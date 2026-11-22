@@ -2,7 +2,7 @@
 
 This checks that a false mathematical Integer claim remains unproved.
 
-```click
+```click quick-solve
 theorem integer_false(x: Integer) {
     ensures x < x by {
         solve();

@@ -249,8 +249,9 @@ Opaque function rules have a narrower boundary:
   postcondition, resource, or effect claim is certified;
 - all recorded contract claims must have checked evidence for that same exact
   function before `VerifiedFunctionRule` can be constructed;
-- contract instantiation uses simultaneous, capture-avoiding substitution,
-  and alpha-equivalence freshens both sides before comparing bound bodies;
+- contract instantiation uses simultaneous substitution; quantifier binders
+  are numbered by height (below), so substitution cannot capture and two
+  quantifiers with the same body have the same binder;
 - composite-resource fold facts are rechecked against the kernel resource
   state even when a resource body has a guard, so surface lowering cannot
   turn a captured fact into resource authority.
@@ -1634,9 +1635,9 @@ result sort, while execution-memory states stay opaque (regressions in
   be given the mark and use `continuing_from`.
 
 Match-arm binders do not need the execution counter: they are *bound*
-variables of the lowered term, drawn from
-`ExecutionBudget::MATCH_BINDER_VARIABLE_BASE` by a counter the budget owns,
-so nested matches get distinct binders and no binder equals a free identity.
+variables of the lowered term, with their own origin (`Variable::match_binder`)
+and numbered by a counter the budget owns, so nested matches get distinct
+binders and no binder equals a free identity, whatever its number.
 Separately lowered terms reuse binder identities safely because `TermRewrite`
 alpha-renames a binder that would capture and stops under a shadowing one.
 `rewrite_integer_match_typed_fields` receives an arm body without its `Match`,
@@ -1665,11 +1666,10 @@ stays within its own range:
 | Range | Producer |
 | --- | --- |
 | `1_000_000 .. 2_000_000` | the execution's fresh-identity counter |
-| `2_000_000 .. 4_000_000` | the surface's quantifier variables; lowering refuses at the ceiling |
+| `2_000_000 .. 4_000_000` | the surface's quantifier variables while a body is lowered, before it is closed; lowering refuses at the ceiling |
 | `4_000_000 .. 4_000_000_000`, stepping by `65_536` | the surface's algebraic binders; lowering refuses at the ceiling |
 | `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
-| `1 << 41 .. 1 << 42` | match-arm binders (`MATCH_BINDER_VARIABLE_BASE`) |
 | `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
 | `1 << 43 .. 1 << 44` | spec fold binders (`spec_fold_bound_variable`, base plus hash) |
 
@@ -1689,12 +1689,13 @@ Direct contract `forall` certification introduces its witness through
 counter mean `Variable(n)` cannot forge its result. New kernel rules that need
 an arbitrary fresh variable use this allocator rather than another range.
 
-The match-binder and spec-fold-binder ranges carry soundness obligations:
-a binder that equals an unrelated free identity can capture it. The
-`the_match_binder_range_is_disjoint_from_every_other_producer` and
-`the_spec_fold_binder_range_is_disjoint_from_every_other_producer` tests assert
-their boundaries. Match lowering refuses with
-`ExecutionLimit::MatchBinderVariables` if it exhausts its range. Arm refutations
+The spec-fold-binder range carries a soundness obligation: a binder that
+equals an unrelated free identity can capture it. The
+`the_spec_fold_binder_range_is_disjoint_from_every_other_producer` test asserts
+its boundaries. Match binders need no range, because their origin separates
+them (`a_match_binder_is_no_other_producer_s_identity`); match lowering
+refuses with `ExecutionLimit::MatchBinderVariables` past
+`ExecutionBudget::MATCH_BINDER_LIMIT` binders. Arm refutations
 start at `1 << 56`, and structural induction starts at `1 << 60`, above the
 fold range.
 
@@ -1707,7 +1708,24 @@ facts' unused identities
 `a_freshened_universal_witness_never_takes_a_program_identity`). A proof that
 exhausts it refuses rather than reusing an identity.
 
-Freshening a binder is a renaming, so it must not change what the proposition
+Quantifier binders are not drawn from any of these ranges. A `ForAll` or
+`Exists` binds a `QuantifierBinder`, a variable of origin `Bound` numbered by
+its height: 0 for an innermost quantifier, otherwise one more than the
+tallest quantifier nested in its body (`src/kernel/quantifiers.rs`). Closing
+a body over a free variable (`close_forall`, `close_exists`, and
+`close_foralls` for a nest in one pass) renames that variable to the binder
+of the computed height; opening (`open_quantifier`, `intro`) always renames
+the binder to a fresh witness. A free variable is never `Bound`, and a
+replacement substituted under a quantifier mentions only taller binders, so
+no substitution captures and no binder is ever freshened: the same body
+closes to the same quantifier, which is what fact keys compare. A rename
+travels through every carrier the binder can occur in (machine terms,
+pointer bases, Integer and algebraic terms) and runs under
+`without_match_reduction`, so renaming never reduces a match or folds a
+conditional. A debug build panics if an assumed condition mentions a `Bound`
+variable (`mdtests/an_introduced_binder_is_not_the_identity_a_later_quantifier_binds.md`).
+
+Opening or closing a quantifier is a renaming, so it must not change what the proposition
 says *or its form*: a proof state matches a goal against a fact
 syntactically, and a goal that quietly moves to another canonical form stops
 matching the surface's re-lowering of the same written range. That is why a

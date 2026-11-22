@@ -423,6 +423,7 @@ pub(super) fn substitute_pure_values(
             );
         }
     }
+    fold_slice_iterator_successors(blocks, &predecessors, &substitutable, &mut removed);
     fold_scalar_successors(locals, blocks, &predecessors, &substitutable, &mut removed);
     for block in blocks.iter_mut() {
         fold_scalar_condition(block, &substitutable, &mut removed);
@@ -494,7 +495,7 @@ fn fold_adjacent_slice_borrows(
 }
 
 /// A fixed-array coercion can supply the pointer and length directly to its
-/// immediate consumer: a length read or a call's sole argument.
+/// immediate consumer: a length read, iterator initialization, or sole call argument.
 fn fold_slice_coercion_operands(
     block: &mut MirBlock,
     substitutable: &impl Fn(&str) -> bool,
@@ -504,19 +505,17 @@ fn fold_slice_coercion_operands(
     for position in 0..block.statements.len() {
         let (earlier, later) = block.statements.split_at_mut(position);
         let statement = &mut later[0];
-        if matches!(
-            statement,
-            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
-        ) {
-            continue;
-        }
-        if let Some(previous) = previous
-            && let S::Assign {
+        let operand = match statement {
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. } => continue,
+            S::Assign {
                 target: E::Local { .. },
                 value: E::SliceLength { slice },
-            } = statement
-        {
-            inline_slice_coercion(&earlier[previous..], slice, true, substitutable, removed);
+            } => Some(slice.as_mut()),
+            S::SharedArrayInitialize { source, .. } => Some(source),
+            _ => None,
+        };
+        if let (Some(previous), Some(operand)) = (previous, operand) {
+            inline_slice_coercion(&earlier[previous..], operand, true, substitutable, removed);
         }
         previous = Some(position);
     }
@@ -534,8 +533,28 @@ fn fold_slice_coercion_operands(
     }
 }
 
-/// The array must be a local or a borrow of a local array or reference.
-/// The intervening markers must keep its storage live through the read.
+/// Find the storage used by a local array or a borrowed array place. Field
+/// selections and dereferences can be carried into the consumer unchanged.
+fn array_coercion_root(array: &E) -> Option<&str> {
+    let mut place = match array {
+        E::Local { name } => return Some(name),
+        E::Borrow {
+            place,
+            value_type: Type::Reference { pointee, .. },
+        } if matches!(pointee.as_ref(), Type::Array { .. }) => place.as_ref(),
+        _ => return None,
+    };
+    loop {
+        place = match place {
+            E::Local { name } => return Some(name),
+            E::Deref { reference, .. } => reference,
+            E::Field { base, .. } => base,
+            _ => return None,
+        };
+    }
+}
+
+/// The intervening markers must keep the source array live through the read.
 fn inline_slice_coercion(
     statements: &[S],
     operand: &mut E,
@@ -553,20 +572,11 @@ fn inline_slice_coercion(
     if (shared_only && *mutable)
         || !matches!(operand, E::Local { name: read } if read == name)
         || !substitutable(name)
+        || removed.contains(name)
     {
         return;
     }
-    let source = match array.as_ref() {
-        E::Borrow {
-            place,
-            value_type: Type::Reference { pointee, .. },
-        } if matches!(pointee.as_ref(), Type::Array { .. }) => match place.as_ref() {
-            E::Deref { reference, .. } => reference.as_ref(),
-            place => place,
-        },
-        array => array,
-    };
-    let E::Local { name: source } = source else {
+    let Some(source) = array_coercion_root(array) else {
         return;
     };
     if statements[1..].iter().any(|statement| {
@@ -576,6 +586,94 @@ fn inline_slice_coercion(
     }
     *operand = value.clone();
     removed.insert(name.clone());
+}
+
+/// Normalizing Iterator::iter can leave a goto (and one storage-only bridge)
+/// between the coercion and initialization. Rejoin those fragments of the
+/// same source statement. A storage-dead marker for the consumed temporary
+/// can go away with the temporary, while the array's storage stays live.
+fn fold_slice_iterator_successors(
+    blocks: &mut [MirBlock],
+    predecessors: &[usize],
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    for index in 0..blocks.len() {
+        let block = &blocks[index];
+        let (T::Goto { target }, Some(site)) = (&block.terminator, block.terminator_site) else {
+            continue;
+        };
+        let Some((last, assignment)) =
+            block.statements.iter().enumerate().rfind(|(_, statement)| {
+                !matches!(
+                    statement,
+                    S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+                )
+            })
+        else {
+            continue;
+        };
+        let S::Assign {
+            target: E::Local { name },
+            value:
+                value @ E::ArrayToSlice {
+                    array,
+                    mutable: false,
+                },
+        } = assignment
+        else {
+            continue;
+        };
+        if !substitutable(name)
+            || removed.contains(name)
+            || array_coercion_root(array).is_none_or(|source| source == name)
+        {
+            continue;
+        }
+        let transparent = |statement: &S| match statement {
+            S::Site { site: marker } => *marker == site,
+            S::EndStorage { local } => local == name,
+            _ => false,
+        };
+        if !block.statements[last + 1..].iter().all(transparent) {
+            continue;
+        }
+        let mut previous = index;
+        let mut target = *target;
+        for _ in 0..2 {
+            if target <= previous || predecessors.get(target) != Some(&1) {
+                break;
+            }
+            let consumer = &blocks[target];
+            match consumer.statements.iter().position(|s| !transparent(s)) {
+                Some(position) => {
+                    if let S::SharedArrayInitialize {
+                        source: E::Local { name: read },
+                        ..
+                    } = &consumer.statements[position]
+                        && read == name
+                    {
+                        let name = name.clone();
+                        let value = value.clone();
+                        if let S::SharedArrayInitialize { source, .. } =
+                            &mut blocks[target].statements[position]
+                        {
+                            *source = value;
+                            removed.insert(name);
+                        }
+                    }
+                    break;
+                }
+                None => {
+                    let T::Goto { target: next } = consumer.terminator else {
+                        break;
+                    };
+                    previous = target;
+                    target = next;
+                }
+            }
+        }
+    }
 }
 
 /// A scalar copy or intrinsic can leave a goto between the expression and
@@ -658,7 +756,11 @@ fn fold_scalar_successors(
                     _ => true,
                 }) {
                 Some(S::Assign { value, .. }) => value,
-                None if copy && consumer.terminator_site == Some(site) => {
+                // The loop test can use its slice metadata directly, just
+                // as it can use an unchanged copy of its index.
+                None if (copy || matches!(result, E::SliceLength { .. }))
+                    && consumer.terminator_site == Some(site) =>
+                {
                     let T::If { condition, .. } = &mut consumer.terminator else {
                         continue;
                     };
@@ -1396,7 +1498,16 @@ pub(super) fn fold_returned_slice_lengths(
             .iter()
             .rfind(|statement| !matches!(statement, S::Site { .. }))
             && destination == name
-            && matches!(value, E::Local { name: source } | E::ChunkRemainder { iterator: source } if source != name)
+            && match value {
+                E::Local { name: source } | E::ChunkRemainder { iterator: source } => {
+                    source != name
+                }
+                E::ArrayToSlice {
+                    array,
+                    mutable: false,
+                } => array_coercion_root(array).is_some_and(|root| root != name),
+                _ => false,
+            }
         {
             folds.push((continuation, name.clone(), value.clone()));
         }

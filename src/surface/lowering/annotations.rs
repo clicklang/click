@@ -9555,13 +9555,10 @@ impl AnnotationLowerer<'_> {
                         .and_then(ProgramType::pointer_to)
                         .ok_or_else(|| format!("static array `{id}` has no element pointer type"))?
                 };
-                return Ok(SpecExpression::Value(
-                    ProgramValue::typed_pointer_with_pointee_constant(
-                        pointer,
-                        pointer_type,
-                        metadata.constant,
-                    ),
-                ));
+                return Ok(SpecExpression::Value(ProgramValue::typed_pointer(
+                    pointer,
+                    pointer_type,
+                )));
             }
             if metadata.volatile {
                 return Err(format!(
@@ -9574,13 +9571,10 @@ impl AnnotationLowerer<'_> {
             let pointer_type = ProgramType::UInt8Pointer;
             return Ok(SpecExpression::MemoryLoad {
                 point: environment.current_point.clone(),
-                pointer: Box::new(SpecExpression::Value(
-                    ProgramValue::typed_pointer_with_pointee_constant(
-                        pointer,
-                        pointer_type,
-                        metadata.constant,
-                    ),
-                )),
+                pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
+                    pointer,
+                    pointer_type,
+                ))),
                 value_type: metadata.program_type,
                 exact: false,
             });
@@ -9786,13 +9780,10 @@ impl AnnotationLowerer<'_> {
                     .pointer_to()
                     .ok_or_else(|| format!("static object `{id}` has no address type"))?
             };
-            return Ok(SpecExpression::Value(
-                ProgramValue::typed_pointer_with_pointee_constant(
-                    crate::kernel::SymbolicMemory::global_pointer(name),
-                    pointer_type,
-                    metadata.constant,
-                ),
-            ));
+            return Ok(SpecExpression::Value(ProgramValue::typed_pointer(
+                crate::kernel::SymbolicMemory::global_pointer(name),
+                pointer_type,
+            )));
         }
         if !environment.checking_definedness
             && let ProgramExpression::AddressOf(target)

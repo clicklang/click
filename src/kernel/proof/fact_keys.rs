@@ -928,7 +928,6 @@ enum AlphaProgramValueKey {
     Scalar(ProgramType, AlphaMachineKey),
     Pointer {
         program_type: ProgramType,
-        pointee_constant: bool,
         pointer: AlphaAddressKey,
         provenance: AlphaAddressKey,
         bounds_known: bool,
@@ -2322,7 +2321,6 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
         }
         ProgramValue::Pointer(pointer) => AlphaProgramValueKey::Pointer {
             program_type: pointer.program_type(),
-            pointee_constant: pointer.pointee_constant(),
             pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
                 pointer.address(),
                 bindings,
@@ -3164,75 +3162,7 @@ pub(crate) fn propositions_are_alpha_equal(left: &Proposition, right: &Propositi
 
 /// The structural comparison used when the indexed identity declines.
 pub(crate) fn proposition_with_canonical_binders(proposition: &Proposition) -> Proposition {
-    renumbered_binders(proposition, 0)
-}
-
-/// A variable range no lowering mints, for renumbering binders.
-const RENUMBERED_BINDER_BASE: u64 = 9_600_000_000;
-
-/// `proposition` with each quantifier's variable replaced, outermost first,
-/// by the variable numbered for its depth, so two propositions that differ
-/// only in how their binders are numbered become the same value. The walk is
-/// over the connectives and quantifiers only, and each renaming is the
-/// ordinary capture-avoiding substitution; a binder inside a term is left as
-/// written, and such a pair then compares equal only when it is written the
-/// same. Work is one substitution per binder.
-fn renumbered_binders(proposition: &Proposition, depth: u64) -> Proposition {
-    use crate::kernel::reasoning::substitute_bitvector_variable_in_proposition;
-    match proposition {
-        Proposition::And(left, right) => Proposition::And(
-            Box::new(renumbered_binders(left, depth)),
-            Box::new(renumbered_binders(right, depth)),
-        ),
-        Proposition::Or(left, right) => Proposition::Or(
-            Box::new(renumbered_binders(left, depth)),
-            Box::new(renumbered_binders(right, depth)),
-        ),
-        Proposition::Implies(left, right) => Proposition::Implies(
-            Box::new(renumbered_binders(left, depth)),
-            Box::new(renumbered_binders(right, depth)),
-        ),
-        Proposition::Not(body) => Proposition::Not(Box::new(renumbered_binders(body, depth))),
-        Proposition::ForAll {
-            var,
-            sort,
-            body,
-            name,
-        } => {
-            let fresh = Variable(RENUMBERED_BINDER_BASE + depth);
-            let body = substitute_bitvector_variable_in_proposition(
-                body,
-                *var,
-                &MachineTerm::Variable(fresh),
-            );
-            Proposition::ForAll {
-                var: fresh,
-                sort: sort.clone(),
-                body: Box::new(renumbered_binders(&body, depth + 1)),
-                name: name.clone(),
-            }
-        }
-        Proposition::Exists {
-            name,
-            var,
-            sort,
-            body,
-        } => {
-            let fresh = Variable(RENUMBERED_BINDER_BASE + depth);
-            let body = substitute_bitvector_variable_in_proposition(
-                body,
-                *var,
-                &MachineTerm::Variable(fresh),
-            );
-            Proposition::Exists {
-                name: name.clone(),
-                var: fresh,
-                sort: sort.clone(),
-                body: Box::new(renumbered_binders(&body, depth + 1)),
-            }
-        }
-        _ => proposition.clone(),
-    }
+    crate::kernel::quantifiers::canonical_binders(proposition)
 }
 
 #[cfg(test)]
@@ -3253,12 +3183,12 @@ mod proposition_identity_tests {
     }
 
     fn forall(var: u64, body: Proposition) -> Proposition {
-        Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(var),
-            sort: Sort::Bitvector32,
-            body: Box::new(body),
-        }
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(var),
+            Sort::Bitvector32,
+            body,
+        )
     }
 
     fn local_definedness_fact(memory: &SymbolicMemory, variable: u64) -> Proposition {
@@ -3361,27 +3291,29 @@ mod proposition_identity_tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
-        let make = |binder: u64, argument: u64, memory: SymbolicMemory| Proposition::Exists {
-            name: "fuel".into(),
-            var: Variable(binder),
-            sort: Sort::Algebraic(ty.clone()),
-            body: Box::new(equal(
-                MachineTerm::ClickFunctionApplication {
-                    name: "walk".into(),
-                    arguments: vec![
-                        PureFunctionArgument::ArrayRef {
-                            point: crate::kernel::ProgramPoint::of_memory(&memory),
-                            pointer: ProgramValue::pointer(pointer.clone()),
-                            element_type: ProgramType::Int32,
-                        },
-                        PureFunctionArgument::Algebraic(AlgebraicTerm {
-                            algebraic_type: ty.clone(),
-                            node: AlgebraicTermNode::Variable(Variable(argument)),
-                        }),
-                    ],
-                },
-                MachineTerm::constant(0),
-            )),
+        let make = |binder: u64, argument: u64, memory: SymbolicMemory| {
+            crate::kernel::quantifiers::test_exists(
+                "fuel".into(),
+                Variable(binder),
+                Sort::Algebraic(ty.clone()),
+                equal(
+                    MachineTerm::ClickFunctionApplication {
+                        name: "walk".into(),
+                        arguments: vec![
+                            PureFunctionArgument::ArrayRef {
+                                point: crate::kernel::ProgramPoint::of_memory(&memory),
+                                pointer: ProgramValue::pointer(pointer.clone()),
+                                element_type: ProgramType::Int32,
+                            },
+                            PureFunctionArgument::Algebraic(AlgebraicTerm {
+                                algebraic_type: ty.clone(),
+                                node: AlgebraicTermNode::Variable(Variable(argument)),
+                            }),
+                        ],
+                    },
+                    MachineTerm::constant(0),
+                ),
+            )
         };
         let original = make(2_000_000, 2_000_000, before.clone());
         assert!(quantified_algebraic_captured_array_identity_key(&original).is_some());
@@ -3397,11 +3329,11 @@ mod proposition_identity_tests {
             &original,
             &make(3_000_000, 2_000_000, before)
         ));
-        let raw_load = Proposition::Exists {
-            name: "fuel".into(),
-            var: Variable(2_000_000),
-            sort: Sort::Algebraic(ty),
-            body: Box::new(equal(
+        let raw_load = crate::kernel::quantifiers::test_exists(
+            "fuel".into(),
+            Variable(2_000_000),
+            Sort::Algebraic(ty),
+            equal(
                 MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::of_memory(
                         &SymbolicMemory::new().with_block("alpha-array", 8),
@@ -3410,8 +3342,8 @@ mod proposition_identity_tests {
                     crate::kernel::LoadKind::Int32,
                 ),
                 MachineTerm::constant(0),
-            )),
-        };
+            ),
+        );
         assert!(quantified_algebraic_captured_array_identity_key(&raw_load).is_none());
     }
 
@@ -3419,11 +3351,11 @@ mod proposition_identity_tests {
     fn alpha_identity_is_capture_safe_and_name_blind() {
         let left = forall(
             1,
-            Proposition::Exists {
-                name: "left".into(),
-                var: Variable(2),
-                sort: Sort::Bitvector32,
-                body: Box::new(Proposition::And(
+            crate::kernel::quantifiers::test_exists(
+                "left".into(),
+                Variable(2),
+                Sort::Bitvector32,
+                Proposition::And(
                     Box::new(equal(
                         MachineTerm::Variable(Variable(1)),
                         MachineTerm::Variable(Variable(2)),
@@ -3438,16 +3370,16 @@ mod proposition_identity_tests {
                             MachineTerm::constant(0),
                         )))),
                     )),
-                )),
-            },
+                ),
+            ),
         );
         let right = forall(
             11,
-            Proposition::Exists {
-                name: "right".into(),
-                var: Variable(12),
-                sort: Sort::Bitvector32,
-                body: Box::new(Proposition::And(
+            crate::kernel::quantifiers::test_exists(
+                "right".into(),
+                Variable(12),
+                Sort::Bitvector32,
+                Proposition::And(
                     Box::new(equal(
                         MachineTerm::Variable(Variable(11)),
                         MachineTerm::Variable(Variable(12)),
@@ -3462,22 +3394,22 @@ mod proposition_identity_tests {
                             MachineTerm::constant(0),
                         )))),
                     )),
-                )),
-            },
+                ),
+            ),
         );
         assert!(propositions_are_alpha_equal(&left, &right));
 
         let changed_free = forall(
             11,
-            Proposition::Exists {
-                name: "right".into(),
-                var: Variable(12),
-                sort: Sort::Bitvector32,
-                body: Box::new(equal(
+            crate::kernel::quantifiers::test_exists(
+                "right".into(),
+                Variable(12),
+                Sort::Bitvector32,
+                equal(
                     MachineTerm::Variable(Variable(11)),
                     MachineTerm::Variable(Variable(1_001)),
-                )),
-            },
+                ),
+            ),
         );
         assert!(!propositions_are_alpha_equal(&left, &changed_free));
     }
@@ -3490,22 +3422,22 @@ mod proposition_identity_tests {
             &forall(7, body.clone()),
             &forall(8, renamed)
         ));
-        let integer = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(8),
-            sort: Sort::Integer,
-            body: Box::new(body.clone()),
-        };
+        let integer = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(8),
+            Sort::Integer,
+            body.clone(),
+        );
         assert!(!propositions_are_alpha_equal(
             &forall(8, body.clone()),
             &integer
         ));
-        let exists = Proposition::Exists {
-            name: "x".into(),
-            var: Variable(8),
-            sort: Sort::Bitvector32,
-            body: Box::new(body.clone()),
-        };
+        let exists = crate::kernel::quantifiers::test_exists(
+            "x".into(),
+            Variable(8),
+            Sort::Bitvector32,
+            body.clone(),
+        );
         assert!(!propositions_are_alpha_equal(
             &forall(8, body.clone()),
             &exists
@@ -3541,15 +3473,15 @@ mod proposition_identity_tests {
                     )),
                     Box::new(Proposition::Or(
                         Box::new(Proposition::Implies(
-                            Box::new(Proposition::Exists {
-                                name: "witness".into(),
-                                var: Variable(inner),
-                                sort: Sort::Bitvector32,
-                                body: Box::new(Proposition::Not(Box::new(equal(
+                            Box::new(crate::kernel::quantifiers::test_exists(
+                                "witness".into(),
+                                Variable(inner),
+                                Sort::Bitvector32,
+                                Proposition::Not(Box::new(equal(
                                     MachineTerm::Variable(Variable(witness)),
                                     MachineTerm::constant(1),
-                                )))),
-                            }),
+                                ))),
+                            )),
                             Box::new(equal(
                                 MachineTerm::Variable(Variable(outer)),
                                 MachineTerm::constant(2),
@@ -3908,7 +3840,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             let ordinal = *next_binder;
             *next_binder = (*next_binder).checked_add(1)?;
             let body = if *sort == Sort::Integer {
-                let prior = bindings.integer.insert(*var, ordinal);
+                let prior = bindings.integer.insert(**var, ordinal);
                 let parent_scope = bindings.integer_scope;
                 let integer_scope = bindings.next_scope_id;
                 bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
@@ -3917,13 +3849,13 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
                 bindings.integer_scope = parent_scope;
                 if let Some(prior) = prior {
-                    bindings.integer.insert(*var, prior);
+                    bindings.integer.insert(**var, prior);
                 } else {
                     bindings.integer.remove(var);
                 }
                 body
             } else if matches!(sort, Sort::Algebraic(_)) {
-                let prior = bindings.algebraic.insert(*var, ordinal);
+                let prior = bindings.algebraic.insert(**var, ordinal);
                 let parent_scope = bindings.bitvector_scope;
                 bindings.bitvector_scope = bindings.next_scope_id;
                 bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
@@ -3931,13 +3863,13 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
                 bindings.bitvector_scope = parent_scope;
                 if let Some(prior) = prior {
-                    bindings.algebraic.insert(*var, prior);
+                    bindings.algebraic.insert(**var, prior);
                 } else {
                     bindings.algebraic.remove(var);
                 }
                 body
             } else {
-                let prior = bindings.bitvector.insert(*var, ordinal);
+                let prior = bindings.bitvector.insert(**var, ordinal);
                 let parent_scope = bindings.bitvector_scope;
                 let bitvector_scope = bindings.next_scope_id;
                 bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
@@ -3946,7 +3878,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
                 bindings.bitvector_scope = parent_scope;
                 if let Some(prior) = prior {
-                    bindings.bitvector.insert(*var, prior);
+                    bindings.bitvector.insert(**var, prior);
                 } else {
                     bindings.bitvector.remove(var);
                 }
@@ -3960,7 +3892,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             let ordinal = *next_binder;
             *next_binder = (*next_binder).checked_add(1)?;
             let body = if *sort == Sort::Integer {
-                let prior = bindings.integer.insert(*var, ordinal);
+                let prior = bindings.integer.insert(**var, ordinal);
                 let parent_scope = bindings.integer_scope;
                 let integer_scope = bindings.next_scope_id;
                 bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
@@ -3969,13 +3901,13 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
                 bindings.integer_scope = parent_scope;
                 if let Some(prior) = prior {
-                    bindings.integer.insert(*var, prior);
+                    bindings.integer.insert(**var, prior);
                 } else {
                     bindings.integer.remove(var);
                 }
                 body
             } else if matches!(sort, Sort::Algebraic(_)) {
-                let prior = bindings.algebraic.insert(*var, ordinal);
+                let prior = bindings.algebraic.insert(**var, ordinal);
                 let parent_scope = bindings.bitvector_scope;
                 bindings.bitvector_scope = bindings.next_scope_id;
                 bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
@@ -3983,13 +3915,13 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
                 bindings.bitvector_scope = parent_scope;
                 if let Some(prior) = prior {
-                    bindings.algebraic.insert(*var, prior);
+                    bindings.algebraic.insert(**var, prior);
                 } else {
                     bindings.algebraic.remove(var);
                 }
                 body
             } else {
-                let prior = bindings.bitvector.insert(*var, ordinal);
+                let prior = bindings.bitvector.insert(**var, ordinal);
                 let parent_scope = bindings.bitvector_scope;
                 let bitvector_scope = bindings.next_scope_id;
                 bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
@@ -3998,7 +3930,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
                 bindings.bitvector_scope = parent_scope;
                 if let Some(prior) = prior {
-                    bindings.bitvector.insert(*var, prior);
+                    bindings.bitvector.insert(**var, prior);
                 } else {
                     bindings.bitvector.remove(var);
                 }
@@ -4111,7 +4043,7 @@ pub(crate) fn selected_state_quantified_alpha_equivalent(
             return None;
         }
         let mut bindings = fold_keys::bindings();
-        bindings.checked_state_binder = Some(*var);
+        bindings.checked_state_binder = Some(**var);
         let key = alpha_proposition_key_with_bindings::<true>(proposition, &mut bindings, &mut 0)?;
         Some((key, bindings.work_units))
     };
@@ -4222,18 +4154,18 @@ mod integer_alpha_scaling_tests {
                         IntegerTerm::var(Variable(binder)).into(),
                     )],
                 ));
-            Proposition::ForAll {
-                name: Default::default(),
-                var: Variable(binder),
-                sort: Sort::Integer,
-                body: Box::new(Proposition::condition_is(
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(binder),
+                Sort::Integer,
+                Proposition::condition_is(
                     ConditionTerm::IntegerGreaterEqual(
                         applied.into(),
                         IntegerTerm::constant_i64(0).into(),
                     ),
                     true,
-                )),
-            }
+                ),
+            )
         };
         let key = |proposition: &Proposition| {
             quantified_equivalence_index_key(proposition).expect("the universal has a key")
@@ -4776,11 +4708,11 @@ mod memory_state_alpha_tests {
                 4,
                 &memory,
             );
-            Proposition::ForAll {
-                name: Default::default(),
-                var: binder,
-                sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::condition_is(
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                binder,
+                Sort::ProgramInt32,
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -4788,8 +4720,8 @@ mod memory_state_alpha_tests {
                         right: Box::new(MachineTerm::constant(1)),
                     },
                     true,
-                )),
-            }
+                ),
+            )
         };
 
         let key = proposition_identity_key(&every_element_is_one(loaded, Variable(315_000)))
@@ -5250,11 +5182,13 @@ mod machine_quantifier_identity_tests {
                             ConditionTerm::IntegerGreaterEqual(left, right)
                         }
                     };
-                    let quantified = |condition, truth| Proposition::ForAll {
-                        var: Variable(981),
-                        name: crate::kernel::BinderName::written("i"),
-                        sort: Sort::ProgramInteger(format),
-                        body: Box::new(Proposition::condition_is(condition, truth)),
+                    let quantified = |condition, truth| {
+                        crate::kernel::quantifiers::test_forall(
+                            crate::kernel::BinderName::written("i"),
+                            Variable(981),
+                            Sort::ProgramInteger(format),
+                            Proposition::condition_is(condition, truth),
+                        )
                     };
                     assert!(
                         propositions_are_alpha_equal(
@@ -5277,28 +5211,30 @@ mod machine_quantifier_identity_tests {
 
     #[test]
     fn wide_quantified_keys_rename_binders_without_erasing_width_or_high_bits() {
-        let quantified = |variable, wide, bound| Proposition::Exists {
-            name: "x".into(),
-            var: Variable(variable),
-            sort: Sort::ProgramInt64,
-            body: Box::new(Proposition::condition_is(
-                if wide {
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int64,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(variable))),
-                        right: Box::new(MachineTerm::int64_constant(bound)),
-                    }
-                } else {
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(variable))),
-                        right: Box::new(MachineTerm::constant(bound as u32)),
-                    }
-                },
-                true,
-            )),
+        let quantified = |variable, wide, bound| {
+            crate::kernel::quantifiers::test_exists(
+                "x".into(),
+                Variable(variable),
+                Sort::ProgramInt64,
+                Proposition::condition_is(
+                    if wide {
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int64,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(MachineTerm::Variable(Variable(variable))),
+                            right: Box::new(MachineTerm::int64_constant(bound)),
+                        }
+                    } else {
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(MachineTerm::Variable(Variable(variable))),
+                            right: Box::new(MachineTerm::constant(bound as u32)),
+                        }
+                    },
+                    true,
+                ),
+            )
         };
         let wide = quantified(1, true, 1i64 << 32);
         let renamed = quantified(2, true, 1i64 << 32);

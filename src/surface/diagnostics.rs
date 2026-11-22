@@ -3767,7 +3767,10 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
         .resources()
         .instance_consumption(access.identity.instance()?);
     let advice = match cause {
-        Some(crate::kernel::InstanceConsumption::Unfold) => match &access.click_type {
+        Some(
+            crate::kernel::InstanceConsumption::Unfold
+            | crate::kernel::InstanceConsumption::UnfoldWithWitnesses { .. },
+        ) => match &access.click_type {
             Some(ClickType::Program(_)) => format!(
                 "`unfold({owner})` consumed it; name the field's folded value where the instance is \
                  unfolded with `let {{ {field}: name }} = unfold({owner});` and write `name` instead"
@@ -5957,12 +5960,7 @@ pub(super) fn describe_program_value(
         {
             let base = describe_pointer(pointer, parameter_binding);
             let ty = crate::kernel::program_type_spelling(pointer.program_type());
-            let constant = if pointer.pointee_constant() {
-                "const "
-            } else {
-                ""
-            };
-            format!("({})", click_cast(&base, &format!("{constant}{ty}")))
+            format!("({})", click_cast(&base, &format!("{ty}")))
         }
         ProgramValue::Pointer(pointer) => describe_pointer(pointer, parameter_binding),
     }
@@ -6303,7 +6301,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
         {
             let target = qualified_native_pointer_spelling(
                 crate::kernel::program_type_spelling(pointer.program_type()),
-                pointer.pointee_constant(),
+                false,
                 false,
             );
             format!("({})", click_cast("0u64", &target))

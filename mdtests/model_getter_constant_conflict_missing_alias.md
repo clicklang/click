@@ -3,7 +3,7 @@
 Without `a == b`, one model can be active and the other done. The unrelated
 conclusion must not follow from their different getter values.
 
-```click
+```click quick-solve
 spec enum Walk { Active, Done }
 function pending(w: Walk) -> int32 { match w { Walk::Active => 1, Walk::Done => 0, } }
 theorem conflicting_aliases(a: Walk, b: Walk, flag: int32) {

@@ -932,25 +932,25 @@ pub(crate) fn instantiate_universal(
         {
             Ok(substitute_int32_variable_in_proposition(
                 body,
-                *var,
+                **var,
                 value.clone(),
             ))
         }
         (Sort::Integer, InstanceArgument::Integer(value)) => {
-            crate::kernel::substitute_integer_variable_in_pure_proposition(body, *var, value)
+            crate::kernel::substitute_integer_variable_in_pure_proposition(body, **var, value)
                 .map_err(|error| ForallInstantiationError::SubstitutionRefused(error.to_string()))
         }
         (Sort::ProgramPointer(program_type), InstanceArgument::Pointer(pointer))
             if program_type.accepts(&ProgramValue::Pointer(pointer.clone())) =>
         {
-            crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
+            crate::kernel::substitute_pointer_value_in_proposition(body, **var, pointer)
                 .map_err(ForallInstantiationError::SubstitutionRefused)
         }
         (Sort::ProgramObjectPointer(program_type, class), InstanceArgument::Pointer(pointer))
             if crate::kernel::AlgebraicValueType::ObjectPointer(*program_type, class.clone())
                 .accepts_program_value(&ProgramValue::Pointer(pointer.clone())) =>
         {
-            crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
+            crate::kernel::substitute_pointer_value_in_proposition(body, **var, pointer)
                 .map_err(ForallInstantiationError::SubstitutionRefused)
         }
         _ => Err(ForallInstantiationError::ArgumentSort),
@@ -1799,6 +1799,42 @@ fn substituted_body_retained_order_equivalent(left: &Proposition, right: &Propos
 }
 
 pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Proposition) -> bool {
+    // A quantifier's binder is numbered by its height, so two quantifiers
+    // with one binder, sort and body are the same up to their display names.
+    if let (
+        Proposition::ForAll {
+            var: lv,
+            sort: ls,
+            body: lb,
+            ..
+        },
+        Proposition::ForAll {
+            var: rv,
+            sort: rs,
+            body: rb,
+            ..
+        },
+    )
+    | (
+        Proposition::Exists {
+            var: lv,
+            sort: ls,
+            body: lb,
+            ..
+        },
+        Proposition::Exists {
+            var: rv,
+            sort: rs,
+            body: rb,
+            ..
+        },
+    ) = (left, right)
+        && lv == rv
+        && ls == rs
+        && lb == rb
+    {
+        return true;
+    }
     let left_comparison = super::term_rewrite::TermRewrite::arithmetic_comparison(left);
     let right_comparison = super::term_rewrite::TermRewrite::arithmetic_comparison(right);
     let left = left_comparison.as_ref().unwrap_or(left);
@@ -1908,23 +1944,23 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
             };
             crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
                 left_body,
-                left_var,
+                *left_var,
                 &replacement,
             ) == crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
                 right_body,
-                right_var,
+                *right_var,
                 &replacement,
             )
         }
         _ => {
             let left = substitute_int32_variable_in_proposition(
                 left_body,
-                left_var,
+                *left_var,
                 MachineTerm::Variable(fresh),
             );
             let right = substitute_int32_variable_in_proposition(
                 right_body,
-                right_var,
+                *right_var,
                 MachineTerm::Variable(fresh),
             );
             substituted_body_retained_order_equivalent(&left, &right)
@@ -2370,11 +2406,13 @@ mod tests {
                 true,
             )
         };
-        let forall = |v, body| Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(v),
-            sort: Sort::ProgramInt32,
-            body: Box::new(body),
+        let forall = |v, body| {
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(v),
+                Sort::ProgramInt32,
+                body,
+            )
         };
         let nested = forall(1, forall(2, eq(1, 2)));
         assert!(quantified_binder_equivalent(
@@ -2403,20 +2441,20 @@ mod tests {
             Proposition::And(Box::new(forall(3, eq(3, 3))), Box::new(eq(2, 7))),
         );
         assert!(quantified_binder_equivalent(&left, &right));
-        let exists = Proposition::Exists {
-            name: "witness".into(),
-            var: Variable(2),
-            sort: Sort::ProgramInt32,
-            body: Box::new(eq(2, 2)),
-        };
+        let exists = crate::kernel::quantifiers::test_exists(
+            "witness".into(),
+            Variable(2),
+            Sort::ProgramInt32,
+            eq(2, 2),
+        );
         assert!(!quantified_binder_equivalent(&forall(1, eq(1, 1)), &exists));
         let reflexive = forall(1, eq(1, 1));
-        let wrong_sort = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(1),
-            sort: Sort::ProgramInt64,
-            body: Box::new(eq(1, 1)),
-        };
+        let wrong_sort = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(1),
+            Sort::ProgramInt64,
+            eq(1, 1),
+        );
         assert!(!quantified_binder_equivalent(&reflexive, &wrong_sort));
         let tautology = forall(
             2,
@@ -2455,15 +2493,15 @@ mod tests {
                     crate::kernel::LoadKind::Int32,
                 )
             };
-            Proposition::ForAll {
-                name: Default::default(),
-                var: Variable(1),
-                sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::condition_is(
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(1),
+                Sort::ProgramInt32,
+                Proposition::condition_is(
                     ConditionTerm::equal(load, MachineTerm::Variable(Variable(1))),
                     true,
-                )),
-            }
+                ),
+            )
         };
         for named in [false, true] {
             let left = quantified(before.clone(), named);
@@ -2508,15 +2546,15 @@ mod tests {
                 4,
                 retained_state,
             );
-            Proposition::ForAll {
-                name: Default::default(),
-                var: binder,
-                sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::condition_is(
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                binder,
+                Sort::ProgramInt32,
+                Proposition::condition_is(
                     ConditionTerm::equal(MachineTerm::Variable(load), MachineTerm::constant(7)),
                     true,
-                )),
-            }
+                ),
+            )
         };
         let available = quantified(&memory, Variable(3_200_000));
         let requested = quantified(&memory, Variable(2_000_000));
@@ -2547,23 +2585,25 @@ mod tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
         );
-        let proposition = |binder| Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(binder),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::MemoryLoad(
-                        crate::kernel::ProgramPoint::of_memory(&memory),
-                        Box::new(pointer.clone()),
-                        crate::kernel::LoadKind::Int32,
-                    )),
-                    right: Box::new(MachineTerm::Variable(Variable(binder))),
-                },
-                true,
-            )),
+        let proposition = |binder| {
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(binder),
+                Sort::ProgramInt32,
+                Proposition::condition_is(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        left: Box::new(MachineTerm::MemoryLoad(
+                            crate::kernel::ProgramPoint::of_memory(&memory),
+                            Box::new(pointer.clone()),
+                            crate::kernel::LoadKind::Int32,
+                        )),
+                        right: Box::new(MachineTerm::Variable(Variable(binder))),
+                    },
+                    true,
+                ),
+            )
         };
         // Both formulas name the same state, but 11 is bound inside its
         // stored value only in the first formula. SymbolicMemory state identity plus an
@@ -2675,12 +2715,12 @@ mod tests {
 
     #[test]
     fn quantified_check_key_is_alpha_invariant_and_preserves_free_variables() {
-        let quantified =
-            |outer: Variable, inner: Variable, free: Variable, name: &str| Proposition::ForAll {
-                name: Default::default(),
-                var: outer,
-                sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::And(
+        let quantified = |outer: Variable, inner: Variable, free: Variable, name: &str| {
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                outer,
+                Sort::ProgramInt32,
+                Proposition::And(
                     Box::new(Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
@@ -2690,11 +2730,11 @@ mod tests {
                         },
                         true,
                     )),
-                    Box::new(Proposition::Exists {
-                        name: name.to_string(),
-                        var: inner,
-                        sort: Sort::ProgramInt32,
-                        body: Box::new(Proposition::condition_is(
+                    Box::new(crate::kernel::quantifiers::test_exists(
+                        name.to_string(),
+                        inner,
+                        Sort::ProgramInt32,
+                        Proposition::condition_is(
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::Equal,
@@ -2702,10 +2742,11 @@ mod tests {
                                 right: Box::new(MachineTerm::Variable(outer)),
                             },
                             true,
-                        )),
-                    }),
-                )),
-            };
+                        ),
+                    )),
+                ),
+            )
+        };
 
         let left = quantified(Variable(0), Variable(1), Variable(7), "left name");
         let renamed = quantified(
@@ -2754,11 +2795,11 @@ mod tests {
         let guarded = |guard: Proposition, binder: Variable, bound: Variable| {
             Proposition::Implies(
                 Box::new(guard),
-                Box::new(Proposition::ForAll {
-                    name: Default::default(),
-                    var: binder,
-                    sort: Sort::ProgramInt32,
-                    body: Box::new(Proposition::condition_is(
+                Box::new(crate::kernel::quantifiers::test_forall(
+                    Default::default(),
+                    binder,
+                    Sort::ProgramInt32,
+                    Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
@@ -2766,8 +2807,8 @@ mod tests {
                             right: Box::new(MachineTerm::Variable(bound)),
                         },
                         true,
-                    )),
-                }),
+                    ),
+                )),
             )
         };
         let fact = guarded(guard(1), Variable(2_000_000), Variable(7));
@@ -2807,27 +2848,29 @@ mod tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         ));
-        let make = |binder, argument, memory: SharedMemory| Proposition::Exists {
-            name: "fuel".into(),
-            var: Variable(binder),
-            sort: Sort::Algebraic(ty.clone()),
-            body: Box::new(Proposition::condition_is(
-                ConditionTerm::equal(
-                    MachineTerm::ClickFunctionApplication {
-                        name: "observe".into(),
-                        arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
-                            algebraic_type: ty.clone(),
-                            node: AlgebraicTermNode::Variable(Variable(argument)),
-                        })],
-                    },
-                    MachineTerm::MemoryLoad(
-                        ProgramPoint::at(&memory),
-                        Box::new(pointer.clone()),
-                        LoadKind::Int32,
+        let make = |binder, argument, memory: SharedMemory| {
+            crate::kernel::quantifiers::test_exists(
+                "fuel".into(),
+                Variable(binder),
+                Sort::Algebraic(ty.clone()),
+                Proposition::condition_is(
+                    ConditionTerm::equal(
+                        MachineTerm::ClickFunctionApplication {
+                            name: "observe".into(),
+                            arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
+                                algebraic_type: ty.clone(),
+                                node: AlgebraicTermNode::Variable(Variable(argument)),
+                            })],
+                        },
+                        MachineTerm::MemoryLoad(
+                            ProgramPoint::at(&memory),
+                            Box::new(pointer.clone()),
+                            LoadKind::Int32,
+                        ),
                     ),
+                    true,
                 ),
-                true,
-            )),
+            )
         };
         let original = make(70_200, 70_200, before.clone());
         assert!(quantified_binder_equivalent(
@@ -2861,19 +2904,21 @@ mod tests {
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let universal = |index: Variable, term: MachineTerm| Proposition::ForAll {
-            name: Default::default(),
-            var: index,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(term),
-                    right: Box::new(MachineTerm::Variable(index)),
-                },
-                true,
-            )),
+        let universal = |index: Variable, term: MachineTerm| {
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                index,
+                Sort::ProgramInt32,
+                Proposition::condition_is(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(term),
+                        right: Box::new(MachineTerm::Variable(index)),
+                    },
+                    true,
+                ),
+            )
         };
         let named = |index: Variable| crate::kernel::canonical_term(&cell(index));
         assert!(matches!(
@@ -2908,15 +2953,15 @@ mod tests {
                     MachineTerm::Variable(item),
                 ),
             );
-            Proposition::ForAll {
-                name: Default::default(),
-                var: index,
-                sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::condition_is(
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                index,
+                Sort::ProgramInt32,
+                Proposition::condition_is(
                     ConditionTerm::equal(fold, MachineTerm::constant(0)),
                     true,
-                )),
-            }
+                ),
+            )
         };
 
         let left = universal(Variable(30_000), Variable(30_001), Variable(30_002));
@@ -3918,12 +3963,12 @@ mod integer_reflexivity_tests {
             )
             .is_err()
         );
-        let quantified = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(96_110),
-            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
-            body: Box::new(normalization_pointer_equality(&a, &b)),
-        };
+        let quantified = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(96_110),
+            Sort::ProgramPointer(ProgramType::Int32Pointer),
+            normalization_pointer_equality(&a, &b),
+        );
         assert!(normalize_using_conditions(&quantified, &[], &facts).is_err());
     }
 

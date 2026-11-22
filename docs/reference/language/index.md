@@ -801,15 +801,25 @@ trusted. Calls that form a directed acyclic graph are ranked by the planner's
 call-graph heights, which are never written in source. A call through a
 function pointer returns when every function whose address the project takes
 returns without calling through a function pointer itself, directly or in
-anything it calls: a comparator, a visitor, or an augment callback qualifies,
-and a function that hands itself to the helper that calls it does not. Where
-that does not hold the refusal is reported at the place the address is taken;
-see `mdtests/termination_callback_self_application_rejected.md`. A callback
-that itself takes callbacks needs a measure on its named contract, which is
-not supported yet. The refusal names the unranked loop or the callee
-responsible, and offers the two repairs: a `decreases` clause, or the
-`diverges` marker. The kernel records termination evidence separately from
-`VerifiedFunctionRule`, so an ordinary `ensures` is still exactly a statement
+anything it calls. A comparator, visitor, or augment callback can meet that
+rule. Click reports `unsupported` at the address-taking declaration when a
+callback can reach an indirect call.
+
+To support nested callbacks, a named callback contract would carry a
+termination measure. An indirect call that can close a cycle would owe a
+proof of descent under that measure. A finite chain through nested callbacks
+should then verify, while self-application would still owe descent. See
+`mdtests/termination_callback_self_application_rejected.md`.
+
+An unranked loop or callee without a termination proof is an `incomplete
+proof`. Click names the loop or follows the call to the missing proof.
+Failure of `solve()` to prove a supplied measure's nonnegativity or descent
+is `unsuccessful search`. A function-level `decreases` clause requires a
+recursive edge to rank. A function that promises to return also needs return
+evidence for its calls. A call authorized by a contract that permits divergence
+conflicts with that promise and reports a `contract error`.
+The kernel records termination evidence separately from `VerifiedFunctionRule`,
+so an ordinary `ensures` is still exactly a statement
 about return states.
 
 ### Functions that may not return
@@ -1979,7 +1989,10 @@ source of `memcpy`, which carries each byte's initialization across.
 `produces p[a..b]` hands the caller initialized bytes, so the function's proof
 is refused at a return that leaves a byte of it unwritten
 (`mdtests/produces_refuses_memory_the_function_did_not_write.md`), and after
-the call the caller holds them written. An initializer consumes
+the call the caller holds them written. A symbolic byte output also yields
+`defined(dst[i])` at the call's return when `i` is in the produced range
+(`mdtests/solve_proves_a_byte_defined_in_a_symbolic_produced_range.md`).
+An initializer consumes
 `uninitialized(p[a..b])` and produces `p[a..b]`
 (`mdtests/an_initializer_produces_the_memory_it_initialized.md`).
 

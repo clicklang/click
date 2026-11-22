@@ -428,6 +428,7 @@ impl<'a> Proof<'a> {
         resource: &ResourceClause,
         unfold: bool,
         saved_instance: Option<&crate::kernel::ResourceInstance>,
+        witness_names: &[(String, String)],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if let ResourceClause::Named { resource, .. } = resource
             && let ResourceClause::Declared { name, .. } = resource.as_ref()
@@ -603,7 +604,7 @@ impl<'a> Proof<'a> {
         // scalar field, as a matched constructor payload names its value. The
         // instance is consumed by this unfold, so the binder is the only
         // spelling of that value for the rest of the proof.
-        let locals = if unfold {
+        let mut locals = if unfold {
             self.bind_unfolded_instance_fields(binding, instance, &execution)?
         } else {
             self.state().locals().clone()
@@ -1053,6 +1054,18 @@ impl<'a> Proof<'a> {
                 )?;
             }
         }
+        if !witness_names.is_empty() {
+            self.bind_unfold_witness_outputs(
+                &mut locals,
+                &execution,
+                witness_names,
+                definition
+                    .witnesses()
+                    .iter()
+                    .map(|witness| witness.name())
+                    .zip(&rewrite.witness_values),
+            )?;
+        }
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
             let source_bindings = rewrite.body_clauses.first().and_then(|clause| {
@@ -1137,7 +1150,8 @@ impl<'a> Proof<'a> {
         let ResourceClause::Named { binding, .. } = resource else {
             unreachable!("a named scope retains its written resource binding")
         };
-        let transition = self.apply_instance_rewrite(binding, resource, false, Some(instance))?;
+        let transition =
+            self.apply_instance_rewrite(binding, resource, false, Some(instance), &[])?;
         Ok(Self {
             state: self.publish_checked_transition(transition)?,
             ..self.clone()
@@ -2573,6 +2587,9 @@ impl<'a> Proof<'a> {
                 "`let { ... } = unfold(...)` names witnesses only before execution reaches function exit",
             ));
         }
+        if let ResourceClause::Named { binding, .. } = resource {
+            return self.apply_instance_rewrite(binding, resource, true, None, names);
+        }
         let witnesses = super::super::resources::declared_resource_witness_values(
             context.resource_environment,
             resource,
@@ -2586,24 +2603,44 @@ impl<'a> Proof<'a> {
         let mut transition = super::super::resources::with_unfold_witness_names(names, || {
             self.apply_execution_resource_unfold(resource, resource)
         })?;
+        self.bind_unfold_witness_outputs(
+            &mut transition.locals,
+            execution,
+            names,
+            witnesses.iter().map(|(slot, value)| (slot.as_str(), value)),
+        )?;
+        Ok(transition)
+    }
+
+    fn bind_unfold_witness_outputs<'w>(
+        &self,
+        locals: &mut ProofLocals,
+        execution: &ExecutionProofState,
+        names: &[(String, String)],
+        witnesses: impl IntoIterator<Item = (&'w str, &'w ProgramValue)>,
+    ) -> Result<(), ClickError> {
+        let witnesses = witnesses.into_iter().collect::<BTreeMap<_, _>>();
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            unreachable!("resource witnesses are bound at an execution frontier");
+        };
         for (slot, name) in names {
-            let Some((_, value)) = witnesses.iter().find(|(witness, _)| witness == slot) else {
+            let Some(&value) = witnesses.get(slot.as_str()) else {
                 let known = witnesses
-                    .iter()
-                    .map(|(witness, _)| format!("`{witness}`"))
+                    .keys()
+                    .map(|witness| format!("`{witness}`"))
                     .collect::<Vec<_>>();
                 return Err(self.step_error(format!(
                     "`{slot}` is not a witness of this resource's body{}",
                     if known.is_empty() {
-                        ", which declares none".to_string()
+                        ", which exposes none here".to_string()
                     } else {
                         format!("; its witnesses are {}", known.join(", "))
                     }
                 )));
             };
             if name == "result"
-                || transition.locals.values.contains_key(name)
-                || transition.locals.integer_values.contains_key(name)
+                || locals.values.contains_key(name)
+                || locals.integer_values.contains_key(name)
                 || execution.core.state.locals().contains_name(name)
                 || context
                     .parsed_function
@@ -2615,14 +2652,12 @@ impl<'a> Proof<'a> {
                     "unfold witness binding `{name}` is already in scope"
                 )));
             }
-            transition
-                .locals
-                .set_values(transition.locals.values.with_inserted(
-                    name.clone(),
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
-                ));
+            locals.set_values(locals.values.with_inserted(
+                name.clone(),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
+            ));
         }
-        Ok(transition)
+        Ok(())
     }
 
     pub(super) fn apply_execution_resource_unfold(
@@ -2644,7 +2679,7 @@ impl<'a> Proof<'a> {
             );
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, true, None);
+            return self.apply_instance_rewrite(binding, resource, true, None, &[]);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return self.apply_execution_population_authority_exchange(resource, false);
@@ -2789,7 +2824,7 @@ impl<'a> Proof<'a> {
             );
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, false, None);
+            return self.apply_instance_rewrite(binding, resource, false, None, &[]);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return self.apply_execution_population_authority_exchange(resource, true);
@@ -2882,7 +2917,7 @@ impl<'a> Proof<'a> {
             ));
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, true, None);
+            return self.apply_instance_rewrite(binding, resource, true, None, &[]);
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `unfold` requires an execution proof"));
@@ -2969,7 +3004,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("resource fold after function outcome is unavailable"));
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, false, None);
+            return self.apply_instance_rewrite(binding, resource, false, None, &[]);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return Err(self.step_error(

@@ -162,7 +162,7 @@ pub(super) fn lower_prefix(
             paths = paths
                 .into_iter()
                 .map(|path| wrap_spec_universal_path(path, &data, assumptions))
-                .collect();
+                .collect::<ExecutionResult<_>>()?;
         } else {
             let range_facts = machine_quantifier_range_facts(&data.sort, data.variable);
             for path in &mut paths {
@@ -172,7 +172,7 @@ pub(super) fn lower_prefix(
             }
             paths = vec![
                 existential::ScopedExistential::new(data.name, data.variable, data.sort, paths)
-                    .into_checked_path(),
+                    .into_checked_path()?,
             ];
         }
     }

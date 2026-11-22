@@ -215,7 +215,7 @@ impl KernelTerm {
         }
         Self::pointer_equal_raw(arguments.map(|value| {
             let p = value.node();
-            value.with_binding_type_and_qualifiers(p.program_type, false)
+            value.with_binding_type(p.program_type)
         }))
     }
 }
@@ -236,7 +236,7 @@ mod tests {
         ] {
             let raw = Pointer::new(pointer, ProgramType::Int32Pointer);
             values.push(raw.clone());
-            values.push(raw.clone().with_pointee_constant(true));
+            values.push(raw.clone());
             values.push(raw.clone().with_root_bounds());
             values.push(raw.clone().with_bounds(Some(SubobjectBounds {
                 start: Address::symbolic(Variable(999101)),
@@ -394,7 +394,7 @@ mod tests {
             Address::symbolic(Variable(999120)),
             ProgramType::Int32Pointer,
         );
-        let roots = [value.clone(), value.with_pointee_constant(true)].map(|value| {
+        let roots = [value.clone(), value].map(|value| {
             KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
                 Box::new(value),
                 Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),

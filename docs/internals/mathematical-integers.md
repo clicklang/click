@@ -333,8 +333,8 @@ and reversed range behavior is unchanged, and fold initial values and bodies
 must have one accumulator carrier.
 
 Quantifier domains remain logically unbounded. Finite enumeration is only a
-bounded proof technique. Universal introduction and existential witnesses use
-capture-avoiding substitution, preserve carrier identity, and retain any
+bounded proof technique. Universal introduction and existential witnesses rename
+height-numbered binders, which cannot capture, preserve carrier identity, and retain any
 definedness obligations in the witness or proposition. Deep repeated universal
 introduction has a known quadratic cost and is deferred for targeted scaling
 work; correctness checks and existing budgets remain in force. See the

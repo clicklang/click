@@ -268,11 +268,19 @@ void parent_detach(struct parent* p) {
         ParentLink::Linked(linked_child) => {
             unfold(link);
             have old(p->kid) == linked_child;
+            have to_integer(old(p->kid->refs)) == to_integer(old(count(child_ref(p->kid))));
             step();
+            have linked_child->refs == old(p->kid->refs);
             if linked_child->refs > 1 {
+                have to_integer(old(count(child_ref(p->kid)))) > 1;
                 step_until(function.exit);
                 solve();
             } else {
+                have to_integer(old(count(child_ref(p->kid)))) == to_integer(linked_child->refs);
+                have to_integer(old(count(child_ref(p->kid)))) <= 1 by {
+                    rewrite(to_integer(old(count(child_ref(p->kid)))), to_integer(linked_child->refs));
+                    solve();
+                }
                 step_until(function.exit);
                 solve();
             }

@@ -359,7 +359,6 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
     let known = q.is_some_and(|q| q.bounds_known);
     Some(AlphaProgramValueKey::Pointer {
         program_type: p.program_type,
-        pointee_constant: q.is_some_and(|q| q.constant),
         pointer: alpha_address::<ALLOW_LOADS>(&p.address, bindings, next)?,
         provenance: alpha_address::<ALLOW_LOADS>(&p.provenance, bindings, next)?,
         bounds_known: known,
@@ -395,7 +394,6 @@ mod tests {
         };
         Pointer::new(address.clone(), ProgramType::VoidPointer)
             .with_provenance(Arc::new(address.clone()))
-            .with_pointee_constant(true)
             .with_bounds(Some(SubobjectBounds {
                 start: address,
                 width: MachineTerm::Binary {
@@ -449,15 +447,6 @@ mod tests {
                 alpha
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
-            // Exact custody remains separate from selector identity.
-            let changed = source.clone().with_pointee_constant(false);
-            let changed = SharedPointer::import(&changed);
-            assert_ne!(shared, changed);
-            assert_eq!(recorded_value(&shared), recorded_value(&changed));
-            assert_ne!(
-                alpha_value::<true>(&shared, &mut fold_keys::bindings(), &mut 0),
-                alpha_value::<true>(&changed, &mut fold_keys::bindings(), &mut 0)
-            );
         }
     }
     #[test]

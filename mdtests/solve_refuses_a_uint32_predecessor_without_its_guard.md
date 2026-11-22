@@ -4,7 +4,7 @@
 `UINT_MAX`. Without the fact `0 <u x` there is no lemma to apply, and `solve`
 leaves the goal open.
 
-```click
+```click quick-solve
 theorem predecessor_without_a_guard(x: uint32) {
     ensures to_integer(x - 1u32) < to_integer(x) by solve();
 }

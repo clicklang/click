@@ -1159,7 +1159,7 @@ fn file_module_path_attributes_are_relative_to_the_source_directory() {
 
 #[test]
 fn moving_explicit_dispatch_to_the_driver_does_not_hide_operation_search() {
-    let file = syn::parse_file("impl ProofDriver<P> { fn apply_theorem_application(&self) { ProofSearch::select_theorem_application_step(self.proof); } }").unwrap();
+    let file = syn::parse_file("impl ProofDriver<P> { fn apply_theorem_application(&self) { ProofSearch::try_fixed_state_fact_transport(self.proof); } }").unwrap();
     let edges = proof_search_boundary::inventory("src/surface/proof/driver/theorems.rs", &file);
     assert!(edges.keys().all(|key| key.contains("\toperation\t")));
     assert_eq!(edges.len(), 1);

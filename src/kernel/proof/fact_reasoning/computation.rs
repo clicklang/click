@@ -138,6 +138,25 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
         } => memory
             .indexed_read_is_defined(pointer, *value_type)
             .then_some(true),
+        Proposition::ResourceContains { parent, child }
+            if let (Resource::Memory(parent), Resource::Memory(child)) =
+                (parent.as_ref(), child.as_ref())
+                && !parent.has_holes()
+                && !child.has_holes()
+                && let Some((parent_base, parent_start, parent_end)) =
+                    crate::kernel::primitives::constant_memory_coordinates(parent)
+                && let Some((child_base, child_start, child_end)) =
+                    crate::kernel::primitives::constant_memory_coordinates(child) =>
+        {
+            // Compare complete physical intervals on the same written base,
+            // even when their element widths differ.
+            (parent_base == child_base
+                && parent_start <= parent_end
+                && child_start <= child_end
+                && parent_start <= child_start
+                && child_end <= parent_end)
+                .then_some(true)
+        }
         Proposition::ResourceSeparate { left, right }
             if let (Resource::Memory(left), Resource::Memory(right)) =
                 (left.as_ref(), right.as_ref()) =>
@@ -838,6 +857,11 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     {
         return Some(true);
     }
+    if constructor_match_forwards_payload(left, right)
+        || constructor_match_forwards_payload(right, left)
+    {
+        return Some(true);
+    }
     let projected_left = constructor_match_projection(left);
     let projected_right = constructor_match_projection(right);
     let left = projected_left.unwrap_or(left);
@@ -870,6 +894,72 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
             .then_some(false),
         _ => None,
     }
+}
+
+/// Check a selected constructor arm that forwards literal int32 payloads
+/// directly into its result. Compare the written fields without substituting
+/// into arbitrary expressions or building a rewritten match.
+fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
+    let (
+        AlgebraicTermNode::Match { scrutinee, arms },
+        AlgebraicTermNode::Constructor {
+            variant: expected_variant,
+            fields: expected_fields,
+        },
+    ) = (&matched.node, &expected.node)
+    else {
+        return false;
+    };
+    let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
+        return false;
+    };
+    crate::instrumentation::record_deterministic_work(arms.len());
+    let Some(arm) = arms.iter().find(|arm| arm.variant == *variant) else {
+        return false;
+    };
+    let AlgebraicTermNode::Constructor {
+        variant: result_variant,
+        fields: result_fields,
+    } = &arm.body.node
+    else {
+        return false;
+    };
+    if arm.bindings.len() != fields.len()
+        || result_variant != expected_variant
+        || result_fields.len() != expected_fields.len()
+    {
+        return false;
+    }
+
+    crate::instrumentation::record_deterministic_work(fields.len() + result_fields.len());
+    let mut payloads = std::collections::HashMap::with_capacity(fields.len());
+    for (binder, field) in arm.bindings.iter().zip(fields) {
+        let (
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))),
+            AlgebraicValue::Program(ProgramValue::Int32(int32_constant!(_))),
+        ) = (binder, field)
+        else {
+            return false;
+        };
+        if payloads.insert(*variable, field).is_some() {
+            return false;
+        }
+    }
+    result_fields
+        .iter()
+        .zip(expected_fields)
+        .all(|(field, expected)| {
+            let AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))) =
+                field
+            else {
+                return false;
+            };
+            payloads
+                .get(variable)
+                .is_some_and(|payload| *payload == expected)
+        })
+        && matched.is_well_formed()
+        && expected.is_well_formed()
 }
 
 /// Select an algebraic field when the match names its constructor and

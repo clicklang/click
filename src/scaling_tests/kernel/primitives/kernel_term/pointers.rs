@@ -97,7 +97,7 @@ fn complete_pointer_construction_retains_shared_bounds_width_dags() {
         );
         let equivalent = SharedPointer::new(shared.node().clone());
         let mut different = shared.node().clone();
-        Arc::make_mut(different.qualifiers.as_mut().unwrap()).constant = false;
+        Arc::make_mut(different.qualifiers.as_mut().unwrap()).bounds_known ^= true;
         let different = SharedPointer::new(different);
         let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
             (

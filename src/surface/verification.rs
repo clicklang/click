@@ -564,8 +564,7 @@ fn record_theorem_certification_authority(
             .parameters()
             .iter()
             .enumerate()
-            .rev()
-            .fold(implication, |body, (index, parameter)| {
+            .map(|(index, parameter)| {
                 let sort = match parameter.interface_type() {
                     InterfaceType::Int32 => crate::kernel::Sort::ProgramInt32,
                     InterfaceType::FunctionPointer(_) => crate::kernel::Sort::ProgramPointer(
@@ -573,13 +572,17 @@ fn record_theorem_certification_authority(
                     ),
                     _ => unreachable!("the theorem binder filter admits only supported types"),
                 };
-                Proposition::ForAll {
-                    var: crate::kernel::Variable(index as u64),
+                (
+                    crate::kernel::BinderName::written(parameter.name()),
+                    crate::kernel::Variable(index as u64),
                     sort,
-                    body: Box::new(body),
-                    name: crate::kernel::BinderName::written(parameter.name()),
-                }
-            });
+                )
+            })
+            .collect::<Vec<_>>();
+        let fact = crate::kernel::quantifiers::close_foralls(&fact, &implication);
+        let Some(fact) = fact else {
+            continue;
+        };
         facts
             .entry(theorem.theorem_definition.name().to_string())
             .or_default()
@@ -2384,7 +2387,10 @@ fn verify_program_in_context(
                 .collect(),
         )
         .map_err(|error| {
-            ClickError::new(format!("could not open C recursion declarations: {error}"))
+            termination_analysis_error(
+                &error,
+                format!("could not open C recursion declarations: {error}"),
+            )
         })?;
         drop(_timing);
         let verified_theorems = verify_theorem_definitions(
@@ -4213,10 +4219,29 @@ fn c_statement_calls_recording(
     calls
 }
 
-/// Words one termination refusal for the function `name`. A refused callee
-/// is named by its source spelling and followed to the defect that refused
-/// it, so the report ends at something the user can repair, with the repairs
-/// the function that owns the defect has.
+#[derive(Clone, Copy)]
+enum TerminationRefusalKind {
+    IncompleteProof,
+    Contract,
+    IndirectCall,
+}
+
+impl TerminationRefusalKind {
+    fn classify(self, error: ClickError) -> ClickError {
+        use crate::surface::ProofRefusal;
+        match self {
+            Self::IncompleteProof | Self::IndirectCall => {
+                error.with_proof_refusal(ProofRefusal::IncompleteProof)
+            }
+            Self::Contract => error.with_proof_refusal(ProofRefusal::Contract),
+        }
+    }
+}
+
+/// Follow a refused callee to the proof or declaration that needs attention.
+/// In a strict callback check an indirect call identifies a documented
+/// limitation. In an ordinary return check it indicates a missing dependency
+/// on the program's callback proof.
 fn termination_refusal_report(
     name: &str,
     refusal: &TerminationRefusal,
@@ -4224,7 +4249,9 @@ fn termination_refusal_report(
     declared_diverging: &BTreeSet<String>,
     unsuitable_callback: Option<&UnsuitableCallback>,
     tactics: &BTreeSet<String>,
-) -> String {
+) -> (String, TerminationRefusalKind) {
+    use TerminationRefusalKind as Kind;
+
     let spelling = |name: &str| {
         name.split_once('#')
             .map_or(name, |(name, _)| name)
@@ -4251,19 +4278,19 @@ fn termination_refusal_report(
                         "{shown}; rank it with function-level `decreases` clauses, or declare `{owner}` `diverges`"
                     ));
                 }
-                return report;
+                return (report, Kind::IncompleteProof);
             }
             TerminationRefusal::UnrankedLoop { .. } => {
                 report.push_str(&format!(
                     "{current}; give it one, or mark it `loop diverges` and declare `{owner}` `diverges`"
                 ));
-                return report;
+                return (report, Kind::IncompleteProof);
             }
             TerminationRefusal::DivergingContract { .. } => {
                 report.push_str(&format!(
                     "{current}; declare `{owner}` `diverges` too, or require a contract without the marker"
                 ));
-                return report;
+                return (report, Kind::Contract);
             }
             TerminationRefusal::IndirectCall { .. } => {
                 report.push_str(&current.to_string());
@@ -4274,11 +4301,11 @@ fn termination_refusal_report(
                         spelling(&unsuitable.callback)
                     ));
                 }
-                return report;
+                return (report, Kind::IndirectCall);
             }
             TerminationRefusal::DeclaredDiverging => {
                 report.push_str(&current.to_string());
-                return report;
+                return (report, Kind::Contract);
             }
         };
         let shown = TerminationRefusal::Callee {
@@ -4289,10 +4316,10 @@ fn termination_refusal_report(
             report.push_str(&format!(
                 ": it is declared `diverges`; declare `{owner}` `diverges` too"
             ));
-            return report;
+            return (report, Kind::Contract);
         }
         let Some(next) = refusals.get(callee).filter(|_| visited.insert(callee)) else {
-            return report;
+            return (report, Kind::IncompleteProof);
         };
         report.push_str(": ");
         owner = spelling(callee);
@@ -8914,6 +8941,29 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     }
 }
 
+fn termination_analysis_error(
+    error: &crate::kernel::TerminationError,
+    message: String,
+) -> ClickError {
+    use crate::kernel::TerminationErrorKind;
+    let located = ClickError::new(message);
+    let located = match error.function() {
+        Some(function) => {
+            located.at_declaration(function.split_once('#').map_or(function, |(name, _)| name))
+        }
+        None => located,
+    };
+    if located.work_limit_exhausted {
+        return located;
+    }
+    match error.kind() {
+        TerminationErrorKind::InvalidMeasure => {
+            located.with_proof_refusal(crate::surface::ProofRefusal::Contract)
+        }
+        TerminationErrorKind::Internal => located.with_kind(ClickErrorKind::Internal),
+    }
+}
+
 pub(in crate::surface) fn program_contract_failure(
     failure: crate::kernel::ProgramContractFailure,
     declared_diverging: &BTreeSet<String>,
@@ -8931,13 +8981,7 @@ pub(in crate::surface) fn program_contract_failure(
             .with_kind(ClickErrorKind::Internal)
         }
         ProgramContractFailure::Analysis(error) => {
-            let located = ClickError::new(format!("could not certify C termination: {error}"))
-                .with_proof_refusal(ProofRefusal::Termination);
-            match error.function() {
-                Some(function) => located
-                    .at_declaration(function.split_once('#').map_or(function, |(name, _)| name)),
-                None => located,
-            }
+            termination_analysis_error(&error, format!("could not certify C termination: {error}"))
         }
         ProgramContractFailure::Obligation { goal, verdicts } => {
             let spelling = |name: &str| {
@@ -8954,35 +8998,55 @@ pub(in crate::surface) fn program_contract_failure(
                     let unsuitable = &verdicts.unsuitable_callbacks[0];
                     let taker = spelling(&unsuitable.taker);
                     let callback = spelling(&unsuitable.callback);
-                    let lacks = match verdicts.refusals.get(&unsuitable.callback) {
-                        Some(refusal) => termination_refusal_report(
-                            &callback,
-                            refusal,
-                            &verdicts.refusals,
-                            declared_diverging,
-                            None,
-                            tactic_names,
-                        ),
-                        None => "it has no termination evidence".to_string(),
-                    };
-                    ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker).with_proof_refusal(ProofRefusal::Termination)
+                    let (lacks, cause) = verdicts.refusals.get(&unsuitable.callback).map_or_else(
+                        || {
+                            (
+                                "it has no termination evidence".to_string(),
+                                TerminationRefusalKind::IncompleteProof,
+                            )
+                        },
+                        |refusal| {
+                            termination_refusal_report(
+                                &callback,
+                                refusal,
+                                &verdicts.refusals,
+                                declared_diverging,
+                                None,
+                                tactic_names,
+                            )
+                        },
+                    );
+                    if matches!(cause, TerminationRefusalKind::IndirectCall) {
+                        return ClickError::new(format!(
+                            "`{taker}` takes the address of `{callback}`, and `{callback}` can call through a function pointer. Click's termination checker requires callbacks to return without indirect calls.\n{lacks}"
+                        ))
+                        .at_declaration(&taker)
+                        .with_kind(ClickErrorKind::Unsupported);
+                    }
+                    cause.classify(
+                        ClickError::new(format!(
+                            "could not certify termination for `{taker}`: it takes the address of `{callback}`, which lacks the required callback termination evidence: {lacks}"
+                        ))
+                        .at_declaration(&taker),
+                    )
                 }
                 ProgramContractGoal::Returns(name) => {
                     let refusal = &verdicts.refusals[&name];
                     let name = spelling(&name);
-                    ClickError::new(format!(
-                        "could not certify termination for `{name}`: {}",
-                        termination_refusal_report(
-                            &name,
-                            refusal,
-                            &verdicts.refusals,
-                            declared_diverging,
-                            verdicts.unsuitable_callbacks.first(),
-                            tactic_names
-                        )
-                    ))
-                    .at_declaration(&name)
-                    .with_proof_refusal(ProofRefusal::Termination)
+                    let (detail, cause) = termination_refusal_report(
+                        &name,
+                        refusal,
+                        &verdicts.refusals,
+                        declared_diverging,
+                        verdicts.unsuitable_callbacks.first(),
+                        tactic_names,
+                    );
+                    cause.classify(
+                        ClickError::new(format!(
+                            "could not certify termination for `{name}`: {detail}"
+                        ))
+                        .at_declaration(&name),
+                    )
                 }
                 ProgramContractGoal::Program
                 | ProgramContractGoal::Body { .. }

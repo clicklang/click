@@ -179,8 +179,8 @@ Verification reports use these headings:
 | `contract entry refused` | Click could not establish the contract's initial state or resources. The diagnostic describes the setup check that stopped verification. |
 | `execution prerequisite unmet` | An exact execution check needs evidence at the current program point. |
 | `execution refused` | The modeled operation could not proceed on this path, for example an uninitialized read. |
-| `termination not established` | A ranking, call, or callback termination check was refused. |
 | `invalid divergence declaration` | The declared divergence conflicts with checked termination evidence. |
+| `unsupported` | Click detected a documented limitation with a path to supporting it. The diagnostic identifies the unsupported case. |
 | `unsupported proof` | Click's driver does not support the reported proof shape or depth. |
 | `unclassified verification refusal` | The reported cause comes from a remaining check without a specific classification. |
 | `syntax error` | Input did not parse. |

@@ -652,16 +652,20 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
             .check_equality_rewrite(&goal, &cited)
             .is_err()
     );
-    for bound in [variable, Variable(921)] {
-        let quantified = Proposition::ForAll {
-            name: Default::default(),
-            var: bound,
-            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
-            body: Box::new(goal.clone()),
-        };
-        assert!(
-            facts.check_equality_rewrite(&quantified, &cited).is_err(),
-            "the equality cannot rewrite a shadowed source or capture the target"
+    // Quantifying the source binds every occurrence the equality could
+    // rewrite; quantifying the target binds it as the quantifier's own bound
+    // variable, so the rewritten target stays free.
+    for (bound, rewrites) in [(variable, false), (Variable(921), true)] {
+        let quantified = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            bound,
+            Sort::ProgramPointer(ProgramType::Int32Pointer),
+            goal.clone(),
+        );
+        assert_eq!(
+            facts.check_equality_rewrite(&quantified, &cited).is_ok(),
+            rewrites,
+            "the equality rewrites only a free source"
         );
     }
     let displaced = Proposition::condition_is(
@@ -863,12 +867,12 @@ fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
         );
     }
     assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
-    let captured = Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(187_001),
-        sort: Sort::Integer,
-        body: Box::new(goal.clone()),
-    };
+    let captured = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        Variable(187_001),
+        Sort::Integer,
+        goal.clone(),
+    );
     assert!(
         PureFactStore::default()
             .with_fact(cited.clone())

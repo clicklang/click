@@ -3372,7 +3372,6 @@ impl ImportedFunction {
     fn static_address_initializer_value(
         &self,
         declared_type: InterfaceType,
-        declared_pointee_constant: bool,
         initializer: &CExpression,
     ) -> Option<crate::kernel::ProgramValue> {
         let CExpression::AddressOf(target) = initializer else {
@@ -3384,7 +3383,6 @@ impl ImportedFunction {
         }
         Some(crate::kernel::ProgramValue::Pointer(
             crate::kernel::Pointer::new(address.pointer, declared_type.to_kernel_type())
-                .with_pointee_constant(declared_pointee_constant)
                 .with_bounds(address.bounds),
         ))
     }
@@ -3448,11 +3446,7 @@ impl ImportedFunction {
             global.pointee_is_constant(),
             initializer,
         )?;
-        Ok(self.static_address_initializer_value(
-            global.interface_type(),
-            global.pointee_is_constant(),
-            initializer,
-        ))
+        Ok(self.static_address_initializer_value(global.interface_type(), initializer))
     }
 
     /// An externally linked pointer array lowered against this translation
@@ -3528,11 +3522,9 @@ impl ImportedFunction {
             return Some(global.to_kernel_global_with_value(value.clone()));
         }
         let initializer = global.initializer()?;
-        if let Some(value) = self.static_address_initializer_value(
-            global.interface_type(),
-            global.pointee_is_constant(),
-            initializer,
-        ) {
+        if let Some(value) =
+            self.static_address_initializer_value(global.interface_type(), initializer)
+        {
             return Some(global.to_kernel_global_with_value(value));
         }
         global.to_kernel_global()
@@ -3543,7 +3535,7 @@ impl ImportedFunction {
             return Some(resolved.clone());
         }
         let values = array.initializer()?.to_kernel_contents(|initializer| {
-            self.static_address_initializer_value(array.element_type(), false, initializer)
+            self.static_address_initializer_value(array.element_type(), initializer)
                 .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
         })?;
         Some(array.to_kernel_global_array_with_values(values))
@@ -3551,23 +3543,17 @@ impl ImportedFunction {
 
     fn to_kernel_static_array(&self, array: &CStaticArray) -> Option<crate::kernel::StaticArray> {
         let values = array.initializer().to_kernel_contents(|initializer| {
-            self.static_address_initializer_value(
-                array.element_type(),
-                array.pointee_is_constant(),
-                initializer,
-            )
-            .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
+            self.static_address_initializer_value(array.element_type(), initializer)
+                .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
         })?;
         Some(array.to_kernel_static_array_with_values(values))
     }
 
     fn to_kernel_static(&self, static_local: &CStaticLocal) -> Option<crate::kernel::StaticLocal> {
         let initializer = static_local.initializer();
-        if let Some(value) = self.static_address_initializer_value(
-            static_local.interface_type(),
-            static_local.pointee_is_constant(),
-            initializer,
-        ) {
+        if let Some(value) =
+            self.static_address_initializer_value(static_local.interface_type(), initializer)
+        {
             return Some(static_local.to_kernel_static_with_value(value));
         }
         static_local.to_kernel_static()

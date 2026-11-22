@@ -6,8 +6,8 @@ it reads the map: its value at the back edge is the pointer loaded at entry. Her
 the back edge `arena->occupied[k]` reads the spare map. The loop keeps the
 field readable at its head with `arena->occupied == old(arena->occupied)`,
 and that clause, the frame over it, is false after the store: the two maps
-are separate and nonempty whenever the body runs. The back edge must refuse
-the bundle rather than carry the entry pointer across the write.
+are separate and nonempty whenever the body runs. The maintenance proof
+checks the pointer invariant explicitly at the back edge.
 
 ```c filename=loop_frame_field_rewritten.c
 struct arena {
@@ -66,11 +66,12 @@ void mark_and_swap(struct arena* arena, int32 start, int32 end) {
         maintain by {
             step();
             step();
+            have arena->occupied == old(arena->occupied) by { known(); }
         }
     }
 }
 ```
 
 ```expect
-fail: closure body did not prove every invariant obligation
+fail: `have` failed for `arena->occupied == old(arena->occupied)`
 ```

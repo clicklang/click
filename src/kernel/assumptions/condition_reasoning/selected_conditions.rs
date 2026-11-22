@@ -1167,15 +1167,15 @@ mod retained_order_tests {
                 true,
             )),
         );
-        let source = Proposition::ForAll {
-            name: Default::default(),
-            var: k,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
+        let source = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            k,
+            Sort::ProgramInt32,
+            Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::condition_is(bound(&body, &b, false), true)),
-            )),
-        };
+            ),
+        );
         let context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let mut facts = Vec::new();

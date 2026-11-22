@@ -531,7 +531,7 @@ fn kernel_identities(
             Proposition::Not(_) => child(first).map(KernelConnective::Not),
             Proposition::ForAll { var, sort, .. } => {
                 child(first).map(|body| KernelConnective::ForAll {
-                    var: *var,
+                    var: **var,
                     sort: sort.clone(),
                     body,
                 })
@@ -540,7 +540,7 @@ fn kernel_identities(
                 name, var, sort, ..
             } => child(first).map(|body| KernelConnective::Exists {
                 name: name.clone(),
-                var: *var,
+                var: **var,
                 sort: sort.clone(),
                 body,
             }),
@@ -1201,36 +1201,6 @@ impl SurfacePropositionMap {
             .flat_map(|containers| containers.nodes().map(|(_, kernel)| kernel.get()))
     }
 
-    pub(in crate::surface) fn memory_erased_kernels(
-        &self,
-        kernel: &Proposition,
-    ) -> impl Iterator<Item = &Proposition> {
-        let tree = flatten(kernel, kernel_children);
-        let mut finder = Finder(&self.storage);
-        let ids = kernel_identities(&mut finder, &tree).ids;
-        let key = blind_keys(&mut finder, &tree, &ids).swap_remove(0);
-        in_proposition_order(
-            key.and_then(|key| self.storage.by_memory_erased.get(&key))
-                .into_iter()
-                .flat_map(|facts| facts.iter().map(|(_, node)| node)),
-        )
-    }
-
-    /// The recorded kernel facts that are not connectives, in proposition
-    /// order: the ones among which a comparison, predicate or loadability
-    /// fact is found.
-    pub(in crate::surface) fn atomic_kernel_facts(&self) -> impl Iterator<Item = &Proposition> {
-        self.storage
-            .kernel_atoms
-            .iter()
-            .filter_map(|(atom, (id, _))| {
-                self.storage
-                    .by_kernel
-                    .contains_key(id)
-                    .then_some(atom.as_ref())
-            })
-    }
-
     /// Recorded atoms with a written enclosing clause. This
     /// enumerates existing syntax records for smart planning; it builds no
     /// reasoning context and publishes no facts.
@@ -1329,15 +1299,6 @@ impl SurfacePropositionMap {
             crate::surface::proof_diagnostics::render::render_proposition(kernel),
         )))
     }
-}
-
-/// Recorded kernel nodes in proposition order.
-fn in_proposition_order<'a>(
-    nodes: impl Iterator<Item = &'a KernelRef>,
-) -> std::vec::IntoIter<&'a Proposition> {
-    let mut propositions = nodes.map(KernelRef::get).collect::<Vec<_>>();
-    propositions.sort();
-    propositions.into_iter()
 }
 
 /// The access a comparison side makes to a qualified object, with any

@@ -1265,7 +1265,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let variable = self.fresh_existential_witness(body, hint)?;
         let witness = crate::kernel::IntegerTerm::var(variable);
         let fact = super::super::reasoning::substitute_integer_variable_in_pure_proposition(
-            body, *var, &witness,
+            body, **var, &witness,
         )
         .map_err(|_| PropositionCloseError::IntegerChoiceFresheningExhausted)?;
         Ok((fact, variable))
@@ -1330,7 +1330,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 Sort::Integer => {
                     super::super::reasoning::substitute_integer_variable_in_pure_proposition(
                         &body,
-                        var,
+                        *var,
                         &crate::kernel::IntegerTerm::var(chosen),
                     )
                     .map_err(|_| PropositionCloseError::IntegerChoiceFresheningExhausted)?
@@ -1338,7 +1338,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 Sort::ProgramInt32 | Sort::ProgramInt64 | Sort::ProgramInteger(_) => {
                     crate::kernel::substitute_int32_variable_in_proposition(
                         &body,
-                        var,
+                        *var,
                         crate::kernel::MachineTerm::Variable(chosen),
                     )
                 }
@@ -1350,12 +1350,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         } else {
                             crate::kernel::Address::symbolic(chosen)
                         };
-                    crate::kernel::substitute_pointer_variable_in_proposition(&body, var, &pointer)
+                    crate::kernel::substitute_pointer_variable_in_proposition(&body, *var, &pointer)
                 }
                 Sort::Algebraic(algebraic_type) => {
                     super::super::reasoning::substitute_algebraic_variable_in_proposition(
                         &body,
-                        var,
+                        *var,
                         &crate::kernel::AlgebraicTerm {
                             algebraic_type: algebraic_type.clone(),
                             node: crate::kernel::AlgebraicTermNode::Variable(chosen),
@@ -1440,25 +1440,25 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     Sort::ProgramPointer(program_type)
                     | Sort::ProgramObjectPointer(program_type, _) => {
                         let (variable, body) = facts
-                            .freshen_pointer_forall_body(*var, *program_type, body)
+                            .freshen_pointer_forall_body(**var, *program_type, body)
                             .ok_or(PropositionCloseError::UniversalWitnessFresheningExhausted)?;
                         (variable, body, Some(*program_type), None)
                     }
                     Sort::Integer => {
                         let (variable, body) = facts
-                            .freshen_integer_forall_body(*var, body)
+                            .freshen_integer_forall_body(**var, body)
                             .ok_or(PropositionCloseError::IntegerFresheningExhausted)?;
                         (variable, body, None, None)
                     }
                     Sort::Algebraic(algebraic_type) => {
                         let (variable, body) = facts
-                            .freshen_algebraic_forall_body(*var, algebraic_type, body)
+                            .freshen_algebraic_forall_body(**var, algebraic_type, body)
                             .ok_or(PropositionCloseError::UniversalWitnessFresheningExhausted)?;
                         (variable, body, None, Some(algebraic_type.clone()))
                     }
                     _ => {
                         let (variable, body) = facts
-                            .freshen_int32_forall_body(*var, body)
+                            .freshen_int32_forall_body(**var, body)
                             .ok_or(PropositionCloseError::UniversalWitnessFresheningExhausted)?;
                         (variable, body, None, None)
                     }
@@ -1870,20 +1870,23 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .map(|&index| {
                 let (case, binders) = &cases[index];
                 crate::instrumentation::record_deterministic_work(1 + binders.len());
-                binders.iter().rev().fold(
+                binders.iter().rev().try_fold(
                     Proposition::Implies(
                         Box::new(case.clone()),
                         Box::new(goal.proposition().clone()),
                     ),
-                    |body, (var, sort)| Proposition::ForAll {
-                        name: Default::default(),
-                        var: *var,
-                        sort: sort.clone(),
-                        body: Box::new(body),
+                    |body, (var, sort)| {
+                        crate::kernel::quantifiers::close_forall(
+                            Default::default(),
+                            *var,
+                            sort.clone(),
+                            &body,
+                        )
+                        .ok_or("a constructor field's quantifier does not close")
                     },
                 )
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         fn conjunction(items: &[Proposition]) -> Proposition {
             if let [only] = items {
                 return only.clone();
@@ -3058,18 +3061,18 @@ mod tests {
             Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
         for goal in [
             Proposition::Implies(Box::new(falsehood.clone()), Box::new(truth.clone())),
-            Proposition::ForAll {
-                name: Default::default(),
-                var: Variable(55),
-                sort: Sort::Integer,
-                body: Box::new(truth.clone()),
-            },
-            Proposition::Exists {
-                name: Default::default(),
-                var: Variable(55),
-                sort: Sort::Integer,
-                body: Box::new(truth.clone()),
-            },
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(55),
+                Sort::Integer,
+                truth.clone(),
+            ),
+            crate::kernel::quantifiers::test_exists(
+                Default::default(),
+                Variable(55),
+                Sort::Integer,
+                truth.clone(),
+            ),
             falsehood,
         ] {
             assert!(
@@ -3116,15 +3119,12 @@ mod tests {
     }
 
     fn unused_integer_existential() -> Proposition {
-        Proposition::Exists {
-            name: "unused".into(),
-            var: Variable(42),
-            sort: Sort::Integer,
-            body: Box::new(Proposition::condition_is(
-                crate::kernel::ConditionTerm::Constant(true),
-                true,
-            )),
-        }
+        crate::kernel::quantifiers::test_exists(
+            "unused".into(),
+            Variable(42),
+            Sort::Integer,
+            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+        )
     }
 
     #[test]
@@ -3183,15 +3183,12 @@ mod tests {
         let proof = integer_choice_proof(
             source.clone(),
             facts,
-            Proposition::ForAll {
-                name: Default::default(),
-                var: binder,
-                sort: Sort::Integer,
-                body: Box::new(Proposition::condition_is(
-                    crate::kernel::ConditionTerm::Constant(true),
-                    true,
-                )),
-            },
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                binder,
+                Sort::Integer,
+                Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            ),
         );
         let mut introduced = None;
         let proof = proof
@@ -3214,12 +3211,12 @@ mod tests {
     #[test]
     fn obtain_assigns_distinct_witnesses_to_unused_mixed_bindings() {
         let inner = unused_integer_existential();
-        let source = Proposition::Exists {
-            name: "machine".into(),
-            var: Variable(43),
-            sort: Sort::ProgramInt32,
-            body: Box::new(inner),
-        };
+        let source = crate::kernel::quantifiers::test_exists(
+            "machine".into(),
+            Variable(43),
+            Sort::ProgramInt32,
+            inner,
+        );
         let proof = integer_choice_proof(
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source)),
@@ -3243,24 +3240,30 @@ mod tests {
     #[test]
     fn integer_choice_freshens_against_focused_goal_binding() {
         let collision = Variable(crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE);
-        let source = Proposition::Exists {
-            name: "source".into(),
-            var: Variable(41),
-            sort: Sort::Integer,
-            body: Box::new(Proposition::condition_is(
+        let source = crate::kernel::quantifiers::test_exists(
+            "source".into(),
+            Variable(41),
+            Sort::Integer,
+            Proposition::condition_is(
                 crate::kernel::ConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(Variable(41)).into(),
                     crate::kernel::IntegerTerm::var(Variable(41)).into(),
                 ),
                 true,
+            ),
+        );
+        // A quantifier binds its own bound variable, so the goal mentions the
+        // first witness identity free for the choice to collide with.
+        let goal = Proposition::And(
+            Box::new(source.clone()),
+            Box::new(Proposition::condition_is(
+                crate::kernel::ConditionTerm::IntegerEqual(
+                    crate::kernel::IntegerTerm::var(collision).into(),
+                    crate::kernel::IntegerTerm::var(collision).into(),
+                ),
+                true,
             )),
-        };
-        let goal = Proposition::ForAll {
-            name: Default::default(),
-            var: collision,
-            sort: Sort::Integer,
-            body: Box::new(source.clone()),
-        };
+        );
         type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
         let proof: TestProof = ProofObject::root(
             (),
@@ -3282,18 +3285,18 @@ mod tests {
     #[test]
     fn integer_choice_freshens_against_unused_ambient_binding() {
         let ambient = Variable(crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE);
-        let source = Proposition::Exists {
-            name: "source".into(),
-            var: Variable(51),
-            sort: Sort::Integer,
-            body: Box::new(Proposition::condition_is(
+        let source = crate::kernel::quantifiers::test_exists(
+            "source".into(),
+            Variable(51),
+            Sort::Integer,
+            Proposition::condition_is(
                 crate::kernel::ConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(Variable(51)).into(),
                     crate::kernel::IntegerTerm::var(Variable(51)).into(),
                 ),
                 true,
-            )),
-        };
+            ),
+        );
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&source))
             .with_reserved_variables([ambient]);
         let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
@@ -3342,12 +3345,12 @@ mod tests {
         // The only fact reserves the binder, exactly as an earlier universal
         // `have` over the same lowered binder identity does. Nothing mentions
         // `Variable(0)`, which is what used to make it the first candidate.
-        let reserving = Proposition::ForAll {
-            name: Default::default(),
-            var: bound,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body.clone()),
-        };
+        let reserving = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            bound,
+            Sort::ProgramInt32,
+            body.clone(),
+        );
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
             .freshen_int32_forall_body(bound, &body)
@@ -3389,12 +3392,12 @@ mod tests {
             name: "witness_body".into(),
             arguments: vec![Term::Bitvector32(MachineTerm::constant(0).into())],
         };
-        let reserving = Proposition::ForAll {
-            name: Default::default(),
-            var: bound,
-            sort: Sort::ProgramPointer(crate::kernel::ProgramType::Int32),
-            body: Box::new(body.clone()),
-        };
+        let reserving = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            bound,
+            Sort::ProgramPointer(crate::kernel::ProgramType::Int32),
+            body.clone(),
+        );
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
             .freshen_pointer_forall_body(bound, crate::kernel::ProgramType::Int32, &body)
@@ -3443,41 +3446,43 @@ mod tests {
             )
         };
         let before = SymbolicMemory::new().with_block("alpha", 16);
-        let loadable = |memory: SymbolicMemory, variable| Proposition::ForAll {
-            name: Default::default(),
-            var: variable,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
-                Box::new(Proposition::And(
-                    Box::new(Proposition::condition_is(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left: Box::new(MachineTerm::constant(0)),
-                            right: Box::new(MachineTerm::Variable(variable)),
-                        },
-                        true,
+        let loadable = |memory: SymbolicMemory, variable: Variable| {
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                variable,
+                Sort::ProgramInt32,
+                Proposition::Implies(
+                    Box::new(Proposition::And(
+                        Box::new(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left: Box::new(MachineTerm::constant(0)),
+                                right: Box::new(MachineTerm::Variable(variable)),
+                            },
+                            true,
+                        )),
+                        Box::new(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left: Box::new(MachineTerm::Variable(variable)),
+                                right: Box::new(MachineTerm::constant(16)),
+                            },
+                            true,
+                        )),
                     )),
-                    Box::new(Proposition::condition_is(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left: Box::new(MachineTerm::Variable(variable)),
-                            right: Box::new(MachineTerm::constant(16)),
+                    Box::new(Proposition::MemoryLoadable {
+                        memory,
+                        base: Address {
+                            base: "alpha".into(),
+                            offset: AddressOffset::Constant(0),
                         },
-                        true,
-                    )),
-                )),
-                Box::new(Proposition::MemoryLoadable {
-                    memory,
-                    base: Address {
-                        base: "alpha".into(),
-                        offset: AddressOffset::Constant(0),
-                    },
-                    bytes: (MachineTerm::Variable(variable)).into(),
-                    wide: false,
-                }),
-            )),
+                        bytes: (MachineTerm::Variable(variable)).into(),
+                        wide: false,
+                    }),
+                ),
+            )
         };
         let quantified_source = loadable(before.clone(), Variable(41));
         let quantified_goal = loadable(before.clone(), Variable(42));
@@ -3700,12 +3705,12 @@ mod tests {
         };
         let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
         let body = Proposition::And(Box::new(domain), Box::new(truth));
-        let goal = Proposition::Exists {
-            name: "x".into(),
-            var: variable,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body.clone()),
-        };
+        let goal = crate::kernel::quantifiers::test_exists(
+            "x".into(),
+            variable,
+            Sort::ProgramInt32,
+            body.clone(),
+        );
         let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
             ProofObject::root(
                 (),
@@ -3724,12 +3729,12 @@ mod tests {
                     assert!(matches!(introduction, PropositionIntroduction::Negation));
                     assert_eq!(
                         introduced,
-                        Some(&Proposition::ForAll {
-                            name: crate::kernel::BinderName::written("x"),
-                            var: variable,
-                            sort: Sort::ProgramInt32,
-                            body: Box::new(Proposition::Not(Box::new(body.clone()))),
-                        })
+                        Some(&crate::kernel::quantifiers::test_forall(
+                            crate::kernel::BinderName::written("x"),
+                            variable,
+                            Sort::ProgramInt32,
+                            Proposition::Not(Box::new(body.clone()))
+                        ))
                     );
                 },
                 true,
@@ -3749,12 +3754,12 @@ mod tests {
             name: "holds".to_string(),
             arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder).into())],
         };
-        let goal = Proposition::ForAll {
-            name: Default::default(),
-            var: binder,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body.clone()),
-        };
+        let goal = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            binder,
+            Sort::ProgramInt32,
+            body.clone(),
+        );
         let branch = ProofBranch::new(
             ProofObligation::Proposition(PropositionObligation::new(goal, ())),
             ProofBranchState {

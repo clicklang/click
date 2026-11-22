@@ -1583,7 +1583,7 @@ impl LocalEnvironment {
             name,
             LocalBinding::Object {
                 storage_declared,
-                value: value.with_pointer_pointee_constant(pointee_constant).into(),
+                value: value.into(),
                 program_type,
                 slot,
                 volatile,
@@ -1727,10 +1727,7 @@ impl LocalEnvironment {
             return;
         }
         let value = if value.program_type().is_pointer() {
-            value
-                .into_value()
-                .with_pointer_binding(program_type, pointee_constant)
-                .into()
+            value.into_value().with_pointer_binding(program_type).into()
         } else {
             value
         };
@@ -1780,10 +1777,7 @@ impl LocalEnvironment {
         }
         let value_type = value.program_type();
         let value = if value_type.is_pointer() {
-            value
-                .into_value()
-                .with_pointer_binding(value_type, pointee_constant)
-                .into()
+            value.into_value().with_pointer_binding(value_type).into()
         } else {
             value
         };
@@ -1952,20 +1946,13 @@ impl LocalEnvironment {
     ) -> Option<(ProgramValue, ProgramType)> {
         let name = self.resolve_binding(&name.into());
         let LocalBinding::ArrayObject {
-            element_type,
-            slot,
-            constant,
-            ..
+            element_type, slot, ..
         } = self.bindings.get(&name)?
         else {
             return None;
         };
         Some((
-            ProgramValue::typed_pointer_with_pointee_constant(
-                slot.clone(),
-                element_type.pointer_to()?,
-                *constant,
-            ),
+            ProgramValue::typed_pointer(slot.clone(), element_type.pointer_to()?),
             *element_type,
         ))
     }
@@ -1981,17 +1968,10 @@ impl LocalEnvironment {
             .iter()
             .filter_map(|(name, binding)| match binding {
                 LocalBinding::ArrayObject {
-                    element_type,
-                    slot,
-                    constant,
-                    ..
+                    element_type, slot, ..
                 } => Some((
                     name,
-                    ProgramValue::typed_pointer_with_pointee_constant(
-                        slot.clone(),
-                        element_type.pointer_to()?,
-                        *constant,
-                    ),
+                    ProgramValue::typed_pointer(slot.clone(), element_type.pointer_to()?),
                     *element_type,
                 )),
                 LocalBinding::Object { .. }
@@ -3806,12 +3786,6 @@ pub fn value_independent_click_memory() -> SymbolicMemory {
 impl SymbolicMemory {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub(crate) fn has_same_state_markers(&self, other: &Self) -> bool {
-        self.blocks == other.blocks
-            && self.forgotten.ended_local_blocks == other.forgotten.ended_local_blocks
-            && self.heap == other.heap
     }
 
     pub fn with_block(

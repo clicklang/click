@@ -59,8 +59,23 @@ pub(in crate::kernel) fn initialized_input_range_fact(
     {
         return Ok(None);
     }
-    let var = Variable::allocate_fresh().ok_or("initialization binder identity exhausted")?;
-    let index = MachineTerm::Variable(var);
+    Ok(Some(initialized_scalar_range_fact(
+        state, range, value_type,
+    )))
+}
+
+/// State the initialization guaranteed by an admitted scalar memory range.
+/// The caller checks that this state holds initialized cells of `value_type`
+/// throughout the range before publishing the fact.
+pub(in crate::kernel) fn initialized_scalar_range_fact(
+    state: &ExecutionState,
+    range: &MemoryRange,
+    value_type: ProgramType,
+) -> Proposition {
+    crate::instrumentation::record_deterministic_work(1);
+    // The body holds no quantifier, so use the innermost binder directly.
+    let binder = crate::kernel::quantifiers::innermost_binder();
+    let index = MachineTerm::Variable(*binder);
     let (format, sort, lo, hi) = match range.wide_bounds() {
         Some((lo, hi)) => (
             MachineIntegerType::UInt64,
@@ -102,12 +117,12 @@ pub(in crate::kernel) fn initialized_input_range_fact(
             .offset_by_typed_elements(index, range.element_width(), wide, wide),
         value_type,
     };
-    Ok(Some(Proposition::ForAll {
-        name: BinderName::written("k"),
-        var,
+    Proposition::ForAll {
+        var: binder,
         sort,
         body: Box::new(Proposition::Implies(Box::new(guard), Box::new(defined))),
-    }))
+        name: BinderName::written("k"),
+    }
 }
 
 #[cfg(test)]

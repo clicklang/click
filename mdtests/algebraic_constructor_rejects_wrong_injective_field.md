@@ -3,7 +3,7 @@
 An equality of product constructors exposes corresponding fields only. It
 does not justify equality between fields at different positions.
 
-```click
+```click quick-solve
 spec enum Pair<T> {
     Pair(T, T),
 }

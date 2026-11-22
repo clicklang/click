@@ -491,7 +491,7 @@ impl<'a> Proof<'a> {
             ProofStep::Step | ProofStep::StepBind(_) => {
                 let execution = self.execution()?;
                 let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
-                    execution.view(context),
+                    execution.view(),
                     &execution.core.state,
                     context.function,
                     context.arguments,
@@ -636,7 +636,7 @@ impl<'a> Proof<'a> {
                     match self.context.as_ref() {
                         ProofContext::Execution(context) => {
                             next_top_level_statement_from_frontier_position(
-                                before.view(context),
+                                before.view(),
                                 &before.core.state,
                                 context.function,
                                 context.arguments,

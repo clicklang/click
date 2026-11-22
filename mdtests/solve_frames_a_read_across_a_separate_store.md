@@ -4,8 +4,8 @@ The last store writes `owner->cell[0]` from `owner->phase`, which a branch
 set just before, so the goal reads `owner->phase` twice: once before the
 store, as the stored value, and once after it. The separation of `*owner` from
 the cell, carried through the branch's `ensuring`, shows the store left
-`owner->phase` alone. `solve` proves the goal by `transport` from the read's
-reflexive equality at the store's entry, citing that separation as the frame.
+`owner->phase` alone. Expansion restricts that separation to the bytes read
+by `owner->phase` and uses `preserve` across the store's two endpoints.
 The pattern is `examples/perpetual-service`'s `service_step`.
 
 ```c filename=solve_frames_a_read_across_a_separate_store.c

@@ -44,7 +44,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         };
         let statement_index = execution.core.frontier.next_statement_index;
         let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
-            execution.view(context),
+            execution.view(),
             &execution.core.state,
             context.function,
             context.arguments,

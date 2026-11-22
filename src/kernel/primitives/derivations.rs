@@ -678,7 +678,7 @@ impl PropositionDerivation {
             | PropositionDerivationRule::OrRight(proof)
             | PropositionDerivationRule::DoubleNegation(proof)
             | PropositionDerivationRule::ImpliesFalseAntecedent(proof)
-            | PropositionDerivationRule::ForAllBody(proof) => {
+            | PropositionDerivationRule::ForAllBody { proof, .. } => {
                 proof.collect_context_premises(premises);
             }
             PropositionDerivationRule::ExistsFromFact { source, body } => {
@@ -694,10 +694,10 @@ impl PropositionDerivation {
                     && let Some(renamed) =
                         crate::kernel::api::substitute_quantified_body_capture_free(
                             source_body,
-                            *source_var,
+                            **source_var,
                             match &self.conclusion {
-                                Proposition::Exists { var, .. } => *var,
-                                _ => *source_var,
+                                Proposition::Exists { var, .. } => **var,
+                                _ => **source_var,
                             },
                             sort,
                         )
@@ -1467,40 +1467,18 @@ impl ExecutionBudget {
     /// that has counted into their range; the execution refuses instead.
     pub(in crate::kernel) const KERNEL_VARIABLE_CEILING: u64 = 2_000_000;
 
-    /// The first identity a lowered match arm's binder may use.
-    ///
-    /// A match binder is a *bound* variable of the term it is lowered into,
-    /// so its identity has to be distinguishable from every *free* identity
-    /// any state or term around it can carry. Reserving a range for it is
-    /// what makes that distinction structural: nothing else mints an
-    /// identity here, so an occurrence of one of these in an arm body is a
-    /// bound occurrence of that arm's binder and nothing else.
-    ///
-    /// The range overlaps none of the reserved ones: the execution counter
-    /// runs `1_000_000 .. 2_000_000`, quantifiers stop at `4_000_000`,
-    /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
-    /// `4_000_000_000 .. 8_000_000_000`, load variables span
-    /// `1 << 40 .. 1 << 41`, and spec fold binders span
-    /// `1 << 43 .. 1 << 44`. The kernel test
-    /// `the_match_binder_range_is_disjoint_from_every_other_producer` asserts
-    /// that rather than leaving it to this comment.
-    pub(in crate::kernel) const MATCH_BINDER_VARIABLE_BASE: u64 = 1 << 41;
-
-    /// The first identity past the match-binder range. One lowering that
-    /// needed more binders than this would start naming something else, so
-    /// it refuses here exactly as the execution counter refuses at
+    /// How many match-arm binders one lowering may allocate. A lowering that
+    /// needs more refuses here, as the execution counter refuses at
     /// [`Self::KERNEL_VARIABLE_CEILING`].
-    pub(in crate::kernel) const MATCH_BINDER_VARIABLE_CEILING: u64 = 1 << 42;
+    pub(in crate::kernel) const MATCH_BINDER_LIMIT: u64 = 1 << 40;
 
-    /// Whether `variable` is a match-arm binder identity.
+    /// Whether `variable` is a match-arm binder.
     ///
-    /// A rewrite that eliminates a binder asks this before substituting: an
-    /// identity outside the range is a free variable of some execution or
-    /// producer, and substituting it would be a capture rather than a
-    /// binder elimination.
+    /// A rewrite that eliminates a binder asks this before substituting: any
+    /// other variable is a free variable of some execution or producer, and
+    /// substituting it would be a capture rather than a binder elimination.
     pub(in crate::kernel) fn is_match_binder_variable(variable: Variable) -> bool {
-        (Self::MATCH_BINDER_VARIABLE_BASE..Self::MATCH_BINDER_VARIABLE_CEILING)
-            .contains(&variable.0)
+        variable.is_match_binder()
     }
 
     /// The first identity a universal introduction or existential choice may use.
@@ -1519,8 +1497,8 @@ impl ExecutionBudget {
     /// `1_000_000 .. 2_000_000`, surface quantifiers run below `4_000_000`,
     /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
     /// `4_000_000_000 .. 8_000_000_000`, load variables span
-    /// `1 << 40 .. 1 << 41`, match binders span `1 << 41 .. 1 << 42`, and
-    /// spec fold binders span `1 << 43 .. 1 << 44`. The
+    /// `1 << 40 .. 1 << 41`, and spec fold binders span
+    /// `1 << 43 .. 1 << 44`; match binders have their own origin. The
     /// kernel test
     /// `the_universal_witness_range_is_disjoint_from_every_other_producer`
     /// asserts that rather than leaving it to this comment.
@@ -1621,7 +1599,7 @@ impl ExecutionBudget {
             paths: 10_000,
             next_opaque_call: 0,
             next_kernel_variable,
-            next_match_binder_variable: Self::MATCH_BINDER_VARIABLE_BASE,
+            next_match_binder_variable: 0,
             refuses_execution_identities: false,
             dropped_runtime_error: None,
             dropped_undefined_behavior: None,
@@ -1683,13 +1661,13 @@ impl ExecutionBudget {
     /// hazard greppable but left it live: the one site that did allocate
     /// handed match binders the identities a loop havoc had already given to
     /// a local, and the binder-elimination rewrite substituted the local
-    /// along with the binder. Match binders now come from
-    /// [`Self::MATCH_BINDER_VARIABLE_BASE`], a range no execution can reach,
-    /// so nothing these sites invent needs the execution counter — and asking
-    /// for one is a defect in the caller rather than a silent collision. The
+    /// along with the binder. Match binders now have their own origin
+    /// ([`Variable::match_binder`]), which no execution can mint, so nothing
+    /// these sites invent needs the execution counter — and asking for one is
+    /// a defect in the caller rather than a silent collision. The
     /// request refuses with
     /// [`ExecutionLimit::ExecutionIdentityBesideLiveState`], so the counter
-    /// this constructor still starts at the base is never read.
+    /// this constructor still starts at zero is never read.
     ///
     /// The users are the proof-side evaluation families reached from the
     /// surface's `have`, `fold`, `unfold` and theorem-application drivers,
@@ -1869,15 +1847,14 @@ impl ExecutionBudget {
 
     /// One binder identity for a match arm this lowering is building.
     ///
-    /// The counter is this budget's own and counts through
-    /// [`Self::MATCH_BINDER_VARIABLE_BASE`], so two binders of one lowering
-    /// -- including a nested match's, whose arms are lowered while the
-    /// enclosing arm is being built -- are always distinct, and no binder can
-    /// equal a free identity of any execution, quantifier, fold, load or
-    /// pointer producer.
+    /// The counter is this budget's own, so two binders of one lowering --
+    /// including a nested match's, whose arms are lowered while the enclosing
+    /// arm is being built -- are always distinct, and the binder origin means
+    /// no binder can equal a free identity of any execution, quantifier,
+    /// fold, load or pointer producer.
     ///
     /// Two separately lowered terms do reuse these identities, because each
-    /// budget starts its binder counter at the base. That is safe exactly
+    /// budget starts its binder counter at zero. That is safe exactly
     /// because they are bound: substituting one term under the other's binder
     /// goes through `TermRewrite`, which alpha-renames a binder that would
     /// capture a free variable of the replacement and stops substituting
@@ -1887,18 +1864,18 @@ impl ExecutionBudget {
     pub(in crate::kernel) fn allocate_match_binder_variable(
         &mut self,
     ) -> ExecutionResult<Variable> {
-        if self.next_match_binder_variable >= Self::MATCH_BINDER_VARIABLE_CEILING {
+        if self.next_match_binder_variable >= Self::MATCH_BINDER_LIMIT {
             return Err(ExecutionLimit::MatchBinderVariables {
-                ceiling: Self::MATCH_BINDER_VARIABLE_CEILING,
+                ceiling: Self::MATCH_BINDER_LIMIT,
             });
         }
-        let variable = Variable(self.next_match_binder_variable);
+        let variable = Variable::match_binder(self.next_match_binder_variable);
         self.next_match_binder_variable += 1;
         Ok(variable)
     }
 
-    /// Runs `lower` with this budget's match binders counted from
-    /// [`Self::MATCH_BINDER_VARIABLE_BASE`] again, then resumes the count.
+    /// Runs `lower` with this budget's match binders counted from zero
+    /// again, then resumes the count.
     ///
     /// A lowering run this way is a separately lowered term in the sense of
     /// [`Self::allocate_match_binder_variable`]: its binders may reuse
@@ -1909,10 +1886,7 @@ impl ExecutionBudget {
         &mut self,
         lower: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        let resumed = std::mem::replace(
-            &mut self.next_match_binder_variable,
-            Self::MATCH_BINDER_VARIABLE_BASE,
-        );
+        let resumed = std::mem::replace(&mut self.next_match_binder_variable, 0);
         let lowered = lower(self);
         self.next_match_binder_variable = resumed;
         lowered

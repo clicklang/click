@@ -4,7 +4,7 @@
 selected call's defining equation at the current proof state; it does not
 recursively expand the call tree.
 
-```click
+```click quick-solve
 function clamp_nonpositive(n: int32) -> int32 {
     if n <= 0 { 0 } else { n }
 }

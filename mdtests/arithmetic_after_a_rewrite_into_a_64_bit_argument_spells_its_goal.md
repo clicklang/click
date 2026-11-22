@@ -6,7 +6,7 @@ Arithmetic then spells the goal from the checked state, and a word argument
 of any 32-, 64- or 128-bit type is spelled as its term, not only an `int32`
 one.
 
-```click
+```click quick-solve
 import click::integer;
 
 function spec_f(bytes: uint8[], length: uint64, a0: Integer) -> Integer { a0 + to_integer(length) }

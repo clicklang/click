@@ -1936,6 +1936,46 @@ fn named_unfold_beside_views_scales_with_the_opened_delta() {
     );
 }
 
+#[test]
+fn named_unfold_and_refold_witness_ignore_unrelated_facts() {
+    let work = [8, 32, 128].map(|count| {
+        let unrelated = lines(count, |i| format!("requires n != {i};"));
+        let proof = format!(
+            r#"
+            verifying "open.c";
+            resource owner(p: int32*) {{
+                field tag: int32;
+                let base: int32* where base == p;
+            }}
+            void check(int32* p, int32 n) {{
+                {unrelated}
+                owns r: owner(p);
+            }} by {{
+                let {{ base: q }} = unfold(r);
+                have q == p by known();
+                fold(r);
+            }}
+        "#
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c_sources(&proof, &[("open.c", "void check(int32* p, int32 n) {}")])
+        });
+        result.unwrap_or_else(|error| panic!("with {count} facts: {}", error.report()));
+        ["unfold", "fold"].map(|tactic| {
+            samples
+                .iter()
+                .find(|sample| sample.tactic.tactic_name == tactic)
+                .unwrap_or_else(|| panic!("the named {tactic} is measured"))
+                .work
+        })
+    });
+    assert!(
+        work.iter()
+            .all(|[unfold, fold]| *unfold <= work[0][0] + 16 && *fold <= work[0][1] + 16),
+        "unrelated fact work: {work:?}"
+    );
+}
+
 /// Compare the same explicit observations and C parameters, with and without
 /// other same-shaped owners. Parameter/lowering cost is shared by the control;
 /// this regression isolates owner selection, also measured directly in the kernel.

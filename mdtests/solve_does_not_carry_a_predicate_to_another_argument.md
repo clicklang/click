@@ -18,7 +18,7 @@ an empty list, as an argument of a list predicate was accepted on the strength
 of the right one, which is how the unchanged Linux `rb_next` proof found it:
 a contract claiming the predecessor verified.
 
-```click
+```click quick-solve
 spec enum Box { Box(int32) }
 
 function holds(b: Box, p: int32) -> int32 {

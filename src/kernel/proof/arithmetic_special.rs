@@ -1134,6 +1134,28 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     if !matches!(goal, Proposition::ConditionIs(..) | Proposition::Not(..)) {
         return false;
     }
+    let selected = |required: &[Proposition]| {
+        premises.len() == required.len()
+            && required.iter().all(|goal| {
+                premises.iter().any(|premise| {
+                    use super::fact_reasoning::order_claim_equivalent;
+                    order_claim_equivalent(premise, goal)
+                    || crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                        premise,
+                    )
+                    .iter()
+                    .any(|reading| order_claim_equivalent(reading, goal))
+                })
+            })
+    };
+    if signed_quotient_bridge_requirement(goal).is_some_and(|guard| selected(&[guard]))
+        || [false, true].into_iter().any(|swap| {
+            signed_product_guard_requirements(goal, swap)
+                .is_some_and(|required| selected(&required))
+        })
+    {
+        return true;
+    }
     if premises.is_empty() {
         return pointer_alignment(None, goal);
     }
@@ -2619,6 +2641,108 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
                 (Some(left), Some(right)) if left != right
             )
     }
+}
+
+/// Observe a signed native quotient with a positive divisor. Positivity
+/// excludes both zero and the sole signed division overflow pair.
+pub(crate) fn signed_quotient_bridge_requirement(goal: &Proposition) -> Option<Proposition> {
+    let (ConditionTerm::IntegerEqual(left, right), true) = goal.condition_native()? else {
+        return None;
+    };
+    for (native, exact) in [(left, right), (right, left)] {
+        let IntegerTerm::Machine(native) = native.as_ref() else {
+            continue;
+        };
+        let IntegerTerm::TruncatingQuotient(a, b) = exact.as_ref() else {
+            continue;
+        };
+        let Some((
+            width @ (MachineIntegerType::Int32 | MachineIntegerType::Int64),
+            MachineBinaryOp::Divide,
+            [dividend, divisor],
+        )) = native.operand_view().binary()
+        else {
+            continue;
+        };
+        if native.ty() != width {
+            continue;
+        }
+        let observe = |operand: crate::kernel::MachineOperandView<'_>| {
+            IntegerTerm::Machine(operand.retain(width))
+        };
+        if observe(dividend).value_read() == a.value_read()
+            && observe(divisor).value_read() == b.value_read()
+        {
+            return Some(Proposition::condition_is(
+                ConditionTerm::integer_greater_than(
+                    b.as_ref().clone(),
+                    IntegerTerm::constant_i64(0),
+                ),
+                true,
+            ));
+        }
+    }
+    None
+}
+
+/// A guarded machine multiplication of two nonnegative signed values.
+/// For a positive divisor y, x <= MAX / y implies x*y <= MAX because
+/// the native quotient is floor(MAX/y). The sign premises give x*y >= 0.
+pub(crate) fn signed_product_guard_requirements(
+    goal: &Proposition,
+    swap: bool,
+) -> Option<Vec<Proposition>> {
+    let (condition, truth) = goal.condition_native()?;
+    let (product, bound, upper) = match (condition, truth) {
+        (ConditionTerm::IntegerLessEqual(a, b), true) if b.as_const().is_some() => (a, b, true),
+        (ConditionTerm::IntegerGreaterEqual(a, b), true) if b.as_const().is_some() => (a, b, false),
+        (ConditionTerm::IntegerLessEqual(a, b), true) if a.as_const().is_some() => (b, a, false),
+        (ConditionTerm::IntegerGreaterEqual(a, b), true) if a.as_const().is_some() => (b, a, true),
+        _ => return None,
+    };
+    let IntegerTerm::Multiply(a, b) = product.as_ref() else {
+        return None;
+    };
+    let (a, b) = if swap { (b, a) } else { (a, b) };
+    let (IntegerTerm::Machine(x), IntegerTerm::Machine(y)) = (a.as_ref(), b.as_ref()) else {
+        return None;
+    };
+    let width = x.ty();
+    let (maximum, minimum) = match width {
+        MachineIntegerType::Int32 => (i64::from(i32::MAX), i64::from(i32::MIN)),
+        MachineIntegerType::Int64 => (i64::MAX, i64::MIN),
+        _ => return None,
+    };
+    if y.ty() != width || *bound.as_const()? != (if upper { maximum } else { minimum }).into() {
+        return None;
+    }
+    let mut premises = vec![
+        Proposition::condition_is(
+            ConditionTerm::integer_greater_equal(a.as_ref().clone(), IntegerTerm::constant_i64(0)),
+            true,
+        ),
+        Proposition::condition_is(
+            ConditionTerm::integer_greater_than(b.as_ref().clone(), IntegerTerm::constant_i64(0)),
+            true,
+        ),
+    ];
+    if upper {
+        // This initial rule covers scalar variables, so building the native
+        // quotient key never exports a potentially large operand DAG.
+        let x = MachineTerm::Variable(*x.operand_view().variable()?);
+        let y = MachineTerm::Variable(*y.operand_view().variable()?);
+        let numerator = match width {
+            MachineIntegerType::Int32 => MachineTerm::constant(maximum as u32),
+            _ => MachineTerm::int64_constant(maximum),
+        };
+        let quotient = MachineTerm::machine_binary(width, MachineBinaryOp::Divide, numerator, y);
+        let observe = |value| IntegerTerm::from_machine(width, value);
+        premises.push(Proposition::condition_is(
+            ConditionTerm::integer_greater_than(observe(x)?, observe(quotient)?),
+            false,
+        ));
+    }
+    Some(premises)
 }
 
 struct FloatBound<'a> {

@@ -4348,7 +4348,7 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        match initialize_produced_memory(
+        let symbolic_initialized_bytes = match initialize_produced_memory(
             &entry_resource_state,
             &output_resource_state,
             interface,
@@ -4358,7 +4358,7 @@ fn execute_verified_function_applications_with_suspension(
             budget,
             application.evidence.is_none() && application.representation_copy.is_none(),
         )? {
-            Ok(()) => {}
+            Ok(ranges) => ranges,
             Err(error) => {
                 paths.push(FunctionPath::new(
                     FunctionOutcome::RuntimeError(error),
@@ -4367,7 +4367,7 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             }
-        }
+        };
         let authority_release_retires = {
             match authority_release_retires_control(
                 &entry_contract_state,
@@ -4864,6 +4864,18 @@ fn execute_verified_function_applications_with_suspension(
                 obligations,
             ));
             continue;
+        }
+        // A representation copy from possibly unwritten storage preserves
+        // just the initialization its source had.
+        if copy_initialization.is_none() {
+            for range in &symbolic_initialized_bytes {
+                let fact = crate::kernel::api::contract_certification::input_initialization::initialized_scalar_range_fact(
+                    &post_state,
+                    range,
+                    ProgramType::UInt8,
+                );
+                facts.push(ExecutionPureFact::certified(fact));
+            }
         }
         let post_contract_state =
             with_bound_contract_interface_argument_views(&post_state, interface, &argument_values);
@@ -11667,9 +11679,9 @@ fn string_literal_fact_value(
                 let constant = range.constant(value);
                 let instance =
                     crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
-                        body, *var, &constant,
+                        body, **var, &constant,
                     );
-                bindings.push((*var, constant));
+                bindings.push((**var, constant));
                 let holds = string_literal_fact_value(&instance, bindings);
                 bindings.pop();
                 if holds != Some(true) {
@@ -13258,9 +13270,10 @@ fn initialize_produced_memory(
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
     opaque_output: bool,
-) -> ExecutionResult<Result<(), RuntimeError>> {
+) -> ExecutionResult<Result<Vec<MemoryRange>, RuntimeError>> {
     let mut memory = post_state.memory().clone();
     let mut word_outputs = Vec::new();
+    let mut symbolic_initialized_bytes = Vec::new();
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
@@ -13321,9 +13334,16 @@ fn initialize_produced_memory(
             );
             continue;
         }
-        // Initialized bytes of a length known only at the call are not
-        // recorded; a read of them then needs a store or `defined` evidence.
         let Some(byte_span) = byte_span else {
+            if range.element_width() == 1
+                && segment.value_runs().is_none()
+                && crate::kernel::eval::program_expression_pointee_type(
+                    output_resource_state,
+                    &segment.base,
+                ) == Some(ProgramType::UInt8)
+            {
+                symbolic_initialized_bytes.push(range.clone());
+            }
             continue;
         };
         match segment.value_runs() {
@@ -13367,7 +13387,7 @@ fn initialize_produced_memory(
             }
         }
     }
-    Ok(Ok(()))
+    Ok(Ok(symbolic_initialized_bytes))
 }
 
 /// Evaluates the first `count` returned resources of a contract as one
@@ -14522,7 +14542,7 @@ pub(super) fn bind_composite_witnesses_with_held(
     held: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProgramValue>> {
-    bind_composite_witness_values(definition, arguments, state, Some(held), assumptions)
+    bind_composite_witness_values(definition, arguments, state, Some(held), assumptions, None)
 }
 
 /// Shared witness producer. Returned bodies pass no held context: their
@@ -14534,6 +14554,7 @@ fn bind_composite_witness_values(
     state: &mut ExecutionState,
     held: Option<&ResourceContext>,
     assumptions: &PureFactContext,
+    instance_scope: Option<(&ResourceInstance, Option<ResourceOccurrenceId>)>,
 ) -> Option<Vec<ProgramValue>> {
     if definition.witnesses().is_empty() {
         return Some(Vec::new());
@@ -14595,6 +14616,11 @@ fn bind_composite_witness_values(
             definition.name().hash(&mut hasher);
             index.hash(&mut hasher);
             argument_identity.hash(&mut hasher);
+            // Two separately held instances can have the same parameters.
+            // Their existential witnesses need separate symbolic names.
+            if let Some(scope) = instance_scope {
+                scope.hash(&mut hasher);
+            }
             // The canonical form names a load by its cell rather than by
             // the state it was read from, so the key is the same before
             // and after the body's cells are materialized.
@@ -14604,7 +14630,7 @@ fn bind_composite_witness_values(
             Address::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
         });
         let value = ProgramValue::typed_pointer(pointer, witness.program_type());
-        state.locals.set_typed(
+        state.locals.bind_logical_typed(
             witness.name().to_string(),
             value.clone(),
             witness.program_type(),
@@ -14863,6 +14889,8 @@ pub(crate) struct ResourceInstanceRewriteResult {
     pub(crate) body_clauses: Vec<ResourceBodyClauseRecord>,
     /// The checked opening delta used to choose the body's pointer spellings.
     pub(crate) naming_facts: Vec<Proposition>,
+    /// The active body's witness values, in definition order.
+    pub(crate) witness_values: Vec<ProgramValue>,
 }
 
 /// Whether an undischarged proposition only says that an arithmetic
@@ -15479,7 +15507,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     if definition.name() != instance.name()
         || definition.instance_schema.as_ref() != Some(instance.schema())
         || definition.recursive
-        || !definition.witnesses.is_empty()
+        || (observe && !definition.witnesses.is_empty())
         || definition.parameters.len() != instance.arguments.len()
         || instance
             .arguments
@@ -15492,9 +15520,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             })
         || !instance_body_clauses_are_exchangeable(&definition.contains)
     {
-        return Err(
-            "instance fold/unfold requires a nonrecursive, witness-free memory body".into(),
-        );
+        return Err("instance fold/unfold requires a supported nonrecursive memory body".into());
     }
     let folded_instance = instance.clone();
     let folded = ResourceFact::own(Resource::Instance(folded_instance.clone()));
@@ -15600,6 +15626,50 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         &mut budget,
     )
     .ok_or("instance fold/unfold requires a proved body guard case")?;
+    let retained_witnesses = if !unfold && active && !definition.witnesses.is_empty() {
+        match state.resources.instance_consumption(instance.identity) {
+            Some(InstanceConsumption::UnfoldWithWitnesses {
+                instance: opened,
+                values,
+            }) if opened.as_ref() == instance => Some(values.as_ref()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let witness_values = if let Some(values) = retained_witnesses {
+        // The opening picks values, not premises. The fold checks the
+        // instantiated body below at the current memory and resources.
+        for (witness, value) in definition.witnesses().iter().zip(values) {
+            crate::instrumentation::record_deterministic_work(1);
+            evaluation.locals.bind_logical_typed(
+                witness.name(),
+                value.clone(),
+                witness.program_type(),
+            );
+        }
+        Vec::new()
+    } else if active && !definition.witnesses.is_empty() {
+        let occurrence = unfold
+            .then(|| state.resources.unique_owned_occurrence_for_fact(&folded))
+            .flatten()
+            .map(|(occurrence, _)| occurrence);
+        let witness_assumptions = assumptions
+            .clone()
+            .allow_symbolic_contract_loads()
+            .prefer_symbolic_external_loads();
+        bind_composite_witness_values(
+            definition,
+            &instance.arguments.native_values(),
+            &mut evaluation,
+            None,
+            &witness_assumptions,
+            Some((instance, occurrence)),
+        )
+        .ok_or("could not bind the instance body's witnesses")?
+    } else {
+        Vec::new()
+    };
     let mut explicit_children = selected_children
         .unwrap_or(&[])
         .iter()
@@ -16191,7 +16261,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         body_assumptions = body_assumptions.assume_proposition(fact);
     }
     let facts_to_rewrite = selected.map_or(&definition.facts, |arm| &arm.facts);
-    let (body_clauses, retained_conditions) = if active {
+    let (mut body_clauses, retained_conditions) = if active {
         lower_selected_resource_body_clauses(
             &evaluation,
             facts_to_rewrite,
@@ -16267,6 +16337,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             semantic_facts,
             body_clauses,
             naming_facts: opening_facts,
+            witness_values,
         });
     }
     next.record_instance_population_exchange(state, instance, !unfold, assumptions)
@@ -16274,8 +16345,16 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // Publish instance consumption records only after the complete rewrite is checked. It names
     // the affected identities without retaining or scanning a proof history.
     if unfold {
+        let consumption = if witness_values.is_empty() {
+            InstanceConsumption::Unfold
+        } else {
+            InstanceConsumption::UnfoldWithWitnesses {
+                instance: std::sync::Arc::new(instance.clone()),
+                values: witness_values.clone().into(),
+            }
+        };
         next.resources
-            .record_instance_consumption(instance.identity, Some(InstanceConsumption::Unfold));
+            .record_instance_consumption(instance.identity, Some(consumption));
         for child in &introduced_children {
             next.resources
                 .record_instance_consumption(child.identity, None);
@@ -16328,12 +16407,24 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     for fact in child_read_definitions {
         fact.retain_pointer_read_definition(entry_assumptions);
     }
+    if retained_witnesses.is_some() && entry_assumptions.retains_required_obligations() {
+        // A checked refold can use its opening's facts by exact lookup. Only
+        // open clauses need a proof script or a spelling for the witness.
+        body_clauses.retain(|clause| {
+            !entry_assumptions.contains_assumed_exact(&clause.proposition)
+                && !required_obligation_is_exactly_discharged(
+                    entry_assumptions,
+                    &clause.proposition,
+                )
+        });
+    }
     Ok(ResourceInstanceRewriteResult {
         body_active: active,
         state: next,
         semantic_facts,
         body_clauses,
         naming_facts: opening_facts,
+        witness_values,
     })
 }
 
@@ -16670,6 +16761,7 @@ fn construct_composite_resource_body_with_source(
             &mut state,
             None,
             assumptions,
+            None,
         )?
     } else {
         bind_composite_witnesses(

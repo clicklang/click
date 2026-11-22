@@ -109,10 +109,10 @@ pub(super) use execution_state::{
     capture_program_proof_site_expansion, capture_program_tactic_expansion,
     capture_project_proof_site_expansion, capture_project_tactic_expansion,
 };
+pub(super) use fact_reasoning::condition_polarity_equivalent;
 #[cfg(test)]
 pub(super) use fact_reasoning::describe_condition_search_miss;
 use fact_reasoning::*;
-pub(super) use fact_reasoning::{condition_polarity_equivalent, exactly_available_fact};
 use fixed_state_proofs::*;
 use language_context::*;
 use proof_object::*;
@@ -130,16 +130,13 @@ use resources::*;
 use source_context::SourceContext;
 use structural::*;
 use surface_certificates::*;
-use surface_construction::*;
 #[cfg(test)]
 pub(super) use surface_synthesis::synthesize_surface_proposition_at_entry_and_post;
 #[cfg(test)]
 use surface_synthesis::{SURFACE_SYNTHESIS_DEPTH_LIMIT, bitvector_term_is_load_free};
 pub(super) use surface_synthesis::{callback_source_name, synthesize_surface_proposition};
 use surface_synthesis::{
-    surface_synthesis_exhaustion_description, surface_synthesis_failure,
-    synthesize_surface_machine_expression,
-    synthesize_surface_proposition_with_bound_variable_names,
+    synthesize_surface_machine_expression, synthesize_surface_proposition_with_bound_variable_names,
 };
 use theorem_application::*;
 use timing::TacticTiming;
@@ -269,9 +266,6 @@ mod certificate_tests {
             )
             .is_none()
         );
-        let reason = surface_synthesis_failure("could not reconstruct test fact", &proposition);
-        assert!(reason.contains("bounded bitvector search"), "{reason}");
-        assert!(!reason.contains("Variable("), "{reason}");
     }
 
     #[test]
@@ -297,154 +291,6 @@ mod certificate_tests {
             error.message().contains("structural depth bound"),
             "{error}"
         );
-    }
-
-    #[test]
-    fn state_index_finds_a_late_exact_selector_inside_a_quantifier() {
-        let early_memory = SymbolicMemory::new().with_block("early", 4);
-        let target_memory = SymbolicMemory::new().with_block("target", 4);
-        let pointer = Address {
-            base: "target".into(),
-            offset: AddressOffset::Constant(0),
-        };
-        let kernel = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(7),
-            sort: Sort::Bitvector32,
-            body: Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::MemoryLoad(
-                        crate::kernel::ProgramPoint::at(
-                            &(crate::kernel::intern_memory(target_memory.clone())),
-                        ),
-                        Box::new(pointer),
-                        crate::kernel::LoadKind::Int32,
-                    )),
-                    right: Box::new(MachineTerm::Variable(Variable(7))),
-                },
-                true,
-            )),
-        };
-        let early = ProgramPointRef {
-            region: CodeRegionRef::Region(0),
-            kind: ProgramPointKind::Entry,
-        };
-        let late = ProgramPointRef {
-            region: CodeRegionRef::Region(99),
-            kind: ProgramPointKind::Entry,
-        };
-        let mut states = RecordedStates::new();
-        states.insert(early, ExecutionState::new().with_memory(early_memory));
-        states.insert(
-            late.clone(),
-            ExecutionState::new().with_memory(target_memory),
-        );
-
-        let (exact, compatible) = state_indexed_selectors(&kernel, &states);
-        assert_eq!(
-            exact
-                .iter()
-                .map(|(selector, _)| *selector)
-                .collect::<Vec<_>>(),
-            vec![&ProgramPointSelector::ProgramPoint(late)]
-        );
-        assert!(compatible.is_empty());
-    }
-
-    #[test]
-    fn missing_state_form_reports_a_concise_indexed_failure() {
-        let target_memory = SymbolicMemory::new().with_block("target", 4);
-        let pointer = Address {
-            base: "target".into(),
-            offset: AddressOffset::Constant(0),
-        };
-        let kernel = Proposition::condition_is(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(target_memory))),
-                    Box::new(pointer),
-                    crate::kernel::LoadKind::Int32,
-                )),
-                right: Box::new(MachineTerm::constant(0)),
-            },
-            true,
-        );
-        let state =
-            ExecutionState::new().with_memory(SymbolicMemory::new().with_block("current", 4));
-
-        let facts = PureFactStore::from_ordered(&[]);
-        let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
-            ExecutionView::new(
-                &ExecutionFrontier::default(),
-                &ExecutionFacts::new(),
-                &RecordedStates::new(),
-                &SurfacePropositionMap::default(),
-                None,
-            ),
-            &kernel,
-            &facts,
-            facts.assumptions(),
-            ParameterBinding::default(),
-            &state,
-            SpecDefinitions::new(
-                &PredicateEnvironment::new(&[]),
-                &ClickFunctionEnvironment::new(&[]),
-            ),
-        )
-        .expect_err("an unrecorded state should have no surface form");
-
-        assert!(
-            error
-                .message()
-                .contains("0 exact and 0 compatible recorded states"),
-            "{error}"
-        );
-        assert!(!error.message().contains("SymbolicMemory"), "{error}");
-    }
-
-    #[test]
-    fn state_variant_search_reaches_a_candidate_after_eight() {
-        let base = ClickProposition::Comparison {
-            left: ContractExpression::ProgramBinding("value".to_string()),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                ProgramValue::Int32(MachineTerm::constant(0)),
-            )),
-        };
-        let selectors = (0..20)
-            .map(|index| {
-                ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                    region: CodeRegionRef::Region(index),
-                    kind: ProgramPointKind::Entry,
-                })
-            })
-            .collect::<Vec<_>>();
-        let variants = comparison_state_variants(&base, &selectors)
-            .expect("comparison should have state variants");
-        let position = variants
-            .iter()
-            .position(|candidate| {
-                matches!(
-                    candidate,
-                    ClickProposition::Comparison {
-                        left: ContractExpression::At {
-                            selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                                region: CodeRegionRef::Region(2),
-                                kind: ProgramPointKind::Entry,
-                            }),
-                            ..
-                        },
-                        ..
-                    }
-                )
-            })
-            .expect("the late program point should remain a candidate");
-
-        assert!(position > 8, "late valid candidates must not be truncated");
     }
 
     fn linear_tactic_coordinates(node: &InternalProofNode) -> Vec<(usize, usize)> {

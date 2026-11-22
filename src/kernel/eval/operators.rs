@@ -914,22 +914,22 @@ impl WideArithmetic {
                     WideArithmetic::Subtract => MachineTerm::uint64_subtract,
                     WideArithmetic::Multiply => MachineTerm::uint64_multiply,
                     WideArithmetic::Divide => {
-                        return apply_program_uint64_division_like(
+                        return apply_program_unsigned_division_like(
+                            ScalarWidth::UInt64,
                             left,
                             right,
                             facts,
                             obligations,
-                            assumptions,
                             MachineTerm::uint64_divide,
                         );
                     }
                     WideArithmetic::Remainder => {
-                        return apply_program_uint64_division_like(
+                        return apply_program_unsigned_division_like(
+                            ScalarWidth::UInt64,
                             left,
                             right,
                             facts,
                             obligations,
-                            assumptions,
                             MachineTerm::uint64_remainder,
                         );
                     }
@@ -1520,7 +1520,8 @@ pub(in crate::kernel) fn apply_program_divide(
         return Vec::new();
     };
     if matches!(width, ScalarWidth::UInt32) {
-        apply_program_uint32_division_like(
+        apply_program_unsigned_division_like(
+            ScalarWidth::UInt32,
             left,
             right,
             facts,
@@ -1573,7 +1574,8 @@ pub(in crate::kernel) fn apply_program_remainder(
         return Vec::new();
     };
     if matches!(width, ScalarWidth::UInt32) {
-        apply_program_uint32_division_like(
+        apply_program_unsigned_division_like(
+            ScalarWidth::UInt32,
             left,
             right,
             facts,
@@ -4081,38 +4083,6 @@ fn pointer_index_from_base(
     }
 }
 
-/// Resolve one recorded equality-class hop before checking signed-add
-/// overflow. The normal simplifier handles direct equalities and recursively
-/// simplifies a term's children, but it deliberately does not search through
-/// a whole equality closure. A returned aggregate can expose a result
-/// variable equal to a short expression whose leaves are direct constants;
-/// checking that one class is enough to recognize the concrete value without
-/// reintroducing an unbounded contextual-lowering search.
-fn simplify_program_int32_add_operand(
-    assumptions: &PureFactContext,
-    term: &MachineTerm,
-) -> MachineTerm {
-    let simplified = assumptions.simplify_bitvector_under_assumptions(term);
-    if simplified.as_const().is_some() {
-        return simplified;
-    }
-    assumptions
-        .recorded_equality_class_view(crate::kernel::MachineOperandView::Legacy(term))
-        .into_iter()
-        .find_map(|member| {
-            let view = member
-                .retained_written_operand()
-                .map(crate::kernel::MachineOperandView::Legacy)
-                .unwrap_or_else(|| member.operand_view());
-            assumptions
-                .simplify_machine_operand_under_assumptions(view, MachineIntegerType::Int32)
-                .operand_view()
-                .word32_constant()
-                .map(MachineTerm::constant)
-        })
-        .unwrap_or(simplified)
-}
-
 /// Splits the paths on the formation guards. The formed value keeps the
 /// operand's type, volatility and subobject bounds. It drops the operand's
 /// `const` pointee qualifier, as formation always has; the write-through-const
@@ -4125,9 +4095,7 @@ fn apply_pointer_formation_guards(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let mut normal = vec![ExpressionPath {
-        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(
-            pointer.with_pointee_constant(false),
-        )),
+        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(pointer)),
         facts,
         obligations,
     }];
@@ -4251,8 +4219,8 @@ pub(in crate::kernel) fn apply_program_int32_add(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::signed_add_overflows(
-        simplify_program_int32_add_operand(assumptions, &left),
-        simplify_program_int32_add_operand(assumptions, &right),
+        assumptions.simplify_bitvector_under_assumptions(&left),
+        assumptions.simplify_bitvector_under_assumptions(&right),
     );
     let decision = crate::instrumentation::measure_operation(
         "kernel",
@@ -4550,34 +4518,10 @@ fn apply_program_int64_division_nonzero(
     )
 }
 
-fn apply_program_uint64_division_like(
-    left: MachineTerm,
-    right: MachineTerm,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-    assumptions: &PureFactContext,
-    result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<ExpressionPath> {
-    let zero = ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0));
-    split_on_undefined_behavior(
-        zero,
-        UndefinedBehavior::DivisionByZero,
-        facts,
-        obligations,
-        assumptions,
-        |facts, obligations| {
-            vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(ProgramValue::UInt64(result(left, right))),
-                facts,
-                obligations,
-            }]
-        },
-    )
-}
-
 /// One conditional successor with C's divisor domain left for the driver.
 /// Even an already known domain is retained; this operation has no fact context.
-fn apply_program_uint32_division_like(
+fn apply_program_unsigned_division_like(
+    width: ScalarWidth,
     left: MachineTerm,
     right: MachineTerm,
     facts: ExecutionFacts,
@@ -4586,18 +4530,16 @@ fn apply_program_uint32_division_like(
 ) -> Vec<ExpressionPath> {
     #[cfg(test)]
     let _fast = crate::kernel::search::FastOperationScope::enter("unsigned division domain");
-    let zero = ConditionTerm::machine_compare(
-        MachineIntegerType::UInt32,
-        CompareRelation::Equal,
-        right.clone(),
-        MachineTerm::constant(0),
-    );
-    obligations.push(
-        ProofObligation::verification_condition(Proposition::condition_is(zero, false))
-            .with_context("unsigned division requires a nonzero divisor"),
-    );
+    let (zero, wrap): (_, fn(MachineTerm) -> ProgramValue) = match width {
+        ScalarWidth::UInt32 => (MachineTerm::constant(0), uint32),
+        ScalarWidth::UInt64 => (MachineTerm::uint64_constant(0), ProgramValue::UInt64),
+        _ => unreachable!("unsigned division width"),
+    };
+    let zero_divisor =
+        ConditionTerm::machine_compare(width.format(), CompareRelation::Equal, right.clone(), zero);
+    obligations.push(ProofObligation::nonzero_unsigned_divisor(zero_divisor));
     vec![ExpressionPath {
-        outcome: ExpressionOutcome::Value(uint32(result(left, right))),
+        outcome: ExpressionOutcome::Value(wrap(result(left, right))),
         facts,
         obligations,
     }]

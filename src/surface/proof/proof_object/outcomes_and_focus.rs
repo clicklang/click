@@ -1209,7 +1209,7 @@ impl<'a> Proof<'a> {
         };
         let Ok((_, _, ProgramStatement::If { condition, .. }, _)) =
             next_top_level_statement_from_frontier_position(
-                execution.view(context),
+                execution.view(),
                 &execution.core.state,
                 context.function,
                 context.arguments,
@@ -1242,7 +1242,7 @@ impl<'a> Proof<'a> {
         };
         let (_, _, mut statement, _) =
             crate::surface::proof::cursor_execution::next_top_level_statement_from_frontier_position(
-                execution.view(context),
+                execution.view(),
                 &execution.core.state,
                 context.function,
                 context.arguments,

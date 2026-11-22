@@ -848,16 +848,11 @@ impl ExecutionProofState {
     }
 
     /// The read-only execution data lowering and fixed-state proofs consult.
-    pub(in crate::surface::proof) fn view<'s>(
-        &'s self,
-        context: &'s ExecutionProofContext<'_>,
-    ) -> ExecutionView<'s> {
+    pub(in crate::surface::proof) fn view(&self) -> ExecutionView<'_> {
         ExecutionView::new(
             &self.core.frontier,
-            &self.core.effect_facts,
             &self.presentation.recorded_states,
             &self.presentation.surface_propositions,
-            context.constants.function_entry_state.as_ref(),
         )
     }
 
@@ -3742,7 +3737,9 @@ impl<'a> Proof<'a> {
     ) -> ClickError {
         if !matches!(
             error.kind(),
-            crate::surface::ClickErrorKind::Proof | crate::surface::ClickErrorKind::Internal
+            crate::surface::ClickErrorKind::Proof
+                | crate::surface::ClickErrorKind::Internal
+                | crate::surface::ClickErrorKind::Unsupported
         ) || error.proof_claim_label().is_some()
         {
             return error;

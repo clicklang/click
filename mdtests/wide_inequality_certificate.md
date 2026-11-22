@@ -5,7 +5,7 @@ the actual set-bit fact that makes the inequality true; smart reasoning must
 turn that derivation into an explicit 64-bit rewrite followed by context-free
 normalization.
 
-```click
+```click quick-solve
 theorem set_low_bit_is_nonzero(word: uint64) {
     requires (word & 1u64) == 1u64;
 

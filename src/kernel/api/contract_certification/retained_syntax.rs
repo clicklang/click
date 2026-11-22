@@ -577,10 +577,6 @@ mod tests {
         };
         let values = vec![
             base.clone(),
-            base.clone()
-                .with_pointee_constant(true)
-                .with_pointee_constant(false),
-            base.clone().with_pointee_constant(true),
             base.clone().with_type(ProgramType::VoidPointer),
             base.clone()
                 .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(999979)))),
@@ -630,7 +626,7 @@ mod tests {
             }
         }
         // Shared bounds must not acquire the numeric identity shortcut.
-        assert!(!Comparison::default().pointer_value(&values[7], &values[7]));
+        assert!(!Comparison::default().pointer_value(&values[5], &values[5]));
     }
 
     #[test]
@@ -1065,7 +1061,11 @@ mod tests {
             crate::kernel::Address::null(),
             crate::kernel::ProgramType::Int32Pointer,
         );
-        let qualified = pointer.clone().with_pointee_constant(true);
+        let qualified = pointer.clone().with_declared_object_class(Some(
+            crate::kernel::effective_type::CAccessClass::Scalar(
+                crate::kernel::effective_type::CScalarClass::Int,
+            ),
+        ));
         assert!(!Comparison::default().argument(
             &A::Value(ProgramValue::Pointer(pointer)),
             &A::Value(ProgramValue::Pointer(qualified))

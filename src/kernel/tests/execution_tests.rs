@@ -302,14 +302,6 @@ fn private_pointer_copy_retains_qualifier_ownership_and_borrow_refusals() {
             .as_deref(),
         Some(&value)
     );
-    let discard_const = program_assign(
-        "p",
-        ProgramExpression::Value(value.clone().with_pointer_pointee_constant(true)),
-    );
-    assert!(matches!(
-        execute(&state, &discard_const)[0].outcome,
-        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
-    ));
     let unowned = state.clone().with_resource_context(ResourceContext::new());
     assert!(matches!(
         execute(&unowned, &copy)[0].outcome,
@@ -2942,7 +2934,7 @@ fn a_reached_mark_round_trips_into_the_next_budget() {
 /// to an execution whose mark the caller does not carry, so an
 /// identity counted from the base would name a havocked local, a join
 /// abstraction or a heap block that state already holds. Nothing those sites
-/// invent needs one: a match binder comes from the reserved binder range, and
+/// invent needs one: a match binder has its own origin, and
 /// anything else has to be given the execution's mark. The request is a defect
 /// in the caller and refuses as one.
 #[test]
@@ -2955,7 +2947,7 @@ fn a_budget_beside_a_live_state_refuses_an_execution_identity() {
     );
     assert_eq!(
         beside.allocate_match_binder_variable(),
-        Ok(Variable(ExecutionBudget::MATCH_BINDER_VARIABLE_BASE)),
+        Ok(Variable::match_binder(0)),
         "a bound variable is not an execution identity and stays available"
     );
 }
@@ -2966,18 +2958,13 @@ fn a_budget_beside_a_live_state_refuses_an_execution_identity() {
 fn the_spec_fold_binder_range_is_disjoint_from_every_other_producer() {
     let fold_binders = crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_BASE
         ..crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_CEILING;
-    let reserved: [(&str, std::ops::Range<u64>); 9] = [
+    let reserved: [(&str, std::ops::Range<u64>); 8] = [
         ("C identities", 0..1_000_000),
         ("execution identities", 1_000_000..2_000_000),
         ("surface quantifiers", 2_000_000..4_000_000),
         ("surface algebraic binders", 4_000_000..4_000_000_000),
         ("symbolic address bases", 4_000_000_000..8_000_000_000),
         ("load variables", (1 << 40)..(1 << 41)),
-        (
-            "match binders",
-            ExecutionBudget::MATCH_BINDER_VARIABLE_BASE
-                ..ExecutionBudget::MATCH_BINDER_VARIABLE_CEILING,
-        ),
         (
             "universal witnesses",
             ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE
@@ -3006,48 +2993,12 @@ fn the_spec_fold_binder_range_is_disjoint_from_every_other_producer() {
     }
 }
 
-/// Match binders are bound variables, and their range overlaps nothing that
-/// can appear free beside them.
-///
-/// The execution counter runs `1_000_000 .. 2_000_000`; quantifier variables
-/// run `2_000_000 .. 4_000_000`; algebraic binders run
-/// `4_000_000 .. 4_000_000_000`; symbolic address bases run
-/// `4_000_000_000 .. 8_000_000_000`. Load, witness, and fold binders have
-/// separate higher ranges.
-/// The match-binder range has to miss all of them, because a binder that
-/// equals a free identity is exactly the capture the binder-elimination
+/// Match binders are bound variables with their own origin, so no binder
+/// equals an identity any other producer mints, whatever its number: a binder
+/// that equals a free identity is exactly the capture the binder-elimination
 /// rewrite cannot see.
 #[test]
-fn the_match_binder_range_is_disjoint_from_every_other_producer() {
-    let binders =
-        ExecutionBudget::MATCH_BINDER_VARIABLE_BASE..ExecutionBudget::MATCH_BINDER_VARIABLE_CEILING;
-    let reserved: [(&str, std::ops::Range<u64>); 7] = [
-        (
-            "the execution counter",
-            ExecutionBudget::KERNEL_VARIABLE_BASE..ExecutionBudget::KERNEL_VARIABLE_CEILING,
-        ),
-        ("surface quantifiers", 2_000_000..4_000_000),
-        ("surface algebraic binders", 4_000_000..4_000_000_000),
-        (
-            "spec fold binders",
-            crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_BASE
-                ..crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_CEILING,
-        ),
-        ("symbolic address bases", 4_000_000_000..8_000_000_000),
-        ("load variables", (1 << 40)..(1 << 41)),
-        ("the C identities below every reserved base", 0..1_000_000),
-    ];
-    for (name, range) in reserved {
-        assert!(
-            binders.end <= range.start || range.end <= binders.start,
-            "the match-binder range {binders:?} overlaps {name} at {range:?}"
-        );
-    }
-    assert!(
-        binders.end <= ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE,
-        "the match-binder range {binders:?} overlaps the universal-witness range"
-    );
-
+fn a_match_binder_is_no_other_producer_s_identity() {
     let mut budget = ExecutionBudget::for_new_execution();
     let first = budget
         .allocate_match_binder_variable()
@@ -3065,6 +3016,17 @@ fn the_match_binder_range_is_disjoint_from_every_other_producer() {
             "{binder:?} is not recognized as a binder, so a rewrite would refuse it"
         );
     }
+    for binder in [first, second] {
+        assert_ne!(
+            binder,
+            Variable(binder.0),
+            "{binder:?} equals the C or execution identity with its number"
+        );
+        assert!(
+            !ExecutionBudget::is_match_binder_variable(Variable(binder.0)),
+            "an identity with a binder's number must never pass as a binder"
+        );
+    }
     assert!(
         !ExecutionBudget::is_match_binder_variable(Variable(ExecutionBudget::KERNEL_VARIABLE_BASE)),
         "the first identity a loop havoc issues must never pass as a binder"
@@ -3079,7 +3041,7 @@ fn the_match_binder_range_is_disjoint_from_every_other_producer() {
 fn the_universal_witness_range_is_disjoint_from_every_other_producer() {
     let witnesses = ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE
         ..ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING;
-    let reserved: [(&str, std::ops::Range<u64>); 8] = [
+    let reserved: [(&str, std::ops::Range<u64>); 7] = [
         ("the C identities below every reserved base", 0..1_000_000),
         (
             "the execution counter",
@@ -3094,11 +3056,6 @@ fn the_universal_witness_range_is_disjoint_from_every_other_producer() {
         ),
         ("symbolic address bases", 4_000_000_000..8_000_000_000),
         ("load variables", (1 << 40)..(1 << 41)),
-        (
-            "match binders",
-            ExecutionBudget::MATCH_BINDER_VARIABLE_BASE
-                ..ExecutionBudget::MATCH_BINDER_VARIABLE_CEILING,
-        ),
     ];
     for (name, range) in reserved {
         assert!(

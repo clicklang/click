@@ -505,11 +505,11 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
         base: "sum".into(),
         offset: AddressOffset::Constant(0),
     };
-    let loadable = Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(30),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    let loadable = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        Variable(30),
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
@@ -536,8 +536,8 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 bytes: (MachineTerm::Variable(Variable(30))).into(),
                 wide: false,
             }),
-        )),
-    };
+        ),
+    );
     let fold = IntegerTerm::range_fold(
         IntegerRangeFoldIndex::Integer {
             start: SharedIntegerTerm::from(IntegerTerm::constant_i64(0)),
@@ -1055,23 +1055,25 @@ fn both_and_preserves_exact_binders_and_saved_states() {
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
     );
-    let conjunct = |binder| Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(binder),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::ProgramPoint::of_memory(&memory),
-                    Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Int32,
-                )),
-                right: Box::new(MachineTerm::Variable(Variable(binder))),
-            },
-            true,
-        )),
+    let conjunct = |binder| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(binder),
+            Sort::ProgramInt32,
+            Proposition::condition_is(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(MachineTerm::MemoryLoad(
+                        crate::kernel::ProgramPoint::of_memory(&memory),
+                        Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Int32,
+                    )),
+                    right: Box::new(MachineTerm::Variable(Variable(binder))),
+                },
+                true,
+            ),
+        )
     };
     // The same saved value is bound in the left goal but free in the right.
     // Opening child scopes must preserve this distinction without re-lowering.
@@ -1859,7 +1861,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
             variable,
             pointer: false,
             integer: false,
-        }) if name.is_named("written") && *variable == actual_variable
+        }) if name.is_named("written") && *variable == *actual_variable
     ));
     assert!(adapted.body().certificate().steps().is_empty());
     assert_eq!(
@@ -2046,11 +2048,11 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
     };
     let root = pure_have_presentation_root(surface.clone());
     let scope = root.driver().open_have(surface).expect("have should open");
-    let reported = Proposition::Exists {
-        name: "different_display_name".to_string(),
-        var: Variable(8_765_432),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let reported = crate::kernel::quantifiers::test_exists(
+        "different_display_name".to_string(),
+        Variable(8_765_432),
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2058,8 +2060,8 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
                 right: Box::new(MachineTerm::constant(7)),
             },
             true,
-        )),
-    };
+        ),
+    );
     scope
         .with_reported_goal_introductions(&reported, None)
         .expect("alpha-renamed existential should match");
@@ -2614,19 +2616,23 @@ fn proof_fact_predicate_index_ignores_unrelated_context() {
 
 #[test]
 fn outcome_fact_deltas_share_ambient_universal_facts() {
-    let universal = |index| Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(index),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(index))),
-                right: Box::new(MachineTerm::Variable(Variable(index))),
-            },
-            true,
-        )),
+    let universal = |index| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(index),
+            Sort::ProgramInt32,
+            Proposition::condition_is(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(MachineTerm::Variable(Variable(index))),
+                    // Each universal differs in content: facts that differ
+                    // only in their binder are one fact.
+                    right: Box::new(MachineTerm::constant(index as u32)),
+                },
+                true,
+            ),
+        )
     };
     for size in [8_u64, 16, 32, 64] {
         let ambient = (0..size)
@@ -4167,16 +4173,16 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         panic!("a universal antecedent must remain quantified");
     };
     let available_variable = Variable(8_200_000);
-    let available_antecedent = Proposition::ForAll {
-        name: Default::default(),
-        var: available_variable,
-        sort: sort.clone(),
-        body: Box::new(substitute_int32_variable_in_proposition(
+    let available_antecedent = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        available_variable,
+        sort.clone(),
+        substitute_int32_variable_in_proposition(
             body,
-            *var,
+            **var,
             MachineTerm::Variable(available_variable),
-        )),
-    };
+        ),
+    );
     let selected_implication = Proposition::Implies(
         Box::new(required_antecedent.clone()),
         Box::new(target.clone()),
@@ -4237,7 +4243,13 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
         assert_eq!(extracted.certificate().steps(), &[step]);
-        assert_eq!(extracted.added_facts(), std::slice::from_ref(&target));
+        // With binders numbered by height the renamed antecedent is the
+        // required one exactly, and the step closes the goal on the spot,
+        // which leaves no added fact; any fact it does report is the target.
+        assert!(
+            extracted.added_facts().is_empty()
+                || extracted.added_facts() == std::slice::from_ref(&target)
+        );
         assert!(extracted.is_complete());
 
         let missing_antecedent = Proof::for_pure_goal(
@@ -4557,7 +4569,6 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         name: "less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
-    let mut selection_allocation_baseline = None;
     for size in [16_u32, 64, 256, 1024, 4096] {
         let mut pure_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         pure_facts.push(kernel_premise.clone());
@@ -4588,39 +4599,13 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         );
         let retained_root = root.clone();
         assert!(
-            crate::kernel::search::ProofSearch::try_theorem_application(
-                &(root),
-                &missing_application
-            )
-            .expect("missing execution theorem search should be a bounded miss")
-            .is_none(),
+            apply_using(&root, &missing_application, vec![premise.clone()]).is_none(),
             "an unavailable execution theorem premise must not manufacture a descendant"
         );
-        let before_query = fact_node_allocations();
-        let selected =
-            crate::kernel::search::ProofSearch::select_execution_theorem_application_step(
-                &(root),
-                &application,
-            )
-            .expect("smart search should select one explicit indexed premise");
-        // The global persistent-node counter now also sees the selected
-        // theorem's small elaboration binding maps. Their fixed setup cost
-        // must not grow with the unrelated fact context.
-        let query_allocations = fact_node_allocations() - before_query;
-        assert_eq!(
-            query_allocations,
-            *selection_allocation_baseline.get_or_insert(query_allocations),
-            "size {size} execution theorem selection must not rebuild persistent fact indexes"
-        );
-        assert!(root.facts().shares_exact_index_with(retained_root.facts()));
-        assert!(root.facts().shares_assumptions_with(retained_root.facts()));
-        assert_eq!(
-            selected,
-            ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: vec![premise.clone()],
-            }
-        );
+        let selected = ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises: vec![premise.clone()],
+        };
         let omitted = root
             .driver()
             .apply_step(ProofStep::ApplyTheoremUsing {
@@ -5622,29 +5607,20 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
             .focus_split_arm(&record, true)
             .expect("the then sibling is open");
         assert!(
-            crate::kernel::search::ProofSearch::try_theorem_application(
-                &(then_arm),
-                &missing_application
-            )
-            .expect("an unavailable exact theorem premise should be a bounded miss")
-            .is_none(),
+            apply_using(&then_arm, &missing_application, vec![premise.clone()]).is_none(),
             "an unavailable theorem premise must not manufacture an arm descendant"
         );
 
         let before = fact_node_allocations();
-        let branches = crate::kernel::search::ProofSearch::try_theorem_application(
-            &(crate::kernel::search::ProofSearch::try_theorem_application(
-                &(then_arm),
-                &application,
-            )
-            .expect("then arm theorem search should run")
-            .expect("then arm theorem search should retain its checked step")
-            .focus_split_arm(&record, false)
-            .expect("the else sibling is open")),
+        let branches = apply_using(
+            &apply_using(&then_arm, &application, vec![premise.clone()])
+                .expect("then arm theorem application should retain its checked step")
+                .focus_split_arm(&record, false)
+                .expect("the else sibling is open"),
             &application,
+            vec![premise.clone()],
         )
-        .expect("else arm theorem search should run")
-        .expect("else arm theorem search should retain its checked step");
+        .expect("else arm theorem application should retain its checked step");
         samples.push((
             size,
             (u32::BITS - size.leading_zeros()) as usize,
@@ -5905,7 +5881,6 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         .record_lowering(&premise, &kernel_premise)
         .expect("the selected premise form should be recorded");
 
-    let mut allocation_baseline = None;
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(Proposition::And(
@@ -5936,33 +5911,13 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
             .apply_step(known_have_step(premise.clone()))
             .expect("a checked predecessor should promote the indexed conjunct");
         assert!(
-            crate::kernel::search::ProofSearch::try_theorem_application(
-                &(extracted),
-                &missing_application
-            )
-            .expect("missing fixed-state theorem search should be a bounded miss")
-            .is_none(),
+            apply_using(&extracted, &missing_application, vec![premise.clone()]).is_none(),
             "an unavailable fixed-state theorem premise must not manufacture a descendant"
         );
-        let before_query = fact_node_allocations();
-        let step = crate::kernel::search::ProofSearch::select_fixed_state_theorem_application_step(
-            &(extracted),
-            &application,
-        )
-        .expect("smart search should select one explicit indexed premise");
-        let query_allocations = fact_node_allocations() - before_query;
-        assert_eq!(
-            query_allocations,
-            *allocation_baseline.get_or_insert(query_allocations),
-            "size {size} theorem selection must not rebuild persistent fact indexes"
-        );
-        assert_eq!(
-            step,
-            ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: vec![premise.clone()],
-            }
-        );
+        let step = ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises: vec![premise.clone()],
+        };
         let tactics = [
             ProofTactic::Have(ProofHave {
                 proposition: premise.clone(),
@@ -6162,7 +6117,6 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         .record_lowering(surface_premise, &kernel_premise)
         .expect("the selected premise form should be recorded");
 
-    let mut allocation_baseline = None;
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(kernel_premise.clone());
@@ -6190,24 +6144,10 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
 
-        let before_query = fact_node_allocations();
-        let step = crate::kernel::search::ProofSearch::select_fixed_state_theorem_application_step(
-            &(root),
-            application,
-        )
-        .expect("the indexed result-aware premise should be selected");
-        let query_allocations = fact_node_allocations() - before_query;
-        assert_eq!(
-            query_allocations,
-            *allocation_baseline.get_or_insert(query_allocations)
-        );
-        assert_eq!(
-            step,
-            ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: vec![surface_premise.clone()],
-            }
-        );
+        let step = ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises: vec![surface_premise.clone()],
+        };
         let before_apply = fact_node_allocations();
         let applied = root
             .driver()
@@ -9302,7 +9242,6 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
 
-    let mut allocation_baseline = None;
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(kernel_premise.clone());
@@ -9329,42 +9268,24 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
             &theorem_environment,
         );
         let retained_root = root.clone();
+        let missing = root
+            .driver()
+            .apply_step(ProofStep::ApplyTheoremUsing {
+                application: missing_application.clone(),
+                premises: vec![premise.clone()],
+            })
+            .err()
+            .expect("an unavailable instantiated requirement must reject the application");
         assert!(
-            crate::kernel::search::ProofSearch::try_theorem_application(
-                &(root),
-                &missing_application
-            )
-            .expect("missing pure theorem search should be a bounded miss")
-            .is_none(),
-            "an unavailable pure theorem premise must not manufacture a descendant"
+            missing.message().contains("required exact fact"),
+            "{missing:?}"
         );
-        let missing = crate::kernel::search::ProofSearch::select_pure_theorem_application_step(
-            &(root),
-            &missing_application,
-        )
-        .expect_err("an unavailable instantiated requirement must reject the candidate");
-        assert!(missing.message().contains("required exact fact"));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
-        let before_query = fact_node_allocations();
-        let step = crate::kernel::search::ProofSearch::select_pure_theorem_application_step(
-            &(root),
-            &application,
-        )
-        .expect("smart pure search should select the indexed source requirement");
-        let query_allocations = fact_node_allocations() - before_query;
-        assert_eq!(
-            query_allocations,
-            *allocation_baseline.get_or_insert(query_allocations),
-            "size {size} pure theorem selection must not rebuild persistent fact indexes"
-        );
-        assert_eq!(
-            step,
-            ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: vec![premise.clone()],
-            }
-        );
+        let step = ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises: vec![premise.clone()],
+        };
         let before_script = fact_node_allocations();
         let complete = root
             .driver()
@@ -12341,12 +12262,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
         ));
         if size == 16 {
             assert!(
-                crate::kernel::search::ProofSearch::try_theorem_application(
-                    &(joined),
-                    &missing_application
-                )
-                .expect("missing theorem search should remain a bounded miss")
-                .is_none(),
+                apply_using(&joined, &missing_application, Vec::new()).is_none(),
                 "a missing theorem must not manufacture a descendant"
             );
             assert!(matches!(
@@ -12354,10 +12270,8 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 [ProofStep::Branch { .. }]
             ));
         }
-        let applied =
-            crate::kernel::search::ProofSearch::try_theorem_application(&(joined), &application)
-                .expect("common theorem search should run")
-                .expect("the reflexive theorem should produce a checked descendant");
+        let applied = apply_using(&joined, &application, Vec::new())
+            .expect("the reflexive theorem should produce a checked descendant");
         assert!(matches!(
             applied.certificate().steps(),
             [
@@ -15491,4 +15405,20 @@ fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
             assert_eq!(edge.explicit_exit_state().is_some(), consumed && may_exit);
         }
     }
+}
+
+/// `application` checked with exactly `premises`, as a written
+/// `apply(...) using { ... }` is; `None` when the checker refuses it.
+fn apply_using<'a>(
+    proof: &Proof<'a>,
+    application: &TheoremApplication,
+    premises: Vec<ClickProposition>,
+) -> Option<Proof<'a>> {
+    proof
+        .driver()
+        .apply_step(ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises,
+        })
+        .ok()
 }

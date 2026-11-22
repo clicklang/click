@@ -509,8 +509,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     let pointer = Pointer::new(
         Address::symbolic(Variable(1027800)),
         ProgramType::Int32Pointer,
-    )
-    .with_pointee_constant(true);
+    );
     let root = KernelTerm::shared_pointer_call(
         KernelTerm::checked_call(
             KernelType::Program(ProgramType::Int32Pointer),
@@ -574,7 +573,6 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         panic!("union pointer load")
     };
     assert_eq!(value.shared(), Some(&root));
-    assert!(value.pointer().unwrap().pointee_constant());
     let overwritten = copied.store(
         target.clone(),
         ProgramValue::Int32(MachineTerm::constant(0)),

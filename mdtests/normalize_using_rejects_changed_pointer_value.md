@@ -43,6 +43,7 @@ void call(struct node* p, struct node* q, int32* anchor) {
     have separate(memory(p->left), memory(q->left)) by known();
     step(); step();
     have p->left == 0;
+    have p->right == 0 by { solve(); }
     mark before;
     let { b: c } = step(retarget, { a: c });
     have p->left == 0;

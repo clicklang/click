@@ -29,6 +29,9 @@ it; shrink them if you can, but a report need not wait for that.
 
 - `syntax error` or `type error`: fix the reported source. This skill does not
   apply.
+- `unsupported`: identify the documented limitation and quote the refusal. If
+  a supported route preserves the original claim and target program, try it.
+  Otherwise stop at `unsupported` and explain how the user can request support.
 - `internal error`: stop at `internal-error`. Click has reported its own
   failure. Capture the error, version, command, and inputs.
 - `limit error`: record the limit and where Click stopped. The run did not
@@ -47,7 +50,9 @@ it; shrink them if you can, but a report need not wait for that.
   links, or supply the missing argument or premises.
 - `incomplete proof`: the proof ended with a requirement still outstanding.
   Record what the report says the proof must establish and the path where it
-  is required. Add the missing steps before the proof closes. For a return
+  is required. Add the missing steps before the proof closes. For missing
+  termination evidence, follow the reported call chain to the unranked loop
+  or recursive call and prove the missing descent there. For a return
   resource, account for the units held on that path and what must go back to
   the caller. Use each owned unit once. If the resource can be assembled from
   parts already held, write the corresponding fold. If an allowed execution
@@ -60,9 +65,8 @@ it; shrink them if you can, but a report need not wait for that.
   Continue with the reported obligation when the diagnostic gives one. For
   an entry refusal, use `contract-bug` if you can show that the original
   contract satisfies the documented rule Click applied.
-- `execution refused`, `termination not established`, `invalid divergence
-  declaration`, or `unsupported proof`: investigate the reported operation,
-  termination check, declaration, or proof shape.
+- `execution refused`, `invalid divergence declaration`, or `unsupported
+  proof`: investigate the reported operation, declaration, or proof shape.
 - `unclassified verification refusal`: investigate the stated cause. If
   the trace leaves the refusal unclear, use `unclear-trace`.
 
@@ -238,6 +242,11 @@ Stop at exactly one outcome:
 - `unclear-trace`: you could not determine from the output what was refused,
   such as the exact goal, its program point, or the facts the tactic used.
   Quote the relevant output and say what you could not determine.
+- `unsupported`: a documented capability limit prevents the original case
+  from being checked. Name the exact limitation and cite its documentation.
+  Describe any supported route and the documented path to supporting the
+  original case. The proof author can choose the supported route or request
+  support from Click maintainers.
 - `internal-error`: Click itself reports `internal error`. Tell the user
   immediately that Click detected a verifier failure. Use the original
   diagnostic. A proof goal and a minimized tactic link are optional evidence.
@@ -272,6 +281,14 @@ the `no Surface form` diagnostic when present. If the output only names the
 larger failed goal, quote it and explain how the trace identifies the
 inexpressible intermediate fact. Give this summary when reporting the
 failure to the user, before asking for approval to file a bug.
+
+## Requesting support
+
+If the user wants to request support, prepare a reduced example, the exact
+command and CLI output, and the capability the example needs. Cite the
+documented limitation and explain what the supported alternatives would
+require changing. Get approval before opening a feature request in
+[Click’s issue tracker](https://github.com/clicklang/click/issues).
 
 ## Reporting a bug
 

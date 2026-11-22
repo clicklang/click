@@ -68,10 +68,9 @@ pub(super) fn execute(
             let value = if copy {
                 Some(value)
             } else {
-                crate::kernel::functions::coerce_program_value_with_pointee_constant(
+                crate::kernel::eval::coerce_program_value_to_type(
                     value,
                     element_type,
-                    false,
                     &mut obligations,
                     &selected,
                 )
@@ -102,10 +101,7 @@ pub(super) fn execute(
                 ));
                 continue;
             }
-            if bytes != 0
-                && (target_pointer.pointee_constant()
-                    || state.memory.is_read_only_block(&target.base))
-            {
+            if bytes != 0 && state.memory.is_read_only_block(&target.base) {
                 paths.push(path(
                     StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                     facts,
@@ -298,10 +294,9 @@ pub(super) fn construct_const(
         )]);
     }
     let mut zero_obligations = Vec::new();
-    let zero = crate::kernel::functions::coerce_program_value_with_pointee_constant(
+    let zero = crate::kernel::eval::coerce_program_value_to_type(
         cell.zero.clone(),
         element_type,
-        cell.pointee_constant,
         &mut zero_obligations,
         &PureFactContext::new(),
     )
@@ -350,14 +345,12 @@ pub(super) fn construct_const(
                         if *index < next || *index >= fill.count {
                             return None;
                         }
-                        let value =
-                            crate::kernel::functions::coerce_program_value_with_pointee_constant(
-                                value.into_native(),
-                                element_type,
-                                cell.pointee_constant,
-                                &mut obligations,
-                                &selected,
-                            )?;
+                        let value = crate::kernel::eval::coerce_program_value_to_type(
+                            value.into_native(),
+                            element_type,
+                            &mut obligations,
+                            &selected,
+                        )?;
                         push_run(next, *index - next, zero.clone());
                         push_run(*index, 1, value);
                         next = *index + 1;

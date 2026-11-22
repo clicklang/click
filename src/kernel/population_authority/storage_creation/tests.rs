@@ -3264,12 +3264,7 @@ mod wildcard_scope_tests {
         let ProgramValue::Pointer(pointer) = pointer else {
             unreachable!()
         };
-        arguments[1] = ProgramValue::Pointer(
-            pointer
-                .with_type(ProgramType::VoidPointer)
-                .with_pointee_constant(true),
-        )
-        .into();
+        arguments[1] = ProgramValue::Pointer(pointer.with_type(ProgramType::VoidPointer)).into();
         let cast =
             ResourceDescription::new("slot".into(), arguments.into(), scope.schema().clone());
         assert_eq!(

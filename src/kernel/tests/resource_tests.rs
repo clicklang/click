@@ -4491,12 +4491,13 @@ fn resource_model_arm_selection_decides_only_entailed_arms() {
             MachineTerm::Variable(Variable(77)),
         ))],
     );
-    let witnessed = PureFactContext::new().assume_proposition(Proposition::Exists {
-        name: "v".to_string(),
-        var: Variable(77),
-        sort: Sort::ProgramInt32,
-        body: Box::new(equal(&model, &witness)),
-    });
+    let witnessed =
+        PureFactContext::new().assume_proposition(crate::kernel::quantifiers::test_exists(
+            "v".to_string(),
+            Variable(77),
+            Sort::ProgramInt32,
+            equal(&model, &witness),
+        ));
     assert_eq!(
         select_resource_model_arm(&model, &witnessed),
         Some(ResourceModelArmSelection::Variant("Filled".to_string()))

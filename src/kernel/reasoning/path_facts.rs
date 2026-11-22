@@ -32,12 +32,7 @@ pub(in crate::kernel) fn memory_range_still_available(
 
 #[cfg(test)]
 pub(in crate::kernel) fn forall_int32(var: Variable, body: Proposition) -> Proposition {
-    Proposition::ForAll {
-        name: Default::default(),
-        var,
-        sort: Sort::ProgramInt32,
-        body: Box::new(body),
-    }
+    crate::kernel::quantifiers::test_forall(Default::default(), var, Sort::ProgramInt32, body)
 }
 
 pub(in crate::kernel) fn wrap_proof_facts(

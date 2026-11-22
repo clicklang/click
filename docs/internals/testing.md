@@ -1608,6 +1608,36 @@ Negative tests use an expected diagnostic substring:
 fail: expected diagnostic substring
 ```
 
+### Writing quick solve tests
+
+A Quick Solve Test isolates one small inference that `solve()` should find
+or promptly refuse. Add `quick-solve` to the opening `click` fence and
+use a normal `expect` block. Write the essential premises and one explicit
+`solve()` that the verifier reaches exactly once. Keep any C setup to the
+operation needed to establish the premises. Name the file for the rule it
+exercises so related tests and near misses are easy to find.
+
+Use a standalone `solve()` in the proof. Click profiles the short form
+`have P by solve()` under `have`, so it does not supply a solve sample.
+
+The mdtest gate checks the ordinary proof verdict and a shared limit of
+50,000 deterministic work units for the written solve, including tactics
+and certificate work it runs. A limit refusal fails the test even when the
+fixture expects a proof refusal. The nightly expansion audit checks replay.
+Use the scaling tests when the question is how inference cost grows with
+unrelated input.
+
+Run just this group with:
+
+```sh
+MDTEST_QUICK_SOLVE=1 cargo test --lib --features fast-gate gate_tests::mdtests::mdtests -- --exact
+```
+
+`MDTEST_FILTER` narrows that group by file name. Set
+`CLICK_TACTIC_WORK_REPORT` to a directory to inspect the per-tactic samples.
+The report's last column includes nested work. For calibration,
+`CLICK_DISABLE_TACTIC_BUDGETS=1` disables the cost verdict.
+
 ### Termination is part of an mdtest's verdict
 
 An mdtest is verified once, by the ordinary entry points, and termination is

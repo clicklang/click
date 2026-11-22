@@ -809,9 +809,18 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 names
                     .iter()
                     .map(|(slot, name)| format!("{slot}: {name}"))
+                    .chain(
+                        match resource {
+                            ResourceClause::Named { binding, .. } =>
+                                binding.child_bindings.as_deref().unwrap_or(&[]),
+                            _ => &[],
+                        }
+                        .iter()
+                        .map(|(slot, name, _)| format!("{slot}: {name}"))
+                    )
                     .collect::<Vec<_>>()
                     .join(", "),
-                format_resource_target(resource)
+                format_resource_call(resource)
             ),
         ),
         ProofTactic::UnfoldResource(resource) => line(

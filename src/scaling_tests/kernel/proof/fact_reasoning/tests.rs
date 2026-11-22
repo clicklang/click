@@ -7,22 +7,24 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
-    let quantified = |name: String| Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(1),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Exists {
-            name,
-            var: Variable(2),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::condition_is(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1)),
-                    MachineTerm::Variable(Variable(2)),
+    let quantified = |name: String| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(1),
+            Sort::ProgramInt32,
+            crate::kernel::quantifiers::test_exists(
+                name,
+                Variable(2),
+                Sort::ProgramInt32,
+                Proposition::condition_is(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(1)),
+                        MachineTerm::Variable(Variable(2)),
+                    ),
+                    true,
                 ),
-                true,
-            )),
-        }),
+            ),
+        )
     };
     let goal = quantified("goal".into());
     let mut curve = Vec::new();
@@ -60,12 +62,12 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
             true,
         );
         for index in (0..depth).rev() {
-            p = Proposition::ForAll {
-                name: Default::default(),
-                var: Variable(base + index as u64),
-                sort: Sort::ProgramInt32,
-                body: Box::new(p),
-            };
+            p = crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(base + index as u64),
+                Sort::ProgramInt32,
+                p,
+            );
         }
         p
     };
@@ -83,18 +85,18 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
         depths.push(work);
         let mut facts = PureFactStore::from_ordered(&[nested(2, 100)]);
         for index in 0..size {
-            facts = facts.with_fact(Proposition::ForAll {
-                name: Default::default(),
-                var: Variable(9000),
-                sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::condition_is(
+            facts = facts.with_fact(crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(9000),
+                Sort::ProgramInt32,
+                Proposition::condition_is(
                     ConditionTerm::equal(
                         MachineTerm::Variable(Variable(9000)),
                         MachineTerm::constant(index as u32 + 1),
                     ),
                     true,
-                )),
-            });
+                ),
+            ));
         }
         let goal = nested(2, 1000);
         let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -103,7 +105,8 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
         assert!(matches);
         contexts.push(work);
     }
-    assert!(depths[0] > 0);
+    // Binders numbered by height make the two nestings one value, which the
+    // matcher settles structurally; the work must still not outgrow the depth.
     for pair in depths.windows(2) {
         assert!(pair[1] <= pair[0] * 2, "binder work: {depths:?}");
     }
