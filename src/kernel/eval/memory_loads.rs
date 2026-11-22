@@ -1781,6 +1781,7 @@ fn evaluate_retained_memory_load_case(
             assumptions,
             source,
             purpose,
+            origin,
         ) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(value),
@@ -1869,12 +1870,19 @@ fn evaluate_retained_memory_load_case(
         }];
     }
 
-    // A complete scalar call output has an indexed version, even when
-    // the call supplied no value equation. Use that same read as Click.
+    // Complete call outputs and untouched static words have indexed
+    // versions even when their values are unknown. Use the same read as Click.
     if purpose == LoadPurpose::Program
-        && value_type == ProgramType::Int32
         && let Some(origin) = origin
-        && let Some(version) = origin.call_output_integer_version(&pointer, LoadKind::Int32)
+        && let Some(version) = origin
+            .unwritten_static_scalar_version(&pointer, value_type)
+            .or_else(|| {
+                if value_type == ProgramType::Int32 {
+                    origin.call_output_integer_version(&pointer, LoadKind::Int32)
+                } else {
+                    None
+                }
+            })
     {
         return vec![
             evaluate_indexed_read(version, origin, pointer, value_type, facts, obligations)
@@ -1896,6 +1904,7 @@ fn evaluate_retained_memory_load_case(
         assumptions,
         source,
         purpose,
+        origin,
     ) {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::Value(value),
@@ -1971,6 +1980,7 @@ pub(in crate::kernel) fn abstract_value_source(
 /// path's value; nothing is named by it. Only a program read asks: a
 /// specification read denotes the named state's value, and a volatile one
 /// may observe a write no recorded step made.
+#[allow(clippy::too_many_arguments)]
 fn cell_value_recorded_on_path(
     memory: &SymbolicMemory,
     pointer: &Address,
@@ -1979,6 +1989,7 @@ fn cell_value_recorded_on_path(
     assumptions: &PureFactContext,
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
+    origin: Option<&ProgramPoint>,
 ) -> Option<ExecutionValue> {
     if purpose != LoadPurpose::Program {
         return None;
@@ -1992,12 +2003,35 @@ fn cell_value_recorded_on_path(
     ) else {
         // Static storage holds no entry placeholder: a cell the path's facts
         // carry unwritten back to function entry reads its entry load.
-        let entry = crate::kernel::resource_tracker::static_cell_unwritten_since_entry_on_path(
-            &at,
-            pointer,
-            value_type.byte_width(),
-            assumptions,
-        )?;
+        let (entry, root) =
+            crate::kernel::resource_tracker::static_cell_unwritten_since_entry_on_path(
+                &at,
+                pointer,
+                value_type.byte_width(),
+                assumptions,
+            )?;
+        if ProgramPoint::supports_static_entry_version(pointer, value_type)
+            && let Some(version) = origin.and_then(|point| {
+                point
+                    .static_entry_matching_resolved_read(pointer, value_type, &entry)
+                    .or_else(|| {
+                        point.static_entry_matching_resolved_read(pointer, value_type, &root)
+                    })
+            })
+        {
+            let path = evaluate_indexed_read(
+                version.clone(),
+                &version,
+                pointer.clone(),
+                value_type,
+                ExecutionFacts::new(),
+                Vec::new(),
+            );
+            if let ExpressionOutcome::Value(value) = path.outcome {
+                facts.extend_shared(&path.facts);
+                return Some(value.into());
+            }
+        }
         return canonicalized_retained_symbolic_load_value_with_identity(
             entry.memory(),
             pointer,
@@ -6091,6 +6125,95 @@ mod tests {
             canonical_scalar_read(&second),
             legacy,
             "warm compatibility path"
+        );
+    }
+
+    #[test]
+    fn an_unwritten_static_word_names_function_entry_after_a_local_declaration() {
+        check_unwritten_static_scalar_version(ProgramType::Int32, 0);
+    }
+
+    #[test]
+    fn an_unwritten_static_array_element_uses_the_same_entry_point() {
+        check_unwritten_static_scalar_version(ProgramType::Int32, 4);
+    }
+
+    #[test]
+    fn an_unwritten_static_halfword_uses_the_same_entry_point() {
+        check_unwritten_static_scalar_version(ProgramType::UInt16, 2);
+    }
+
+    #[test]
+    fn an_unwritten_static_wide_word_uses_the_same_entry_point() {
+        check_unwritten_static_scalar_version(ProgramType::UInt64, 8);
+    }
+
+    fn check_unwritten_static_scalar_version(ty: ProgramType, offset: u32) {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = SymbolicMemory::global_pointer("unwritten").offset_by_bytes(offset);
+        let entry = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(cell.base.clone(), 16))
+            .begin_function_entry_memory();
+        let next = entry
+            .clone()
+            .with_memory(
+                entry
+                    .memory()
+                    .clone()
+                    .with_block(SymbolicMemory::local_pointer("local").base, 4),
+            )
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                ResourceFact::view_memory(MemoryRange::access(cell.clone(), ty)),
+            ));
+        let point = next.program_point();
+        assert_ne!(point.id(), entry.program_point_id());
+        assert_eq!(
+            point
+                .indexed_array_version(&cell.base)
+                .and_then(|version| version.read_version_id()),
+            entry.program_point_id(),
+        );
+
+        let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+            ProgramValue::typed_pointer(cell.clone(), ty.pointer_to().expect("pointer to scalar")),
+        )));
+        let paths = super::super::evaluate_expression_value_paths(
+            &next,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked C read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("static storage supplies the word: {:?}", path.outcome);
+        };
+        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value.native())
+        else {
+            panic!("one symbolic word read");
+        };
+        assert_eq!(version.read_version_id(), entry.program_point_id());
+        assert_eq!(*address, cell);
+        assert_eq!(kind, LoadKind::of_type(ty).expect("scalar load kind"));
+        assert_eq!(
+            point
+                .ordinary_typed_version(&cell, ty)
+                .and_then(|version| version.read_version_id()),
+            entry.program_point_id(),
+        );
+        let written = next.clone().with_memory(
+            next.memory()
+                .clone()
+                .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        assert!(
+            written
+                .program_point()
+                .unwritten_static_scalar_version(&cell, ty)
+                .is_none()
         );
     }
 

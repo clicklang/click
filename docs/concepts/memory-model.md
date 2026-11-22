@@ -99,6 +99,13 @@ When a checked call initializes an entire `int32` local with an unknown
 value, Click and C name its symbolic read by the call's recorded output
 point. An effect that can write the local retires that version.
 
+An integer read of static storage uses the function-entry version when the
+whole-object index shows that the object is unchanged. This includes reads
+of array elements at symbolic indices. For fixed-offset reads, the index
+also retains the entry version across disjoint fixed-width writes to the
+same object. An effect with an unknown byte footprint invalidates that
+byte-level entry information for the affected object.
+
 A declared little-endian `uint32` can be read as four complete indexed byte
 reads. Each byte uses its own version. Click spells it with the bitwise OR
 of four zero-extended and shifted unsigned bytes, using the same

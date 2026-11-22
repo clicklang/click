@@ -5429,6 +5429,15 @@ fn synthesize_point_read(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let place = |state: &ExecutionState| {
+        if let Some(name) = SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+            let owners = slot.borrow();
+            let (name, ty) = owners.as_ref()?.storage_scalars.get(pointer)?;
+            (*ty == value_type).then(|| name.clone())
+        }) {
+            return Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(name),
+            ));
+        }
         if let Some(field) = synthesize_owned_field_at_address(pointer, value_type, state) {
             return Some(field);
         }

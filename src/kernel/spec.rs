@@ -8322,7 +8322,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         && matches!(pointer.base, AddressBase::LoadedPointer(_));
                 let version = if !*exact
                     && (ProgramPoint::supports_indexed_version(&pointer)
-                        || integer_read_through_loaded_pointer)
+                        || integer_read_through_loaded_pointer
+                        || ProgramPoint::supports_static_entry_version(&pointer, *value_type))
                 {
                     read_point().ordinary_typed_version(&pointer, *value_type)
                 } else {
