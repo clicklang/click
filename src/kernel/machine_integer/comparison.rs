@@ -941,6 +941,30 @@ impl NativeComparisonView<'_> {
         }
     }
 
+    /// The comparison logical lowering states for these operands: the one
+    /// [`logical_condition_for_operand_views`] gives a machine-spelled
+    /// comparison of the same operands, so `to_integer(a) < to_integer(b)`
+    /// and `a < b` lower to one term. A compound operand keeps the Integer
+    /// form; only roots that constructor reads natively give `Compare`.
+    pub(crate) fn logical_condition(&self) -> (ConditionTerm, bool) {
+        use crate::kernel::CompareRelation as R;
+        let relation = match self.relation {
+            Relation::Equal | Relation::NotEqual => R::Equal,
+            Relation::Less => R::LessThan,
+            Relation::LessEqual => R::LessEqual,
+        };
+        (
+            logical_condition_for_operand_views(
+                self.format,
+                relation,
+                self.operands
+                    .each_ref()
+                    .map(|operand| operand.operand_view()),
+            ),
+            self.relation != Relation::NotEqual,
+        )
+    }
+
     /// A checking reading that retains arithmetic in the shared arena.
     /// Only fixed-size leaves and already-written native operands use Compare.
     pub(crate) fn retained_condition(&self) -> (ConditionTerm, bool) {
