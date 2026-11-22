@@ -854,6 +854,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
     contract_environment: ContractEnvironment<'_>,
     pre_state: &ExecutionState,
     state: &ExecutionState,
+    result: Option<&ProgramValue>,
     retained_states: &RecordedStates,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<
@@ -868,7 +869,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
         contract_environment,
         pre_state,
         state,
-        None,
+        result,
     );
     match ty {
         crate::kernel::ResourceFieldType::Program(expected) => {
@@ -878,7 +879,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 &states.entry_state,
                 states.entry_values,
                 states.current_values,
-                None,
+                result,
                 retained_states,
                 spec_definitions,
                 BTreeSet::new(),
@@ -908,7 +909,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 &states.entry_state,
                 states.entry_values,
                 states.current_values,
-                None,
+                result,
                 retained_states,
                 spec_definitions,
                 BTreeSet::new(),
@@ -933,7 +934,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 states.current_values,
                 BTreeMap::new(),
                 &PersistentBinderMap::default(),
-                None,
+                result,
                 retained_states,
                 spec_definitions,
                 BTreeSet::new(),

@@ -5337,6 +5337,20 @@ fn user_tactic_call_obligations_expand_and_recheck() {
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
+#[test]
+fn user_tactic_at_return_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/user_tactic_at_return.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "implicit_proof.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("divide(p, result,"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 /// The outer call of `y = f(f(y));` owes `f`'s requirement of the inner
 /// call's result. Whole-claim expansion renders its certificate after
 /// checking ends, and must still spell that result by its call, never as

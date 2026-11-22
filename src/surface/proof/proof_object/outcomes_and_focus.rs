@@ -584,7 +584,21 @@ impl<'a> Proof<'a> {
             .state
             .complete_function_outcome_in_execution(&owner.state, execution)
             .map_err(|reason| self.step_error(reason))?;
+        self.retain_outcome_tactic_dependencies(execution);
         Ok(owner.with_kernel_state(state))
+    }
+
+    fn retain_outcome_tactic_dependencies(
+        &self,
+        owner: &mut crate::kernel::ContractExecutionOwner,
+    ) {
+        if let (Some(Obligation::FunctionOutcome(outcome)), Some(execution)) =
+            (self.focused_obligation(), self.execution())
+        {
+            execution
+                .core
+                .retain_return_tactic_dependencies(outcome.path_index, owner);
+        }
     }
 
     pub(in crate::surface::proof) fn finish_contract_execution(
@@ -749,6 +763,7 @@ impl<'a> Proof<'a> {
                     let state = state
                         .refute_function_outcome_in_execution(&owner.state, &fact, execution_owner)
                         .map_err(|reason| self.step_error(reason))?;
+                    self.retain_outcome_tactic_dependencies(execution_owner);
                     *owner = owner.with_kernel_state(state);
                     return Ok(None);
                 }

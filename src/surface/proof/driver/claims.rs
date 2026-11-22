@@ -4244,9 +4244,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | PostExecutionTactic::ImplicitSolve
                                 | PostExecutionTactic::SolveUsing(_)
                                 | PostExecutionTactic::Leaf(
-                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::UserTactic(_)
                                 )
-                                | PostExecutionTactic::FoldProved(_)
+                                | PostExecutionTactic::ResourceStepProved(_)
                                 | PostExecutionTactic::CloseOpen { .. }
                         )
                     }) {
@@ -4459,10 +4461,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         });
                         if matches!(
                             post_tactic,
-                            PostExecutionTactic::FoldProved(_)
+                            PostExecutionTactic::ResourceStepProved(_)
                                 | PostExecutionTactic::CloseOpen { .. }
                                 | PostExecutionTactic::Leaf(
-                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::UserTactic(_)
                                 )
                         ) {
                             closing_input = None;
@@ -4514,7 +4518,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             continue;
                         }
                         match post_tactic {
-                            PostExecutionTactic::FoldProved(ProofTactic::StepProved {
+                            PostExecutionTactic::ResourceStepProved(ProofTactic::StepProved {
                                 step,
                                 proof,
                             }) => {
@@ -4551,8 +4555,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                 }
                             }
-                            PostExecutionTactic::FoldProved(_) => {
-                                unreachable!("a proved fold wraps its `StepProved` tactic")
+                            PostExecutionTactic::ResourceStepProved(_) => {
+                                unreachable!("a proved resource step wraps its `StepProved` tactic")
                             }
                             PostExecutionTactic::Leaf(tactic)
                                 if opens_outcome_claim_scope(tactic)
@@ -5570,7 +5574,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 };
                                 if matches!(
                                     tactic,
-                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::UserTactic(_)
                                 ) {
                                     has_return_resource_rewrite |=
                                         applied.execution().is_some_and(|execution| {
@@ -5583,7 +5589,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // resources; the other leaves only add facts.
                                 if matches!(
                                     tactic,
-                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::UserTactic(_)
                                 ) {
                                     outcome = applied.focused_outcome_state()?;
                                 }

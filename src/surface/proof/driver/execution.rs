@@ -918,9 +918,12 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
     }
     match tactic {
         ProofTactic::StepProved { step, .. }
-            if matches!(step.as_ref(), ProofTactic::FoldResource(_)) =>
+            if matches!(
+                step.as_ref(),
+                ProofTactic::FoldResource(_) | ProofTactic::UserTactic(_)
+            ) =>
         {
-            Some(PostExecutionTactic::FoldProved(tactic.clone()))
+            Some(PostExecutionTactic::ResourceStepProved(tactic.clone()))
         }
         ProofTactic::ApplyFact(fact) => Some(PostExecutionTactic::Have(ProofHave {
             proposition: crate::surface::proof::driver::fact_application_parts(fact).1,
@@ -5652,7 +5655,6 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         ProofTactic::StepContract(name) => format!("step({name})"),
         ProofTactic::StepBind(name) => format!("let {{ result: {name} }} = step()"),
         ProofTactic::StepCall(transport) => transport.to_string(),
-        ProofTactic::UserTactic(application) => application.tactic_spelling(),
         ProofTactic::SmartExecute => "the implicit tail".to_string(),
         ProofTactic::ExecuteUntil(point) => format!(
             "step_until({})",

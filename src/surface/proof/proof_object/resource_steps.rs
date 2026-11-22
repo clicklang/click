@@ -537,6 +537,7 @@ impl<'a> Proof<'a> {
                         .with_parameters(context.parameter_binding()),
                     pre_state,
                     before,
+                    None,
                     &execution.presentation.recorded_states,
                     context.spec_definitions,
                 )
