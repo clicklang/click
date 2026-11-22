@@ -811,5 +811,13 @@ supplement from the pinned checkout, Debian package and Clang resources.
 
 The selected `ios_failure` profile explicitly assumes allocation failure
 terminates and trusts the pinned standard exception construction and runtime
-storage/destruction. It exposes no message or class layout. Typed catches and
-`SpanReader::read` are later slices; see `roadmap/cpp-exceptions.md`.
+storage/destruction. It exposes no message or class layout.
+
+`SpanReaderRead.click` uses the same offline inputs to verify the unchanged
+`SpanReader::read`. The source view supplies initialized bytes. On success the
+proof checks every destination byte against the corresponding entry source byte
+and checks the cursor's pointer and length after advancing. On short input the
+proof checks the exact exception and the unchanged cursor. The test authenticates
+the `memcpy` declaration, then verifies the sidecar and replays its expansion
+both cold and in a retained session. Decoding through this reader and typed
+catches are tracked in [the exceptions roadmap](../../roadmap/cpp-exceptions.md).

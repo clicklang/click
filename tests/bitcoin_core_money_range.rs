@@ -5715,8 +5715,8 @@ fn pinned_streams_selected_fixture(
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: pinned Bitcoin read capture"]
-fn pinned_spanreader_read_captures_the_canonical_memcpy_call() {
+#[ignore = "nightly: pinned Bitcoin reader verification and expansion replay"]
+fn pinned_spanreader_read_verifies_and_replays_both_outcomes_offline() {
     let (root, import) =
         pinned_streams_selected_fixture("read", "bitcoin-src/src/streams.h", "SpanReader::read");
     assert_eq!(import.export().functions[0].path, ["SpanReader", "read"]);
@@ -5726,6 +5726,31 @@ fn pinned_spanreader_read_captures_the_canonical_memcpy_call() {
                 && axiom.signature == "void *(void *, const void *, unsigned long) noexcept"
         })
     }));
+    let path = root.join("SpanReaderRead.click");
+    let source = include_str!("../integrations/bitcoin-core-money-range/SpanReaderRead.click");
+    fs::write(&path, source).unwrap();
+    let project = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&project, &import).unwrap();
+
+    let label = format!(
+        "{}.contract",
+        click::languages::cpp::names::path_name(&["SpanReader".to_owned(), "read".to_owned()])
+    );
+    let inputs = ProgramInputs::program(&import);
+    let expanded = expand_project_claim_source_by_label(&project, &inputs, &label).unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    click::surface::without_implicit_solve_for_claim(&label, || {
+        verify_program_prepared_project(&rewritten, &import)
+            .map_err(|error| error.message().to_string())
+    })
+    .unwrap();
+    let site = project_tactic_source_position(&rewritten, &inputs, &label, 0).unwrap();
+    // Start the retained session after the cold verification replaced its kernel state.
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&project, &import).unwrap();
+    session
+        .verify_at_project(&expanded, site.line, site.column)
+        .unwrap();
     fs::remove_dir_all(root).unwrap();
 }
 
