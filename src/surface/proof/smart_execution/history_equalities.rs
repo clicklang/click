@@ -244,17 +244,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let normalize =
-            ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(vec![separation])])
-                .expect("ordinary footprint normalization");
+        let certificate = ProofCertificate::from_steps(vec![ProofStep::Known])
+            .expect("ordinary footprint separation");
         attempt::candidate_outcome(
             proof
                 .driver()
-                .apply_have_step(footprint_separation, &normalize),
+                .apply_have_step(footprint_separation, &certificate),
         )
     }
 
-    /// Restrict a separated range to the indexed read before normalizing a
+    /// Restrict a separated range to the indexed read before checking the
     /// single-memory footprint. Only guarded read search needs this fallback.
     fn try_single_write_indexed_separation(
         search_input: &Proof<'a>,
@@ -297,9 +296,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let proof = separated.join()?;
-        let certificate =
-            ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(vec![separation])])
-                .expect("ordinary footprint normalization");
+        let certificate = ProofCertificate::from_steps(vec![ProofStep::Known])
+            .expect("ordinary footprint separation");
         attempt::candidate_outcome(
             proof
                 .driver()
@@ -606,11 +604,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     right: at(ProgramPointKind::Entry),
                 };
                 let steps = vec![
-                    have(separation.clone(), ProofStep::Known),
-                    have(
-                        footprint.clone(),
-                        ProofStep::NormalizeUsing(vec![separation]),
-                    ),
+                    have(separation, ProofStep::Known),
+                    have(footprint.clone(), ProofStep::Known),
                     have(equality, ProofStep::Preserve(footprint.clone())),
                     ProofStep::Known,
                 ];

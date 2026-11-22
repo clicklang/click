@@ -1619,6 +1619,8 @@ available when one of these holds:
   all four bytes are recorded initialized. These checks use the goal's
   memory state and decline if its lifetime or initialization needs further
   evidence.
+- It checks containment of constant byte intervals with the same address
+  origin, including intervals written at different element widths.
 - It separates a complete recorded effect footprint from the named
   resource. For each recorded member, the checker tests intrinsic
   separation or looks up the exact member separation. Two ranges that meet
@@ -2288,14 +2290,14 @@ premise of `preserve`; this route needs no footprint normalization.
 See `mdtests/recursive_call_footprint_containment.md` and
 `mdtests/recursive_call_pair_footprint_containment.md`.
 
-For one checked transition, prove `separate(region.footprint, B)` with
-`normalize() using { ... };`, listing an exact separation for each affected resource. Restrict parent
-separations or rewrite aliases in preceding explicit proof steps. Spatial ranges
-are compared in byte coordinates; their written range-validity conditions are
-retained. Separating two footprint collections is not a simple normalization
-rule. Empty memory ranges, distinct storage blocks, and token/memory pairs
-are disjoint directly. This simple rule does not walk a region containing several transitions: write individual
-`have` goals using `preserve(...)`, then compose the equalities with `rewrite` and `known`.
+For one checked transition, establish each affected member's exact separation
+from `B`, then close `separate(region.footprint, B)` with `known()`.
+Restrict parent separations or rewrite aliases in preceding proof steps.
+Spatial ranges use byte coordinates and retain their range-validity
+conditions. Empty memory ranges, distinct storage blocks, and token/memory
+pairs are disjoint directly. For several transitions, write an individual
+`preserve(...)` proof for each transition and compose their equalities with
+`rewrite` and `known`.
 
 `preserve` supports complete pointer, 8/16/32/64/128-bit integer, and abstract
 typed memory observations. It also preserves a selected field of a named owned

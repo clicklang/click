@@ -3812,14 +3812,10 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
 
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
     let mut steps = vec![ProofStep::Known];
-    // These goals still rely on checked constructor reduction or byte-span
-    // containment. Keep their existing certificate until each has a closer.
+    // Keep the existing certificate for retained constructor reduction.
     if matches!(
         goal,
-        Some(
-            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-                | Proposition::ResourceContains { .. }
-        )
+        Some(Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_)))
     ) {
         steps.push(ProofStep::Normalize);
     }
