@@ -1029,8 +1029,8 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: crate::kernel::ConditionOperand::new(0.into()),
-                    right: crate::kernel::ConditionOperand::new(index.clone()),
+                    left: Box::new(0.into()),
+                    right: Box::new(index.clone()),
                 },
                 true,
             )
@@ -1038,8 +1038,8 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: crate::kernel::ConditionOperand::new(index.clone()),
-                    right: crate::kernel::ConditionOperand::new(64.into()),
+                    left: Box::new(index.clone()),
+                    right: Box::new(64.into()),
                 },
                 true,
             );
@@ -1048,10 +1048,8 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        100_000 + unrelated,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(1000.into()),
+                    left: Box::new(MachineTerm::Variable(Variable(100_000 + unrelated))),
+                    right: Box::new(1000.into()),
                 },
                 true,
             );

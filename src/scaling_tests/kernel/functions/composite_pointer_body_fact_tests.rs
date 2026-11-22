@@ -23,8 +23,8 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(word.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Binary {
+                left: Box::new(word.clone()),
+                right: Box::new(MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(address.clone()),
@@ -43,8 +43,8 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(copied.clone()),
-            right: crate::kernel::ConditionOperand::new(word.clone()),
+            left: Box::new(copied.clone()),
+            right: Box::new(word.clone()),
         },
         true,
     );
@@ -77,12 +77,8 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        720_000 + index,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(
-                        index,
-                    )),
+                    left: Box::new(MachineTerm::Variable(Variable(720_000 + index))),
+                    right: Box::new(MachineTerm::uint64_constant(index)),
                 },
                 true,
             ));
@@ -120,8 +116,8 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(word.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Binary {
+                left: Box::new(word.clone()),
+                right: Box::new(MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(address.clone()),
@@ -143,8 +139,8 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(copied.clone()),
-                right: crate::kernel::ConditionOperand::new(word.clone()),
+                left: Box::new(copied.clone()),
+                right: Box::new(word.clone()),
             },
             true,
         ));
@@ -186,14 +182,14 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::ClickFunctionApplication {
+                left: Box::new(MachineTerm::ClickFunctionApplication {
                     name: "parent_is".into(),
                     arguments: vec![PureFunctionArgument::Value(ProgramValue::typed_pointer(
                         pointer.clone(),
                         ProgramType::Int32Pointer,
                     ))],
                 }),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(value)),
+                right: Box::new(MachineTerm::constant(value)),
             },
             true,
         )

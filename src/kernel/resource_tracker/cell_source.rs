@@ -309,8 +309,8 @@ pub(in crate::kernel) fn unsigned_index_in_range(
             return ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation,
-                left: crate::kernel::ConditionOperand::new(left),
-                right: crate::kernel::ConditionOperand::new(right),
+                left: Box::new(left),
+                right: Box::new(right),
             };
         }
         let mut operands = [
@@ -2232,8 +2232,8 @@ mod unsigned_index_membership_tests {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(index)),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(end)),
+            left: Box::new(MachineTerm::Variable(index)),
+            right: Box::new(MachineTerm::uint64_constant(end)),
         }
     }
 
@@ -2262,8 +2262,8 @@ mod unsigned_index_membership_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(k)),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(3)),
+                left: Box::new(MachineTerm::Variable(k)),
+                right: Box::new(MachineTerm::uint64_constant(3)),
             },
             true,
         );

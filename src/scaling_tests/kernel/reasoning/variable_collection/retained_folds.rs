@@ -315,12 +315,12 @@ fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
         let native = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 LoadKind::Int32,
             )),
-            right: crate::kernel::ConditionOperand::new(0.into()),
+            right: Box::new(0.into()),
         };
         let stored = StoredConditionTerm::from_minted(native.clone());
         let root = stored.root().expect("minted scalar comparison");

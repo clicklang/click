@@ -490,8 +490,8 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
         ConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(written),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(2)),
+            left: Box::new(written),
+            right: Box::new(MachineTerm::constant(2)),
         },
         false,
     );

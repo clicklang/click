@@ -235,8 +235,8 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(x.clone()),
-            right: crate::kernel::ConditionOperand::new(y.clone()),
+            left: Box::new(x.clone()),
+            right: Box::new(y.clone()),
         },
         true,
     );
@@ -740,8 +740,8 @@ fn rewrite_capture_collection_does_not_visit_state_contents() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(free)),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::Variable(free)),
+                right: Box::new(MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(Address::symbolic(address)),
                     crate::kernel::LoadKind::Int32,
@@ -1290,8 +1290,8 @@ fn selected_rewrite_premises_never_rebuild_a_context() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(a))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(b))),
+                left: Box::new(MachineTerm::Variable(Variable(a))),
+                right: Box::new(MachineTerm::Variable(Variable(b))),
             },
             true,
         )
@@ -1342,8 +1342,8 @@ fn selected_rewrite_does_not_discover_a_load_equality_chain() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(a),
-                right: crate::kernel::ConditionOperand::new(b),
+                left: Box::new(a),
+                right: Box::new(b),
             },
             true,
         )

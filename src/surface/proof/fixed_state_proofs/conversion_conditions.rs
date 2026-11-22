@@ -379,34 +379,19 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
             op: OverflowOperation::Add,
             left,
             right,
-        } => Some(binary_node!(
-            Int32,
-            Add,
-            (left.clone()).boxed(),
-            (right.clone()).boxed()
-        )),
+        } => Some(binary_node!(Int32, Add, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left,
             right,
-        } => Some(binary_node!(
-            Int32,
-            Subtract,
-            (left.clone()).boxed(),
-            (right.clone()).boxed()
-        )),
+        } => Some(binary_node!(Int32, Subtract, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left,
             right,
-        } => Some(binary_node!(
-            Int32,
-            Multiply,
-            (left.clone()).boxed(),
-            (right.clone()).boxed()
-        )),
+        } => Some(binary_node!(Int32, Multiply, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
@@ -415,8 +400,8 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
         } => Some(MachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Add,
-            left: (left.clone()).boxed(),
-            right: (right.clone()).boxed(),
+            left: left.clone(),
+            right: right.clone(),
         }),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
@@ -426,8 +411,8 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
         } => Some(MachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Subtract,
-            left: (left.clone()).boxed(),
-            right: (right.clone()).boxed(),
+            left: left.clone(),
+            right: right.clone(),
         }),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
@@ -437,8 +422,8 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
         } => Some(MachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Multiply,
-            left: (left.clone()).boxed(),
-            right: (right.clone()).boxed(),
+            left: left.clone(),
+            right: right.clone(),
         }),
         _ => None,
     }

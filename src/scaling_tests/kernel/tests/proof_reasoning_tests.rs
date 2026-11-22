@@ -348,10 +348,8 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::constant(
-                        -3_i32 as u32,
-                    )),
-                    right: crate::kernel::ConditionOperand::new(reversed.clone()),
+                    left: Box::new(MachineTerm::constant(-3_i32 as u32)),
+                    right: Box::new(reversed.clone()),
                 },
                 true,
             )
@@ -359,10 +357,8 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(wide.clone()),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::int64_constant(
-                        1 << 40,
-                    )),
+                    left: Box::new(wide.clone()),
+                    right: Box::new(MachineTerm::int64_constant(1 << 40)),
                 },
                 true,
             );
@@ -1110,8 +1106,8 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: crate::kernel::ConditionOperand::new(old.clone()),
-                        right: crate::kernel::ConditionOperand::new(delta.clone()),
+                        left: Box::new(old.clone()),
+                        right: Box::new(delta.clone()),
                     },
                     false,
                 )),
@@ -1215,8 +1211,8 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(x.clone()),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+            left: Box::new(x.clone()),
+            right: Box::new(MachineTerm::constant(1)),
         },
         true,
     ));

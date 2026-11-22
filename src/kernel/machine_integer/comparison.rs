@@ -320,8 +320,8 @@ fn retained_compare(
     ConditionTerm::Compare {
         format,
         relation,
-        left: crate::kernel::ConditionOperand::new(left),
-        right: crate::kernel::ConditionOperand::new(right),
+        left: Box::new(left),
+        right: Box::new(right),
     }
 }
 
@@ -544,8 +544,8 @@ fn read_conditional_atom(
             ConditionTerm::Compare {
                 format: *format,
                 relation: *relation,
-                left: crate::kernel::ConditionOperand::new(left),
-                right: crate::kernel::ConditionOperand::new(right),
+                left: Box::new(left),
+                right: Box::new(right),
             }
         }
         _ => return None,
@@ -1495,8 +1495,8 @@ mod borrowed_comparison_tests {
                 let condition = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: crate::kernel::ConditionOperand::new(left.clone()),
-                    right: crate::kernel::ConditionOperand::new(right.clone()),
+                    left: Box::new(left.clone()),
+                    right: Box::new(right.clone()),
                 };
                 assert_eq!(literal_native_comparison_value(&condition), Some(expected));
                 for truth in [true, false] {
@@ -1513,10 +1513,8 @@ mod borrowed_comparison_tests {
                 let symbolic = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        992597,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(right.clone()),
+                    left: Box::new(MachineTerm::Variable(Variable(992597))),
+                    right: Box::new(right.clone()),
                 };
                 assert_eq!(literal_native_comparison_value(&symbolic), None);
             }
@@ -1541,12 +1539,8 @@ mod borrowed_comparison_tests {
                 let condition = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        982412,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        982413,
-                    ))),
+                    left: Box::new(MachineTerm::Variable(Variable(982412))),
+                    right: Box::new(MachineTerm::Variable(Variable(982413))),
                 };
                 let ConditionTerm::Compare { left, right, .. } = &condition else {
                     unreachable!()

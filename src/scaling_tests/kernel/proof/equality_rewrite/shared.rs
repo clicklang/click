@@ -52,8 +52,8 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
                         ConditionTerm::Compare {
                             format: if ty == T::Int32 { T::Int32 } else { T::Int64 },
                             relation: CompareRelation::Equal,
-                            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(x)),
-                            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(y)),
+                            left: Box::new(MachineTerm::Variable(x)),
+                            right: Box::new(MachineTerm::Variable(y)),
                         },
                         true,
                     );

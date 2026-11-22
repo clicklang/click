@@ -1008,8 +1008,8 @@ fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(n.clone()),
-                right: crate::kernel::ConditionOperand::new(4u32.into()),
+                left: Box::new(n.clone()),
+                right: Box::new(4u32.into()),
             },
             true,
         )
@@ -1017,8 +1017,8 @@ fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(i.clone()),
-                right: crate::kernel::ConditionOperand::new(middle.clone()),
+                left: Box::new(i.clone()),
+                right: Box::new(middle.clone()),
             },
             true,
         )

@@ -148,8 +148,8 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::from(read(&after)),
-                    right: crate::kernel::ConditionOperand::from(read(&before)),
+                    left: read(&after),
+                    right: read(&before),
                 },
                 true,
             );

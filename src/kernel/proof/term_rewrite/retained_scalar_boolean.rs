@@ -191,8 +191,8 @@ mod tests {
                 inputs.push(ConditionTerm::Compare {
                     format,
                     relation,
-                    left: crate::kernel::ConditionOperand::new(source.clone()),
-                    right: crate::kernel::ConditionOperand::new(literal(1)),
+                    left: Box::new(source.clone()),
+                    right: Box::new(literal(1)),
                 });
             }
             for op in [
@@ -203,8 +203,8 @@ mod tests {
                 inputs.push(ConditionTerm::Overflows {
                     format,
                     op,
-                    left: crate::kernel::ConditionOperand::new(source.clone()),
-                    right: crate::kernel::ConditionOperand::new(literal(0)),
+                    left: Box::new(source.clone()),
+                    right: Box::new(literal(0)),
                 });
             }
             for input in inputs {
@@ -324,8 +324,8 @@ mod tests {
             let predicate = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(from)),
-                right: crate::kernel::ConditionOperand::new(zero.clone()),
+                left: Box::new(MachineTerm::Variable(from)),
+                right: Box::new(zero.clone()),
             };
             let conditional = IntegerTerm::If {
                 condition: Box::new(predicate.clone()),
@@ -381,8 +381,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(word.clone()),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                    left: Box::new(word.clone()),
+                    right: Box::new(MachineTerm::constant(0)),
                 },
                 true,
             ),
@@ -390,8 +390,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(word.clone()),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::int64_constant(0)),
+                    left: Box::new(word.clone()),
+                    right: Box::new(MachineTerm::int64_constant(0)),
                 },
                 false,
             ),
@@ -399,8 +399,8 @@ mod tests {
                 ConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
-                    left: crate::kernel::ConditionOperand::new(word),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                    left: Box::new(word),
+                    right: Box::new(MachineTerm::constant(0)),
                 },
                 false,
             ),
@@ -471,8 +471,8 @@ mod tests {
         let input = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(998180))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(998180))),
+            right: Box::new(MachineTerm::constant(0)),
         };
         let root = KernelTermImport::for_exact_field_inputs().condition(&input);
         let facts = HashMap::from([(input.clone(), true)]);

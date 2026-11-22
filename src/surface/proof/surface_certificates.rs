@@ -2744,8 +2744,8 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
-            right: crate::kernel::ConditionOperand::new(value.clone()),
+            left: Box::new(MachineTerm::constant(1)),
+            right: Box::new(value.clone()),
         },
         true,
     );
@@ -2770,8 +2770,8 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(step.source().clone()),
-                right: crate::kernel::ConditionOperand::new(step.target().clone()),
+                left: Box::new(step.source().clone()),
+                right: Box::new(step.target().clone()),
             },
             true,
         );
@@ -2813,8 +2813,8 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor_is_zero(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(step.source().clone()),
-                right: crate::kernel::ConditionOperand::new(step.target().clone()),
+                left: Box::new(step.source().clone()),
+                right: Box::new(step.target().clone()),
             },
             true,
         );
@@ -2880,15 +2880,15 @@ pub(super) fn plan_recorded_signed_order_path(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: crate::kernel::ConditionOperand::new(current_lower),
-                    right: crate::kernel::ConditionOperand::new(next_upper),
+                    left: Box::new(current_lower),
+                    right: Box::new(next_upper),
                 }
             } else {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: crate::kernel::ConditionOperand::new(current_lower),
-                    right: crate::kernel::ConditionOperand::new(next_upper),
+                    left: Box::new(current_lower),
+                    right: Box::new(next_upper),
                 }
             },
             true,
@@ -3008,8 +3008,8 @@ pub(super) fn plan_recorded_bitvector_equality_path(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(step.source().clone()),
-                right: crate::kernel::ConditionOperand::new(step.target().clone()),
+                left: Box::new(step.source().clone()),
+                right: Box::new(step.target().clone()),
             },
             true,
         );
@@ -3107,8 +3107,8 @@ pub(super) fn plan_recorded_load_address_congruence(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(step.source().clone()),
-                    right: crate::kernel::ConditionOperand::new(step.target().clone()),
+                    left: Box::new(step.source().clone()),
+                    right: Box::new(step.target().clone()),
                 },
                 true,
             );
@@ -3392,8 +3392,8 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(goal_lower.as_ref().clone()),
-                right: crate::kernel::ConditionOperand::new(premise_lower.clone()),
+                left: Box::new(goal_lower.as_ref().clone()),
+                right: Box::new(premise_lower.clone()),
             },
             true,
         );
@@ -4630,8 +4630,8 @@ pub(super) fn plan_pointer_advanced_load_equality(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(source_index.clone()),
-                right: crate::kernel::ConditionOperand::new(target_index.clone()),
+                left: Box::new(source_index.clone()),
+                right: Box::new(target_index.clone()),
             },
             true,
         );
@@ -4842,8 +4842,8 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(lower.clone()),
-                right: crate::kernel::ConditionOperand::new(successor.clone()),
+                left: Box::new(lower.clone()),
+                right: Box::new(successor.clone()),
             },
             true,
         );
@@ -4880,14 +4880,8 @@ pub(super) fn plan_explicit_increment_preserves_order(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::add(
-                        lower.clone(),
-                        MachineTerm::constant(1),
-                    )),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::add(
-                        value.clone(),
-                        MachineTerm::constant(1),
-                    )),
+                    left: Box::new(MachineTerm::add(lower.clone(), MachineTerm::constant(1))),
+                    right: Box::new(MachineTerm::add(value.clone(), MachineTerm::constant(1))),
                 },
                 true,
             );
@@ -5455,8 +5449,8 @@ mod shared_goal_spelling_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(10)),
+                    left: Box::new(MachineTerm::Variable(variable)),
+                    right: Box::new(MachineTerm::constant(10)),
                 },
                 true,
             ),

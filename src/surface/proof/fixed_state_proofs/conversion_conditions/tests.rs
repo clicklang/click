@@ -122,8 +122,8 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
+                left: Box::new(MachineTerm::constant(0)),
+                right: Box::new(MachineTerm::Variable(Variable(1))),
             },
             true,
         ))
@@ -173,8 +173,8 @@ fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+                left: Box::new(MachineTerm::Variable(Variable(1))),
+                right: Box::new(MachineTerm::constant(1)),
             },
             false,
         )),
@@ -200,8 +200,8 @@ fn established_conditions_are_named_beside_the_missing_one() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::constant(1)),
         },
         false,
     );
@@ -385,10 +385,8 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        1 << 41,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
+                    left: Box::new(MachineTerm::Variable(Variable(1 << 41))),
+                    right: Box::new(MachineTerm::Variable(Variable(1))),
                 },
                 true,
             )),
@@ -447,8 +445,8 @@ fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(760_000))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(10)),
+            left: Box::new(MachineTerm::Variable(Variable(760_000))),
+            right: Box::new(MachineTerm::constant(10)),
         },
         true,
     );

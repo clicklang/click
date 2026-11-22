@@ -1150,36 +1150,31 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::machine_compare(
-            format,
-            CompareRelation::Equal,
-            left.into_term(),
-            right.into_term(),
-        ),
+        } => ConditionTerm::machine_compare(format, CompareRelation::Equal, *left, *right),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
-        } => ConditionTerm::signed_less_than(left.into_term(), right.into_term()),
+        } => ConditionTerm::signed_less_than(*left, *right),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
-        } => ConditionTerm::signed_less_equal(left.into_term(), right.into_term()),
+        } => ConditionTerm::signed_less_equal(*left, *right),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
-        } => ConditionTerm::signed_greater_than(left.into_term(), right.into_term()),
+        } => ConditionTerm::signed_greater_than(*left, *right),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
-        } => ConditionTerm::signed_greater_equal(left.into_term(), right.into_term()),
+        } => ConditionTerm::signed_greater_equal(*left, *right),
         condition => condition,
     }
 }
@@ -5894,10 +5889,10 @@ impl<'a> TermRewrite<'a> {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: *relation,
-                    left: crate::kernel::ConditionOperand::new(
+                    left: Box::new(
                         self.bits_with_match_reduction(left, !is_simple_int32_match(left)),
                     ),
-                    right: crate::kernel::ConditionOperand::new(
+                    right: Box::new(
                         self.bits_with_match_reduction(right, !is_simple_int32_match(right)),
                     ),
                 }
@@ -5928,8 +5923,8 @@ impl<'a> TermRewrite<'a> {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(left),
-                        right: crate::kernel::ConditionOperand::new(right),
+                        left: Box::new(left),
+                        right: Box::new(right),
                     }
                 }
             }
@@ -7192,8 +7187,8 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            left: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(MachineTerm::constant(0)),
         };
         let conditions = HashMap::from([(condition.clone(), true)]);
         let input = MachineTerm::RangeFold {
@@ -7540,10 +7535,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(variable.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(
-                    i32::MAX as u64,
-                )),
+                left: Box::new(variable.clone()),
+                right: Box::new(MachineTerm::uint64_constant(i32::MAX as u64)),
             },
             true,
         )]);
@@ -7797,10 +7790,8 @@ mod tests {
                     condition: Box::new(ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                            Variable(20_000 + index),
-                        )),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        left: Box::new(MachineTerm::Variable(Variable(20_000 + index))),
+                        right: Box::new(MachineTerm::constant(0)),
                     }),
                     then_term: Box::new(fanout),
                     else_term: Box::new(MachineTerm::constant(0)),
@@ -7809,12 +7800,12 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::of_memory(&memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: crate::kernel::ConditionOperand::new(right),
+                right: Box::new(right),
             }
         };
         let memory_with_unrelated_blocks = |count: u64| {
@@ -9475,8 +9466,8 @@ mod comparison_read_batch_tests {
                     ConditionTerm::Compare {
                         format,
                         relation,
-                        left: crate::kernel::ConditionOperand::new(read.clone()),
-                        right: crate::kernel::ConditionOperand::new(literal(rhs)),
+                        left: Box::new(read.clone()),
+                        right: Box::new(literal(rhs)),
                     },
                     true,
                 );

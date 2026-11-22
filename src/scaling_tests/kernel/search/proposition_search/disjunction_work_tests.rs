@@ -13,8 +13,8 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(950_000))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(20)),
+            left: Box::new(MachineTerm::Variable(Variable(950_000))),
+            right: Box::new(MachineTerm::constant(20)),
         },
         true,
     );
@@ -33,10 +33,8 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        960_000 + index,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(100)),
+                    left: Box::new(MachineTerm::Variable(Variable(960_000 + index))),
+                    right: Box::new(MachineTerm::constant(100)),
                 },
                 true,
             );

@@ -4480,8 +4480,8 @@ mod guarded_quantified_cell_tests {
         let guard = holds(ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::from(variable(index())),
-            right: crate::kernel::ConditionOperand::new(length.clone()),
+            left: variable(index()),
+            right: Box::new(length.clone()),
         });
         assert_eq!(
             MemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
@@ -4503,8 +4503,8 @@ mod guarded_quantified_cell_tests {
         let signed = holds(ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::from(variable(index())),
-            right: crate::kernel::ConditionOperand::from(length.clone()),
+            left: variable(index()),
+            right: length.clone(),
         });
         assert_eq!(
             MemoryRange::guarded_quantified_cells(&cell, index(), &signed, 1),
@@ -4514,8 +4514,8 @@ mod guarded_quantified_cell_tests {
         let circular = holds(ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::from(variable(index())),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::Binary {
+            left: variable(index()),
+            right: Box::new(MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: variable(index()),
@@ -4530,8 +4530,8 @@ mod guarded_quantified_cell_tests {
         let bound = holds(ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::from(variable(index())),
-            right: crate::kernel::ConditionOperand::from(length),
+            left: variable(index()),
+            right: length,
         });
         assert_eq!(
             MemoryRange::guarded_quantified_cells(&cell, index(), &bound, 4),

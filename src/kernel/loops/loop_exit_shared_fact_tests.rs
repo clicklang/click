@@ -7,8 +7,8 @@ fn fact(variable: u64, value: i64) -> Proposition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(variable))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(value as _)),
+            left: Box::new(MachineTerm::Variable(Variable(variable))),
+            right: Box::new(MachineTerm::constant(value as _)),
         },
         true,
     )

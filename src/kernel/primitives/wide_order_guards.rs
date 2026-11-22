@@ -203,8 +203,8 @@ mod tests {
                 let native = C::Compare {
                     format: T::UInt64,
                     relation,
-                    left: crate::kernel::ConditionOperand::new(a.clone()),
-                    right: crate::kernel::ConditionOperand::new(b.clone()),
+                    left: Box::new(a.clone()),
+                    right: Box::new(b.clone()),
                 };
                 let expected = guards(&native);
                 if expected_rule < 5 && expected[expected_rule].is_some() {
@@ -276,8 +276,8 @@ mod tests {
         let reversed = C::Compare {
             format: T::UInt64,
             relation: R::GreaterEqual,
-            left: crate::kernel::ConditionOperand::new(n),
-            right: crate::kernel::ConditionOperand::new(k),
+            left: Box::new(n),
+            right: Box::new(k),
         };
         assert!(guards(&reversed).iter().all(Option::is_none));
     }

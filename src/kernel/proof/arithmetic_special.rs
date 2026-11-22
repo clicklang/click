@@ -2764,10 +2764,8 @@ mod tests {
                     ConditionTerm::Overflows {
                         format,
                         op,
-                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                            crate::kernel::Variable(986302),
-                        )),
-                        right: crate::kernel::ConditionOperand::new(
+                        left: Box::new(MachineTerm::Variable(crate::kernel::Variable(986302))),
+                        right: Box::new(
                             if format == MachineIntegerType::Int64
                                 || format == MachineIntegerType::UInt64
                             {
@@ -2856,8 +2854,8 @@ mod tests {
                                 ConditionTerm::Compare {
                                     format,
                                     relation,
-                                    left: crate::kernel::ConditionOperand::new(left),
-                                    right: crate::kernel::ConditionOperand::new(right),
+                                    left: Box::new(left),
+                                    right: Box::new(right),
                                 },
                                 truth,
                             );
@@ -3034,8 +3032,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(wide),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(i32::MAX as u32)),
+                left: Box::new(wide),
+                right: Box::new(MachineTerm::constant(i32::MAX as u32)),
             },
             true,
         );

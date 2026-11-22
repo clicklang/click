@@ -47,8 +47,8 @@ fn add_overflows(a: &MachineTerm, b: &MachineTerm) -> ConditionTerm {
     ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
-        left: crate::kernel::ConditionOperand::new(a.clone()),
-        right: crate::kernel::ConditionOperand::new(b.clone()),
+        left: Box::new(a.clone()),
+        right: Box::new(b.clone()),
     }
 }
 
@@ -133,15 +133,15 @@ fn unsigned_conversion_keeps_a_nonnegative_value() {
     let below = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
-        left: crate::kernel::ConditionOperand::new(wide),
-        right: crate::kernel::ConditionOperand::new(length.clone()),
+        left: Box::new(wide),
+        right: Box::new(length.clone()),
     };
     let graph = graph(&[(le(&constant(0), &i), true), (below, true)]);
     let length_positive = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
-        left: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(0)),
-        right: crate::kernel::ConditionOperand::new(length),
+        left: Box::new(MachineTerm::uint64_constant(0)),
+        right: Box::new(length),
     };
     assert_eq!(graph.decide(&length_positive), Some(true));
 }
@@ -573,8 +573,8 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
                 _ => ConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
-                    left: crate::kernel::ConditionOperand::from(boxed(a)),
-                    right: crate::kernel::ConditionOperand::from(boxed(&pool[next(pool.len())])),
+                    left: boxed(a),
+                    right: boxed(&pool[next(pool.len())]),
                 },
             };
             facts.push((fact, next(3) != 0));
@@ -615,50 +615,50 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: crate::kernel::ConditionOperand::from(a.clone()),
-                        right: crate::kernel::ConditionOperand::from(b.clone()),
+                        left: a.clone(),
+                        right: b.clone(),
                     },
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Subtract,
-                        left: crate::kernel::ConditionOperand::from(a.clone()),
-                        right: crate::kernel::ConditionOperand::from(b.clone()),
+                        left: a.clone(),
+                        right: b.clone(),
                     },
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Divide,
-                        left: crate::kernel::ConditionOperand::from(a.clone()),
-                        right: crate::kernel::ConditionOperand::from(b.clone()),
+                        left: a.clone(),
+                        right: b.clone(),
                     },
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Multiply,
-                        left: crate::kernel::ConditionOperand::from(a.clone()),
-                        right: crate::kernel::ConditionOperand::from(b.clone()),
+                        left: a.clone(),
+                        right: b.clone(),
                     },
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::ShiftLeft,
-                        left: crate::kernel::ConditionOperand::from(a.clone()),
-                        right: crate::kernel::ConditionOperand::from(b.clone()),
+                        left: a.clone(),
+                        right: b.clone(),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::from(a.clone()),
-                        right: crate::kernel::ConditionOperand::from(b.clone()),
+                        left: a.clone(),
+                        right: b.clone(),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::from(a.clone()),
-                        right: crate::kernel::ConditionOperand::from(b.clone()),
+                        left: a.clone(),
+                        right: b.clone(),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::UInt32,
                         relation: CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::from(a.clone()),
-                        right: crate::kernel::ConditionOperand::from(b.clone()),
+                        left: a.clone(),
+                        right: b.clone(),
                     },
                 ] {
                     let Some(answer) = graph.decide(&query) else {
@@ -690,14 +690,14 @@ fn a_disequality_at_a_range_end_tightens_it() {
     let divide = ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Divide,
-        left: crate::kernel::ConditionOperand::from(boxed(&x)),
-        right: crate::kernel::ConditionOperand::from(boxed(&y)),
+        left: boxed(&x),
+        right: boxed(&y),
     };
     let negate = ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Subtract,
-        left: crate::kernel::ConditionOperand::from(boxed(&constant(0))),
-        right: crate::kernel::ConditionOperand::from(boxed(&x)),
+        left: boxed(&constant(0)),
+        right: boxed(&x),
     };
     assert_eq!(graph(&[]).decide(&divide), None);
     let not_min = graph(&[(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false)]);
@@ -777,8 +777,8 @@ fn a_named_compound_term_keeps_its_operands_bounds() {
         graph.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
-            left: crate::kernel::ConditionOperand::from(boxed(&difference)),
-            right: crate::kernel::ConditionOperand::from(boxed(&constant(1)))
+            left: boxed(&difference),
+            right: boxed(&constant(1))
         }),
         Some(false)
     );
@@ -795,8 +795,8 @@ fn overflow_facts_shifts_and_products_are_read() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::from(boxed(&x)),
-            right: crate::kernel::ConditionOperand::from(boxed(&y)),
+            left: boxed(&x),
+            right: boxed(&y),
         },
         false,
     )]);
@@ -804,8 +804,8 @@ fn overflow_facts_shifts_and_products_are_read() {
         recorded.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::from(boxed(&y)),
-            right: crate::kernel::ConditionOperand::from(boxed(&x))
+            left: boxed(&y),
+            right: boxed(&x)
         }),
         Some(false)
     );
@@ -815,8 +815,8 @@ fn overflow_facts_shifts_and_products_are_read() {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: crate::kernel::ConditionOperand::from(boxed(&x)),
-                right: crate::kernel::ConditionOperand::from(boxed(&y)),
+                left: boxed(&x),
+                right: boxed(&y),
             },
             false,
         ),
@@ -826,8 +826,8 @@ fn overflow_facts_shifts_and_products_are_read() {
         renamed.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::from(boxed(&alias)),
-            right: crate::kernel::ConditionOperand::from(boxed(&y))
+            left: boxed(&alias),
+            right: boxed(&y)
         }),
         Some(false)
     );
@@ -836,8 +836,8 @@ fn overflow_facts_shifts_and_products_are_read() {
         byte.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::ShiftLeft,
-            left: crate::kernel::ConditionOperand::from(boxed(&x)),
-            right: crate::kernel::ConditionOperand::from(boxed(&constant(1)))
+            left: boxed(&x),
+            right: boxed(&constant(1))
         }),
         Some(false)
     );
@@ -846,8 +846,8 @@ fn overflow_facts_shifts_and_products_are_read() {
         byte.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
-            left: crate::kernel::ConditionOperand::from(boxed(&doubled)),
-            right: crate::kernel::ConditionOperand::from(boxed(&constant(1)))
+            left: boxed(&doubled),
+            right: boxed(&constant(1))
         }),
         Some(false)
     );
@@ -936,8 +936,8 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
     let divide = ConditionTerm::Overflows {
         format: MachineIntegerType::Int64,
         op: OverflowOperation::Divide,
-        left: crate::kernel::ConditionOperand::new(n.clone()),
-        right: crate::kernel::ConditionOperand::new(d.clone()),
+        left: Box::new(n.clone()),
+        right: Box::new(d.clone()),
     };
     assert_eq!(nonnegative.decide(&divide), None);
     let zero = graph(&[(ConditionTerm::int64_equal(d.clone(), int64(0)), true)]);
@@ -960,8 +960,8 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
         int32.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Divide,
-            left: crate::kernel::ConditionOperand::new(n),
-            right: crate::kernel::ConditionOperand::new(d)
+            left: Box::new(n),
+            right: Box::new(d)
         }),
         Some(false)
     );
@@ -1056,8 +1056,8 @@ fn a_zero_extension_reads_its_operands_bounds() {
     let at_most = |a: &MachineTerm, k: i64| ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::from(boxed(a)),
-        right: crate::kernel::ConditionOperand::new(T::int64_constant(k)),
+        left: boxed(a),
+        right: Box::new(T::int64_constant(k)),
     };
     let bounded = graph(&[
         (le(&constant(0), &x), true),
@@ -1110,16 +1110,16 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
     let fits = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::from(boxed(&x)),
-        right: crate::kernel::ConditionOperand::new(quotient),
+        left: boxed(&x),
+        right: Box::new(quotient),
     };
     let pinned = graph(&[
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::from(boxed(&x)),
-                right: crate::kernel::ConditionOperand::new(T::uint64_constant(1 << 32)),
+                left: boxed(&x),
+                right: Box::new(T::uint64_constant(1 << 32)),
             },
             true,
         ),
@@ -1127,8 +1127,8 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::from(boxed(&y)),
-                right: crate::kernel::ConditionOperand::new(T::uint64_constant(1 << 31)),
+                left: boxed(&y),
+                right: Box::new(T::uint64_constant(1 << 31)),
             },
             true,
         ),
@@ -1139,8 +1139,8 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::from(boxed(&x)),
-                right: crate::kernel::ConditionOperand::new(T::uint64_constant(1 << 33)),
+                left: boxed(&x),
+                right: Box::new(T::uint64_constant(1 << 33)),
             },
             true,
         ),
@@ -1148,8 +1148,8 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::from(boxed(&y)),
-                right: crate::kernel::ConditionOperand::new(T::uint64_constant(1 << 31)),
+                left: boxed(&y),
+                right: Box::new(T::uint64_constant(1 << 31)),
             },
             true,
         ),
@@ -1176,15 +1176,15 @@ fn a_constant_mask_bounds_an_unsigned_value() {
     let at_least = |k| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::new(T::uint64_constant(k)),
-        right: crate::kernel::ConditionOperand::new(low_half.clone()),
+        left: Box::new(T::uint64_constant(k)),
+        right: Box::new(low_half.clone()),
     };
     let one = graph(&[(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::from(boxed(&x)),
-            right: crate::kernel::ConditionOperand::new(T::uint64_constant(65537)),
+            left: boxed(&x),
+            right: Box::new(T::uint64_constant(65537)),
         },
         true,
     )]);
@@ -1210,16 +1210,16 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::from(boxed(&x)),
-            right: crate::kernel::ConditionOperand::new(T::uint64_constant(u64::MAX)),
+            left: boxed(&x),
+            right: Box::new(T::uint64_constant(u64::MAX)),
         },
         true,
     )]);
     let increment_overflows = |value: &MachineTerm| ConditionTerm::Overflows {
         format: MachineIntegerType::Int64,
         op: OverflowOperation::Add,
-        left: crate::kernel::ConditionOperand::new(value.clone()),
-        right: crate::kernel::ConditionOperand::new(T::int64_constant(1)),
+        left: Box::new(value.clone()),
+        right: Box::new(T::int64_constant(1)),
     };
     assert_eq!(all_ones.decide(&increment_overflows(&x)), Some(false));
     let cast = T::Cast {
@@ -1235,8 +1235,8 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::from(boxed(&x)),
-            right: crate::kernel::ConditionOperand::new(T::uint64_constant(i64::MAX as u64)),
+            left: boxed(&x),
+            right: Box::new(T::uint64_constant(i64::MAX as u64)),
         },
         true,
     )]);
@@ -1257,8 +1257,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::from(boxed(&n)),
-                right: crate::kernel::ConditionOperand::new(T::int64_constant(7)),
+                left: boxed(&n),
+                right: Box::new(T::int64_constant(7)),
             },
             true,
         ),
@@ -1266,8 +1266,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::from(boxed(&d)),
-                right: crate::kernel::ConditionOperand::new(T::constant(3)),
+                left: boxed(&d),
+                right: Box::new(T::constant(3)),
             },
             true,
         ),
@@ -1285,8 +1285,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
     let positive = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::GreaterThan,
-        left: crate::kernel::ConditionOperand::new(remainder.clone()),
-        right: crate::kernel::ConditionOperand::new(T::constant(0)),
+        left: Box::new(remainder.clone()),
+        right: Box::new(T::constant(0)),
     };
     assert_eq!(pinned.decide(&positive), Some(true));
     let correction = T::If {
@@ -1298,8 +1298,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         pinned.decide(&ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(correction),
-            right: crate::kernel::ConditionOperand::new(T::constant(0))
+            left: Box::new(correction),
+            right: Box::new(T::constant(0))
         }),
         Some(false)
     );
@@ -1313,8 +1313,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         pinned.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(quotient),
-            right: crate::kernel::ConditionOperand::new(T::int64_constant(1))
+            left: Box::new(quotient),
+            right: Box::new(T::int64_constant(1))
         }),
         Some(false)
     );
@@ -1334,8 +1334,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         unknown.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(any_quotient),
-            right: crate::kernel::ConditionOperand::new(T::int64_constant(1))
+            left: Box::new(any_quotient),
+            right: Box::new(T::int64_constant(1))
         }),
         None
     );
@@ -1348,8 +1348,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         unknown.decide(&ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(either.clone()),
-            right: crate::kernel::ConditionOperand::new(T::constant(0))
+            left: Box::new(either.clone()),
+            right: Box::new(T::constant(0))
         }),
         None
     );
@@ -1357,8 +1357,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         unknown.decide(&ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(either),
-            right: crate::kernel::ConditionOperand::new(T::constant(2))
+            left: Box::new(either),
+            right: Box::new(T::constant(2))
         }),
         Some(false)
     );
@@ -1388,8 +1388,8 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         unknown.decide(&ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
-            left: crate::kernel::ConditionOperand::from(boxed(&x)),
-            right: crate::kernel::ConditionOperand::new(remainder)
+            left: boxed(&x),
+            right: Box::new(remainder)
         }),
         Some(true)
     );
@@ -1404,28 +1404,28 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     let dividend_bound = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::new(by_variable.clone()),
-        right: crate::kernel::ConditionOperand::from(boxed(&x)),
+        left: Box::new(by_variable.clone()),
+        right: boxed(&x),
     };
     assert_eq!(unknown.decide(&dividend_bound), None);
     let by_zero = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::new(T::Binary {
+        left: Box::new(T::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Remainder,
             left: boxed(&x),
             right: Box::new(T::uint64_constant(0)),
         }),
-        right: crate::kernel::ConditionOperand::from(boxed(&x)),
+        right: boxed(&x),
     };
     assert_eq!(unknown.decide(&by_zero), None);
     let positive = graph(&[(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(T::uint64_constant(1)),
-            right: crate::kernel::ConditionOperand::new(variable(1)),
+            left: Box::new(T::uint64_constant(1)),
+            right: Box::new(variable(1)),
         },
         true,
     )]);
@@ -1433,16 +1433,16 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     let at_least_four = |rounded: &MachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::new(T::uint64_constant(4)),
-        right: crate::kernel::ConditionOperand::new(rounded.clone()),
+        left: Box::new(T::uint64_constant(4)),
+        right: Box::new(rounded.clone()),
     };
     assert_eq!(unknown.decide(&at_least_four(&rounded)), None);
     let large = graph(&[(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(T::uint64_constant(4)),
-            right: crate::kernel::ConditionOperand::from(boxed(&x)),
+            left: Box::new(T::uint64_constant(4)),
+            right: boxed(&x),
         },
         true,
     )]);
@@ -1452,8 +1452,8 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(T::uint64_constant(3)),
-            right: crate::kernel::ConditionOperand::from(boxed(&x)),
+            left: Box::new(T::uint64_constant(3)),
+            right: boxed(&x),
         },
         true,
     )]);
@@ -1476,16 +1476,16 @@ fn a_sign_flip_of_known_sign_is_bounded() {
     let below_zero = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::new(flipped),
-        right: crate::kernel::ConditionOperand::new(T::constant(u32::MAX)),
+        left: Box::new(flipped),
+        right: Box::new(T::constant(u32::MAX)),
     };
     let ordered = graph(&[
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::from(boxed(&b)),
-                right: crate::kernel::ConditionOperand::from(boxed(&a)),
+                left: boxed(&b),
+                right: boxed(&a),
             },
             true,
         ),
@@ -1493,8 +1493,8 @@ fn a_sign_flip_of_known_sign_is_bounded() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(T::constant(0)),
-                right: crate::kernel::ConditionOperand::from(boxed(&b)),
+                left: Box::new(T::constant(0)),
+                right: boxed(&b),
             },
             true,
         ),
@@ -1522,8 +1522,8 @@ fn an_unsigned_quotient_of_words_is_bounded() {
     let fits = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::new(flip(x.clone())),
-        right: crate::kernel::ConditionOperand::new(flip(binary_node!(
+        left: Box::new(flip(x.clone())),
+        right: Box::new(flip(binary_node!(
             UInt32,
             Divide,
             Box::new(T::constant(u32::MAX)),
@@ -1536,8 +1536,8 @@ fn an_unsigned_quotient_of_words_is_bounded() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::from(boxed(&x)),
-                    right: crate::kernel::ConditionOperand::new(T::constant(u32::MAX)),
+                    left: boxed(&x),
+                    right: Box::new(T::constant(u32::MAX)),
                 },
                 true,
             ),
@@ -1545,8 +1545,8 @@ fn an_unsigned_quotient_of_words_is_bounded() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::from(boxed(&y)),
-                    right: crate::kernel::ConditionOperand::new(T::constant(y_value)),
+                    left: boxed(&y),
+                    right: Box::new(T::constant(y_value)),
                 },
                 true,
             ),
@@ -1583,8 +1583,8 @@ fn field_offsets_from_equal_bases_are_equal() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(variable(0)),
-            right: crate::kernel::ConditionOperand::new(variable(1)),
+            left: Box::new(variable(0)),
+            right: Box::new(variable(1)),
         },
         true,
     )]);
@@ -1796,21 +1796,21 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
     let at_most = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::from(boxed(&difference)),
-        right: crate::kernel::ConditionOperand::from(boxed(&a)),
+        left: boxed(&difference),
+        right: boxed(&a),
     };
     let below = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
-        left: crate::kernel::ConditionOperand::from(boxed(&difference)),
-        right: crate::kernel::ConditionOperand::from(boxed(&a)),
+        left: boxed(&difference),
+        right: boxed(&a),
     };
     let ordered = graph(&[(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::from(boxed(&b)),
-            right: crate::kernel::ConditionOperand::from(boxed(&a)),
+            left: boxed(&b),
+            right: boxed(&a),
         },
         true,
     )]);
@@ -1821,8 +1821,8 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::from(boxed(&b)),
-                right: crate::kernel::ConditionOperand::from(boxed(&a)),
+                left: boxed(&b),
+                right: boxed(&a),
             },
             true,
         ),
@@ -1830,8 +1830,8 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(T::uint64_constant(1)),
-                right: crate::kernel::ConditionOperand::from(boxed(&b)),
+                left: Box::new(T::uint64_constant(1)),
+                right: boxed(&b),
             },
             true,
         ),
@@ -1876,8 +1876,8 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     let equal = |a: &MachineTerm, b: &MachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
-        left: crate::kernel::ConditionOperand::from(boxed(a)),
-        right: crate::kernel::ConditionOperand::from(boxed(b)),
+        left: boxed(a),
+        right: boxed(b),
     };
     let (p, q) = (
         address(pointer(scaled(0, 4))),
@@ -1923,8 +1923,8 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
     let overflows = |x: &MachineTerm| ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
-        left: crate::kernel::ConditionOperand::new(one_more(x)),
-        right: crate::kernel::ConditionOperand::from(boxed(&r)),
+        left: Box::new(one_more(x)),
+        right: boxed(&r),
     };
     let graph = graph(&[
         (overflows(&l), false),
@@ -1941,13 +1941,8 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: crate::kernel::ConditionOperand::new(binary_node!(
-                    Int32,
-                    Add,
-                    boxed(&constant(1)),
-                    boxed(l)
-                )),
-                right: crate::kernel::ConditionOperand::from(boxed(r)),
+                left: Box::new(binary_node!(Int32, Add, boxed(&constant(1)), boxed(l))),
+                right: boxed(r),
             },
             false,
         )])
@@ -1965,8 +1960,8 @@ fn direct_order_fact_survives_a_high_degree_source() {
     let less = |left: MachineTerm, right: MachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
-        left: crate::kernel::ConditionOperand::new(left),
-        right: crate::kernel::ConditionOperand::new(right),
+        left: Box::new(left),
+        right: Box::new(right),
     };
     let last = EDGE_LIMIT as u64 + 1;
     let mut graph = DifferenceGraph::new();
@@ -2007,8 +2002,8 @@ fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
                 ConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(left),
-                    right: crate::kernel::ConditionOperand::new(right),
+                    left: Box::new(left),
+                    right: Box::new(right),
                 }
             };
             let zero = equal_to(constant(0));
@@ -2430,8 +2425,8 @@ fn a_rounded_down_value_stays_below_the_bound_of_its_dividend() {
     let at_most = |left: &T, right: &T| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::new(left.clone()),
-        right: crate::kernel::ConditionOperand::new(right.clone()),
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
     };
     let length = variable(10);
     let divisor = variable(11);

@@ -468,8 +468,8 @@ fn a_sixty_four_bit_index_is_an_element_index_only_where_it_is_pinned() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(value.clone()),
-                right: crate::kernel::ConditionOperand::new(constant),
+                left: Box::new(value.clone()),
+                right: Box::new(constant),
             },
             true,
         )
@@ -708,8 +708,8 @@ fn a_sixty_four_bit_displacement_is_exact_only_where_a_fact_pins_it() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(value.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::int64_constant(constant)),
+                left: Box::new(value.clone()),
+                right: Box::new(MachineTerm::int64_constant(constant)),
             },
             true,
         )
@@ -6039,8 +6039,8 @@ mod wrapped_assumed_span_is_refused {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(symbolic_bytes.clone()),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0x6000_0000)),
+                    left: Box::new(symbolic_bytes.clone()),
+                    right: Box::new(MachineTerm::constant(0x6000_0000)),
                 },
                 true,
             )

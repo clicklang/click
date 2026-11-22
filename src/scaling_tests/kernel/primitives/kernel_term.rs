@@ -1141,10 +1141,8 @@ fn common_boolean_identity_visits_shared_connectives_once() {
             KernelTermImport::default().condition(&ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                    964_099,
-                ))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+                left: Box::new(MachineTerm::Variable(Variable(964_099))),
+                right: Box::new(MachineTerm::constant(1)),
             })
         };
         let mut left = atom(MachineIntegerType::Int32);

@@ -2156,8 +2156,8 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(left))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(right))),
+                left: Box::new(MachineTerm::Variable(Variable(left))),
+                right: Box::new(MachineTerm::Variable(Variable(right))),
             },
             true,
         )
@@ -2169,12 +2169,8 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        441_000 + index as u64,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
-                        1_000 + index as u32,
-                    )),
+                    left: Box::new(MachineTerm::Variable(Variable(441_000 + index as u64))),
+                    right: Box::new(MachineTerm::constant(1_000 + index as u32)),
                 },
                 true,
             ));
@@ -4727,10 +4723,8 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                    variable,
-                ))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(value)),
+                left: Box::new(MachineTerm::Variable(Variable(variable))),
+                right: Box::new(MachineTerm::constant(value)),
             },
             true,
         )
@@ -4750,10 +4744,8 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        433_000,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5)),
+                    left: Box::new(MachineTerm::Variable(Variable(433_000))),
+                    right: Box::new(MachineTerm::constant(5)),
                 },
                 true,
             );
@@ -4837,10 +4829,8 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        435_000,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5)),
+                    left: Box::new(MachineTerm::Variable(Variable(435_000))),
+                    right: Box::new(MachineTerm::constant(5)),
                 },
                 true,
             );
@@ -7387,8 +7377,8 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(left))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(right))),
+                left: Box::new(MachineTerm::Variable(Variable(left))),
+                right: Box::new(MachineTerm::Variable(Variable(right))),
             },
             true,
         )
@@ -7536,8 +7526,8 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(index.clone()),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(2)),
+            left: Box::new(index.clone()),
+            right: Box::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -7559,8 +7549,8 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(value),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+                    left: Box::new(value),
+                    right: Box::new(MachineTerm::constant(7)),
                 },
                 true,
             ));
@@ -7639,8 +7629,8 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(left),
-                right: crate::kernel::ConditionOperand::new(right),
+                left: Box::new(left),
+                right: Box::new(right),
             },
             true,
         )
@@ -7650,8 +7640,8 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(left),
-                right: crate::kernel::ConditionOperand::new(right),
+                left: Box::new(left),
+                right: Box::new(right),
             },
             holds,
         )

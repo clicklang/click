@@ -26,12 +26,12 @@ fn growing_shared_state_comparisons_reuse_syntax_but_recheck_loads() {
                     crate::kernel::KernelTermImport::default().condition(&ConditionTerm::Compare {
                         format: ty,
                         relation: CompareRelation::GreaterThan,
-                        left: crate::kernel::ConditionOperand::new(if structural {
+                        left: Box::new(if structural {
                             read
                         } else {
                             MachineTerm::Variable(variable)
                         }),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     })
                 };
                 let guards = [guard(left_read.clone(), a), guard(right_read.clone(), b)];

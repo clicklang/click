@@ -1541,8 +1541,8 @@ impl<'a> Proof<'a> {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: crate::kernel::ConditionOperand::new(current.clone()),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        left: Box::new(current.clone()),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     true,
                 );

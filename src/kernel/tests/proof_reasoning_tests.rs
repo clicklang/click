@@ -1181,8 +1181,8 @@ fn int32_le_antisymmetric_axiom_has_the_exact_implications() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(right),
+            left: Box::new(left),
+            right: Box::new(right),
         },
         true,
     );
@@ -1502,8 +1502,8 @@ fn increment_definedness_derivation_retains_its_exact_max_bound() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(value.clone()),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+            left: Box::new(value.clone()),
+            right: Box::new(MachineTerm::constant(1)),
         },
         false,
     );
@@ -1537,8 +1537,8 @@ fn one_plus_rules_retain_their_exact_max_bound_and_operand_order() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
-            right: crate::kernel::ConditionOperand::new(value.clone()),
+            left: Box::new(MachineTerm::constant(1)),
+            right: Box::new(value.clone()),
         },
         false,
     );
@@ -1592,8 +1592,8 @@ fn symbolic_add_definedness_retains_both_exact_named_theorem_bounds() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(value.clone()),
-            right: crate::kernel::ConditionOperand::new(amount.clone()),
+            left: Box::new(value.clone()),
+            right: Box::new(amount.clone()),
         },
         false,
     );
@@ -1629,8 +1629,8 @@ fn symbolic_subtract_definedness_retains_both_exact_named_theorem_bounds() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
-            left: crate::kernel::ConditionOperand::new(value.clone()),
-            right: crate::kernel::ConditionOperand::new(amount.clone()),
+            left: Box::new(value.clone()),
+            right: Box::new(amount.clone()),
         },
         false,
     );
@@ -5423,8 +5423,8 @@ fn symbolic_max_lt_branch_is_native_theorem() {
     let condition = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
-        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(a)),
-        right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(b)),
+        left: Box::new(MachineTerm::Variable(a)),
+        right: Box::new(MachineTerm::Variable(b)),
     };
     let state = program_max_state(
         int32(MachineTerm::Variable(a)),
@@ -5461,8 +5461,8 @@ fn symbolic_max_not_lt_branch_is_native_theorem() {
     let condition = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
-        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(a)),
-        right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(b)),
+        left: Box::new(MachineTerm::Variable(a)),
+        right: Box::new(MachineTerm::Variable(b)),
     };
     let state = program_max_state(
         int32(MachineTerm::Variable(a)),
@@ -5638,8 +5638,8 @@ fn common_base_offset_distinctness_compares_bare_offsets_of_one_block() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(i.clone()),
-            right: crate::kernel::ConditionOperand::new(j.clone()),
+            left: Box::new(i.clone()),
+            right: Box::new(j.clone()),
         },
         true,
     ));
@@ -5800,8 +5800,8 @@ fn signed_intervals_range_sums_of_any_depth() {
             assumptions.decide_from_overflow_facts(&ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: crate::kernel::ConditionOperand::new(sum),
-                right: crate::kernel::ConditionOperand::new(x.clone())
+                left: Box::new(sum),
+                right: Box::new(x.clone())
             }),
             Some(false),
             "a {depth}-deep sum of a variable in [0, 1] cannot overflow"
@@ -6417,8 +6417,8 @@ fn direct_constant_index_requires_written_premises_and_preserves_forks() {
             let fact = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(left),
-                right: crate::kernel::ConditionOperand::new(right),
+                left: Box::new(left),
+                right: Box::new(right),
             };
             let facts = PureFactContext::new().assume_condition(fact, true);
             assert_eq!(
@@ -7141,8 +7141,8 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::from(left.clone()),
-            right: crate::kernel::ConditionOperand::from(right.clone()),
+            left: left.clone(),
+            right: right.clone(),
         },
         true,
     );
@@ -7150,8 +7150,8 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterThan,
-            left: crate::kernel::ConditionOperand::from(right.clone()),
-            right: crate::kernel::ConditionOperand::from(left.clone()),
+            left: right.clone(),
+            right: left.clone(),
         },
         true,
     );
@@ -7159,8 +7159,8 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterEqual,
-            left: crate::kernel::ConditionOperand::from(left.clone()),
-            right: crate::kernel::ConditionOperand::from(right.clone()),
+            left: left.clone(),
+            right: right.clone(),
         },
         false,
     );
@@ -7178,8 +7178,8 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterThan,
-            left: crate::kernel::ConditionOperand::from(right.clone()),
-            right: crate::kernel::ConditionOperand::from(left.clone()),
+            left: right.clone(),
+            right: left.clone(),
         },
         true,
     );
@@ -7191,8 +7191,8 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::from(left.clone()),
-            right: crate::kernel::ConditionOperand::from(right.clone()),
+            left: left.clone(),
+            right: right.clone(),
         },
         true,
     );
@@ -7206,8 +7206,8 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::from(left.clone()),
-            right: crate::kernel::ConditionOperand::from(right.clone()),
+            left: left.clone(),
+            right: right.clone(),
         },
         true,
     );
@@ -7215,8 +7215,8 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
-            left: crate::kernel::ConditionOperand::from(right),
-            right: crate::kernel::ConditionOperand::from(left),
+            left: right,
+            right: left,
         },
         true,
     );

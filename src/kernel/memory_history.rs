@@ -4927,8 +4927,8 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         ConditionTerm::Compare {
@@ -4941,8 +4941,8 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         ConditionTerm::Compare {
@@ -4955,8 +4955,8 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         ConditionTerm::Compare {
@@ -4969,8 +4969,8 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         ConditionTerm::Compare {
@@ -4983,8 +4983,8 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             ConditionTerm::Compare {
                 format: *format,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         _ => return fact.clone(),
@@ -5575,8 +5575,8 @@ pub(crate) fn narrow_read_has_recorded_value(
             || assumptions.decide(&ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(word),
-                right: crate::kernel::ConditionOperand::new(other.clone()),
+                left: Box::new(word),
+                right: Box::new(other.clone()),
             }) == Some(true)
     };
     stored_value_matches(left, right) || stored_value_matches(right, left)
@@ -7740,8 +7740,8 @@ pub(super) fn condition_with_canonicalized_loads(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         ConditionTerm::Compare {
@@ -7754,8 +7754,8 @@ pub(super) fn condition_with_canonicalized_loads(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         ConditionTerm::Compare {
@@ -7768,8 +7768,8 @@ pub(super) fn condition_with_canonicalized_loads(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         ConditionTerm::Compare {
@@ -7782,8 +7782,8 @@ pub(super) fn condition_with_canonicalized_loads(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         ConditionTerm::Compare {
@@ -7796,8 +7796,8 @@ pub(super) fn condition_with_canonicalized_loads(
             ConditionTerm::Compare {
                 format: *format,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::from(left),
-                right: crate::kernel::ConditionOperand::from(right),
+                left,
+                right,
             }
         }
         _ => return None,
@@ -9114,8 +9114,8 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
                         format
                     },
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(named),
-                    right: crate::kernel::ConditionOperand::new(term),
+                    left: Box::new(named),
+                    right: Box::new(term),
                 },
                 true
             )]
@@ -9332,8 +9332,8 @@ mod retained_boolean_dependency_tests {
             Box::new(ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(read(ProgramPoint::at(&first))),
-                right: crate::kernel::ConditionOperand::new(read(ProgramPoint::at(&second))),
+                left: Box::new(read(ProgramPoint::at(&first))),
+                right: Box::new(read(ProgramPoint::at(&second))),
             }),
             Box::new(ConditionTerm::BoolApplication(
                 SharedPureApplication::intern(
@@ -9375,12 +9375,12 @@ mod common_boolean_transport_tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: crate::kernel::OverflowOperation::Add,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     ProgramPoint::at(&memory),
                     Box::new(address.clone()),
                     LoadKind::Int32,
                 )),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+                right: Box::new(MachineTerm::constant(1)),
             },
             ConditionTerm::PointerEqual(
                 Box::new(Pointer::new(
@@ -9434,22 +9434,18 @@ mod common_boolean_transport_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     ProgramPoint::at(&memory),
                     Box::new(address),
                     LoadKind::Int32,
                 )),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                    972_001,
-                ))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                    972_001,
-                ))),
+                left: Box::new(MachineTerm::Variable(Variable(972_001))),
+                right: Box::new(MachineTerm::Variable(Variable(972_001))),
             },
         ] {
             let root = KernelTermImport::default().condition(&source);

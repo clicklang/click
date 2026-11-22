@@ -182,8 +182,8 @@ mod tests {
                     condition: Box::new(ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(load.clone()),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        left: Box::new(load.clone()),
+                        right: Box::new(MachineTerm::constant(0)),
                     }),
                     then_term: Box::new(variable.clone()),
                     else_term: Box::new(MachineTerm::constant(1)),

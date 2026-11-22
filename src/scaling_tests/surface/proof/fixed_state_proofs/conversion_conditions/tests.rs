@@ -67,10 +67,8 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        780_000 + i,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(1000u32.into()),
+                    left: Box::new(MachineTerm::Variable(Variable(780_000 + i))),
+                    right: Box::new(1000u32.into()),
                 },
                 true,
             );
@@ -81,12 +79,8 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                            Variable(785_000 + i),
-                        )),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
-                            i as u32,
-                        )),
+                        left: Box::new(MachineTerm::Variable(Variable(785_000 + i))),
+                        right: Box::new(MachineTerm::constant(i as u32)),
                     },
                     true,
                 );
@@ -120,10 +114,8 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
-                            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                                Variable(790_000 + i),
-                            )),
-                            right: crate::kernel::ConditionOperand::new(255u32.into()),
+                            left: Box::new(MachineTerm::Variable(Variable(790_000 + i))),
+                            right: Box::new(255u32.into()),
                         },
                         true,
                     )),

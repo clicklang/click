@@ -555,12 +555,7 @@ mod tests {
                     };
                     shared_equivalents(
                         &context,
-                        &ConditionTerm::machine_compare(
-                            format,
-                            mirrored,
-                            right.into_term(),
-                            left.into_term(),
-                        ),
+                        &ConditionTerm::machine_compare(format, mirrored, *right, *left),
                     )
                     .unwrap();
                 }

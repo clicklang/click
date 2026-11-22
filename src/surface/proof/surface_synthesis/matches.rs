@@ -243,8 +243,8 @@ mod tests {
                     ConditionTerm::bool_not(ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(word.clone()),
-                        right: crate::kernel::ConditionOperand::new(zero),
+                        left: Box::new(word.clone()),
+                        right: Box::new(zero),
                     }),
                 )));
             }

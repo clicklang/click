@@ -970,13 +970,8 @@ theorem black_color_is_black(color: Color) {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(capacity),
-                right: crate::kernel::ConditionOperand::new(binary_node!(
-                    Int32,
-                    Add,
-                    Box::new(used),
-                    Box::new(slots)
-                )),
+                left: Box::new(capacity),
+                right: Box::new(binary_node!(Int32, Add, Box::new(used), Box::new(slots))),
             },
             true,
         );

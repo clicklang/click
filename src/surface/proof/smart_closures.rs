@@ -5291,8 +5291,8 @@ mod synthesized_literal_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(991984))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(10)),
+                left: Box::new(MachineTerm::Variable(Variable(991984))),
+                right: Box::new(MachineTerm::constant(10)),
             },
             true,
         );
@@ -5333,8 +5333,8 @@ mod synthesized_literal_tests {
         let less_equal = |left, right| ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(right),
+            left: Box::new(left),
+            right: Box::new(right),
         };
         let trivial = Proposition::condition_is(less_equal(0u32.into(), 0u32.into()), true);
         let bound = Proposition::condition_is(
@@ -5447,8 +5447,8 @@ mod synthesized_literal_tests {
             ConditionTerm::Compare {
                 format: ty,
                 relation: R::Equal,
-                left: crate::kernel::ConditionOperand::new(sum.clone()),
-                right: crate::kernel::ConditionOperand::new(sum.clone()),
+                left: Box::new(sum.clone()),
+                right: Box::new(sum.clone()),
             },
             true,
         );

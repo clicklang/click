@@ -374,12 +374,12 @@ mod tests {
                     condition: Box::new(ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                        left: Box::new(MachineTerm::MemoryLoad(
                             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                             Box::new(pointer.clone()),
                             LoadKind::Int32,
                         )),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     }),
                     then_term: IntegerTerm::constant_i64(1).into(),
                     else_term: IntegerTerm::constant_i64(2).into(),

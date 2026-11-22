@@ -3247,8 +3247,8 @@ mod proposition_identity_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(left),
-                right: crate::kernel::ConditionOperand::new(right),
+                left: Box::new(left),
+                right: Box::new(right),
             },
             true,
         )
@@ -3632,12 +3632,12 @@ mod proposition_identity_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(&load_memory),
                     Box::new(load_pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+                right: Box::new(MachineTerm::constant(7)),
             },
             true,
         );
@@ -3666,12 +3666,12 @@ mod proposition_identity_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(&changed_memory),
                     Box::new(changed_pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+                right: Box::new(MachineTerm::constant(7)),
             },
             true,
         );
@@ -4786,10 +4786,8 @@ mod memory_state_alpha_tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                            element_load,
-                        )),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+                        left: Box::new(MachineTerm::Variable(element_load)),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     true,
                 )),
@@ -5232,12 +5230,8 @@ mod machine_quantifier_identity_tests {
                     let native = ConditionTerm::Compare {
                         format,
                         relation,
-                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                            Variable(981),
-                        )),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                            Variable(982),
-                        )),
+                        left: Box::new(MachineTerm::Variable(Variable(981))),
+                        right: Box::new(MachineTerm::Variable(Variable(982))),
                     };
                     let left =
                         IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(981)))
@@ -5294,23 +5288,15 @@ mod machine_quantifier_identity_tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                            Variable(variable),
-                        )),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::int64_constant(
-                            bound,
-                        )),
+                        left: Box::new(MachineTerm::Variable(Variable(variable))),
+                        right: Box::new(MachineTerm::int64_constant(bound)),
                     }
                 } else {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                            Variable(variable),
-                        )),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
-                            bound as u32,
-                        )),
+                        left: Box::new(MachineTerm::Variable(Variable(variable))),
+                        right: Box::new(MachineTerm::constant(bound as u32)),
                     }
                 },
                 true,
@@ -5455,12 +5441,8 @@ mod overflow_condition_tests {
                 let source = ConditionTerm::Overflows {
                     format,
                     op,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        998630,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        998631,
-                    ))),
+                    left: Box::new(MachineTerm::Variable(Variable(998630))),
+                    right: Box::new(MachineTerm::Variable(Variable(998631))),
                 };
                 let root = crate::kernel::KernelTermImport::default().condition(&source);
                 let actual = memory_erased_boolean_operand_key(

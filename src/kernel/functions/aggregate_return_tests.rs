@@ -822,8 +822,8 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(read(memory)),
-                right: crate::kernel::ConditionOperand::new(read(&before)),
+                left: Box::new(read(memory)),
+                right: Box::new(read(&before)),
             },
             true,
         )

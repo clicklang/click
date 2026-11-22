@@ -636,8 +636,8 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         &mut identity,
                         &mut tasks,
                         BitvectorComparisonOp::Compare(format, relation),
-                        left.into_term(),
-                        right.into_term(),
+                        *left,
+                        *right,
                     ),
                     ConditionTerm::Overflows {
                         format,
@@ -648,8 +648,8 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         &mut identity,
                         &mut tasks,
                         BitvectorComparisonOp::Overflows(format, op),
-                        left.into_term(),
-                        right.into_term(),
+                        *left,
+                        *right,
                     ),
                     crate::kernel::integer_comparison_condition!(_, _) => {
                         let _ = write!(identity, "icond{condition:?};");

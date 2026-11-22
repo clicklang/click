@@ -4432,10 +4432,8 @@ fn execute_verified_function_applications_with_suspension(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(
-                            quantity.native_compat().clone(),
-                        ),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        left: Box::new(quantity.native_compat().clone()),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
                 MachineTerm::constant(0)
@@ -10104,8 +10102,8 @@ fn allocation_continuity(
         let condition = ConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(input_bytes.clone()),
-            right: crate::kernel::ConditionOperand::new(output_bytes.clone()),
+            left: Box::new(input_bytes.clone()),
+            right: Box::new(output_bytes.clone()),
         };
         // Two allocation sizes at one base are the same allocation, a
         // refuted one, or an undecided pair. The refutation uses the exact
@@ -15129,8 +15127,8 @@ fn resource_body_fact_is_established(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(endpoint.clone()),
-                        right: crate::kernel::ConditionOperand::new(alias.clone()),
+                        left: Box::new(endpoint.clone()),
+                        right: Box::new(alias.clone()),
                     },
                     true,
                 );
@@ -15723,8 +15721,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
-                    left: crate::kernel::ConditionOperand::new(quantity),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                    left: Box::new(quantity),
+                    right: Box::new(MachineTerm::constant(0)),
                 },
                 true,
             );
@@ -17344,8 +17342,8 @@ fn consume_returned_resource_unit(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(quantity.native_compat().clone()),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+            left: Box::new(quantity.native_compat().clone()),
+            right: Box::new(MachineTerm::constant(1)),
         },
     );
     if !active.insert(required.clone()) {
@@ -20336,10 +20334,8 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: crate::kernel::ConditionOperand::new(
-                            quantity.native_compat().clone(),
-                        ),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        left: Box::new(quantity.native_compat().clone()),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
                     return Ok(Err(RuntimeError::FunctionContract(
@@ -20554,8 +20550,8 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: crate::kernel::ConditionOperand::new(quantity.native_compat().clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                left: Box::new(quantity.native_compat().clone()),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         ));
@@ -22357,12 +22353,8 @@ fn contract_exit_outcome_with_boundary_transfer(
                                                     ConditionTerm::Compare {
                                                         format: MachineIntegerType::Int32,
                                                         relation: CompareRelation::Equal,
-                                                        left: crate::kernel::ConditionOperand::new(
-                                                            actual.clone(),
-                                                        ),
-                                                        right: crate::kernel::ConditionOperand::new(
-                                                            MachineTerm::constant(0),
-                                                        ),
+                                                        left: Box::new(actual.clone()),
+                                                        right: Box::new(MachineTerm::constant(0)),
                                                     },
                                                 ))
                                                 && crate::kernel::quantity_condition_holds(
@@ -22370,12 +22362,8 @@ fn contract_exit_outcome_with_boundary_transfer(
                                                     ConditionTerm::Compare {
                                                         format: MachineIntegerType::Int32,
                                                         relation: CompareRelation::Equal,
-                                                        left: crate::kernel::ConditionOperand::new(
-                                                            actual,
-                                                        ),
-                                                        right: crate::kernel::ConditionOperand::new(
-                                                            expected.clone(),
-                                                        ),
+                                                        left: Box::new(actual),
+                                                        right: Box::new(expected.clone()),
                                                     },
                                                 )
                                         })
@@ -22395,12 +22383,8 @@ fn contract_exit_outcome_with_boundary_transfer(
                                         ConditionTerm::Compare {
                                             format: MachineIntegerType::Int32,
                                             relation: CompareRelation::Equal,
-                                            left: crate::kernel::ConditionOperand::new(
-                                                actual_quantity.clone(),
-                                            ),
-                                            right: crate::kernel::ConditionOperand::new(
-                                                MachineTerm::constant(0),
-                                            ),
+                                            left: Box::new(actual_quantity.clone()),
+                                            right: Box::new(MachineTerm::constant(0)),
                                         },
                                     ))
                                     && crate::kernel::quantity_condition_holds(
@@ -22408,12 +22392,8 @@ fn contract_exit_outcome_with_boundary_transfer(
                                         ConditionTerm::Compare {
                                             format: MachineIntegerType::Int32,
                                             relation: CompareRelation::Equal,
-                                            left: crate::kernel::ConditionOperand::new(
-                                                actual_quantity,
-                                            ),
-                                            right: crate::kernel::ConditionOperand::new(
-                                                expected_quantity.clone(),
-                                            ),
+                                            left: Box::new(actual_quantity),
+                                            right: Box::new(expected_quantity.clone()),
                                         },
                                     )
                             })

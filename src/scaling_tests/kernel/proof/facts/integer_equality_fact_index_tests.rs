@@ -14,8 +14,8 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(a),
-                right: crate::kernel::ConditionOperand::new(b),
+                left: Box::new(a),
+                right: Box::new(b),
             },
             true,
         )
@@ -60,8 +60,8 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(left.clone()),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(7)),
+            left: Box::new(left.clone()),
+            right: Box::new(MachineTerm::uint64_constant(7)),
         },
         true,
     );
@@ -70,8 +70,8 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(left),
-                right: crate::kernel::ConditionOperand::new(middle.clone()),
+                left: Box::new(left),
+                right: Box::new(middle.clone()),
             },
             true,
         ),
@@ -79,8 +79,8 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(middle),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(7)),
+                left: Box::new(middle),
+                right: Box::new(MachineTerm::uint64_constant(7)),
             },
             true,
         ),
@@ -218,8 +218,8 @@ fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -269,8 +269,8 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(load(memory)),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        left: Box::new(load(memory)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     true,
                 )
@@ -280,8 +280,8 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(load(memories.last().unwrap())),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                left: Box::new(load(memories.last().unwrap())),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );

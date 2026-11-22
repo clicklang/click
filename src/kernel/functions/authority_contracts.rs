@@ -1160,8 +1160,8 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(term.clone()),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        left: Box::new(term.clone()),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                 )
         };
@@ -1179,8 +1179,8 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::Equal,
-                                left: crate::kernel::ConditionOperand::new(actual_quantity),
-                                right: crate::kernel::ConditionOperand::from(quantity.clone()),
+                                left: Box::new(actual_quantity),
+                                right: quantity.clone(),
                             },
                         ))
             });
@@ -1298,8 +1298,8 @@ pub(super) fn check_quantity_exchange_at_return(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: crate::kernel::ConditionOperand::new(actual),
-                            right: crate::kernel::ConditionOperand::new(binary_node!(
+                            left: Box::new(actual),
+                            right: Box::new(binary_node!(
                                 Int32,
                                 Subtract,
                                 Box::new(produced.native_compat().clone()),

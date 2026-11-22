@@ -95,8 +95,8 @@ mod tests {
                         let native = ConditionTerm::Overflows {
                             format,
                             op: operation,
-                            left: crate::kernel::ConditionOperand::new(a.clone()),
-                            right: crate::kernel::ConditionOperand::new(b.clone()),
+                            left: Box::new(a.clone()),
+                            right: Box::new(b.clone()),
                         };
                         let raw = KernelTermImport::default().condition(&native);
                         assert!(matches!(raw.node(), KernelTermNode::BoolOverflow { .. }));
@@ -133,10 +133,8 @@ mod tests {
                 let source = ConditionTerm::Overflows {
                     format,
                     op: operation,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        999201,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::machine_constant(
+                    left: Box::new(MachineTerm::Variable(Variable(999201))),
+                    right: Box::new(MachineTerm::machine_constant(
                         MachineIntegerConstant::from_signed(format.format(), 0).unwrap(),
                     )),
                 };
@@ -203,7 +201,7 @@ mod tests {
                 let sources = memories.each_ref().map(|memory| ConditionTerm::Overflows {
                     format,
                     op,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                    left: Box::new(MachineTerm::MemoryLoad(
                         ProgramPoint::at(memory),
                         Box::new(crate::kernel::SymbolicMemory::global_pointer(
                             "overflow-read",
@@ -214,9 +212,7 @@ mod tests {
                             LoadKind::Bits64
                         },
                     )),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        999203,
-                    ))),
+                    right: Box::new(MachineTerm::Variable(Variable(999203))),
                 });
                 let roots = sources
                     .each_ref()
@@ -254,11 +250,11 @@ mod tests {
         let source = ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::IntegerAddress(
+            left: Box::new(MachineTerm::IntegerAddress(
                 Box::new(Address::symbolic(Variable(999210))),
                 AddressObjectClass::NONE,
             )),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(0)),
+            right: Box::new(MachineTerm::uint64_constant(0)),
         };
         for source in [
             source.clone(),

@@ -215,8 +215,8 @@ fn symbolic_comparisons_ignore_ambient_guard_facts() {
                     MachineIntegerType::UInt64
                 },
                 relation,
-                left: crate::kernel::ConditionOperand::new(guard_value.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(8)),
+                left: Box::new(guard_value.clone()),
+                right: Box::new(MachineTerm::uint64_constant(8)),
             };
             let proposition = SpecProposition::Comparison {
                 left: SpecExpression::If {
@@ -369,10 +369,8 @@ fn reflexive_conditionals_ignore_unrelated_facts_and_value_aliases() {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
-                            left: crate::kernel::ConditionOperand::new(variable.clone()),
-                            right: crate::kernel::ConditionOperand::new(
-                                MachineTerm::uint64_constant(3),
-                            ),
+                            left: Box::new(variable.clone()),
+                            right: Box::new(MachineTerm::uint64_constant(3)),
                         },
                         true,
                     );
@@ -534,10 +532,8 @@ fn bitwise_arm_comparisons_ignore_ambient_flag_and_operand_facts() {
                                         format
                                     },
                                     relation: CompareRelation::Equal,
-                                    left: crate::kernel::ConditionOperand::new(
-                                        MachineTerm::Variable(Variable(1_010_000)),
-                                    ),
-                                    right: crate::kernel::ConditionOperand::new(
+                                    left: Box::new(MachineTerm::Variable(Variable(1_010_000))),
+                                    right: Box::new(
                                         crate::kernel::machine_integer::range::constant_word(
                                             format,
                                             &0.into(),
@@ -711,10 +707,8 @@ fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
                                         format
                                     },
                                     relation: CompareRelation::Equal,
-                                    left: crate::kernel::ConditionOperand::new(
-                                        MachineTerm::Variable(Variable(1_010_000)),
-                                    ),
-                                    right: crate::kernel::ConditionOperand::new(
+                                    left: Box::new(MachineTerm::Variable(Variable(1_010_000))),
+                                    right: Box::new(
                                         crate::kernel::machine_integer::range::constant_word(
                                             format,
                                             &0.into(),

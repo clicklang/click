@@ -11,8 +11,8 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
     let zero = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: crate::kernel::ConditionOperand::new(status.clone()),
-        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+        left: Box::new(status.clone()),
+        right: Box::new(MachineTerm::constant(0)),
     };
     let success_assumptions =
         PureFactContext::new().assume_proposition(Proposition::condition_is(zero.clone(), true));

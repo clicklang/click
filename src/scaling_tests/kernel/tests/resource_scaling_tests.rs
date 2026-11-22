@@ -863,8 +863,8 @@ fn int32_equal(left: u64, right: u64) -> ConditionTerm {
     ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(left))),
-        right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(right))),
+        left: Box::new(MachineTerm::Variable(Variable(left))),
+        right: Box::new(MachineTerm::Variable(Variable(right))),
     }
 }
 

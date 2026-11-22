@@ -673,8 +673,8 @@ impl KernelTermExport {
             } => Old::Overflows {
                 format: *format,
                 op: *operation,
-                left: crate::kernel::ConditionOperand::new(Self::machine(&arguments[0])?),
-                right: crate::kernel::ConditionOperand::new(Self::machine(&arguments[1])?),
+                left: Box::new(Self::machine(&arguments[0])?),
+                right: Box::new(Self::machine(&arguments[1])?),
             },
             Node::PointerEqual(pair) => {
                 let [a, b] = pair.arguments();
@@ -696,12 +696,8 @@ impl KernelTermExport {
             } => Old::Compare {
                 format: *format,
                 relation: *relation,
-                left: crate::kernel::ConditionOperand::new(Self::condition_machine_operand(
-                    &arguments[0],
-                )?),
-                right: crate::kernel::ConditionOperand::new(Self::condition_machine_operand(
-                    &arguments[1],
-                )?),
+                left: Box::new(Self::condition_machine_operand(&arguments[0])?),
+                right: Box::new(Self::condition_machine_operand(&arguments[1])?),
             },
             Node::IntegerCompare {
                 operator,
@@ -789,10 +785,8 @@ mod tests {
                 cases.push(ConditionTerm::Compare {
                     format,
                     relation,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                        964_096,
-                    ))),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::machine_constant(
+                    left: Box::new(MachineTerm::Variable(Variable(964_096))),
+                    right: Box::new(MachineTerm::machine_constant(
                         MachineIntegerConstant::from_signed(format.format(), 1).unwrap(),
                     )),
                 });
@@ -852,10 +846,8 @@ mod tests {
             then_condition: Box::new(ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(fold.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                    971_004,
-                ))),
+                left: Box::new(fold.clone()),
+                right: Box::new(MachineTerm::Variable(Variable(971_004))),
             }),
             else_condition: Box::new(ConditionTerm::Constant(false)),
         };
@@ -889,11 +881,11 @@ mod tests {
         let atom = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::IntegerAddress(
+            left: Box::new(MachineTerm::IntegerAddress(
                 Box::new(Address::symbolic(from)),
                 crate::kernel::AddressObjectClass::NONE,
             )),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(0)),
+            right: Box::new(MachineTerm::uint64_constant(0)),
         };
         let sources = [
             ConditionTerm::BoolEqual(Box::new(atom.clone()), Box::new(atom.clone())),
@@ -959,10 +951,8 @@ mod tests {
             condition: Box::new(ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                    964_090,
-                ))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+                left: Box::new(MachineTerm::Variable(Variable(964_090))),
+                right: Box::new(MachineTerm::constant(1)),
             }),
             then_condition: Box::new(ConditionTerm::Constant(true)),
             else_condition: Box::new(ConditionTerm::BoolEqual(
@@ -1084,8 +1074,8 @@ mod tests {
         let comparison = |format| ConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(961_001))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(961_001))),
+            right: Box::new(MachineTerm::constant(0)),
         };
         let signed = comparison(MachineIntegerType::Int32);
         let unsigned = comparison(MachineIntegerType::UInt32);

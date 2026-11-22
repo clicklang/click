@@ -137,8 +137,8 @@ fn machine_affine_equality_work_is_linear_in_the_sum() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(forward),
-                right: crate::kernel::ConditionOperand::new(backward),
+                left: Box::new(forward),
+                right: Box::new(backward),
             },
             true,
         );

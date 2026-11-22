@@ -540,10 +540,8 @@ pub(super) fn pure_induction_hypothesis(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(value.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                    *current_variable,
-                )),
+                left: Box::new(value.clone()),
+                right: Box::new(MachineTerm::Variable(*current_variable)),
             }
         },
         true,
@@ -554,8 +552,8 @@ pub(super) fn pure_induction_hypothesis(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: crate::kernel::ConditionOperand::new(value),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                left: Box::new(value),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -3353,28 +3351,28 @@ mod tests {
             Box::new(fact(Condition::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
-                left: crate::kernel::ConditionOperand::from(word(0)),
-                right: crate::kernel::ConditionOperand::from(word(1)),
+                left: word(0),
+                right: word(1),
             })),
             Box::new(Proposition::Not(Box::new(fact(Condition::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::GreaterEqual,
-                left: crate::kernel::ConditionOperand::from(word(2)),
-                right: crate::kernel::ConditionOperand::from(word(3)),
+                left: word(2),
+                right: word(3),
             })))),
         );
         let less = Proposition::Implies(
             Box::new(fact(Condition::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::from(word(1)),
-                right: crate::kernel::ConditionOperand::from(word(0)),
+                left: word(1),
+                right: word(0),
             })),
             Box::new(Proposition::Not(Box::new(fact(Condition::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::from(word(3)),
-                right: crate::kernel::ConditionOperand::from(word(2)),
+                left: word(3),
+                right: word(2),
             })))),
         );
         assert_eq!(oriented_order_comparisons(&greater), less);
@@ -3383,15 +3381,15 @@ mod tests {
         let reversed = fact(Condition::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::from(word(0)),
-            right: crate::kernel::ConditionOperand::from(word(1)),
+            left: word(0),
+            right: word(1),
         });
         assert_ne!(
             oriented_order_comparisons(&fact(Condition::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
-                left: crate::kernel::ConditionOperand::from(word(0)),
-                right: crate::kernel::ConditionOperand::from(word(1))
+                left: word(0),
+                right: word(1)
             })),
             reversed
         );

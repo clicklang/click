@@ -42,8 +42,8 @@ fn narrow_comparison_identity_is_constant_in_operand_size() {
         let native = ConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(deep_uint8_value(depth)),
-            right: crate::kernel::ConditionOperand::new(seven.clone()),
+            left: Box::new(deep_uint8_value(depth)),
+            right: Box::new(seven.clone()),
         };
         let promoted =
             crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(&native)

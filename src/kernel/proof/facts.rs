@@ -3876,10 +3876,8 @@ mod integer_equality_fact_index_tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::GreaterEqual,
-                            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
-                                Variable(index),
-                            )),
-                            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                            left: Box::new(MachineTerm::Variable(Variable(index))),
+                            right: Box::new(MachineTerm::constant(0)),
                         },
                         true,
                     )
@@ -3897,19 +3895,15 @@ mod integer_equality_fact_index_tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
-                        left: crate::kernel::ConditionOperand::new(measure.clone()),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
-                            bound as u32,
-                        )),
+                        left: Box::new(measure.clone()),
+                        right: Box::new(MachineTerm::constant(bound as u32)),
                     }
                 } else {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: crate::kernel::ConditionOperand::new(measure.clone()),
-                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
-                            bound as u32,
-                        )),
+                        left: Box::new(measure.clone()),
+                        right: Box::new(MachineTerm::constant(bound as u32)),
                     }
                 };
                 let facts =
@@ -5202,8 +5196,8 @@ mod retained_match_root_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(native),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+                left: Box::new(native),
+                right: Box::new(MachineTerm::constant(1)),
             },
             true,
         );
@@ -5298,10 +5292,8 @@ mod unified_store_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                    901_091,
-                ))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+                left: Box::new(MachineTerm::Variable(Variable(901_091))),
+                right: Box::new(MachineTerm::constant(7)),
             },
             true,
         );

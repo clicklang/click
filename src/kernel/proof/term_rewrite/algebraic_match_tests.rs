@@ -219,8 +219,8 @@ fn algebraic_conditional_is_one_branch_once_its_condition_is_decided() {
     let condition = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(7))),
-        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+        left: Box::new(MachineTerm::Variable(Variable(7))),
+        right: Box::new(MachineTerm::constant(0)),
     };
     // The smart constructor never builds a decided or branch-equal conditional.
     assert_eq!(

@@ -126,7 +126,7 @@ impl KernelTerm {
                         return native(ConditionTerm::Compare {
                             format: T::Int64,
                             relation,
-                            left: crate::kernel::ConditionOperand::new(MachineTerm::Binary {
+                            left: Box::new(MachineTerm::Binary {
                                 format: T::UInt64,
                                 op: MachineBinaryOp::BitwiseAnd,
                                 left: Box::new(MachineTerm::IntegerAddress(
@@ -135,9 +135,7 @@ impl KernelTerm {
                                 )),
                                 right: Box::new(MachineTerm::uint64_constant(alignment - 1)),
                             }),
-                            right: crate::kernel::ConditionOperand::new(
-                                MachineTerm::uint64_constant(0),
-                            ),
+                            right: Box::new(MachineTerm::uint64_constant(0)),
                         });
                     }
                 }
@@ -289,8 +287,8 @@ mod tests {
                 let source = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: crate::kernel::ConditionOperand::new(term.clone()),
-                    right: crate::kernel::ConditionOperand::new(one.clone()),
+                    left: Box::new(term.clone()),
+                    right: Box::new(one.clone()),
                 };
                 let root = KernelTermImport::default().condition(&source);
                 let expected = crate::kernel::reasoning::substitute_bitvector_variable_in_condition(

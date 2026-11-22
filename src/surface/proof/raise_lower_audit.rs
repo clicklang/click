@@ -152,8 +152,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(7))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(10)),
+                left: Box::new(MachineTerm::Variable(Variable(7))),
+                right: Box::new(MachineTerm::constant(10)),
             },
             value,
         )

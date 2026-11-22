@@ -871,8 +871,8 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+            left: Box::new(MachineTerm::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         };
         let premises = vec![(condition.clone(), true)];
         let mut labels = MemoryStateLabels::default();

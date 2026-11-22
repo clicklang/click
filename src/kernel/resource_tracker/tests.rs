@@ -697,8 +697,8 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(load(memory)),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5)),
+                left: Box::new(load(memory)),
+                right: Box::new(MachineTerm::constant(5)),
             },
             true,
         )
@@ -724,8 +724,8 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(5)),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5)),
+            left: Box::new(MachineTerm::constant(5)),
+            right: Box::new(MachineTerm::constant(5)),
         },
         true,
     );
@@ -1567,13 +1567,13 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
         condition: Box::new(ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Binary {
+            left: Box::new(MachineTerm::Binary {
                 format: MachineIntegerType::Int32,
                 op: crate::kernel::MachineBinaryOp::Add,
                 left: Box::new(read("global:g")),
                 right: Box::new(read("global:h")),
             }),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         }),
         then_condition: Box::new(ConditionTerm::BoolApplication(
             SharedPureApplication::intern(

@@ -793,8 +793,8 @@ mod tests {
         .map(|left| ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(0.into()),
+            left: Box::new(left),
+            right: Box::new(0.into()),
         });
         let stored = native
             .each_ref()
@@ -1340,13 +1340,11 @@ mod tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: crate::kernel::OverflowOperation::Add,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::IntegerToMachine {
+                left: Box::new(MachineTerm::IntegerToMachine {
                     value: IntegerTerm::Variable(Variable(970_020)).into(),
                     destination: MachineIntegerType::Int32,
                 }),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
-                    970_021,
-                ))),
+                right: Box::new(MachineTerm::Variable(Variable(970_021))),
             },
             ConditionTerm::PointerEqual(
                 Box::new(
@@ -1440,11 +1438,11 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::IntegerToMachine {
+                left: Box::new(MachineTerm::IntegerToMachine {
                     value: integer(62),
                     destination: MachineIntegerType::Int32,
                 }),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(63))),
+                right: Box::new(MachineTerm::Variable(Variable(63))),
             },
             ConditionTerm::BoolEqual(
                 Box::new(comparison.clone()),

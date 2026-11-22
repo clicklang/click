@@ -5681,11 +5681,11 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
                 LoadKind::Int32 | LoadKind::UInt32 | LoadKind::Float32 => MachineIntegerType::Int32,
             },
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+            left: Box::new(MachineTerm::Variable(variable)),
             // The registered variable is the structural read term used by
             // logical lowering. Keep the raw descriptor in the producer
             // binding below, not as a second term form in a citable fact.
-            right: crate::kernel::ConditionOperand::new(canonical_form_of_load(
+            right: Box::new(canonical_form_of_load(
                 memory.shared_memory().clone(),
                 pointer.as_ref().clone(),
                 *kind,
@@ -7389,8 +7389,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
-                    right: crate::kernel::ConditionOperand::new(descriptor),
+                    left: Box::new(MachineTerm::Variable(variable)),
+                    right: Box::new(descriptor),
                 },
                 true,
             );
@@ -7559,8 +7559,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
-                right: crate::kernel::ConditionOperand::new(second_load),
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(second_load),
             },
             true,
         );

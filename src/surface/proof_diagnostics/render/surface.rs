@@ -3119,8 +3119,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(value),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                left: Box::new(value),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         )
@@ -3192,10 +3192,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(
-                    1.5_f64.to_bits(),
-                )),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(9))),
+                left: Box::new(MachineTerm::uint64_constant(1.5_f64.to_bits())),
+                right: Box::new(MachineTerm::Variable(Variable(9))),
             },
             true,
         );
@@ -3271,8 +3269,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(value),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                left: Box::new(value),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -3293,8 +3291,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(7))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant((-56i32) as u32)),
+                left: Box::new(MachineTerm::Variable(Variable(7))),
+                right: Box::new(MachineTerm::constant((-56i32) as u32)),
             },
             true,
         );
@@ -3303,8 +3301,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(8))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant((-56i32) as u32)),
+                left: Box::new(MachineTerm::Variable(Variable(8))),
+                right: Box::new(MachineTerm::constant((-56i32) as u32)),
             },
             false,
         );
@@ -3314,8 +3312,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(7))),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1073741823)),
+                left: Box::new(MachineTerm::Variable(Variable(7))),
+                right: Box::new(MachineTerm::constant(1073741823)),
             },
             true,
         );
@@ -3354,8 +3352,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::new(arithmetic.clone()),
-                        right: crate::kernel::ConditionOperand::new(arithmetic),
+                        left: Box::new(arithmetic.clone()),
+                        right: Box::new(arithmetic),
                     },
                     false,
                 );
@@ -3385,8 +3383,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(product),
-                right: crate::kernel::ConditionOperand::from(a()),
+                left: Box::new(product),
+                right: a(),
             },
             false,
         );
@@ -3394,13 +3392,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(binary_node!(
-                    Int32,
-                    BitwiseAnd,
-                    a(),
-                    b()
-                )),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                left: Box::new(binary_node!(Int32, BitwiseAnd, a(), b())),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );

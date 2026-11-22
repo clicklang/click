@@ -488,8 +488,8 @@ pub(in crate::surface) fn signed_less_than(left: MachineTerm, right: MachineTerm
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(right),
+            left: Box::new(left),
+            right: Box::new(right),
         },
     }
 }
@@ -505,8 +505,8 @@ pub(in crate::surface) fn signed_less_equal(
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(right),
+            left: Box::new(left),
+            right: Box::new(right),
         },
     }
 }
@@ -522,8 +522,8 @@ pub(in crate::surface) fn signed_greater_than(
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(right),
+            left: Box::new(left),
+            right: Box::new(right),
         },
     }
 }
@@ -539,8 +539,8 @@ pub(in crate::surface) fn signed_greater_equal(
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(right),
+            left: Box::new(left),
+            right: Box::new(right),
         },
     }
 }
@@ -556,8 +556,8 @@ pub(in crate::surface) fn bitvector32_equal(
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(right),
+            left: Box::new(left),
+            right: Box::new(right),
         },
     }
 }

@@ -273,13 +273,13 @@ mod tests {
             let condition = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::GreaterEqual,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::Binary {
+                left: Box::new(MachineTerm::Binary {
                     format,
                     op,
                     left: Box::new(left),
                     right: Box::new(right),
                 }),
-                right: crate::kernel::ConditionOperand::new(bound),
+                right: Box::new(bound),
             };
             assert_eq!(comparison_value(&condition), None, "{condition:?}");
         }

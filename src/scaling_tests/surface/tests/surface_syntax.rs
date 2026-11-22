@@ -76,12 +76,12 @@ fn memory_erased_surface_selection_scales_by_index_height() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(upper)),
+                right: Box::new(MachineTerm::constant(upper)),
             },
             true,
         )
@@ -254,16 +254,14 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(
                         &(crate::kernel::intern_memory(SymbolicMemory::new())),
                     ),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(
-                    u64::from(index),
-                )),
+                right: Box::new(MachineTerm::uint64_constant(u64::from(index))),
             },
             true,
         );

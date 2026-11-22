@@ -6823,8 +6823,8 @@ pub fn prove_int32_le_antisymmetric(left: MachineTerm, right: MachineTerm) -> Th
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(left),
-            right: crate::kernel::ConditionOperand::new(right),
+            left: Box::new(left),
+            right: Box::new(right),
         },
         true,
     );
@@ -8306,8 +8306,8 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(rewritten_left),
-                right: crate::kernel::ConditionOperand::new(rewritten_right),
+                left: Box::new(rewritten_left),
+                right: Box::new(rewritten_right),
             },
             true,
         );

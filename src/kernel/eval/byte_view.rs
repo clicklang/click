@@ -105,8 +105,8 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(value),
-            right: crate::kernel::ConditionOperand::new(assembled),
+            left: Box::new(value),
+            right: Box::new(assembled),
         },
         true,
     ))

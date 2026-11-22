@@ -339,16 +339,16 @@ impl EqualityGraph {
                     Some(ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(left.clone()),
-                        right: crate::kernel::ConditionOperand::new(right.clone()),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
                     })
                 }
                 Input::UInt64(left, right) if is_scalar_read(left) || is_scalar_read(right) => {
                     Some(ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(left.clone()),
-                        right: crate::kernel::ConditionOperand::new(right.clone()),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
                     })
                 }
                 Input::Offset(left, right) if is_read_offset(left) || is_read_offset(right) => {

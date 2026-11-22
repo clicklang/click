@@ -385,8 +385,8 @@ impl EqualityGraph {
                 let condition = ConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(left.clone()),
-                    right: crate::kernel::ConditionOperand::new(right.clone()),
+                    left: Box::new(left.clone()),
+                    right: Box::new(right.clone()),
                 };
                 if self.admitted.scalar_evidence_keys.contains_key(&condition) {
                     return Some(value as u32);

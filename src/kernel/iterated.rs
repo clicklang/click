@@ -53,7 +53,7 @@ fn terms_equal(assumptions: &PureFactContext, left: &MachineTerm, right: &Machin
         || crate::kernel::assumptions::affine_bitvector_difference_constant(left, right) == Some(0)
         || proves(
             assumptions,
-            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: crate::kernel::ConditionOperand::new(left.clone()), right: crate::kernel::ConditionOperand::new(right.clone()) },
+            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: Box::new(left.clone()), right: Box::new(right.clone()) },
         )
 }
 
@@ -64,8 +64,8 @@ fn terms_distinct(assumptions: &PureFactContext, left: &MachineTerm, right: &Mac
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(left.clone()),
-                right: crate::kernel::ConditionOperand::new(right.clone()),
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
             },
         ) == Some(false)
 }
@@ -84,8 +84,8 @@ fn index_in_range(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(index.clone()),
-            right: crate::kernel::ConditionOperand::new(iterated.upper().clone()),
+            left: Box::new(index.clone()),
+            right: Box::new(iterated.upper().clone()),
         },
     )
 }
@@ -101,8 +101,8 @@ fn index_out_of_range(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(index.clone()),
-            right: crate::kernel::ConditionOperand::new(iterated.lower().clone()),
+            left: Box::new(index.clone()),
+            right: Box::new(iterated.lower().clone()),
         },
     ) || proves(
         assumptions,
@@ -121,8 +121,8 @@ fn guard_holds_for(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(cell.clone()),
-            right: crate::kernel::ConditionOperand::new(iterated.guard().value().clone()),
+            left: Box::new(cell.clone()),
+            right: Box::new(iterated.guard().value().clone()),
         },
     )?;
     Some(equal == iterated.guard().holds_when_equal())
@@ -510,8 +510,8 @@ fn every_guard(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: crate::kernel::ConditionOperand::new(index.clone()),
-                right: crate::kernel::ConditionOperand::new(iterated.upper().clone()),
+                left: Box::new(index.clone()),
+                right: Box::new(iterated.upper().clone()),
             },
             true,
         ));

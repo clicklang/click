@@ -1833,8 +1833,8 @@ impl PureFactContext {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(left.clone()),
-            right: crate::kernel::ConditionOperand::new(right.clone()),
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
         };
         if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
             let (aligned, premise) =
@@ -3554,14 +3554,14 @@ mod annotated_alignment_premise_tests {
         let source = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::uint64_bitwise_and(
+            left: Box::new(MachineTerm::uint64_bitwise_and(
                 MachineTerm::object_pointer_address(
                     pointer.clone(),
                     Some(CAccessClass::Scalar(CScalarClass::Int)),
                 ),
                 MachineTerm::uint64_constant(7),
             )),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(0)),
+            right: Box::new(MachineTerm::uint64_constant(0)),
         };
         assert_eq!(source, ConditionTerm::pointer_aligned(pointer.clone(), 8));
         let bare = ConditionTerm::pointer_aligned(pointer.clone(), 4);
@@ -3676,26 +3676,26 @@ mod exact_order_path_tests {
                     0 => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::from(left),
-                        right: crate::kernel::ConditionOperand::from(right),
+                        left,
+                        right,
                     },
                     1 => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: crate::kernel::ConditionOperand::from(left),
-                        right: crate::kernel::ConditionOperand::from(right),
+                        left,
+                        right,
                     },
                     2 => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
-                        left: crate::kernel::ConditionOperand::from(left),
-                        right: crate::kernel::ConditionOperand::from(right),
+                        left,
+                        right,
                     },
                     _ => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: crate::kernel::ConditionOperand::from(left),
-                        right: crate::kernel::ConditionOperand::from(right),
+                        left,
+                        right,
                     },
                 };
                 context = context.assume_condition(condition, !terms.next().is_multiple_of(3));
@@ -3784,26 +3784,26 @@ mod exact_order_path_tests {
                     0 => ConditionTerm::Compare {
                         format: crate::kernel::MachineIntegerType::Int32,
                         relation: crate::kernel::CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::from(left),
-                        right: crate::kernel::ConditionOperand::from(right),
+                        left,
+                        right,
                     },
                     1 => ConditionTerm::Compare {
                         format: crate::kernel::MachineIntegerType::Int32,
                         relation: crate::kernel::CompareRelation::LessEqual,
-                        left: crate::kernel::ConditionOperand::from(left),
-                        right: crate::kernel::ConditionOperand::from(right),
+                        left,
+                        right,
                     },
                     2 => ConditionTerm::Compare {
                         format: crate::kernel::MachineIntegerType::Int32,
                         relation: crate::kernel::CompareRelation::GreaterThan,
-                        left: crate::kernel::ConditionOperand::from(left),
-                        right: crate::kernel::ConditionOperand::from(right),
+                        left,
+                        right,
                     },
                     _ => ConditionTerm::Compare {
                         format: crate::kernel::MachineIntegerType::Int32,
                         relation: crate::kernel::CompareRelation::GreaterEqual,
-                        left: crate::kernel::ConditionOperand::from(left),
-                        right: crate::kernel::ConditionOperand::from(right),
+                        left,
+                        right,
                     },
                 };
                 context = context.assume_condition(condition, !terms.next().is_multiple_of(3));
@@ -3877,8 +3877,8 @@ mod exact_order_path_tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::new(var(index)),
-                        right: crate::kernel::ConditionOperand::new(var(index + 1)),
+                        left: Box::new(var(index)),
+                        right: Box::new(var(index + 1)),
                     },
                     true,
                 );
@@ -3888,8 +3888,8 @@ mod exact_order_path_tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: crate::kernel::ConditionOperand::new(var(1_000 + 2 * index)),
-                        right: crate::kernel::ConditionOperand::new(var(1_001 + 2 * index)),
+                        left: Box::new(var(1_000 + 2 * index)),
+                        right: Box::new(var(1_001 + 2 * index)),
                     },
                     true,
                 );

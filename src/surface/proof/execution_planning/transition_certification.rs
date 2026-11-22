@@ -1408,8 +1408,8 @@ mod condition_transition_tests {
                 ConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(value),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0))
+                    left: Box::new(value),
+                    right: Box::new(MachineTerm::constant(0))
                 },
                 true
             )

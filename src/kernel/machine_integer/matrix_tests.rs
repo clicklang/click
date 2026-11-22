@@ -274,8 +274,8 @@ fn every_order_is_native_at_its_own_format() {
                 ConditionTerm::Compare {
                     format: filed,
                     relation: compare,
-                    left: crate::kernel::ConditionOperand::new(a.clone()),
-                    right: crate::kernel::ConditionOperand::new(b.clone()),
+                    left: Box::new(a.clone()),
+                    right: Box::new(b.clone()),
                 },
                 "{ty:?} {relation:?}"
             );

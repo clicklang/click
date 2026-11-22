@@ -3111,8 +3111,8 @@ impl PureFactContext {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
-                        left: crate::kernel::ConditionOperand::new(upper.clone()),
-                        right: crate::kernel::ConditionOperand::new(lower.clone()),
+                        left: Box::new(upper.clone()),
+                        right: Box::new(lower.clone()),
                     },
                     true,
                 ),
@@ -3120,8 +3120,8 @@ impl PureFactContext {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: crate::kernel::ConditionOperand::new(lower.clone()),
-                        right: crate::kernel::ConditionOperand::new(upper.clone()),
+                        left: Box::new(lower.clone()),
+                        right: Box::new(upper.clone()),
                     },
                     false,
                 ),
@@ -3140,8 +3140,8 @@ impl PureFactContext {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: crate::kernel::ConditionOperand::new(upper.clone()),
-                        right: crate::kernel::ConditionOperand::new(lower.clone()),
+                        left: Box::new(upper.clone()),
+                        right: Box::new(lower.clone()),
                     },
                     true,
                 ),
@@ -3149,8 +3149,8 @@ impl PureFactContext {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
-                        left: crate::kernel::ConditionOperand::new(lower.clone()),
-                        right: crate::kernel::ConditionOperand::new(upper.clone()),
+                        left: Box::new(lower.clone()),
+                        right: Box::new(upper.clone()),
                     },
                     false,
                 ),
@@ -3605,8 +3605,8 @@ impl PureFactContext {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: crate::kernel::ConditionOperand::new(left),
-                        right: crate::kernel::ConditionOperand::new(right),
+                        left: Box::new(left),
+                        right: Box::new(right),
                     },
                     truth,
                 )),
@@ -5728,17 +5728,17 @@ mod annotated_alignment_conflict_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(masked_address.clone()),
-                right: crate::kernel::ConditionOperand::new(zero.clone())
+                left: Box::new(masked_address.clone()),
+                right: Box::new(zero.clone())
             },
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(MachineTerm::uint64_bitwise_and(
+                left: Box::new(MachineTerm::uint64_bitwise_and(
                     MachineTerm::object_pointer_address(Address::symbolic(Variable(970_001)), None,),
                     MachineTerm::uint64_constant(7),
                 )),
-                right: crate::kernel::ConditionOperand::new(zero.clone())
+                right: Box::new(zero.clone())
             },
         );
         // The context's same-key insertion replaces its prior value. Admit
@@ -5749,8 +5749,8 @@ mod annotated_alignment_conflict_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(zero),
-                right: crate::kernel::ConditionOperand::new(masked_address),
+                left: Box::new(zero),
+                right: Box::new(masked_address),
             },
             false,
         );

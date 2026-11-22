@@ -1491,8 +1491,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::constant(1)),
         },
         false,
     );
@@ -1501,8 +1501,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(2))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+            left: Box::new(MachineTerm::Variable(Variable(2))),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -1527,8 +1527,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::Variable(Variable(2))),
         },
         true,
     );
@@ -1536,8 +1536,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::Variable(Variable(2))),
         },
         false,
     );
@@ -1547,8 +1547,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(2))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
+            left: Box::new(MachineTerm::Variable(Variable(2))),
+            right: Box::new(MachineTerm::Variable(Variable(1))),
         },
         true,
     );
@@ -1556,8 +1556,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::Variable(Variable(2))),
         },
         true,
     );

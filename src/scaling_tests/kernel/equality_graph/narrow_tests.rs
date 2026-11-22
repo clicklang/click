@@ -44,8 +44,8 @@ fn narrow_equation_width_reads_are_root_bounded() {
             let equation = |right| ConditionTerm::Compare {
                 format: Ty::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(side.clone()),
-                right: crate::kernel::ConditionOperand::new(var(right)),
+                left: Box::new(side.clone()),
+                right: Box::new(var(right)),
             };
             let graph = EqualityGraph::default();
             let mut state = graph.state.lock().expect("equality graph");

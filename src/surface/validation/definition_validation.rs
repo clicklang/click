@@ -3534,8 +3534,8 @@ mod read_authority_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
-                    right: crate::kernel::ConditionOperand::new(index_value.clone()),
+                    left: Box::new(MachineTerm::constant(0)),
+                    right: Box::new(index_value.clone()),
                 },
                 true,
             ))
@@ -3543,8 +3543,8 @@ mod read_authority_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: crate::kernel::ConditionOperand::new(index_value.clone()),
-                    right: crate::kernel::ConditionOperand::new(bound_value.clone()),
+                    left: Box::new(index_value.clone()),
+                    right: Box::new(bound_value.clone()),
                 },
                 true,
             ));

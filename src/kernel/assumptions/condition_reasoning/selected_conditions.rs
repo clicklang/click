@@ -100,8 +100,8 @@ impl PureFactContext {
                 ConditionTerm::Compare {
                     format,
                     relation: reversed,
-                    left: crate::kernel::ConditionOperand::new(right.clone()),
-                    right: crate::kernel::ConditionOperand::new(left.clone()),
+                    left: Box::new(right.clone()),
+                    right: Box::new(left.clone()),
                 }
             }
             MemoryMatchOperands::Offsets(left, right) => {
@@ -236,8 +236,8 @@ mod memory_condition_match_tests {
         ConditionTerm::Compare {
             format,
             relation,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(left))),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(right))),
+            left: Box::new(MachineTerm::Variable(Variable(left))),
+            right: Box::new(MachineTerm::Variable(Variable(right))),
         }
     }
 

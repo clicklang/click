@@ -255,8 +255,8 @@ mod storage_tests {
                 value: Box::new(ConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(call),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::uint32_constant(7)),
+                    left: Box::new(call),
+                    right: Box::new(MachineTerm::uint32_constant(7)),
                 }),
             }),
         ];

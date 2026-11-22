@@ -10654,8 +10654,8 @@ fn resource_quantity_at_least(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: crate::kernel::ConditionOperand::new(available.clone()),
-                right: crate::kernel::ConditionOperand::new(required.clone()),
+                left: Box::new(available.clone()),
+                right: Box::new(required.clone()),
             },
         )
 }
@@ -10682,8 +10682,8 @@ pub(super) fn resource_quantity_is_positive(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
-                left: crate::kernel::ConditionOperand::new(quantity.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                left: Box::new(quantity.clone()),
+                right: Box::new(MachineTerm::constant(0)),
             },
         )
 }
@@ -10741,8 +10741,8 @@ pub(in crate::kernel) fn population_quantity_sum(
     let no_overflow = ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
-        left: crate::kernel::ConditionOperand::new(left.clone()),
-        right: crate::kernel::ConditionOperand::new(right.clone()),
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
     };
     (assumptions.proves_exact(&Proposition::condition_is(no_overflow.clone(), false))
         || assumptions.decide(&no_overflow) == Some(false))
@@ -10772,8 +10772,8 @@ fn resource_quantity_is_zero(quantity: &MachineTerm, assumptions: &PureFactConte
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(quantity.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                left: Box::new(quantity.clone()),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         ))
@@ -10965,8 +10965,8 @@ fn consume_exact_resource_fact(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(residual.clone()),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                    left: Box::new(residual.clone()),
+                    right: Box::new(MachineTerm::constant(0)),
                 },
             );
         ResourceFactConsumption::Replace(if residual_is_zero {
@@ -11651,8 +11651,8 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
             || assumptions.decide(&ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: crate::kernel::ConditionOperand::new(a.clone()),
-                right: crate::kernel::ConditionOperand::new(b.clone()),
+                left: Box::new(a.clone()),
+                right: Box::new(b.clone()),
             }) == Some(true)
     };
     let address_equal = |a: &Address, b: &Address| {

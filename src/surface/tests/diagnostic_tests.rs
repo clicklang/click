@@ -921,8 +921,8 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(term.clone()),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(bound)),
+                left: Box::new(term.clone()),
+                right: Box::new(MachineTerm::constant(bound)),
             },
             true,
         )
@@ -931,8 +931,8 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: crate::kernel::ConditionOperand::new(x.clone()),
-            right: crate::kernel::ConditionOperand::new(y.clone()),
+            left: Box::new(x.clone()),
+            right: Box::new(y.clone()),
         },
         true,
     );
@@ -973,8 +973,8 @@ fn verifier_diagnostics_bound_fact_items() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: crate::kernel::ConditionOperand::new(MachineTerm::constant(index)),
-                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(index)),
+                    left: Box::new(MachineTerm::constant(index)),
+                    right: Box::new(MachineTerm::constant(index)),
                 },
                 true,
             )
@@ -1523,8 +1523,8 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(j.clone()),
-            right: crate::kernel::ConditionOperand::new(i.clone()),
+            left: Box::new(j.clone()),
+            right: Box::new(i.clone()),
         },
         false,
     );
@@ -1545,8 +1545,8 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(i.clone()),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            left: Box::new(i.clone()),
+            right: Box::new(MachineTerm::constant(0)),
         },
         false,
     );
@@ -2922,8 +2922,8 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(load(&after)),
-            right: crate::kernel::ConditionOperand::new(load(&before)),
+            left: Box::new(load(&after)),
+            right: Box::new(load(&before)),
         },
         true,
     );
@@ -3497,12 +3497,12 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );

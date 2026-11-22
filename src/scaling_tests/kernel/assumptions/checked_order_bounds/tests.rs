@@ -122,8 +122,8 @@ fn native_order_premises_select_retained_promoted_call_bounds() {
             let fact = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessEqual,
-                left: crate::kernel::ConditionOperand::new(literal),
-                right: crate::kernel::ConditionOperand::new(endpoint.clone()),
+                left: Box::new(literal),
+                right: Box::new(endpoint.clone()),
             };
             let mut index = CheckedOrderBounds::default();
             index.adjust(&fact, truth);

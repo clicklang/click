@@ -181,8 +181,8 @@ fn pure_pointer_capture_cache_does_not_hide_a_free_occurrence_after_a_fold() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: crate::kernel::ConditionOperand::new(fold),
-            right: crate::kernel::ConditionOperand::new(observed),
+            left: Box::new(fold),
+            right: Box::new(observed),
         },
         true,
     );

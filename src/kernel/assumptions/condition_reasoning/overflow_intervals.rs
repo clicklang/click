@@ -2210,8 +2210,8 @@ mod tests {
                         let query = ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation,
-                            left: crate::kernel::ConditionOperand::new(left),
-                            right: crate::kernel::ConditionOperand::new(right),
+                            left: Box::new(left),
+                            right: Box::new(right),
                         };
                         assert_eq!(
                             context.decide_masked_order(&query),
@@ -2465,8 +2465,8 @@ mod shared_overflow_query_tests {
             ConditionTerm::Overflows {
                 format,
                 op: OverflowOperation::Add,
-                left: crate::kernel::ConditionOperand::new(written),
-                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(2)),
+                left: Box::new(written),
+                right: Box::new(MachineTerm::constant(2)),
             },
             false,
         );

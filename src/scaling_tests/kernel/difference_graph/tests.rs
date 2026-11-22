@@ -298,8 +298,8 @@ fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
     let order = |format, left: MachineTerm| ConditionTerm::Compare {
         format,
         relation: CompareRelation::LessEqual,
-        left: crate::kernel::ConditionOperand::new(left),
-        right: crate::kernel::ConditionOperand::new(n.clone()),
+        left: Box::new(left),
+        right: Box::new(n.clone()),
     };
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
@@ -349,8 +349,8 @@ fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
     let order = |format, right: MachineTerm| ConditionTerm::Compare {
         format,
         relation: CompareRelation::LessThan,
-        left: crate::kernel::ConditionOperand::new(i.clone()),
-        right: crate::kernel::ConditionOperand::new(right),
+        left: Box::new(i.clone()),
+        right: Box::new(right),
     };
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {

@@ -643,8 +643,8 @@ mod tests {
                 let condition = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: crate::kernel::ConditionOperand::new(left),
-                    right: crate::kernel::ConditionOperand::new(other.clone()),
+                    left: Box::new(left),
+                    right: Box::new(other.clone()),
                 };
                 let mut classes = TermClasses::default();
                 let a = classes.machine_comparison_node(

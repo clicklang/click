@@ -867,8 +867,8 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
         let root = KernelTermImport::default().condition(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: crate::kernel::ConditionOperand::new(operand),
-            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+            left: Box::new(operand),
+            right: Box::new(MachineTerm::Variable(variable)),
         });
         let names = (BTreeMap::<_, String>::from([(variable, "x".into())]))
             .into_iter()
@@ -958,8 +958,8 @@ fn narrow_literal_comparison_spelling_ignores_unrelated_locals() {
                 ConditionTerm::Compare {
                     format,
                     relation: R::LessEqual,
-                    left: crate::kernel::ConditionOperand::new(word(9)),
-                    right: crate::kernel::ConditionOperand::new(word(100)),
+                    left: Box::new(word(9)),
+                    right: Box::new(word(100)),
                 },
                 true,
             );
@@ -990,8 +990,8 @@ fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
             ConditionTerm::Compare {
                 format: T::UInt8,
                 relation: R::GreaterEqual,
-                left: crate::kernel::ConditionOperand::new(word(9)),
-                right: crate::kernel::ConditionOperand::new(word(5)),
+                left: Box::new(word(9)),
+                right: Box::new(word(5)),
             },
             true,
         );
