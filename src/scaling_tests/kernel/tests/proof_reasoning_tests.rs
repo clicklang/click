@@ -220,7 +220,9 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
             ExecutionState::new().with_local("changed", int32(1)),
             interface_type
         )));
-        assert!(!context.contains_known(&contract(
+        // The contract's name fixes its interface, which a call checks
+        // against the callee term's type; pointer equality ignores the type.
+        assert!(context.contains_known(&contract(
             "Invoke",
             callback.clone(),
             ExecutionState::new(),

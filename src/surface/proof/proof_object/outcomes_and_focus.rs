@@ -516,13 +516,6 @@ impl<'a> Proof<'a> {
                     .step_error(format!("contract for `{label}`: {reason}"))
                     .with_proof_refusal(crate::surface::ProofRefusal::Contract);
             }
-            Refusal::Limit(reason) => {
-                return self
-                    .step_error(format!(
-                        "contract closing for `{label}` path {index}: {reason}"
-                    ))
-                    .with_kind(crate::surface::ClickErrorKind::Limit);
-            }
             Refusal::Execution(reason) => {
                 return self
                     .step_error(format!(

@@ -23,6 +23,29 @@ theorem rewritten(p: Packet) {
         solve();
     }
 }
+
+theorem rewritten_symbolic(p: Packet, value: int32) {
+    requires p == Packet::Full(value);
+    ensures (match p {
+        Packet::Empty => Output::NoValue,
+        Packet::Full(n) => Output::Value(n),
+    }) == Output::Value(value) by {
+        rewrite(p, Packet::Full(value));
+        solve();
+    }
+}
+spec enum WidePacket { Full(uint64) }
+spec enum WideOutput { Value(uint64) }
+
+theorem rewritten_wide(p: WidePacket, value: uint64) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(n) => WideOutput::Value(n),
+    }) == WideOutput::Value(value) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
 ```
 
 ```expect

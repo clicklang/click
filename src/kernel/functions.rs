@@ -11979,12 +11979,8 @@ pub(in crate::kernel) fn allocation_size_kind_refusal(
         .find(|(base, size)| {
             size.kind() != required_size.kind()
                 && crate::kernel::resource_arguments_proven_equal(
-                    &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
-                        .into(),
-                    &ProgramValue::Pointer(
-                        required_base.clone().with_type(ProgramType::Int32Pointer),
-                    )
-                    .into(),
+                    &ProgramValue::Pointer((*base).clone()).into(),
+                    &ProgramValue::Pointer(required_base.clone()).into(),
                     assumptions,
                 )
         })

@@ -1458,7 +1458,7 @@ fn unparseable_expansion_error_for_file(
     parse_error: ClickError,
     file: Option<&ClickFile>,
 ) -> ClickError {
-    if parse_error.kind() == super::ClickErrorKind::Limit {
+    if parse_error.verification_stopped() {
         return parse_error;
     }
     let fragment: String = replacement.chars().take(400).collect();

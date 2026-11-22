@@ -331,8 +331,10 @@ function that may throw meets only a contract that may, and its
 `exceptional ensures` must give the contract's
 (`mdtests/exceptional_named_contract.md`,
 `mdtests/exceptional_external_contract.md`). An explicit refinement theorem
-for a source that may throw is not supported yet. The separate C++
-scalar-exception import profile accepts typed `throw int32`, one typed `try`/`catch (int name)`
+for a source that may throw reports `unsupported`. The automatic refinement
+check handles throwing contracts. Explicit refinement would need to generate
+and check each exceptional postcondition implication alongside the normal
+one. The separate C++ scalar-exception import profile accepts typed `throw int32`, one typed `try`/`catch (int name)`
 with a fresh payload binding, and the narrow single-guard cleanup shape
 documented by the import reference. It still rejects nested handlers and other
 catch forms. A direct modular call whose normal

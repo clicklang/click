@@ -559,6 +559,7 @@ pub(super) fn lower(
                 arguments,
                 destination,
                 through_pointer: true,
+                result: result_step,
                 owned_arguments,
                 ..
             } => {
@@ -575,6 +576,8 @@ pub(super) fn lower(
                     cx.typed_arguments(parameters.clone(), arguments)?;
                 let call = if **result == Type::Unit {
                     program_call(function, arguments_values)
+                } else if let Some(step) = result_step {
+                    crate::kernel::program_call_value(*step, function, arguments_values).0
                 } else {
                     let destination = destination
                         .as_ref()

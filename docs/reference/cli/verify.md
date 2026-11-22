@@ -84,12 +84,12 @@ rather than checking their proofs.
 | `-h`, `--help` | Print command help and exit successfully. |
 | `--` | Stop option parsing; the remaining argument is the target path. |
 
-A C parsing stop at the whole-run work budget reports `limit error`, retaining
-the exhausted budget and phase in its message. It does not report a syntax
-error in otherwise valid C. The structured error kind used by audit reports
-is also `limit error`.
+A C parsing stop at the whole-run work budget reports `work limit reached`.
+The report identifies the budget and parsing phase. Audit reports use the
+same error kind.
 
-A `solve` work-budget failure retains its already-checked prefix, including
+A `solve` that exhausts its own work budget reports `unsuccessful search` and
+retains its already-checked prefix, including
 accepted steps inside nested `have` blocks and loop bodies. An unfinished
 claim contributes no accepted fact to that trace.
 
@@ -172,20 +172,19 @@ Verification reports use these headings:
 
 | Heading | When Click uses it |
 | --- | --- |
-| `tactic error` | Click refused a written tactic or an implicit proof step. For example, `step()` found no statement left, or contract closing could not establish permission for a write. |
+| `tactic error` | Click refused a written tactic or an implicit proof step. For example, `step()` found no statement left or lacked evidence that a store was in bounds. |
 | `unsuccessful search` | A proof search ran and could not close a goal, for example a written `solve()` or a statement’s implicit closer. |
 | `incomplete proof` | The proof ended with a requirement outstanding, such as a resource the contract promises to return. |
 | `contract error` | Click identified a rule it believes the written contract violates, such as a potentially overflowing resource endpoint or a proven overlap between owned entry resources or between an owned resource and an input view. |
 | `contract entry refused` | Click could not establish the contract's initial state or resources. The diagnostic describes the setup check that stopped verification. |
-| `execution prerequisite unmet` | An exact execution check needs evidence at the current program point. |
 | `execution refused` | The modeled operation could not proceed on this path, for example an uninitialized read. |
 | `unsupported` | Click detected a documented limitation with a path to supporting it. The diagnostic identifies the unsupported case. |
-| `unsupported proof` | Click's driver does not support the reported proof shape or depth. |
 | `unclassified verification refusal` | The reported cause comes from a remaining check without a specific classification. |
 | `syntax error` | Input did not parse. |
 | `type error` | The source did not pass checking of names or types. |
-| `limit error` | A configured verification limit stopped the command. |
-| `internal error` | Click detected a verifier failure. |
+| `work limit reached` | The run hit its `--work-limit` before it finished checking. The report names the phase or tactic that was running when it stopped. |
+| `timed out` | The wall-clock crash-containment bound stopped the run before it gave a verdict. |
+| `internal error` | Click detected a verifier failure, including ordinary checking that exhausts an internal work allowance. |
 
 A tactic error at an implicit step names that operation in the report, even
 without a proof trace.

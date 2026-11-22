@@ -2511,6 +2511,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
 pub(in crate::surface::proof) fn preservation_smart_step<'a>(
     proof: &Proof<'a>,
 ) -> Result<Proof<'a>, ClickError> {
+    let _origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("loop preservation");
     let mut retried_requirements = std::collections::BTreeSet::new();
     match crate::kernel::search::ProofSearch::try_smart_statement_step(
         proof,
@@ -5644,8 +5645,12 @@ fn frontier_ahead_of_exit(proof: &Proof<'_>) -> String {
 
 /// The diagnostic for an execution tactic written after execution already
 /// reached function exit: the tactic has no statement to run.
+const INDUCT_EXECUTION_REFUSAL: &str =
+    "`induct` requires a pure theorem. Prove the property as a pure theorem and apply it here.";
+
 fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
     let name = match tactic {
+        ProofTactic::Induct { .. } => return Some(INDUCT_EXECUTION_REFUSAL.to_owned()),
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
         ProofTactic::StepBind(name) => format!("let {{ result: {name} }} = step()"),
@@ -5691,6 +5696,7 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
 /// `solve` gets the same diagnostic here as in an execution arm.
 fn pre_exit_outcome_tactic_error(proof: &Proof<'_>, tactic: &ProofTactic) -> Option<String> {
     let name = match tactic {
+        ProofTactic::Induct { .. } => return Some(INDUCT_EXECUTION_REFUSAL.to_owned()),
         ProofTactic::Witness(_) => "witness",
         ProofTactic::Choose(_) => "choose",
         ProofTactic::Solve => return Some(solve_before_exit_reason(proof)),

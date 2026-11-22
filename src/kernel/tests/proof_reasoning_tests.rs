@@ -8120,7 +8120,7 @@ fn lazy_finite_forall_certificates_require_exact_complete_instance_tables() {
 }
 
 #[test]
-fn pointer_predicate_matching_preserves_types_arguments_states_and_scope() {
+fn pointer_predicate_matching_preserves_arguments_states_and_scope() {
     fn fact(
         name: &str,
         state: ExecutionState,
@@ -8183,16 +8183,18 @@ fn pointer_predicate_matching_preserves_types_arguments_states_and_scope() {
         before.contains_known(&goal),
         "equalities may precede witnesses"
     );
+    // A predicate's name fixes its parameter types, so an argument's type is
+    // the term's, and pointer equality ignores it.
+    assert!(joined.contains_known(&fact(
+        "Selected",
+        state.clone(),
+        &[b.clone(), d.clone()],
+        ProgramType::UInt32Pointer,
+        7,
+    )));
     for wrong in [
         fact("Other", state.clone(), &[b.clone(), d.clone()], ty, 7),
         fact("Selected", state.clone(), &[b.clone(), d.clone()], ty, 8),
-        fact(
-            "Selected",
-            state.clone(),
-            &[b.clone(), d.clone()],
-            ProgramType::UInt32Pointer,
-            7,
-        ),
         fact(
             "Selected",
             state.clone().with_local("different", int32(1)),

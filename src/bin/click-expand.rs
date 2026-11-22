@@ -598,7 +598,7 @@ fn verify_expansion_now(
         ));
     }
     result.map_err(|error| {
-        if error.kind() == click::surface::ClickErrorKind::Limit {
+        if error.verification_stopped() {
             return error.report();
         }
         let start: usize = original
@@ -856,7 +856,7 @@ int32 identity(int32 x) {
         .expect_err("an exhausted command deadline must fail before output");
 
         assert!(
-            error.starts_with("click expand was stopped after")
+            error.starts_with("timed out:\n  click expand was stopped after")
                 && error.contains("1ms wall-clock crash-containment bound")
                 && error.contains("not a verdict about the proof"),
             "{error}"

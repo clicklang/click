@@ -264,6 +264,25 @@ enum VariableOrigin {
     /// an arbitrary value. Numbered from the witnesses its proof state
     /// already reserves.
     Witness,
+    /// A variable a named producer mints, numbered by that producer.
+    Produced(Producer),
+}
+
+/// A producer of free variables that numbers its own variables. Two
+/// producers never share a variable, whatever their numbers, so a producer
+/// numbers from zero by whatever rule suits it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum Producer {
+    /// A parameter of the function whose recursive call a termination check
+    /// compares, by parameter index.
+    TerminationParameter,
+    /// A `let` witness of a structural measure's definition, by index.
+    TerminationWitness,
+    /// A pointer argument of a pure theorem, by parameter index.
+    PointerArgument,
+    /// An Integer binder of a resource `match` arm, numbered once for a
+    /// function's whole resource environment.
+    ResourceIntegerBinding,
 }
 
 impl std::fmt::Debug for Variable {
@@ -280,6 +299,10 @@ impl std::fmt::Debug for Variable {
                 formatter.debug_tuple("MatchBinder").field(&self.0).finish()
             }
             VariableOrigin::Witness => formatter.debug_tuple("Witness").field(&self.0).finish(),
+            VariableOrigin::Produced(producer) => formatter
+                .debug_tuple(&format!("{producer:?}"))
+                .field(&self.0)
+                .finish(),
             VariableOrigin::SpecFoldBinder => formatter
                 .debug_tuple("SpecFoldBinder")
                 .field(&self.0)
@@ -348,6 +371,14 @@ impl Variable {
     /// Whether this is a specification fold's binder.
     pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
         self.origin == VariableOrigin::SpecFoldBinder
+    }
+
+    /// The `number`th variable `producer` minted.
+    pub(crate) const fn produced(producer: Producer, number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::Produced(producer),
+        }
     }
 
     /// The `number`th universal-introduction or choice witness.
@@ -3055,8 +3086,8 @@ impl Pointer {
 }
 
 impl Pointer {
-    /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, and the subobject it
+    /// Everything that is the value's identity: the address, its provenance,
+    /// and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
     /// fresh scalar id, never a structural resource or ledger key.
     /// Two values at one address with different bounds are
@@ -3067,7 +3098,6 @@ impl Pointer {
     ) -> (
         &Address,
         &Address,
-        &ProgramType,
         bool,
         Option<&Address>,
         Option<&SubobjectBounds>,
@@ -3075,7 +3105,6 @@ impl Pointer {
         (
             &self.address,
             &self.provenance,
-            &self.program_type,
             self.bounds_are_known(),
             if self.bounds_are_known() {
                 None
@@ -4018,7 +4047,9 @@ pub enum IntegerCastMode {
     /// target's type as written, and its value is that operator's native
     /// node at the target's format, `(a op b) mod 2^N`, with no promotion
     /// and no conversion. Only the Rust front end writes it; Rust's
-    /// overflow panics are separate checked assertions.
+    /// overflow panics for these operators are separate checked assertions.
+    /// Signed narrow `/ %` retain the promoted operation's converted term
+    /// and emit their own narrow overflow prerequisite.
     NarrowArithmetic,
     /// The conversion lowering inserts from a pure function's body to its
     /// declared result type: C's conversion, as `CConversion`, at whose

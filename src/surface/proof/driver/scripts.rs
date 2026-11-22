@@ -474,7 +474,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit tail");
                 let mut search = attempt::search_scope("implicit script tail");
                 let (result, checks) = solve(&proof);
-                check_verification_deadline()?;
+                check_verification_deadline()
+                    .map_err(|error| proof.attach_step_diagnostic(error))?;
                 let error = match result {
                     Ok(Some(closed)) => {
                         search.succeed();

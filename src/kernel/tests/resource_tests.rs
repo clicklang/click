@@ -4004,7 +4004,7 @@ fn matched_resource_integer_binding_is_checked_and_substituted() {
         vec![AlgebraicValue::Algebraic(model.clone())].into(),
     )
     .unwrap();
-    let binding = Variable(9_100_000_000);
+    let binding = Variable::produced(crate::kernel::Producer::ResourceIntegerBinding, 0);
     let mut definition =
         CompositeResourceDefinition::new("integer_box", vec![], None, false, vec![], vec![])
             .with_instance_schema(Some(schema));

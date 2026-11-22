@@ -1687,9 +1687,10 @@ operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
 builds a constructor directly from its bound fields or captured `Integer`
-variables. The payloads can be literal `int32` values or `Integer` literals
-and variables. The check compares each result field with the corresponding
-written payload or captured variable.
+variables. The check can follow nested matches on written constructors, keeping
+each selected arm's bindings in scope. The payloads can be machine-integer
+or `Integer` literals and variables. Machine fields retain their exact width
+and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
@@ -3021,10 +3022,8 @@ before its declaration. Use `apply(ih(m))` at the top level and inside nested
 
 An unsupported parameter type, changed goal, repeated induction, or unproved
 signed nonnegative domain fails with a message naming the case. `induct` in
-a C function proof is refused with the generic "no checked proof driver accepts this proof
-script's shape". Click opens the
-induction rule; expansion is unchanged, and profiling charges the structural
-setup.
+a C execution proof reports a `tactic error`. Click opens the induction
+rule during checking and profiling charges the structural setup.
 
 **Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
 [`an_induction_hypothesis_applies_inside_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_a_have.md),

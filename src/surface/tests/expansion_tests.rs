@@ -3260,6 +3260,16 @@ fn integer_constructor_arm_fields_expand_to_known() {
     let (source, _) = mdtest_sources("mdtests/algebraic_integer_match_bindings.md");
     for (theorem, result, wrong_result) in [
         (
+            "nested_fields",
+            "nested(b, other) == Pair::Pair(n, m)",
+            "nested(b, other) == Pair::Pair(m, n)",
+        ),
+        (
+            "shadows",
+            "shadow(b, other, ambient) == Box::Box(m)",
+            "shadow(b, other, ambient) == Box::Box(n)",
+        ),
+        (
             "swaps",
             "swap(p) == Pair::Pair(b, a)",
             "swap(p) == Pair::Pair(a, b)",
@@ -3293,18 +3303,37 @@ fn integer_constructor_arm_fields_expand_to_known() {
 #[test]
 fn rewritten_constructor_payload_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/algebraic_match_on_known_constructor.md");
-    let label = "rewritten.ensures_0";
-    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
-    let (_, proof) = expanded.split_once("theorem rewritten").unwrap();
-    assert!(proof.contains("known();"), "{expanded}");
-    assert!(!proof.contains("normalize()"), "{expanded}");
-    without_implicit_solve_for_claim(label, || {
-        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
-    })
-    .unwrap();
-    let wrong = expanded.replace("== Output::Value(7) by", "== Output::Value(8) by");
-    assert_ne!(wrong, expanded);
-    assert!(verify_c_sources(&wrong, &[]).is_err());
+    for (theorem, result, wrong_result) in [
+        ("rewritten", "Output::Value(7)", "Output::Value(8)"),
+        (
+            "rewritten_symbolic",
+            "Output::Value(value)",
+            "Output::Value(8)",
+        ),
+        (
+            "rewritten_wide",
+            "WideOutput::Value(value)",
+            "WideOutput::Value(8u64)",
+        ),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
+        let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
+        let proof = proof.split("\ntheorem ").next().unwrap();
+        assert!(proof.contains("known();"), "{expanded}");
+        assert!(!proof.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+        let wrong = expanded.replace(&format!("== {result} by"), &format!("== {wrong_result} by"));
+        assert_ne!(wrong, expanded);
+        let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
+        assert!(
+            error.contains("`known` requires the current goal"),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -16872,6 +16901,39 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .expect("the expanded indexed-read proof should check without implicit solving");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the symbolic indexed read"]
+fn returned_read_expands_by_restricting_range_separation_to_the_cell() {
+    let (source, sources) = mdtest_sources("mdtests/separate_symbolic_unwritten_read.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "write_i_read_j.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve(memory(p[j])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the loop-exit frame"]
+fn returned_read_expands_through_its_loop_footprint() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_break_exit_ordinary_join_keeps_post_loop_read.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve(memory(q[0])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]

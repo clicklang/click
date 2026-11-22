@@ -3088,10 +3088,8 @@ fn execute_program_heap_free_paths(
             .filter_map(ResourceFact::allocation_size)
             .find(|(base, _)| {
                 crate::kernel::resource_arguments_proven_equal(
-                    &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
-                        .into(),
-                    &ProgramValue::Pointer(pointer.clone().with_type(ProgramType::Int32Pointer))
-                        .into(),
+                    &ProgramValue::Pointer((*base).clone()).into(),
+                    &ProgramValue::Pointer(pointer.clone()).into(),
                     &effective_assumptions,
                 )
             });
