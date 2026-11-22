@@ -1291,25 +1291,67 @@ pub enum OverflowOperation {
 }
 
 /// One operand of a native comparison or overflow test
-/// ([`ConditionTerm::Compare`], [`ConditionTerm::Overflows`]).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ConditionOperand(Box<MachineTerm>);
+/// ([`ConditionTerm::Compare`], [`ConditionTerm::Overflows`]). It derefs to
+/// its machine term. A condition's fact identity reads the operand by its
+/// observation identity ([`ConditionOperand::key`]), computed once per
+/// operand and shared by its clones, so equality, hashing and order of a
+/// condition do not walk the operand's tree.
+#[derive(Clone)]
+pub struct ConditionOperand(std::sync::Arc<ConditionOperandData>);
+
+struct ConditionOperandData {
+    term: MachineTerm,
+    /// Observations of this term or a subterm, at the type its identity
+    /// reads it: at most one per identity reading. Each handle is kept
+    /// alive with the operand so its id stays the value's identity.
+    keys: std::sync::Mutex<Vec<(MachineIntegerType, usize, SharedMachineIntegerTerm)>>,
+}
 
 impl ConditionOperand {
     pub fn new(value: MachineTerm) -> Self {
-        Self(Box::new(value))
+        Self(std::sync::Arc::new(ConditionOperandData {
+            term: value,
+            keys: std::sync::Mutex::new(Vec::new()),
+        }))
     }
     /// The operand's machine term, boxed for a node that holds one.
     pub fn boxed(&self) -> Box<MachineTerm> {
-        self.0.clone()
+        Box::new(self.0.term.clone())
     }
     pub fn into_term(self) -> MachineTerm {
-        *self.0
+        match std::sync::Arc::try_unwrap(self.0) {
+            Ok(data) => data.term,
+            Err(shared) => shared.term.clone(),
+        }
+    }
+    /// The observation identity of `term`, this operand's term or one of
+    /// its subterms, read at `ty`. A value has one observation whichever
+    /// producer built it, so two operands of one value have one key.
+    pub(crate) fn key(&self, ty: MachineIntegerType, term: &MachineTerm) -> u64 {
+        let address = term as *const MachineTerm as usize;
+        let cached = |keys: &[(MachineIntegerType, usize, SharedMachineIntegerTerm)]| {
+            keys.iter()
+                .find(|(seen, at, _)| *seen == ty && *at == address)
+                .map(|(_, _, handle)| handle.id())
+        };
+        if let Some(id) = cached(&self.0.keys.lock().expect("condition operand keys poisoned")) {
+            return id;
+        }
+        // Interning can read the identity of conditions nested in this term;
+        // hold no lock across it.
+        let handle = SharedMachineIntegerTerm::identity_of(ty, term.clone());
+        let mut keys = self.0.keys.lock().expect("condition operand keys poisoned");
+        if let Some(id) = cached(&keys) {
+            return id;
+        }
+        let id = handle.id();
+        keys.push((ty, address, handle));
+        id
     }
 }
 impl From<Box<MachineTerm>> for ConditionOperand {
     fn from(value: Box<MachineTerm>) -> Self {
-        Self(value)
+        Self::new(*value)
     }
 }
 impl From<MachineTerm> for ConditionOperand {
@@ -1320,12 +1362,40 @@ impl From<MachineTerm> for ConditionOperand {
 impl std::ops::Deref for ConditionOperand {
     type Target = MachineTerm;
     fn deref(&self) -> &MachineTerm {
-        &self.0
+        &self.0.term
     }
 }
 impl AsRef<MachineTerm> for ConditionOperand {
     fn as_ref(&self) -> &MachineTerm {
-        &self.0
+        &self.0.term
+    }
+}
+impl std::fmt::Debug for ConditionOperand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.term.fmt(formatter)
+    }
+}
+// Comparing two operands directly compares their terms, as before; only a
+// condition's fact identity reads their observation keys.
+impl PartialEq for ConditionOperand {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0) || self.0.term == other.0.term
+    }
+}
+impl Eq for ConditionOperand {}
+impl std::hash::Hash for ConditionOperand {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.term.hash(state)
+    }
+}
+impl PartialOrd for ConditionOperand {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for ConditionOperand {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.term.cmp(&other.0.term)
     }
 }
 
@@ -1419,8 +1489,8 @@ enum ConditionIdentity<'a> {
     Overflows {
         format: MachineIntegerType,
         op: OverflowOperation,
-        left: &'a MachineTerm,
-        right: &'a MachineTerm,
+        left: ComparisonSide<'a>,
+        right: ComparisonSide<'a>,
     },
     Float32(&'a FloatCondition),
     Float64(&'a FloatCondition),
@@ -1446,10 +1516,51 @@ enum ConditionIdentity<'a> {
 /// ([`ConditionTerm::comparison_fact`]): a term, or the value of a
 /// constant of the comparison's identity format (an 8- or 16-bit format, or
 /// `int32` for a 32-bit equality's constant of either spelling).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// A term side compares by its observation key, never by walking the term.
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum ComparisonSide<'a> {
-    Term(&'a MachineTerm),
+    Term(&'a MachineTerm, u64),
     Value(i128),
+}
+
+impl ComparisonSide<'_> {
+    fn identity(&self) -> (u8, u64, i128) {
+        match self {
+            Self::Term(_, key) => (0, *key, 0),
+            Self::Value(value) => (1, 0, *value),
+        }
+    }
+}
+impl PartialEq for ComparisonSide<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+impl Eq for ComparisonSide<'_> {}
+impl std::hash::Hash for ComparisonSide<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identity().hash(state)
+    }
+}
+impl PartialOrd for ComparisonSide<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for ComparisonSide<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
+    }
+}
+
+/// The signed type whose observation reads a word of `format`'s width: a
+/// comparison of 8 to 32 bits compares 32-bit words.
+fn identity_word_type(format: MachineIntegerType) -> MachineIntegerType {
+    match format.format().bits() {
+        64 => MachineIntegerType::Int64,
+        128 => MachineIntegerType::Int128,
+        _ => MachineIntegerType::Int32,
+    }
 }
 
 impl<'a> ComparisonSide<'a> {
@@ -1457,7 +1568,7 @@ impl<'a> ComparisonSide<'a> {
     /// itself, a value as that format's native constant.
     pub(crate) fn term(self, format: MachineIntegerType) -> std::borrow::Cow<'a, MachineTerm> {
         match self {
-            Self::Term(term) => std::borrow::Cow::Borrowed(term),
+            Self::Term(term, _) => std::borrow::Cow::Borrowed(term),
             Self::Value(value) if format.format().bits() == 32 => {
                 std::borrow::Cow::Owned(MachineTerm::constant_at32(format, value as u32))
             }
@@ -1496,35 +1607,48 @@ thread_local! {
 fn comparison_identity<'a>(
     format: MachineIntegerType,
     relation: CompareRelation,
-    left: &'a MachineTerm,
-    right: &'a MachineTerm,
+    left_operand: &'a ConditionOperand,
+    right_operand: &'a ConditionOperand,
 ) -> (MachineIntegerType, ComparisonSide<'a>, ComparisonSide<'a>) {
     #[cfg(test)]
     COMPARISON_IDENTITY_VISITS.with(|visits| visits.set(visits.get() + 1));
     let format = ConditionTerm::fact_format(format, relation);
     let bits = format.format().bits();
-    let (left, right) = if relation == CompareRelation::Equal && bits == 32 {
-        (left.sign_cast32_bits(), right.sign_cast32_bits())
-    } else {
-        (left, right)
+    let (left, right): (&'a MachineTerm, &'a MachineTerm) =
+        if relation == CompareRelation::Equal && bits == 32 {
+            (
+                left_operand.sign_cast32_bits(),
+                right_operand.sign_cast32_bits(),
+            )
+        } else {
+            (left_operand, right_operand)
+        };
+    // A side's key: its observation as a word of the comparison's width, or
+    // (`narrow`) as a value of the narrow format a widening reads. Both
+    // operands' subterms are keyed through the operand that owns them.
+    let word = identity_word_type(format);
+    let key = |owner: &'a ConditionOperand, term: &'a MachineTerm, ty: MachineIntegerType| {
+        ComparisonSide::Term(term, owner.key(ty, term))
     };
     // A 32-bit equality's constant side, of either spelling, as its bits.
-    let side = |term: &'a MachineTerm| match term.constant32() {
+    let side = |owner: &'a ConditionOperand, term: &'a MachineTerm| match term.constant32() {
         Some(bits) if relation == CompareRelation::Equal && format == MachineIntegerType::Int32 => {
             ComparisonSide::Value(i128::from(bits as i32))
         }
-        _ => ComparisonSide::Term(term),
+        _ => key(owner, term, word),
     };
     if bits < 32 {
-        let side = |term: &'a MachineTerm| match term {
+        let side = |owner: &'a ConditionOperand, term: &'a MachineTerm| match term {
             native_constant!(constant_format, bits) if *constant_format == format => {
                 MachineIntegerConstant::from_term_bits(format.format(), *bits)
                     .to_i128()
-                    .map_or(ComparisonSide::Term(term), ComparisonSide::Value)
+                    .map_or_else(|| key(owner, term, format), ComparisonSide::Value)
             }
-            _ => ComparisonSide::Term(term),
+            // A narrow value as a value of its format, the reading the
+            // `int32` comparison of its widening gives it.
+            _ => key(owner, term, format),
         };
-        return (format, side(left), side(right));
+        return (format, side(left_operand, left), side(right_operand, right));
     }
     if format == MachineIntegerType::Int32 {
         let source = left
@@ -1541,7 +1665,7 @@ fn comparison_identity<'a>(
                     (0, (1i128 << bits) - 1)
                 }
             };
-            let side = |term: &'a MachineTerm| match term {
+            let side = |owner: &'a ConditionOperand, term: &'a MachineTerm| match term {
                 bits32_constant!(value) if relation == CompareRelation::Equal => {
                     let value = i128::from(constant_u32(*value) as i32);
                     (low <= value && value <= high).then_some(ComparisonSide::Value(value))
@@ -1552,17 +1676,19 @@ fn comparison_identity<'a>(
                 }
                 term => match term.narrow_widening32_operand() {
                     Some((operand_source, operand)) if operand_source == source => {
-                        Some(ComparisonSide::Term(operand))
+                        Some(key(owner, operand, source))
                     }
                     _ => None,
                 },
             };
-            if let (Some(left), Some(right)) = (side(left), side(right)) {
+            if let (Some(left), Some(right)) =
+                (side(left_operand, left), side(right_operand, right))
+            {
                 return (source, left, right);
             }
         }
     }
-    (format, side(left), side(right))
+    (format, side(left_operand, left), side(right_operand, right))
 }
 
 impl ConditionTerm {
@@ -1607,12 +1733,15 @@ impl ConditionTerm {
                 op,
                 left,
                 right,
-            } => I::Overflows {
-                format: *format,
-                op: *op,
-                left,
-                right,
-            },
+            } => {
+                let word = identity_word_type(*format);
+                I::Overflows {
+                    format: *format,
+                    op: *op,
+                    left: ComparisonSide::Term(left, left.key(word, left)),
+                    right: ComparisonSide::Term(right, right.key(word, right)),
+                }
+            }
             Self::Float32(condition) => I::Float32(condition),
             Self::Float64(condition) => I::Float64(condition),
             Self::AddressOffsetEqual(left, right) => I::AddressOffsetEqual(left, right),
