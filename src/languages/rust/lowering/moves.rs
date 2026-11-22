@@ -124,13 +124,20 @@ pub(super) fn lower(
     mir: &MirBody,
     owner: &LocalFunctionId,
 ) -> Result<Sited, String> {
+    if mir.blocks.is_empty() {
+        return Err("MIR body has no entry block".into());
+    }
+    let flow = flow::Flow::analyze(f, mir)?;
+    // Loop reconstruction can evaluate its test before the header statements.
+    // Ordinary branches run immediately after their block's statements.
+    let loop_tests = flow.loops.values().map(|loop_| loop_.test).collect();
     let local_types: BTreeMap<_, _> = f
         .parameters
         .iter()
         .chain(&mir.locals)
         .map(|local| (local.name.as_str(), &local.value_type))
         .collect();
-    for (name, last_use) in super::super::charon::scalar_expression_operands(mir) {
+    for (name, last_use) in super::super::charon::scalar_expression_operands(mir, &loop_tests) {
         cx.scalar_operands
             .insert(name, (cx.result_step(), last_use));
     }
@@ -418,10 +425,6 @@ pub(super) fn lower(
             declarations = program_seq(declarations, statement);
         }
     }
-    if mir.blocks.is_empty() {
-        return Err("MIR body has no entry block".into());
-    }
-    let flow = flow::Flow::analyze(f, mir)?;
     let mut escape_flags = BTreeMap::new();
     for (header, loop_) in &flow.loops {
         if loop_.escapes.is_empty() {
@@ -1568,7 +1571,13 @@ fn region(
                     *else_target..join,
                     exits,
                 )?;
-                result = result.then(Sited::branch(site, cx.condition(condition)?, yes, no));
+                cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
+                    block,
+                    statement: mir.blocks[block].statements.len(),
+                });
+                let condition = cx.condition(condition)?;
+                cx.mir_point = None;
+                result = result.then(Sited::branch(site, condition, yes, no));
                 block = join;
             }
             T::Switch {

@@ -128,6 +128,3 @@ trial.rs	guarded_increment	15	38	__rust_mir_7
 trial.rs	guarded_increment	23	21	__rust_mir_14
 values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	9	__rust_mir_7
 values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	12	__rust_mir_8
-widths.rs	parity_u16	3	39	__rust_mir_2
-widths.rs	parity_u32	5	39	__rust_mir_2
-widths.rs	parity_u8	1	36	__rust_mir_2

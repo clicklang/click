@@ -94,8 +94,26 @@ fn check_remainder_guards(ty: &str, maximum: &str, controls: bool) {
         let claim = format!(
             "verifying \"widths.rs\"; fn {name}(x: {ty}){result} {{ requires x % 2{ty} == 0{ty}; ensures {ensures}; }}"
         );
-        ProgramVerificationSession::new_program_prepared(&claim, &prepared)
-            .unwrap_or_else(|error| panic!("{claim}: {error:?}"));
+        let verify = || {
+            ProgramVerificationSession::new_program_prepared(&claim, &prepared)
+                .unwrap_or_else(|error| panic!("{claim}: {error:?}"));
+        };
+        if name == "parity_u8" {
+            click::surface::with_proof_trace(&name, || {
+                verify();
+                let trace = click::surface::accepted_proof_trace(
+                    &|_, _| None,
+                    &|_, _, _| None,
+                    &|_, _, _| false,
+                    None,
+                )
+                .expect("accepted parity proof trace");
+                assert!(trace.contains("steps through: if"), "{trace}");
+                assert!(!trace.contains("__rust_mir_"), "{trace}");
+            });
+        } else {
+            verify();
+        }
         if controls {
             let invalid = claim.replace(&format!("requires x % 2{ty} == 0{ty};"), "");
             assert!(

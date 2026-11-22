@@ -36,6 +36,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// control-flow edge where other paths can enter still needs storage.
 pub(in crate::languages::rust) fn scalar_expression_operands(
     mir: &MirBody,
+    loop_tests: &BTreeSet<usize>,
 ) -> BTreeMap<String, super::super::borrow_frontiers::MirPoint> {
     use super::super::borrow_frontiers::MirPoint;
     if mir.unnamed_locals.is_empty() {
@@ -136,7 +137,8 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                             through_pointer: false,
                             ..
                         }
-                )
+                ) || matches!(&code.terminator, T::If { condition, .. }
+                    if !loop_tests.contains(&block) && straight_line_scalar(condition))
             };
             for (name, count) in reads {
                 if !is_candidate(&name) {

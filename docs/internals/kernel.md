@@ -1560,13 +1560,15 @@ from its storage markers and its writes of pure values, and a `()` temporary
 that is only a call's destination, which the call never writes.
 
 The importer can use numbered keys to connect MIR producers and readers.
-An unnamed local that survives normalization must lower through a supported
-representation, such as a scalar operand result, iterator state, or typed
-storage for a written literal or borrow. If lowering would declare a program
-variable using the raw MIR key, it reports an unsupported Rust construct at
-the local's source location. It selects this check using the importer's
-unnamed-local metadata, so source identifiers remain valid regardless of
-spelling. The compatibility list in
+Those keys belong to frontend bookkeeping. Surface terms, including terms
+raised from proof facts, use source names, source expressions, or selectors
+rooted in the source program. An unnamed local that survives normalization must
+lower through a supported representation, such as a scalar operand result,
+iterator state, or typed storage for a written literal or borrow. If lowering
+would declare a program variable using the raw MIR key, it reports an
+unsupported Rust construct at the local's source location. The check uses the
+importer's unnamed-local metadata, so source identifiers remain valid
+regardless of spelling. The compatibility list in
 `src/languages/rust/lowering/unnamed_storage_exceptions.tsv` identifies existing
 slots by source, function, line, column, and MIR key.
 Each row can go when that slot has supported lowering.
