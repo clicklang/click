@@ -4598,15 +4598,6 @@ impl ProgramValue {
         }
     }
 
-    pub(crate) fn with_pointer_pointee_volatile(self, pointee_volatile: bool) -> Self {
-        match self {
-            Self::Pointer(pointer) => {
-                Self::Pointer(pointer.with_pointee_volatile(pointee_volatile))
-            }
-            value => value,
-        }
-    }
-
     /// Records the class of the object a pointer value designates; see
     /// [`Pointer::with_object_class`].
     pub(crate) fn with_pointer_object_class(

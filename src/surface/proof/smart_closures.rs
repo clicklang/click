@@ -4877,7 +4877,7 @@ fn initialized_byte_call_result(
     };
     let value = execution.core.state.step_result(*step)?;
     let pointer = value.pointer()?;
-    if pointer.program_type() != ProgramType::UInt8Pointer || pointer.pointee_volatile() {
+    if pointer.program_type() != ProgramType::UInt8Pointer {
         return None;
     }
     let region = context.constants.source_layout.step_region(*step)?;

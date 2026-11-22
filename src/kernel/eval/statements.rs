@@ -655,10 +655,7 @@ fn write_program_lvalue_paths_for_initialization(
         value
     } else {
         let Some(converted) = crate::kernel::functions::coerce_program_value_with_pointee_constant(
-            value
-                .native()
-                .into_owned()
-                .with_pointer_pointee_volatile(pointee_volatile),
+            value.native().into_owned(),
             lvalue.value_type,
             pointee_constant,
             &mut obligations,

@@ -612,8 +612,7 @@ mod pointer_observation_tests {
             Address::symbolic(Variable(1024900)),
             ProgramType::Int32Pointer,
         )
-        .with_pointee_constant(true)
-        .with_pointee_volatile(true);
+        .with_pointee_constant(true);
         let numeric = ProgramValue::UInt64(MachineTerm::object_pointer_address(
             pointer.address().clone(),
             pointer.object_class(),

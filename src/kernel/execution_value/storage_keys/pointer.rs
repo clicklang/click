@@ -16,7 +16,6 @@ struct PointerIdentity {
     address: AddressKey,
     provenance: AddressKey,
     program_type: ProgramType,
-    volatile: bool,
     bounds_known: bool,
     bounds_owner: Option<AddressKey>,
     bounds: Option<(AddressKey, MachineTerm)>,
@@ -55,7 +54,6 @@ impl PointerStorageKey {
             address: AddressKey::native(value.address()),
             provenance: AddressKey::native(value.provenance()),
             program_type: value.program_type(),
-            volatile: value.pointee_volatile(),
             bounds_known: value.bounds_are_known(),
             bounds_owner: (!value.bounds_are_known())
                 .then(|| value.bounds_owner().map(AddressKey::native))
@@ -73,7 +71,6 @@ impl PointerStorageKey {
             address: AddressKey::shared(&value.address),
             provenance: AddressKey::shared(&value.provenance),
             program_type: value.program_type,
-            volatile: q.is_some_and(|q| q.volatile),
             bounds_known,
             bounds_owner: (!bounds_known)
                 .then(|| value.bounds_owner.as_ref().map(AddressKey::shared))
