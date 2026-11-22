@@ -6293,8 +6293,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         .map(|proof| proof.filter(Proof::is_complete))
     }
 
-    /// Preserve an indexed or masked read across the store reaching the
-    /// current frontier, then rewrite the comparison to the entry value.
+    /// Preserve the selected read across the store reaching the current
+    /// frontier, then rewrite the comparison to the entry value.
     fn try_single_store_read_rewrite(
         search_input: &Proof<'a>,
         target: &ClickProposition,
@@ -6319,6 +6319,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ) =>
             {
                 read.as_ref()
+            }
+            ContractExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } if matches!(then_branch.as_ref(), ContractExpression::IntegerLiteral(_))
+                && matches!(else_branch.as_ref(), ContractExpression::IntegerLiteral(_))
+                && let ClickProposition::Comparison {
+                    left: read @ ContractExpression::Index(..),
+                    right: ContractExpression::IntegerLiteral(_),
+                    ..
+                } = condition.as_ref() =>
+            {
+                read
             }
             _ => return Ok(None),
         };

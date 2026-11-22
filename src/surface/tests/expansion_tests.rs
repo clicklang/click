@@ -16878,22 +16878,26 @@ fn indexed_terminator_expands_through_ordered_store_preservation() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: expand and replay the masked array read"]
-fn masked_indexed_read_expands_through_distinct_store_preservation() {
+#[ignore = "nightly: expand and replay the conditional and masked array reads"]
+fn indexed_reads_in_expressions_expand_through_distinct_store_preservation() {
     let (source, sources) = mdtest_sources("mdtests/an_if_form_fact_survives_a_disjoint_store.md");
     let sources = crate::cli::source_refs(&sources);
-    let claim = "mark_odd.contract";
-    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
-    assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(
-        expanded.contains("separation::separate_elements("),
-        "{expanded}"
-    );
-    assert!(expanded.contains("preserve(memory(a[m])"), "{expanded}");
-    without_implicit_solve_for_claim(claim, || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .unwrap();
+    for claim in ["mark_one.contract", "mark_odd.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains("separation::separate_elements("),
+            "{claim}: {expanded}"
+        );
+        assert!(
+            expanded.contains("preserve(memory(a[m])"),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
 }
 
 #[test]
