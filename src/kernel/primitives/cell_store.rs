@@ -1204,6 +1204,12 @@ fn collect_cells_outside_gaps(
     );
 }
 
+pub(super) struct CallHavocSelection {
+    pub(super) cells: Vec<Address>,
+    /// A retained frame may exclude whole parameter runs.
+    pub(super) runs: Option<Vec<RunKey>>,
+}
+
 impl CellStore {
     /// Index checked whole-cell membership in an atomic parameter partition.
     /// Follow persistent cell deltas; unrelated members are not queried at
@@ -1476,20 +1482,29 @@ impl CellStore {
         guard
     }
 
-    /// Concrete cells not wholly held by the caller's retained flat owners.
-    pub(in crate::kernel) fn call_unowned_candidates(
+    /// Select concrete cells outside proven byte gaps and, when the call
+    /// has a retained frame, outside its flat parameter owners.
+    pub(super) fn call_havoc_selection(
         &self,
-        resources: &crate::kernel::ResourceContext,
+        resources: Option<&crate::kernel::ResourceContext>,
         candidates: &AliasCandidates,
-    ) -> (Vec<Address>, Vec<RunKey>) {
+        cells_kept: &[(Address, Address)],
+    ) -> Option<CallHavocSelection> {
+        let Some(resources) = resources else {
+            return (!cells_kept.is_empty()).then(|| CallHavocSelection {
+                cells: self.concrete_candidate_keys(candidates, cells_kept),
+                runs: None,
+            });
+        };
         let guard = self.prepare_parameter_partition(resources, None);
         let index = guard.as_ref().expect("prepared partition");
         let ordinary = candidates.excluding_external_arguments();
-        let mut cells = candidates
-            .entries(&index.unknown)
-            .map(|(key, _)| key.clone())
-            .chain(ordinary.entries(&self.concrete).map(|(key, _)| key.clone()))
-            .collect::<Vec<_>>();
+        let mut cells = self.concrete_candidate_keys(&ordinary, cells_kept);
+        cells.extend(
+            candidates
+                .entries(&index.unknown)
+                .map(|(key, _)| key.clone()),
+        );
         let mut runs = candidates
             .entries(&index.unknown_runs)
             .map(|(key, _)| key.clone())
@@ -1497,7 +1512,26 @@ impl CellStore {
             .collect::<Vec<_>>();
         cells.sort_unstable();
         runs.sort_unstable();
-        (cells, runs)
+        Some(CallHavocSelection {
+            cells,
+            runs: Some(runs),
+        })
+    }
+
+    fn concrete_candidate_keys(
+        &self,
+        candidates: &AliasCandidates,
+        cells_kept: &[(Address, Address)],
+    ) -> Vec<Address> {
+        if cells_kept.is_empty() {
+            return candidates
+                .entries(&self.concrete)
+                .map(|(key, _)| key.clone())
+                .collect();
+        }
+        let (entries, visited) = candidates.entries_outside(&self.concrete, cells_kept);
+        crate::instrumentation::record_deterministic_work(visited);
+        entries.into_iter().map(|(key, _)| key.clone()).collect()
     }
 
     /// Concrete cells whose canonical address lies on the region's line.

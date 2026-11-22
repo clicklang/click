@@ -2838,6 +2838,46 @@ fn call_havoc_candidates(mutable_ranges: &[MemoryRange]) -> AliasCandidates {
     AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().base))
 }
 
+/// The concrete keys separated by byte geometry from one exact local write.
+fn call_havoc_kept_cell_ranges(
+    mutable_ranges: &[MemoryRange],
+    assumptions: &PureFactContext,
+) -> Vec<(Address, Address)> {
+    use crate::kernel::reasoning::store_gap::{CONSTANT_LIMIT, store_gap_kept_ranges};
+
+    let [range] = mutable_ranges else {
+        return Vec::new();
+    };
+    let base = range.base();
+    // Byte indexing makes every constant cell offset an exact index in the
+    // range's coordinates, including a cell of a different scalar width.
+    if !base.base.is_local_block() || range.element_width() != 1 {
+        return Vec::new();
+    }
+    let (AddressOffset::Constant(base_offset), Some(start), Some(end)) = (
+        &base.offset,
+        range.signed_constant_start(),
+        range.signed_constant_end(),
+    ) else {
+        return Vec::new();
+    };
+    // Inside these bounds the per-cell rule's signed byte offsets are exact.
+    let exact = -CONSTANT_LIMIT..=CONSTANT_LIMIT;
+    if !exact.contains(base_offset) {
+        return Vec::new();
+    }
+    let start = *base_offset + start;
+    let end = *base_offset + end;
+    if !exact.contains(&start) || !exact.contains(&end) || end <= start {
+        return Vec::new();
+    }
+    let start_pointer = Address {
+        base: base.base.clone(),
+        offset: AddressOffset::Constant(start),
+    };
+    store_gap_kept_ranges(&start_pointer, (end - start) as u32, assumptions)
+}
+
 /// What a caller keeps unchanged across one call: the residual resource context
 /// left once the call's consumed and borrowed resources are transferred, the
 /// owned memory of that residual's owned instances and folded composites,
@@ -5633,16 +5673,18 @@ impl SymbolicMemory {
         // (`mdtests/call_havoc_drops_a_union_member_view.md`). A callee can
         // only initialize more, so the automatic values that go stay
         // initialized.
-        let selected = kept.map(|kept| {
-            self.cells
-                .call_unowned_candidates(&kept.residual, &candidates)
-        });
+        let cells_kept = call_havoc_kept_cell_ranges(mutable_ranges, assumptions);
+        let selected = self.cells.call_havoc_selection(
+            kept.map(|kept| &kept.residual),
+            &candidates,
+            &cells_kept,
+        );
         let scope = match selected.as_ref() {
-            Some((selected, runs)) => ForgetScope::Ordered {
+            Some(selected) => ForgetScope::Ordered {
                 candidates: &candidates,
-                selected,
+                selected: &selected.cells,
                 cells_kept: &[],
-                runs: Some(runs),
+                runs: selected.runs.as_deref(),
             },
             None => ForgetScope::candidates(&candidates),
         };
@@ -5955,15 +5997,18 @@ impl SymbolicMemory {
         let mut visited = 0usize;
         let mut dropped_cells = Vec::new();
         let mut dropped_initialized = Vec::new();
-        let selected = kept.map(|kept| {
-            before
-                .cells
-                .call_unowned_candidates(&kept.residual, &candidates)
-        });
+        let cells_kept = call_havoc_kept_cell_ranges(mutable_ranges, assumptions);
+        let selected = before.cells.call_havoc_selection(
+            kept.map(|kept| &kept.residual),
+            &candidates,
+            &cells_kept,
+        );
         let entries = before.cells.candidate_logical_entries_selected(
             &candidates,
-            selected.as_ref().map(|(cells, _)| cells.as_slice()),
-            selected.as_ref().map(|(_, runs)| runs.as_slice()),
+            selected.as_ref().map(|selected| selected.cells.as_slice()),
+            selected
+                .as_ref()
+                .and_then(|selected| selected.runs.as_deref()),
         );
         for (pointer, value) in entries {
             visited += 1;
