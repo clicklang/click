@@ -5641,8 +5641,11 @@ fn synthesize_named_integer_local<'a>(
         .next()
         .filter(|name| has_surface_iterator_binding(name))
     {
-        if let Some(result) = synthesize_call_capture(state, name) {
-            return Some(result);
+        if name
+            .local_id()
+            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+        {
+            return synthesize_call_capture(state, name);
         }
         return Some(if crate::surface::is_click_value_name(name) {
             ContractExpression::ProgramBinding(name.to_string())

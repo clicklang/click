@@ -1786,6 +1786,7 @@ mod tests {
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
                 compound_literals: Default::default(),
+                borrowed_scalars: Default::default(),
                 locals: vec![Place {
                     name: "value".into(),
                     value_type: Type::Record {
@@ -1879,6 +1880,7 @@ mod tests {
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
                 compound_literals: Default::default(),
+                borrowed_scalars: Default::default(),
                 locals: vec![],
                 blocks,
             };

@@ -514,6 +514,9 @@ pub struct MirBody {
     /// Materialized aggregate literals, keyed by MIR local, with their source occurrence ordinal.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub compound_literals: BTreeMap<String, u32>,
+    /// Unnamed scalar storage associated with a written borrow occurrence.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub borrowed_scalars: BTreeMap<String, u32>,
 }
 
 /// The name of a function's return place.
