@@ -2690,7 +2690,7 @@ pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<[Propo
         let Some(count) = shift_count_mask(width, masked) else {
             continue;
         };
-        if count.retain(width) != plain.retain(width) {
+        if count.try_retain(width)? != plain.try_retain(width)? {
             continue;
         }
         let literal = |value: u32| match width {
