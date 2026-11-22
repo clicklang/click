@@ -170,12 +170,8 @@ fn a_broader_holding_supplies_bytes_its_reader_has_coverage_for() {
         assert!(!facts.access_provenance_matches_bytes(required, &beyond, 1, &held));
         // Another object's holding at no proven provenance supplies nothing.
         let other = opaque(1_004_000);
-        let elsewhere = MemoryRange::from_pointer_value(
-            &other.with_root_bounds(),
-            0u32.into(),
-            4u32.into(),
-            1,
-        );
+        let elsewhere =
+            MemoryRange::from_pointer_value(&other.with_root_bounds(), 0u32.into(), 4u32.into(), 1);
         assert!(!facts.access_provenance_matches_bytes(required, p.address(), 1, &elsewhere));
         unrelated_samples.push(work);
     }
