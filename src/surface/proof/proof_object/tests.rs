@@ -2696,6 +2696,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
             target_type: ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,

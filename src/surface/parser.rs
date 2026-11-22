@@ -9,6 +9,7 @@ mod rust_generic_resources;
 mod rust_generic_traits;
 mod rust_literals;
 mod rust_reference_authority;
+mod rust_type_resources;
 use super::names;
 use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
@@ -1915,6 +1916,13 @@ impl Parser {
                     &parser.struct_layouts,
                     &parser.rust_enum_types,
                 )?;
+            // A box or option-of-box place holds its value's type resource.
+            let (tokens, positions, written) = rust_type_resources::write_type_resources(
+                tokens,
+                positions,
+                written,
+                &parser.struct_layouts,
+            )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
             parser.positions = positions;
@@ -2646,6 +2654,11 @@ impl Parser {
                 algebraic_type_definitions.push(self.parse_algebraic_type_definition()?);
             } else if self.peek_ident() == Some("type")
                 && matches!(self.peek_next(), Some(Token::Ident(_)))
+                && self.type_resource_declaration_follows()
+            {
+                self.skip_type_resource_declaration()?;
+            } else if self.peek_ident() == Some("type")
+                && matches!(self.peek_next(), Some(Token::Ident(_)))
             {
                 algebraic_type_definitions.push(self.parse_primitive_type_definition()?);
             } else if self.peek_ident() == Some("predicate") {
@@ -3243,6 +3256,45 @@ impl Parser {
     /// `type Vec<T>;` in a Click library module: a primitive type with no
     /// definition, like `uint32`. Its meaning is the library's bodyless
     /// functions over it and the axioms that relate them.
+    /// Whether a `type` at the cursor declares a type resource, `type
+    /// Box<T> { ... }`: its head is followed by a body, not by `;`.
+    fn type_resource_declaration_follows(&self) -> bool {
+        self.tokens[self.position..]
+            .iter()
+            .find(|token| matches!(token, Token::LBrace | Token::Semicolon))
+            == Some(&Token::LBrace)
+    }
+
+    /// A type resource declaration, `type Box<T> { owns ...; }`. The Rust
+    /// front end reads the library's declarations where it derives the
+    /// authority a value's type grants
+    /// (`rust_reference_authority::type_resources`); a source names only a
+    /// type the library declares.
+    fn skip_type_resource_declaration(&mut self) -> Result<(), ClickError> {
+        self.expect_ident_spelling("type")?;
+        let name = self.expect_ident("type name")?;
+        if !rust_reference_authority::declares_type_resource(&name) {
+            return Err(self.error(format!(
+                "`type {name} {{ ... }}` declares a type resource, which only the Click library declares"
+            )));
+        }
+        let mut depth = 0usize;
+        while let Some(token) = self.peek().cloned() {
+            self.position += 1;
+            match token {
+                Token::LBrace => depth += 1,
+                Token::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
+        }
+        Err(self.error(format!("unterminated `type {name}` declaration")))
+    }
+
     fn parse_primitive_type_definition(&mut self) -> Result<AlgebraicTypeDefinition, ClickError> {
         if !self.library_primitives {
             return Err(self.error(

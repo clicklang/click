@@ -428,6 +428,7 @@ impl Parser {
                             array_shape: None,
                             offset: offset_bytes.into(),
                             byte_width: field_size,
+                            boxed: None,
                         },
                     )
                     .is_some()
@@ -497,6 +498,7 @@ impl Parser {
                             array_shape,
                             offset: offset_bytes.into(),
                             byte_width: field_size,
+                            boxed: None,
                         },
                     )
                     .is_some()

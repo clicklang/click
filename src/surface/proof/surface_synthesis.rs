@@ -631,6 +631,20 @@ pub(in crate::surface) fn synthesize_surface_proposition_at_entry_and_post(
     synthesize_surface_proposition(proposition, parameter_binding, post)
 }
 
+/// [`synthesize_surface_value`] at `state`, spelling a value only the
+/// function's entry holds as `old(...)`.
+pub(in crate::surface) fn synthesize_surface_value_at_entry_and_post(
+    value: &ProgramValue,
+    parameter_binding: ParameterBinding<'_>,
+    entry: Option<&ExecutionState>,
+    state: &ExecutionState,
+) -> Option<ContractExpression> {
+    let _entry = entry.map(|entry| {
+        SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry.clone()))))
+    });
+    synthesize_surface_value(value, parameter_binding, state)
+}
+
 /// [`synthesize_surface_proposition_at_entry_and_post`] with names for
 /// bound variables.
 pub(in crate::surface) fn synthesize_surface_proposition_at_entry_post_with_bound_variable_names(

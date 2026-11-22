@@ -7991,6 +7991,10 @@ allocation limit is smaller and aborts rather than returns.
 ### `Box<T>`
 
 ```click
+type Box<T> {
+    owns allocation(self, sizeof(T));
+    owns *self;
+}
 fn Box::new<T>(x: T) -> Box<T> {
     allocates(result, sizeof(T));
     produces *result;
@@ -8005,7 +8009,8 @@ fn Box::drop<T>(b: Box<T>) {
 ```
 
 **Meaning:** A box owns its allocation, `sizeof(T)` bytes, and the value in
-it. `Box::new(x)` moves `x` into an allocation the call creates
+it: its [type resource](../rust.md#type-resources), `Box<R>(b)`, holds
+both. `Box::new(x)` moves `x` into an allocation the call creates
 ([fresh allocations](../language/c.md#fresh-allocations)); allocation
 failure aborts, so it returns only a non-null box. `Box::drop(b)` is
 `<Box<T> as Drop>::drop`, which the compiler calls after the contents'

@@ -10,8 +10,11 @@
 //!   inherent method's `&mut self` and `&self` likewise;
 //! - `x: &mut [T]` and `x: &[T]` own or view `x[0..x.len()]`, and
 //!   `x: &[T; N]` views `x[0..N]`;
-//! - a box moved in, `b: Box<R>`, consumes `allocation(b, sizeof(R))` and
-//!   `*b`; a box moved out, `-> Box<R>`, produces the same of `result`.
+//! - a value moved in whose type the library declares a type resource for,
+//!   `b: Box<R>` with `type Box<T> { owns allocation(self, sizeof(T)); owns
+//!   *self; }`, consumes the type resource's clauses at `b`,
+//!   `allocation(b, sizeof(R))` and `*b`; one moved out, `-> Box<R>`,
+//!   produces them of `result`.
 //!
 //! The derived clause is exactly the one a sidecar would write, so the callee
 //! is still checked against it and every caller still has to hold it.
@@ -54,9 +57,139 @@ struct ReferenceParameter {
 enum Grant {
     /// A reference: `owns` (`&mut`) or `views` (`&`) of its referent.
     Reference { mutable: bool, referent: Referent },
-    /// A box moved in or out, `Box<R>`: its allocation of `sizeof(R)` and
-    /// the record in it, consumed from the caller or produced for it.
-    Box { record: Vec<Token> },
+    /// A value moved in or out whose type declares a type resource,
+    /// `Box<R>`: the type resource's clauses at the value, consumed from the
+    /// caller or produced for it.
+    Typed {
+        resource: &'static TypeResource,
+        arguments: Vec<Vec<Token>>,
+    },
+}
+
+/// A type resource the library declares, `type Box<T> { owns
+/// allocation(self, sizeof(T)); owns *self; }`: what holding a value of the
+/// type holds, with `self` the value and the type parameters its arguments.
+pub(super) struct TypeResource {
+    parameters: Vec<String>,
+    /// Each clause's tokens, from its `owns` or `views` to before its `;`.
+    clauses: Vec<Vec<Token>>,
+}
+
+/// The type resources the Rust core library declares, by type name.
+fn type_resources() -> &'static BTreeMap<String, TypeResource> {
+    static DECLARED: std::sync::OnceLock<BTreeMap<String, TypeResource>> =
+        std::sync::OnceLock::new();
+    DECLARED.get_or_init(|| {
+        declared_type_resources(crate::languages::rust::standard_library::type_resource_library())
+    })
+}
+
+/// The clauses of the type resource the library declares for `name` at
+/// `arguments`, of the value `value`: each `self` is `value` and each type
+/// parameter its argument. Each clause keeps its `owns` or `views`.
+pub(super) fn type_resource_clauses(
+    name: &str,
+    arguments: &[Vec<Token>],
+    value: &[Token],
+) -> Option<Vec<Vec<Token>>> {
+    let resource = type_resources().get(name)?;
+    if arguments.len() != resource.parameters.len() {
+        return None;
+    }
+    Some(
+        resource
+            .clauses
+            .iter()
+            .map(|clause| {
+                let mut tokens = Vec::new();
+                for token in clause {
+                    match token {
+                        Token::Ident(word) if word == "self" => {
+                            tokens.extend(value.iter().cloned())
+                        }
+                        Token::Ident(word) => match resource
+                            .parameters
+                            .iter()
+                            .position(|parameter| parameter == word)
+                        {
+                            Some(index) => tokens.extend(arguments[index].iter().cloned()),
+                            None => tokens.push(token.clone()),
+                        },
+                        _ => tokens.push(token.clone()),
+                    }
+                }
+                tokens
+            })
+            .collect(),
+    )
+}
+
+/// Whether the library declares a type resource for the type `name`.
+pub(super) fn declares_type_resource(name: &str) -> bool {
+    type_resources().contains_key(name)
+}
+
+/// The `type NAME<P, ...> { clause; ... }` declarations in `source`.
+fn declared_type_resources(source: &str) -> BTreeMap<String, TypeResource> {
+    let (tokens, _) = tokenizer::tokenize(source, None).expect("the library tokenizes");
+    let mut declared = BTreeMap::new();
+    let mut at = 0;
+    while at < tokens.len() {
+        let (Some(Token::Ident(keyword)), Some(Token::Ident(name)), Some(Token::LessThan)) =
+            (tokens.get(at), tokens.get(at + 1), tokens.get(at + 2))
+        else {
+            at += 1;
+            continue;
+        };
+        if keyword != "type" {
+            at += 1;
+            continue;
+        }
+        let mut parameters = Vec::new();
+        let mut cursor = at + 3;
+        while let Some(Token::Ident(parameter)) = tokens.get(cursor) {
+            parameters.push(parameter.clone());
+            cursor += 1;
+            if tokens.get(cursor) == Some(&Token::Comma) {
+                cursor += 1;
+            }
+        }
+        if tokens.get(cursor) != Some(&Token::GreaterThan)
+            || tokens.get(cursor + 1) != Some(&Token::LBrace)
+        {
+            at += 1;
+            continue;
+        }
+        cursor += 2;
+        let mut clauses = Vec::new();
+        let mut clause = Vec::new();
+        let mut depth = 0usize;
+        while let Some(token) = tokens.get(cursor) {
+            cursor += 1;
+            match token {
+                Token::RBrace if depth == 0 => break,
+                Token::Semicolon if depth == 0 => clauses.push(std::mem::take(&mut clause)),
+                Token::LParen | Token::LBracket | Token::LBrace => {
+                    depth += 1;
+                    clause.push(token.clone());
+                }
+                Token::RParen | Token::RBracket | Token::RBrace => {
+                    depth -= 1;
+                    clause.push(token.clone());
+                }
+                _ => clause.push(token.clone()),
+            }
+        }
+        declared.insert(
+            name.clone(),
+            TypeResource {
+                parameters,
+                clauses,
+            },
+        );
+        at = cursor;
+    }
+    declared
 }
 
 pub(super) fn derive_reference_authority(
@@ -143,7 +276,7 @@ pub(super) fn derive_reference_authority(
 
 /// `impl Type {`: an inherent `impl` block, which names no trait and no
 /// type parameters.
-fn inherent_impl_at(source: &[Spanned], index: usize) -> bool {
+pub(super) fn inherent_impl_at(source: &[Spanned], index: usize) -> bool {
     if !is_ident(source.get(index), "impl") {
         return false;
     }
@@ -198,7 +331,7 @@ fn rewrite_function(
     let mut parameters = reference_parameters(&source[after_name + 1..list_close], types);
     // A box result, `-> Box<R>`, is produced for the caller.
     if source.get(list_close + 1).map(|(token, _)| token) == Some(&Token::Arrow)
-        && let Some(record) = boxed_record(
+        && let Some(grant) = typed_value(
             &source[list_close + 2..body_open]
                 .iter()
                 .take_while(|(token, _)| !matches!(token, Token::Ident(word) if word == "diverges"))
@@ -209,7 +342,7 @@ fn rewrite_function(
     {
         parameters.push(ReferenceParameter {
             name: "result".into(),
-            grant: Grant::Box { record },
+            grant,
             position: source[list_close + 1].1.clone(),
         });
     }
@@ -308,10 +441,10 @@ fn reference_parameter(tokens: &[Spanned], types: Types<'_>) -> Option<Reference
     if name == "self" {
         return None;
     }
-    if let Some(record) = boxed_record(rest, types) {
+    if let Some(grant) = typed_value(rest, types) {
         return Some(ReferenceParameter {
             name: name.clone(),
-            grant: Grant::Box { record },
+            grant,
             position: position.clone(),
         });
     }
@@ -369,7 +502,7 @@ fn reference_parameter(tokens: &[Spanned], types: Types<'_>) -> Option<Reference
 }
 
 /// The importer name of a plain path type, `a::b::C`.
-fn path_type_name(path: &[Token]) -> Option<String> {
+pub(super) fn path_type_name(path: &[Token]) -> Option<String> {
     let segments = path
         .iter()
         .enumerate()
@@ -398,26 +531,50 @@ fn record_referent(path: &[Token], types: Types<'_>) -> Option<Referent> {
     scalar_record(types.structs.get(&name)?, types.structs).then_some(Referent::Value)
 }
 
-/// `Box<R>` for a struct `R` of scalar fields: the tokens of `R`.
-fn boxed_record(tokens: &[Spanned], types: Types<'_>) -> Option<Vec<Token>> {
+/// A value of a type that declares a type resource, `Box<R>`, with its
+/// type arguments' tokens. Each argument is a struct of scalar fields, whose
+/// `*x` the derived clauses name whole.
+fn typed_value(tokens: &[Spanned], types: Types<'_>) -> Option<Grant> {
     let [
-        (Token::Ident(boxed), _),
+        (Token::Ident(name), _),
         (Token::LessThan, _),
-        record @ ..,
+        inner @ ..,
         (Token::GreaterThan, _),
     ] = tokens
     else {
         return None;
     };
-    if boxed != "Box" {
+    let resource = type_resources().get(name)?;
+    let mut arguments = vec![Vec::new()];
+    let mut depth = 0usize;
+    for (token, _) in inner {
+        match token {
+            Token::Comma if depth == 0 => {
+                arguments.push(Vec::new());
+                continue;
+            }
+            Token::LessThan => depth += 1,
+            Token::GreaterThan => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+        arguments
+            .last_mut()
+            .expect("an argument")
+            .push(token.clone());
+    }
+    if arguments.len() != resource.parameters.len()
+        || !arguments.iter().all(|argument| {
+            path_type_name(argument)
+                .and_then(|name| types.structs.get(&name))
+                .is_some_and(|layout| scalar_record(layout, types.structs))
+        })
+    {
         return None;
     }
-    let record = record
-        .iter()
-        .map(|(token, _)| token.clone())
-        .collect::<Vec<_>>();
-    let name = path_type_name(&record)?;
-    scalar_record(types.structs.get(&name)?, types.structs).then_some(record)
+    Some(Grant::Typed {
+        resource,
+        arguments,
+    })
 }
 
 /// A struct whose every field is one scalar value or an embedded struct of
@@ -480,30 +637,44 @@ fn clause_for(parameter: &ReferenceParameter) -> Vec<Spanned> {
     let name = || ident(&parameter.name);
     let mut tokens = Vec::new();
     match &parameter.grant {
-        Grant::Box { record } => {
+        Grant::Typed {
+            resource,
+            arguments,
+        } => {
             let access = if parameter.name == "result" {
                 "produces"
             } else {
                 "consumes"
             };
-            tokens.extend([
-                ident(access),
-                ident("allocation"),
-                Token::LParen,
-                name(),
-                Token::Comma,
-                ident("sizeof"),
-                Token::LParen,
-            ]);
-            tokens.extend(record.iter().cloned());
-            tokens.extend([
-                Token::RParen,
-                Token::RParen,
-                Token::Semicolon,
-                ident(access),
-                Token::Star,
-                name(),
-            ]);
+            // Each declared clause at the value: `self` is the parameter,
+            // each type parameter its argument, `owns` the transfer.
+            for (at, clause) in resource.clauses.iter().enumerate() {
+                // The match's end writes the last clause's `;`.
+                if at > 0 {
+                    tokens.push(Token::Semicolon);
+                }
+                let mut rest = clause.as_slice();
+                if let [Token::Ident(keyword), tail @ ..] = rest
+                    && keyword == "owns"
+                {
+                    rest = tail;
+                }
+                tokens.push(ident(access));
+                for token in rest {
+                    match token {
+                        Token::Ident(word) if word == "self" => tokens.push(name()),
+                        Token::Ident(word) => match resource
+                            .parameters
+                            .iter()
+                            .position(|parameter| parameter == word)
+                        {
+                            Some(index) => tokens.extend(arguments[index].iter().cloned()),
+                            None => tokens.push(token.clone()),
+                        },
+                        _ => tokens.push(token.clone()),
+                    }
+                }
+            }
         }
         Grant::Reference { mutable, referent } => {
             tokens.push(ident(if *mutable { "owns" } else { "views" }));
