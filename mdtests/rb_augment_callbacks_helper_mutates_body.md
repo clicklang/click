@@ -33,6 +33,8 @@ void erase_mutating(struct node *node, struct node *parent,
 ```click
 abstract resource spare(value: int32);
 
+import click::separation;
+
 verifying "rb_augment_callbacks_mutates_body.c";
 
 contract void Propagate(struct node* node, struct node* stop) {
@@ -78,6 +80,49 @@ void erase_mutating(struct node* node, struct node* parent,
     ensures parent->right == old(parent->right);
 } by {
     with(callback_suite(augment)) {
+        apply(separation::contains_refl(memory(*augment))) using {};
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 0, 2)) using { 0 <= 0; 0 <= 2; 2 <= 6; };
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 2, 4)) using { 0 <= 2; 2 <= 4; 4 <= 6; };
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 4, 6)) using { 0 <= 4; 4 <= 6; 6 <= 6; };
+        apply(separation::contains_subrange(parent as (int32*), 0, 4, 0, 2)) using { 0 <= 0; 0 <= 2; 2 <= 4; };
+        have separate(memory(parent->left), memory(*augment)) by {
+            apply(separation::separate_restrict(memory(*parent), memory(*augment), memory(parent->left), memory(*augment)));
+        }
+        apply(separation::contains_subrange(parent as (int32*), 0, 4, 2, 4)) using { 0 <= 2; 2 <= 4; 4 <= 4; };
+        have separate(memory(parent->right), memory(*augment)) by {
+            apply(separation::separate_restrict(memory(*parent), memory(*augment), memory(parent->right), memory(*augment)));
+        }
+        apply(separation::separate_star(memory(parent->left), memory(parent->right), memory(*augment))) using {
+            separate(memory(parent->left), memory(*augment));
+            separate(memory(parent->right), memory(*augment));
+        };
+        mark before_propagate;
+        step_until(statement(1).entry);
+        have contains(memory(parent->left), statement(0).footprint) by { known(); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(0).footprint, memory(augment->propagate)));
+        have augment->propagate == at(before_propagate, augment->propagate) by { preserve(memory(augment->propagate), statement(0)); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(0).footprint, memory(augment->copy)));
+        have augment->copy == at(before_propagate, augment->copy) by { preserve(memory(augment->copy), statement(0)); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(0).footprint, memory(augment->rotate)));
+        have augment->rotate == at(before_propagate, augment->rotate) by { preserve(memory(augment->rotate), statement(0)); }
+        mark before_copy;
+        step_until(statement(2).entry);
+        have contains(memory(parent->left), statement(1).footprint) by { known(); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(1).footprint, memory(augment->propagate)));
+        have augment->propagate == at(before_copy, augment->propagate) by { preserve(memory(augment->propagate), statement(1)); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(1).footprint, memory(augment->copy)));
+        have augment->copy == at(before_copy, augment->copy) by { preserve(memory(augment->copy), statement(1)); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(1).footprint, memory(augment->rotate)));
+        have augment->rotate == at(before_copy, augment->rotate) by { preserve(memory(augment->rotate), statement(1)); }
+        mark before_rotate;
+        step();
+        have contains(memory(parent->left) * memory(parent->right), statement(2).footprint) by { known(); }
+        apply(separation::separate_restrict(memory(parent->left) * memory(parent->right), memory(*augment), statement(2).footprint, memory(augment->propagate)));
+        have augment->propagate == at(before_rotate, augment->propagate) by { preserve(memory(augment->propagate), statement(2)); }
+        apply(separation::separate_restrict(memory(parent->left) * memory(parent->right), memory(*augment), statement(2).footprint, memory(augment->copy)));
+        have augment->copy == at(before_rotate, augment->copy) by { preserve(memory(augment->copy), statement(2)); }
+        apply(separation::separate_restrict(memory(parent->left) * memory(parent->right), memory(*augment), statement(2).footprint, memory(augment->rotate)));
+        have augment->rotate == at(before_rotate, augment->rotate) by { preserve(memory(augment->rotate), statement(2)); }
         step_until(function.exit);
     }
     solve();

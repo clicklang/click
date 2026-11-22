@@ -1624,7 +1624,7 @@ impl ProgramPoint {
             ProgramType::Int64 | ProgramType::UInt64 => self
                 .external_entry_read(pointer, true)
                 .or_else(|| self.entry_read_through_loaded_pointer(pointer)),
-            value_type if value_type.is_object_pointer() => self.external_entry_read(pointer, true),
+            value_type if value_type.is_pointer() => self.external_entry_read(pointer, true),
             ProgramType::Parameter(parameter) if !parameter.is_enum() => {
                 self.external_entry_read(pointer, true)
             }

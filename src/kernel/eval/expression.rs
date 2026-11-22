@@ -3542,7 +3542,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 }
                 let can_name_read = !lvalue.is_volatile() || SpecificationAccessScope::is_active();
                 let uses_entry_version = has_read_resource
-                    && (lvalue.value_type.is_object_pointer()
+                    && (lvalue.value_type.is_pointer()
                         || matches!(
                             lvalue.value_type,
                             ProgramType::Int8
