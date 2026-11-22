@@ -2545,6 +2545,125 @@ fn mentioned_in_expression(expression: &E, local: &str) -> bool {
     reads.contains_key(local) || named.contains(local)
 }
 
+/// Call an unchanged callback parameter directly when MIR only copied it to
+/// name the callee. In particular, the parameter cannot change while a call
+/// in an argument runs, because nothing writes it or takes its address.
+pub(super) fn fold_callback_copies(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+    parameters: &BTreeMap<String, Type>,
+) {
+    if !parameters
+        .values()
+        .any(|ty| matches!(ty, Type::FnPointer { .. }))
+    {
+        return;
+    }
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    let mut writes = BTreeMap::<String, usize>::new();
+    let mut copies = BTreeMap::new();
+    let mut callees = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![(None, 0usize); blocks.len()];
+    for (index, block) in blocks.iter().enumerate() {
+        for statement in &block.statements {
+            statement_uses(statement, &mut reads, &mut named);
+            match statement {
+                S::Assign {
+                    target: E::Local { name },
+                    value,
+                } => {
+                    *writes.entry(name.clone()).or_default() += 1;
+                    if let E::Local { name: source } = value
+                        && temporaries.contains(name)
+                        && matches!(parameters.get(source), Some(Type::FnPointer { .. }))
+                    {
+                        copies.insert(name.clone(), (index, source.clone()));
+                    }
+                }
+                S::BeginStorage { local } | S::EndStorage { local }
+                    if parameters.contains_key(local) =>
+                {
+                    named.insert(local.clone());
+                }
+                _ => {}
+            }
+        }
+        if let T::Call {
+            function,
+            arguments,
+            owned_arguments,
+            through_pointer: true,
+            ..
+        } = &block.terminator
+        {
+            *callees.entry(function.clone()).or_default() += 1;
+            for argument in arguments {
+                expression_uses(argument, &mut reads, &mut named);
+            }
+            named.extend(
+                owned_arguments
+                    .iter()
+                    .map(|argument| argument.local.clone()),
+            );
+        } else {
+            terminator_uses(&block.terminator, &mut reads, &mut named);
+        }
+        if let Some(destination) = call_destination(&block.terminator) {
+            *writes.entry(destination.clone()).or_default() += 1;
+        }
+        for target in successors(&block.terminator) {
+            if let Some((predecessor, count)) = predecessors.get_mut(target) {
+                *predecessor = Some(index);
+                *count += 1;
+            }
+        }
+    }
+
+    let types: BTreeMap<_, _> = locals
+        .iter()
+        .map(|local| (&local.name, &local.value_type))
+        .collect();
+    let mut removed = BTreeSet::new();
+    for (index, block) in blocks.iter_mut().enumerate() {
+        let T::Call {
+            function,
+            through_pointer: true,
+            ..
+        } = &mut block.terminator
+        else {
+            continue;
+        };
+        let Some((producer, source)) = copies.get(function) else {
+            continue;
+        };
+        if writes.get(function) == Some(&1)
+            && callees.get(function) == Some(&1)
+            && !reads.contains_key(function)
+            && !named.contains(function)
+            && !writes.contains_key(source)
+            && !named.contains(source)
+            && types.get(function).copied() == parameters.get(source)
+            && (*producer == index
+                || (*producer < index && predecessors[index] == (Some(*producer), 1)))
+        {
+            removed.insert(std::mem::replace(function, source.clone()));
+        }
+    }
+    for block in blocks {
+        block.statements.retain(|statement| match statement {
+            S::Assign {
+                target: E::Local { name },
+                ..
+            } => !removed.contains(name),
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
 /// The local a call terminator assigns its result to, unless the call is
 /// already a call step.
 fn call_destination(terminator: &T) -> Option<&String> {
@@ -3422,6 +3541,61 @@ mod tests {
             span: Span { line: 1, column: 1 },
         }
     }
+
+    #[test]
+    fn callback_copy_only_folds_when_the_source_cannot_change() {
+        let pointer = Type::FnPointer {
+            parameters: vec![],
+            result: Box::new(Type::Unit),
+        };
+        let parameters = BTreeMap::from([("f".into(), pointer.clone())]);
+        let borrowed = E::Borrow {
+            place: Box::new(local("f")),
+            value_type: Type::Reference {
+                mutable: true,
+                pointee: Box::new(pointer.clone()),
+            },
+        };
+        for change in [
+            None,
+            Some(assign("f", local("other"))),
+            Some(assign("r", borrowed)),
+        ] {
+            let folded = change.is_none();
+            let mut locals = vec![Place {
+                value_type: pointer.clone(),
+                ..place("t1")
+            }];
+            let mut statements = vec![assign("t1", local("f"))];
+            statements.extend(change);
+            let call = |function: &str, through_pointer, target| T::Call {
+                function: function.into(),
+                through_pointer,
+                target,
+                arguments: vec![],
+                owned_arguments: vec![],
+                destination: None,
+                result: None,
+            };
+            let mut blocks = [
+                block(statements, call("evaluate_argument", false, 1)),
+                block(vec![], call("t1", true, 2)),
+                block(vec![], T::Return),
+            ];
+            super::fold_callback_copies(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+                &parameters,
+            );
+            assert_eq!(locals.is_empty(), folded);
+            let expected = if folded { "f" } else { "t1" };
+            assert!(
+                matches!(&blocks[1].terminator, T::Call { function, .. } if function == expected)
+            );
+        }
+    }
+
     /// Runs the pass over one block with temporaries `t1` and `t2`.
     fn substituted(statements: Vec<S>, terminator: T) -> (Vec<String>, MirBlock) {
         let mut locals = ["a", "b", "x", "t1", "t2"].map(place).to_vec();

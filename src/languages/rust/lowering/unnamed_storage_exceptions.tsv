@@ -1,25 +1,16 @@
 # Existing Rust MIR storage exceptions. Remove a row when lowering gives its slot a supported identity.
 # Source	Function	Line	Column	MIR key
-adds.rs	__rust_q_I4_adds_I5_apply	6	5	__rust_mir_4
 borrow.rs	Node_drop_glue	848	1	__rust_mir_2
 borrow.rs	Stack_drop_glue	848	1	__rust_mir_2
 boxed.rs	__rust_q_I5_boxed_I13_maybe_through	40	14	__rust_mir_3
 boxed.rs	__rust_q_I5_boxed_I5_maybe	26	14	__rust_mir_4
-callback.rs	__rust_q_I17_function_pointers_I5_apply	6	5	__rust_mir_3
 chunks.rs	cover	8	5	__rust_mir_19
 chunks.rs	tail	3	5	__rust_mir_7
 closure.rs	__rust_q_I18_capturing_closures_I5_moved	11	11	__rust_mir_6
-closure.rs	__rust_q_I18_capturing_closures_I5_shift	2	28	__rust_mir_6
 closure.rs	__rust_q_I18_capturing_closures_I6_caller	6	11	__rust_mir_3
-closure.rs	__rust_q_I18_capturing_closures_I9_increment	15	5	__rust_mir_3
-closure.rs	__rust_q_I7_impl_fn_I4_both	26	5	__rust_mir_5
 closure.rs	__rust_q_I7_impl_fn_I4_both	26	7	__rust_mir_7
-closure.rs	__rust_q_I7_impl_fn_I4_both	26	7	__rust_mir_8
-closure.rs	__rust_q_I7_impl_fn_I5_apply	10	5	__rust_mir_3
-closure.rs	__rust_q_I7_impl_fn_I5_shift	2	28	__rust_mir_6
 closure.rs	__rust_q_I7_impl_fn_I5_twice	30	10	__rust_mir_3
 closure.rs	__rust_q_I7_impl_fn_I6_caller	6	11	__rust_mir_3
-closure.rs	__rust_q_I8_closures_I5_apply	2	5	__rust_mir_3
 copies.rs	collision	16	9	__rust_mir_9
 copies.rs	copy_right	3	9	__rust_mir_8
 copies.rs	reassign_left	8	9	__rust_mir_9
