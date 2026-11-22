@@ -3239,6 +3239,16 @@ fn integer_constructor_arm_fields_expand_to_known() {
     let (source, _) = mdtest_sources("mdtests/algebraic_integer_match_bindings.md");
     for (theorem, result, wrong_result) in [
         (
+            "nested_fields",
+            "nested(b, other) == Pair::Pair(n, m)",
+            "nested(b, other) == Pair::Pair(m, n)",
+        ),
+        (
+            "shadows",
+            "shadow(b, other, ambient) == Box::Box(m)",
+            "shadow(b, other, ambient) == Box::Box(n)",
+        ),
+        (
             "swaps",
             "swap(p) == Pair::Pair(b, a)",
             "swap(p) == Pair::Pair(a, b)",

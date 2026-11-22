@@ -74,6 +74,49 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
 }
 
 #[test]
+fn nested_constructor_payload_check_scales_with_selected_arms() {
+    for depth in [4, 8, 16] {
+        let _session = VerificationSession::enter();
+        let original = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
+        let value = |index| AlgebraicValue::Integer(IntegerTerm::var(Variable(993_000 + index)));
+        let constructor = |index| AlgebraicTerm {
+            algebraic_type: original.algebraic_type.clone(),
+            node: AlgebraicTermNode::Constructor {
+                variant: "Arm".into(),
+                fields: vec![value(index)],
+            },
+        };
+        let mut matched = constructor(depth);
+        for index in (0..depth).rev() {
+            matched = AlgebraicTerm {
+                algebraic_type: original.algebraic_type.clone(),
+                node: AlgebraicTermNode::Match {
+                    scrutinee: Box::new(constructor(index)),
+                    arms: vec![AlgebraicResultMatchArm {
+                        variant: "Arm".into(),
+                        binding_names: Default::default(),
+                        bindings: vec![value(index + 1)],
+                        body: matched,
+                    }],
+                },
+            };
+        }
+        let goal = Proposition::Equal(
+            Term::Algebraic(matched.into()),
+            Term::Algebraic(constructor(0).into()),
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
+        assert!(proved);
+        let depth = depth as usize;
+        assert!(
+            (3 * depth..=8 * depth + 48).contains(&work),
+            "{depth}: {work}"
+        );
+    }
+}
+
+#[test]
 fn constructor_match_computation_visits_shared_terms_once() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
