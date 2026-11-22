@@ -1711,7 +1711,8 @@ fn refinement_preparation_error(
                 | ExecutionLimit::BoolComparedWithInteger
                 | ExecutionLimit::BoolOrdered
                 | ExecutionLimit::BoolArithmetic
-                | ExecutionLimit::MixedBoolArms => {
+                | ExecutionLimit::MixedBoolArms
+                | ExecutionLimit::QuantifierDoesNotClose => {
                     error.with_proof_refusal(ProofRefusal::UnsupportedProof)
                 }
                 ExecutionLimit::Paths
