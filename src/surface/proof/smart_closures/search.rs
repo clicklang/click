@@ -3695,21 +3695,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }) {
             return Self::apply_normalization_closure(search_input, Some(Vec::new())).map(Some);
         }
-        let pointer_congruence_fallback = match Self::try_goal_conditional_normalization(
-            search_input,
-        ) {
-            Some(proof)
-                if matches!(&search_input.goal(), Some(condition_source_0 @ Proposition::ConditionIs(
-                            _,
-                            true
-                        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..) | ConditionTerm::PointerEqual(..), _))))
-                    && proof.ends_in_empty_normalize_using() =>
-            {
-                Some(proof)
-            }
-            Some(proof) => return Ok(Some(proof)),
-            None => None,
-        };
+        let pointer_congruence_fallback =
+            match Self::try_goal_conditional_normalization(search_input) {
+                Some(proof) if proof.ends_in_empty_normalize_using() => {
+                    let (left, right) =
+                        match search_input.goal().and_then(Proposition::condition_native) {
+                            Some((ConditionTerm::AddressEqual(left, right), true)) => {
+                                (left.as_ref(), right.as_ref())
+                            }
+                            Some((ConditionTerm::PointerEqual(left, right), true)) => {
+                                (left.address(), right.address())
+                            }
+                            _ => return Ok(Some(proof)),
+                        };
+                    // This check proves the two reads as written. Rewriting a
+                    // base can synthesize a different exact read for which the
+                    // replayed `known` has no fact.
+                    if left.as_loaded_value().is_some() && right.as_loaded_value().is_some() {
+                        return Ok(Some(proof));
+                    }
+                    Some(proof)
+                }
+                Some(proof) => return Ok(Some(proof)),
+                None => None,
+            };
         // Close an indexed equality rewrite before deriving a longer
         // arithmetic proof of the same fact. Connected chains still wait
         // until selected arithmetic has had the goal.
