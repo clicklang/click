@@ -647,7 +647,23 @@ impl PathLink {
         let id = ProgramPointId::fresh();
         let point_read_index =
             join_point_read_indexes(points).unwrap_or_else(|| PointReadIndex::empty(id));
-        let external_read_start = joined_external_entry(points);
+        let external_read_start = joined_external_entry(points).or_else(|| {
+            // A single exit still has a successor point of its own. When it
+            // carries the predecessor's certified view, the join adds no
+            // effect that could change the version of caller storage.
+            let [predecessor] = points else { return None };
+            if predecessor.memory.arena_id() != memory.arena_id()
+                || !predecessor.has_certified_read_view()
+            {
+                return None;
+            }
+            let anchor = predecessor.parameter_read_start(&AddressBase::ExternalArgument);
+            Some(ReadVersionPoint {
+                point: Arc::downgrade(anchor.path.0.as_ref()?),
+                view: anchor.path.1.clone(),
+                memory: anchor.memory,
+            })
+        });
         Self(
             Some(Arc::new_cyclic(|joined| PointNode {
                 id,
@@ -2151,6 +2167,31 @@ mod tests {
             joined.path_link().split().and_then(PathLink::id),
             start.program_point().id()
         );
+    }
+
+    #[test]
+    fn a_single_loop_exit_keeps_the_caller_array_read_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let block = AddressBase::ExternalArgument;
+        let cell = Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        let effect = entry.clone().with_memory(
+            entry
+                .memory()
+                .clone()
+                .store(cell, ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        let mut joined = effect.clone();
+        joined.join_loop_exit_program_points(&[&effect]);
+        assert_ne!(joined.program_point_id(), effect.program_point_id());
+        let selected = joined
+            .program_point()
+            .indexed_array_version(&block)
+            .expect("the join keeps the caller array version");
+        assert_eq!(selected.read_version_id(), effect.program_point_id());
     }
 
     #[test]
