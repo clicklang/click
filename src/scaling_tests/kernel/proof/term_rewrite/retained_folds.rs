@@ -129,3 +129,98 @@ fn integer_fold_capture_summary_scales_without_integer_exports() {
         );
     }
 }
+
+#[test]
+fn nested_integer_fold_rewrites_keep_shared_bodies_and_scopes() {
+    for capture in [false, true] {
+        for depth in [4, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let source = Variable(96_000);
+            let accumulator = Variable(96_001);
+            let item = Variable(96_002);
+            let replacement = if capture {
+                accumulator
+            } else {
+                Variable(96_003)
+            };
+            let var = |variable| KernelTerm::variable(KernelType::Integer, variable);
+            let add = |left, right| {
+                KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![left, right])
+                    .unwrap()
+            };
+            let make_fold = |body| {
+                KernelFold::new(
+                    KernelFoldIndex::Integer,
+                    accumulator,
+                    item,
+                    [var(accumulator), var(accumulator), var(source), body],
+                )
+                .unwrap()
+            };
+            let mut fold = make_fold(add(var(accumulator), var(source)));
+            for _ in 1..depth {
+                let child = fold.into_term();
+                fold = make_fold(add(child.clone(), child));
+            }
+
+            let samples = [0, 16, 64, 256].map(|unrelated| {
+                let replacement_term = IntegerTerm::Variable(replacement);
+                let renamings = BTreeMap::new();
+                let mut rewrite = TermRewrite::for_integer_variables(
+                    source,
+                    &replacement_term,
+                    false,
+                    &renamings,
+                );
+                for index in 0..unrelated {
+                    let other = var(Variable(97_000 + index));
+                    assert_eq!(rewrite.shared_fold_integer_child(&other), Some(other));
+                }
+                let exports = KernelTermExport::integer_export_count();
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    rewrite.retained_fold(&fold)
+                });
+                let result = result.unwrap();
+                assert_eq!(KernelTermExport::integer_export_count(), exports);
+
+                let mut outer = accumulator;
+                let mut current = &result;
+                for level in 0..depth {
+                    assert_eq!(current.arguments[0], var(outer));
+                    assert_eq!(current.arguments[1], var(outer));
+                    assert_eq!(current.arguments[2], var(replacement));
+                    assert_eq!(current.item, item);
+                    assert_eq!(current.accumulator != accumulator, capture);
+                    if capture {
+                        assert_ne!(current.accumulator, outer);
+                    }
+                    outer = current.accumulator;
+
+                    let KernelTermNode::IntegerOperation { arguments, .. } =
+                        current.arguments[3].node()
+                    else {
+                        panic!("expected retained addition");
+                    };
+                    if level + 1 == depth {
+                        assert_eq!(arguments, &[var(outer), var(replacement)]);
+                        break;
+                    }
+                    assert_eq!(arguments[0], arguments[1]);
+                    let KernelTermNode::Fold(nested) = arguments[0].node() else {
+                        panic!("expected retained nested fold");
+                    };
+                    current = nested;
+                }
+                work
+            });
+            assert!(
+                samples.iter().all(|work| *work == samples[0]),
+                "{samples:?}"
+            );
+            assert!(
+                samples[0] <= 200 * depth + 400,
+                "capture={capture} depth={depth} work={samples:?}"
+            );
+        }
+    }
+}
