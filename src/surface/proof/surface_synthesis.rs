@@ -6282,7 +6282,12 @@ fn synthesize_surface_bitvector(
                     // in that state.
                     return synthesize_at_read_origin(memory, state, |selected| {
                         Some(synthesize_memory_load(
-                            call_result_pointer_expression(kernel_pointer, selected)?,
+                            call_result_pointer_expression(
+                                kernel_pointer,
+                                parameter_binding,
+                                selected,
+                                bound_variables,
+                            )?,
                             value_type,
                         ))
                     });
@@ -7301,20 +7306,63 @@ fn synthesize_struct_field_load(
 /// name.
 fn call_result_pointer_expression(
     pointer: &Address,
+    parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
-    state_call_result(
+    if let Some(expression) = state_call_result(
         state,
         |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer),
-    )
-    .or_else(|| {
-        SYNTHESIS_RECORDED_POINTS.with(|points| {
-            points
-                .borrow()
-                .as_ref()?
-                .call_result_address_expression(pointer)
-        })
-    })
+    ) {
+        return Some(expression);
+    }
+    if let Some(expression) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+        points
+            .borrow()
+            .as_ref()?
+            .call_result_address_expression(pointer)
+    }) {
+        return Some(expression);
+    }
+    if !matches!(
+        pointer.offset,
+        AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
+    ) {
+        return None;
+    }
+    // Keep the call as the base and use the index at its original machine
+    // width. An exact lookup suffices for a call that introduced this base.
+    let base = Address {
+        base: pointer.base.clone(),
+        offset: AddressOffset::Constant(0),
+    };
+    let (region, width) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+        let points = points.borrow();
+        let points = points.as_ref()?;
+        let region = points.call_result_naming_pointer(&base)?;
+        let ProgramValue::Pointer(result) = points.region_result_value(&region).ok()? else {
+            return None;
+        };
+        // A record pointer's stride comes from its layout, not its scalar
+        // carrier. This path raises indices over ordinary scalar pointees.
+        if matches!(
+            result.object_class(),
+            Some(crate::kernel::effective_type::CAccessClass::Struct(_))
+        ) {
+            return None;
+        }
+        Some((region, result.program_type().pointee_type()?.byte_width()))
+    })?;
+    let index = synthesis_element_index(pointer, &base, width)?;
+    Some(ContractExpression::Add(
+        Box::new(ContractExpression::RegionResult(region)),
+        Box::new(pointer_indices::raise(
+            index.operand_view(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?),
+    ))
 }
 
 /// The program type a load of `kind` reads.
@@ -8118,20 +8166,9 @@ fn synthesize_surface_pointer_expression(
         }
         return Some(ContractExpression::ProgramExpression(pointer));
     }
-    if let Some(result) = state_call_result(
-        state,
-        |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer),
-    ) {
-        return Some(result);
-    }
-    // A pointer an earlier call returned can also name an address at a
-    // fixed byte displacement from that result.
-    if let Some(expression) = SYNTHESIS_RECORDED_POINTS.with(|points| {
-        points
-            .borrow()
-            .as_ref()?
-            .call_result_address_expression(pointer)
-    }) {
+    if let Some(expression) =
+        call_result_pointer_expression(pointer, parameter_binding, state, bound_variables)
+    {
         return Some(expression);
     }
     if parameter_binding.arguments.iter().any(|argument| {
