@@ -896,9 +896,19 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     }
 }
 
+fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
+    match field {
+        AlgebraicValue::Integer(IntegerTerm::Constant(_)) => true,
+        AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })) => {
+            field.value_type() == AlgebraicValueType::Program(format.program_type())
+        }
+        _ => false,
+    }
+}
+
 /// Follow selected constructor arms that forward scalar payloads into a
-/// constructor, possibly alongside captured Integer variables. Resolve each
-/// binding in its scrutinee's scope, then use the recorded values at the result.
+/// constructor, possibly alongside literals or captured Integer variables.
+/// Resolve each binding in its scrutinee's scope before checking the result.
 fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
     let AlgebraicTermNode::Constructor {
         variant: expected_variant,
@@ -930,22 +940,17 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
             let (variable, payload) = match (binder, field) {
                 (
                     AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })),
-                ) if field.value_type() == AlgebraicValueType::Program(format.program_type()) => {
-                    (variable, field)
-                }
-                (
-                    AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-                    AlgebraicValue::Integer(IntegerTerm::Constant(_)),
-                ) => (variable, field),
-                (
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
                     AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(source))),
                 )
                 | (
                     AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
                     AlgebraicValue::Integer(IntegerTerm::Variable(source)),
                 ) => (variable, payloads.get(source).copied().unwrap_or(field)),
+                (
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
+                    | AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
+                    field,
+                ) if is_constructor_payload_literal(field) => (variable, field),
                 _ => return false,
             };
             let field_type = field.value_type();
@@ -982,7 +987,7 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
                     (variable, None)
                 }
                 AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => (variable, Some(field)),
-                _ => return false,
+                _ => return is_constructor_payload_literal(field) && field == expected,
             };
             payloads
                 .get(variable)
