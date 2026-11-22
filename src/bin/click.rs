@@ -381,6 +381,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn branch_safety_obligation_expands_to_a_checked_have() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("positive.click");
+        let expanded = directory.path().join("expanded.click");
+        fs::write(
+            directory.path().join("positive.c"),
+            "int positive(double d, int k) { if ((int) d > 0) { return 1; } return 0; }",
+        )
+        .unwrap();
+        fs::write(
+            &sidecar,
+            r#"verifying "positive.c";
+int32 positive(double d, int32 k) {
+    requires d > float64_from_bits(0xc1e0000000200000u64) or k < 0;
+    requires k >= 0;
+    requires d < float64_from_bits(0x41e0000000000000u64);
+    ensures result >= 0;
+} by {
+    branch { true => { step(); solve(); } false => {} }
+    step();
+    solve();
+}
+"#,
+        )
+        .unwrap();
+        entry([
+            "expand".to_string(),
+            "--claim".to_string(),
+            "positive.contract".to_string(),
+            "--output".to_string(),
+            expanded.display().to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap();
+        let expanded = fs::read_to_string(expanded).unwrap();
+        assert!(
+            expanded.contains("have d > float64_from_bits(0xc1e0000000200000u64)"),
+            "{expanded}"
+        );
+    }
+
     /// A refused C step names the file, line, and column of the statement it
     /// checked and quotes the statement as written, not as Click lowered it:
     /// a struct-field store reads `items[i].x = 7;` rather than a byte
