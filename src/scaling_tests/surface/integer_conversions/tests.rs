@@ -178,9 +178,7 @@ fn int64_integer_operation_applications_scale_with_steps_and_unused_bounds() {
             }
             source.push_str(&format!("ensures {goal} by {{ "));
             for _ in 0..size {
-                source.push_str(&format!(
-                    "have {goal} by {{ apply({name}(x, y)); }} "
-                ));
+                source.push_str(&format!("have {goal} by {{ apply({name}(x, y)); }} "));
             }
             source.push_str("known(); } }");
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -299,7 +297,9 @@ fn multiply_order_applications_scale_with_explicit_inputs() {
         }
         source.push_str("ensures a * c <= b * c by { ");
         for _ in 0..size {
-            source.push_str("have a * c <= b * c by { apply(integer::multiply_order_nonnegative(a,b,c)); } ");
+            source.push_str(
+                "have a * c <= b * c by { apply(integer::multiply_order_nonnegative(a,b,c)); } ",
+            );
         }
         source.push_str("known(); } }");
         let (result, work) =
@@ -353,7 +353,9 @@ fn correction_endpoint_applications_scale_with_steps_and_unused_bounds() {
         }
         source.push_str("ensures b + 1 <= q by { ");
         for _ in 0..size {
-            source.push_str("have b + 1 <= q by { apply(integer::lower_correction_bound(n, d, q, r, b)); } ");
+            source.push_str(
+                "have b + 1 <= q by { apply(integer::lower_correction_bound(n, d, q, r, b)); } ",
+            );
         }
         source.push_str("known(); } }");
         let (checked, work) =
