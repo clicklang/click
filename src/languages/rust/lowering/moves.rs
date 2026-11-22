@@ -98,6 +98,26 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
     }
 }
 
+/// Keep compatibility only for the inventoried slots while migrating them.
+fn allows_legacy_storage(
+    source: &str,
+    function: &str,
+    local: &super::super::schema::Place,
+) -> bool {
+    static EXCEPTIONS: std::sync::LazyLock<BTreeSet<&'static str>> =
+        std::sync::LazyLock::new(|| {
+            include_str!("unnamed_storage_exceptions.tsv")
+                .lines()
+                .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                .collect()
+        });
+    let key = format!(
+        "{source}\t{function}\t{}\t{}\t{}",
+        local.span.line, local.span.column, local.name
+    );
+    EXCEPTIONS.contains(key.as_str())
+}
+
 pub(super) fn lower(
     cx: &mut Context<'_>,
     f: &Function,
@@ -244,7 +264,8 @@ pub(super) fn lower(
             Type::Unit => program_skip(),
             Type::Reference { .. } if iterator_reference(&local.value_type) => program_skip(),
             _ if mir.unnamed_locals.contains(&local.name)
-                && !cx.bindings.contains_key(&local.name) =>
+                && !cx.bindings.contains_key(&local.name)
+                && !allows_legacy_storage(cx.source, &f.name, local) =>
             {
                 return Err(format!(
                     "{}:{}:{}: unsupported Rust construct: an unnamed compiler local requires storage with no supported identity",
