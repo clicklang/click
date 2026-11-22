@@ -3410,7 +3410,7 @@ impl<'a> Proof<'a> {
             }
             ProofContext::Execution(context) => {
                 let execution = self.execution()?;
-                let execution_view = execution.view(context);
+                let execution_view = execution.view();
                 let _recorded_points =
                     super::surface_synthesis::SynthesisRecordedPointsScope::enter(
                         execution_view.recorded_states,
@@ -3566,7 +3566,7 @@ impl<'a> Proof<'a> {
         let Some(execution) = self.execution() else {
             return Ok(None);
         };
-        let execution_view = execution.view(context);
+        let execution_view = execution.view();
         let _recorded_points = super::surface_synthesis::SynthesisRecordedPointsScope::enter(
             execution_view.recorded_states,
         );
@@ -4408,7 +4408,7 @@ fn source_backed_call_requirement_surface(
     // moved to a different frontier, and keeps source arguments authoritative
     // rather than reconstructing them from a reduced state.
     let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
-        execution.view(context),
+        execution.view(),
         &execution.core.state,
         context.function,
         context.arguments,

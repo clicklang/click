@@ -173,7 +173,6 @@ src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_selected_theorem_
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_prepared_theorem	driver	4
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_prepared_theorem	try_solve_closure	1
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_theorem_application	driver	1
-src/surface/proof/driver/theorems.rs	operation	ProofDriver::apply_theorem_application	select_theorem_application_step	1
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_loop_phase_goal	driver	4
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_loop_phase_goal	try_solve_closure	2
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_loop_phase_have	driver	1
@@ -606,14 +605,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_zero_witness_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_zero_witness_closure	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::with_goal_operation_identities	prove_operation_identities	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	driver	2
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::select_execution_theorem_application_step	select_theorem_application_step_in_fixed_state	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::select_fixed_state_theorem_application_step	select_theorem_application_step_in_fixed_state	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::select_pure_theorem_application_step	argument_guard_premises	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::select_theorem_application_step	select_execution_theorem_application_step	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::select_theorem_application_step	select_fixed_state_theorem_application_step	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::select_theorem_application_step	select_pure_theorem_application_step	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::select_theorem_application_step	select_theorem_application_step_in_fixed_state	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::select_theorem_application_step_in_fixed_state	argument_guard_premises	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_back_edge_descendant	driver	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_back_edge_descendant	try_smart_statement_step	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_exit	try_execute_to_exit_descendant	1

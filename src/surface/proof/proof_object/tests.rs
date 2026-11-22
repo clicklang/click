@@ -4557,7 +4557,6 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         name: "less_than_implies_less_equal".to_string(),
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
-    let mut selection_allocation_baseline = None;
     for size in [16_u32, 64, 256, 1024, 4096] {
         let mut pure_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         pure_facts.push(kernel_premise.clone());
@@ -4588,39 +4587,13 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         );
         let retained_root = root.clone();
         assert!(
-            crate::kernel::search::ProofSearch::try_theorem_application(
-                &(root),
-                &missing_application
-            )
-            .expect("missing execution theorem search should be a bounded miss")
-            .is_none(),
+            apply_using(&root, &missing_application, vec![premise.clone()]).is_none(),
             "an unavailable execution theorem premise must not manufacture a descendant"
         );
-        let before_query = fact_node_allocations();
-        let selected =
-            crate::kernel::search::ProofSearch::select_execution_theorem_application_step(
-                &(root),
-                &application,
-            )
-            .expect("smart search should select one explicit indexed premise");
-        // The global persistent-node counter now also sees the selected
-        // theorem's small elaboration binding maps. Their fixed setup cost
-        // must not grow with the unrelated fact context.
-        let query_allocations = fact_node_allocations() - before_query;
-        assert_eq!(
-            query_allocations,
-            *selection_allocation_baseline.get_or_insert(query_allocations),
-            "size {size} execution theorem selection must not rebuild persistent fact indexes"
-        );
-        assert!(root.facts().shares_exact_index_with(retained_root.facts()));
-        assert!(root.facts().shares_assumptions_with(retained_root.facts()));
-        assert_eq!(
-            selected,
-            ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: vec![premise.clone()],
-            }
-        );
+        let selected = ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises: vec![premise.clone()],
+        };
         let omitted = root
             .driver()
             .apply_step(ProofStep::ApplyTheoremUsing {
@@ -5622,29 +5595,20 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
             .focus_split_arm(&record, true)
             .expect("the then sibling is open");
         assert!(
-            crate::kernel::search::ProofSearch::try_theorem_application(
-                &(then_arm),
-                &missing_application
-            )
-            .expect("an unavailable exact theorem premise should be a bounded miss")
-            .is_none(),
+            apply_using(&then_arm, &missing_application, vec![premise.clone()]).is_none(),
             "an unavailable theorem premise must not manufacture an arm descendant"
         );
 
         let before = fact_node_allocations();
-        let branches = crate::kernel::search::ProofSearch::try_theorem_application(
-            &(crate::kernel::search::ProofSearch::try_theorem_application(
-                &(then_arm),
-                &application,
-            )
-            .expect("then arm theorem search should run")
-            .expect("then arm theorem search should retain its checked step")
-            .focus_split_arm(&record, false)
-            .expect("the else sibling is open")),
+        let branches = apply_using(
+            &apply_using(&then_arm, &application, vec![premise.clone()])
+                .expect("then arm theorem application should retain its checked step")
+                .focus_split_arm(&record, false)
+                .expect("the else sibling is open"),
             &application,
+            vec![premise.clone()],
         )
-        .expect("else arm theorem search should run")
-        .expect("else arm theorem search should retain its checked step");
+        .expect("else arm theorem application should retain its checked step");
         samples.push((
             size,
             (u32::BITS - size.leading_zeros()) as usize,
@@ -5905,7 +5869,6 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         .record_lowering(&premise, &kernel_premise)
         .expect("the selected premise form should be recorded");
 
-    let mut allocation_baseline = None;
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(Proposition::And(
@@ -5936,33 +5899,13 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
             .apply_step(known_have_step(premise.clone()))
             .expect("a checked predecessor should promote the indexed conjunct");
         assert!(
-            crate::kernel::search::ProofSearch::try_theorem_application(
-                &(extracted),
-                &missing_application
-            )
-            .expect("missing fixed-state theorem search should be a bounded miss")
-            .is_none(),
+            apply_using(&extracted, &missing_application, vec![premise.clone()]).is_none(),
             "an unavailable fixed-state theorem premise must not manufacture a descendant"
         );
-        let before_query = fact_node_allocations();
-        let step = crate::kernel::search::ProofSearch::select_fixed_state_theorem_application_step(
-            &(extracted),
-            &application,
-        )
-        .expect("smart search should select one explicit indexed premise");
-        let query_allocations = fact_node_allocations() - before_query;
-        assert_eq!(
-            query_allocations,
-            *allocation_baseline.get_or_insert(query_allocations),
-            "size {size} theorem selection must not rebuild persistent fact indexes"
-        );
-        assert_eq!(
-            step,
-            ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: vec![premise.clone()],
-            }
-        );
+        let step = ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises: vec![premise.clone()],
+        };
         let tactics = [
             ProofTactic::Have(ProofHave {
                 proposition: premise.clone(),
@@ -6164,7 +6107,6 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         .record_lowering(surface_premise, &kernel_premise)
         .expect("the selected premise form should be recorded");
 
-    let mut allocation_baseline = None;
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(kernel_premise.clone());
@@ -6192,24 +6134,10 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
 
-        let before_query = fact_node_allocations();
-        let step = crate::kernel::search::ProofSearch::select_fixed_state_theorem_application_step(
-            &(root),
-            application,
-        )
-        .expect("the indexed result-aware premise should be selected");
-        let query_allocations = fact_node_allocations() - before_query;
-        assert_eq!(
-            query_allocations,
-            *allocation_baseline.get_or_insert(query_allocations)
-        );
-        assert_eq!(
-            step,
-            ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: vec![surface_premise.clone()],
-            }
-        );
+        let step = ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises: vec![surface_premise.clone()],
+        };
         let before_apply = fact_node_allocations();
         let applied = root
             .driver()
@@ -9304,7 +9232,6 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         arguments: application.arguments.iter().cloned().rev().collect(),
     };
 
-    let mut allocation_baseline = None;
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(kernel_premise.clone());
@@ -9331,42 +9258,24 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
             &theorem_environment,
         );
         let retained_root = root.clone();
+        let missing = root
+            .driver()
+            .apply_step(ProofStep::ApplyTheoremUsing {
+                application: missing_application.clone(),
+                premises: vec![premise.clone()],
+            })
+            .err()
+            .expect("an unavailable instantiated requirement must reject the application");
         assert!(
-            crate::kernel::search::ProofSearch::try_theorem_application(
-                &(root),
-                &missing_application
-            )
-            .expect("missing pure theorem search should be a bounded miss")
-            .is_none(),
-            "an unavailable pure theorem premise must not manufacture a descendant"
+            missing.message().contains("required exact fact"),
+            "{missing:?}"
         );
-        let missing = crate::kernel::search::ProofSearch::select_pure_theorem_application_step(
-            &(root),
-            &missing_application,
-        )
-        .expect_err("an unavailable instantiated requirement must reject the candidate");
-        assert!(missing.message().contains("required exact fact"));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
-        let before_query = fact_node_allocations();
-        let step = crate::kernel::search::ProofSearch::select_pure_theorem_application_step(
-            &(root),
-            &application,
-        )
-        .expect("smart pure search should select the indexed source requirement");
-        let query_allocations = fact_node_allocations() - before_query;
-        assert_eq!(
-            query_allocations,
-            *allocation_baseline.get_or_insert(query_allocations),
-            "size {size} pure theorem selection must not rebuild persistent fact indexes"
-        );
-        assert_eq!(
-            step,
-            ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: vec![premise.clone()],
-            }
-        );
+        let step = ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises: vec![premise.clone()],
+        };
         let before_script = fact_node_allocations();
         let complete = root
             .driver()
@@ -12343,12 +12252,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
         ));
         if size == 16 {
             assert!(
-                crate::kernel::search::ProofSearch::try_theorem_application(
-                    &(joined),
-                    &missing_application
-                )
-                .expect("missing theorem search should remain a bounded miss")
-                .is_none(),
+                apply_using(&joined, &missing_application, Vec::new()).is_none(),
                 "a missing theorem must not manufacture a descendant"
             );
             assert!(matches!(
@@ -12356,10 +12260,8 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 [ProofStep::Branch { .. }]
             ));
         }
-        let applied =
-            crate::kernel::search::ProofSearch::try_theorem_application(&(joined), &application)
-                .expect("common theorem search should run")
-                .expect("the reflexive theorem should produce a checked descendant");
+        let applied = apply_using(&joined, &application, Vec::new())
+            .expect("the reflexive theorem should produce a checked descendant");
         assert!(matches!(
             applied.certificate().steps(),
             [
@@ -15493,4 +15395,20 @@ fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
             assert_eq!(edge.explicit_exit_state().is_some(), consumed && may_exit);
         }
     }
+}
+
+/// `application` checked with exactly `premises`, as a written
+/// `apply(...) using { ... }` is; `None` when the checker refuses it.
+fn apply_using<'a>(
+    proof: &Proof<'a>,
+    application: &TheoremApplication,
+    premises: Vec<ClickProposition>,
+) -> Option<Proof<'a>> {
+    proof
+        .driver()
+        .apply_step(ProofStep::ApplyTheoremUsing {
+            application: application.clone(),
+            premises,
+        })
+        .ok()
 }

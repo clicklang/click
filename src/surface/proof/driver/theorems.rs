@@ -53,11 +53,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 self.apply_prepared_theorem(application, !implicit_solve_disabled())
             });
         }
+        // The kernel's population law has no declared requirements to
+        // instantiate: its one premise is the written population count, so it
+        // applies at an exit that still holds several outcomes.
         let driver_proof = self.proof;
-        let Some(step) = crate::kernel::search::ProofSearch::select_theorem_application_step(
-            driver_proof,
-            application,
-        )?
+        let Some(step) =
+            crate::surface::proof::theorem_application::population_member_count_zero_step(
+                application,
+            )
         else {
             return Err(driver_proof.step_error(
                 "theorem application requires a result-sensitive fixed-state proof after function exit",

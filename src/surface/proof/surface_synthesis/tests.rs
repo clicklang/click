@@ -766,51 +766,6 @@ fn qualified_multidimensional_cell_recovery_preserves_its_source_rank() {
     );
 }
 
-#[test]
-fn multidimensional_array_definedness_tracks_local_roots_and_indexes() {
-    let lowered = ProgramExpression::Index(
-        Box::new(ProgramExpression::Variable("grid".into())),
-        Box::new(ProgramExpression::Variable("column".into())),
-    );
-    let local = ContractExpression::ArrayIndex {
-        base: Box::new(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("grid".into()),
-        )),
-        indexes: vec![ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("row".into()),
-        )],
-        dimensions: vec![1],
-        lowered: lowered.clone(),
-    };
-    assert!(contract_expression_mentions_program_local(
-        &local,
-        &BTreeSet::from(["grid", "column"]),
-    ));
-    assert!(contract_expression_mentions_program_local(
-        &local,
-        &BTreeSet::from(["row", "column"]),
-    ));
-
-    let qualified = ContractExpression::ArrayIndex {
-        base: Box::new(ContractExpression::QualifiedC {
-            name: "static_local::f::grid".into(),
-            lowered: ProgramExpression::Value(int32(0)),
-        }),
-        indexes: vec![ContractExpression::ProgramExpression(
-            ProgramExpression::Value(int32(0)),
-        )],
-        dimensions: vec![1],
-        lowered: ProgramExpression::Index(
-            Box::new(ProgramExpression::Variable("global_grid".into())),
-            Box::new(ProgramExpression::Value(int32(0))),
-        ),
-    };
-    assert!(!contract_expression_mentions_program_local(
-        &qualified,
-        &BTreeSet::new(),
-    ));
-}
-
 /// One fixture's call requirement over a foreign object: spellable as that
 /// object's qualified cells, and re-lowering to the same cells.
 fn assert_foreign_object_requirement_is_spellable(block: &str, name: &str, cells: i32) {

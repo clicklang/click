@@ -12617,7 +12617,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         // Structural frontiers belong to the branch and loop operations.
         let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
-            execution.view(context),
+            execution.view(),
             &execution.core.state,
             context.function,
             context.arguments,

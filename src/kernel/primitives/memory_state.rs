@@ -3811,12 +3811,6 @@ impl SymbolicMemory {
         Self::default()
     }
 
-    pub(crate) fn has_same_state_markers(&self, other: &Self) -> bool {
-        self.blocks == other.blocks
-            && self.forgotten.ended_local_blocks == other.forgotten.ended_local_blocks
-            && self.heap == other.heap
-    }
-
     pub fn with_block(
         mut self,
         block: impl Into<AddressBase>,

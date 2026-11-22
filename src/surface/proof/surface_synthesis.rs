@@ -1148,20 +1148,6 @@ fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
     false
 }
 
-pub(super) fn surface_synthesis_exhaustion_description() -> Option<String> {
-    LAST_SURFACE_SYNTHESIS_EXHAUSTION.with(|last| {
-        last.get().map(|category| {
-            format!("Surface Click reconstruction exhausted its bounded {category} search")
-        })
-    })
-}
-
-pub(super) fn surface_synthesis_failure(prefix: &str, kernel: &Proposition) -> String {
-    surface_synthesis_exhaustion_description()
-        .map(|exhaustion| format!("{prefix}: {exhaustion}"))
-        .unwrap_or_else(|| format!("{prefix}: {kernel:?}"))
-}
-
 pub(in crate::surface) fn synthesize_surface_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,

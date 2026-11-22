@@ -186,6 +186,7 @@ pub(crate) use eval::load_variable_for_term;
 pub(crate) use eval::offsets_have_same_canonical_form;
 pub(crate) use eval::pointer_read_over_immediate_store;
 pub(crate) use eval::proposition_mentions_load_variable;
+#[cfg(test)]
 pub(crate) use eval::proposition_mentions_scalar_read;
 pub(crate) use eval::read_over_write_program_value;
 pub(crate) use eval::read_over_write_value;
@@ -260,9 +261,7 @@ pub(crate) use reasoning::memory_resolution::{
     ClosureFactCheck, closure_memoized_fact_check, with_closure_failure_memo,
 };
 pub(crate) use reasoning::resolve_load_variables_from_registry;
-pub(crate) use reasoning::resolve_minted_load_variables;
 pub(crate) use reasoning::substitute_integer_variable_in_pure_proposition;
-pub(crate) use reasoning::try_resolve_load_variables_from_registry;
 pub use reasoning::{LoweringIntroduction, LoweringIntroductions};
 pub(crate) use reasoning::{
     collect_bitvector_variables, collect_program_value_bitvector_variables,

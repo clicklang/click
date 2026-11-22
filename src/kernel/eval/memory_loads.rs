@@ -4079,22 +4079,6 @@ fn proposition_mentions_structural_read(proposition: &Proposition) -> bool {
 pub(crate) const LOAD_VARIABLE_RANGE: std::ops::Range<u64> =
     LOAD_VARIABLE_BASE..LOAD_VARIABLE_BASE + LOAD_VARIABLE_RANGE_SIZE;
 
-/// Whether the selected proposition contains a state-bearing scalar read,
-/// in structural form or through the transitional registered name.
-pub(crate) fn proposition_mentions_scalar_read(proposition: &Proposition) -> bool {
-    if proposition_mentions_structural_read(proposition) {
-        return true;
-    }
-    let mut variables = std::collections::BTreeSet::new();
-    crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(
-        proposition,
-        &mut variables,
-    );
-    variables.iter().any(|variable| {
-        is_load_variable(variable) && registered_load_for_variable(variable).is_some()
-    })
-}
-
 /// The comparison form: assumption-free read-over-write canonicalization
 /// followed by structural selection of unresolved scalar reads. This is a
 /// checker operation; lowering retains the read even when its value is known.
@@ -5917,6 +5901,23 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         ProgramValue::Int128(bits) => ProgramValue::Int128(canonical_scalar_read(&bits)),
         ProgramValue::UInt128(bits) => ProgramValue::UInt128(canonical_scalar_read(&bits)),
         other => other,
+    })
+}
+
+/// Whether the selected proposition contains a state-bearing scalar read,
+/// in structural form or through the transitional registered name.
+#[cfg(test)]
+pub(crate) fn proposition_mentions_scalar_read(proposition: &Proposition) -> bool {
+    if proposition_mentions_structural_read(proposition) {
+        return true;
+    }
+    let mut variables = std::collections::BTreeSet::new();
+    crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(
+        proposition,
+        &mut variables,
+    );
+    variables.iter().any(|variable| {
+        is_load_variable(variable) && registered_load_for_variable(variable).is_some()
     })
 }
 
@@ -10036,36 +10037,6 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
     assert!(!crate::kernel::proposition_holds_without_facts(
         &comparison_form(&different_state).unwrap_or(different_state)
     ));
-}
-
-#[test]
-fn scalar_read_presence_survives_shared_admission_and_registry_reset() {
-    use crate::kernel::{IntegerTerm, SharedMachineIntegerTerm, Term};
-    let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let pointer = Address::symbolic(Variable(997171));
-    let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 4);
-    let observed = |term| {
-        Proposition::Equal(
-            Term::Integer(
-                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
-                    MachineIntegerType::Int32,
-                    term,
-                ))
-                .into(),
-            ),
-            Term::Integer(IntegerTerm::constant_i64(0).into()),
-        )
-    };
-    let shared = observed(MachineTerm::Variable(name));
-    assert!(proposition_mentions_scalar_read(&shared));
-    assert!(proposition_mentions_load_variable(&shared));
-    clear_load_variable_registry();
-    assert!(proposition_mentions_scalar_read(&shared));
-    assert!(proposition_mentions_load_variable(&shared));
-    assert!(!proposition_mentions_scalar_read(&observed(
-        MachineTerm::Variable(Variable(997172))
-    )));
 }
 
 #[cfg(test)]

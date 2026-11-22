@@ -1674,10 +1674,81 @@ impl PureFactStore {
         self.quantified_fact_available(required)
     }
 
+    pub(crate) fn matching_quantified_fact(&self, required: &Proposition) -> Option<Proposition> {
+        self.quantified_matches(required).next().cloned()
+    }
+
+    pub(crate) fn matching_quantified_facts(&self, required: &Proposition) -> Vec<Proposition> {
+        self.quantified_matches(required).cloned().collect()
+    }
+
+    fn quantified_matches<'a>(
+        &'a self,
+        required: &'a Proposition,
+    ) -> impl Iterator<Item = &'a Proposition> {
+        quantified_equivalence_index_key(required)
+            .and_then(|key| self.by_quantified_equivalence.get(&key))
+            .into_iter()
+            .flat_map(PersistentSequence::iter)
+            .map(Arc::as_ref)
+            .filter(move |candidate| quantified_binder_equivalent(required, candidate))
+    }
+
+    pub(crate) fn quantified_fact_available(&self, required: &Proposition) -> bool {
+        self.matching_quantified_fact(required).is_some()
+    }
+
+    /// An available guarded universal that entails `required` by dropping
+    /// conjuncts of its conclusion under identical binder and guards:
+    /// `forall k { G implies A and B }` for `forall k { G implies A }`.
+    ///
+    /// One probe of the projection index selects the candidates, and each is
+    /// accepted only when one of its own projections is binder-equivalent to
+    /// `required` by the same check `known` applies to quantified facts.
+    /// A different guard, binder sort, or conjunct has a different key or
+    /// fails that check. The returned fact is not itself `required`; the
+    /// caller must still establish the weakening with checked steps.
+    pub(crate) fn quantified_conjunct_projection_source(
+        &self,
+        required: &Proposition,
+    ) -> Option<&Proposition> {
+        if !matches!(required, Proposition::ForAll { .. }) {
+            return None;
+        }
+        let key = quantified_equivalence_index_key(required)?;
+        self.quantified_conjunct_projections
+            .get(&key)?
+            .iter()
+            .map(Arc::as_ref)
+            .find(|source| {
+                guarded_universal_conjunct_projections(source)
+                    .iter()
+                    .any(|projection| quantified_binder_equivalent(required, projection))
+            })
+    }
+
+    /// Returns a stored true Integer comparison whose typed alpha form matches
+    /// `required`. The candidate is selected by the persistent alpha bucket,
+    /// so unrelated ambient facts are never scanned.
+    fn matching_integer_condition_alpha_fact(&self, required: &Proposition) -> Option<Proposition> {
+        let key = integer_condition_alpha_key(required)?;
+        let fingerprint = key.checked_fingerprint()?;
+        let bucket = self.by_integer_condition_alpha.get(&fingerprint)?;
+        for candidate in bucket {
+            match candidate.key.checked_eq(&key) {
+                Some(true) => return Some(candidate.proposition.clone()),
+                Some(false) => {}
+                None => return None,
+            }
+        }
+        None
+    }
+
     /// Returns one actual available fact accepted by explicit check. Smart
     /// syntax selection needs the retained fact, not merely a yes/no answer:
     /// its recorded surface form may carry a statement state that the
     /// freshly lowered theorem requirement no longer exposes.
+    #[cfg(test)]
     pub(crate) fn matching_fact_across_effects(
         &self,
         required: &Proposition,
@@ -1759,76 +1830,6 @@ impl PureFactStore {
         }
         separation_bridged_fact_is_available(required, &candidates, &self.assumptions, framing)
             .then(|| required.clone())
-    }
-
-    pub(crate) fn matching_quantified_fact(&self, required: &Proposition) -> Option<Proposition> {
-        self.quantified_matches(required).next().cloned()
-    }
-
-    pub(crate) fn matching_quantified_facts(&self, required: &Proposition) -> Vec<Proposition> {
-        self.quantified_matches(required).cloned().collect()
-    }
-
-    fn quantified_matches<'a>(
-        &'a self,
-        required: &'a Proposition,
-    ) -> impl Iterator<Item = &'a Proposition> {
-        quantified_equivalence_index_key(required)
-            .and_then(|key| self.by_quantified_equivalence.get(&key))
-            .into_iter()
-            .flat_map(PersistentSequence::iter)
-            .map(Arc::as_ref)
-            .filter(move |candidate| quantified_binder_equivalent(required, candidate))
-    }
-
-    pub(crate) fn quantified_fact_available(&self, required: &Proposition) -> bool {
-        self.matching_quantified_fact(required).is_some()
-    }
-
-    /// An available guarded universal that entails `required` by dropping
-    /// conjuncts of its conclusion under identical binder and guards:
-    /// `forall k { G implies A and B }` for `forall k { G implies A }`.
-    ///
-    /// One probe of the projection index selects the candidates, and each is
-    /// accepted only when one of its own projections is binder-equivalent to
-    /// `required` by the same check `known` applies to quantified facts.
-    /// A different guard, binder sort, or conjunct has a different key or
-    /// fails that check. The returned fact is not itself `required`; the
-    /// caller must still establish the weakening with checked steps.
-    pub(crate) fn quantified_conjunct_projection_source(
-        &self,
-        required: &Proposition,
-    ) -> Option<&Proposition> {
-        if !matches!(required, Proposition::ForAll { .. }) {
-            return None;
-        }
-        let key = quantified_equivalence_index_key(required)?;
-        self.quantified_conjunct_projections
-            .get(&key)?
-            .iter()
-            .map(Arc::as_ref)
-            .find(|source| {
-                guarded_universal_conjunct_projections(source)
-                    .iter()
-                    .any(|projection| quantified_binder_equivalent(required, projection))
-            })
-    }
-
-    /// Returns a stored true Integer comparison whose typed alpha form matches
-    /// `required`. The candidate is selected by the persistent alpha bucket,
-    /// so unrelated ambient facts are never scanned.
-    fn matching_integer_condition_alpha_fact(&self, required: &Proposition) -> Option<Proposition> {
-        let key = integer_condition_alpha_key(required)?;
-        let fingerprint = key.checked_fingerprint()?;
-        let bucket = self.by_integer_condition_alpha.get(&fingerprint)?;
-        for candidate in bucket {
-            match candidate.key.checked_eq(&key) {
-                Some(true) => return Some(candidate.proposition.clone()),
-                Some(false) => {}
-                None => return None,
-            }
-        }
-        None
     }
 
     fn integer_alpha_fact_available(&self, required: &Proposition) -> bool {

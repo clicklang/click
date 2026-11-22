@@ -571,10 +571,8 @@ pub(super) fn execute_branch_step_from_frontier_position(
         next_top_level_statement_from_frontier_position(
             ExecutionView::new(
                 &execution.core.frontier,
-                &execution.core.effect_facts,
                 &execution.presentation.recorded_states,
                 &execution.presentation.surface_propositions,
-                proof_context.constants.function_entry_state.as_ref(),
             ),
             state,
             function,
@@ -1604,7 +1602,7 @@ pub(super) fn prepare_call_outcome_split(
         })?;
     let (execution_start_state, current_state, mut statement, mut remaining) =
         next_top_level_statement_from_frontier_position(
-            prepared.view(proof_context),
+            prepared.view(),
             &prepared.core.state,
             function,
             arguments,
@@ -2046,10 +2044,8 @@ fn execute_step_from_frontier_position_selecting_path(
         next_top_level_statement_from_frontier_position(
             ExecutionView::new(
                 &execution.core.frontier,
-                &execution.core.effect_facts,
                 &execution.presentation.recorded_states,
                 &execution.presentation.surface_propositions,
-                proof_context.constants.function_entry_state.as_ref(),
             ),
             state,
             function,

@@ -110,27 +110,6 @@ pub(super) fn cite_range_span_guards(
     }
 }
 
-/// The first span guard a theorem requirement owes that an application
-/// citing the requirement cannot supply.
-///
-/// This is the search-side mirror of the check in
-/// `instantiate_theorem_application_with_assumptions`: that check asks for
-/// each count-form guard among the evidence, and [`cite_range_span_guards`]
-/// puts it there exactly when it is available. A selector that lists the
-/// range requirement therefore owes nothing more when this returns `None`,
-/// and would be refused by the checker when it returns a guard.
-pub(super) fn missing_theorem_span_guard(
-    requirement: &Proposition,
-    available: impl Fn(&Proposition) -> bool,
-) -> Option<Proposition> {
-    crate::kernel::stated_loadable_span_guards(requirement)
-        .into_iter()
-        .find(|guard| {
-            !available(guard)
-                && !matches!(normalize_proposition(guard), NormalizedProposition::True)
-        })
-}
-
 /// Instantiates one theorem from explicit evidence and an indexed lowering
 /// context. Index the evidence only when unfolding a requirement or applying
 /// an Integer fold law needs it; ordinary exact requirements read the list.
