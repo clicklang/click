@@ -4113,10 +4113,12 @@ fn describe_model_field_version_stop(
                 ),
                 // The entry model is the old version, never the replacement,
                 // so it is not a cause; `replacing_change` skips it.
-                Some(crate::kernel::model_fields::ModelMint::ContractEntry) | None => format!(
-                    "the two states store different models for `{owner}`, and no step here says \
+                Some(crate::kernel::model_fields::ModelMint::ContractEntry { .. }) | None => {
+                    format!(
+                        "the two states store different models for `{owner}`, and no step here says \
                      which replaced which. State {promise} wherever the model is replaced."
-                ),
+                    )
+                }
             };
             format!("`{field}` may have changed since {since}: {cause}")
         }

@@ -492,22 +492,6 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         let (Some(schema), Some(fields)) = (&binding.schema, &binding.fields) else {
             continue;
         };
-        for (field_index, ((field, _), value)) in
-            schema.fields().iter().zip(fields.iter()).enumerate()
-        {
-            let Some(variable) = crate::kernel::algebraic_value_variable(value) else {
-                continue;
-            };
-            crate::kernel::model_fields::register_model_field_variable(
-                variable,
-                crate::kernel::model_fields::ModelFieldOrigin {
-                    identity: instance,
-                    field: std::sync::Arc::from(field.as_str()),
-                    field_index,
-                    minted_by: crate::kernel::model_fields::ModelMint::ContractEntry,
-                },
-            );
-        }
         let spelling = if binding.name.starts_with('#') {
             let ResourceClause::Declared {
                 name, arguments, ..
@@ -522,6 +506,25 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         } else {
             binding.name.clone()
         };
+        let owner = std::sync::Arc::from(spelling.as_str());
+        for (field_index, ((field, _), value)) in
+            schema.fields().iter().zip(fields.iter()).enumerate()
+        {
+            let Some(variable) = crate::kernel::algebraic_value_variable(value) else {
+                continue;
+            };
+            crate::kernel::model_fields::register_model_field_variable(
+                variable,
+                crate::kernel::model_fields::ModelFieldOrigin {
+                    identity: instance,
+                    field: std::sync::Arc::from(field.as_str()),
+                    field_index,
+                    minted_by: crate::kernel::model_fields::ModelMint::ContractEntry {
+                        owner: std::sync::Arc::clone(&owner),
+                    },
+                },
+            );
+        }
         crate::kernel::model_fields::register_instance_spelling(instance, &spelling);
     }
 }
