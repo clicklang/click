@@ -1561,8 +1561,10 @@ predicate calls, definedness, and proposition expressions, including ordinary
 arithmetic and function-call operands. It does not invent arguments absent
 from the conclusion, match modulo arbitrary equality, or chain applications.
 Discovery uses an index of conclusion shapes and function/predicate symbols,
-runs under the normal solve work budget, and expands to explicit
-`apply(theorem(args)) using { ... }`. Direct existing proofs remain preferred.
+runs under the normal solve work budget, and expands to
+`apply(theorem(args))` when its obligations can be checked from the facts in
+scope. The expanded call retains an explicit evidence list when replay
+requires it.
 
 <!-- verified-example: mdtests/solve_using_discovers_one_theorem.md -->
 ```click
@@ -2792,7 +2794,8 @@ Theorem calls keep their existing `apply(theorem(args))` spelling.
 **Core.** Apply a verified global theorem at the written arguments. Click
 generates obligations from the instantiated theorem requirements and argument
 evaluation, in pure proofs, at the execution frontier, and on returned
-outcomes. Available facts and direct checking close these obligations.
+outcomes. Available facts and direct checking close these obligations,
+including evaluation conditions that are already established in scope.
 Ordinary implicit `solve()` proves any remaining obligations. You can
 establish a missing fact first with `have P by { ... }`.
 
@@ -2801,8 +2804,8 @@ establish a missing fact first with `have P by { ... }`.
 An unknown theorem, type mismatch, or unproved obligation fails without
 changing resources. A missing obligation names the proposition to prove.
 Expansion retains any needed `have` proofs and writes the bare
-`apply(theorem(args))`. Replay checks the generated obligations with
-`known()` rules. The explicit `using` form also checks a theorem application
+`apply(theorem(args))`. Replay checks generated obligations using ordinary
+availability and evaluation rules. The explicit `using` form checks a theorem application
 from written evidence.
 
 **Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`pure_apply_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_apply_obligations.md), [`apply_cites_a_premise_stated_first.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_cites_a_premise_stated_first.md)

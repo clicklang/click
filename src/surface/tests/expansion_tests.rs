@@ -11350,17 +11350,14 @@ fn restricted_solve_retains_symbolic_add_definedness_theorem() {
         .expect("symbolic-add definedness solve should expand");
     assert!(
         expanded.contains(
-            "apply(click::integer::int32_nonnegative_add_within_max_is_defined(value, amount)) using"
+            "apply(click::integer::int32_nonnegative_add_within_max_is_defined(value, amount));"
         ),
         "{expanded}"
     );
-    assert!(expanded.contains("amount >= 0;"), "{expanded}");
-    assert!(
-        expanded.contains("to_integer((2147483647 - amount)) >= to_integer(value);"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("have "), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
-    verify_click_theorems(&expanded).expect("expanded symbolic-add definedness proof should check");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("the bare application should reuse the known evaluation evidence");
 }
 
 #[test]
