@@ -71,6 +71,22 @@ int32 buffer_push(struct buffer* owner, int32 value) {
 } by {
     unfold(owned_buffer(owner));
     step_until(function.exit);
+    have 0 != (old(owner->len) + 1) by {
+        solve() using { 1 <= old(owner->len); };
+    }
+    have separate(memory(old(owner->data)[0]), memory(old(owner->data)[old(owner->len) + 1])) by {
+        apply(click::separation::separate_elements(old(owner->data), 0, old(owner->len) + 1));
+    }
+    have separate(statement(4).footprint, at(statement(4).entry, memory(owner->data[0]))) by {
+        normalize() using { separate(memory(old(owner->data)[0]), memory(old(owner->data)[old(owner->len) + 1])); };
+    }
+    have at(statement(4).exit, owner->data[0]) == at(statement(4).entry, owner->data[0]) by {
+        preserve(at(statement(4).entry, memory(owner->data[0])), statement(4));
+    }
+    have owner->data[0] == old(owner->data[0]) by {
+        rewrite(at(statement(4).exit, owner->data[0]), at(statement(4).entry, owner->data[0]));
+        known();
+    }
     have 0 <= owner->len by {
         solve();
     }
