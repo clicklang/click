@@ -47,7 +47,7 @@ fn external_array_unknown_states_and_noop_maps_scale_with_representation() {
 }
 
 #[test]
-fn external_array_execution_requires_full_authority_and_mutability() {
+fn external_array_execution_requires_full_authority() {
     let source = external(933_000);
     let target = external(933_001);
     let mut samples = Vec::new();
@@ -57,7 +57,6 @@ fn external_array_execution_requires_full_authority_and_mutability() {
                 (count, count, true),
                 (count - 1, count, true),
                 (count, count - 1, true),
-                (count, count, false),
             ] {
                 let state = ExecutionState::new().with_resource_context(
                     ResourceContext::new().unchecked_with_facts([
@@ -65,8 +64,7 @@ fn external_array_execution_requires_full_authority_and_mutability() {
                         own_memory_fact(target.clone(), 0, write),
                     ]),
                 );
-                let target_value = Pointer::new(target.clone(), ProgramType::UInt32Pointer)
-                    .with_pointee_constant(!mutable);
+                let target_value = Pointer::new(target.clone(), ProgramType::UInt32Pointer);
                 let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
                     prove_execution_statement_execution(
                         state,

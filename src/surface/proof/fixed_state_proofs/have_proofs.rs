@@ -1856,13 +1856,10 @@ mod retained_capture_tests {
             ProgramValue::UInt64(MachineTerm::Variable(Variable(997001))),
             ProgramValue::Bool(MachineTerm::constant(1)),
             ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
-            ProgramValue::Pointer(
-                crate::kernel::Pointer::new(
-                    crate::kernel::Address::symbolic(Variable(997003)),
-                    ProgramType::Int32Pointer,
-                )
-                .with_pointee_constant(true),
-            ),
+            ProgramValue::Pointer(crate::kernel::Pointer::new(
+                crate::kernel::Address::symbolic(Variable(997003)),
+                ProgramType::Int32Pointer,
+            )),
         ];
         for value in values {
             let expression =

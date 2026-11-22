@@ -162,8 +162,7 @@ fn aggregate_array_field_decay_keeps_the_element_pointer_type() {
     let source = SymbolicMemory::local_pointer("array");
     let state = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 16));
-    let pointer = ProgramValue::typed_pointer(source, ProgramType::UInt8Pointer)
-        .with_pointer_pointee_constant(true);
+    let pointer = ProgramValue::typed_pointer(source, ProgramType::UInt8Pointer);
     for (array_type, pointer_type) in [
         (ProgramType::Int32Array(2), ProgramType::Int32Pointer),
         (ProgramType::Float64Array(2), ProgramType::Float64Pointer),

@@ -843,7 +843,11 @@ mod term_payload_contract_tests {
         );
         let values = [
             algebraic(pointer.clone()),
-            algebraic(pointer.with_pointee_constant(true)),
+            algebraic(pointer.with_declared_object_class(true.then(|| {
+                crate::kernel::effective_type::CAccessClass::Scalar(
+                    crate::kernel::effective_type::CScalarClass::Int,
+                )
+            }))),
         ];
         for value in &values {
             let input = StoredAlgebraicTerm::from(value.clone());
@@ -867,7 +871,7 @@ mod term_payload_contract_tests {
                 let AlgebraicValue::Program(ProgramValue::Pointer(pointer)) = &fields[0] else {
                     unreachable!()
                 };
-                pointer.pointee_constant()
+                pointer.object_class()
             };
             assert_eq!(pointer(retained.native_compat()), pointer(value));
         }

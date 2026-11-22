@@ -681,13 +681,10 @@ mod tests {
     #[test]
     fn retained_pointer_numeric_results_match_native_casts_and_differences() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = ProgramExpression::Value(ProgramValue::Pointer(
-            Pointer::new(
-                Address::symbolic(Variable(1024100)),
-                ProgramType::Int32Pointer,
-            )
-            .with_pointee_constant(true),
-        ));
+        let pointer = ProgramExpression::Value(ProgramValue::Pointer(Pointer::new(
+            Address::symbolic(Variable(1024100)),
+            ProgramType::Int32Pointer,
+        )));
         let cast = |expression: ProgramExpression, target_type| ProgramExpression::Cast {
             expression: Box::new(expression),
             target_type,
@@ -759,13 +756,10 @@ mod tests {
     #[test]
     fn retained_pointer_arithmetic_preserves_operands_metadata_and_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = ProgramExpression::Value(ProgramValue::Pointer(
-            Pointer::new(
-                Address::symbolic(Variable(1023000)),
-                ProgramType::Int32Pointer,
-            )
-            .with_pointee_constant(true),
-        ));
+        let pointer = ProgramExpression::Value(ProgramValue::Pointer(Pointer::new(
+            Address::symbolic(Variable(1023000)),
+            ProgramType::Int32Pointer,
+        )));
         let index = ProgramExpression::Add(
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(1023001)),
@@ -861,8 +855,7 @@ mod tests {
         let pointer = Pointer::new(
             Address::symbolic(Variable(1022000)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointee_constant(true);
+        );
         let source = ProgramExpression::Value(ProgramValue::Pointer(pointer));
         let mut expressions = vec![
             ProgramExpression::Value(ProgramValue::typed_pointer(
@@ -1122,13 +1115,10 @@ mod tests {
     #[test]
     fn pointer_conditional_paths_keep_scoped_facts_and_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
-        let left = ProgramValue::Pointer(
-            Pointer::new(
-                Address::symbolic(Variable(1026200)),
-                ProgramType::Int32Pointer,
-            )
-            .with_pointee_constant(true),
-        );
+        let left = ProgramValue::Pointer(Pointer::new(
+            Address::symbolic(Variable(1026200)),
+            ProgramType::Int32Pointer,
+        ));
         let right = ProgramValue::Pointer(Pointer::new(
             Address::symbolic(Variable(1026201)),
             ProgramType::Int32Pointer,
@@ -1154,13 +1144,10 @@ mod tests {
                 panic!("pointer result")
             };
             assert!(value.shared().is_some());
-            let ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = &native.outcome else {
-                panic!("native pointer")
-            };
-            assert_eq!(
-                value.pointer().unwrap().pointee_constant(),
-                pointer.pointee_constant()
-            );
+            assert!(matches!(
+                &native.outcome,
+                ExpressionOutcome::Value(ProgramValue::Pointer(_))
+            ));
             assert_eq!(path.into_native(), native);
         }
     }

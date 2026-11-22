@@ -8510,8 +8510,7 @@ mod pointee_const_return_tests {
         let value = ProgramValue::typed_pointer(
             Address::symbolic(Variable(918)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointer_pointee_constant(true);
+        );
         assert_eq!(
             substitute_bitvector_variable_in_program_value(
                 &value,
@@ -8527,7 +8526,7 @@ mod pointee_const_return_tests {
         let replaced =
             substitute_pointer_variable_in_program_value(&value, Variable(918), &Address::null());
         assert!(matches!(replaced, ProgramValue::Pointer(pointer)
-            if pointer.is_null() && pointer.pointee_constant()));
+            if pointer.is_null()));
     }
 
     #[test]

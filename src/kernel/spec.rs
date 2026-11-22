@@ -4260,7 +4260,7 @@ fn evaluate_spec_algebraic_non_call_in(
                         // so the stored pointer carries none: a `const`
                         // parameter and a plain one build the same value,
                         // whichever route evaluated the field.
-                        next_values.push(field_path.value.without_pointer_constant());
+                        next_values.push(field_path.value);
                         next.push((next_values, merged_facts, merged_obligations));
                     }
                 }

@@ -83,8 +83,7 @@ mod tests {
                 Pointer::new(
                     Address::symbolic(Variable(999728)),
                     ProgramType::Int32Pointer,
-                )
-                .with_pointee_constant(true),
+                ),
             ))],
         };
         let native = AlgebraicTerm {
@@ -162,11 +161,16 @@ mod tests {
                 let pointer = Pointer::new(
                     Address::symbolic(Variable(999730)),
                     ProgramType::Int32Pointer,
-                )
-                .with_pointee_constant(qualified);
+                );
                 let application = SharedPureApplication::intern(
                     "carrier_pointer".into(),
-                    vec![PureFunctionArgument::Value(ProgramValue::Pointer(pointer))],
+                    vec![PureFunctionArgument::Value(ProgramValue::Pointer(
+                        pointer.with_declared_object_class(qualified.then(|| {
+                            crate::kernel::effective_type::CAccessClass::Scalar(
+                                crate::kernel::effective_type::CScalarClass::Int,
+                            )
+                        })),
+                    ))],
                 );
                 let carrier = if exact {
                     SharedMachineIntegerTerm::from_shared(

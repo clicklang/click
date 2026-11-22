@@ -167,8 +167,14 @@ Each step is one PR, measured with the gate and the raise-lower audit.
    - 3a, step 2: `volatile` leaves the pointer value. Pointer identity no
      longer includes it, and parameter binding, local stores, casts and
      `&` of a volatile object no longer record it on the value. An access is
-     volatile exactly when its own lvalue type is. `const` follows in a
-     separate step.
+     volatile exactly when its own lvalue type is.
+   - 3a, step 3: `const` leaves the pointer value. Writing through a
+     const-qualified lvalue and dropping `const` in a conversion are C
+     constraint violations (C11 6.5.16.1, 6.3.2.3p2) that the C frontend
+     and Clang reject before Click verifies; across the C mdtests no kernel
+     refusal on a pointer value's `const` fires. Writing a `const` object
+     stays undefined behaviour that the storage's read-only status refuses
+     (C11 6.7.3p6). Declarations keep their qualifiers.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

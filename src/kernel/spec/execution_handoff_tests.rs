@@ -420,7 +420,6 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
     )
     .with_address(Address::symbolic(Variable(999981)))
     .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(999983)))))
-    .with_pointee_constant(true)
     .with_bounds(Some(SubobjectBounds {
         start: Address::symbolic(Variable(999984)),
         width: MachineTerm::Variable(Variable(999985)),
@@ -446,10 +445,9 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
         ),
     ];
     for root in roots {
-        let field = AlgebraicFieldResult::from_program(SpecValue::Shared(root.clone()))
-            .without_pointer_constant()
-            .into_kernel();
-        let expected = SharedPointer::import(&source.clone().with_pointee_constant(false));
+        let field =
+            AlgebraicFieldResult::from_program(SpecValue::Shared(root.clone())).into_kernel();
+        let expected = SharedPointer::import(&source.clone());
         assert!(
             field
                 .pointer_payload()
@@ -488,9 +486,7 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
             _ => panic!("pointer producer changed"),
         }
         assert_eq!(
-            AlgebraicFieldResult::from_program(SpecValue::Shared(field.clone()))
-                .without_pointer_constant()
-                .into_kernel(),
+            AlgebraicFieldResult::from_program(SpecValue::Shared(field.clone())).into_kernel(),
             field
         );
         let mut state = ExecutionState::new();
@@ -545,12 +541,12 @@ fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
         (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
         (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
     ] {
-        let pointer = Pointer::new(Address::symbolic(Variable(999940)), source)
-            .with_pointee_constant(true)
-            .with_bounds(Some(SubobjectBounds {
+        let pointer = Pointer::new(Address::symbolic(Variable(999940)), source).with_bounds(Some(
+            SubobjectBounds {
                 start: Address::symbolic(Variable(999940)),
                 width: MachineTerm::constant(4),
-            }));
+            },
+        ));
         let expression = SpecExpression::Cast(
             Box::new(SpecExpression::Value(ProgramValue::Pointer(pointer))),
             target,
@@ -729,8 +725,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
     let pointer = Pointer::new(
         Address::symbolic(Variable(999961)),
         ProgramType::Int32Pointer,
-    )
-    .with_pointee_constant(true);
+    );
     let arguments = vec![
         SpecPureFunctionArgument::Value(sum(MachineIntegerType::UInt32)),
         SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Float32(

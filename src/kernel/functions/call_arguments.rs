@@ -80,9 +80,7 @@ fn contract_interface_argument_views(
         // and make pointer preconditions impossible to lower.
         let value = coerce_contract_argument_without_obligations(value, parameter)
             .expect("function arguments were type-checked before building contract views");
-        let value = value
-            .with_pointer_pointee_constant(parameter.pointee_is_constant())
-            .with_pointer_declared_object_class(parameter.pointee_class());
+        let value = value.with_pointer_declared_object_class(parameter.pointee_class());
         state.locals.set_typed_with_all_qualifiers(
             parameter.binding_name().clone(),
             value.clone(),
@@ -180,9 +178,7 @@ pub(super) fn set_contract_result(
         );
         return;
     }
-    let value = value
-        .with_pointer_pointee_constant(interface.return_pointee_is_constant())
-        .with_pointer_declared_object_class(interface.return_pointee_class());
+    let value = value.with_pointer_declared_object_class(interface.return_pointee_class());
     state.locals.set_retained_typed_with_all_qualifiers(
         CONTRACT_RESULT,
         source.retain_checked_pointer(value),
@@ -447,34 +443,7 @@ pub(super) fn coerce_function_return_value(
             function.return_type(),
         ));
     }
-    coerce_program_value_with_pointee_constant(
-        value,
-        function.return_type(),
-        function.return_pointee_is_constant(),
-        obligations,
-        assumptions,
-    )
-}
-
-pub(in crate::kernel) fn coerce_program_value_with_pointee_constant(
-    value: ProgramValue,
-    program_type: ProgramType,
-    pointee_constant: bool,
-    obligations: &mut Vec<ProofObligation>,
-    assumptions: &PureFactContext,
-) -> Option<ProgramValue> {
-    // This is an implicit conversion boundary. Explicit C casts have their
-    // own rules; storage read-only status is independently checked on writes.
-    if matches!(&value, ProgramValue::Pointer(pointer) if pointer.pointee_constant())
-        && program_type.is_pointer()
-        && !pointee_constant
-    {
-        return None;
-    }
-    Some(
-        coerce_program_value_to_type(value, program_type, obligations, assumptions)?
-            .with_pointer_pointee_constant(pointee_constant),
-    )
+    coerce_program_value_to_type(value, function.return_type(), obligations, assumptions)
 }
 
 #[cfg(test)]
@@ -502,8 +471,7 @@ pub(super) fn symbolic_contract_result(
         return ProgramValue::typed_pointer(
             Address::verifier_temporary(variable),
             interface.return_type(),
-        )
-        .with_pointer_pointee_constant(interface.return_pointee_is_constant());
+        );
     }
     // A contract that `allocates(result, n)` returns a block the call
     // creates, so the result takes a heap identity, which
@@ -518,12 +486,10 @@ pub(super) fn symbolic_contract_result(
             },
             interface.return_type(),
         )
-        .with_pointer_pointee_constant(interface.return_pointee_is_constant())
         .with_pointer_declared_object_class(interface.return_pointee_class());
     }
     symbolic_call_result(interface.return_type(), variable)
         .complete_word(Address::symbolic(variable))
-        .with_pointer_pointee_constant(interface.return_pointee_is_constant())
         .with_pointer_declared_object_class(interface.return_pointee_class())
 }
 
@@ -1090,7 +1056,6 @@ fn bind_program_function_arguments_impl(
             continue;
         }
         let value = coerce_program_function_argument_without_obligations(value, parameter)?
-            .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
         if address_taken_parameters.contains(parameter.binding_name()) {
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
@@ -1264,7 +1229,6 @@ pub(super) fn bind_contract_arguments(
         let root = roots.get(index);
         let value = if let Some(value) = value {
             let value = coerce_program_function_argument_without_obligations(value, parameter)?
-                .with_pointer_pointee_constant(parameter.pointee_is_constant())
                 .with_pointer_declared_object_class(parameter.pointee_class());
             match root {
                 Some(source)
@@ -1314,10 +1278,9 @@ pub(super) fn coerce_contract_argument_without_obligations(
     parameter: &ProgramParameter,
 ) -> Option<ProgramValue> {
     let mut obligations = Vec::new();
-    let value = coerce_program_value_with_pointee_constant(
+    let value = coerce_program_value_to_type(
         value.clone(),
         parameter.program_type(),
-        parameter.pointee_is_constant(),
         &mut obligations,
         &PureFactContext::new(),
     )?;
@@ -1370,10 +1333,9 @@ pub(super) fn coerce_contract_arguments(
                 }
                 value => value.clone(),
             };
-            coerced.push(coerce_program_value_with_pointee_constant(
+            coerced.push(coerce_program_value_to_type(
                 value,
                 parameter.program_type(),
-                parameter.pointee_is_constant(),
                 &mut obligations,
                 assumptions,
             )?);
@@ -1657,13 +1619,12 @@ mod pointer_argument_tests {
 mod pointer_return_tests {
     use super::*;
     #[test]
-    fn pointer_returns_keep_complete_payload_and_const_drop_refusals() {
+    fn pointer_returns_keep_complete_payload() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::new(
             Address::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointee_constant(true);
+        );
         let root = KernelTerm::shared_pointer_call(
             KernelTerm::checked_call(
                 KernelType::Program(ProgramType::Int32Pointer),
@@ -1679,15 +1640,6 @@ mod pointer_return_tests {
             program_return(crate::kernel::program_expression::int32_literal(0)),
         );
         let retained = || StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
-        assert!(
-            coerce_retained_function_return_value(
-                retained(),
-                &plain,
-                &mut Vec::new(),
-                &PureFactContext::new()
-            )
-            .is_none()
-        );
         let constant = plain.with_return_pointee_constant(true);
         let result = coerce_retained_function_return_value(
             retained(),
@@ -1709,21 +1661,10 @@ mod pointer_return_tests {
         set_function_result(&mut state, &constant, result.clone());
         let bound = state.locals.get(CONTRACT_RESULT).unwrap();
         assert!(bound.shared().is_some());
-        assert!(bound.pointer().unwrap().pointee_constant());
         state.locals.set_typed(
             "mutable",
             ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
             ProgramType::Int32Pointer,
-        );
-        assert!(
-            crate::kernel::loops::assign_call_result(
-                &mut state,
-                &("mutable").into(),
-                result.clone(),
-                &mut Vec::new(),
-                &PureFactContext::new()
-            )
-            .is_err()
         );
         crate::kernel::loops::assign_call_result(
             &mut state,
@@ -1734,14 +1675,5 @@ mod pointer_return_tests {
         )
         .unwrap();
         assert!(state.locals.get("fresh").unwrap().shared().is_some());
-        assert!(
-            state
-                .locals
-                .get("fresh")
-                .unwrap()
-                .pointer()
-                .unwrap()
-                .pointee_constant()
-        );
     }
 }

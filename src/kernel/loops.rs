@@ -67,14 +67,7 @@ pub(super) fn assign_call_result(
                 )
             }
             Some(_) => return Err(RuntimeError::TypeMismatch),
-            None => (
-                value.program_type(),
-                false,
-                false,
-                value
-                    .pointer()
-                    .is_some_and(|pointer| pointer.pointee_constant()),
-            ),
+            None => (value.program_type(), false, false, false),
         };
     let value = if value.shared().is_some()
         && value.program_type() == program_type
@@ -95,10 +88,9 @@ pub(super) fn assign_call_result(
         ) {
         value
     } else {
-        let converted = super::functions::coerce_program_value_with_pointee_constant(
+        let converted = super::eval::coerce_program_value_to_type(
             value.native().into_owned(),
             program_type,
-            pointee_constant,
             obligations,
             assumptions,
         )

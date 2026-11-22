@@ -52,8 +52,7 @@ mod tests {
         let pointer = Pointer::new(
             Address::symbolic(Variable(999702)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointee_constant(true);
+        );
         let arguments = [
             PureFunctionArgument::Value(ProgramValue::Int32(word.clone())),
             PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
@@ -95,8 +94,7 @@ mod tests {
         let pointer = Pointer::new(
             Address::symbolic(Variable(999703)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointee_constant(true);
+        );
         native.node = AlgebraicTermNode::Constructor {
             variant: "Arm".into(),
             fields: vec![AlgebraicValue::Program(ProgramValue::Pointer(pointer))],

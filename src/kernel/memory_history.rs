@@ -670,11 +670,9 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
                 ProgramValue::UInt128(term) => ProgramValue::UInt128(scalar(term)),
                 ProgramValue::Float32(term) => ProgramValue::Float32(scalar(term)),
                 ProgramValue::Float64(term) => ProgramValue::Float64(scalar(term)),
-                ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
-                    pointer
-                        .map_addresses(canonicalize_pointer_loads)
-                        .with_pointee_constant(false),
-                ),
+                ProgramValue::Pointer(pointer) => {
+                    ProgramValue::Pointer(pointer.map_addresses(canonicalize_pointer_loads))
+                }
             };
             (key, value)
         },
@@ -740,11 +738,9 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
             ProgramValue::UInt128(term) => ProgramValue::UInt128(canonicalize_atomic_loads(term)),
             ProgramValue::Float32(term) => ProgramValue::Float32(canonicalize_atomic_loads(term)),
             ProgramValue::Float64(term) => ProgramValue::Float64(canonicalize_atomic_loads(term)),
-            ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
-                pointer
-                    .map_addresses(canonicalize_pointer_loads)
-                    .with_pointee_constant(false),
-            ),
+            ProgramValue::Pointer(pointer) => {
+                ProgramValue::Pointer(pointer.map_addresses(canonicalize_pointer_loads))
+            }
         };
         std::sync::Arc::make_mut(&mut canonical.union_cells)
             .insert((key, *program_type), value.with_native_value(mapped));

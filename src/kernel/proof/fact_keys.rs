@@ -928,7 +928,6 @@ enum AlphaProgramValueKey {
     Scalar(ProgramType, AlphaMachineKey),
     Pointer {
         program_type: ProgramType,
-        pointee_constant: bool,
         pointer: AlphaAddressKey,
         provenance: AlphaAddressKey,
         bounds_known: bool,
@@ -2322,7 +2321,6 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
         }
         ProgramValue::Pointer(pointer) => AlphaProgramValueKey::Pointer {
             program_type: pointer.program_type(),
-            pointee_constant: pointer.pointee_constant(),
             pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
                 pointer.address(),
                 bindings,

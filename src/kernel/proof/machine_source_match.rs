@@ -231,7 +231,7 @@ mod tests {
             Address::symbolic(Variable(999464)),
             ProgramType::Int32Pointer,
         );
-        let values = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
+        let values = [pointer.clone(), pointer].map(|pointer| {
             MachineTerm::bool_cast(
                 MachineIntegerType::Int32,
                 ConditionTerm::BoolApplication(SharedPureApplication::intern(

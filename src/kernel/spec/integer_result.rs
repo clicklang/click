@@ -246,18 +246,24 @@ mod conditional_contract_tests {
         else {
             unreachable!("typed symbolic pointer")
         };
-        let call = |constant| {
+        let call = |constant: bool| {
             IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "integer_conditional_pointer".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-                    pointer.clone().with_pointee_constant(constant),
+                    pointer
+                        .clone()
+                        .with_declared_object_class(constant.then(|| {
+                            crate::kernel::effective_type::CAccessClass::Scalar(
+                                crate::kernel::effective_type::CScalarClass::Int,
+                            )
+                        })),
                 ))],
             ))
         };
         let calls = [call(false), call(true)];
         assert_eq!(
             calls[0], calls[1],
-            "native application identity ignores pointer const"
+            "native application identity ignores the pointer's declared class"
         );
         let common_calls = calls.clone().map(IntegerResult::from);
         assert_ne!(

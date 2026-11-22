@@ -87,7 +87,7 @@ mod tests {
             Address::symbolic(Variable(999401)),
             ProgramType::Int32Pointer,
         );
-        let applications = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
+        let applications = [pointer.clone(), pointer].map(|pointer| {
             SharedPureApplication::intern(
                 "boolean_exact_arguments".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(pointer))],

@@ -460,10 +460,7 @@ mod tests {
                 }],
             }
         };
-        let native = [
-            make(pointer.clone()),
-            make(pointer.with_pointee_constant(true)),
-        ];
+        let native = [make(pointer.clone()), make(pointer)];
         let roots = native
             .each_ref()
             .map(|value| KernelTermImport::default().machine(MachineIntegerType::Int32, value));
@@ -504,7 +501,7 @@ mod tests {
             Address::symbolic(Variable(999600)),
             ProgramType::Int32Pointer,
         );
-        let values = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
+        let values = [pointer.clone(), pointer].map(|pointer| {
             let mut value = KernelMatch::test_scrutinee(vec![
                 AlgebraicValueType::Integer,
                 AlgebraicValueType::Program(ProgramType::Int32Pointer),

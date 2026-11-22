@@ -251,12 +251,15 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
     let pointer = Pointer::new(
         Address::symbolic(Variable(1026100)),
         ProgramType::Int32Pointer,
-    )
-    .with_pointee_constant(true);
+    );
     let native = SpecValue::Native(ProgramValue::Pointer(pointer.clone()));
     let shared = native.clone().retain_pointer_result();
     let other_payload = SpecValue::Native(ProgramValue::Pointer(
-        pointer.clone().with_pointee_constant(false),
+        pointer.clone().with_declared_object_class(Some(
+            crate::kernel::effective_type::CAccessClass::Scalar(
+                crate::kernel::effective_type::CScalarClass::Int,
+            ),
+        )),
     ));
     let condition = Proposition::condition_is(ConditionTerm::Variable(Variable(1026101)), true);
     for left in [native.clone(), shared.clone()] {
@@ -272,7 +275,6 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
                 assert_eq!(result.shared(), Some(root));
             }
             assert_eq!(result.clone().into_native(), native.clone().into_native());
-            assert!(result.pointer().unwrap().pointee_constant());
         }
     }
     let distinct = SpecValue::Native(ProgramValue::Pointer(Pointer::new(
