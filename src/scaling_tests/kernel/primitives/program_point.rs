@@ -814,3 +814,77 @@ fn a_static_scalar_entry_version_ignores_disjoint_call_ranges_in_its_block() {
         "{samples:?}"
     );
 }
+
+/// A caller cell no write reached keeps its entry version across writes to
+/// other cells of the same parameter origin. Selecting it costs a lookup
+/// per byte of the read, not a walk over the writes before it.
+#[test]
+fn an_unwritten_parameter_cell_keeps_its_entry_version_across_sibling_writes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let store = |state: &ExecutionState, address: Address, bits| {
+        state.clone().with_memory(
+            state
+                .memory()
+                .clone()
+                .store(address, ProgramValue::Int32(MachineTerm::constant(bits))),
+        )
+    };
+    let read = |state: &ExecutionState, address: &Address| {
+        state
+            .program_point()
+            .entry_integer_version(address, LoadKind::Int32)
+    };
+    let at_entry = read(&store(&entry, cell.offset_by_bytes(4), 0), &cell)
+        .expect("an entry version after one sibling write");
+    assert_eq!(at_entry.read_version_id(), entry.program_point_id());
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = entry.clone();
+        for index in 1..=count {
+            state = store(&state, cell.offset_by_bytes(4 * index), index);
+        }
+        let point = state.program_point();
+        let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+            point.entry_integer_version(&cell, LoadKind::Int32)
+        });
+        // The same read term as one taken before the other writes.
+        assert_eq!(version.as_ref(), Some(&at_entry), "at {count} writes");
+        samples.push(work);
+
+        // A write reaching any byte of the cell ends its entry version.
+        assert!(read(&store(&state, cell.offset_by_bytes(2), 0), &cell).is_none());
+        assert!(read(&store(&state, cell.clone(), 0), &cell).is_none());
+        // A write from another parameter origin may alias the cell.
+        let other_origin = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(38_901)),
+        };
+        assert!(read(&store(&state, other_origin, 0), &cell).is_none());
+        // A write through a pointer of unknown storage may too.
+        assert!(
+            read(
+                &store(&state, Address::symbolic(Variable(38_902)), 0),
+                &cell
+            )
+            .is_none()
+        );
+        // A local store leaves caller storage alone.
+        let local = SymbolicMemory::local_pointer("unwritten_parameter_local");
+        let with_local = state
+            .clone()
+            .with_memory(state.memory().clone().with_block(local.base.clone(), 4));
+        assert_eq!(
+            read(&store(&with_local, local, 0), &cell).as_ref(),
+            Some(&at_entry)
+        );
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+}
