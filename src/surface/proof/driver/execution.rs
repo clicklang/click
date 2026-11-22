@@ -2508,6 +2508,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
 pub(in crate::surface::proof) fn preservation_smart_step<'a>(
     proof: &Proof<'a>,
 ) -> Result<Proof<'a>, ClickError> {
+    let _origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("loop preservation");
     let mut retried_requirements = std::collections::BTreeSet::new();
     match crate::kernel::search::ProofSearch::try_smart_statement_step(
         proof,

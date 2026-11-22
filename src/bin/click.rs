@@ -59,7 +59,6 @@ fn report_error(message: String) -> ! {
         "incomplete proof",
         "contract error",
         "contract entry refused",
-        "execution prerequisite unmet",
         "execution refused",
         "unsupported",
         "unsupported proof",
@@ -346,8 +345,12 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+                "tactic error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
             )),
+            "{error}"
+        );
+        assert!(
+            error.contains("refused by: implicit step (loop preservation)"),
             "{error}"
         );
 
@@ -355,7 +358,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
+                "tactic error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
             "{error}"
         );

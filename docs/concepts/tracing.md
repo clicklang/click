@@ -21,10 +21,9 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `internal error` | Click detected its own failure. | Stop at [`internal-error`](#outcomes) and capture the command, version, output, and inputs. |
 | `limit error` | A configured work limit stopped verification. | Record the limit and the operation that reached it. |
 | `contract error` | Click identified a rule it believes a written contract clause violates. | Check the rule under the contract’s requirements. Correct the clause or report a supported `contract-bug`. |
-| `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
+| `tactic error` | A written tactic or implicit proof step was refused. | Check `click docs TACTIC` and establish any evidence the operation requires at that program point. |
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
 | `incomplete proof` | The proof ended with a requirement outstanding. | Establish the named requirement before closing, such as a resource promised on return. |
-| `execution prerequisite unmet` | A checked operation needs evidence at its program point. | Record the requirement and follow the procedure below. |
 | `contract entry refused` | Click could not enter a contract. | Inspect the named clauses and work from the available goal. |
 | `execution refused` or `unsupported proof` | Click identified a specific execution or proof-driver refusal. | Investigate the reported cause. |
 

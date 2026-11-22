@@ -12868,6 +12868,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     let have = match proof.driver().open_have(spelling.surface) {
                         Ok(have) => have,
+                        Err(cause)
+                            if cause.kind() != crate::surface::ClickErrorKind::Proof
+                                || crate::instrumentation::exceeded_verification_limit_context(
+                                )
+                                .is_some() =>
+                        {
+                            return Err(cause);
+                        }
                         Err(_) => {
                             check_verification_deadline()?;
                             return Err(error);

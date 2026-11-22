@@ -39,7 +39,8 @@ it; shrink them if you can, but a report need not wait for that.
 - `tactic error`: read `click docs TACTIC` and check whether the tactic is valid
   at the reported point. Correct an invalid invocation. If the invocation and
   its premises satisfy the documented rule and Click still refuses, report
-  `tactic-bug`. If the tactic owes a goal, continue with that goal below.
+  `tactic-bug`. For a written or implicit step that needs evidence, record
+  the requirement at the operation's pre-state and continue with it below.
 - `contract error`: identify the written clause and read the documented
   contract rule that Click says it violates. Check the rule under the
   contract's stated requirements. If the clause violates it, explain why to
@@ -59,8 +60,6 @@ it; shrink them if you can, but a report need not wait for that.
   cannot supply what the contract promises, follow the `false-claim` procedure.
   If Click demands something the closing rule does not require, follow the
   `obligation-bug` procedure.
-- `execution prerequisite unmet`: record the exact prerequisite at the
-  operation's pre-state and continue with that goal.
 - `contract entry refused`: inspect the named resource clauses and effects.
   Continue with the reported obligation when the diagnostic gives one. For
   an entry refusal, use `contract-bug` if you can show that the original
