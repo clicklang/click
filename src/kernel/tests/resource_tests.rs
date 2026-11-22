@@ -1058,9 +1058,11 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     );
     assert!(open.instance_field_scope.is_empty());
     assert!(open.resource_instance_fields(instance.identity()).is_none());
-    assert!(
-        open.resource_instance_at_path(instance.identity(), &["left".into()])
-            .is_none()
+    let left_path = ["left".into()];
+    assert_eq!(
+        open.resource_instance_at_path(instance.identity(), &left_path)
+            .map(ResourceInstance::identity),
+        Some(children[0].1)
     );
     let left = open
         .owned_resource_instance(InstanceId::from_variable(Variable(501)))
@@ -1068,6 +1070,10 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
         .clone();
     let raw = rewrite(&open, &left, true, &[]).unwrap().state;
     assert!(raw.owned_resource_instance(left.identity()).is_none());
+    assert!(
+        raw.resource_instance_at_path(instance.identity(), &left_path)
+            .is_none()
+    );
     assert!(rewrite(&raw, &instance, false, &children).is_err());
     let mut replacement = left.clone();
     replacement.identity = InstanceId::from_variable(Variable(503));
@@ -1110,9 +1116,13 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
         *state.resources()
     );
     assert!(closed.instance_field_scope.is_empty());
+    assert!(
+        closed
+            .resource_instance_at_path(instance.identity(), &left_path)
+            .is_none()
+    );
     for bad in [
-        vec![],
-        vec![("left".into(), InstanceId::from_variable(Variable(501)))],
+        vec![("absent".into(), InstanceId::from_variable(Variable(501)))],
         vec![
             ("left".into(), InstanceId::from_variable(Variable(501))),
             ("right".into(), InstanceId::from_variable(Variable(501))),
