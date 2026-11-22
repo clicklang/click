@@ -96,10 +96,9 @@ const NIGHTLY: &[&str] = &[
     // 0.75s focused; nested-read identity and the positive C case stay in the gate.
     "nested_index_read_does_not_use_the_changed_index.md",
     "a_decreases_measure_sum_is_an_integer.md", // 2.4s: original disjunctive-guard regression
-    // 9.7s in a debug build: eleven sequential branches reach the split limit.
-    // 16s in a debug build: the loop closer's eleven branches reach the same
-    // limit; `an_automatically_closed_loop_splits_at_its_c_branches.md`
-    // keeps loop-body splitting in the gate.
+    // Eleven sequential branches exhaust the loop closer's work budget.
+    // `an_automatically_closed_loop_splits_at_its_c_branches.md`
+    // keeps the smaller loop-body splitting case in the gate.
     "a_branching_loop_stops_at_the_work_limit.md",
     // 1.9s focused; retain the full stack-pop case alongside the isolated
     // constructor-guard scaling regression.
