@@ -5629,9 +5629,8 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                     | native_constant!(_, _) => results.push(term.clone()),
                     MachineTerm::IntegerAddress(_, _) => results.push(term.clone()),
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                        // The selected entry already names the unchanged cell.
-                        // Resolving its empty view would discard that point.
-                        if memory.is_entry_read() {
+                        // A selected read already carries the point that names its cell.
+                        if memory.read_version_id().is_some() {
                             results.push(term.clone());
                             continue;
                         }
@@ -9523,4 +9522,21 @@ mod common_boolean_read_tests {
         // is checked separately by the load transport rule.
         assert_eq!(actual, vec![new]);
     }
+}
+
+#[test]
+fn atomic_canonicalization_keeps_two_written_read_points() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = SymbolicMemory::new();
+    let pointer = Address::symbolic(Variable(989_790));
+    let first = ProgramPoint::starting_at(&memory).for_exact_read();
+    let second = ProgramPoint::starting_at(&memory).for_exact_read();
+    let kind = LoadKind::Bits64;
+    let first = MachineTerm::MemoryLoad(first, Box::new(pointer.clone()), kind);
+    let second = MachineTerm::MemoryLoad(second, Box::new(pointer), kind);
+    assert_ne!(first, second);
+    assert_eq!(canonicalize_atomic_loads(&first), first);
+    assert_eq!(canonicalize_atomic_loads(&second), second);
+    assert_eq!(crate::kernel::canonical_term(&first), first);
+    assert_eq!(crate::kernel::canonical_term(&second), second);
 }
