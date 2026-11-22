@@ -1620,41 +1620,42 @@ fn switch(
             exits,
         )?);
     }
-    let field_type = match scrutinee {
+    let capture_type = match scrutinee {
         E::EnumField {
             name,
             variant,
             index,
             ..
-        } => super::nested_enum_field_type(name, variant, *index)?.map(|ty| ty.to_kernel_type()),
+        } => super::nested_enum_field_type(name, variant, *index)?
+            .map(|ty| (ty.to_kernel_type(), "Rust enum field")),
+        E::Deref {
+            value_type: value_type @ Type::Enum { .. },
+            ..
+        } => Some((
+            scalar_type(value_type)?.to_kernel_type(),
+            "Rust match operand",
+        )),
         _ => None,
     };
     if groups.len() == 1 {
         let body = bodies.pop().expect("one match arm");
-        return Ok(if let Some(value_type) = field_type {
-            let projection = cx.expr(scrutinee)?;
-            Sited::at(
-                site,
-                typed_value_step(Vec::new(), projection, value_type, false),
-            )
-            .then(body)
+        return Ok(if let Some((value_type, _)) = capture_type {
+            let value = cx.expr(scrutinee)?;
+            Sited::at(site, typed_value_step(Vec::new(), value, value_type, false)).then(body)
         } else {
             body
         });
     }
-    // Read a nested enum projection once, even when its base is itself a
-    // retained call result. Only the last test can end it on both edges.
-    let capture = if let Some(value_type) = field_type {
+    // Read the match operand once so the proof can split on that value.
+    // Only the last test can end it on both edges.
+    let capture = if let Some((value_type, origin)) = capture_type {
         let step = cx.result_step();
-        let projection = cx.expr(scrutinee)?;
+        let value = cx.expr(scrutinee)?;
         Some((
-            Sited::at(
-                site,
-                typed_value_step(vec![step], projection, value_type, false),
-            ),
+            Sited::at(site, typed_value_step(vec![step], value, value_type, false)),
             ProgramExpression::StepResult {
                 step,
-                origin: StepOrigin::Value("Rust enum field"),
+                origin: StepOrigin::Value(origin),
                 ends: true,
             },
             value_type,
