@@ -3635,7 +3635,8 @@ fn read_retained_lvalue_paths_without_ranges(
                 let may_use_recorded_integer_version = can_name_read
                     && ((is_integer && ProgramPoint::supports_local_call_output(pointer))
                         || ProgramPoint::supports_static_entry_version(pointer, lvalue.value_type));
-                let origin = (uses_entry_version
+                let point = state.program_point();
+                let uses_recorded_point = uses_entry_version
                     || may_use_loaded_entry_version
                     || may_use_recorded_integer_version
                     || (can_name_read
@@ -3643,9 +3644,8 @@ fn read_retained_lvalue_paths_without_ranges(
                             || crate::kernel::KernelFloatType::from_program_type(
                                 lvalue.value_type,
                             )
-                            .is_some())))
-                .then(|| state.program_point());
-                let entry_read = origin.as_ref().and_then(|point| {
+                            .is_some()));
+                let entry_read = uses_recorded_point.then_some(&point).and_then(|point| {
                     let entry = match lvalue.value_type {
                         ProgramType::Int8
                         | ProgramType::UInt8
@@ -3678,7 +3678,7 @@ fn read_retained_lvalue_paths_without_ranges(
                     ]
                 } else {
                     evaluate_retained_memory_load_paths(
-                        &state.memory,
+                        &point,
                         pointer.clone(),
                         lvalue.value_type,
                         facts,
@@ -3688,7 +3688,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
                         source,
                         budget.program_byte_order(),
-                        origin.as_ref(),
+                        uses_recorded_point,
                     )
                 };
                 for path in &mut paths {
