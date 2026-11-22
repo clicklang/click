@@ -1608,7 +1608,7 @@ Negative tests use an expected diagnostic substring:
 fail: expected diagnostic substring
 ```
 
-### Quick Solve Tests
+### Writing quick solve tests
 
 A Quick Solve Test isolates one small inference that `solve()` should find
 or promptly refuse. Add `quick-solve` to the opening `click` fence and
