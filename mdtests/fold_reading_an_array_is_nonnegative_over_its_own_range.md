@@ -11,8 +11,8 @@ That fact is now provable, so the workaround is not needed. `induct(hi)` gives
 an induction hypothesis guarded by the theorem's own `requires` at the smaller
 endpoint; `have viewable(v[lo..hi - 1]);` narrows the theorem's
 own range to that endpoint, against the order facts established by the shared
-`array_fold_induction_bounds` theorem. Then `known()` assembles the conjunction
-required by the induction hypothesis.
+`array_fold_induction_bounds` theorem. Induction application checks both
+conjuncts of the substituted requirement.
 
 The theorem also carries `hi <= 1073741823`, which with `0 <= lo` bounds the
 range's element count by the largest count a four-byte range can have and still
@@ -44,16 +44,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
             have lo < hi;
             apply(array_fold_induction_bounds(lo, hi));
             have viewable(v[lo..hi - 1]);
-            have to_integer(hi - 1) >= 0 and viewable(v[lo..hi - 1]) by known();
-            apply(ih(hi - 1)) using {
-                0 <= to_integer(hi - 1);
-                to_integer(hi - 1) < to_integer(hi);
-                0 <= lo;
-                to_integer(hi - 1) <= 1073741823;
-                to_integer(hi - 1) >= 0 and viewable(v[lo..hi - 1]);
-                0 <= to_integer(hi - 1 - lo);
-                to_integer(hi - 1 - lo) <= 1073741823;
-            };
+            apply(ih(hi - 1));
             unfold(unmarked(v, lo, hi));
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
             solve() using { 0 <= unmarked(v, lo, hi - 1); to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 }); };

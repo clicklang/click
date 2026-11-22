@@ -93,11 +93,6 @@ path = "mdtests/pure_induction_countdown.md"
 needle = "apply(ih(n - 1));"
 
 [[form]]
-id = "apply-induction-using"
-path = "mdtests/pure_induction_countdown_explicit.md"
-needle = "apply(ih(n - 1)) using {"
-
-[[form]]
 id = "apply-fact"
 path = "mdtests/apply_implication_fact.md"
 needle = "apply(h);"

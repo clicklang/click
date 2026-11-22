@@ -144,7 +144,6 @@ src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemm
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemma	try_direct_logical_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::have_by_integer_arithmetic	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_planned_fact_transport	1
-src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_smart_induction	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	17
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_execution_fact_transport_or_refusal	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_restricted_solve_closure	1
@@ -293,7 +292,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_unsigned_order_step_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_wide_arithmetic_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	driver	6
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_smart_induction	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_rewrite_equality	available_surface_fact	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_surface_fact	available_surface_fact_raw	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_surface_fact	named_returned_pointer_surface_fact	1

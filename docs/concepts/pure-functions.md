@@ -248,10 +248,9 @@ the same goal at any proved nonnegative `m < n`. The application also requires
 the theorem's declared requirements with `n` replaced by `m`; Click never
 drops a domain condition merely because it is doing induction.
 
-Bare `apply(ih(m))` is smart because it searches the available facts for
-those fixed obligations; it proves none, so state a missing one first with
-`have`. Expansion ends in `apply(ih(m)) using { ... }`, the simple form
-that checks exactly the listed obligations without searching.
+`apply(ih(m))` checks those obligations against facts in scope. Establish a
+missing one with `have` before the application. Expansion keeps the same
+application.
 
 The measure form's induction variable must be an `int32` or `uint64` theorem parameter. It
 quantifies that one variable, so other theorem parameters remain fixed and

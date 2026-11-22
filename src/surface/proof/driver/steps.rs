@@ -510,11 +510,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 parameter,
                 hypothesis,
             } => driver_proof.apply_induct(parameter, hypothesis),
-            ProofStep::ApplyInductionUsing {
+            ProofStep::ApplyInduction {
                 hypothesis,
                 arguments,
-                premises,
-            } => driver_proof.apply_induction(hypothesis, arguments, premises),
+            } => driver_proof.apply_induction(hypothesis, arguments),
             ProofStep::ApplyTheoremUsing {
                 application,
                 premises,

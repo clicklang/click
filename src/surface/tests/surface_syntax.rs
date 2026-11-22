@@ -1082,15 +1082,18 @@ fn parses_and_prints_pure_induction_tactics() {
             if application.name == "ih" && application.arguments.len() == 1
     ));
 
+    let legacy = source.replace("apply(ih(n - 1));", "apply(ih(n - 1)) using { n > 0; };");
+    let error = parse(&legacy).unwrap_err();
+    assert!(error.message().contains("takes no `using` list"), "{error}");
+
     let printable = vec![
         tactics[0].clone(),
-        ProofTactic::ApplyInductionUsing {
+        ProofTactic::ApplyInduction {
             hypothesis: "ih".to_string(),
             arguments: match &tactics[1] {
                 ProofTactic::ApplyTheorem(application) => application.arguments.clone(),
                 _ => unreachable!(),
             },
-            premises: Vec::new(),
         },
         ProofTactic::Known,
     ];
@@ -1105,8 +1108,7 @@ fn parses_and_prints_pure_induction_tactics() {
     };
     assert!(matches!(
         &reparsed[1],
-        ProofTactic::ApplyTheoremUsing { application, premises }
-            if application.name == "ih" && premises.is_empty()
+        ProofTactic::ApplyTheorem(application) if application.name == "ih"
     ));
     assert!(matches!(&reparsed[2], ProofTactic::Known));
 }

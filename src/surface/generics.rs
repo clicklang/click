@@ -1135,21 +1135,6 @@ fn instantiate_proof_tactic(
                 .map(&expression)
                 .collect::<Result<Vec<_>, _>>()?,
         },
-        ProofTactic::ApplyInductionUsing {
-            hypothesis,
-            arguments,
-            premises,
-        } => ProofTactic::ApplyInductionUsing {
-            hypothesis: hypothesis.clone(),
-            arguments: arguments
-                .iter()
-                .map(&expression)
-                .collect::<Result<Vec<_>, _>>()?,
-            premises: premises
-                .iter()
-                .map(proposition)
-                .collect::<Result<Vec<_>, _>>()?,
-        },
         ProofTactic::ApplyTheorem(application) => ProofTactic::ApplyTheorem(
             instantiate_theorem_application(application, substitution, algebraic_parameters)?,
         ),

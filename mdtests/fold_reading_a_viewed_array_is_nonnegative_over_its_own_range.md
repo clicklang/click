@@ -42,15 +42,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
             have lo < hi;
             apply(array_fold_induction_bounds(lo, hi));
             have viewable(v[lo..hi - 1]);
-            apply(ih(hi - 1)) using {
-                0 <= to_integer(hi - 1);
-                to_integer(hi - 1) < to_integer(hi);
-                viewable(v[lo..hi - 1]);
-                0 <= lo;
-                to_integer(hi - 1) <= 1073741823;
-                0 <= to_integer(hi - 1 - lo);
-                to_integer(hi - 1 - lo) <= 1073741823;
-            };
+            apply(ih(hi - 1));
             unfold(unmarked(v, lo, hi));
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
             solve() using { 0 <= unmarked(v, lo, hi - 1); to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 }); };

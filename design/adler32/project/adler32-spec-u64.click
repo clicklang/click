@@ -57,7 +57,7 @@ theorem adler_weight_shift_u64(bytes: uint8[], n: uint64, w0: Integer, w1: Integ
   } else {
    have 0u64 < n by solve();
    have to_integer(n - 1u64) < to_integer(n) by solve() using { 0u64 < n; };
-   apply(ih(n - 1u64)) using { to_integer(n - 1u64) < to_integer(n); };
+   apply(ih(n - 1u64));
    apply(adler_weighted_append_u64(bytes, n, w1));
    apply(adler_weighted_append_u64(bytes, n, w0));
    apply(adler_sum_append_u64(bytes, n));
@@ -127,7 +127,7 @@ theorem adler_sum_nonnegative_u64(bytes: uint8[], n: uint64) {
   } else {
    have 0u64 < n by solve();
    have to_integer(n - 1u64) < to_integer(n) by solve() using { 0u64 < n; };
-   apply(ih(n - 1u64)) using { to_integer(n - 1u64) < to_integer(n); };
+   apply(ih(n - 1u64));
    apply(adler_byte_bounds_u64(bytes[n - 1u64]));
    apply(adler_sum_append_u64(bytes, n));
    rewrite(adler_byte_sum_u64(bytes, n), adler_byte_sum_u64(bytes, n - 1u64) + to_integer(bytes[n - 1u64]));
@@ -147,7 +147,7 @@ theorem adler_weighted_nonnegative_u64(bytes: uint8[], n: uint64) {
   } else {
    have 0u64 < n by solve();
    have to_integer(n - 1u64) < to_integer(n) by solve() using { 0u64 < n; };
-   apply(ih(n - 1u64)) using { to_integer(n - 1u64) < to_integer(n); };
+   apply(ih(n - 1u64));
    apply(adler_sum_nonnegative_u64(bytes, n));
    apply(adler_weighted_prefix_step_u64(bytes, n));
    rewrite(adler_weighted_sum_u64(bytes, n, to_integer(n)), adler_weighted_sum_u64(bytes, n - 1u64, to_integer(n - 1u64)) + adler_byte_sum_u64(bytes, n));
@@ -432,7 +432,7 @@ theorem adler_sum_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64) {
     to_integer(prefix) + to_integer(suffix) <= 18446744073709551615;
     to_integer(suffix - 1u64) == to_integer(suffix) - to_integer(1u64);
    };
-   apply(ih(suffix - 1u64)) using { to_integer(suffix - 1u64) < to_integer(suffix); to_integer(prefix) + to_integer(suffix - 1u64) <= 18446744073709551615; };
+   apply(ih(suffix - 1u64));
    have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
    have to_integer(prefix + (suffix - 1u64)) == to_integer(prefix) + to_integer(suffix - 1u64);
    have to_integer(0u64) < to_integer(prefix + suffix) by solve() using {
@@ -493,7 +493,7 @@ theorem adler_weighted_concat_u64(bytes: uint8[], prefix: uint64, suffix: uint64
     to_integer(prefix) + to_integer(suffix) <= 18446744073709551615;
     to_integer(suffix - 1u64) == to_integer(suffix) - to_integer(1u64);
    };
-   apply(ih(suffix - 1u64)) using { to_integer(suffix - 1u64) < to_integer(suffix); to_integer(prefix) + to_integer(suffix - 1u64) <= 18446744073709551615; };
+   apply(ih(suffix - 1u64));
    have to_integer(prefix + suffix) == to_integer(prefix) + to_integer(suffix);
    have to_integer(prefix + (suffix - 1u64)) == to_integer(prefix) + to_integer(suffix - 1u64);
    have to_integer(0u64) < to_integer(prefix + suffix) by solve() using {
@@ -587,7 +587,7 @@ theorem adler_sum_upper_u64(bytes: uint8[], n: uint64) {
   } else {
    have 0u64 < n by solve();
    have to_integer(n - 1u64) < to_integer(n) by solve() using { 0u64 < n; };
-   apply(ih(n - 1u64)) using { to_integer(n - 1u64) < to_integer(n); };
+   apply(ih(n - 1u64));
    apply(adler_sum_append_u64(bytes, n));
    apply(adler_byte_bounds_u64(bytes[n - 1u64]));
    have 1u64 <= n by solve() using { 0u64 < n; };
@@ -828,10 +828,7 @@ theorem adler_sums_extensional_u64(left: uint8[], right: uint8[], bound: uint64,
    have to_integer(n - 1u64) < to_integer(n) by solve() using { 0u64 < n; };
    have to_integer(n - 1u64) <= to_integer(bound) by solve() using { n <= bound; 0u64 < n; };
    have to_integer(n - 1u64) < to_integer(bound) by solve() using { n <= bound; 0u64 < n; };
-   apply(ih(n - 1u64)) using {
-    to_integer(n - 1u64) < to_integer(n); to_integer(n - 1u64) <= to_integer(bound);
-    forall (k: uint64) { k < bound implies left[k] == right[k] };
-   };
+   apply(ih(n - 1u64));
    have (n - 1u64) < bound;
    instantiate(forall (k: uint64) { k < bound implies left[k] == right[k] }, n - 1u64);
    apply(adler_sum_append_u64(left, n));

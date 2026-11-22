@@ -1375,11 +1375,9 @@ goal remains focused. The facts available at that step must establish that
 its parameter is nonnegative. `ih(m)` is available after that declaration and
 requires `m` to be nonnegative and strictly smaller, plus all theorem
 requirements after substituting `m` for the induction parameter. Other theorem
-parameters remain fixed. This is a pure proposition rule, not C execution or
-C termination evidence. Bare `apply(ih(m))` is smart: it looks those fixed
-obligations up among the available facts, proving none, and expansion emits
-`apply(ih(m)) using { ... }`. The `using` form is
-the simple checked operation and accepts only the exact listed obligations.
+parameters remain fixed. This is a pure proposition rule. `apply(ih(m))` checks
+those fixed obligations against the facts already in scope. Use `have` to
+establish a missing premise. Expansion keeps the same application.
 
 Pure-function calls can be opened explicitly with
 `unfold(function(args))`. This simple operation exposes one defining equation

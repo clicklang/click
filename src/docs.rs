@@ -216,10 +216,6 @@ fn tactic_entries() -> Vec<TacticEntry> {
 /// The class of a written tactic, when its text selects one form class.
 pub fn written_tactic_class(written: &str) -> Option<(String, TacticClass)> {
     let name = tactic_identifier(written)?;
-    // The induction hypothesis is resolved in its enclosing theorem proof.
-    if name == "apply" && crate::surface::is_written_bare_apply(written) {
-        return Some((name.to_owned(), TacticClass::Simple));
-    }
     let entries = tactic_entries();
     let entry = entries.iter().find(|entry| entry.name == name)?;
     let written_has = |marker: &str| written.contains(marker);

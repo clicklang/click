@@ -701,7 +701,7 @@ fn rejects_apply_theorem_with_explicit_premises() {
     assert!(
         error
             .message()
-            .contains("named theorem application takes no `using` list")
+            .contains("application takes no `using` list")
     );
 }
 

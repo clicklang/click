@@ -197,7 +197,7 @@ pub(super) fn format_forall_instantiation_error(
         // tell a reader which premise to supply, and a premise the hypothesis
         // owes is exactly what they have to write down.
         Error::MissingGuard(missing) => format!(
-            "instantiated premise `{}` does not follow from the listed evidence",
+            "instantiated premise `{}` is not established by the available facts",
             spell(&missing),
         ),
         Error::SubstitutionRefused(reason) => {

@@ -1133,8 +1133,7 @@ step is still checked.
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
 | `let ih = induct(value)` | simple | Core | Introduce scalar or structural induction. | [Reference](#proposition-reasoning) |
-| `apply(ih(m))` | smart | Core | Apply an induction hypothesis, looking up its premises. | [Reference](#induction-hypothesis-application) |
-| `apply(ih(m)) using { P; ... }` | simple | Expansion output | Apply an induction hypothesis using written premises. | [Reference](#induction-hypotheses-with-selected-premises) |
+| `apply(ih(m))` | simple | Core | Apply an induction hypothesis, looking up its premises. | [Reference](#induction-hypothesis-application) |
 | `have P by { ... }` | control | Core | Prove and retain a named or unnamed fact. | [Reference](#intermediate-facts) |
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
@@ -1204,10 +1203,9 @@ See [`theorem_argument_arm_binding.md`](https://github.com/clicklang/click/blob/
 [`theorem_argument_arm_binding_algebraic.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_arm_binding_algebraic.md),
 and [`theorem_argument_null_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_null_constant.md).
 
-Bare `apply(ih(m))` is smart because it plans proofs of the fixed application
-obligations. Its expansion ends in the deterministic simple
-`apply(ih(m)) using { ... }` operation, which checks exactly the listed
-nonnegative, strict-decrease, and substituted-requirement facts.
+`apply(ih(m))` checks the nonnegativity, strict decrease, and substituted
+requirements for its argument. State missing premises with `have`.
+Expansion preserves the application.
 
 `enumerate` is how an explicit proof closes a finite case analysis over a
 constant-bounded universal, such as a `sorted(p, 3)` postcondition: the
@@ -2994,8 +2992,8 @@ only), `m < n`, and every theorem requirement at `m`, together with the span
 halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
 Earlier helper proofs may precede `induct`; the hypothesis is unavailable
-before its declaration. The script then uses `ih` through `apply(ih(m))` or
-`apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `all`,
+before its declaration. Use `apply(ih(m))` at the top level and inside nested
+`if`, `all`,
 `cases`, `have`, and `match` blocks.
 
 **Outside it**, with what to write instead:
@@ -3070,73 +3068,23 @@ the arm certificates.
 
 **Form:** `apply(ih(m))`
 
-**Core.** Select the available facts `m < n` and the theorem requirements at
-`m`, and `0 <= m` for a signed measure, then instantiate the local induction
-hypothesis. None is proved: state a missing one first with `have`. Under a
-structural `induct` the obligations are instead the theorem's requirements at
-the written parameter list, and the descent is the inducted argument naming a
-field of the current arm.
+**Core.** Instantiate the local induction hypothesis when its premises are
+available. For a scalar measure, those premises are `m < n`, `0 <= m` for a
+signed measure, and the theorem's requirements at `m`. Other parameters stay
+fixed. For structural induction, the inducted argument must be a recursive
+field of the current arm, and the requirements are checked at the full
+written parameter list.
 
-**Failure, checking, and tools:**
+A premise may be stated in an equivalent order form such as `n > m` for
+`m < n`. Range requirements also owe their span halves. A previously stated
+range supplies those halves where they are available. Use `have` to establish
+missing premises.
 
-A bounded selection miss, nondecreasing argument, or violated requirement
-fails. A premise that is not an available fact is a search miss: the refusal
-says so and names the `have` that states the premise. Click checks the
-selected operations; expansion adds a `using` block.
+The application adds the instantiated theorem conclusion and closes the
+focused goal if the conclusion proves it. Expansion keeps the application
+unchanged. A missing premise is named in the refusal.
 
-**Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
-
-### Induction hypotheses with selected premises
-
-**Form:** `apply(ih(m)) using { P; ... }`
-
-**Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which selects the decrease and requirements. Instantiate the local induction
-hypothesis from exactly the listed strict-decrease and substituted-requirement
-obligations, including nonnegativity for a signed measure.
-
-**Accepts**, after scalar `let ih = induct(n)`, one argument `m` of the measure's
-type (any expression, such as `n - 1` or `n - 1u64`), when:
-
-- Every listed `P` is an available fact, read as `using` lists read premises:
-  exactly, under another form of the same order claim (`0 <= m` for
-  `m >= 0`, `n > m` for `m < n`), or true without facts. Listing a range a
-  clause stated also cites its two span halves where they are available.
-  Extra or repeated premises are allowed.
-- Every guard of the hypothesis at `m`, split into its `and` conjuncts, is
-  true by context-free evaluation or is one listed premise under one of those
-  forms. The guards are `m >= 0` (signed only), `m < n`, each requirement
-  at `m`, and the span halves of every range a requirement names at `m`.
-
-It adds the theorem's goal at `m` as a fact and closes the current goal when
-that fact is the goal. Nothing else in context is read.
-
-**Outside it**, with what to write instead:
-
-- A guard that is not listed, including one held as a fact: add it to the list;
-  prove it first with `have` when it is not yet a fact.
-- A listed conjunction `A and B` that is not itself a fact: list `A` and `B`
-  separately.
-- More than one argument: measure induction takes the measure alone and holds
-  the other parameters fixed.
-- An argument of another type than the measure, such as `1u64` for an `int32`
-  `n`: convert it.
-
-A guard may also close by the kernel's order reasoning over several listed
-premises, so `n - 1 < n` and `n <= 100` together discharge `n - 1 <= 100`.
-That is not a documented guarantee; list the instantiated guard itself.
-
-**Failure, checking, and tools:**
-
-A missing guard prints it at `m` (``instantiated premise `n - 1 >= 0` does not
-follow from the listed evidence``); an unavailable listed premise prints that
-premise with the theorem's parameter names (``induction premise is not exactly
-available: n - 2 < n``). Click performs one local instantiation with no premise
-search; expansion is unchanged.
-
-**Checked examples:** [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md),
-[`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md),
-and [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
+**Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md), [`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md), [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
 
 ### Intermediate facts
 
