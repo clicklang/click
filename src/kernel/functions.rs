@@ -14522,7 +14522,7 @@ pub(super) fn bind_composite_witnesses_with_held(
     held: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProgramValue>> {
-    bind_composite_witness_values(definition, arguments, state, Some(held), assumptions)
+    bind_composite_witness_values(definition, arguments, state, Some(held), assumptions, None)
 }
 
 /// Shared witness producer. Returned bodies pass no held context: their
@@ -14534,6 +14534,7 @@ fn bind_composite_witness_values(
     state: &mut ExecutionState,
     held: Option<&ResourceContext>,
     assumptions: &PureFactContext,
+    instance_scope: Option<(&ResourceInstance, Option<ResourceOccurrenceId>)>,
 ) -> Option<Vec<ProgramValue>> {
     if definition.witnesses().is_empty() {
         return Some(Vec::new());
@@ -14595,6 +14596,11 @@ fn bind_composite_witness_values(
             definition.name().hash(&mut hasher);
             index.hash(&mut hasher);
             argument_identity.hash(&mut hasher);
+            // Two separately held instances can have the same parameters.
+            // Their existential witnesses need separate symbolic names.
+            if let Some(scope) = instance_scope {
+                scope.hash(&mut hasher);
+            }
             // The canonical form names a load by its cell rather than by
             // the state it was read from, so the key is the same before
             // and after the body's cells are materialized.
@@ -14604,7 +14610,7 @@ fn bind_composite_witness_values(
             Address::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
         });
         let value = ProgramValue::typed_pointer(pointer, witness.program_type());
-        state.locals.set_typed(
+        state.locals.bind_logical_typed(
             witness.name().to_string(),
             value.clone(),
             witness.program_type(),
@@ -14863,6 +14869,8 @@ pub(crate) struct ResourceInstanceRewriteResult {
     pub(crate) body_clauses: Vec<ResourceBodyClauseRecord>,
     /// The checked opening delta used to choose the body's pointer spellings.
     pub(crate) naming_facts: Vec<Proposition>,
+    /// The active body's witness values, in definition order.
+    pub(crate) witness_values: Vec<ProgramValue>,
 }
 
 /// Whether an undischarged proposition only says that an arithmetic
@@ -15479,7 +15487,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     if definition.name() != instance.name()
         || definition.instance_schema.as_ref() != Some(instance.schema())
         || definition.recursive
-        || !definition.witnesses.is_empty()
+        || (observe && !definition.witnesses.is_empty())
         || definition.parameters.len() != instance.arguments.len()
         || instance
             .arguments
@@ -15492,9 +15500,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             })
         || !instance_body_clauses_are_exchangeable(&definition.contains)
     {
-        return Err(
-            "instance fold/unfold requires a nonrecursive, witness-free memory body".into(),
-        );
+        return Err("instance fold/unfold requires a supported nonrecursive memory body".into());
     }
     let folded_instance = instance.clone();
     let folded = ResourceFact::own(Resource::Instance(folded_instance.clone()));
@@ -15600,6 +15606,27 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         &mut budget,
     )
     .ok_or("instance fold/unfold requires a proved body guard case")?;
+    let witness_values = if active && !definition.witnesses.is_empty() {
+        let occurrence = unfold
+            .then(|| state.resources.unique_owned_occurrence_for_fact(&folded))
+            .flatten()
+            .map(|(occurrence, _)| occurrence);
+        let witness_assumptions = assumptions
+            .clone()
+            .allow_symbolic_contract_loads()
+            .prefer_symbolic_external_loads();
+        bind_composite_witness_values(
+            definition,
+            &instance.arguments.native_values(),
+            &mut evaluation,
+            None,
+            &witness_assumptions,
+            Some((instance, occurrence)),
+        )
+        .ok_or("could not bind the instance body's witnesses")?
+    } else {
+        Vec::new()
+    };
     let mut explicit_children = selected_children
         .unwrap_or(&[])
         .iter()
@@ -16267,6 +16294,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             semantic_facts,
             body_clauses,
             naming_facts: opening_facts,
+            witness_values,
         });
     }
     next.record_instance_population_exchange(state, instance, !unfold, assumptions)
@@ -16334,6 +16362,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         semantic_facts,
         body_clauses,
         naming_facts: opening_facts,
+        witness_values,
     })
 }
 
@@ -16670,6 +16699,7 @@ fn construct_composite_resource_body_with_source(
             &mut state,
             None,
             assumptions,
+            None,
         )?
     } else {
         bind_composite_witnesses(
