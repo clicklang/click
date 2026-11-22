@@ -18,8 +18,6 @@ refs.rs	__rust_q_I11_option_refs_I4_peek	12	11	__rust_mir_4
 refs.rs	__rust_q_I12_generic_refs_I8_use_refs	22	9	__rust_mir_8
 refs.rs	__rust_q_I15_nongeneric_refs_I8_use_refs	22	9	__rust_mir_8
 results.rs	__rust_q_I13_result_values_I7_quarter	26	16	__rust_mir_3
-slices.rs	sum	8	15	__rust_mir_6
-slices.rs	zero	17	15	__rust_mir_5
 slots.rs	__rust_q_I14_resource_state_I11_through_dyn	43	16	__rust_mir_3
 slots.rs	__rust_q_I14_resource_state_I7_through	39	12	__rust_mir_3
 slots.rs	__rust_q_T35___rust_q_I14_resource_state_I4_Slot_R43___rust_q_I14_resource_state_I5_Store_A3_u32_I7_take_or	21	15	__rust_mir_3

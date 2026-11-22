@@ -756,7 +756,11 @@ fn fold_scalar_successors(
                     _ => true,
                 }) {
                 Some(S::Assign { value, .. }) => value,
-                None if copy && consumer.terminator_site == Some(site) => {
+                // The loop test can use its slice metadata directly, just
+                // as it can use an unchanged copy of its index.
+                None if (copy || matches!(result, E::SliceLength { .. }))
+                    && consumer.terminator_site == Some(site) =>
+                {
                     let T::If { condition, .. } = &mut consumer.terminator else {
                         continue;
                     };
