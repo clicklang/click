@@ -6872,11 +6872,18 @@ impl<'a> TermRewrite<'a> {
                             *kind,
                         )
                     });
-                // An exact read names its written point. Use that point
-                // and the original width with the rewritten address.
-                if memory.is_exact_read() && memory.has_certified_read_view() {
+                // An exact read names its written point. An explicit pointer
+                // equality also keeps a store-backed read at its selected point.
+                // The store receipt applies only to the original address.
+                if (memory.is_exact_read()
+                    || (self.pointer_exact.is_some() && memory.indexed_stored_value().is_some()))
+                    && memory.has_certified_read_view()
+                {
                     return crate::kernel::eval::scalar_read_for_exact_cell_at(
-                        memory, &rewritten, *kind, bytes,
+                        &memory.clone().for_exact_read(),
+                        &rewritten,
+                        *kind,
+                        bytes,
                     );
                 }
                 // A projection belongs to the selected address. Instantiating
