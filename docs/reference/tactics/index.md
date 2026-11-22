@@ -1601,10 +1601,10 @@ described below.
 goal that is already available or true by direct computation, without search,
 typically after a `rewrite`. It closes the goal or refuses; it adds no fact.
 
-Smart closure prefers `known()` for computational leaves, including residuals
-after a rewrite or unfold and leaves inside logical proofs. Expansion retains
-`normalize()` only where its broader rules are still needed; it does not
-replace an explicitly written `normalize()` with another tactic.
+Smart closure uses `known()` for computational leaves, including residuals
+after a rewrite or unfold and leaves inside logical proofs. Proof strategies
+can still use `normalize()` where its broader rules are needed. Expansion also
+preserves explicitly written `normalize()` steps.
 
 **Accepts** a goal that is available, where an atomic proposition is
 available when one of these holds:
