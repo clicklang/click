@@ -1174,6 +1174,11 @@ fn lower_guarded_conjunct_in(
         &right_assumptions,
         budget,
     )? {
+        if (!right_path.obligations.is_empty() || right_path.facts.has_path_conditions())
+            && guard_exceeds_conjunction_limit(&left_path.proposition)
+        {
+            return Err(ExecutionLimit::GuardedConjunctionTooLong);
+        }
         let mut guarded_right_obligations =
             guard_right_obligations(&left_path.proposition, right_path.obligations);
         let right_facts = guard_right_facts(
@@ -1201,6 +1206,28 @@ fn lower_guarded_conjunct_in(
         }
     }
     Ok(())
+}
+
+/// Whether `guard` has more than [`GUARDED_CONJUNCTION_LIMIT`](crate::kernel::GUARDED_CONJUNCTION_LIMIT) conjuncts. Each
+/// domain a right side owes copies its whole guard, so a chain whose later
+/// conjuncts owe domains grows with the square of its length; the count stops
+/// one past the limit, so it never walks a long guard.
+fn guard_exceeds_conjunction_limit(guard: &Proposition) -> bool {
+    let mut pending = vec![guard];
+    let mut conjuncts = 0;
+    while let Some(proposition) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match proposition {
+            Proposition::And(left, right) => pending.extend([left.as_ref(), right.as_ref()]),
+            _ => {
+                conjuncts += 1;
+                if conjuncts > crate::kernel::GUARDED_CONJUNCTION_LIMIT {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The path facts of a side read only where `guard` holds. Its logical read

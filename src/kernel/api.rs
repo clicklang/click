@@ -3335,6 +3335,11 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::AuthorityCountLentToWorker => {
             "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
         }
+        ExecutionLimit::GuardedConjunctionTooLong => format!(
+            "unsupported: a conjunction reads a side that owes evaluation domains under more \
+             than {} earlier conjuncts; split it into separate clauses or `have` steps",
+            crate::kernel::GUARDED_CONJUNCTION_LIMIT
+        ),
         ExecutionLimit::BoolComparedWithInteger => BOOL_HAS_NO_INTEGER_VALUE.to_string(),
         ExecutionLimit::BoolArithmetic => BOOL_HAS_NO_INTEGER_VALUE.to_string(),
         ExecutionLimit::BoolOrdered => {

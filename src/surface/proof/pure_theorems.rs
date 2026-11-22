@@ -1716,6 +1716,7 @@ fn refinement_preparation_error(
                 | ExecutionLimit::BoolOrdered
                 | ExecutionLimit::BoolArithmetic
                 | ExecutionLimit::MixedBoolArms
+                | ExecutionLimit::GuardedConjunctionTooLong
                 | ExecutionLimit::QuantifierDoesNotClose => {
                     error.with_proof_refusal(ProofRefusal::UnsupportedProof)
                 }
