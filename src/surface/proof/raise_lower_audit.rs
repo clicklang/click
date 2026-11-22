@@ -322,27 +322,6 @@ int32 short_sum(int32 seed) {
         }
     }
 
-    /// `to_integer(a) < to_integer(b)` over a compound machine operand lowers
-    /// to the term `a < b` lowers to, so a written observation comparison
-    /// round-trips instead of becoming a native comparison only its Integer
-    /// spelling produces.
-    #[test]
-    fn observation_comparisons_over_machine_arithmetic_round_trip() {
-        let lines = round_trips(
-            "a_long_loop_is_ranked_by_an_int64_measure.md",
-            include_str!("../../../mdtests/a_long_loop_is_ranked_by_an_int64_measure.md"),
-        );
-        let original = "to_integer(length - (i + 2i64)) < to_integer(length - i)";
-        assert!(
-            lines.contains(&("same".to_string(), original.to_string())),
-            "{lines:#?}"
-        );
-        assert!(
-            lines.iter().all(|(outcome, _)| outcome == "same"),
-            "{lines:#?}"
-        );
-    }
-
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();

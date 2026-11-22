@@ -6040,68 +6040,36 @@ fn retained_integer_comparison(
                 ConditionTerm::IntegerGreaterEqual(left, right)
             }
         };
-        // The constructor a machine-spelled comparison of these operands
-        // uses, so both spellings lower to one term.
-        match crate::kernel::machine_integer::comparison::structural_native_comparison_view(
-            &condition, true,
-        )
-        .map(|view| view.logical_condition())
-        {
-            Some((native, _)) if !matches!(native, ConditionTerm::Compare { .. }) => {
-                Some(condition)
-            }
-            None => Some(condition),
+        match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&condition, true) {
+            Some((ConditionTerm::Constant(_), _)) | None => Some(condition),
             Some((native, truth)) => {
                 let mut source = arguments.each_ref();
-                if matches!(
-                    operator,
-                    IntegerComparisonOperator::GreaterThan
-                        | IntegerComparisonOperator::GreaterEqual
-                ) {
+                if matches!(operator, IntegerComparisonOperator::GreaterThan | IntegerComparisonOperator::GreaterEqual) {
                     source.swap(0, 1);
                 }
                 // Only these source classes pass through the canonical native
                 // constructor without rewriting an arithmetic/alignment operand.
                 let simple = source.iter().all(|root| match root.node() {
                     KernelTermNode::IntegerLiteral(_) => true,
-                    KernelTermNode::MachineObservation { operand, .. } => {
-                        matches!(operand.node(), KernelTermNode::Variable(_))
-                    }
+                    KernelTermNode::MachineObservation { operand, .. } => matches!(operand.node(), KernelTermNode::Variable(_)),
                     _ => false,
                 });
-                if simple
-                    && let ConditionTerm::Compare {
-                        format,
-                        relation,
-                        left,
-                        right,
-                    } = &native
-                {
+                if simple && let ConditionTerm::Compare { format, relation, left, right } = &native {
                     let mut import = KernelTermImport::for_exact_field_inputs();
-                    let operands = source
-                        .into_iter()
-                        .zip([left.as_ref(), right.as_ref()])
-                        .map(|(root, literal)| match root.node() {
-                            KernelTermNode::MachineObservation { operand, .. } => {
-                                operand.with_machine_observation_type(*format)
-                            }
+                    let operands = source.into_iter().zip([left.as_ref(), right.as_ref()]).map(|(root, literal)| {
+                        match root.node() {
+                            KernelTermNode::MachineObservation { operand, .. } => operand.with_machine_observation_type(*format),
                             KernelTermNode::IntegerLiteral(_) => import.machine(*format, literal),
                             _ => unreachable!("simple comparison source"),
-                        })
-                        .collect::<Vec<_>>();
-                    let root = KernelTerm::boolean_comparison_raw(
-                        *format,
-                        *relation,
-                        [operands[0].clone(), operands[1].clone()],
-                    );
+                        }
+                    }).collect::<Vec<_>>();
+                    let root = KernelTerm::boolean_comparison_raw(*format, *relation,
+                        [operands[0].clone(), operands[1].clone()]);
                     root.retain_native_condition_output(native);
-                    return (
-                        StoredConditionTerm::from_root(root).expect("canonical comparison"),
-                        truth,
-                    );
+                    return (StoredConditionTerm::from_root(root).expect("canonical comparison"), truth);
                 }
                 return (StoredConditionTerm::from_minted(native), truth);
-            }
+            },
         }
     } else {
         None

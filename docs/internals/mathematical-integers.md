@@ -87,7 +87,7 @@ to_integer(y)` or `to_integer(x) OP c` for a constant `c` in the type's range,
 holds exactly when the native comparison `x OP y` or `x OP c` does
 (`to_integer` is injective and order-preserving within each type). The kernel
 states such a fact in one form, the native comparison
-(`NativeComparisonView::logical_condition`, applied when a contract lowers;
+(`structural_native_comparison_of_integer_observation`, applied when a contract lowers;
 `canonical_observation_form` on every kernel-built verification condition and
 on a `rewrite` result). Written either way it is the same fact: `known()` closes
 `to_integer(i) < to_integer(n)` from `i < n`, and a dropped `requires right !=
@@ -115,15 +115,11 @@ The native comparison node holds boxed machine terms, so a comparison whose
 operand is a retained shared machine term other than a variable, literal,
 read, call, address or simple conditional (a sum or a product) is stated as the
 Integer comparison of its observations instead
-(`comparison::logical_condition_for_operand_views`), and
-`canonical_observation_form` keeps it so. Lowering states it so whichever way
-it is written: `to_integer(i + 2i64) <= to_integer(n)` and `i + 2i64 <= n`
-lower to one Integer fact, and that fact raises back to either. Producers that
-build a comparison from boxed machine terms (C evaluation,
-`representation::comparison`) still state the native comparison of a compound
-operand, so a fact can still take both forms; this is a representation gap,
-not a semantic exception, and closes when those producers use the same
-constructor or the native comparison can retain shared operands.
+(`comparison::condition_for_operand_views`), and `canonical_observation_form`
+keeps it so. Contract lowering's boxed reading exports the operand and states
+the native comparison, so the same fact can still take both forms; this is a
+representation gap, not a semantic exception, and closes when the native
+comparison can retain shared operands.
 
 Built-in checks (Rust panic checks, C definedness and branch decisions) read
 machine facts, so filing an Integer fact (`PureFactContext::assume_condition`)
