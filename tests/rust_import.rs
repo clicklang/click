@@ -2727,6 +2727,7 @@ fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
 fn rust_move_drop_cli_proofs_expand_and_reverify() {
     let (p, _) = moves_project(MOVE_SOURCE);
     p.refresh().unwrap();
+    assert_cli(&p, &["audit", "expansion", "--claim", "restore.contract"]);
     assert_cli(&p, &["expand", "--claim", "restore.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
@@ -2740,6 +2741,10 @@ fn rust_conditional_move_and_explicit_drop_verify() {
         MOVE_SOURCE.split("    let moved = guard;").next().unwrap()
     );
     let (p, sidecar) = moves_project(&source);
+    // This implementation has different cleanup points from the example.
+    let (contract, _) = sidecar.split_once("\n} by {\n").unwrap();
+    let sidecar = format!("{contract}\n}}\n");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
