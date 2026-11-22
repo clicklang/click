@@ -2709,6 +2709,59 @@ void probe(struct node *node) {{
         assert!(error.contains("ticket(0)"), "{error}");
     }
 
+    #[test]
+    fn contract_closing_identifies_implicit_and_written_tactic_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("f.c"),
+            "int32 counter = 0;\nint32 f() { counter = 1; return 1; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        let verify = |proof: &str| {
+            fs::write(
+                &sidecar,
+                format!("verifying \"f.c\";\nint32 f() {{ ensures result == 1; }}{proof}\n"),
+            )
+            .unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err()
+        };
+        for proof in [
+            "",
+            " by { step_until(function.exit); }",
+            " by { step_until(function.exit); known(); }",
+        ] {
+            let error = verify(proof);
+            assert!(error.starts_with("tactic error:\n"), "{error}");
+            assert!(error.contains("write to `&counter`"), "{error}");
+            assert!(
+                error.contains("refused by: implicit step (contract closing)"),
+                "{error}"
+            );
+            assert!(!error.contains("tactic@"), "{error}");
+        }
+        let traced = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "f".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(traced.starts_with("tactic error:\n"), "{traced}");
+        assert!(
+            traced.contains("refused by: implicit step (contract closing)")
+                && traced.contains("location: implicit step (contract closing)"),
+            "{traced}"
+        );
+
+        let error =
+            verify(" by { step_until(function.exit); known(); known(); known(); known(); }");
+        assert!(error.starts_with("tactic error:\n"), "{error}");
+        assert!(error.contains("write to `&counter`"), "{error}");
+        assert!(error.contains("refused by: `known`"), "{error}");
+        assert!(!error.contains("refused by: implicit step"), "{error}");
+    }
+
     /// A failure at a C operation names that statement. A proof failure with
     /// no site of its own is located at the declaration being verified.
     #[test]

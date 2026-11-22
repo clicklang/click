@@ -297,6 +297,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     pub(in crate::surface::proof) fn try_execute_to_exit(
         &self,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit tail");
         let driver_proof = self.proof;
         let Some((body, added_facts)) =
             crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(

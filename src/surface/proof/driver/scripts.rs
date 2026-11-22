@@ -467,7 +467,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 let _timing =
                     TacticTiming::new(proof.claim_label(), 0, 0, &ProofTactic::ImplicitSolve, 0);
                 let _origin =
-                    crate::surface::proof_trace::TraceOrigin::enter(Some("implicit tail"));
+                    crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit tail");
                 let mut search = attempt::search_scope("implicit script tail");
                 let (result, checks) = solve(&proof);
                 check_verification_deadline()?;
@@ -677,6 +677,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 ProofTactic::Have(have) => {
                     let scope = proof.driver().open_have(have.proposition.clone())?;
                     let source_proof = have.checking_proof();
+                    let _origin = source_proof.uses_implicit_tail().then(|| {
+                        crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve")
+                    });
                     let selected = match source_proof.as_ref() {
                         SourceProof::Tactic(SmartTactic::ImplicitTail) => {
                             let Some(selected) = scope.driver().try_solve_closure()? else {

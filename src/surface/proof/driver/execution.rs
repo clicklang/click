@@ -2412,6 +2412,9 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
     use crate::surface::proof::smart_closures::LinearScriptDecline;
     let body = nested.body().clone();
     let source_proof = have.checking_proof();
+    let _origin = source_proof
+        .uses_implicit_tail()
+        .then(|| crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve"));
     let (selected, checks) = crate::surface::proof_diagnostics::capture_check_observations(
         || -> Result<_, ClickError> {
             Ok(match source_proof.as_ref() {

@@ -2166,11 +2166,12 @@ fn check_direct_pure_goal_with_proof(
             TacticTiming::new(claim_label, 0, 0, &ProofTactic::Solve, 0),
         )
     };
-    let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some(if implicit {
-        "implicit tail"
+    use crate::surface::proof_trace::TraceOrigin;
+    let _origin = if implicit {
+        TraceOrigin::enter_implicit("implicit tail")
     } else {
-        "solve"
-    }));
+        TraceOrigin::enter(Some("solve"))
+    };
     let (result, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| {
         crate::kernel::search::ProofSearch::try_solve_closure(&root)
     });

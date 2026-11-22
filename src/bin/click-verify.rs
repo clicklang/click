@@ -681,9 +681,14 @@ fn verification_error_report(
 ) -> String {
     let (mut report, mut context) = error.concise_report_parts();
     let source_locations = ProofSourceLocations::new(project, inputs);
-    let failure_position = error
-        .proof_source_site()
-        .and_then(|(claim, path)| source_locations.position(claim, path));
+    let implicit_tactic_error = error.implicit_tactic_step().is_some();
+    let failure_position = if implicit_tactic_error {
+        None
+    } else {
+        error
+            .proof_source_site()
+            .and_then(|(claim, path)| source_locations.position(claim, path))
+    };
     let written_tactic = project
         .entry_source()
         .zip(failure_position.as_ref())
@@ -751,7 +756,7 @@ fn verification_error_report(
             context.push(excerpt);
         }
     }
-    if error.kind() == ClickErrorKind::Proof {
+    if error.kind() == ClickErrorKind::Proof && !implicit_tactic_error {
         context.extend(refusal_class_lines(
             written_tactic.as_deref(),
             error.proof_refusal(),

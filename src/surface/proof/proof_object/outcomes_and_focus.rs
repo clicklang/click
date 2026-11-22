@@ -453,6 +453,10 @@ impl<'a> Proof<'a> {
             }
             _ => None,
         };
+        let is_write_permission_error = matches!(
+            refusal,
+            Refusal::Write(_) | Refusal::Range(_) | Refusal::Storage(_)
+        );
         let message = match refusal {
             Refusal::Claim(key) => {
                 let claim = match key {
@@ -507,6 +511,9 @@ impl<'a> Proof<'a> {
             Some(kind) => error
                 .with_kind(kind)
                 .with_proof_refusal(crate::surface::ProofRefusal::Execution),
+            None if is_write_permission_error => {
+                error.with_proof_refusal(crate::surface::ProofRefusal::Tactic)
+            }
             None => error.with_proof_refusal(crate::surface::ProofRefusal::ContractExit),
         }
     }

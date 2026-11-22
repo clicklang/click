@@ -128,6 +128,8 @@ fn prove_next_contract_closing_goal<'a>(
     else {
         return Ok(false);
     };
+    let _origin = matches!(mode, ClosingProofMode::Implicit)
+        .then(|| crate::surface::proof_trace::TraceOrigin::enter_implicit("contract closing"));
     if input.is_none() {
         *input = Some(contract_closing_input(
             Some(root),
@@ -4318,9 +4320,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         let _origin = {
                             let (tactic_name, tactic_class) =
                                 post_execution_tactic_timing(post_tactic);
-                            crate::surface::proof_trace::TraceOrigin::enter(
-                                (tactic_class == "smart").then_some(tactic_name),
-                            )
+                            use crate::surface::proof_trace::TraceOrigin;
+                            if matches!(post_tactic, PostExecutionTactic::ImplicitSolve) {
+                                TraceOrigin::enter_implicit(tactic_name)
+                            } else {
+                                TraceOrigin::enter((tactic_class == "smart").then_some(tactic_name))
+                            }
                         };
                         // Match TacticTiming's normal constructor: the implicit
                         // contract closer has no selectable written source site.

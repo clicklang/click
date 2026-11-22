@@ -8791,6 +8791,7 @@ pub enum ProofKind {
 struct ReportDetail {
     /// The prepared program's accessor spellings, retained for lazy reports.
     model_accessors: Option<diagnostics::CapturedModelAccessors>,
+    implicit_step: Option<&'static str>,
     missing_tactic_requirement: Option<String>,
     /// Instantiated declared theorem prerequisite, for discovery diagnostics only.
     missing_theorem_requirement: Option<String>,
@@ -8819,10 +8820,13 @@ struct ReportDetail {
 }
 
 impl ReportDetail {
-    fn capture_model_accessors() -> Option<std::sync::Arc<Self>> {
-        diagnostics::CapturedModelAccessors::capture().map(|model_accessors| {
+    fn capture() -> Option<std::sync::Arc<Self>> {
+        let model_accessors = diagnostics::CapturedModelAccessors::capture();
+        let implicit_step = proof_trace::implicit_step();
+        (model_accessors.is_some() || implicit_step.is_some()).then(|| {
             std::sync::Arc::new(Self {
-                model_accessors: Some(model_accessors),
+                model_accessors,
+                implicit_step,
                 ..Self::default()
             })
         })
@@ -10807,7 +10811,7 @@ impl ClickError {
             diagnostic: None,
             search_failures: None,
             unresolved_requirement: None,
-            report_detail: ReportDetail::capture_model_accessors(),
+            report_detail: ReportDetail::capture(),
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -10837,7 +10841,7 @@ impl ClickError {
             diagnostic: Some(std::sync::Arc::new(diagnostic)),
             search_failures: None,
             unresolved_requirement: None,
-            report_detail: ReportDetail::capture_model_accessors(),
+            report_detail: ReportDetail::capture(),
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -11024,6 +11028,9 @@ impl ClickError {
             }
         }
         let mut context = Vec::new();
+        if let Some(step) = self.implicit_tactic_step() {
+            context.push(format!("refused by: implicit step ({step})"));
+        }
         if let Some(tactic) = self.failed_tactic {
             context.push(format!("tactic: {tactic}"));
         }
@@ -11262,6 +11269,15 @@ impl ClickError {
 
     pub fn kind(&self) -> ClickErrorKind {
         self.kind
+    }
+
+    /// The implicit proof operation that refused this tactic, if any.
+    pub fn implicit_tactic_step(&self) -> Option<&'static str> {
+        if self.proof_refusal() == Some(ProofRefusal::Tactic) {
+            self.report_detail.as_ref()?.implicit_step
+        } else {
+            None
+        }
     }
 
     /// The proof refusal the terminal report attributes to this error.
