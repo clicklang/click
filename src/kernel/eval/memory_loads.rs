@@ -6245,9 +6245,17 @@ mod tests {
 
     #[test]
     fn a_checked_c_read_names_the_call_that_wrote_its_static_word() {
+        check_static_call_output_scalar_read(ProgramType::Int32);
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_wrote_its_static_wide_word() {
+        check_static_call_output_scalar_read(ProgramType::UInt64);
+    }
+
+    fn check_static_call_output_scalar_read(ty: ProgramType) {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = SymbolicMemory::global_pointer("call_output_static");
-        let ty = ProgramType::Int32;
         let start = ExecutionState::new().begin_function_entry_memory();
         let entry = start.clone().with_function_entry_memory(
             start.memory().clone().with_declared_scalar_block(
@@ -6294,11 +6302,11 @@ mod tests {
         let Some(MachineTerm::MemoryLoad(version, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value.native())
         else {
-            panic!("expected a typed int32 read");
+            panic!("expected a typed integer read");
         };
         assert_eq!(version.read_version_id(), output.program_point_id());
         assert_eq!(*address, cell);
-        assert_eq!(kind, LoadKind::Int32);
+        assert_eq!(kind, LoadKind::of_type(ty).expect("scalar load kind"));
         assert_eq!(
             next.program_point()
                 .ordinary_typed_version(&cell, ty)

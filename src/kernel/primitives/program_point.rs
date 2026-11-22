@@ -1845,11 +1845,18 @@ impl ProgramPoint {
         })
     }
 
-    /// A call with one complete static word in its checked footprint creates
+    /// A call with one complete static scalar in its checked footprint creates
     /// that word's next version, even though the caller does not know its bits.
     fn whole_static_call_output(&self, pointer: &Address, bytes: u32) -> Option<Self> {
+        use crate::kernel::effective_type::CAccessClass;
+
+        let memory = self.memory();
         if pointer.offset != AddressOffset::Constant(0)
-            || self.memory().block_size(&pointer.base)?.as_const()? != bytes
+            || memory.block_size(&pointer.base)?.as_const()? != bytes
+            || !matches!(
+                memory.declared_class(pointer),
+                Some(CAccessClass::Scalar(_))
+            )
         {
             return None;
         }
