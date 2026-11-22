@@ -5364,6 +5364,7 @@ mod synthesized_literal_tests {
             introductions: Default::default(),
             call_site: None,
             assertion_condition: None,
+            statement_safety: false,
             surface: None,
         };
         let less_equal = |left, right| ConditionTerm::Compare {

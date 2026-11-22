@@ -520,8 +520,10 @@ a refusal there is not a bug.
 
 **Failure, checking, and tools:**
 
-A prerequisite the context cannot prove, or an unsupported transition, fails at
-that statement with that diagnostic. A refusal printed as `refused
+A direct safety refusal names the C operation, such as a read of an
+uninitialized local. A documented modeling limit reports `unsupported`.
+If Click generates a safety obligation but cannot prepare it for the
+implicit closer, it reports an internal error. A refusal printed as `refused
 by: the implicit closer that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with

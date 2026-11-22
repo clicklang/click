@@ -593,7 +593,25 @@ fn imported_project_rebuild_reason(project: &ClickProject) -> Option<&'static st
 }
 
 fn click_message(error: click::surface::ClickError) -> String {
-    error.concise_report()
+    label_tactic_evidence(&error, error.concise_report())
+}
+
+fn label_tactic_evidence(error: &ClickError, report: String) -> String {
+    if error.proof_refusal() != Some(ProofRefusal::Tactic) {
+        return report;
+    }
+    let mut result = String::with_capacity(report.len());
+    for line in report.split_inclusive('\n') {
+        let content = line.trim_start_matches(' ');
+        if let Some(evidence) = content.strip_prefix("goal: ") {
+            result.push_str(&line[..line.len() - content.len()]);
+            result.push_str("required evidence: ");
+            result.push_str(evidence);
+        } else {
+            result.push_str(line);
+        }
+    }
+    result
 }
 
 /// Where the declaration a failure is about is written: the one the failure
@@ -658,7 +676,7 @@ fn located_click_message(
         report.push_str("\n\n");
         report.push_str(&excerpt);
     }
-    report
+    label_tactic_evidence(&error, report)
 }
 
 fn shell_word(value: &str) -> String {
@@ -840,13 +858,13 @@ fn verification_error_report(
                 "\n\nproof trace unavailable: no checked path was retained for this failure",
             );
         }
-        return report;
+        return label_tactic_evidence(error, report);
     }
     // The hint is printed only for a command that `--trace-proof` accepts:
     // both resolve the name through `trace_unit`.
     if matches!(
         error.kind(),
-        ClickErrorKind::Proof | ClickErrorKind::Unsupported
+        ClickErrorKind::Proof | ClickErrorKind::Unsupported | ClickErrorKind::Internal
     ) && let Some(declaration) = error.proof_claim_label().and_then(|claim| {
         if claim == "program.termination" {
             Some(claim)
@@ -861,7 +879,7 @@ fn verification_error_report(
             shell_word(&sidecar.display().to_string())
         ));
     }
-    click::surface::bound_diagnostic_message(report)
+    click::surface::bound_diagnostic_message(label_tactic_evidence(error, report))
 }
 
 /// What refused a proof step, by class, and the `click docs` entry that

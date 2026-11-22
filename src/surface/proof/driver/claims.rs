@@ -610,7 +610,7 @@ fn checked_driver_refusal(
         // unimplemented, since the fix is in the proof script.
         return ClickError::new(format!(
             "`{proof_label}`: a `branch` or proof `if` split the path, one arm returned, and the tactics after the split ran out before the continuing arm reached the function exit, so that path is still open. The proof after the split runs inside the continuing arm; finish it there (for example with `step_until(function.exit);`), or check the continuation's last tactics."
-        )).with_proof_refusal(crate::surface::ProofRefusal::Execution);
+        )).with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof);
     }
     let claim_description = if claim_labels.len() == 1 {
         format!("the contract claim `{}`", claim_labels[0])

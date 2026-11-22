@@ -3099,6 +3099,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introductions: Default::default(),
                 call_site: None,
                 assertion_condition: None,
+                statement_safety: false,
                 surface: None,
             };
             let Some(Some(spelling)) = attempt::candidate_outcome(
@@ -12757,6 +12758,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introductions: Default::default(),
                 call_site: None,
                 assertion_condition: None,
+                statement_safety: false,
                 surface: Some(surface),
             };
             let Some(Some(spelling)) =
@@ -12855,7 +12857,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     return Err(error);
                 };
                 let Some(identity) = proposition_identity_key(&requirement.proposition) else {
-                    return Err(error);
+                    return Err(if requirement.statement_safety {
+                        error.with_safety_preparation_error(
+                            "Click could not identify the generated statement safety obligation",
+                        )
+                    } else {
+                        error
+                    });
                 };
                 if !retried_requirements.insert(identity) {
                     return Err(error);
@@ -12864,7 +12872,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let mut error = error;
                 loop {
                     let Some(spelling) = proof.requirement_surface(&requirement, &step)? else {
-                        return Err(error);
+                        check_verification_deadline()?;
+                        return Err(if requirement.statement_safety {
+                            error.with_safety_preparation_error(
+                                "Click could not raise the generated statement safety obligation",
+                            )
+                        } else {
+                            error
+                        });
                     };
                     let have = match proof.driver().open_have(spelling.surface) {
                         Ok(have) => have,
@@ -12876,9 +12891,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         {
                             return Err(cause);
                         }
-                        Err(_) => {
+                        Err(cause) => {
                             check_verification_deadline()?;
-                            return Err(error);
+                            return Err(if requirement.statement_safety {
+                                error.with_safety_preparation_error(&format!("Click could not open the generated statement safety obligation: {}", cause.raw_summary()))
+                            } else {
+                                error
+                            });
                         }
                     };
                     let closed = have.driver().try_solve_closure()?;

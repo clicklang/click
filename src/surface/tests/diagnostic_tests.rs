@@ -646,7 +646,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
     );
     assert_eq!(
         error.concise_report_parts().0,
-        "execution refused in `use_mutex`:\n  could not prove that mutex `cell` was initialized on this path"
+        "tactic error in `use_mutex`:\n  could not prove that mutex `cell` was initialized on this path"
     );
     assert!(!error.message().contains("runtime error"), "{error:?}");
 }
