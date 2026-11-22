@@ -30,7 +30,10 @@ void word_prefix(const uint32* p, uint64 held, uint64 requested) {
 } by {
     have requested <= 2305843009213693951u64;
     step_until(function.exit);
-    solve() using { to_integer(requested * 4u64) <= to_integer(held * 4u64); viewable(p[0u64..held]); requested <= 2305843009213693951u64; };
+    have contains(memory(p[0u64..held]), memory(p[0u64..requested])) by {
+        apply(click::separation::contains_subrange(p, 0u64, held, 0u64, requested));
+    }
+    apply(click::separation::viewable_restrict(memory(p[0u64..held]), memory(p[0u64..requested])));
 }
 void first_byte(const uint8* p, uint64 held) {
     requires 1u64 <= held;

@@ -46,8 +46,8 @@ int32 update_bounds(struct box* box, int32 n) {
     step();
     mark saved;
     step();
-    observe(at(saved, memory(box->data[0..count])));
     step_until(function.exit);
+    observe(at(saved, memory(box->data[0..count])));
     known();
 }
 ```
