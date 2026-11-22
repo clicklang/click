@@ -114,8 +114,8 @@ needle = "apply(nonnegative_body(y));"
 
 [[form]]
 id = "apply-theorem-using"
-path = "mdtests/apply_keeps_sibling_conclusions_when_one_is_the_goal.md"
-needle = "apply(three_bounds(x)) using {"
+path = "mdtests/c_proof_applies_a_viewable_premise_theorem_with_using.md"
+needle = "apply(viewable_range_is_nonnegative(a, n)) using {"
 
 [[form]]
 id = "have"

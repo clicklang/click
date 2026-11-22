@@ -154,14 +154,11 @@ fn generic_pointer_parameters_subrange_and_expansion() {
         let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
         without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     }
+    let (definitions, callers) = source.split_once("theorem integers").unwrap();
     for premise in ["lo <= a;", "a <= b;", "b <= hi;"] {
-        let missing = source.replace(
-            "using { lo <= a; a <= b; b <= hi; }",
-            &format!(
-                "using {{ {} }}",
-                "lo <= a; a <= b; b <= hi;".replace(premise, "")
-            ),
-        );
+        let caller_without_premise = callers.replacen(&format!("requires {premise}"), "", 1);
+        assert_ne!(caller_without_premise, callers);
+        let missing = format!("{definitions}theorem integers{caller_without_premise}");
         assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
     }
 }
@@ -432,10 +429,8 @@ fn wide_subrange_applies_and_expands_without_implicit_solve() {
     let expanded = expand_c_claim_source_by_label(&source, &[], "wide.ensures_0").unwrap();
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     for premise in ["lo <= a;", "a <= b;", "b <= hi;"] {
-        let missing = source.replace(
-            "lo <= a; a <= b; b <= hi;",
-            &"lo <= a; a <= b; b <= hi;".replace(premise, ""),
-        );
+        let missing = source.replacen(&format!("requires {premise}"), "", 1);
+        assert_ne!(missing, source);
         assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
     }
 }
