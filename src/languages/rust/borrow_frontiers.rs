@@ -763,11 +763,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
                     statement: 0,
                 };
             }
-            T::If { .. }
-            | T::Switch { .. }
-            | T::Drop { .. }
-            | T::BoxNew { .. }
-            | T::BoxFree { .. } => {
+            T::If { .. } | T::Switch { .. } | T::Drop { .. } | T::BoxFree { .. } => {
                 return Err(FrontierRefusal::UnsupportedFlow);
             }
         }

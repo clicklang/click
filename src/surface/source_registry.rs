@@ -616,6 +616,7 @@ mod tests {
                 rust_spelling: Default::default(),
             },
             external: true,
+            allocates_result: false,
             parameter_struct_casts: BTreeMap::new(),
             parameter_field_places: BTreeMap::new(),
             pointee_field_places: BTreeMap::new(),

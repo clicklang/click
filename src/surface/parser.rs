@@ -1908,12 +1908,14 @@ impl Parser {
             )?;
             // A reference parameter's type grants the authority a safe
             // caller holds over its referent.
-            let (tokens, positions) = rust_reference_authority::derive_reference_authority(
-                tokens,
-                positions,
-                &parser.struct_layouts,
-                &parser.rust_enum_types,
-            )?;
+            let (tokens, positions, written) =
+                rust_reference_authority::derive_reference_authority(
+                    tokens,
+                    positions,
+                    written,
+                    &parser.struct_layouts,
+                    &parser.rust_enum_types,
+                )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
             parser.positions = positions;
@@ -5328,6 +5330,7 @@ impl Parser {
         let mut ensures = Vec::new();
         // The kind each written postcondition clause was written as, which
         // its claim label counts it among.
+        let mut allocates_result = false;
         let mut ensure_kinds = Vec::new();
         let mut clause_positions = Vec::new();
         let mut exceptional_ensures = Vec::new();
@@ -5757,6 +5760,54 @@ impl Parser {
                     requires.push(
                         apply_contract_lets_to_requirement(
                             Requirement::Resource(resource),
+                            &contract_lets,
+                        )
+                        .map_err(|message| self.error(message))?,
+                    );
+                }
+                // `allocates(result, n)` is `produces allocation(result, n)`
+                // of an allocation the call creates: no pointer that existed
+                // before the call reaches it, as none reaches `malloc`'s.
+                Some("allocates") if self.peek_next() == Some(&Token::LParen) => {
+                    let at = self.position;
+                    if !matches!(self.tokens.get(at + 2), Some(Token::Ident(word)) if word == "result")
+                        || self.tokens.get(at + 3) != Some(&Token::Comma)
+                    {
+                        return Err(self.error(
+                            "`allocates` names the allocation the function returns: `allocates(result, n)`",
+                        ));
+                    }
+                    if allocates_result {
+                        return Err(self.error("a function states `allocates` once"));
+                    }
+                    allocates_result = true;
+                    self.tokens[at] = Token::Ident("allocation".to_string());
+                    let resource = self.parse_function_contract_memory_binding();
+                    self.tokens[at] = Token::Ident("allocates".to_string());
+                    let resource = resource?;
+                    let proof = self.parse_proof_clause_or_default()?;
+                    let binder_resource =
+                        apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
+                            .map_err(|message| self.error(message))?;
+                    self.record_callee_resource_binder(
+                        signature.name(),
+                        &binder_resource,
+                        &parameter_names_in_order,
+                        CalleeResourceBinderKind::Produced,
+                    );
+                    ensure_kinds.push(ClaimClauseKind::Produces);
+                    clause_positions.push(clause_start.clone());
+                    ensures.push(
+                        apply_contract_lets_to_ensure_clause(
+                            EnsureClause {
+                                proof_bindings: Vec::new(),
+                                name: None,
+                                ensure: Ensure::Resource(resource),
+                                proof,
+                                borrowed: false,
+                                view_source: None,
+                                condition: None,
+                            },
                             &contract_lets,
                         )
                         .map_err(|message| self.error(message))?,
@@ -6210,6 +6261,7 @@ impl Parser {
             parameter_field_places,
             pointee_field_places,
             witness_count,
+            allocates_result,
         })
     }
 
@@ -9388,6 +9440,16 @@ impl Parser {
             };
             self.expect(Token::Comma)?;
             let alignment = match self.next() {
+                // `alignof(type)`: the type's alignment, a number for every
+                // type a contract names but an abstract one.
+                Some(Token::Ident(word))
+                    if word == "alignof" && self.peek() == Some(&Token::LParen) =>
+                {
+                    self.position += 1;
+                    let alignment = self.parse_alignof_operand()?;
+                    self.expect(Token::RParen)?;
+                    alignment
+                }
                 Some(Token::Number(alignment)) if alignment.is_power_of_two() => alignment,
                 Some(token) => {
                     return Err(self.error(format!(
@@ -14403,6 +14465,40 @@ impl Parser {
         Ok(name)
     }
 
+    /// The alignment of the type `alignof(...)` names, after its `(`: a
+    /// struct's layout alignment or a scalar's ABI alignment. An abstract
+    /// type's alignment is no number and is refused.
+    fn parse_alignof_operand(&mut self) -> Result<u32, ClickError> {
+        let struct_alignment = |parser: &Self, name: &str| {
+            parser
+                .struct_layouts
+                .get(name)
+                .map(crate::languages::interface::RecordLayout::alignment_bytes)
+                .ok_or_else(|| parser.error(format!("unknown struct declaration `{name}`")))
+        };
+        if self.peek_ident() == Some("struct") {
+            self.position += 1;
+            let name = self.expect_ident("struct name")?;
+            return struct_alignment(self, &name);
+        }
+        let parsed_type = if self.verifies_rust() {
+            self.parse_rust_type()?
+        } else {
+            self.parse_type()?
+        };
+        if let InterfaceType::Parameter(parameter) = parsed_type.interface_type
+            && parameter.has_abstract_size()
+        {
+            return Err(self.error(
+                "the alignment of an abstract type is not one number; name a concrete type",
+            ));
+        }
+        match &parsed_type.struct_name {
+            Some(name) if !parsed_type.struct_pointer => struct_alignment(self, name),
+            _ => Ok(parsed_type.interface_type.abi_alignment_bytes()),
+        }
+    }
+
     /// A struct value written by its fields: `(struct pair){ .x = a, .y = b }`
     /// in C and `crate_name::Pair { x: a, y: b }` in Rust. Every field is
     /// named once; the value is the struct's constructor of them.
@@ -18962,7 +19058,8 @@ fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickPropo
 
 /// The alignment fact a required complete-object clause carries: a live
 /// object of a struct type is placed at that type's alignment, so a
-/// required `*p` states `aligned(p, alignof(struct))`, which the
+/// required `*p` (but not `uninitialized(*p)`, which is storage and no live
+/// object) states `aligned(p, alignof(struct))`, which the
 /// caller proves and the function relies on. A produced object and a
 /// resource body state alignment explicitly (`ensures aligned(result, n)`,
 /// `fact aligned(p, n)`): a function may return an object it received
@@ -18975,6 +19072,11 @@ fn object_alignment_fact(
     let (ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment)) = clause else {
         return None;
     };
+    // `uninitialized(*p)` is the object's storage, not a live object of its
+    // type: freeing it, as `Box::drop` does, needs no alignment.
+    if segment.uninitialized {
+        return None;
+    }
     let alignment = match &segment.surface {
         ContractSegmentSurface::Object(struct_name) => {
             struct_layouts.get(struct_name)?.alignment_bytes()

@@ -4160,7 +4160,7 @@ fn charon_box_fields_take_and_assign_through_self() {
         (
             "            owns allocation(p, sizeof(box_fields::Cell));\n",
             "",
-            "cannot free a pointer that is not a live heap allocation",
+            "missing resource fact `owns allocation(old(self.slot), 4)`",
         ),
     ] {
         assert!(BOX_FIELD_SIDECAR.contains(before), "{before}");
@@ -4247,7 +4247,7 @@ fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
         &prepared,
         "            owns allocation(p, sizeof(recursive_drop::Node));\n",
         "",
-        "cannot free a pointer that is not a live heap allocation",
+        "missing resource fact `owns allocation(old(self.next), 16)`",
     );
     assert_recursive_drop_refused(
         &prepared,

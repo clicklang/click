@@ -3499,7 +3499,9 @@ instance supplies the fact that `base[0..bytes]` lies inside one block. The base
 argument accepts any modeled data, pointer-array or struct pointer; the owned
 range keeps the pointer's own element width. An `extern` allocator contract
 writes `produces allocation(result, bytes);`
-([C allocation](c.md#heap-allocation)).
+([C allocation](c.md#heap-allocation)), or `allocates(result, bytes);` when
+the allocation is new, a block no earlier pointer reaches
+([fresh allocations](c.md#fresh-allocations)).
 
 The declared byte count is an `int32`, and argument 1 also accepts a
 `uint64` (`size_t`) count, as argument 0 accepts any data pointer. `malloc`,

@@ -488,89 +488,33 @@ pub(super) fn lower(
                 crate::kernel::program_expression::int32_literal(0),
                 format!("Rust panic `{message}`"),
             ),
-            // The allocation comes first; a failed one aborts, so the
-            // record moves into a live block, and the box is its address.
-            T::BoxNew {
-                source,
-                fields,
+            // A non-null box's record is dropped through its glue before the
+            // library's `Box::drop`, `if (box) { glue(box); drop(box); }`.
+            T::BoxFree {
+                local,
                 record,
-                destination,
+                glue,
+                optional,
                 ..
             } => {
-                if let Some(source) = source {
-                    check(source, record)?;
-                } else if fields.is_empty() {
-                    return Err("Box::new without its record".into());
-                }
-                let layout = cx
-                    .layouts
-                    .get(record.as_str())
-                    .ok_or("missing boxed record layout")?;
-                let class = layout.class().map(|class| {
-                    (
-                        crate::kernel::effective_type::CAccessClass::Struct(class.clone()),
-                        layout.size_bytes(),
-                        layout.alignment_bytes(),
-                    )
-                });
-                // A symbolic struct's allocation is its `sizeof` bytes, a
-                // 64-bit size.
-                let bytes = match layout.size() {
-                    crate::kernel::LayoutSize::Bytes(size) => {
-                        crate::kernel::program_expression::int32_literal(size)
-                    }
-                    size @ crate::kernel::LayoutSize::Of(_) => {
-                        ProgramExpression::Value(crate::kernel::ProgramValue::UInt64(size.term()))
-                    }
-                };
-                program_seq(
-                    ProgramStatement::HeapAllocate {
-                        target: (destination.clone()).into(),
-                        bytes,
-                        zeroed: false,
-                        object_type: class,
-                        ends_program_on_failure: true,
-                    },
-                    match source {
-                        Some(source) => crate::kernel::program_copy_aggregate(
-                            crate::kernel::program_expression::variable(cx.binding(destination)),
-                            crate::kernel::program_expression::cast(
-                                crate::kernel::program_expression::variable(cx.binding(source)),
-                                ProgramType::Int32Pointer,
-                            ),
-                            layout.to_kernel_aggregate_layout(),
-                        ),
-                        None => write_fields(
-                            cx,
-                            crate::kernel::program_expression::variable(cx.binding(destination)),
-                            record,
-                            fields,
-                        )?,
-                    },
-                )
-            }
-            // A non-null box's record is dropped through its glue before
-            // the free, `if (box) glue(box); free(box);`; freeing null has no
-            // effect.
-            T::BoxFree { local, glue, .. } => {
-                let free = crate::kernel::program_heap_free(
-                    crate::kernel::program_expression::variable(cx.binding(local)),
-                );
-                match glue {
-                    Some(glue) => program_seq(
-                        crate::kernel::program_if(
-                            crate::kernel::program_expression::variable(cx.binding(local)),
-                            program_call(
-                                glue,
-                                vec![crate::kernel::program_expression::variable(
-                                    cx.binding(local),
-                                )],
-                            ),
-                            program_skip(),
-                        ),
-                        free,
+                // The library's `Box::drop<R>` frees the allocation, after
+                // the record's glue; a `None` box, null, drops nothing.
+                let boxed = || crate::kernel::program_expression::variable(cx.binding(local));
+                let free = program_call(
+                    &super::super::standard_library::box_function(
+                        super::super::standard_library::BOX_DROP,
+                        record,
                     ),
+                    vec![boxed()],
+                );
+                let drop = match glue {
+                    Some(glue) => program_seq(program_call(glue, vec![boxed()]), free),
                     None => free,
+                };
+                if *optional {
+                    crate::kernel::program_if(boxed(), drop, program_skip())
+                } else {
+                    drop
                 }
             }
             T::Drop { local, record, .. } => {
@@ -1166,7 +1110,6 @@ fn successors(t: &T, exit: usize) -> Vec<usize> {
         T::Goto { target }
         | T::Drop { target, .. }
         | T::Call { target, .. }
-        | T::BoxNew { target, .. }
         | T::BoxFree { target, .. } => vec![*target],
         T::If {
             then_target,
@@ -1606,7 +1549,6 @@ fn region(
             T::Goto { target }
             | T::Drop { target, .. }
             | T::Call { target, .. }
-            | T::BoxNew { target, .. }
             | T::BoxFree { target, .. } => block = *target,
             _ => break,
         }

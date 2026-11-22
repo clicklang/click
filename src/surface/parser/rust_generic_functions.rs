@@ -477,12 +477,15 @@ fn instance(
             && let spelled = crate::languages::rust::names::display_rust_names(argument)
             && spelled.contains("::")
         {
-            for (segment, name) in spelled.split("::").enumerate() {
-                if segment > 0 {
-                    tokens.push((Token::ColonColon, position.clone()));
-                }
-                tokens.push((Token::Ident(name.to_string()), position.clone()));
-            }
+            // The path's type arguments, `generic_stack::Node<T>`, are
+            // tokens of their own.
+            let (spelled, _) = tokenizer::tokenize(&spelled, None).map_err(|_| {
+                error_at(
+                    position,
+                    format!("type argument `{spelled}` is no Rust type"),
+                )
+            })?;
+            tokens.extend(spelled.into_iter().map(|token| (token, position.clone())));
             continue;
         }
         tokens.push(match token {

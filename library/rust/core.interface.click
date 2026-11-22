@@ -91,3 +91,22 @@ fn Result::expect<T, E>(r: Result<T, E>) -> T {
 fn Result::unwrap_or<T, E>(r: Result<T, E>, d: T) -> T {
     ensures result == click::rust::result::unwrap_or(r, d);
 }
+
+// A `Box<T>` owns its allocation, `sizeof(T)` bytes, and the value in it,
+// and it is never null. `Box::new(x)` moves `x` into a new allocation the
+// box owns. Allocation failure aborts the program rather than returning.
+fn Box::new<T>(x: T) -> Box<T> {
+    allocates(result, sizeof(T));
+    produces *result;
+    ensures result != 0;
+    ensures aligned(result, alignof(T));
+    ensures *result == x;
+}
+
+// `<Box<T> as Drop>::drop(b)` frees the box's allocation, after its value
+// was dropped or moved out: it needs the storage, initialized or not, and
+// no alignment, which a free does not read.
+fn Box::drop<T>(b: Box<T>) {
+    consumes allocation(b, sizeof(T));
+    consumes uninitialized(*b);
+}

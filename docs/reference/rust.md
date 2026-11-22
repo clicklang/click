@@ -1689,17 +1689,26 @@ cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 
 ## Boxes
 
-A `Box<R>` of a crate struct `R` with no drop glue is the address of an
-allocation it owns: `Box::new(r)` allocates `size_of::<R>()` bytes, moves the record local
-`r` into them, and gives the box their address; `Box::new(R { a, b })` writes
-the field values into the allocation, with no record local; `b.field` reads and writes
-through it; the box's drop frees the allocation. Allocation failure aborts the
-process, so the body continues only on success and the proof sees a non-null,
-owned allocation. The compiler places the drop; the free is the kernel's
-checked heap free, as for C `free`. The importer lowers `Box::new` and the
-drop itself, and each proof writes the box's ownership resource; both are
-[departures](../concepts/library-interfaces.md#where-the-implementation-departs-from-this)
-that `Box`'s library contracts and resource are to replace.
+A `Box<R>` of a crate struct `R` is the address of an allocation it owns:
+its contents, `*b`, are an `R`, and `b.field` reads and writes through it.
+`Box::new` and the box's drop are calls of the library's
+[`Box<T>` contracts](library/index.md#boxt), instantiated at `R`:
+`Box::new` states `allocates(result, sizeof(T)); produces *result;` and
+`ensures *result == x;`, and `Box::drop` consumes `allocation(b, sizeof(T))`
+and `uninitialized(*b)`.
+
+`Box::new(r)` moves the record `r` into a new allocation and returns its
+address; `Box::new(R { a, b })` builds the record in a local first.
+`allocates` makes the box a block no earlier pointer reaches, as `malloc`'s
+result is ([Fresh allocations](language/c.md#fresh-allocations)), so a
+field the proof knows keeps its value across the caller's later stores.
+Allocation failure aborts the process, so `Box::new` returns only a non-null
+box. The compiler places the drop: a box of a struct with drop glue calls the
+glue on the contents first, then `Box::drop`, which needs only the box's
+storage, initialized or not, and frees it. An `Option<Box<R>>` drops through
+`Box::drop` when it is `Some`. A struct with fields of an abstract type `T`
+has a symbolic layout, and `Box::new` and `Box::drop` are instantiated at it
+as at any struct.
 [`design/charon-trial/boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/boxes/boxed.rs)
 verifies
 
@@ -1794,7 +1803,9 @@ value, with its allocation and its struct: a sidecar writes the type as Rust
 does, `Box<boxed::Cell>` or `Option<Box<boxed::Cell>>`, and it is the
 struct's address. A function a box moves into owns it and frees it at its
 drop, so its contract consumes what the box owns; a function a box moves out
-of produces it, and states its alignment, which a caller passing it on needs.
+of produces it. A function that returns a box it made states `allocates`
+only when every box it returns is new; one that may return a box it was
+given states `produces allocation`.
 In the fixture, `make(x) -> Box<Cell>` states `produces allocation(result,
 sizeof(boxed::Cell)); produces *result; ensures aligned(result, 4); ensures
 result.value == x;`, `read(b: Box<Cell>) -> u32` consumes them, and

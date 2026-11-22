@@ -1493,10 +1493,10 @@ into the loop's own iterator. `temporaries::collapse_iterator_moves` builds
 the range in the loop's iterator directly, so its state is the proof's
 `iter.start` and `iter.end` everywhere Click prints it. A crate struct moves
 the same way: `for k in Countdown { n }` builds the struct in `iter`. A
-struct built only to be boxed, `Box::new(Cell { value: x })`, is built in its
-allocation (`temporaries::box_initializers`: `MirTerminator::BoxNew` writes
-its `fields`), and an array built only as a struct's field, `[v; 4]`, is
-that field's value (`substitute_pure_values`). The blocks the
+struct built to be boxed, `Box::new(Cell { value: x })`, is built in a local
+and moved into the box by the library's `Box::new` contract, and an array
+built only as a struct's field, `[v; 4]`, is that field's value
+(`substitute_pure_values`). The blocks the
 iterator protocol splits from a `next` call come from the `for` statement,
 so their regions are named inside it.
 

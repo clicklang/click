@@ -2490,6 +2490,14 @@ id = "library.cpp.std::span<T>::subspan"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
+id = "library.rust.Box::drop"
+path = "reference/library/index.md#boxt"
+
+[[item]]
+id = "library.rust.Box::new"
+path = "reference/library/index.md#boxt"
+
+[[item]]
 id = "library.rust.Option::expect"
 path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
 

@@ -10507,8 +10507,10 @@ fn apply_verified_heap_allocation_delta(
                     RuntimeError::InvalidFree(InvalidFree::NonHeapPointer),
                 ))?;
         }
+        // The caller's retained frame was just checked separate from the
+        // allocation's whole extent, so the free keeps what it covers.
         memory = memory
-            .free_heap_block(&base, assumptions)
+            .free_heap_block_with_owned_frame(&base, assumptions, &preserved)
             .map_err(|error| {
                 VerifiedAllocationDeltaError::Runtime(RuntimeError::InvalidFree(error))
             })?;
@@ -11881,12 +11883,8 @@ pub(crate) fn guard_contract_refusal(
 }
 
 fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
-    ResourceFact::own_memory(MemoryRange::new_with_element_width(
-        slot,
-        MachineTerm::constant(0),
-        MachineTerm::constant(layout.size_bytes()),
-        1,
-    ))
+    // A symbolic struct's storage is its whole object, `sizeof(S)` bytes.
+    ResourceFact::own_memory(MemoryRange::object(slot, layout.size()))
 }
 
 fn with_private_aggregate_parameter_owners(

@@ -461,6 +461,56 @@ impl Adapter<'_> {
         Ok(name)
     }
 
+    /// The library's `Box` function `method`, `Box::new` or `Box::drop`, at
+    /// the crate struct `record`: its instance `Box::new<R>`, declared so the
+    /// import calls it under the library's contract.
+    pub(super) fn box_library_function(&self, method: &str, record: &str) -> String {
+        let function = super::standard_library::box_function(method, record);
+        let boxed = Type::Box {
+            pointee: Box::new(Type::Record {
+                name: record.to_string(),
+            }),
+        };
+        let (parameters, return_type) = if method == super::standard_library::BOX_NEW {
+            (
+                vec![(
+                    "x",
+                    Type::Record {
+                        name: record.to_string(),
+                    },
+                )],
+                boxed,
+            )
+        } else {
+            (vec![("b", boxed)], Type::Unit)
+        };
+        self.core_methods
+            .borrow_mut()
+            .entry(function.clone())
+            .or_insert_with(|| out::Function {
+                sites: Vec::new(),
+                name: function.clone(),
+                return_type,
+                parameters: parameters
+                    .into_iter()
+                    .map(|(name, value_type)| out::Place {
+                        name: name.into(),
+                        value_type,
+                        span: out::Span { line: 0, column: 0 },
+                    })
+                    .collect(),
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                instance_of: None,
+                core_method: Some(method.to_string()),
+                span: out::Span { line: 0, column: 0 },
+            });
+        function
+    }
+
     fn qualified_function_name(&self, name: &a::Name) -> Result<String, String> {
         self.qualified_function_name_at(name, None)
     }
@@ -2452,9 +2502,9 @@ impl BodyAdapter<'_, '_> {
                 Ok(Type::Box { .. } | Type::OptionBox { .. })
             ) =>
             {
-                let (Type::Box { pointee } | Type::OptionBox { pointee }) =
-                    self.adapter.ty(&place.ty)?
-                else {
+                let place_type = self.adapter.ty(&place.ty)?;
+                let optional = matches!(place_type, Type::OptionBox { .. });
+                let (Type::Box { pointee } | Type::OptionBox { pointee }) = place_type else {
                     unreachable!()
                 };
                 let Type::Record { name } = *pointee else {
@@ -2474,10 +2524,13 @@ impl BodyAdapter<'_, '_> {
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial box drop"));
                 };
+                self.adapter
+                    .box_library_function(super::standard_library::BOX_DROP, &name);
                 T::BoxFree {
                     local: self.local(local)?,
                     record: name,
                     glue,
+                    optional,
                     target: target.index(),
                 }
             }
@@ -2576,10 +2629,13 @@ impl BodyAdapter<'_, '_> {
                     let Type::Record { name } = *pointee else {
                         return Err(unsupported("box of a non-record"));
                     };
+                    self.adapter
+                        .box_library_function(super::standard_library::BOX_DROP, &name);
                     return Ok(T::BoxFree {
                         local: self.local(*local)?,
                         record: name,
                         glue: None,
+                        optional: false,
                         target: target.index(),
                     });
                 }
@@ -2610,12 +2666,26 @@ impl BodyAdapter<'_, '_> {
                     {
                         return Err(unsupported("Box::new destination type"));
                     }
-                    return Ok(T::BoxNew {
-                        source: Some(self.local(*source_local)?),
-                        fields: Vec::new(),
-                        record: name,
-                        destination: self.local(*destination)?,
+                    // The library's `Box::new<R>`, whose contract is the box.
+                    let function = self
+                        .adapter
+                        .box_library_function(super::standard_library::BOX_NEW, &name);
+                    let source_local = self.local(*source_local)?;
+                    return Ok(T::Call {
+                        function,
+                        arguments: vec![E::Local {
+                            name: source_local.clone(),
+                        }],
+                        owned_arguments: vec![out::OwnedArgument {
+                            index: 0,
+                            local: source_local,
+                            record: name,
+                            moved: true,
+                        }],
+                        destination: Some(self.local(*destination)?),
                         target: target.index(),
+                        through_pointer: false,
+                        result: None,
                     });
                 }
                 // A Rust core method the library specifies calls its
@@ -3903,7 +3973,6 @@ pub(super) fn decode_crate(
             &temporaries,
             &constant_initializers,
         );
-        temporaries::box_initializers(&mut locals, &mut blocks, &temporaries);
         temporaries::fold_callback_copies(&mut locals, &mut blocks, &temporaries, &parameter_types);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);

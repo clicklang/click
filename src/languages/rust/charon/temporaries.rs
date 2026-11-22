@@ -797,100 +797,6 @@ fn fold_constant_remainder_casts(
     }
 }
 
-/// Builds a boxed record in its allocation. MIR builds `Box::new(R { a, b })`
-/// in a temporary record and moves it into the box. When the record's
-/// initialization ends the block whose terminator boxes it, past nothing but
-/// storage markers and source sites, and nothing else names the temporary,
-/// the box writes the field values itself and the temporary is gone.
-pub(super) fn box_initializers(
-    locals: &mut Vec<Place>,
-    blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
-) {
-    let marker = |statement: &S| {
-        matches!(
-            statement,
-            S::BeginStorage { .. } | S::EndStorage { .. } | S::Site { .. }
-        )
-    };
-    // How many statements and terminators name each local, apart from its
-    // storage markers.
-    let mut mentions = BTreeMap::<String, usize>::new();
-    for block in blocks.iter() {
-        for statement in &block.statements {
-            if marker(statement) {
-                continue;
-            }
-            for name in mentioned_locals(statement) {
-                *mentions.entry(name).or_default() += 1;
-            }
-        }
-        let mut reads = BTreeMap::new();
-        let mut named = BTreeSet::new();
-        terminator_uses(&block.terminator, &mut reads, &mut named);
-        named.extend(reads.into_keys());
-        for name in named {
-            *mentions.entry(name).or_default() += 1;
-        }
-    }
-    let mut removed = BTreeSet::new();
-    for block in blocks.iter_mut() {
-        let T::BoxNew {
-            source: Some(source),
-            record,
-            ..
-        } = &block.terminator
-        else {
-            continue;
-        };
-        if !temporaries.contains(source) || mentions.get(source) != Some(&2) {
-            continue;
-        }
-        let Some(position) = block
-            .statements
-            .iter()
-            .rposition(|statement| !marker(statement))
-        else {
-            continue;
-        };
-        let S::Initialize {
-            target,
-            record: initialized,
-            ..
-        } = &block.statements[position]
-        else {
-            continue;
-        };
-        if target != source || initialized != record {
-            continue;
-        }
-        let source = source.clone();
-        let S::Initialize { fields, .. } = block.statements.remove(position) else {
-            unreachable!("the boxed record's initialization")
-        };
-        if let T::BoxNew {
-            source: boxed,
-            fields: written,
-            ..
-        } = &mut block.terminator
-        {
-            *boxed = None;
-            *written = fields;
-        }
-        removed.insert(source);
-    }
-    if removed.is_empty() {
-        return;
-    }
-    for block in blocks.iter_mut() {
-        block.statements.retain(|statement| match statement {
-            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
-            _ => true,
-        });
-    }
-    locals.retain(|local| !removed.contains(&local.name));
-}
-
 /// The kind of iterator an iterator statement builds or moves.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum IteratorKind {
@@ -1241,8 +1147,7 @@ fn unchanged_parameters(
         if let T::Call {
             destination: Some(destination),
             ..
-        }
-        | T::BoxNew { destination, .. } = &block.terminator
+        } = &block.terminator
         {
             changed.insert(destination.clone());
         }
@@ -1294,15 +1199,6 @@ pub(super) fn remove_unused(
             ..
         } = &block.terminator
         {
-            used.insert(destination.clone());
-        }
-        if let T::BoxNew {
-            source,
-            destination,
-            ..
-        } = &block.terminator
-        {
-            used.extend(source.iter().cloned());
             used.insert(destination.clone());
         }
     }
@@ -2964,7 +2860,6 @@ fn successors(terminator: &T) -> Vec<usize> {
         T::Goto { target }
         | T::Drop { target, .. }
         | T::Call { target, .. }
-        | T::BoxNew { target, .. }
         | T::BoxFree { target, .. } => vec![*target],
         T::If {
             then_target,
@@ -3135,7 +3030,6 @@ fn terminator_expressions_mut(terminator: &mut T) -> Vec<&mut E> {
         T::Call { arguments, .. } => arguments.iter_mut().collect(),
         T::Switch { scrutinee, .. } => vec![scrutinee],
         T::ReturnValue { value } => vec![value],
-        T::BoxNew { fields, .. } => fields.iter_mut().collect(),
         T::Goto { .. }
         | T::Drop { .. }
         | T::Return
@@ -3158,11 +3052,6 @@ fn terminator_named_locals(terminator: &T) -> Vec<&String> {
             named.extend(owned_arguments.iter().map(|argument| &argument.local));
             named
         }
-        T::BoxNew {
-            source,
-            destination,
-            ..
-        } => source.iter().chain([destination]).collect(),
         T::If { .. }
         | T::Switch { .. }
         | T::Goto { .. }
@@ -4676,39 +4565,6 @@ mod tests {
             T::Return,
         );
         assert!(names.contains(&"t1".to_string()));
-    }
-
-    #[test]
-    fn a_boxed_record_is_built_in_its_allocation() {
-        // `t1 = R { x }; b = Box::new(t1)` writes `x` into the box itself.
-        let mut locals = ["x", "b", "t1"].map(place).to_vec();
-        let mut blocks = vec![block(
-            vec![
-                S::BeginStorage { local: "t1".into() },
-                S::Initialize {
-                    target: "t1".into(),
-                    record: "R".into(),
-                    fields: vec![local("x")],
-                },
-            ],
-            T::BoxNew {
-                source: Some("t1".into()),
-                fields: Vec::new(),
-                record: "R".into(),
-                destination: "b".into(),
-                target: 1,
-            },
-        )];
-        blocks.push(block(vec![S::EndStorage { local: "t1".into() }], T::Return));
-        super::box_initializers(&mut locals, &mut blocks, &BTreeSet::from(["t1".into()]));
-        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
-        assert_eq!(names, ["x", "b"]);
-        assert!(blocks[0].statements.is_empty() && blocks[1].statements.is_empty());
-        assert!(matches!(
-            &blocks[0].terminator,
-            T::BoxNew { source: None, fields, .. }
-                if matches!(fields.as_slice(), [E::Local { name }] if name == "x")
-        ));
     }
 
     #[test]

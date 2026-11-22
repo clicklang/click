@@ -360,7 +360,6 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
             T::Goto { target }
             | T::Call { target, .. }
             | T::Drop { target, .. }
-            | T::BoxNew { target, .. }
             | T::BoxFree { target, .. } => vec![*target],
             T::If {
                 then_target,
