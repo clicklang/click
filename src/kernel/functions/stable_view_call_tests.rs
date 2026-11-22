@@ -2731,8 +2731,8 @@ fn nonnegative_quantity(quantity: Variable) -> PureFactContext {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(MachineTerm::Variable(quantity)),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(quantity)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     )
@@ -2969,8 +2969,8 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
             ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
-                left: Box::new(MachineTerm::constant(7)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true
         )

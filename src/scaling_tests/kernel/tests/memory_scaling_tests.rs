@@ -1643,8 +1643,12 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(START_LOAD))),
-                right: Box::new(MachineTerm::Variable(Variable(START_FIELD))),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    START_LOAD,
+                ))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    START_FIELD,
+                ))),
             },
             true,
         ))

@@ -31,8 +31,8 @@ fn loaded_fact_of_format(
         ConditionTerm::Compare {
             format,
             relation: CompareRelation::LessThan,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         }
     };
     let read = MachineTerm::MemoryLoad(
@@ -119,9 +119,10 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             unreachable!()
         };
         if change == 2 {
-            **right = MachineTerm::constant(1);
+            *right = crate::kernel::ConditionOperand::new(MachineTerm::constant(1));
         }
-        let MachineTerm::MemoryLoad(_, pointer, kind) = left.as_mut() else {
+        let mut read = left.clone().into_term();
+        let MachineTerm::MemoryLoad(_, pointer, kind) = &mut read else {
             unreachable!()
         };
         match change {
@@ -133,6 +134,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             }
             _ => {}
         }
+        *left = crate::kernel::ConditionOperand::new(read);
         **conclusion = Proposition::condition_is(condition, truth);
         assert!(
             !quantified_binder_equivalent(&native, &different),

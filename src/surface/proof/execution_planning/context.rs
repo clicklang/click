@@ -1251,8 +1251,10 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(1 << 40))),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    1 << 40,
+                ))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1291,8 +1293,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1310,12 +1312,12 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(&memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(MachineTerm::constant(0)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1344,8 +1346,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(dynamic_variable)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(dynamic_variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1417,8 +1419,10 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(3_100_001),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),
@@ -1451,8 +1455,10 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(3_100_001),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                     },
                     true,
                 )),
@@ -1474,8 +1480,10 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(MachineTerm::Variable(Variable(1 << 40))),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(1 << 40),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),
@@ -1518,8 +1526,10 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(3_100_001),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),
@@ -1547,8 +1557,10 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(3_100_001),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),
@@ -1569,8 +1581,10 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(3_100_001),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),

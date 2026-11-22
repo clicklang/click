@@ -177,13 +177,15 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Binary {
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Binary {
                             format: MachineIntegerType::UInt64,
                             op: MachineBinaryOp::BitwiseAnd,
                             left: Box::new(word),
                             right: Box::new(MachineTerm::uint64_constant(1)),
                         }),
-                        right: Box::new(MachineTerm::uint64_constant(0)),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(
+                            0,
+                        )),
                     },
                     true,
                 ),
@@ -194,11 +196,13 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::ClickFunctionApplication {
-                            name: "rb_root_black".into(),
-                            arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
-                        }),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: crate::kernel::ConditionOperand::new(
+                            MachineTerm::ClickFunctionApplication {
+                                name: "rb_root_black".into(),
+                                arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
+                            },
+                        ),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                     },
                     true,
                 ),

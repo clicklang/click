@@ -4038,8 +4038,8 @@ mod progress_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(0))),
-                right: Box::new(MachineTerm::constant(index)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(0))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(index)),
             },
             true,
         )
@@ -4097,8 +4097,8 @@ mod progress_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(71_000))),
-                right: Box::new(MachineTerm::constant(10)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(71_000))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(10)),
             },
             true,
         );

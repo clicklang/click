@@ -1629,8 +1629,8 @@ impl OrderOperands {
                     GreaterThan => CompareRelation::GreaterThan,
                     GreaterEqual => CompareRelation::GreaterEqual,
                 },
-                left,
-                right,
+                left: crate::kernel::ConditionOperand::from(left),
+                right: crate::kernel::ConditionOperand::from(right),
             },
             (Self::Integer(l, r), LessThan) => ConditionTerm::IntegerLessThan(l, r),
             (Self::Integer(l, r), LessEqual) => ConditionTerm::IntegerLessEqual(l, r),
@@ -1677,7 +1677,7 @@ fn order_condition_parts(condition: &ConditionTerm) -> Option<(OrderOperator, Or
                 CompareRelation::GreaterEqual => GreaterEqual,
                 CompareRelation::Equal => return None,
             },
-            OrderOperands::Machine(*format, l.clone(), r.clone()),
+            OrderOperands::Machine(*format, l.boxed(), r.boxed()),
         ),
         ConditionTerm::IntegerLessThan(l, r) => {
             (LessThan, OrderOperands::Integer(l.clone(), r.clone()))
@@ -2327,8 +2327,8 @@ mod tests {
         let equality = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::uint64_constant(1)),
-            right: Box::new(MachineTerm::uint64_constant(0)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(1)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(0)),
         };
         assert!(normalizes_context_free_leaf(&Proposition::condition_is(
             equality.clone(),
@@ -2341,8 +2341,8 @@ mod tests {
         let same_bits = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::uint64_constant(u64::MAX)),
-            right: Box::new(MachineTerm::int64_constant(-1)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(u64::MAX)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::int64_constant(-1)),
         };
         assert!(normalizes_context_free_leaf(&Proposition::condition_is(
             same_bits, true,
@@ -2351,8 +2351,8 @@ mod tests {
         let symbolic = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(90_000))),
-            right: Box::new(MachineTerm::uint64_constant(0)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(90_000))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(0)),
         };
         assert!(!normalizes_context_free_leaf(&Proposition::condition_is(
             symbolic, false,
@@ -2555,12 +2555,14 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::MemoryLoad(
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                         crate::kernel::ProgramPoint::of_memory(&memory),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
                     )),
-                    right: Box::new(MachineTerm::Variable(Variable(binder))),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                        binder,
+                    ))),
                 },
                 true,
             )),
@@ -2685,8 +2687,12 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(MachineTerm::Variable(outer)),
-                            right: Box::new(MachineTerm::Variable(free)),
+                            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                outer,
+                            )),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                free,
+                            )),
                         },
                         true,
                     )),
@@ -2698,8 +2704,12 @@ mod tests {
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::Equal,
-                                left: Box::new(MachineTerm::Variable(inner)),
-                                right: Box::new(MachineTerm::Variable(outer)),
+                                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                    inner,
+                                )),
+                                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                    outer,
+                                )),
                             },
                             true,
                         )),
@@ -2745,8 +2755,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(Variable(1))),
-                    right: Box::new(MachineTerm::constant(value)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(value)),
                 },
                 true,
             )
@@ -2762,8 +2772,12 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
-                            left: Box::new(MachineTerm::Variable(binder)),
-                            right: Box::new(MachineTerm::Variable(bound)),
+                            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                binder,
+                            )),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                bound,
+                            )),
                         },
                         true,
                     )),
@@ -2869,8 +2883,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(term),
-                    right: Box::new(MachineTerm::Variable(index)),
+                    left: crate::kernel::ConditionOperand::new(term),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(index)),
                 },
                 true,
             )),
@@ -3120,8 +3134,8 @@ impl ScalarReadBridgeSide for MachineTerm {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -3520,28 +3534,36 @@ fn separations_equal_modulo_proven_states(
                     &ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(expand_load_variables_shallow(left.start())),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: crate::kernel::ConditionOperand::new(expand_load_variables_shallow(
+                            left.start(),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                     },
                     &ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(expand_load_variables_shallow(right.start())),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: crate::kernel::ConditionOperand::new(expand_load_variables_shallow(
+                            right.start(),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                     },
                 )
                 && assumptions.conditions_equal_modulo_proven_states(
                     &ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(expand_load_variables_shallow(left.end())),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: crate::kernel::ConditionOperand::new(expand_load_variables_shallow(
+                            left.end(),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                     },
                     &ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(expand_load_variables_shallow(right.end())),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: crate::kernel::ConditionOperand::new(expand_load_variables_shallow(
+                            right.end(),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                     },
                 ))
     };
@@ -4070,8 +4092,8 @@ mod integer_reflexivity_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(left.clone()),
-                    right: Box::new(right.clone()),
+                    left: crate::kernel::ConditionOperand::new(left.clone()),
+                    right: crate::kernel::ConditionOperand::new(right.clone()),
                 },
                 value,
             );
@@ -4079,8 +4101,8 @@ mod integer_reflexivity_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(right.clone()),
-                    right: Box::new(left.clone()),
+                    left: crate::kernel::ConditionOperand::new(right.clone()),
+                    right: crate::kernel::ConditionOperand::new(left.clone()),
                 },
                 value,
             );

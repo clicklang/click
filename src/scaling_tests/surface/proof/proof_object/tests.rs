@@ -19,8 +19,8 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(term),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(term),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         )
@@ -170,8 +170,8 @@ fn same_block_offset_rewrite_work(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(old),
-                        right: Box::new(MachineTerm::constant(4)),
+                        left: crate::kernel::ConditionOperand::new(old),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(4)),
                     },
                     true,
                 ),
@@ -182,8 +182,8 @@ fn same_block_offset_rewrite_work(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(k),
-            right: Box::new(MachineTerm::constant(4)),
+            left: crate::kernel::ConditionOperand::new(k),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(4)),
         },
         true,
     );
@@ -541,8 +541,12 @@ fn choose_body_indexing_scales_with_selected_body_size() {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(MachineTerm::Variable(chosen_variable)),
-                            right: Box::new(MachineTerm::constant(index)),
+                            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                chosen_variable,
+                            )),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                                index,
+                            )),
                         },
                         true,
                     )
@@ -1128,8 +1132,8 @@ fn state_premise_raising_does_no_per_state_work() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         )
@@ -1207,8 +1211,8 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(x.clone()),
-            right: Box::new(y.clone()),
+            left: crate::kernel::ConditionOperand::new(x.clone()),
+            right: crate::kernel::ConditionOperand::new(y.clone()),
         },
         true,
     );
@@ -1216,8 +1220,8 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: Box::new(y.clone()),
-            right: Box::new(bound.clone()),
+            left: crate::kernel::ConditionOperand::new(y.clone()),
+            right: crate::kernel::ConditionOperand::new(bound.clone()),
         },
         true,
     );
@@ -1225,8 +1229,8 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: Box::new(x.clone()),
-            right: Box::new(bound.clone()),
+            left: crate::kernel::ConditionOperand::new(x.clone()),
+            right: crate::kernel::ConditionOperand::new(bound.clone()),
         },
         true,
     );
@@ -1253,8 +1257,10 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(y.clone()),
-                    right: Box::new(MachineTerm::Variable(Variable(9_921_000 + i))),
+                    left: crate::kernel::ConditionOperand::new(y.clone()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                        9_921_000 + i,
+                    ))),
                 },
                 true,
             ));
@@ -1526,8 +1532,8 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(registered),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                    right: crate::kernel::ConditionOperand::new(registered),
                 },
                 true,
             );
@@ -1566,8 +1572,8 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(sum),
-                right: Box::new(MachineTerm::constant(7)),
+                left: crate::kernel::ConditionOperand::new(sum),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
             },
             true,
         );
@@ -1611,8 +1617,8 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(reads[0].clone()),
-                right: Box::new(reads[1].clone()),
+                left: crate::kernel::ConditionOperand::new(reads[0].clone()),
+                right: crate::kernel::ConditionOperand::new(reads[1].clone()),
             },
             true,
         );
@@ -1665,8 +1671,8 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_states() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(value),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(value),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         )
@@ -1886,8 +1892,8 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(load.clone()),
-                    right: Box::new(MachineTerm::sign_cast32(
+                    left: crate::kernel::ConditionOperand::new(load.clone()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::sign_cast32(
                         MachineIntegerType::UInt32,
                         MachineIntegerType::Int32,
                         stored,
@@ -1932,10 +1938,10 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: left.clone(),
-                right: Box::new(binary_node!(
+                right: crate::kernel::ConditionOperand::new(binary_node!(
                     Int32,
                     Add,
-                    right.clone(),
+                    (right.clone()).boxed(),
                     Box::new(MachineTerm::constant(1))
                 ))
             },
@@ -1949,7 +1955,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             &ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                     memory_for_control.clone(),
                     pointer_for_control.clone(),
                     crate::kernel::LoadKind::Bits64
@@ -1987,8 +1993,8 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(sum),
-                right: Box::new(MachineTerm::constant(7)),
+                left: crate::kernel::ConditionOperand::new(sum),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
             },
             true,
         );
@@ -2097,8 +2103,8 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(reads[0].clone()),
-                right: Box::new(reads[1].clone()),
+                left: crate::kernel::ConditionOperand::new(reads[0].clone()),
+                right: crate::kernel::ConditionOperand::new(reads[1].clone()),
             },
             true,
         );
@@ -2176,8 +2182,8 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(words[0].clone()),
-                        right: Box::new(words[index].clone()),
+                        left: crate::kernel::ConditionOperand::new(words[0].clone()),
+                        right: crate::kernel::ConditionOperand::new(words[index].clone()),
                     },
                     true,
                 );
@@ -2197,8 +2203,8 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(words[0].clone()),
-                    right: Box::new(binary_node!(
+                    left: crate::kernel::ConditionOperand::new(words[0].clone()),
+                    right: crate::kernel::ConditionOperand::new(binary_node!(
                         Int32,
                         Add,
                         Box::new(words[base].clone()),
@@ -2412,8 +2418,8 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(term.clone()),
-            right: Box::new(MachineTerm::constant(1)),
+            left: crate::kernel::ConditionOperand::new(term.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -2497,8 +2503,8 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -2568,8 +2574,8 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(variable),
-                right: Box::new(MachineTerm::constant(limit)),
+                left: crate::kernel::ConditionOperand::new(variable),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(limit)),
             },
             true,
         )

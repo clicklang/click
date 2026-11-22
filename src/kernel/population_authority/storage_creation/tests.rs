@@ -1575,8 +1575,10 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(spent.observe_symbolic(&description).unwrap().entry_count),
-                right: Box::new(MachineTerm::constant(1)),
+                left: crate::kernel::ConditionOperand::new(
+                    spent.observe_symbolic(&description).unwrap().entry_count,
+                ),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
             },
             true,
         ));
@@ -2218,8 +2220,8 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(entry_count.clone()),
-            right: Box::new(MachineTerm::constant(2)),
+            left: crate::kernel::ConditionOperand::new(entry_count.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(2)),
         },
         true,
     ));
@@ -2232,8 +2234,8 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(entry_count),
-            right: Box::new(MachineTerm::constant(1)),
+            left: crate::kernel::ConditionOperand::new(entry_count),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         },
         true,
     ));
@@ -2304,8 +2306,8 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::Equal,
-            left: Box::new(total.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(total.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2331,8 +2333,8 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::Equal,
-            left: Box::new(total),
-            right: Box::new(quantity),
+            left: crate::kernel::ConditionOperand::new(total),
+            right: crate::kernel::ConditionOperand::new(quantity),
         },
         true,
     );

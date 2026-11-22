@@ -1893,8 +1893,8 @@ fn surface_synthesis_qualifies_a_c_local_named_result() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(local.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(local.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2030,14 +2030,14 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                 ),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2074,14 +2074,14 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                 ),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -5213,8 +5213,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(984_500))),
-            right: Box::new(MachineTerm::constant(1)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(984_500))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -5222,8 +5222,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(984_501))),
-            right: Box::new(MachineTerm::constant(7)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(984_501))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -5254,8 +5254,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(984_502))),
-            right: Box::new(MachineTerm::constant(2)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(984_502))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -5323,8 +5323,8 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     let less_equal = |left, right| ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
-        left: Box::new(left),
-        right: Box::new(right),
+        left: crate::kernel::ConditionOperand::new(left),
+        right: crate::kernel::ConditionOperand::new(right),
     };
     let hi = MachineTerm::Variable(Variable(984_600));
     let lo = MachineTerm::Variable(Variable(984_601));

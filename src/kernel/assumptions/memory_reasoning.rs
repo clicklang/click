@@ -883,8 +883,8 @@ impl PureFactContext {
                 || self.decide(&ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(left.clone()),
-                    right: Box::new(right.clone()),
+                    left: crate::kernel::ConditionOperand::new(left.clone()),
+                    right: crate::kernel::ConditionOperand::new(right.clone()),
                 }) == Some(true)
                 || crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                     &left, &right, self,

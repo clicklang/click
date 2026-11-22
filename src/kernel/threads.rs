@@ -345,8 +345,8 @@ impl PendingThreadCreate {
         let zero = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(self.storage.status.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(self.storage.status.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         };
         let success = assumptions.decide(&zero)?;
         let mut selected = visible.clone();

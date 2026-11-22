@@ -921,8 +921,8 @@ fn inactive_instance_quantity_does_not_imply_nonnegativity() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(MachineTerm::constant(u32::MAX)),
-            right: Box::new(MachineTerm::constant(0))
+            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(u32::MAX)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0))
         },
         true,
     )));
@@ -2332,8 +2332,8 @@ fn equality(left: MachineTerm, right: MachineTerm) -> Proposition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         },
         true,
     )
@@ -3237,8 +3237,8 @@ fn symbolic_declared_resource_quantity_splits_without_materializing_units() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(quantity.clone()),
-            right: Box::new(MachineTerm::constant(1)),
+            left: crate::kernel::ConditionOperand::new(quantity.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -3279,8 +3279,8 @@ fn declared_resource_quantity_work_ignores_the_numeric_coefficient() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(quantity.clone()),
-                right: Box::new(MachineTerm::constant(1)),
+                left: crate::kernel::ConditionOperand::new(quantity.clone()),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
             },
             true,
         );
@@ -5826,8 +5826,10 @@ mod constant_range_containment {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(index.clone()),
-                    right: Box::new(MachineTerm::constant(value as u32)),
+                    left: crate::kernel::ConditionOperand::new(index.clone()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                        value as u32,
+                    )),
                 },
                 true,
             )

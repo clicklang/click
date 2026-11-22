@@ -1465,12 +1465,12 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::MemoryLoad(
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(pointer.clone()),
                         LoadKind::Bits64,
                     )),
-                    right: Box::new(MachineTerm::uint64_constant(3)),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(3)),
                 },
                 true,
             )
@@ -1720,8 +1720,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::MemoryLoad(
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(&memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,

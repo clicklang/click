@@ -1481,8 +1481,8 @@ fn selected_match_conditionals_known_work_ignores_context_growth() {
         condition: Box::new(ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         }),
         then_term: Box::new(then_term),
         else_term: Box::new(MachineTerm::constant(0)),
@@ -1623,8 +1623,8 @@ fn known_constructor_order_looks_up_only_the_selected_payload_bound() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(term),
-                right: Box::new(MachineTerm::constant(upper)),
+                left: crate::kernel::ConditionOperand::new(term),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(upper)),
             },
             true,
         )

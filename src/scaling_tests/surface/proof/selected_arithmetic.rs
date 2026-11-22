@@ -19,8 +19,8 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(value.clone()),
-                    right: Box::new((100 + index).into()),
+                    left: crate::kernel::ConditionOperand::new(value.clone()),
+                    right: crate::kernel::ConditionOperand::new((100 + index).into()),
                 },
                 true,
             );
@@ -139,8 +139,8 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(k.clone()),
-                right: Box::new(j.clone()),
+                left: crate::kernel::ConditionOperand::new(k.clone()),
+                right: crate::kernel::ConditionOperand::new(j.clone()),
             },
             true,
         );
@@ -155,8 +155,8 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(y.clone()),
-                    right: Box::new((100 + index).into()),
+                    left: crate::kernel::ConditionOperand::new(y.clone()),
+                    right: crate::kernel::ConditionOperand::new((100 + index).into()),
                 },
                 true,
             );
@@ -312,8 +312,10 @@ fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
                 ConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
-                    left: Box::new(root.machine_conversion_leaf().unwrap().clone()),
-                    right: Box::new(
+                    left: crate::kernel::ConditionOperand::new(
+                        root.machine_conversion_leaf().unwrap().clone(),
+                    ),
+                    right: crate::kernel::ConditionOperand::new(
                         crate::kernel::machine_integer::range::constant_word(format, &0.into())
                             .unwrap(),
                     ),

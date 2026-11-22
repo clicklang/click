@@ -330,8 +330,8 @@ pub(crate) fn overflow_condition(
     has_overflow_test(ty).then(|| ConditionTerm::Overflows {
         format: ty,
         op: overflow_operation_of(operation),
-        left,
-        right,
+        left: crate::kernel::ConditionOperand::from(left),
+        right: crate::kernel::ConditionOperand::from(right),
     })
 }
 

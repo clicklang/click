@@ -610,8 +610,8 @@ pub(in crate::kernel) fn reduce_known_int32_match_comparison(
     Some(ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation,
-        left: Box::new(left.into_owned()),
-        right: Box::new(right.into_owned()),
+        left: crate::kernel::ConditionOperand::new(left.into_owned()),
+        right: crate::kernel::ConditionOperand::new(right.into_owned()),
     })
 }
 
@@ -1771,8 +1771,8 @@ mod tests {
             let condition = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::constant(u32::MAX)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::constant(u32::MAX)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             };
             assert!(computes_leaf(&Proposition::condition_is(
                 condition.clone(),

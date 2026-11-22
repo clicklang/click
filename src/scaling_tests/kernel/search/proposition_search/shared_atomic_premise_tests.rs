@@ -15,8 +15,8 @@ fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(term(left)),
-                    right: Box::new(term(right)),
+                    left: crate::kernel::ConditionOperand::new(term(left)),
+                    right: crate::kernel::ConditionOperand::new(term(right)),
                 },
                 true,
             )
@@ -131,8 +131,8 @@ fn solve_retains_recorded_load_address_equality_premises() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(left),
-                    right: Box::new(right),
+                    left: crate::kernel::ConditionOperand::new(left),
+                    right: crate::kernel::ConditionOperand::new(right),
                 },
                 true,
             )
@@ -253,8 +253,8 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(load(0)),
-                right: Box::new(load(1)),
+                left: crate::kernel::ConditionOperand::new(load(0)),
+                right: crate::kernel::ConditionOperand::new(load(1)),
             },
             true,
         );

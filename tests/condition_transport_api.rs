@@ -28,8 +28,8 @@ fn consistent_context_retains_its_symbolic_premise() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(777))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: ConditionOperand::new(MachineTerm::Variable(Variable(777))),
+            right: ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -75,8 +75,8 @@ fn context_free_disjoint_store_transport_stays_closed() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(old_load.clone()),
-            right: Box::new(old_load.clone()),
+            left: ConditionOperand::new(old_load.clone()),
+            right: ConditionOperand::new(old_load.clone()),
         },
         true,
     );
@@ -84,8 +84,8 @@ fn context_free_disjoint_store_transport_stays_closed() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(new_load),
-            right: Box::new(old_load),
+            left: ConditionOperand::new(new_load),
+            right: ConditionOperand::new(old_load),
         },
         true,
     );
@@ -106,8 +106,8 @@ fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(777))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: ConditionOperand::new(MachineTerm::Variable(Variable(777))),
+            right: ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );

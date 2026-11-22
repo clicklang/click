@@ -2063,8 +2063,8 @@ fn requirement_deduplication_uses_replay_truth_and_polarity() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(left.into()),
-                right: Box::new(right.into()),
+                left: crate::kernel::ConditionOperand::new(left.into()),
+                right: crate::kernel::ConditionOperand::new(right.into()),
             },
             true,
         ),

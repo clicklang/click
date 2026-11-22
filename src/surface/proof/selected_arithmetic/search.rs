@@ -2143,8 +2143,8 @@ mod retained_match_policy_tests {
         let written = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(native),
-            right: Box::new(MachineTerm::constant(1)),
+            left: crate::kernel::ConditionOperand::new(native),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         };
         for condition in [common, written] {
             assert!(is_word32_equality(&Proposition::condition_is(

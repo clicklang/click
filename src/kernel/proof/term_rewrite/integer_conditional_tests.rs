@@ -13,8 +13,8 @@ fn is_zero(id: u64) -> ConditionTerm {
     ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(MachineTerm::Variable(Variable(id))),
-        right: Box::new(MachineTerm::constant(0)),
+        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(id))),
+        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
     }
 }
 

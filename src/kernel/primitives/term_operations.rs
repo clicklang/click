@@ -2773,8 +2773,8 @@ impl ConditionTerm {
         Self::Compare {
             format,
             relation,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         }
     }
 
@@ -2824,8 +2824,8 @@ impl ConditionTerm {
                     _ => Self::Compare {
                         format: Ty::Int128,
                         relation,
-                        left: Box::new(left),
-                        right: Box::new(right),
+                        left: crate::kernel::ConditionOperand::new(left),
+                        right: crate::kernel::ConditionOperand::new(right),
                     },
                 }
             }
@@ -2844,8 +2844,8 @@ impl ConditionTerm {
                     _ => Self::Compare {
                         format,
                         relation,
-                        left: Box::new(left),
-                        right: Box::new(right),
+                        left: crate::kernel::ConditionOperand::new(left),
+                        right: crate::kernel::ConditionOperand::new(right),
                     },
                 }
             }
@@ -2900,16 +2900,16 @@ impl ConditionTerm {
                     _ => Self::Overflows {
                         format,
                         op,
-                        left: Box::new(left),
-                        right: Box::new(right),
+                        left: crate::kernel::ConditionOperand::new(left),
+                        right: crate::kernel::ConditionOperand::new(right),
                     },
                 }
             }
             (format, op) => Self::Overflows {
                 format,
                 op,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -2920,8 +2920,8 @@ impl ConditionTerm {
             None => Self::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -2932,8 +2932,8 @@ impl ConditionTerm {
             None => Self::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -2944,8 +2944,8 @@ impl ConditionTerm {
             None => Self::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::GreaterThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -2956,8 +2956,8 @@ impl ConditionTerm {
             None => Self::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3231,8 +3231,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3246,8 +3246,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3259,8 +3259,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::GreaterThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3272,8 +3272,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3440,8 +3440,8 @@ impl ConditionTerm {
                 let condition = Self::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(left),
-                    right: Box::new(right),
+                    left: crate::kernel::ConditionOperand::new(left),
+                    right: crate::kernel::ConditionOperand::new(right),
                 };
                 // Alignment describes address bits, independently of the
                 // object's class. Give C masks and `aligned` one canonical
@@ -3450,7 +3450,7 @@ impl ConditionTerm {
                     return Self::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Binary {
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Binary {
                             format: MachineIntegerType::UInt64,
                             op: MachineBinaryOp::BitwiseAnd,
                             left: Box::new(MachineTerm::IntegerAddress(
@@ -3459,7 +3459,9 @@ impl ConditionTerm {
                             )),
                             right: Box::new(MachineTerm::uint64_constant(alignment - 1)),
                         }),
-                        right: Box::new(MachineTerm::uint64_constant(0)),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(
+                            0,
+                        )),
                     };
                 }
                 condition
@@ -3485,8 +3487,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,
                 op: OverflowOperation::Add,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3504,8 +3506,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,
                 op: OverflowOperation::Subtract,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3516,8 +3518,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,
                 op: OverflowOperation::Multiply,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3530,8 +3532,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,
                 op: OverflowOperation::Divide,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3544,8 +3546,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,
                 op: OverflowOperation::ShiftLeft,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3606,8 +3608,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::UInt32,
                 relation,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3619,8 +3621,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3632,8 +3634,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3645,8 +3647,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3658,8 +3660,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3671,8 +3673,8 @@ impl ConditionTerm {
             _ => Self::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3707,8 +3709,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3728,8 +3730,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3746,8 +3748,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Multiply,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3764,8 +3766,8 @@ impl ConditionTerm {
             _ => Self::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Divide,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -3782,16 +3784,16 @@ impl ConditionTerm {
                     None => Self::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::ShiftLeft,
-                        left: Box::new(left),
-                        right: Box::new(right),
+                        left: crate::kernel::ConditionOperand::new(left),
+                        right: crate::kernel::ConditionOperand::new(right),
                     },
                 }
             }
             _ => Self::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
         }
     }
@@ -5965,8 +5967,8 @@ mod shift_overflow_refusal_tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
-                left: Box::new(left),
-                right: Box::new(right)
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right)
             },
             "an out-of-range shift must not become the safe constant false"
         );
@@ -6238,11 +6240,11 @@ mod integer_equality_citation_tests {
             let condition = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessThan,
-                left: Box::new(
+                left: crate::kernel::ConditionOperand::new(
                     crate::kernel::machine_integer::range::constant_word(format, &0.into())
                         .unwrap(),
                 ),
-                right: Box::new(
+                right: crate::kernel::ConditionOperand::new(
                     crate::kernel::machine_integer::range::constant_word(format, &2.into())
                         .unwrap(),
                 ),
@@ -6494,8 +6496,8 @@ mod format_range_premise_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
-                left: Box::new(left),
-                right: Box::new(MachineTerm::constant(bound as u32)),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(bound as u32)),
             },
             true,
         ))

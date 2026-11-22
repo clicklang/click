@@ -848,8 +848,8 @@ pub(crate) fn render_read_resolution(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(resolution.read.clone()),
-                right: Box::new(resolution.expected.clone()),
+                left: crate::kernel::ConditionOperand::new(resolution.read.clone()),
+                right: crate::kernel::ConditionOperand::new(resolution.expected.clone()),
             },
             true,
         ),
@@ -2988,8 +2988,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(988002))),
-                right: Box::new(binary_node!(
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(988002))),
+                right: crate::kernel::ConditionOperand::new(binary_node!(
                     Int32,
                     Add,
                     Box::new(MachineTerm::Variable(Variable(988001))),
@@ -3073,8 +3073,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::Variable(Variable(8))),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(7))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(8))),
             },
             true,
         );
@@ -3121,8 +3121,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(MachineTerm::constant(0)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                 },
                 false,
             )

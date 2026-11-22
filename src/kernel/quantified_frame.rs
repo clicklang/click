@@ -401,8 +401,8 @@ mod wide_condition_tests {
         let condition = |read, value| ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(read),
-            right: Box::new(value),
+            left: crate::kernel::ConditionOperand::new(read),
+            right: crate::kernel::ConditionOperand::new(value),
         };
         let stamp = MachineTerm::uint64_constant(0x1_0000_0001);
         let source = condition(load(&before, LoadKind::Bits64), stamp.clone());
@@ -434,8 +434,8 @@ mod wide_condition_tests {
             &ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(load(&after, LoadKind::Bits64)),
-                right: Box::new(MachineTerm::constant(1))
+                left: crate::kernel::ConditionOperand::new(load(&after, LoadKind::Bits64)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1))
             },
             &|_, _| true,
         ));

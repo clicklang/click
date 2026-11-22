@@ -3079,8 +3079,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -3201,8 +3201,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -3213,8 +3213,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -3225,8 +3225,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -3237,8 +3237,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             false,
         )
@@ -3249,8 +3249,8 @@ mod tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             false,
         )
@@ -3334,8 +3334,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(x.clone()),
-                right: Box::new(constant(1)),
+                left: crate::kernel::ConditionOperand::new(x.clone()),
+                right: crate::kernel::ConditionOperand::new(constant(1)),
             },
             true,
         );
@@ -3400,8 +3400,8 @@ mod tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Divide,
-                left: Box::new(x.clone()),
-                right: Box::new(constant(7)),
+                left: crate::kernel::ConditionOperand::new(x.clone()),
+                right: crate::kernel::ConditionOperand::new(constant(7)),
             },
             false,
         );
@@ -3422,8 +3422,8 @@ mod tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
-                left: Box::new(x.clone()),
-                right: Box::new(constant(2)),
+                left: crate::kernel::ConditionOperand::new(x.clone()),
+                right: crate::kernel::ConditionOperand::new(constant(2)),
             },
             false,
         );
@@ -3456,8 +3456,8 @@ mod tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Multiply,
-                left: Box::new(x.clone()),
-                right: Box::new(x.clone()),
+                left: crate::kernel::ConditionOperand::new(x.clone()),
+                right: crate::kernel::ConditionOperand::new(x.clone()),
             },
             false,
         );

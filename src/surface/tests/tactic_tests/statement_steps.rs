@@ -304,8 +304,8 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(first_value),
-            right: Box::new(MachineTerm::constant(7)),
+            left: crate::kernel::ConditionOperand::new(first_value),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -346,14 +346,14 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(post_state.memory().clone())),
                 ),
                 Box::new(first),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(7)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
         },
         true,
     );

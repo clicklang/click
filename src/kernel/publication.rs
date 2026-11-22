@@ -315,8 +315,8 @@ fn release_store(
     if assumptions.decide(&ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(desired.clone()),
-        right: Box::new(MachineTerm::constant(0)),
+        left: crate::kernel::ConditionOperand::new(desired.clone()),
+        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
     }) != Some(false)
     {
         return Ok(Err(refusal(
@@ -471,8 +471,8 @@ pub(crate) fn resolve_observed_publications(
         let zero = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(term.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(term.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         };
         let Some(unpublished) = assumptions.decide(&zero) else {
             continue;
@@ -615,8 +615,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(term),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: crate::kernel::ConditionOperand::new(term),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                     },
                     false,
                 ))

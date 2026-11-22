@@ -5564,14 +5564,14 @@ mod machine_integer_substitution_tests {
                 let condition = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(word(5)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                    right: crate::kernel::ConditionOperand::new(word(5)),
                 };
                 let expected = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: Box::new(word(9)),
-                    right: Box::new(word(5)),
+                    left: crate::kernel::ConditionOperand::new(word(9)),
+                    right: crate::kernel::ConditionOperand::new(word(5)),
                 };
                 assert_eq!(
                     substitute_bitvector_variable_in_condition(&condition, variable, &word(9)),
@@ -5883,8 +5883,12 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
         } => ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(substitute_bitvector_variable(left, from, to)),
-            right: Box::new(substitute_bitvector_variable(right, from, to)),
+            left: crate::kernel::ConditionOperand::new(substitute_bitvector_variable(
+                left, from, to,
+            )),
+            right: crate::kernel::ConditionOperand::new(substitute_bitvector_variable(
+                right, from, to,
+            )),
         },
         crate::kernel::integer_comparison_condition!(left, right) => {
             let rewrite =

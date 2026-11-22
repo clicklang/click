@@ -174,8 +174,8 @@ fn int32_graph_conditions_do_not_cross_sorts_or_admit_disequality() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(a.clone()),
-            right: Box::new(b.clone()),
+            left: crate::kernel::ConditionOperand::new(a.clone()),
+            right: crate::kernel::ConditionOperand::new(b.clone()),
         },
         ConditionTerm::IntegerEqual(
             IntegerTerm::from_machine(MachineIntegerType::Int32, a)

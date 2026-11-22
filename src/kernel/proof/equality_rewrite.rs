@@ -678,8 +678,10 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(byte.clone()),
-            right: Box::new(MachineTerm::constant(u32::from(signed as u8))),
+            left: crate::kernel::ConditionOperand::new(byte.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(u32::from(
+                signed as u8,
+            ))),
         },
         true,
     ))
@@ -1805,8 +1807,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(rewrite_term(left)),
-                        right: Box::new(rewrite_term(right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(right)),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -1816,8 +1818,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(rewrite_term(left)),
-                        right: Box::new(rewrite_term(right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(right)),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -1827,8 +1829,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
-                        left: Box::new(rewrite_term(left)),
-                        right: Box::new(rewrite_term(right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(right)),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -1838,8 +1840,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(rewrite_term(left)),
-                        right: Box::new(rewrite_term(right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(right)),
                     },
                     ConditionTerm::Compare {
                         format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
@@ -1849,8 +1851,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: *format,
                         relation: CompareRelation::Equal,
-                        left: Box::new(rewrite_term(left)),
-                        right: Box::new(rewrite_term(right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(right)),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
@@ -1860,8 +1862,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: Box::new(rewrite_term(left)),
-                        right: Box::new(rewrite_term(right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(right)),
                     },
                     _ => {
                         return pointer_offset_congruence_rewrite(goal, left, right).ok_or_else(
@@ -2160,8 +2162,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(rewrite_term(goal_left)),
-                        right: Box::new(rewrite_term(goal_right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(goal_left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(goal_right)),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -2171,8 +2173,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(rewrite_term(goal_left)),
-                        right: Box::new(rewrite_term(goal_right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(goal_left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(goal_right)),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -2182,8 +2184,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
-                        left: Box::new(rewrite_term(goal_left)),
-                        right: Box::new(rewrite_term(goal_right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(goal_left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(goal_right)),
                     },
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -2193,8 +2195,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(rewrite_term(goal_left)),
-                        right: Box::new(rewrite_term(goal_right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(goal_left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(goal_right)),
                     },
                     ConditionTerm::Compare {
                         format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
@@ -2204,8 +2206,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } => ConditionTerm::Compare {
                         format: *format,
                         relation: CompareRelation::Equal,
-                        left: Box::new(rewrite_term(goal_left)),
-                        right: Box::new(rewrite_term(goal_right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(goal_left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(goal_right)),
                     },
                     // A native 8- or 16-bit comparison keeps its format.
                     ConditionTerm::Compare {
@@ -2216,8 +2218,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     } if format.format().bits() < 32 => ConditionTerm::Compare {
                         format: *format,
                         relation: *relation,
-                        left: Box::new(rewrite_term(goal_left)),
-                        right: Box::new(rewrite_term(goal_right)),
+                        left: crate::kernel::ConditionOperand::new(rewrite_term(goal_left)),
+                        right: crate::kernel::ConditionOperand::new(rewrite_term(goal_right)),
                     },
                     _ => {
                         return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
@@ -2611,7 +2613,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         relation: CompareRelation::Equal,
                         left,
                         right,
-                    } => ConditionTerm::int64_equal(*left, *right),
+                    } => ConditionTerm::int64_equal(left.into_term(), right.into_term()),
                     other => other,
                 }
             } else {
@@ -2952,52 +2954,52 @@ mod tests {
             (Int32 | UInt32, 0) => ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             (Int64 | UInt64, 0) => ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             (Int32, 1) => ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             (Int64, 1) => ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             (UInt32, 1) => ConditionTerm::unsigned_less_equal(left, right),
             (UInt64, 1) => ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             (Int32, 2) => ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             (Int64, 2) => ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             (UInt32, 2) => ConditionTerm::unsigned_less_than(left, right),
             (UInt64, 2) => ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             _ => unreachable!(),
         }
@@ -3240,8 +3242,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -3392,8 +3394,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(value.clone()),
-                        right: Box::new(bound),
+                        left: crate::kernel::ConditionOperand::new(value.clone()),
+                        right: crate::kernel::ConditionOperand::new(bound),
                     },
                     true,
                 )
@@ -3417,8 +3419,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt64,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(value.clone()),
-                    right: Box::new(bound),
+                    left: crate::kernel::ConditionOperand::new(value.clone()),
+                    right: crate::kernel::ConditionOperand::new(bound),
                 },
                 true,
             );
@@ -4012,8 +4014,8 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
-                            left: Box::new(a),
-                            right: Box::new(b),
+                            left: crate::kernel::ConditionOperand::new(a),
+                            right: crate::kernel::ConditionOperand::new(b),
                         }
                     } else {
                         ConditionTerm::equal(a, b)
@@ -4106,8 +4108,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(a),
-                    right: Box::new(b),
+                    left: crate::kernel::ConditionOperand::new(a),
+                    right: crate::kernel::ConditionOperand::new(b),
                 },
                 true,
             )
@@ -4208,8 +4210,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(left),
-                    right: Box::new(right),
+                    left: crate::kernel::ConditionOperand::new(left),
+                    right: crate::kernel::ConditionOperand::new(right),
                 },
                 true,
             )
@@ -4356,8 +4358,8 @@ mod wide_bound_equality_reader_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(end.clone()),
-                right: Box::new(0u32.into()),
+                left: crate::kernel::ConditionOperand::new(end.clone()),
+                right: crate::kernel::ConditionOperand::new(0u32.into()),
             },
             true,
         );

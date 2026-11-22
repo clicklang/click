@@ -107,7 +107,11 @@ fn add_arithmetic_branch_fact(
                 ))
             }
             OverflowOperation::ShiftLeft => Some(Proposition::condition_is(
-                ConditionTerm::signed_shift_result_fits(*format, *left.clone(), *right.clone()),
+                ConditionTerm::signed_shift_result_fits(
+                    *format,
+                    left.clone().into_term(),
+                    right.clone().into_term(),
+                ),
                 true,
             )),
             _ => None,

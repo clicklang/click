@@ -3439,8 +3439,10 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(MachineTerm::constant(0)),
-                            right: Box::new(MachineTerm::Variable(variable)),
+                            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                variable,
+                            )),
                         },
                         true,
                     )),
@@ -3448,8 +3450,10 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(MachineTerm::Variable(variable)),
-                            right: Box::new(MachineTerm::constant(16)),
+                            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                variable,
+                            )),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(16)),
                         },
                         true,
                     )),

@@ -62,8 +62,8 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(terms.pop().unwrap()),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(terms.pop().unwrap()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         };
         let ((context, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -112,8 +112,8 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
             let condition = ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(term(20_000 + index as u64)),
-                right: Box::new(MachineTerm::MemoryLoad(
+                left: crate::kernel::ConditionOperand::new(term(20_000 + index as u64)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: "other".into(),
@@ -150,8 +150,8 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
         let extra = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(term(90_000)),
-            right: Box::new(MachineTerm::MemoryLoad(
+            left: crate::kernel::ConditionOperand::new(term(90_000)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
                 Box::new(Address {
                     base: "other".into(),
@@ -284,8 +284,8 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(term(10_000 + index)),
-                    right: Box::new(1000.into()),
+                    left: crate::kernel::ConditionOperand::new(term(10_000 + index)),
+                    right: crate::kernel::ConditionOperand::new(1000.into()),
                 },
                 true,
             );
@@ -332,8 +332,8 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(load.clone()),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                    right: crate::kernel::ConditionOperand::new(load.clone()),
                 },
                 true,
             );
@@ -345,8 +345,8 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(reads[0].0)),
-                right: Box::new(reads[1].1.clone()),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(reads[0].0)),
+                right: crate::kernel::ConditionOperand::new(reads[1].1.clone()),
             },
             true,
         );
@@ -363,8 +363,8 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(sum),
-                right: Box::new(7.into()),
+                left: crate::kernel::ConditionOperand::new(sum),
+                right: crate::kernel::ConditionOperand::new(7.into()),
             },
             true,
         );

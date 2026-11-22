@@ -113,8 +113,8 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(MachineTerm::constant(4)),
-                right: Box::new(MachineTerm::constant(0))
+                left: crate::kernel::ConditionOperand::new(MachineTerm::constant(4)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0))
             },
             true
         )));

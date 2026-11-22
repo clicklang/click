@@ -44,8 +44,8 @@ fn fold_resource_quantity_activity(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(quantity.clone()),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(quantity.clone()),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         ),
@@ -56,8 +56,8 @@ fn fold_resource_quantity_activity(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
-                left: Box::new(quantity.clone()),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(quantity.clone()),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         ),
@@ -1818,8 +1818,8 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
-                        left: Box::new(quantity.clone()),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: crate::kernel::ConditionOperand::new(quantity.clone()),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                     },
                     true,
                 ),
@@ -2306,8 +2306,8 @@ fn owned_quantity_is_positive(quantity: &MachineTerm, assumptions: &PureFactCont
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
-                    left: Box::new(quantity.clone()),
-                    right: Box::new(MachineTerm::constant(0)),
+                    left: crate::kernel::ConditionOperand::new(quantity.clone()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                 },
                 true,
             ),
@@ -3448,8 +3448,8 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(count),
-                right: Box::new(quantity),
+                left: crate::kernel::ConditionOperand::new(count),
+                right: crate::kernel::ConditionOperand::new(quantity),
             },
             true,
         );
@@ -5927,8 +5927,8 @@ void child_release(struct child* obj) {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: index_term(),
-                    right: Box::new(MachineTerm::constant(end)),
+                    left: crate::kernel::ConditionOperand::from(index_term()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(end)),
                 },
                 true,
             )
@@ -5937,8 +5937,8 @@ void child_release(struct child* obj) {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::constant(0)),
-                right: index_term(),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                right: crate::kernel::ConditionOperand::from(index_term()),
             },
             true,
         );
@@ -6036,12 +6036,12 @@ void child_release(struct child* obj) {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&retained_state),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         };
         let proposition = if definedness {
             Proposition::MemoryReadDefined {
@@ -6062,8 +6062,8 @@ void child_release(struct child* obj) {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(span.clone()),
-                right: Box::new(MachineTerm::constant(1)),
+                left: crate::kernel::ConditionOperand::new(span.clone()),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
             },
             true,
         ));
@@ -6838,8 +6838,10 @@ mod fold_quantity_activity_tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(MachineTerm::Variable(Variable(9_810_000 + index))),
-                        right: Box::new(100u32.into()),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(9_810_000 + index),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(100u32.into()),
                     },
                     true,
                 );
@@ -6880,8 +6882,8 @@ mod fold_quantity_activity_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(count.clone()),
-                    right: Box::new(value.into()),
+                    left: crate::kernel::ConditionOperand::new(count.clone()),
+                    right: crate::kernel::ConditionOperand::new(value.into()),
                 },
                 true,
             );

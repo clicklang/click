@@ -1578,8 +1578,8 @@ fn verified_function_rule_applies_contract_without_executing_body() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(result.clone()),
-                right: Box::new(MachineTerm::constant(5))
+                left: crate::kernel::ConditionOperand::new(result.clone()),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5))
             },
             true,
         )
@@ -2200,8 +2200,8 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(value.clone()),
-                            right: Box::new(MachineTerm::constant(5))
+                            left: crate::kernel::ConditionOperand::new(value.clone()),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5))
                         },
                         true,
                     )
@@ -2212,8 +2212,8 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(value.clone()),
-                            right: Box::new(MachineTerm::constant(7))
+                            left: crate::kernel::ConditionOperand::new(value.clone()),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7))
                         },
                         true,
                     )
@@ -2241,8 +2241,8 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(value.clone()),
-                            right: Box::new(MachineTerm::constant(7))
+                            left: crate::kernel::ConditionOperand::new(value.clone()),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7))
                         },
                         true,
                     )
@@ -2253,8 +2253,8 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(value.clone()),
-                            right: Box::new(MachineTerm::constant(5))
+                            left: crate::kernel::ConditionOperand::new(value.clone()),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5))
                         },
                         true,
                     )
@@ -2357,8 +2357,8 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(value.clone()),
-                    right: Box::new(MachineTerm::constant(7))
+                    left: crate::kernel::ConditionOperand::new(value.clone()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7))
                 },
                 true,
             )
@@ -2369,8 +2369,8 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(value.clone()),
-                    right: Box::new(MachineTerm::constant(99))
+                    left: crate::kernel::ConditionOperand::new(value.clone()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(99))
                 },
                 true,
             )
@@ -3619,8 +3619,8 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left.clone()),
-                right: Box::new(right.clone()),
+                left: crate::kernel::ConditionOperand::new(left.clone()),
+                right: crate::kernel::ConditionOperand::new(right.clone()),
             },
             value,
         )
@@ -4511,8 +4511,8 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(would_be_witness)),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(would_be_witness)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -4524,8 +4524,8 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(binder)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(binder)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         )),

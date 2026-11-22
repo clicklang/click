@@ -414,8 +414,8 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
             condition: Box::new(ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(load.clone()),
-                right: Box::new(u32_value.clone()),
+                left: crate::kernel::ConditionOperand::new(load.clone()),
+                right: crate::kernel::ConditionOperand::new(u32_value.clone()),
             }),
             then_term: Box::new(load.clone()),
             else_term: Box::new(u32_value.clone()),
@@ -486,8 +486,10 @@ fn canonical_term_is_idempotent_at_multiple_term_depths() {
                     condition: Box::new(ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(term),
-                        right: Box::new(MachineTerm::constant(depth as u32)),
+                        left: crate::kernel::ConditionOperand::new(term),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                            depth as u32
+                        )),
                     }),
                     then_term: Box::new(unresolved_canonicalization_test_load()),
                     else_term: Box::new(MachineTerm::constant(depth as u32 + 1)),
@@ -523,8 +525,8 @@ fn canonical_term_is_independent_of_contextual_equalities() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(term.clone()),
-            right: Box::new(MachineTerm::constant(1)),
+            left: crate::kernel::ConditionOperand::new(term.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -532,8 +534,8 @@ fn canonical_term_is_independent_of_contextual_equalities() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(term.clone()),
-            right: Box::new(MachineTerm::constant(2)),
+            left: crate::kernel::ConditionOperand::new(term.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -624,8 +626,8 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         condition: Box::new(ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: Box::new(load.clone()),
-            right: Box::new(MachineTerm::constant(1)),
+            left: crate::kernel::ConditionOperand::new(load.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         }),
         then_term: Box::new(MachineTerm::constant(2)),
         else_term: Box::new(MachineTerm::constant(3)),
@@ -703,8 +705,8 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right)
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right)
             },
             true,
         )
@@ -1190,8 +1192,8 @@ fn variable_substitution_visits_each_state_once_per_rewrite() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(nested_state_load(depth)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(nested_state_load(depth)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );

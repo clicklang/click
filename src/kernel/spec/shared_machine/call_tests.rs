@@ -101,8 +101,8 @@ fn native_domain(value: &Proposition) -> Proposition {
                 } => ConditionTerm::Compare {
                     format: *format,
                     relation: *relation,
-                    left: Box::new(native_term(left)),
-                    right: Box::new(native_term(right)),
+                    left: crate::kernel::ConditionOperand::new(native_term(left)),
+                    right: crate::kernel::ConditionOperand::new(native_term(right)),
                 },
                 c => c.clone(),
             },

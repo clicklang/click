@@ -15,8 +15,8 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(300))),
-                right: Box::new(MachineTerm::constant(5)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(300))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5)),
             },
             true,
         )),
@@ -29,8 +29,10 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(20_000 + index))),
-                right: Box::new(MachineTerm::constant(index as u32)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    20_000 + index,
+                ))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(index as u32)),
             },
             true,
         ));
@@ -118,8 +120,8 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
     let equality = |format, right: u32| ConditionTerm::Compare {
         format,
         relation: CompareRelation::Equal,
-        left: Box::new(x.clone()),
-        right: Box::new(MachineTerm::constant(right)),
+        left: crate::kernel::ConditionOperand::new(x.clone()),
+        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(right)),
     };
     let mut samples = Vec::new();
     for size in [16u32, 64, 256, 1024] {
@@ -133,8 +135,10 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(32_000 + u64::from(index)))),
-                        right: Box::new(MachineTerm::constant(index)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(32_000 + u64::from(index)),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(index)),
                     },
                     true,
                 );

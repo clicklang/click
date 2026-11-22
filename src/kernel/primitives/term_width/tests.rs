@@ -100,8 +100,8 @@ fn a_comparison_takes_operands_of_the_width_it_names() {
         condition_width_mismatch(&ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: boxed(wide.clone()),
-            right: boxed(MachineTerm::Variable(Variable(5)))
+            left: crate::kernel::ConditionOperand::from(boxed(wide.clone())),
+            right: crate::kernel::ConditionOperand::from(boxed(MachineTerm::Variable(Variable(5))))
         })
         .is_none()
     );
@@ -109,8 +109,8 @@ fn a_comparison_takes_operands_of_the_width_it_names() {
         condition_width_mismatch(&ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: boxed(MachineTerm::constant(1)),
-            right: boxed(wide)
+            left: crate::kernel::ConditionOperand::from(boxed(MachineTerm::constant(1))),
+            right: crate::kernel::ConditionOperand::from(boxed(wide))
         }),
         Some(WidthMismatch {
             site: "32-bit comparison",
@@ -127,8 +127,8 @@ fn a_condition_reports_each_variable_at_the_width_it_is_used() {
     let below = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
-        left: boxed(MachineTerm::Variable(i)),
-        right: boxed(MachineTerm::Variable(n)),
+        left: crate::kernel::ConditionOperand::from(boxed(MachineTerm::Variable(i))),
+        right: crate::kernel::ConditionOperand::from(boxed(MachineTerm::Variable(n))),
     };
     assert_eq!(
         condition_variable_widths(&below),
@@ -138,8 +138,8 @@ fn a_condition_reports_each_variable_at_the_width_it_is_used() {
     let mixed = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: boxed(MachineTerm::Variable(n)),
-        right: boxed(MachineTerm::legacy_cast(
+        left: crate::kernel::ConditionOperand::from(boxed(MachineTerm::Variable(n))),
+        right: crate::kernel::ConditionOperand::from(boxed(MachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
             boxed(MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
@@ -147,7 +147,7 @@ fn a_condition_reports_each_variable_at_the_width_it_is_used() {
                 left: boxed(MachineTerm::Variable(n)),
                 right: boxed(MachineTerm::uint64_constant(1)),
             }),
-        )),
+        ))),
     };
     assert_eq!(
         condition_variable_widths(&mixed),
@@ -169,8 +169,8 @@ fn one_fact_context_keeps_a_variable_at_one_width() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: boxed(n.clone()),
-            right: boxed(MachineTerm::uint64_constant(10)),
+            left: crate::kernel::ConditionOperand::from(boxed(n.clone())),
+            right: crate::kernel::ConditionOperand::from(boxed(MachineTerm::uint64_constant(10))),
         },
         true,
     );
@@ -179,8 +179,8 @@ fn one_fact_context_keeps_a_variable_at_one_width() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: boxed(n),
-            right: boxed(MachineTerm::constant(5)),
+            left: crate::kernel::ConditionOperand::from(boxed(n)),
+            right: crate::kernel::ConditionOperand::from(boxed(MachineTerm::constant(5))),
         },
         true,
     );
@@ -193,8 +193,8 @@ fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: boxed(n.clone()),
-            right: boxed(MachineTerm::uint64_constant(10)),
+            left: crate::kernel::ConditionOperand::from(boxed(n.clone())),
+            right: crate::kernel::ConditionOperand::from(boxed(MachineTerm::uint64_constant(10))),
         },
         true,
     );
@@ -202,8 +202,8 @@ fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: boxed(n),
-            right: boxed(MachineTerm::constant(5)),
+            left: crate::kernel::ConditionOperand::from(boxed(n)),
+            right: crate::kernel::ConditionOperand::from(boxed(MachineTerm::constant(5))),
         },
         true,
     );
@@ -345,8 +345,8 @@ fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
-            left: boxed(binary),
-            right: boxed(MachineTerm::int64_constant(0)),
+            left: crate::kernel::ConditionOperand::from(boxed(binary)),
+            right: crate::kernel::ConditionOperand::from(boxed(MachineTerm::int64_constant(0))),
         };
         assert!(condition_variable_widths(&condition).is_err(), "{format:?}");
     }

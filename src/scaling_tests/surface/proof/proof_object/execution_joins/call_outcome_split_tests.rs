@@ -102,8 +102,12 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::Variable(Variable(81_000 + index))),
-                        right: Box::new(MachineTerm::constant(index as u32)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(81_000 + index),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                            index as u32,
+                        )),
                     },
                     true,
                 )

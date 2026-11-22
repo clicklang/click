@@ -597,8 +597,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(sum),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(sum),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -608,8 +608,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(variable(index)),
-                        right: Box::new(variable(100 + index)),
+                        left: crate::kernel::ConditionOperand::new(variable(index)),
+                        right: crate::kernel::ConditionOperand::new(variable(100 + index)),
                     },
                     true,
                 );
@@ -688,8 +688,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(load)),
-                    right: Box::new(MachineTerm::constant(17)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(load)),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(17)),
                 },
                 true,
             );
@@ -758,8 +758,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(read_through(loaded)),
-                right: Box::new(MachineTerm::constant(5)),
+                left: crate::kernel::ConditionOperand::new(read_through(loaded)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5)),
             },
             true,
         );
@@ -777,8 +777,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(read_through(target_loaded)),
-                    right: Box::new(MachineTerm::constant(5))
+                    left: crate::kernel::ConditionOperand::new(read_through(target_loaded)),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5))
                 },
                 true,
             )
@@ -818,8 +818,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(field_load(&source, 4)),
-                    right: Box::new(field_load(&target, 4)),
+                    left: crate::kernel::ConditionOperand::new(field_load(&source, 4)),
+                    right: crate::kernel::ConditionOperand::new(field_load(&target, 4)),
                 },
                 true,
             )),
@@ -827,8 +827,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(field_load(&source, 8)),
-                    right: Box::new(field_load(&target, 12)),
+                    left: crate::kernel::ConditionOperand::new(field_load(&source, 8)),
+                    right: crate::kernel::ConditionOperand::new(field_load(&target, 12)),
                 },
                 true,
             )),
@@ -849,8 +849,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(field_load(&target, 4)),
-                    right: Box::new(field_load(&target, 4)),
+                    left: crate::kernel::ConditionOperand::new(field_load(&target, 4)),
+                    right: crate::kernel::ConditionOperand::new(field_load(&target, 4)),
                 },
                 true,
             )),
@@ -858,8 +858,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(field_load(&target, 8)),
-                    right: Box::new(field_load(&target, 12)),
+                    left: crate::kernel::ConditionOperand::new(field_load(&target, 8)),
+                    right: crate::kernel::ConditionOperand::new(field_load(&target, 12)),
                 },
                 true,
             )),
@@ -926,8 +926,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(load(indexed_offset)),
-                right: Box::new(load(alias_offset.clone())),
+                left: crate::kernel::ConditionOperand::new(load(indexed_offset)),
+                right: crate::kernel::ConditionOperand::new(load(alias_offset.clone())),
             },
             true,
         );
@@ -935,8 +935,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(index),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(index),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -985,8 +985,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(source_len),
-                right: Box::new(target_len.clone()),
+                left: crate::kernel::ConditionOperand::new(source_len),
+                right: crate::kernel::ConditionOperand::new(target_len.clone()),
             },
             true,
         );
@@ -1041,8 +1041,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(load),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(load),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1086,8 +1086,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(from),
-                right: Box::new(to.clone()),
+                left: crate::kernel::ConditionOperand::new(from),
+                right: crate::kernel::ConditionOperand::new(to.clone()),
             },
             true,
         );
@@ -1141,8 +1141,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(from),
-                right: Box::new(to),
+                left: crate::kernel::ConditionOperand::new(from),
+                right: crate::kernel::ConditionOperand::new(to),
             },
             true,
         );
@@ -1197,8 +1197,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(first_load),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(first_load),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );

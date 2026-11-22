@@ -1639,8 +1639,8 @@ mod monotone_forall_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(left),
-                    right: Box::new(right),
+                    left: crate::kernel::ConditionOperand::new(left),
+                    right: crate::kernel::ConditionOperand::new(right),
                 },
                 true,
             )
@@ -1758,8 +1758,8 @@ mod condition_premise_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(left),
-                    right: Box::new(right),
+                    left: crate::kernel::ConditionOperand::new(left),
+                    right: crate::kernel::ConditionOperand::new(right),
                 },
                 true,
             )
@@ -1826,8 +1826,8 @@ mod condition_premise_tests {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(term(left)),
-            right: Box::new(term(right)),
+            left: crate::kernel::ConditionOperand::new(term(left)),
+            right: crate::kernel::ConditionOperand::new(term(right)),
         }
     }
 
@@ -1836,8 +1836,8 @@ mod condition_premise_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(term(1)),
-                right: Box::new(MachineTerm::constant(1000)),
+                left: crate::kernel::ConditionOperand::new(term(1)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1000)),
             }
         } else {
             order(index, index - 1)
@@ -1857,8 +1857,8 @@ mod condition_premise_tests {
         let goal = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(term(size as u64)),
-            right: Box::new(MachineTerm::constant(1000)),
+            left: crate::kernel::ConditionOperand::new(term(size as u64)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1000)),
         };
         (context, Proposition::condition_is(goal, true))
     }
@@ -1935,8 +1935,8 @@ mod condition_premise_tests {
         let fact = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(load.clone()),
-            right: Box::new(term(50)),
+            left: crate::kernel::ConditionOperand::new(load.clone()),
+            right: crate::kernel::ConditionOperand::new(term(50)),
         };
         let context = PureFactContext::new()
             .assume_condition(fact.clone(), true)
@@ -1947,8 +1947,8 @@ mod condition_premise_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(load),
-                right: Box::new(term(60)),
+                left: crate::kernel::ConditionOperand::new(load),
+                right: crate::kernel::ConditionOperand::new(term(60)),
             },
             true,
         );
@@ -2551,8 +2551,8 @@ mod atomic_reduction_tests {
         let equal = |left, right| ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         };
         let goal = Proposition::condition_is(equal(left.clone(), right.clone()), true);
         let mut context = PureFactContext::new()

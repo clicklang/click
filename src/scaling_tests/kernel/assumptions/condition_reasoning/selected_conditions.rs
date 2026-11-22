@@ -63,8 +63,8 @@ fn symmetric_memory_condition_matches_ignore_other_facts() {
                     let condition = |left, right, relation| ConditionTerm::Compare {
                         format,
                         relation,
-                        left: Box::new(term(left)),
-                        right: Box::new(term(right)),
+                        left: crate::kernel::ConditionOperand::new(term(left)),
+                        right: crate::kernel::ConditionOperand::new(term(right)),
                     };
                     let mut context = PureFactContext::new();
                     for index in 0..size {
@@ -119,8 +119,8 @@ fn equivalent_equality_spellings_use_bounded_lookups() {
             let comparison = |format, left, right| ConditionTerm::Compare {
                 format,
                 relation: Equal,
-                left: Box::new(word(left)),
-                right: Box::new(word(right)),
+                left: crate::kernel::ConditionOperand::new(word(left)),
+                right: crate::kernel::ConditionOperand::new(word(right)),
             };
             let offset = |left, right| {
                 ConditionTerm::AddressOffsetEqual(

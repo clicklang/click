@@ -1129,8 +1129,12 @@ mod tests {
             crate::kernel::ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
-                left: Box::new(crate::kernel::MachineTerm::Variable(variable)),
-                right: Box::new(crate::kernel::MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(crate::kernel::MachineTerm::Variable(
+                    variable,
+                )),
+                right: crate::kernel::ConditionOperand::new(crate::kernel::MachineTerm::constant(
+                    0,
+                )),
             },
             true,
         )

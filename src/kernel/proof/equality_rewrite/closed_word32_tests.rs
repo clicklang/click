@@ -174,8 +174,8 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
                     let input = ConditionTerm::Compare {
                         format,
                         relation,
-                        left: Box::new(left),
-                        right: Box::new(right),
+                        left: crate::kernel::ConditionOperand::new(left),
+                        right: crate::kernel::ConditionOperand::new(right),
                     };
                     let result =
                         TermRewrite::for_condition_exact(&flag, &ConditionTerm::Constant(false))
@@ -190,8 +190,8 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
                         ConditionTerm::Compare {
                             format,
                             relation,
-                            left: Box::new(expected.clone()),
-                            right: Box::new(expected)
+                            left: crate::kernel::ConditionOperand::new(expected.clone()),
+                            right: crate::kernel::ConditionOperand::new(expected)
                         },
                         "{format:?}, {relation:?}, bits={bits}, reverse={reverse}"
                     );
@@ -210,7 +210,7 @@ fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Pro
         ConditionTerm::Compare {
             format,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::If {
+            left: crate::kernel::ConditionOperand::new(MachineTerm::If {
                 condition: Box::new(ConditionTerm::machine_compare(
                     format,
                     CompareRelation::Equal,
@@ -220,7 +220,7 @@ fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Pro
                 then_term: Box::new(variable),
                 else_term: Box::new(word(literal)),
             }),
-            right: Box::new(MachineTerm::constant(100)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(100)),
         },
         true,
     )

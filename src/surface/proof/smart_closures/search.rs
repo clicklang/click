@@ -1468,8 +1468,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(left.clone()),
-                            right: Box::new(right.clone()),
+                            left: crate::kernel::ConditionOperand::new(left.clone()),
+                            right: crate::kernel::ConditionOperand::new(right.clone()),
                         },
                         true,
                     ))
@@ -1477,8 +1477,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(right.clone()),
-                            right: Box::new(left.clone()),
+                            left: crate::kernel::ConditionOperand::new(right.clone()),
+                            right: crate::kernel::ConditionOperand::new(left.clone()),
                         },
                         true,
                     ))
@@ -4569,8 +4569,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     } else {
                         CompareRelation::LessEqual
                     },
-                    left: Box::new(left),
-                    right: Box::new(right),
+                    left: crate::kernel::ConditionOperand::new(left),
+                    right: crate::kernel::ConditionOperand::new(right),
                 };
                 let fact = Proposition::condition_is(condition, true);
                 let mut found = false;
@@ -5630,15 +5630,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
-                            left: Box::new(left),
-                            right: Box::new(right),
+                            left: crate::kernel::ConditionOperand::new(left),
+                            right: crate::kernel::ConditionOperand::new(right),
                         }
                     } else {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(left),
-                            right: Box::new(right),
+                            left: crate::kernel::ConditionOperand::new(left),
+                            right: crate::kernel::ConditionOperand::new(right),
                         }
                     };
                     let fact = Proposition::condition_is(condition, true);
@@ -8014,15 +8014,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left,
-                        right,
+                        left: crate::kernel::ConditionOperand::from(left),
+                        right: crate::kernel::ConditionOperand::from(right),
                     }
                 } else {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left,
-                        right,
+                        left: crate::kernel::ConditionOperand::from(left),
+                        right: crate::kernel::ConditionOperand::from(right),
                     }
                 },
                 true,
@@ -9540,7 +9540,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: value.clone(),
+                left: crate::kernel::ConditionOperand::from(value.clone()),
                 right: goal_upper.clone(),
             },
             true,

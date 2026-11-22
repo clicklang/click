@@ -329,8 +329,10 @@ fn cells_within_bounds(loads: &[MachineTerm]) -> Proposition {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
-                    left: Box::new(load.clone()),
-                    right: Box::new(MachineTerm::constant((-1000i32) as u32)),
+                    left: crate::kernel::ConditionOperand::new(load.clone()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                        (-1000i32) as u32,
+                    )),
                 },
                 true,
             ),
@@ -338,8 +340,8 @@ fn cells_within_bounds(loads: &[MachineTerm]) -> Proposition {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(load.clone()),
-                    right: Box::new(MachineTerm::constant(1000)),
+                    left: crate::kernel::ConditionOperand::new(load.clone()),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1000)),
                 },
                 true,
             ),
@@ -638,8 +640,8 @@ fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(current.clone()),
-            right: Box::new(loads[0].clone()),
+            left: crate::kernel::ConditionOperand::new(current.clone()),
+            right: crate::kernel::ConditionOperand::new(loads[0].clone()),
         },
         true,
     );
@@ -997,8 +999,8 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(MachineTerm::constant(0)),
-                        right: Box::new(index.clone()),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        right: crate::kernel::ConditionOperand::new(index.clone()),
                     },
                     true,
                 )),
@@ -1006,8 +1008,8 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(index.clone()),
-                        right: Box::new(length.clone()),
+                        left: crate::kernel::ConditionOperand::new(index.clone()),
+                        right: crate::kernel::ConditionOperand::new(length.clone()),
                     },
                     true,
                 )),
@@ -1616,8 +1618,8 @@ fn strlen_quantified_element_range_requirement_round_trips() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(MachineTerm::Variable(binder)),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(binder)),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                     },
                     true,
                 )),
@@ -1625,8 +1627,10 @@ fn strlen_quantified_element_range_requirement_round_trips() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::Variable(binder)),
-                        right: Box::new(MachineTerm::Variable(Variable(100_001))),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(binder)),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(100_001),
+                        )),
                     },
                     true,
                 )),
@@ -2177,8 +2181,8 @@ fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::constant(7)),
-                        right: Box::new(MachineTerm::constant(7)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
                     },
                     true,
                 )
@@ -2264,8 +2268,8 @@ fn load_defining_equation_round_trips() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(defining_load.clone()),
-            right: Box::new(defining_load),
+            left: crate::kernel::ConditionOperand::new(defining_load.clone()),
+            right: crate::kernel::ConditionOperand::new(defining_load),
         },
         true,
     );
@@ -2309,8 +2313,8 @@ fn load_defining_equation_uses_entry_state() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(defining_load),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+            right: crate::kernel::ConditionOperand::new(defining_load),
         },
         true,
     );
@@ -2377,8 +2381,8 @@ fn load_defining_equation_uses_saved_state() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(defining_load),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+            right: crate::kernel::ConditionOperand::new(defining_load),
         },
         true,
     );
@@ -2450,8 +2454,8 @@ fn example_load_defining_requirement(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(defining_load),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                right: crate::kernel::ConditionOperand::new(defining_load),
             },
             true,
         ),
@@ -2529,7 +2533,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: left.clone(),
-            right: Box::new(MachineTerm::MemoryLoad(
+            right: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory_ref(state.memory())),
                 ),
@@ -2553,7 +2557,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: left.clone(),
-            right: Box::new(MachineTerm::MemoryLoad(
+            right: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&wrong_memory))),
                 Box::new(Address {
                     base: AddressBase::Concrete("owned-string:wrong-retained_state".into()),
@@ -2572,7 +2576,9 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(variable.0 + 1))),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                variable.0 + 1,
+            ))),
             right: left.clone(),
         },
         true,
@@ -2611,8 +2617,8 @@ fn actual_struct_field_load_equation(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(defining_load),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+            right: crate::kernel::ConditionOperand::new(defining_load),
         },
         true,
     );
@@ -2800,8 +2806,8 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::constant(0)),
-                    right: Box::new(increment),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                    right: crate::kernel::ConditionOperand::new(increment),
                 },
                 true,
             )),
@@ -2843,8 +2849,8 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
-                    left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(MachineTerm::constant(0)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
                 },
                 true,
             )),
@@ -2876,8 +2882,8 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::constant(1)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
             },
             false,
         );
@@ -2885,8 +2891,8 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::constant(0)),
-                right: Box::new(binary_node!(
+                left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                right: crate::kernel::ConditionOperand::new(binary_node!(
                     Int32,
                     Add,
                     Box::new(MachineTerm::Variable(variable)),
@@ -3168,14 +3174,14 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
-            left: Box::new(quotient.clone()),
-            right: Box::new(unsigned(result.clone())),
+            left: crate::kernel::ConditionOperand::new(quotient.clone()),
+            right: crate::kernel::ConditionOperand::new(unsigned(result.clone())),
         },
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
-            left: Box::new(remainder),
-            right: Box::new(unsigned(result)),
+            left: crate::kernel::ConditionOperand::new(remainder),
+            right: crate::kernel::ConditionOperand::new(unsigned(result)),
         },
         ConditionTerm::unsigned_less_equal(unsigned(x), quotient),
     ] {
@@ -3581,8 +3587,8 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(earlier)),
-            right: Box::new(MachineTerm::constant(5)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(earlier)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(5)),
         },
         true,
     );
@@ -3926,8 +3932,8 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     ConditionTerm::Compare {
                         format: element_format,
                         relation: CompareRelation::Equal,
-                        left: Box::new(load),
-                        right: Box::new(zero.clone()),
+                        left: crate::kernel::ConditionOperand::new(load),
+                        right: crate::kernel::ConditionOperand::new(zero.clone()),
                     },
                     true,
                 );
@@ -4945,8 +4951,8 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 ConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::Int32,
                     relation: crate::kernel::CompareRelation::Equal,
-                    left: Box::new(term.clone()),
-                    right: Box::new(term.clone()),
+                    left: crate::kernel::ConditionOperand::new(term.clone()),
+                    right: crate::kernel::ConditionOperand::new(term.clone()),
                 },
                 true,
             ),
@@ -7100,8 +7106,8 @@ fn comparison_over_named_word_round_trip(
         ConditionTerm::Compare {
             format: comparison_type,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::constant(0)),
-            right: Box::new(word),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            right: crate::kernel::ConditionOperand::new(word),
         },
         true,
     );
@@ -7127,8 +7133,8 @@ fn raw_signed_nonnegative(word: MachineTerm) -> Proposition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::constant(0)),
-            right: Box::new(word),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            right: crate::kernel::ConditionOperand::new(word),
         },
         true,
     )
@@ -7160,8 +7166,8 @@ fn unsigned_small_bound_produces_round_tripping_signed_facts() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(signed_word),
-            right: Box::new(MachineTerm::constant(256)),
+            left: crate::kernel::ConditionOperand::new(signed_word),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(256)),
         },
         true,
     );
@@ -7315,8 +7321,8 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
             conditions.push(ConditionTerm::Overflows {
                 format,
                 op,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::Variable(variable)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
             });
         }
     }
@@ -10020,8 +10026,8 @@ fn nested_operand_definedness_round_trips() {
         ConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::Variable(Variable(973_001))),
-            right: Box::new(MachineTerm::Variable(Variable(973_002))),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(973_001))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(973_002))),
         },
         false,
     );
@@ -10029,8 +10035,8 @@ fn nested_operand_definedness_round_trips() {
         ConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
-            left: Box::new(inner),
-            right: Box::new(c),
+            left: crate::kernel::ConditionOperand::new(inner),
+            right: crate::kernel::ConditionOperand::new(c),
         },
         false,
     );
@@ -10049,8 +10055,8 @@ fn nested_operand_definedness_round_trips() {
         ConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::Variable(Variable(973_001))),
-            right: Box::new(MachineTerm::Variable(Variable(973_003))),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(973_001))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(973_003))),
         },
         false,
     ));

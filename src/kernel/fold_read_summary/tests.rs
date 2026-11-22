@@ -437,8 +437,8 @@ fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
     fact(ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
-        left: Box::new(left),
-        right: Box::new(right),
+        left: crate::kernel::ConditionOperand::new(left),
+        right: crate::kernel::ConditionOperand::new(right),
     })
 }
 
@@ -446,8 +446,8 @@ fn lt(left: MachineTerm, right: MachineTerm) -> Proposition {
     fact(ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
-        left: Box::new(left),
-        right: Box::new(right),
+        left: crate::kernel::ConditionOperand::new(left),
+        right: crate::kernel::ConditionOperand::new(right),
     })
 }
 

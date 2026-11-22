@@ -858,8 +858,8 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(x.clone()),
-            right: Box::new(x),
+            left: crate::kernel::ConditionOperand::new(x.clone()),
+            right: crate::kernel::ConditionOperand::new(x),
         },
         true,
     );

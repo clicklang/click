@@ -29,8 +29,8 @@ fn same_quantity(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFact
             crate::kernel::ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
-                left: Box::new(left.clone()),
-                right: Box::new(right.clone()),
+                left: crate::kernel::ConditionOperand::new(left.clone()),
+                right: crate::kernel::ConditionOperand::new(right.clone()),
             },
         )
 }

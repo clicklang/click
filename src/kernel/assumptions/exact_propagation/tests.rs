@@ -495,8 +495,8 @@ fn exact_propagation_computes_substituted_word_equality_guards() {
         let comparison = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::uint64_constant(1)),
-            right: Box::new(MachineTerm::int64_constant(right)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(1)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::int64_constant(right)),
         };
         for truth in [true, false] {
             let guard = Proposition::condition_is(comparison.clone(), truth);
@@ -508,8 +508,8 @@ fn exact_propagation_computes_substituted_word_equality_guards() {
     let mismatched = ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
-        left: Box::new(MachineTerm::constant(1)),
-        right: Box::new(MachineTerm::int64_constant(1)),
+        left: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
+        right: crate::kernel::ConditionOperand::new(MachineTerm::int64_constant(1)),
     };
     assert_eq!(
         crate::kernel::proof::fact_reasoning::trivial_condition_value(&mismatched),

@@ -524,15 +524,19 @@ mod protocol_value_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(10993643))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    10993643,
+                ))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
             },
             ConditionTerm::BoolEqual(
                 Box::new(ConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(10993644))),
-                    right: Box::new(MachineTerm::uint32_constant(1)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                        10993644,
+                    ))),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::uint32_constant(1)),
                 }),
                 Box::new(ConditionTerm::Constant(false)),
             ),
@@ -564,8 +568,8 @@ mod protocol_value_tests {
         let native = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(value),
-            right: Box::new(MachineTerm::constant(9)),
+            left: crate::kernel::ConditionOperand::new(value),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(9)),
         };
         let exports = KernelTermExport::machine_export_count();
         let stored = StoredConditionTerm::from_minted(native.clone());
@@ -588,8 +592,10 @@ mod protocol_value_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(10993712))),
-                right: Box::new(MachineTerm::constant(9)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    10993712,
+                ))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(9)),
             },
         ] {
             let root = KernelTermImport::for_exact_field_inputs().condition(&condition);
@@ -620,8 +626,8 @@ mod protocol_value_tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(MachineTerm::constant(3)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(3)),
         };
         let root = KernelTermImport::for_exact_field_inputs().condition(&condition);
         let native = Proposition::condition_is(condition, false);

@@ -498,40 +498,40 @@ mod tests {
                 0..=2 => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left,
-                    right,
+                    left: crate::kernel::ConditionOperand::from(left),
+                    right: crate::kernel::ConditionOperand::from(right),
                 },
                 3..=5 => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left,
-                    right,
+                    left: crate::kernel::ConditionOperand::from(left),
+                    right: crate::kernel::ConditionOperand::from(right),
                 },
                 6 | 7 => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
-                    left,
-                    right,
+                    left: crate::kernel::ConditionOperand::from(left),
+                    right: crate::kernel::ConditionOperand::from(right),
                 },
                 8 => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
-                    left,
-                    right,
+                    left: crate::kernel::ConditionOperand::from(left),
+                    right: crate::kernel::ConditionOperand::from(right),
                 },
                 9 | 10 => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left,
-                    right,
+                    left: crate::kernel::ConditionOperand::from(left),
+                    right: crate::kernel::ConditionOperand::from(right),
                 },
                 _ => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
                         crate::kernel::eval::LOAD_VARIABLE_RANGE.start + self.next() % 2,
                     ))),
-                    right,
+                    right: crate::kernel::ConditionOperand::from(right),
                 },
             };
             (condition, value)
@@ -607,8 +607,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -619,8 +619,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left),
-                right: Box::new(right),
+                left: crate::kernel::ConditionOperand::new(left),
+                right: crate::kernel::ConditionOperand::new(right),
             },
             true,
         )
@@ -675,8 +675,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(var(index)),
-                        right: Box::new(var(index + 1)),
+                        left: crate::kernel::ConditionOperand::new(var(index)),
+                        right: crate::kernel::ConditionOperand::new(var(index + 1)),
                     },
                     true,
                 );
@@ -684,8 +684,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(var(10_000 + index)),
-                        right: Box::new(var(10_001 + index)),
+                        left: crate::kernel::ConditionOperand::new(var(10_000 + index)),
+                        right: crate::kernel::ConditionOperand::new(var(10_001 + index)),
                     },
                     true,
                 );
@@ -696,8 +696,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(var(size + 1)),
-                        right: Box::new(MachineTerm::constant(7)),
+                        left: crate::kernel::ConditionOperand::new(var(size + 1)),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
                     },
                     true,
                 );

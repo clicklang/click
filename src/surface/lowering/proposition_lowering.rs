@@ -488,8 +488,8 @@ pub(in crate::surface) fn signed_less_than(left: MachineTerm, right: MachineTerm
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         },
     }
 }
@@ -505,8 +505,8 @@ pub(in crate::surface) fn signed_less_equal(
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         },
     }
 }
@@ -522,8 +522,8 @@ pub(in crate::surface) fn signed_greater_than(
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         },
     }
 }
@@ -539,8 +539,8 @@ pub(in crate::surface) fn signed_greater_equal(
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         },
     }
 }
@@ -556,8 +556,8 @@ pub(in crate::surface) fn bitvector32_equal(
         _ => ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(right),
         },
     }
 }

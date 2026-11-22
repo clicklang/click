@@ -86,8 +86,8 @@ pub(crate) fn admit_declared_entry_resources(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
-                        left: Box::new(quantity.clone()),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: crate::kernel::ConditionOperand::new(quantity.clone()),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                     },
                 )
             });
@@ -104,8 +104,8 @@ pub(crate) fn admit_declared_entry_resources(
                         ConditionTerm::Compare {
                             format,
                             relation: CompareRelation::LessThan,
-                            left: Box::new(start.clone()),
-                            right: Box::new(end.clone()),
+                            left: crate::kernel::ConditionOperand::new(start.clone()),
+                            right: crate::kernel::ConditionOperand::new(end.clone()),
                         },
                     )
                 {

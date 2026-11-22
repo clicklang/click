@@ -309,8 +309,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(written),
-                right: Box::new(MachineTerm::uint64_constant(7)),
+                left: crate::kernel::ConditionOperand::new(written),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(7)),
             },
             true,
         );

@@ -6484,8 +6484,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(left.clone()),
-                    right: Box::new(right.clone()),
+                    left: crate::kernel::ConditionOperand::new(left.clone()),
+                    right: crate::kernel::ConditionOperand::new(right.clone()),
                 },
                 true,
             ))
@@ -6493,8 +6493,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(right.clone()),
-                    right: Box::new(left.clone()),
+                    left: crate::kernel::ConditionOperand::new(right.clone()),
+                    right: crate::kernel::ConditionOperand::new(left.clone()),
                 },
                 true,
             ));
@@ -6506,8 +6506,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(right_term.clone()),
-                right: Box::new(left.clone()),
+                left: crate::kernel::ConditionOperand::new(right_term.clone()),
+                right: crate::kernel::ConditionOperand::new(left.clone()),
             },
             false,
         );
@@ -6523,8 +6523,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(2))),
-                right: Box::new(MachineTerm::constant(10)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(2))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(10)),
             },
             true,
         );
@@ -6539,8 +6539,8 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::constant(10)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(1))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(10)),
         };
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(condition.clone(), false));

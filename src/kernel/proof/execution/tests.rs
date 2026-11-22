@@ -2496,8 +2496,8 @@ fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterEqual,
-            left: Box::new(MachineTerm::constant(0)),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2876,8 +2876,8 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::MemoryLoad(
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                     memory,
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,

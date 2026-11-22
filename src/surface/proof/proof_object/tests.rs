@@ -149,8 +149,8 @@ fn indexed_fact(index: u32) -> Proposition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(0))),
-            right: Box::new(MachineTerm::constant(index)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(0))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(index)),
         },
         true,
     )
@@ -291,8 +291,8 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(remainder.clone()),
-            right: Box::new(MachineTerm::uint64_constant(0)),
+            left: crate::kernel::ConditionOperand::new(remainder.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(0)),
         },
         true,
     );
@@ -300,8 +300,8 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(size),
-            right: Box::new(MachineTerm::uint64_constant(22208)),
+            left: crate::kernel::ConditionOperand::new(size),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(22208)),
         },
         true,
     )];
@@ -356,8 +356,8 @@ fn missing_known_side_uses_recorded_names_in_fixed_state_errors() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: Box::new(before.clone()),
-            right: Box::new(after.clone()),
+            left: crate::kernel::ConditionOperand::new(before.clone()),
+            right: crate::kernel::ConditionOperand::new(after.clone()),
         },
         true,
     );
@@ -510,8 +510,10 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(MachineTerm::constant(0)),
-                        right: Box::new(MachineTerm::Variable(Variable(30))),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(30),
+                        )),
                     },
                     true,
                 )),
@@ -519,8 +521,10 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(MachineTerm::Variable(Variable(30))),
-                        right: Box::new(MachineTerm::constant(16)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(30),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(16)),
                     },
                     true,
                 )),
@@ -567,8 +571,8 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(left.clone()),
-                    right: Box::new(right.clone()),
+                    left: crate::kernel::ConditionOperand::new(left.clone()),
+                    right: crate::kernel::ConditionOperand::new(right.clone()),
                 },
                 true,
             ),
@@ -1058,12 +1062,14 @@ fn both_and_preserves_exact_binders_and_saved_states() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::of_memory(&memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(MachineTerm::Variable(Variable(binder))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    binder,
+                ))),
             },
             true,
         )),
@@ -1967,8 +1973,8 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::constant(0)),
-            right: Box::new(MachineTerm::constant(1)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -2049,8 +2055,10 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(8_765_432))),
-                right: Box::new(MachineTerm::constant(7)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    8_765_432,
+                ))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
             },
             true,
         )),
@@ -2542,8 +2550,8 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(left.clone()),
-            right: Box::new(right.clone()),
+            left: crate::kernel::ConditionOperand::new(left.clone()),
+            right: crate::kernel::ConditionOperand::new(right.clone()),
         },
         true,
     );
@@ -2553,8 +2561,8 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(left.clone()),
-                right: Box::new(right.clone()),
+                left: crate::kernel::ConditionOperand::new(left.clone()),
+                right: crate::kernel::ConditionOperand::new(right.clone()),
             },
             false,
         ),
@@ -2562,8 +2570,8 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(right.clone()),
-                right: Box::new(left.clone()),
+                left: crate::kernel::ConditionOperand::new(right.clone()),
+                right: crate::kernel::ConditionOperand::new(left.clone()),
             },
             false,
         ),
@@ -2571,8 +2579,8 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
-                left: Box::new(right.clone()),
-                right: Box::new(left.clone()),
+                left: crate::kernel::ConditionOperand::new(right.clone()),
+                right: crate::kernel::ConditionOperand::new(left.clone()),
             },
             false,
         ))),
@@ -2617,8 +2625,8 @@ fn outcome_fact_deltas_share_ambient_universal_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(index))),
-                right: Box::new(MachineTerm::Variable(Variable(index))),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(index))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(index))),
             },
             true,
         )),
@@ -3336,8 +3344,8 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(MachineTerm::constant(7)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(variable)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -3555,8 +3563,8 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(source_variable)),
-                right: Box::new(MachineTerm::constant(7)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(source_variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
             },
             true,
         )),
@@ -3570,8 +3578,8 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(goal_variable)),
-                right: Box::new(MachineTerm::constant(7)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(goal_variable)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
             },
             true,
         )),
@@ -6634,8 +6642,8 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(selected_term.clone()),
-            right: Box::new(MachineTerm::constant(2)),
+            left: crate::kernel::ConditionOperand::new(selected_term.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -6643,13 +6651,13 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(binary_node!(
+            left: crate::kernel::ConditionOperand::new(binary_node!(
                 Int32,
                 Subtract,
                 Box::new(selected_term.clone()),
                 Box::new(MachineTerm::constant(1)),
             )),
-            right: Box::new(MachineTerm::constant(1)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -6676,10 +6684,12 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(
-                            9_000_000 + u64::from(index),
-                        ))),
-                        right: Box::new(MachineTerm::constant(10_000 + index)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(9_000_000 + u64::from(index)),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                            10_000 + index,
+                        )),
                     },
                     true,
                 )
@@ -6751,8 +6761,8 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(term.clone()),
-                right: Box::new(zero.clone()),
+                left: crate::kernel::ConditionOperand::new(term.clone()),
+                right: crate::kernel::ConditionOperand::new(zero.clone()),
             },
             true,
         )
@@ -6766,13 +6776,13 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(binary_node!(
+            left: crate::kernel::ConditionOperand::new(binary_node!(
                 Int32,
                 Add,
                 Box::new(left.clone()),
                 Box::new(right.clone()),
             )),
-            right: Box::new(zero.clone()),
+            right: crate::kernel::ConditionOperand::new(zero.clone()),
         },
         true,
     );
@@ -6794,10 +6804,12 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(
-                            9_100_000 + u64::from(index),
-                        ))),
-                        right: Box::new(MachineTerm::constant(20_000 + index)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(9_100_000 + u64::from(index)),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                            20_000 + index,
+                        )),
                     },
                     true,
                 )
@@ -7123,8 +7135,13 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(binary_node!(Int32, Add, Box::new(left), Box::new(right))),
-            right: Box::new(MachineTerm::constant(2)),
+            left: crate::kernel::ConditionOperand::new(binary_node!(
+                Int32,
+                Add,
+                Box::new(left),
+                Box::new(right)
+            )),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -11951,8 +11968,8 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(60_001))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(60_001))),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -14659,8 +14676,8 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left.clone()),
-            right: Box::new(right.clone()),
+            left: crate::kernel::ConditionOperand::new(left.clone()),
+            right: crate::kernel::ConditionOperand::new(right.clone()),
         },
         true,
     );
@@ -14668,8 +14685,8 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left.clone()),
-            right: Box::new(MachineTerm::constant(7)),
+            left: crate::kernel::ConditionOperand::new(left.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -14815,8 +14832,8 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left.clone()),
-            right: Box::new(MachineTerm::constant(7)),
+            left: crate::kernel::ConditionOperand::new(left.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -14934,8 +14951,8 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left.clone()),
-            right: Box::new(right.clone()),
+            left: crate::kernel::ConditionOperand::new(left.clone()),
+            right: crate::kernel::ConditionOperand::new(right.clone()),
         },
         true,
     )];
@@ -14943,8 +14960,8 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(left),
-            right: Box::new(MachineTerm::constant(7)),
+            left: crate::kernel::ConditionOperand::new(left),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
         },
         true,
     );

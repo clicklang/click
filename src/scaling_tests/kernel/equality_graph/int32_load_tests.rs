@@ -248,8 +248,8 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
             let equal = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
-                left: Box::new(read(&projected)),
-                right: Box::new(read(&source)),
+                left: crate::kernel::ConditionOperand::new(read(&projected)),
+                right: crate::kernel::ConditionOperand::new(read(&source)),
             };
             let graph = EqualityGraph::default();
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {

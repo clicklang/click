@@ -575,8 +575,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(left_name.clone()),
-                right: Box::new(right_name.clone()),
+                left: crate::kernel::ConditionOperand::new(left_name.clone()),
+                right: crate::kernel::ConditionOperand::new(right_name.clone()),
             },
             true,
         );

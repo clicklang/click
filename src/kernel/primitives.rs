@@ -1290,6 +1290,45 @@ pub enum OverflowOperation {
     ShiftLeft,
 }
 
+/// One operand of a native comparison or overflow test
+/// ([`ConditionTerm::Compare`], [`ConditionTerm::Overflows`]).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ConditionOperand(Box<MachineTerm>);
+
+impl ConditionOperand {
+    pub fn new(value: MachineTerm) -> Self {
+        Self(Box::new(value))
+    }
+    /// The operand's machine term, boxed for a node that holds one.
+    pub fn boxed(&self) -> Box<MachineTerm> {
+        self.0.clone()
+    }
+    pub fn into_term(self) -> MachineTerm {
+        *self.0
+    }
+}
+impl From<Box<MachineTerm>> for ConditionOperand {
+    fn from(value: Box<MachineTerm>) -> Self {
+        Self(value)
+    }
+}
+impl From<MachineTerm> for ConditionOperand {
+    fn from(value: MachineTerm) -> Self {
+        Self::new(value)
+    }
+}
+impl std::ops::Deref for ConditionOperand {
+    type Target = MachineTerm;
+    fn deref(&self) -> &MachineTerm {
+        &self.0
+    }
+}
+impl AsRef<MachineTerm> for ConditionOperand {
+    fn as_ref(&self) -> &MachineTerm {
+        &self.0
+    }
+}
+
 /// Equality, hashing and order compare a condition's identity
 /// ([`ConditionIdentity`]): a 32-bit equality is one fact whichever
 /// signedness it is filed at (rule K6), so `Compare { UInt32, Equal }` and
@@ -1313,8 +1352,8 @@ pub enum ConditionTerm {
     Compare {
         format: MachineIntegerType,
         relation: CompareRelation,
-        left: Box<MachineTerm>,
-        right: Box<MachineTerm>,
+        left: ConditionOperand,
+        right: ConditionOperand,
     },
     /// Whether the exact result of `left op right`, the operands read at
     /// `format`, lies outside `format`: a signed overflow test is C's
@@ -1323,8 +1362,8 @@ pub enum ConditionTerm {
     Overflows {
         format: MachineIntegerType,
         op: OverflowOperation,
-        left: Box<MachineTerm>,
-        right: Box<MachineTerm>,
+        left: ConditionOperand,
+        right: ConditionOperand,
     },
     Float32(FloatCondition),
     Float64(FloatCondition),

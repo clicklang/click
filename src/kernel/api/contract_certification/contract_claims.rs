@@ -3140,8 +3140,10 @@ mod checked_proposition_index_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(variable))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    variable,
+                ))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
             },
             value,
         )
@@ -3406,8 +3408,8 @@ mod unproved_path_obligation_message_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::constant(3)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(7))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(3)),
             },
             true,
         );

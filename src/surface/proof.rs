@@ -255,8 +255,8 @@ mod certificate_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(term),
-                right: Box::new(MachineTerm::constant(0)),
+                left: crate::kernel::ConditionOperand::new(term),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -315,14 +315,14 @@ mod certificate_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::MemoryLoad(
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                         crate::kernel::ProgramPoint::at(
                             &(crate::kernel::intern_memory(target_memory.clone())),
                         ),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32,
                     )),
-                    right: Box::new(MachineTerm::Variable(Variable(7))),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(7))),
                 },
                 true,
             )),
@@ -364,12 +364,12 @@ mod certificate_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                     crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(target_memory))),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(MachineTerm::constant(0)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
             },
             true,
         );

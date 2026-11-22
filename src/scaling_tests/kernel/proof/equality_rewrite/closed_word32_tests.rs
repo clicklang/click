@@ -165,8 +165,8 @@ fn selected_word32_literal_comparisons_ignore_unrelated_facts() {
                         ConditionTerm::Compare {
                             format,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(MachineTerm::constant(3)),
-                            right: Box::new(MachineTerm::constant(100)),
+                            left: crate::kernel::ConditionOperand::new(MachineTerm::constant(3)),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(100)),
                         }
                     },
                     true
@@ -214,8 +214,12 @@ fn selected_word32_literal_comparisons_scale_with_selected_source() {
                             ConditionTerm::Compare {
                                 format,
                                 relation: CompareRelation::LessEqual,
-                                left: Box::new(MachineTerm::constant(i as u32)),
-                                right: Box::new(MachineTerm::constant(100)),
+                                left: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                                    i as u32,
+                                )),
+                                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(
+                                    100,
+                                )),
                             }
                         },
                         true

@@ -768,8 +768,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(999983))),
-                right: Box::new(MachineTerm::constant(4)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(999983))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(4)),
             },
             ConditionTerm::BoolIf {
                 condition: Box::new(ConditionTerm::Variable(Variable(999983))),
@@ -904,11 +904,11 @@ mod tests {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::Constant {
+            left: crate::kernel::ConditionOperand::new(MachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 48,
             }),
-            right: Box::new(MachineTerm::ClickFunctionApplication {
+            right: crate::kernel::ConditionOperand::new(MachineTerm::ClickFunctionApplication {
                 name: "strict_digit".into(),
                 arguments: vec![A::SharedMachine(
                     SharedMachineIntegerTerm::from_shared(MachineIntegerType::UInt64, argument)

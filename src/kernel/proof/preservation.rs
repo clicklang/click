@@ -656,8 +656,8 @@ mod tests {
                 MachineIntegerType::Int64 | MachineIntegerType::UInt64 => ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(after_value),
-                    right: Box::new(before_value),
+                    left: crate::kernel::ConditionOperand::new(after_value),
+                    right: crate::kernel::ConditionOperand::new(before_value),
                 },
                 _ => ConditionTerm::equal(after_value, before_value),
             },
@@ -706,7 +706,9 @@ mod tests {
                 let ConditionTerm::Compare { left, .. } = &mut condition else {
                     panic!("wide equality")
                 };
-                **left = MachineTerm::Variable(Variable(8_390_999));
+                *left = crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                    8_390_999,
+                )));
                 preservation.result = Proposition::condition_is(condition, truth);
                 assert!(preservation.apply(|p| p == &separation).is_err());
             }
@@ -1174,8 +1176,8 @@ mod tests {
             8 => ConditionTerm::Compare {
                 format: comparison,
                 relation: CompareRelation::Equal,
-                left: Box::new(after_read.clone()),
-                right: Box::new(before_read.clone()),
+                left: crate::kernel::ConditionOperand::new(after_read.clone()),
+                right: crate::kernel::ConditionOperand::new(before_read.clone()),
             },
             _ => ConditionTerm::machine_compare(
                 comparison,

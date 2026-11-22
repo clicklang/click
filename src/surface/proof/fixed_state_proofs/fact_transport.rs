@@ -1032,8 +1032,8 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
         } => ConditionTerm::Compare {
             format: *format,
             relation: *relation,
-            left: Box::new(erase_term(left)),
-            right: Box::new(erase_term(right)),
+            left: crate::kernel::ConditionOperand::new(erase_term(left)),
+            right: crate::kernel::ConditionOperand::new(erase_term(right)),
         },
         _ => return None,
     };
@@ -1433,8 +1433,8 @@ mod path_condition_tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(7))),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
             },
             false,
         );

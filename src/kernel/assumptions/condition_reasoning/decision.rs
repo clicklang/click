@@ -1459,8 +1459,8 @@ impl PureFactContext {
                             self.condition_facts.get(&ConditionTerm::Compare {
                                 format: MachineIntegerType::UInt32,
                                 relation,
-                                left: Box::new(left.clone()),
-                                right: Box::new(right.clone()),
+                                left: crate::kernel::ConditionOperand::new(left.clone()),
+                                right: crate::kernel::ConditionOperand::new(right.clone()),
                             })
                         };
                     let (mirrored, converse) = match relation {
@@ -2910,8 +2910,8 @@ mod shared_order_pipeline_tests {
                         let native = ConditionTerm::Compare {
                             format,
                             relation,
-                            left: Box::new(term.clone()),
-                            right: Box::new(right.clone()),
+                            left: crate::kernel::ConditionOperand::new(term.clone()),
+                            right: crate::kernel::ConditionOperand::new(right.clone()),
                         };
                         let roots = [term, &right].map(|t| {
                             KernelTermImport::default()

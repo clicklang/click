@@ -514,14 +514,14 @@ impl BitvectorComparisonOp {
             Self::Compare(format, relation) => ConditionTerm::Compare {
                 format,
                 relation,
-                left,
-                right,
+                left: crate::kernel::ConditionOperand::from(left),
+                right: crate::kernel::ConditionOperand::from(right),
             },
             Self::Overflows(format, op) => ConditionTerm::Overflows {
                 format,
                 op,
-                left,
-                right,
+                left: crate::kernel::ConditionOperand::from(left),
+                right: crate::kernel::ConditionOperand::from(right),
             },
         }
     }

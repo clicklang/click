@@ -149,8 +149,8 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                                 ConditionTerm::Compare {
                                     format: MachineIntegerType::Int32,
                                     relation: CompareRelation::Equal,
-                                    left: Box::new(value),
-                                    right: Box::new(0u32.into()),
+                                    left: crate::kernel::ConditionOperand::new(value),
+                                    right: crate::kernel::ConditionOperand::new(0u32.into()),
                                 },
                                 true,
                             )),

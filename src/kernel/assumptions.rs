@@ -1329,8 +1329,10 @@ mod planning_index_memo_lifetime_tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(size * 1000 + index))),
-                        right: Box::new(MachineTerm::constant(7)),
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            Variable(size * 1000 + index),
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::constant(7)),
                     },
                     true,
                 ));
@@ -5034,8 +5036,10 @@ impl PureFactContext {
                     let definition = ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(*variable)),
-                        right: Box::new(MachineTerm::MemoryLoad(
+                        left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                            *variable,
+                        )),
+                        right: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                             ProgramPoint::at(memory),
                             Box::new(address.clone()),
                             kind,
@@ -11296,8 +11300,10 @@ mod stated_requirement_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(Variable(var))),
-                    right: Box::new(MachineTerm::constant(4)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(Variable(
+                        var,
+                    ))),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(4)),
                 },
                 true,
             )),
@@ -12623,8 +12629,8 @@ mod integer_observation_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(word(1)),
-                right: Box::new(MachineTerm::constant(1)),
+                left: crate::kernel::ConditionOperand::new(word(1)),
+                right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
             },
             true,
         );
@@ -12646,8 +12652,8 @@ mod integer_observation_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt64,
                     relation: CompareRelation::GreaterEqual,
-                    left: Box::new(word(1)),
-                    right: Box::new(MachineTerm::uint64_constant(32)),
+                    left: crate::kernel::ConditionOperand::new(word(1)),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(32)),
                 },
                 ConditionTerm::IntegerLessEqual(
                     constant(32),
@@ -12658,8 +12664,8 @@ mod integer_observation_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt64,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::uint64_constant(0)),
-                    right: Box::new(word(1)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::uint64_constant(0)),
+                    right: crate::kernel::ConditionOperand::new(word(1)),
                 },
                 ConditionTerm::IntegerLessEqual(
                     observe(MachineIntegerType::UInt64, 1),
@@ -12972,12 +12978,12 @@ mod execution_variable_ceiling_tests {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: crate::kernel::ConditionOperand::new(MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(word(4)),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         }
     }
 
@@ -12991,8 +12997,10 @@ mod execution_variable_ceiling_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(execution_variable(3))),
-                    right: Box::new(MachineTerm::constant(1)),
+                    left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                        execution_variable(3),
+                    )),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::constant(1)),
                 },
                 true,
             ));
@@ -13622,8 +13630,8 @@ mod shared_load_atom_comparison_tests {
         let comparison = |format| ConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
-            left: Box::new(read.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(read.clone()),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         };
         let signed = comparison(MachineIntegerType::Int32);
         let unsigned = comparison(MachineIntegerType::UInt32);
@@ -13660,8 +13668,8 @@ mod shared_load_atom_comparison_tests {
         let atom = |value| ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(value),
-            right: Box::new(MachineTerm::constant(0)),
+            left: crate::kernel::ConditionOperand::new(value),
+            right: crate::kernel::ConditionOperand::new(MachineTerm::constant(0)),
         };
         let a = atom(a);
         let b = atom(b);
@@ -13775,8 +13783,8 @@ mod shared_load_atom_comparison_tests {
                 let mixed = ConditionTerm::Compare {
                     format: ty,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(mixed),
-                    right: Box::new(MachineTerm::machine_constant(
+                    left: crate::kernel::ConditionOperand::new(mixed),
+                    right: crate::kernel::ConditionOperand::new(MachineTerm::machine_constant(
                         crate::kernel::MachineIntegerConstant::from_signed(ty.format(), 7).unwrap(),
                     )),
                 };
@@ -13898,8 +13906,8 @@ mod shared_load_atom_comparison_tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Multiply,
-                left,
-                right: Box::new(factor.clone()),
+                left: crate::kernel::ConditionOperand::from(left.boxed()),
+                right: crate::kernel::ConditionOperand::new(factor.clone()),
             },
             false,
         );
@@ -13950,8 +13958,10 @@ mod shared_load_atom_comparison_tests {
                         ConditionTerm::Overflows {
                             format: ty,
                             op,
-                            left: Box::new(native.clone()),
-                            right: Box::new(MachineTerm::Variable(Variable(991003))),
+                            left: crate::kernel::ConditionOperand::new(native.clone()),
+                            right: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                Variable(991003),
+                            )),
                         },
                         truth,
                     )
@@ -14034,8 +14044,10 @@ mod shared_load_atom_comparison_tests {
                         forms.push(ConditionTerm::Compare {
                             format,
                             relation,
-                            left: Box::new(MachineTerm::Variable(variable)),
-                            right: Box::new(constant),
+                            left: crate::kernel::ConditionOperand::new(MachineTerm::Variable(
+                                variable,
+                            )),
+                            right: crate::kernel::ConditionOperand::new(constant),
                         });
                     }
                 }
