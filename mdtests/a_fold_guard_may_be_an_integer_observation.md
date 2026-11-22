@@ -8,7 +8,7 @@ observation, `to_integer(n - k) < 18446744073709551615`, which holds exactly
 when the native comparison does. `unfold` reads a listed observation as that
 native guard.
 
-```click
+```click quick-solve
 
 function total(lo: uint64, hi: uint64) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(k) })

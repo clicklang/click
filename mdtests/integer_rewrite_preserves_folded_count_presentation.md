@@ -4,7 +4,7 @@ The native count expression remains the checked value. Replacing its exact
 signed observation by 16 folds the source bound to 4081; retaining that spelling
 must use the same normalized Integer claim, without extra assumptions.
 
-```click
+```click quick-solve
 function observed_batch_prefix(total: uint64, remaining: uint64) -> int32 {
  (total - remaining) as uint32 as int32
 }

@@ -1,6 +1,6 @@
 # Integer certificates retain proof-local algebraic bindings
 
-```click
+```click quick-solve
 spec enum Count { Value(int32) }
 function count_value(count: Count) -> int32 {
     match count { Count::Value(value) => value, }

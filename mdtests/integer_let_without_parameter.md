@@ -1,6 +1,6 @@
 # Integer typed let without parameter
 
-```click
+```click quick-solve
 // include <stdint.h>
 
 theorem integer_let_without_parameter() {

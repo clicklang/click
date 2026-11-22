@@ -4,7 +4,7 @@
 premise written `x >= 0` also closes the goal spelled `0 <= x`. This catches a
 conditional normalizer that drops the mirrored form of a cited `>=` condition.
 
-```click
+```click quick-solve
 theorem greater_equal_premise_closes_mirrored_goal(x: int32) {
     requires x >= 0;
     ensures 0 <= x by {

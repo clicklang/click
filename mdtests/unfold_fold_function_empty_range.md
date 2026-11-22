@@ -4,7 +4,7 @@
 `hi <= lo`. The result is `f(args) == <initial>`; ordinary obligations handle
 any remaining guards without a tactic-specific premise list.
 
-```click
+```click quick-solve
 function icount(p: int32[], lo: int32, hi: int32, x: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| {
         acc + to_integer(if p[k] == x { 1 } else { 0 })

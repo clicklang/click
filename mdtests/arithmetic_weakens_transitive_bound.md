@@ -1,6 +1,6 @@
 # A strict transitive bound also implies a weak bound
 
-```click
+```click quick-solve
 theorem weak_transitive_bound(j: int32, hi: int32, n: int32) {
     requires j < hi;
     requires hi <= n;

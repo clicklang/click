@@ -1652,7 +1652,7 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                     .map_err(|error| error.message().to_string())
                 };
                 let fixture = fixture_name(&click_path);
-                let (result, samples) = tactic_work::measure(verify);
+                let (result, samples) = tactic_work::measure(false, verify);
                 if !samples.is_empty() {
                     let single_module =
                         click_project.modules().len() == 1 && click_project.c_profile().is_none();

@@ -1,6 +1,6 @@
 # Mirrored float comparisons keep IEEE semantics
 
-```click
+```click quick-solve
 function fixed_float(x: double) -> double {
     float64_from_bits(0x3ff0000000000000)
 }

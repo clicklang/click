@@ -25,6 +25,8 @@ mod tactic_work;
 const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Rewrites the checked-in C++ imports instead of comparing them.
 const REFRESH_CPP_IMPORTS: &str = "CLICK_REFRESH_CPP_IMPORTS";
+const QUICK_SOLVE_ONLY: &str = "MDTEST_QUICK_SOLVE";
+const QUICK_SOLVE_WORK_LIMIT: usize = 50_000;
 const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
 /// Pin the explicit frame refusal under a fixed work limit.
 const PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT: usize = 250_000;
@@ -460,7 +462,7 @@ fn mdtests() {
                 .is_some_and(|extension| extension == "md" || extension == "click")
         })
         .collect::<Vec<_>>();
-    let filtered = if let Ok(filter) = std::env::var("MDTEST_FILTER") {
+    let named_filter = if let Ok(filter) = std::env::var("MDTEST_FILTER") {
         // A whole file name selects just that file; anything else selects
         // every file whose name contains it.
         let exact = filter.ends_with(".md");
@@ -478,6 +480,16 @@ fn mdtests() {
     } else {
         false
     };
+    let quick_solve_only = std::env::var_os(QUICK_SOLVE_ONLY).is_some();
+    if quick_solve_only {
+        paths.retain(|path| {
+            path.extension().is_some_and(|extension| extension == "md")
+                && read_mdtest(path)
+                    .unwrap_or_else(|error| panic!("{error}"))
+                    .quick_solve
+        });
+    }
+    let filtered = named_filter || quick_solve_only;
     if !filtered && std::env::var_os(RUN_QUARANTINED).is_none() {
         paths.retain(|path| {
             let name = path.file_name().and_then(|name| name.to_str());
@@ -726,7 +738,9 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
         .map_err(|error| (error.message().to_string(), error.report()))
     };
 
-    let (result, samples) = timed_mdtest_phase(path, "verify", || tactic_work::measure(verify));
+    let (result, samples) = timed_mdtest_phase(path, "verify", || {
+        tactic_work::measure(mdtest.quick_solve, verify)
+    });
     if !samples.is_empty() {
         let line_offset = mdtest.click_start_line.saturating_sub(1);
         let relative = path
@@ -769,7 +783,83 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
             },
         );
     }
+    if mdtest.quick_solve {
+        let work_limit = std::env::var_os("CLICK_DISABLE_TACTIC_BUDGETS")
+            .is_none()
+            .then_some(QUICK_SOLVE_WORK_LIMIT);
+        check_quick_solve(&samples, &result, work_limit)?;
+    }
     check_expectation(path, expectation, result)
+}
+
+fn check_quick_solve(
+    samples: &[instrumentation::TacticWorkSample],
+    result: &Result<(), (String, String)>,
+    work_limit: Option<usize>,
+) -> Result<(), String> {
+    if let Err((_, report)) = result
+        && report.starts_with("limit error:")
+    {
+        return Err(format!(
+            "Quick Solve Test hit a verification limit: {report}"
+        ));
+    }
+    // Program closing profiles its generated termination proof as a solve
+    // even when the fixture has no written solve at that source.
+    let mut solves = samples.iter().filter(|sample| {
+        sample.tactic.tactic_name == "solve" && sample.tactic.claim != "program.termination"
+    });
+    let Some(solve) = solves.next() else {
+        return Err("Quick Solve Test must reach one explicit `solve()`".into());
+    };
+    if solves.next().is_some() {
+        return Err("Quick Solve Test ran more than one explicit `solve()`".into());
+    }
+    let work = solve.inclusive_work;
+    if let Some(limit) = work_limit
+        && work > limit
+    {
+        return Err(format!(
+            "Quick Solve Test used {work} deterministic work units (limit {limit}) in `{}`",
+            solve.tactic.claim
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn quick_solve_caps_inclusive_work_even_for_an_expected_refusal() {
+    let samples = [instrumentation::TacticWorkSample {
+        tactic: instrumentation::TacticEvent {
+            source_tactic_path: None,
+            claim: "transitive".into(),
+            tactic_index: 0,
+            tactic_name: "solve".into(),
+            class: "smart".into(),
+            statement_index: 0,
+            source_index: 0,
+        },
+        work: 2,
+        inclusive_work: 10,
+        failed: true,
+    }];
+    let mut samples = samples.to_vec();
+    let mut termination = samples[0].clone();
+    termination.tactic.claim = "program.termination".into();
+    termination.inclusive_work = 100;
+    samples.push(termination);
+    let refused = Err((
+        "could not establish the goal".into(),
+        "unsuccessful search".into(),
+    ));
+    check_quick_solve(&samples, &refused, Some(10)).unwrap();
+    let error = check_quick_solve(&samples, &refused, Some(9)).unwrap_err();
+    assert!(error.contains("10 deterministic work units (limit 9)"));
+    let exhausted = Err((
+        "search stopped".into(),
+        "limit error:\n  search stopped".into(),
+    ));
+    assert!(check_quick_solve(&samples, &exhausted, Some(10)).is_err());
 }
 
 fn check_expectation(
