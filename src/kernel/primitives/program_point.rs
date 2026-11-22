@@ -1660,9 +1660,8 @@ impl ProgramPoint {
     ) -> Option<Self> {
         self.indexed_typed_version(pointer, value_type)
             .or_else(|| {
-                (value_type == ProgramType::Int32)
-                    .then(|| self.call_output_integer_version(pointer, LoadKind::Int32))
-                    .flatten()
+                LoadKind::of_type(value_type)
+                    .and_then(|kind| self.call_output_integer_version(pointer, kind))
             })
             .or_else(|| self.entry_cell_version(pointer, value_type))
     }
@@ -1676,7 +1675,7 @@ impl ProgramPoint {
         pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
-        if kind != LoadKind::Int32 || !Self::supports_local_call_word(pointer) {
+        if !kind.is_word32() || !Self::supports_local_call_word(pointer) {
             return None;
         }
         self.indexed_version(pointer, kind.byte_width(), |effect| {

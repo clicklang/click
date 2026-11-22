@@ -429,6 +429,12 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
 
 #[test]
 fn opaque_call_word_versions_follow_checked_local_effects() {
+    for ty in [ProgramType::Int32, ProgramType::UInt32] {
+        assert_opaque_call_word_versions(ty);
+    }
+}
+
+fn assert_opaque_call_word_versions(ty: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
     let output = slot();
     let sibling = SymbolicMemory::local_pointer("disjoint");
@@ -436,7 +442,7 @@ fn opaque_call_word_versions_follow_checked_local_effects() {
     let sibling_range = MemoryRange::new(sibling.clone(), 0.into(), 1.into());
     let start = ExecutionState::new().with_memory(
         SymbolicMemory::new()
-            .with_declared_scalar_block(output.base.clone(), 4, ProgramType::Int32)
+            .with_declared_scalar_block(output.base.clone(), 4, ty)
             .with_block(sibling.base.clone(), 4),
     );
     let call = |state: &ExecutionState, index, range: &MemoryRange| {
@@ -454,11 +460,7 @@ fn opaque_call_word_versions_follow_checked_local_effects() {
         state
     };
     let returned = output_return(call(&start, 38_201, &output_range));
-    let select = |state: &ExecutionState| {
-        state
-            .program_point()
-            .ordinary_typed_version(&output, ProgramType::Int32)
-    };
+    let select = |state: &ExecutionState| state.program_point().ordinary_typed_version(&output, ty);
     let version = select(&returned).expect("opaque output has a version");
     assert_eq!(version.read_version_id(), returned.program_point_id());
     assert!(version.indexed_integer_store_bits().is_none());
