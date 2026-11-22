@@ -173,12 +173,11 @@ pub(crate) enum PropositionCloseError {
 
     ExpectedIntroduction(Proposition),
     IntegerFresheningExhausted,
-    /// The reserved universal-witness range
-    /// ([`crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE`])
-    /// holds no identity above the witnesses already in scope. The
-    /// introduction refuses rather than reusing one: an identity outside that
-    /// range is some other producer's, and a witness that names a live C
-    /// variable is the capture this range exists to prevent.
+    /// No witness is left above the witnesses already in scope
+    /// ([`crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT`]). The
+    /// introduction refuses rather than reusing one: a variable of another
+    /// origin is some other producer's, and a witness that names a live C
+    /// variable is the capture the witness origin exists to prevent.
     UniversalWitnessFresheningExhausted,
     IntegerChoiceSourceUnavailable,
     IntegerChoiceWrongSort,
@@ -1231,8 +1230,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .facts
             .fresh_universal_witness(&excluded)
             .ok_or(PropositionCloseError::IntegerChoiceFresheningExhausted)?;
-        let variable = Variable(fresh.0.max(hint.0));
-        if !crate::kernel::ExecutionBudget::is_universal_witness_variable(variable) {
+        let variable = if hint.is_witness() && hint.0 > fresh.0 {
+            hint
+        } else {
+            fresh
+        };
+        if variable.0 >= crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT {
             return Err(PropositionCloseError::IntegerChoiceFresheningExhausted);
         }
         Ok(variable)
@@ -1365,7 +1368,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 _ => unreachable!("checked above"),
             };
             opened.push((current.clone(), chosen, sort));
-            next = Variable(
+            next = Variable::witness(
                 chosen
                     .0
                     .checked_add(1)
@@ -1851,9 +1854,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let first = facts
             .fresh_universal_witness(&reserved)
             .ok_or("match has exhausted fresh universal witness identities")?;
-        let mut variables = crate::kernel::KernelVariableGenerator::fresh_for(first.0, reserved);
+        // Every witness from `first` up is fresh: it is above each witness the
+        // state and the goal name.
+        let mut next = first.0;
         let cases = crate::kernel::api::algebraic_constructor_case_equations(value, &mut || {
-            variables.next()
+            let variable = Variable::witness(next);
+            next += 1;
+            variable
         })
         .ok_or("match requires a supported datatype with a nonempty constructor family")?;
         if order.len() != cases.len()
@@ -3128,7 +3135,7 @@ mod tests {
     }
 
     #[test]
-    fn integer_choices_and_obtain_stay_in_the_witness_band() {
+    fn integer_choices_and_obtain_choose_witnesses() {
         let source = unused_integer_existential();
         let goal = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
         let proof = integer_choice_proof(
@@ -3136,7 +3143,11 @@ mod tests {
             PureFactStore::from_ordered(std::slice::from_ref(&source)),
             goal,
         );
-        for hint in [Variable(3_000_000), Variable((1 << 40) + 8)] {
+        for hint in [
+            Variable(3_000_000),
+            Variable((1 << 40) + 8),
+            Variable::witness(8),
+        ] {
             let (_, chosen) = proof
                 .check_integer_exists_choice(&source, hint)
                 .ok()
@@ -3148,24 +3159,24 @@ mod tests {
                 .expect("obtain");
             assert!(crate::kernel::ExecutionBudget::is_universal_witness_variable(opened[0].1));
         }
-        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING;
+        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT;
         let (_, last) = proof
-            .check_integer_exists_choice(&source, Variable(ceiling - 1))
+            .check_integer_exists_choice(&source, Variable::witness(ceiling - 1))
             .ok()
             .expect("last witness");
-        assert_eq!(last, Variable(ceiling - 1));
+        assert_eq!(last, Variable::witness(ceiling - 1));
         assert!(matches!(
-            proof.check_integer_exists_choice(&source, Variable(ceiling)),
+            proof.check_integer_exists_choice(&source, Variable::witness(ceiling)),
             Err(PropositionCloseError::IntegerChoiceFresheningExhausted)
         ));
         assert!(matches!(
-            proof.check_exists_bindings(&source, 1, Variable(ceiling)),
+            proof.check_exists_bindings(&source, 1, Variable::witness(ceiling)),
             Err(PropositionCloseError::IntegerChoiceFresheningExhausted)
         ));
         let exhausted = integer_choice_proof(
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source))
-                .with_reserved_variables([Variable(ceiling - 1)]),
+                .with_reserved_variables([Variable::witness(ceiling - 1)]),
             Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
         );
         assert!(matches!(
@@ -3230,16 +3241,16 @@ mod tests {
         assert!(opened.iter().all(|(_, var, _)| {
             crate::kernel::ExecutionBudget::is_universal_witness_variable(*var)
         }));
-        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING;
+        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT;
         assert!(matches!(
-            proof.check_exists_bindings(&source, 2, Variable(ceiling - 1)),
+            proof.check_exists_bindings(&source, 2, Variable::witness(ceiling - 1)),
             Err(PropositionCloseError::IntegerChoiceFresheningExhausted)
         ));
     }
 
     #[test]
     fn integer_choice_freshens_against_focused_goal_binding() {
-        let collision = Variable(crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE);
+        let collision = Variable::witness(0);
         let source = crate::kernel::quantifiers::test_exists(
             "source".into(),
             Variable(41),
@@ -3284,7 +3295,7 @@ mod tests {
 
     #[test]
     fn integer_choice_freshens_against_unused_ambient_binding() {
-        let ambient = Variable(crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE);
+        let ambient = Variable::witness(0);
         let source = crate::kernel::quantifiers::test_exists(
             "source".into(),
             Variable(51),
@@ -3354,13 +3365,14 @@ mod tests {
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
             .freshen_int32_forall_body(bound, &body)
-            .expect("the witness range holds an identity for the first introduction");
+            .expect("a witness is left for the first introduction");
         assert!(
             crate::kernel::ExecutionBudget::is_universal_witness_variable(witness),
-            "{witness:?} is outside the reserved universal-witness range, so it is some other producer's identity"
+            "{witness:?} is not a witness, so it is some other producer's identity"
         );
-        assert!(
-            witness.0 >= crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING,
+        assert_ne!(
+            witness,
+            Variable(witness.0),
             "{witness:?} can still be a C identity or an execution identity"
         );
 
@@ -3401,10 +3413,10 @@ mod tests {
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
             .freshen_pointer_forall_body(bound, crate::kernel::ProgramType::Int32, &body)
-            .expect("the witness range holds an identity");
+            .expect("a witness is left");
         assert!(
             crate::kernel::ExecutionBudget::is_universal_witness_variable(witness),
-            "{witness:?} is outside the reserved universal-witness range"
+            "{witness:?} is not a witness"
         );
     }
 

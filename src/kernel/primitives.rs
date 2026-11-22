@@ -260,6 +260,10 @@ enum VariableOrigin {
     /// A specification fold's accumulator or item, one per written binder
     /// name and role, numbered in allocation order.
     SpecFoldBinder,
+    /// A free variable `intro` or a logical choice introduced, standing for
+    /// an arbitrary value. Numbered from the witnesses its proof state
+    /// already reserves.
+    Witness,
 }
 
 impl std::fmt::Debug for Variable {
@@ -275,6 +279,7 @@ impl std::fmt::Debug for Variable {
             VariableOrigin::MatchBinder => {
                 formatter.debug_tuple("MatchBinder").field(&self.0).finish()
             }
+            VariableOrigin::Witness => formatter.debug_tuple("Witness").field(&self.0).finish(),
             VariableOrigin::SpecFoldBinder => formatter
                 .debug_tuple("SpecFoldBinder")
                 .field(&self.0)
@@ -343,6 +348,19 @@ impl Variable {
     /// Whether this is a specification fold's binder.
     pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
         self.origin == VariableOrigin::SpecFoldBinder
+    }
+
+    /// The `number`th universal-introduction or choice witness.
+    pub(in crate::kernel) const fn witness(number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::Witness,
+        }
+    }
+
+    /// Whether this is a universal-introduction or choice witness.
+    pub(in crate::kernel) fn is_witness(&self) -> bool {
+        self.origin == VariableOrigin::Witness
     }
 
     /// Whether this is a match arm's binder.

@@ -1145,9 +1145,9 @@ step is still checked.
 parses only under `click verify --allow-sorry` and closes its goal without
 checking it. See [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole).
 
-When `intro` must freshen a universal binder, it uses the reserved logical-witness
-range. Existential choices use that same range, separate from C execution,
-load and binder identities. Issued witnesses remain reserved even when their
+When `intro` must freshen a universal binder, it uses a logical witness, a
+variable kind of its own. Existential choices use witnesses too, separate from
+C execution, load and binder identities. Issued witnesses remain reserved even when their
 instantiated body does not mention them, so later introductions and choices
 cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
