@@ -288,6 +288,17 @@ established while its footprint was evaluated. `EvaluatedMemorySegment` and
 publishes clause facts. Range identity and authority ignore this metadata;
 rebasing and splitting retain it, and substitution maps its variables.
 
+Bounds and bytes are separate questions at an access. A holding of the same
+provenance supplies the bytes of an access through an opaque pointer when that
+pointer's own coverage evidence contains them, even if the holding was formed
+through a wider view (2026-11-22). For example, a byte-view contract such as
+C++'s `memcpy` produces its destination's bytes through
+`destination as (uint8 *)`, and the caller's later read through its own
+`destination` is bounded by the caller's entry clause
+(`mdtests/a_byte_view_holding_supplies_a_read_its_reader_has_bounds_for.md`). The
+query reads the required domain's coverage bucket only. A wider holding still
+supplies no bytes beyond that evidence.
+
 An owned allocation supplies bounds independently of byte ownership. Entry,
 unfold and verified allocation-return producers publish its coverage, requiring
 positive ownership. The token retains complete pointer identity: a member

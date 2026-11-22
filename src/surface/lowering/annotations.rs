@@ -6950,16 +6950,15 @@ impl AnnotationLowerer<'_> {
                         if *target_type == ProgramType::UInt8Pointer
                             && pointee_struct.is_none()
                             && *integer_mode != crate::kernel::IntegerCastMode::PointerCoercion
-                            // A `void *` operand converts to the byte view as
-                            // the C conversion does (C11 6.3.2.3p7).
                             && !matches!(
                                 self.contract_expression_click_type(operand, environment),
                                 Some(ClickType::Program(
-                                    InterfaceType::Int64(_)
-                                        | InterfaceType::UInt64(_)
-                                        | InterfaceType::VoidPointer
+                                    InterfaceType::Int64(_) | InterfaceType::UInt64(_)
                                 ))
                             )
+                            // A `void *` operand converts to the byte view as
+                            // the C conversion does (C11 6.3.2.3p7).
+                            && !self.contract_operand_is_void_pointer(operand, environment)
                             && !self
                                 .contract_pointer_element_type(operand, environment)
                                 .is_some_and(|element| {
@@ -10560,6 +10559,37 @@ impl AnnotationLowerer<'_> {
     /// The element type a contract expression steps by when it is a pointer:
     /// an array reference or a pointer-valued binding in scope, a pointer
     /// fragment, or pointer arithmetic on one. `None` for a scalar.
+    /// Whether a contract cast's operand is a `void *`, by its Surface type or,
+    /// for a C name, by its declared type.
+    fn contract_operand_is_void_pointer(
+        &self,
+        operand: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        if matches!(
+            self.contract_expression_click_type(operand, environment),
+            Some(ClickType::Program(InterfaceType::VoidPointer))
+        ) {
+            return true;
+        }
+        match operand {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                self.c_variable_type(name.clone()) == Some(ProgramType::VoidPointer)
+            }
+            ContractExpression::ProgramBinding(name) => matches!(
+                environment.values.get(name),
+                Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))
+                    if pointer.program_type() == ProgramType::VoidPointer
+            ),
+            ContractExpression::Old(expression)
+            | ContractExpression::Exact(expression)
+            | ContractExpression::At { expression, .. } => {
+                self.contract_operand_is_void_pointer(expression, environment)
+            }
+            _ => false,
+        }
+    }
+
     fn contract_pointer_element_type(
         &self,
         expression: &ContractExpression,
