@@ -6245,23 +6245,33 @@ mod tests {
 
     #[test]
     fn a_checked_c_read_names_the_call_that_wrote_its_static_word() {
-        check_static_call_output_scalar_read(ProgramType::Int32);
+        check_static_call_output_scalar_read(
+            ProgramType::Int32,
+            crate::kernel::effective_type::CScalarClass::Int,
+        );
     }
 
     #[test]
     fn a_checked_c_read_names_the_call_that_wrote_its_static_wide_word() {
-        check_static_call_output_scalar_read(ProgramType::UInt64);
+        check_static_call_output_scalar_read(
+            ProgramType::UInt64,
+            crate::kernel::effective_type::CScalarClass::Long,
+        );
     }
 
-    fn check_static_call_output_scalar_read(ty: ProgramType) {
+    fn check_static_call_output_scalar_read(
+        ty: ProgramType,
+        class: crate::kernel::effective_type::CScalarClass,
+    ) {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = SymbolicMemory::global_pointer("call_output_static");
         let start = ExecutionState::new().begin_function_entry_memory();
         let entry = start.clone().with_function_entry_memory(
-            start.memory().clone().with_declared_scalar_block(
+            start.memory().clone().with_classed_scalar_block(
                 cell.base.clone(),
                 ty.byte_width(),
                 ty,
+                Some(crate::kernel::effective_type::CAccessClass::Scalar(class)),
             ),
         );
         let facts = PureFactContext::new();
