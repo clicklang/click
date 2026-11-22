@@ -1,13 +1,5 @@
 # Existing Rust MIR storage exceptions. Remove a row when lowering gives its slot a supported identity.
 # Source	Function	Line	Column	MIR key
-../../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	118	13	__rust_mir_3
-../../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	119	13	__rust_mir_6
-../../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	120	13	__rust_mir_9
-../../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	121	13	__rust_mir_12
-../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	118	13	__rust_mir_3
-../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	119	13	__rust_mir_6
-../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	120	13	__rust_mir_9
-../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	121	13	__rust_mir_12
 adds.rs	__rust_q_I4_adds_I5_apply	6	5	__rust_mir_4
 borrow.rs	Node_drop_glue	848	1	__rust_mir_2
 borrow.rs	Stack_drop_glue	848	1	__rust_mir_2
@@ -63,10 +55,6 @@ options.rs	__rust_q_I13_option_values_I3_sum	68	13	__rust_mir_4
 options.rs	__rust_q_I13_option_values_I3_sum	69	13	__rust_mir_11
 options.rs	__rust_q_I13_option_values_I4_same	48	13	__rust_mir_3
 options.rs	__rust_q_I13_option_values_I8_plus_one	43	13	__rust_mir_3
-quad.rs	__rust_q_I4_quad_I4_load	3	20	__rust_mir_3
-quad.rs	__rust_q_I4_quad_I4_load	3	37	__rust_mir_6
-quad.rs	__rust_q_I4_quad_I4_load	3	54	__rust_mir_9
-quad.rs	__rust_q_I4_quad_I4_load	3	71	__rust_mir_12
 refs.rs	__rust_q_I11_option_refs_I4_peek	12	11	__rust_mir_4
 refs.rs	__rust_q_I12_generic_refs_I8_use_refs	22	9	__rust_mir_8
 refs.rs	__rust_q_I15_nongeneric_refs_I8_use_refs	22	9	__rust_mir_8
@@ -88,10 +76,6 @@ slots.rs	__rust_q_T35___rust_q_I14_resource_state_I4_Slot_R43___rust_q_I14_resou
 slots.rs	__rust_q_T35___rust_q_I14_resource_state_I4_Slot_R43___rust_q_I14_resource_state_I5_Store_A3_u32_I3_put	17	21	__rust_mir_5
 slots.rs	__rust_q_T35___rust_q_I14_resource_state_I4_Slot_R43___rust_q_I14_resource_state_I5_Store_A3_u32_I3_put	17	26	__rust_mir_6
 slots.rs	__rust_q_T35___rust_q_I14_resource_state_I4_Slot_R43___rust_q_I14_resource_state_I5_Store_A3_u32_I7_take_or	21	15	__rust_mir_3
-src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	118	13	__rust_mir_3
-src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	119	13	__rust_mir_6
-src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	120	13	__rust_mir_9
-src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	121	13	__rust_mir_12
 stack.rs	__rust_q_I13_generic_stack_I4_Node_A1_T_drop_glue	848	1	__rust_mir_2
 stack.rs	__rust_q_I13_generic_stack_I4_Node_A1_T_drop_glue	848	1	__rust_mir_3
 stack.rs	__rust_q_I13_generic_stack_I5_Stack_A1_T_drop_glue	848	1	__rust_mir_2
@@ -115,7 +99,6 @@ stack.rs	__rust_q_I17_generic_container_T44___rust_q_I17_generic_container_I5_St
 take.rs	__rust_q_I11_option_take_I11_taken_twice	19	22	__rust_mir_3
 take.rs	__rust_q_I11_option_take_I5_taken	6	22	__rust_mir_3
 trial.rs	guarded_increment	15	31	__rust_mir_6
-trial.rs	guarded_increment	15	38	__rust_mir_7
 trial.rs	guarded_increment	23	21	__rust_mir_14
 values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	9	__rust_mir_7
 values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	12	__rust_mir_8

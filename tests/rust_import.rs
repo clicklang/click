@@ -1935,6 +1935,15 @@ fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
     let p = chunk_lane_project();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(CHUNK_LANE_PROOF, &prepared).unwrap();
+    let traced = p.cli(&["verify", "--trace-proof", "quad::load"]);
+    assert!(
+        traced.status.success(),
+        "{}",
+        String::from_utf8_lossy(&traced.stderr)
+    );
+    let trace = String::from_utf8_lossy(&traced.stdout);
+    assert!(trace.contains("1 selected proof verified"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
     for (before, after) in [
         (
             "have lanes.lanes[1] == chunk[1]",
