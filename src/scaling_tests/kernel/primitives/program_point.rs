@@ -460,11 +460,7 @@ fn assert_opaque_call_word_versions(ty: ProgramType) {
         state
     };
     let returned = output_return(call(&start, 38_201, &output_range));
-    let select = |state: &ExecutionState| {
-        state
-            .program_point()
-            .ordinary_typed_version(&output, ty)
-    };
+    let select = |state: &ExecutionState| state.program_point().ordinary_typed_version(&output, ty);
     let version = select(&returned).expect("opaque output has a version");
     assert_eq!(version.read_version_id(), returned.program_point_id());
     assert!(version.indexed_integer_store_bits().is_none());
