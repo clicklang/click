@@ -16841,6 +16841,23 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the loop-exit frame"]
+fn returned_read_expands_through_its_loop_footprint() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_break_exit_ordinary_join_keeps_post_loop_read.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve(memory(q[0])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expand and replay fixed and variable array spans"]
 fn pruned_indexed_read_expands_through_distinct_store_preservation() {
     for (fixture, function) in [
