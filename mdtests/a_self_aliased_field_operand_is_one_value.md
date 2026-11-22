@@ -6,7 +6,9 @@ Bitcoin Core's `FeeFrac::operator-=` and `operator+=` read `this->size` and
 defined under bounds on `size` alone. The pointer equality is a fact about
 the two pointers, not about their integer offsets; the overflow check reads
 it to see that the second field read is the first one. The field is at a
-nonzero offset, after `fee`, as in the original struct. The companion
+nonzero offset, after `fee`, as in the original struct. The proof separates
+the fee write's footprint from `size`, preserves the exact read, and uses the
+pointer equality to identify the second operand. The companion
 `a_self_aliased_field_sum_without_bounds_is_refused.md` shows the sum still
 needs its bounds.
 
@@ -36,6 +38,20 @@ void subtract_assign(struct FeeFrac* self, struct FeeFrac* other) {
     owns self->size;
     ensures self->fee == 0i64;
     ensures self->size == 0;
+} by {
+    step();
+    have separate(statement(0).footprint, memory((*&self->size))) by {
+        solve();
+    }
+    have exact(self->size) == at(statement(0).entry, exact(self->size)) by {
+        preserve(memory((*&self->size)), statement(0));
+    }
+    have other->size == old(self->size) by {
+        rewrite(other, self);
+        known();
+    }
+    step_until(function.exit);
+    solve();
 }
 
 void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
@@ -48,6 +64,20 @@ void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
     requires self->size <= 1073741823;
     ensures to_integer(self->fee) == to_integer(old(self->fee) + old(self->fee));
     ensures to_integer(self->size) == to_integer(old(self->size) + old(self->size));
+} by {
+    step();
+    have separate(statement(0).footprint, memory((*&self->size))) by {
+        solve();
+    }
+    have exact(self->size) == at(statement(0).entry, exact(self->size)) by {
+        preserve(memory((*&self->size)), statement(0));
+    }
+    have other->size == old(self->size) by {
+        rewrite(other, self);
+        known();
+    }
+    step_until(function.exit);
+    solve();
 }
 ```
 
