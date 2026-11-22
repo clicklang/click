@@ -2700,7 +2700,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let Some(chosen) = attempt::candidate_outcome(search_input.driver().apply_step(
             ProofStep::LetSatisfy(ProofLetSatisfy {
-                bindings: vec![(choice_name.clone(), click_type)],
+                bindings: vec![(choice_name.clone(), Some(click_type))],
                 proposition: source,
             }),
         ))?

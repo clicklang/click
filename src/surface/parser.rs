@@ -11042,26 +11042,30 @@ impl Parser {
         };
         let mut bindings = Vec::with_capacity(names.len());
         let previous_integer_context = self.integer_literal_context;
-        for name in names {
-            let ClickProposition::Exists {
-                click_type, body, ..
-            } = source
-            else {
-                return Err(self.error(
+        let binding_count = names.len();
+        for (index, name) in names.into_iter().enumerate() {
+            let (click_type, body) = match source {
+                ClickProposition::Exists {
+                    click_type, body, ..
+                } => (Some(click_type.clone()), body.as_ref()),
+                ClickProposition::RangeAny { body, .. } if index + 1 == binding_count => {
+                    (None, body.as_ref())
+                }
+                _ => return Err(self.error(
                     "`obtain` needs an existential proposition with at least one binder per output",
-                ));
+                )),
             };
             self.refuse_cast_type_binder(&name)?;
             if self.names.contains(NameKind::ProofBinder, &name) {
                 return Err(self.error(format!("`{name}` is already in scope")));
             }
             self.bind_proof_name(&name, false)?;
-            let integer = *click_type == ClickType::Integer;
+            let integer = click_type == Some(ClickType::Integer);
             self.names
                 .set_scoped(NameKind::ContractBinding, &name, !integer);
             self.names.set_scoped(NameKind::IntegerLet, &name, integer);
             self.names.insert(NameKind::ProofBinder, name.clone());
-            bindings.push((name, click_type.clone()));
+            bindings.push((name, click_type));
             source = body;
         }
         self.integer_literal_context = previous_integer_context;

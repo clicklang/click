@@ -1774,7 +1774,8 @@ proposition, and an unmet one is reported by its text. An `ensures` label
 names its postcondition claim. A loop `invariant` may be labeled the same
 way, and the label names it where a failure reports it: "loop 0 invariant
 `bounded` entry" for `invariant bounded: i <= n;`. To open an available existential precondition, write its
-proposition with `let k = obtain(exists (x: Type) { ... });`.
+proposition with `let k = obtain(exists (x: Type) { ... });` or
+`let k = obtain((lo..hi).any(|i| { ... }));`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
 integer element ranges. The byte count is derived from the base pointer's

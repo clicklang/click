@@ -615,7 +615,7 @@ fn parses_existential_proof_tactics() {
         ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT)
     ));
     assert!(matches!(&tactics[1], ProofTactic::LetSatisfy(binding)
-        if binding.bindings == [("k".to_string(), ClickType::Program(InterfaceType::Int32))]));
+        if binding.bindings == [("k".to_string(), Some(ClickType::Program(InterfaceType::Int32)))]));
     assert_eq!(
         tactics[2],
         ProofTactic::Witness(ProofWitness::single(ContractExpression::Add(
