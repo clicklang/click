@@ -504,15 +504,14 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
     true
 }
 
-/// Distinguish the operand that selects a theorem from a written fact
-/// when classifying a standalone `apply` spelling for diagnostics.
-pub(crate) fn written_apply_is_theorem(source: &str) -> Option<bool> {
-    let mut parser = Parser::new(source).ok()?;
-    match parser.parse_proof_tactic().ok()? {
-        ProofTactic::ApplyTheorem(_) => Some(true),
-        ProofTactic::ApplyFact(_) => Some(false),
-        _ => None,
-    }
+/// Whether the written tactic is a bare application.
+pub(crate) fn is_written_bare_apply(source: &str) -> bool {
+    Parser::new(source).is_ok_and(|mut parser| {
+        matches!(
+            parser.parse_proof_tactic(),
+            Ok(ProofTactic::ApplyTheorem(_) | ProofTactic::ApplyFact(_))
+        )
+    })
 }
 
 /// Parses file items under the default target, for tests.
@@ -11743,9 +11742,9 @@ impl Parser {
                     let fact = self.parse_proposition()?;
                     self.expect(Token::RParen)?;
                     if self.peek_ident() == Some("using") {
-                        let premises = self.parse_exact_premises()?;
-                        self.skip_redundant_semicolon();
-                        return Ok(ProofTactic::ApplyFactUsing { fact, premises });
+                        return Err(self.error(
+                            "implication application takes no `using` list; write `apply(fact)`",
+                        ));
                     }
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ApplyFact(fact));
@@ -19387,10 +19386,6 @@ mod tactic_classification_tests {
         ("apply-induction", "apply(ih(m));"),
         ("apply-induction-using", "apply(ih(m)) using { m == 1; };"),
         ("apply-fact", "apply(x > 0 implies y > 0);"),
-        (
-            "apply-fact-using",
-            "apply(x > 0 implies y > 0) using { x > 0; };",
-        ),
         ("apply-theorem", "apply(theorem(x));"),
         ("have", "have x == 1 by { normalize(); }"),
         ("with", "with(reference(p)) { normalize(); }"),

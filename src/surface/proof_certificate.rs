@@ -90,6 +90,7 @@ pub enum ProofStep {
         arguments: Vec<ContractExpression>,
         premises: Vec<ClickProposition>,
     },
+    ApplyFact(ClickProposition),
     ApplyFactUsing {
         fact: ClickProposition,
         premises: Vec<ClickProposition>,
@@ -780,6 +781,7 @@ impl ProofStep {
                 }
             }
             ProofTactic::CheckTerminationCallbacks => Self::CheckTerminationCallbacks,
+            ProofTactic::ApplyFact(fact) => Self::ApplyFact(fact.clone()),
             ProofTactic::ApplyFactUsing { fact, premises } => Self::ApplyFactUsing {
                 fact: fact.clone(),
                 premises: premises.clone(),
@@ -970,6 +972,7 @@ impl ProofStep {
                 }
             }
             Self::CheckTerminationCallbacks => ProofTactic::CheckTerminationCallbacks,
+            Self::ApplyFact(fact) => ProofTactic::ApplyFact(fact.clone()),
             Self::ApplyFactUsing { fact, premises } => ProofTactic::ApplyFactUsing {
                 fact: fact.clone(),
                 premises: premises.clone(),
@@ -1176,9 +1179,7 @@ pub(super) fn smart_site_spelling(site: SmartSite) -> &'static str {
         SmartSite::Engine(SmartTacticKind::Arithmetic) => "arithmetic",
         SmartSite::Engine(SmartTacticKind::Solve) => "solve",
         SmartSite::Engine(SmartTacticKind::Execute) => "implicit tail",
-        SmartSite::Elided(ElidedArgument::TheoremPremises | ElidedArgument::InductionPremises) => {
-            "apply"
-        }
+        SmartSite::Elided(ElidedArgument::InductionPremises) => "apply",
         SmartSite::Elided(ElidedArgument::FrameEvidence) => "transport",
         SmartSite::CloseInvariants => "close_invariants",
         SmartSite::Implicit => "implicit tail",
@@ -1213,7 +1214,8 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
         ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-        ProofStep::ApplyFactUsing { .. }
+        ProofStep::ApplyFact(_)
+        | ProofStep::ApplyFactUsing { .. }
         | ProofStep::ApplyTheorem(_)
         | ProofStep::ApplyTheoremUsing { .. }
         | ProofStep::ApplyPlannedTheorem { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),

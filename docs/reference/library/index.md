@@ -686,7 +686,7 @@ Source: `library/integer.click`, `import click::integer;`. Width-specific order,
 ### Foundational integer order axioms
 
 These trusted laws expose addition of inequalities, nonnegative scaling, and
-integer rounding to ordinary `apply(...) using { ... }` proofs. They state
+integer rounding to ordinary `apply(...)` proofs. They state
 mathematical Integer laws; machine operations still need their definedness and
 observation bridges. The scaling law is
 [`integer::multiply_order_nonnegative`](#integermultiply_order_nonnegative).
@@ -8383,8 +8383,8 @@ Executable pointer arithmetic and accesses retain their normal definedness check
 
 The premise is the disequality of the index values at type `I`. For an
 `int32` index `m - 1` that is `((m - 1) as int32) != 0`, not the
-mathematical Integer fact `m - 1 != 0`, which `apply ... using` refuses as a
-different fact. State the word fact with `have ((m - 1) as int32) != 0 by
+mathematical Integer fact `m - 1 != 0`, which is a
+different proposition. State the word fact with `have ((m - 1) as int32) != 0 by
 solve();`, which `solve` proves from the Integer fact where the facts keep
 `m - 1` in range, and cite `defined(m - 1)` for the argument expression
 ([`separation_elements_index_word_from_an_integer_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_index_word_from_an_integer_fact.md)).
@@ -8409,7 +8409,7 @@ disequality of the index values at type `I`, such as
 `((m - 1) as int32) != 0` or `j != 0u64`. The law states only the address
 disequality; it grants no ownership and checks no pointer arithmetic.
 `solve` applies it to a goal `&q[j] != &q[0]` after proving the index
-disequality, and its expansion writes the `apply` with an explicit `using`
+disequality. Expansion states the premise with `have` before `apply`
 ([tactics](../tactics/index.md#arithmetic-with-selected-premises)).
 
 **Verified use:** [`mdtests/solve_proves_element_addresses_distinct_from_their_indices.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_from_their_indices.md) applies it explicitly and through `solve`, and [`mdtests/solve_proves_element_addresses_distinct_at_each_index_type.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_at_each_index_type.md) at `uint64` and `int64` indices; [`mdtests/solve_does_not_prove_element_addresses_distinct_when_the_indices_may_be_equal.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_prove_element_addresses_distinct_when_the_indices_may_be_equal.md) refuses equal-possible indices.

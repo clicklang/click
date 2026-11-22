@@ -2822,6 +2822,16 @@ impl<'a> Proof<'a> {
         ))
     }
 
+    pub(super) fn apply_fact_from_scope(
+        &self,
+        fact: &ClickProposition,
+    ) -> Result<KernelProofHandle, ClickError> {
+        let fact = self.lower_cited_surface_proposition(fact, "`apply` fact")?;
+        self.state
+            .apply_fact_from_scope(&fact)
+            .map_err(|message| self.step_error(message))
+    }
+
     pub(super) fn apply_fact_using(
         &self,
         fact: &ClickProposition,

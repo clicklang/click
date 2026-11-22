@@ -1067,7 +1067,7 @@ arguments and instantiated conclusions while returning prerequisite obligations;
 prove those obligations in the driver with ordinary solve; publish the retained
 conclusions. Pure, fixed-state, live and returned-outcome applications share this
 route, including the population-member-count-zero and Integer range-fold
-built-ins. Explicit `apply(...) using { ... }` is the replay operation.
+built-ins. Replay checks `apply(...)` against the facts in scope.
 
 In test builds, `FastOperationScope` surrounds preparation, publication and
 explicit theorem application, contract-claim opening, and proposition/resource

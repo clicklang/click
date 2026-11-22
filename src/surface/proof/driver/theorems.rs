@@ -3,8 +3,7 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
-    /// An omitted evidence list proves each written antecedent in a `have`
-    /// scope, retaining those proofs before the explicit implication step.
+    /// Use established antecedents directly and retain proofs for open ones.
     pub(in crate::surface::proof) fn apply_fact_application(
         &self,
         fact: &ClickProposition,
@@ -15,10 +14,17 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .proof
                 .step_error("`apply(fact)` requires an implication fact"));
         }
+        let step = ProofStep::ApplyFact(fact.clone());
+        let direct = self.apply_step(step.clone());
+        if direct.is_ok() || implicit_solve_disabled() {
+            return direct;
+        }
         let mut current = self.proof.clone();
         for antecedent in &antecedents {
-            if implicit_solve_disabled() {
-                return Err(current.step_error("bare `apply(fact)` has implicit premise obligations; write `apply(fact) using { ... }`"));
+            let lowered =
+                current.lower_cited_surface_proposition(antecedent, "implication antecedent")?;
+            if current.facts().pure_known_available(&lowered) {
+                continue;
             }
             let scope = current.driver().open_have(antecedent.clone())?;
             let Some(closed) = scope.driver().try_solve_closure()? else {
@@ -32,10 +38,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             };
             current = closed.join()?;
         }
-        current.driver().apply_step(ProofStep::ApplyFactUsing {
-            fact: fact.clone(),
-            premises: antecedents,
-        })
+        current.driver().apply_step(step)
     }
 
     /// Retain an application's evaluated arguments and instantiated result,

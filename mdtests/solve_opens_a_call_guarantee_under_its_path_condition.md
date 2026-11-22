@@ -4,7 +4,7 @@ A callee's conditional guarantee reaches the caller as an implication,
 `r == 0 implies cell[0] == 0 and cell[1] == at(before_probe, cell[0])`.
 Inside the branch whose path condition is exactly that antecedent, `solve`
 selects the implication and concludes its consequent by modus ponens.
-Expansion writes `apply(fact) using { ... }` with the available antecedent. The
+Expansion writes `apply(fact)` with the available antecedent. The
 goal names the `before_probe` state as written, so it is looked up as
 written rather than re-read at the branch's own program point, where
 `cell[0]` has changed. `branching_graph_dfs.md` opens quantified

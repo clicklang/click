@@ -91,7 +91,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             have (forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }) implies forall (path: Path) { walk(old(left), old(right), cur, path) != to } by {
                 intro();
                 instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur);
-                apply(0 <= cur and cur < n implies old(visited[cur]) == 0) using { 0 <= cur and cur < n; };
+                apply(0 <= cur and cur < n implies old(visited[cur]) == 0);
                 contradiction(visited[cur] != 0);
             }
 
@@ -292,7 +292,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             } by {
                 apply(left_result != 0 implies exists (path: Path) {
                     walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
-                }) using { left_result != 0; };
+                });
             }
             let rest = obtain(exists (rest: Path) {
                 walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
@@ -341,14 +341,14 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         apply(left_result == 0 implies forall (k: int32) {
         0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
             at(before_right, visited[at(after_mark, left[k])]) != 0 and at(before_right, visited[at(after_mark, right[k])]) != 0
-    }) using { left_result == 0; };
+    });
     }
     have at(after_mark, left[cur]) == old(left[cur]) by {
         instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }, cur);
         known();
     }
     have at(before_right, visited[at(after_mark, left[cur])]) != 0 by {
-        apply(left_result == 0 implies at(before_right, visited[at(after_mark, left[cur])]) != 0) using { left_result == 0; };
+        apply(left_result == 0 implies at(before_right, visited[at(after_mark, left[cur])]) != 0);
     }
 
     have forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(before_right, left[k]) } by {
@@ -433,7 +433,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         } by {
             apply(right_result != 0 implies exists (path: Path) {
                 walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), path) == to
-            }) using { right_result != 0; };
+            });
         }
         let right_rest = obtain(exists (right_rest: Path) {
             walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), right_rest) == to
@@ -456,9 +456,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 instantiate(forall (k: int32) {
                     0 <= k and k < n and old(visited[k]) != 0 implies at(before_right, visited[k]) != 0
                 }, to);
-                apply(0 <= to and to < n and old(visited[to]) != 0 implies at(before_right, visited[to]) != 0) using {
-                    0 <= to and to < n and old(visited[to]) != 0;
-                };
+                apply(0 <= to and to < n and old(visited[to]) != 0 implies at(before_right, visited[to]) != 0);
                 contradiction(at(before_right, visited[to]) == 0);
             } else { solve(); }
         }
@@ -473,10 +471,10 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             apply(right_result == 0 implies forall (k: int32) {
             0 <= k and k < n and at(before_right, visited[k]) == 0 and visited[k] != 0 implies
                 visited[at(before_right, left[k])] != 0 and visited[at(before_right, right[k])] != 0
-        }) using { right_result == 0; };
+        });
         }
         have visited[at(before_right, right[cur])] != 0 by {
-            apply(right_result == 0 implies visited[at(before_right, right[cur])] != 0) using { right_result == 0; };
+            apply(right_result == 0 implies visited[at(before_right, right[cur])] != 0);
         }
         have forall (k: int32) {
                 0 <= k and k < n and at(before_right, visited[k]) == 0 and visited[k] != 0 implies
@@ -549,23 +547,17 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                             at(before_right, visited[old(left[k])]) != 0 and at(before_right, visited[old(right[k])]) != 0
                     }, k);
                     apply(0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
-                        at(before_right, visited[old(left[k])]) != 0 and at(before_right, visited[old(right[k])]) != 0) using {
-                        0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0;
-                    };
+                        at(before_right, visited[old(left[k])]) != 0 and at(before_right, visited[old(right[k])]) != 0);
                     instantiate(forall (k: int32) {
                         0 <= k and k < n and at(before_right, visited[k]) != 0 implies visited[k] != 0
                     }, old(left[k]));
                     apply(0 <= old(left[k]) and old(left[k]) < n and at(before_right, visited[old(left[k])]) != 0 implies
-                        visited[old(left[k])] != 0) using {
-                        0 <= old(left[k]) and old(left[k]) < n and at(before_right, visited[old(left[k])]) != 0;
-                    };
+                        visited[old(left[k])] != 0);
                     instantiate(forall (k: int32) {
                         0 <= k and k < n and at(before_right, visited[k]) != 0 implies visited[k] != 0
                     }, old(right[k]));
                     apply(0 <= old(right[k]) and old(right[k]) < n and at(before_right, visited[old(right[k])]) != 0 implies
-                        visited[old(right[k])] != 0) using {
-                        0 <= old(right[k]) and old(right[k]) < n and at(before_right, visited[old(right[k])]) != 0;
-                    };
+                        visited[old(right[k])] != 0);
                     known();
                 }
             }

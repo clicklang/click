@@ -3911,7 +3911,8 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::StepCall(_)
         | ProofStep::StepProved { .. } => "step",
         ProofStep::UserTactic(_) => "tactic application",
-        ProofStep::ApplyFactUsing { .. }
+        ProofStep::ApplyFact(_)
+        | ProofStep::ApplyFactUsing { .. }
         | ProofStep::ApplyTheorem(_)
         | ProofStep::ApplyTheoremUsing { .. }
         | ProofStep::ApplyPlannedTheorem { .. } => "apply",

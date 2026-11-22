@@ -74,19 +74,18 @@ with the argument written is simple:
 
 | Elided form (smart) | Written form (simple) | What the search fills |
 |---|---|---|
-| `apply(fact)` | `apply(fact) using { P; ... }` | the implication's antecedents |
 | `apply(ih(m))` | `apply(ih(m)) using { P; ... }` | the hypothesis's premises |
 | `transport(P, Q)` | `transport(P, Q) using { R; ... }` | the frame evidence |
 
-Bare implication application uses the ordinary implicit closer for its
-antecedents. The searches for induction premises and frame evidence look
+Implication application checks antecedents in scope. When the ordinary
+implicit closer proves a missing one, expansion writes its `have` before
+`apply(fact)`. The searches for induction premises and frame evidence look
 facts up. When a lookup finds nothing, the refusal is a
 **search miss**: it says "this is a search miss", names the fact it did not
 find, and tells you to write it (with `have P by { ... }` first, or in the
 `using` form). A search miss is never a Click bug; only the written form's
 refusal is a real refusal. `click expand` writes the found argument into the
-same tactic, so the expanded proof keeps `apply(...)` and gains its `using`
-list.
+same tactic, so the expanded tactic gains its `using` list.
 
 The kernel's condition decision (`PureFactContext::decide`) is checking, not
 search: simple tactics may use it, and it is bounded per query like any other

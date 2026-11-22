@@ -54,12 +54,11 @@ and its refusal points at `click docs tracing`. A control tactic such as `have` 
 entry, since its refusal comes from a tactic it contains.
 
 A smart form that elides an argument a simple form of the same tactic takes
-written, such as `apply(fact)` beside `apply(fact) using { ... }`, or
-`transport(P, Q)` beside its `using` form, has a fourth meaning: a search fills
+written, such as `transport(P, Q)` beside its `using` form, has a fourth meaning: a search fills
 the argument, and a refusal is a search miss. Its line reads:
 
 ```text
-refused by: `apply` (smart: a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument)
+refused by: `transport` (smart: a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument)
 ```
 
 `click docs` prints the same meaning beside each such form, with the form

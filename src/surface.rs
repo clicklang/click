@@ -77,7 +77,7 @@ mod lowering;
 mod modules;
 mod names;
 mod parser;
-pub(crate) use parser::written_apply_is_theorem;
+pub(crate) use parser::is_written_bare_apply;
 mod pointer_result_types;
 pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
@@ -6358,7 +6358,6 @@ pub enum SmartTacticKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ElidedArgument {
     /// `apply(theorem(args))`: the theorem's premises.
-    TheoremPremises,
     /// `apply(ih(m))`: the hypothesis's premises.
     InductionPremises,
     /// `transport(P, Q)`: the frame evidence.
@@ -6369,7 +6368,6 @@ impl ElidedArgument {
     /// The simple tactic the elided form is, once its argument is written.
     pub fn written_form(self) -> SimpleTactic {
         match self {
-            Self::TheoremPremises => SimpleTactic::ApplyTheorem,
             Self::InductionPremises => SimpleTactic::ApplyInduction,
             Self::FrameEvidence => SimpleTactic::FactTransport,
         }
@@ -6559,11 +6557,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "apply-fact",
         syntax: "apply(fact)",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "apply-fact-using",
-        syntax: "apply(fact) using",
         class: "simple",
     },
     PublicTacticForm {
@@ -6836,10 +6829,8 @@ impl ProofTactic {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
             }
             Self::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-            Self::ApplyFact(_) => {
-                TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
-            }
-            Self::ApplyFactUsing { .. }
+            Self::ApplyFact(_)
+            | Self::ApplyFactUsing { .. }
             | Self::ApplyTheorem(_)
             | Self::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),

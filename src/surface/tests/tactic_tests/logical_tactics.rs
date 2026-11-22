@@ -386,7 +386,7 @@ fn known_computes_leaves_and_uses_exact_propagation() {
         } by {
             step();
             have y == 0 by {
-                apply(x == 0 implies y == 0) using { x == 0; };
+                apply(x == 0 implies y == 0);
             }
             step();
             normalize();
@@ -396,10 +396,7 @@ fn known_computes_leaves_and_uses_exact_propagation() {
     verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("explicit extraction and normalization should verify");
 
-    let implicit_extract = click_source.replace(
-        "apply(x == 0 implies y == 0) using { x == 0; };",
-        "known();",
-    );
+    let implicit_extract = click_source.replace("apply(x == 0 implies y == 0);", "known();");
     verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
         .expect("known sees the exactly propagated consequence");
     let missing_guard = implicit_extract.replace("requires x == 0;", "");
@@ -3822,13 +3819,13 @@ fn local_predicate_unfold_preserves_proposition_values() {
 }
 
 #[test]
-fn apply_fact_checks_source_and_selected_evidence() {
+fn apply_fact_checks_source_and_antecedents() {
     let source = r#"
         theorem demo(x: int32, y: int32) {
             requires x > 0;
             requires x > 0 implies y > 0;
             ensures y > 0 by {
-                apply(x > 0 implies y > 0) using { x > 0; };
+                apply(x > 0 implies y > 0);
             }
         }
     "#;
@@ -3838,13 +3835,13 @@ fn apply_fact_checks_source_and_selected_evidence() {
             source.replace("requires x > 0 implies y > 0;", ""),
             "source implication",
         ),
+        (source.replace("requires x > 0;", ""), "antecedent"),
         (
-            source.replace("requires x > 0;", ""),
-            "premise that is not available",
-        ),
-        (
-            source.replace("using { x > 0; }", "using { }"),
-            "antecedent",
+            source.replace(
+                "apply(x > 0 implies y > 0);",
+                "apply(x > 0 implies y > 0) using { x > 0; };",
+            ),
+            "implication application takes no `using` list",
         ),
         (
             source.replace("apply(x > 0 implies y > 0)", "apply(x > 0)"),
@@ -3873,9 +3870,9 @@ fn apply_fact_is_available_at_execution_frontiers_and_outcomes() {
     for application in [
         "apply(x > 0 implies x != 0); step();",
         "have h: x > 0 implies x != 0 by known(); apply(h); step();",
-        "have x > 0; apply(x > 0 implies x != 0) using { x > 0; }; step();",
+        "have x > 0; apply(x > 0 implies x != 0); step();",
         "step(); apply(x > 0 implies x != 0);",
-        "step(); have x > 0; apply(x > 0 implies x != 0) using { x > 0; };",
+        "step(); have x > 0; apply(x > 0 implies x != 0);",
     ] {
         let source = template.replace("APPLICATION", application);
         verify_c_sources(&source, &[("identity.c", c)])

@@ -93,7 +93,7 @@ when the default misses or when a proof must not search.
   arm or iteration proves; a proof `if` before the C splits the paths that
   return differently, each arm stepping to exit.
 - **Closing a proposition: `solve`, `known`, `normalize`,
-  `apply(fact) using {...}`.** Letting the script end,
+  `apply(fact)`.** Letting the script end,
   so that the
   implicit closer closes the goal, is the default, and `solve()` closes the
   first open goal where a script continues after it. Write
@@ -1099,7 +1099,7 @@ See [`have_disjunction_projection.md`](https://github.com/clicklang/click/blob/m
 and [`loop_exit_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_exit_disjunction_projection.md).
 
 A simple tactic that adds a fact (`instantiate(...)`,
-`apply ... using`, `transport ... using`, and `obtain`) also closes a
+`apply`, `transport ... using`, and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
 `known`, `solve`, or `normalize` follows it. An added order fact closes
 the goal under either form of the same claim: `0 <= e` closes the goal
@@ -1128,8 +1128,7 @@ step is still checked.
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
-| `apply(fact)` | smart | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
-| `apply(fact) using { P; ... }` | simple | Expansion output | Apply an implication using written evidence. | [Reference](#fact-application) |
+| `apply(fact)` | simple | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
@@ -1377,7 +1376,7 @@ A goal that is one conjunct of an implication's consequent, `c == 2` from
 antecedent is an exact available fact: unit propagation publishes the whole
 conclusion, and expansion can close the selected conjunct with `known()`.
 When the guard needs proving first, expansion may retain an explicit
-`apply(fact) using { ... }`
+`apply(fact)`
 ([`solve_closes_a_conjunct_of_a_discharged_consequent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_a_conjunct_of_a_discharged_consequent.md)).
 
 A comparison held only under a definedness guard (`defined(e) implies a == b`,
@@ -1467,7 +1466,7 @@ refuted arms closing by `contradiction`
 A goal that an available implication (or chain) concludes whose antecedents are
 exactly available, such as a call guarantee `r == 0 implies X` inside the branch
 where `r == 0`, is closed by selecting the implication and expanding to
-`apply(fact) using { ... }`, with the goal's `at(...)` points as written.
+`apply(fact)`, with the goal's `at(...)` points as written.
 
 A guarded universal goal `forall k { G implies A }` closes from an available
 `forall k { G implies A and B }` with the same binder and guards, selected by one
@@ -1750,7 +1749,7 @@ already held as a fact retains its existing exact-lookup behavior.
 **Outside it**, with what to write instead:
 
 - A consequent of an available implication: `have Q;` or apply the implication
-  with `apply(fact) using { ... }`.
+  with `apply(fact)`.
 - A reordered disjunction fact (`y > 0 or x < y` from `x < y or y > 0`):
   `have y > 0 or x < y;`, which expands to `cases`, then `known()`.
 - A weaker or derived bound, such as `x <= y` from `x < y`: `solve()
@@ -1915,7 +1914,7 @@ operand. Restricted `solve() using` must select that fact. For example,
 `isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`.
 
 For supported native unsigned address words, `solve` emits ordinary `have`
-goals, `apply(click::integer::...) using`, rewrites, and `known()`: alignment
+goals, `apply(click::integer::...)`, rewrites, and `known()`: alignment
 weakening, scalar element offsets, low-tag projections and high-mask recovery
 name their local laws and retain the unsigned width explicitly. Remaining
 legacy forms still use the compatibility normalization path.
@@ -2159,7 +2158,7 @@ once both Integer bounds of its exact value are facts, which together are its
 definedness fact, so `known()` states it; a premise over a signed sum is
 carried only once that sum is defined.
 
-Expansion writes those steps as ordinary `have`, `apply(...) using`, and
+Expansion writes those steps as ordinary `have`, `apply(...)`, and
 normalization steps with explicit premises.
 
 A disequality goal `a != b` (or `not (a == b)`) over machine or `Integer`
@@ -2351,7 +2350,7 @@ Arithmetic automation expands to ordinary proofs. Arithmetic operations correspo
 | Round an Integer upper bound | `integer::round_down_le(value, bound, divisor, remainder)` |
 
 Integer composition plans expand their premise, addition, scaling, and
-equality-direction nodes into ordinary `have`, `apply(...) using`, `rewrite`,
+equality-direction nodes into ordinary `have`, `apply(...)`, `rewrite`,
 and `known()` steps. Each intermediate fact is established once and later
 nodes reuse it. Context-free identities relate the plan's flat affine forms
 to the written operands. Expansion uses checked `normalize()` when the
@@ -2761,30 +2760,27 @@ of unrelated facts.
 
 ### Fact application
 
-**Forms:** `apply(fact)`; `apply(fact) using { P; ... }`
+**Form:** `apply(fact)`
 
 Apply an available implication, written in full or cited by a `have` fact
 name. For `A implies B implies C`, the result is `C` after proving `A` and
 `B`. The source must already be available; application does not unfold it or
 search for an implication with that conclusion.
 
-The bare form proves each antecedent in an ordinary `have` scope with the
-implicit solver. Expansion retains those proofs and writes
-`apply(fact) using { A; B; }`, which checks without search. Every listed
-premise must be available, and the antecedents must follow from the listed
-premises by `known()`'s rules. Ambient facts do not fill missing evidence.
+Established antecedents discharge directly. The implicit solver handles open
+antecedents in ordinary `have` scopes. Expansion retains those proofs before
+the bare application, which replays using the established facts.
 Conjunctions and quantified conclusions are retained whole. Later written
 steps see the established conclusion, as after theorem application.
 
 <!-- verified-example: mdtests/apply_implication_fact.md -->
 ```click
 have h: x > 0 implies y > 0 by known();
-apply(h) using { x > 0; };
+apply(h);
 ```
 
-A source that is unavailable or is not an implication fails. A missing
-antecedent in the bare form names the unproved proposition; an explicit list
-with unavailable or insufficient evidence fails without invoking search.
+An unavailable source, a source of the wrong shape, or an unproved antecedent
+causes application to fail.
 Named fact scope and program-point selectors retain their ordinary meaning.
 Theorem calls keep their existing `apply(theorem(args))` spelling.
 
@@ -3548,7 +3544,7 @@ pure theorem too, where the listed premises are all there is to read.
   premises: exactly, under another form of the same order claim, or true
   without facts. A quantified premise may name its own binder: a call's
   postcondition held under the binder its lowering chose is cited by a written
-  form with another, as in `apply using`. Listing a stated range also cites
+  form with another. Listing a stated range also cites
   its two span halves.
 - The source `P` is a listed premise, follows from the listed premises by the
   kernel's atomic derivation (`old(p[0]) <= 7` from `old(p[0]) == 7`), or is
