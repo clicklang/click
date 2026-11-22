@@ -6321,8 +6321,17 @@ pub(crate) fn certified_store_equations(
 
 /// Construct the value equation from this one store's operands at admission.
 /// Later consumers reuse the retained equation instead of naming its read again.
+#[cfg(test)]
 pub(super) fn store_value_equation(
     after: &SymbolicMemory,
+    pointer: &Address,
+    value: &ProgramValue,
+) -> Option<Proposition> {
+    store_value_equation_at(&ProgramPoint::of_memory(after), pointer, value)
+}
+
+pub(super) fn store_value_equation_at(
+    after: &ProgramPoint,
     pointer: &Address,
     value: &ProgramValue,
 ) -> Option<Proposition> {
@@ -6331,9 +6340,8 @@ pub(super) fn store_value_equation(
     {
         // The producer knows this exact store's value. Retain its read equation;
         // registration relates aliases by congruence, without looking in cells.
-        let memory = crate::kernel::intern_memory(after.clone());
         let read = Pointer::new(
-            Address::loaded_value(&memory, pointer),
+            Address::loaded_value(after.shared_memory(), pointer),
             value.program_type(),
         );
         return Some(Proposition::condition_is(
@@ -6373,18 +6381,22 @@ pub(super) fn store_value_equation(
     // Record the width before naming the read, as a typed load
     // producer does. Every other kind's fallback is its own width.
     if kind.is_word32() {
-        crate::kernel::eval::record_load_access_width(after, pointer, value.byte_width());
+        crate::kernel::eval::record_load_access_width(after.memory(), pointer, value.byte_width());
     }
-    // The store record establishes the value of this exact read.
-    // Publish its registered version name, the same term logical
-    // lowering constructs at the post-store state. The private
-    // store record retains the raw memory relation; no history or
-    // ambient fact search is needed to name its read.
-    let read = crate::kernel::canonical_form_of_load(
-        crate::kernel::intern_memory(after.clone()),
-        pointer.clone(),
-        kind,
-    );
+    // For an indexed store, publish the same typed read that ordinary
+    // lowering selects at the written point.
+    let read = if let Some(version) = after.indexed_integer_version(pointer, kind)
+        && version.read_version_id() == after.id()
+    {
+        crate::kernel::eval::scalar_read_for_exact_cell_at(
+            &version,
+            pointer,
+            kind,
+            value.byte_width(),
+        )
+    } else {
+        crate::kernel::canonical_form_of_load(after.shared_memory().clone(), pointer.clone(), kind)
+    };
     let format = match value.numeric_value() {
         ProgramValue::Bool(_) => MachineIntegerType::UInt8,
         value => MachineIntegerType::from_program_type(value.program_type())?,
@@ -9107,7 +9119,11 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
             LoadKind::of_value(&value).unwrap(),
         );
         let facts: ExecutionFacts = vec![ExecutionPureFact::certified_store(
-            before, after, address, value, None,
+            before,
+            ProgramPoint::of_memory(&after),
+            address,
+            value,
+            None,
         )]
         .into();
         let equations = certified_store_equations(&facts);
@@ -9157,7 +9173,7 @@ fn a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes() 
         .store(cell(stored), ProgramValue::Int32(variable(value)));
     let facts: ExecutionFacts = vec![ExecutionPureFact::certified_store(
         before,
-        after.clone(),
+        ProgramPoint::of_memory(&after),
         cell(stored),
         ProgramValue::Int32(variable(value)),
         None,
@@ -9547,4 +9563,36 @@ fn atomic_canonicalization_keeps_two_written_read_points() {
     assert_eq!(canonicalize_atomic_loads(&second), second);
     assert_eq!(crate::kernel::canonical_term(&first), first);
     assert_eq!(crate::kernel::canonical_term(&second), second);
+}
+
+#[test]
+fn the_equation_for_an_indexed_store_names_its_written_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = SymbolicMemory::local_pointer("stored_equation_word");
+    let before = ExecutionState::new().with_memory(
+        SymbolicMemory::new().with_declared_scalar_block(slot.base.clone(), 8, ProgramType::UInt64),
+    );
+    let value = ProgramValue::UInt64(MachineTerm::Variable(Variable(989_793)));
+    let after = before
+        .clone()
+        .with_memory(before.memory().clone().store(slot.clone(), value.clone()));
+    let point = after.program_point();
+    let fact = ExecutionPureFact::certified_store(
+        before.memory().clone(),
+        point.clone(),
+        slot.clone(),
+        value,
+        None,
+    );
+    let Some((ConditionTerm::Compare { left, .. }, true)) = fact
+        .certified_store_equation()
+        .and_then(|fact| fact.condition_native())
+    else {
+        panic!("certified store equality");
+    };
+    let MachineTerm::MemoryLoad(read, address, LoadKind::Bits64) = left.as_ref() else {
+        panic!("store equation's typed read");
+    };
+    assert_eq!(address.as_ref(), &slot);
+    assert_eq!(read.read_version_id(), point.id());
 }

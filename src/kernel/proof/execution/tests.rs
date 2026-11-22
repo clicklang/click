@@ -1003,7 +1003,7 @@ fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
     let empty = PureFactStore::default();
     let store = crate::kernel::ExecutionPureFact::certified_store(
         SymbolicMemory::new(),
-        memory,
+        crate::kernel::ProgramPoint::of_memory(&memory),
         pointer,
         value,
         None,
