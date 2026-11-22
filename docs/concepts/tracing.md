@@ -205,9 +205,18 @@ premises; it does not by itself certify that checking is fast.
 
 ## The procedure
 
+Start with the [verification outcome](#classify-the-verification-outcome).
+Use `unclear-output` when the available diagnostics lack the detail
+needed to tell whether the proof author or Click maintainers should follow up. For example, a contract error may omit
+the clause or rule to check, or an implicit-step refusal may omit the
+operation Click tried. When a proof obligation is outstanding, work from
+that obligation.
+
 1. **Record the goal.** Write down the failing goal `G`, the point
-   where it is required, and the premises available there. If the report has
-   no `goal:` line, or you cannot read it, stop at `unclear-trace`.
+   where it is required, and the premises available there. Read the diagnostic
+   and any available trace. A named resource and return path can identify
+   a requirement. If you still cannot identify the requirement or its point,
+   stop at `unclear-output`.
 2. **Decide whether `G` is true.** Check it against the contract, the branch
    facts, and the C semantics. If an admitted execution refutes `G`, check
    the original claim on that execution and the rule that introduced `G`.
@@ -279,7 +288,7 @@ The procedure ends at exactly one of these:
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
 | `contract-bug` | Click refuses a contract that satisfies the documented rule. Quote the clause and exact refusal and show how the contract satisfies the rule. Click maintainers follow up. |
 | `tactic-bug` | Click refuses a minimized simple tactic whose written premises justify its goal and whose documented **Accepts** list covers the link. Report a Click bug. |
-| `unclear-trace` | You could not determine what the output says was refused. Quote the output and identify what you could not determine. |
+| `unclear-output` | The available diagnostics leave responsibility undetermined. Quote the output and name the missing or ambiguous detail that prevented triage. |
 | `work-limit-reached` | Click exhausted the entire run’s `--work-limit`. Report the budget and the operation where it stopped. |
 | `timed-out` | The wall-clock containment bound stopped Click before a verdict. Report the bound and the last reported operation, if available. |
 | `internal-error` | Click printed `internal error`. Tell the user immediately that Click detected a verifier failure. A proof goal or a minimized tactic link is optional evidence. |
@@ -288,16 +297,15 @@ The `proof refusal:` heading locates a refusal. The outcome depends on what
 the proof-repair investigation establishes. For a smart-tactic miss or a
 failed search for an omitted argument, identify the primitive and state
 its premises. Report diagnosis as in progress while checking the inference
-and its documented support. An `unclear-trace` leaves the reason for the
-refusal undetermined. File a diagnostic bug only when you can demonstrate
-a specific defect in the output.
+and its documented support. File a diagnostic bug from `unclear-output`
+only when you can demonstrate a specific defect in the output.
 
 ### Reporting a bug
 
 Report a Click defect with the user's approval as an issue at
 <https://github.com/clicklang/click/issues> that contains enough to reproduce
 it. Label the issue with its outcome (`tracing: inexpressible-fact`,
-`tracing: contract-bug`, `tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-trace`,
+`tracing: contract-bug`, `tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-output`,
 `tracing: internal-error`, `crash`, or `hang`), and
 start its title with it in brackets (`[tactic-bug] ...`, `[hang] ...`) so
 it shows even without permission to set labels.
@@ -317,8 +325,12 @@ Cite the rule or semantics that governs the check and show what it actually
 requires. Include any execution that satisfies the claim while refuting the
 generated goal.
 
-For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
-found during `unclear-trace` triage, include:
+For a confirmed diagnostic defect found during `unclear-output` triage,
+include the reduced inputs, exact command, `click --version`, and complete
+output. Identify the missing or misleading detail and show the evidence for
+the discrepancy. Include any trace or goal that helps demonstrate it.
+
+For `tactic-bug` or `inexpressible-fact`, include:
 
 - the smallest C and Click that still fail, keeping the original source
   pattern, with the exact command and its output, including the `goal:` line;
@@ -329,8 +341,7 @@ found during `unclear-trace` triage, include:
 - why the link holds, in one line of mathematics, and the step of that
   argument Click did not take; and
 - for `tactic-bug`, the item of that tactic's **Accepts** list that
-  covers the link, or for a diagnostic defect, the specific missing or
-  misleading output and the evidence of the defect.
+  covers the link.
 
 ## Worked example
 
