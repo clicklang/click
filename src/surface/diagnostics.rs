@@ -8519,6 +8519,12 @@ pub(super) fn describe_parameter_bitvector(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
+    // A constant is its literal. A local that happens to hold the same
+    // value does not name it: `b->content[0u64..n]` is not
+    // `b->content[skipped..n]`.
+    if matches!(term, MachineTerm::Constant { .. }) {
+        return None;
+    }
     for (parameter, argument) in parameter_binding
         .parameters
         .iter()
