@@ -1,13 +1,10 @@
 # Checked transport composes with same-state load congruence
 
-The store writes `p[k]`. The element-separation law uses `i != k` to establish that
-the store misses `p[i]`; `preserve` retains its entry value. The next `have` uses only the trusted equality
-graph: `i == j` identifies the current reads, and the transported equality
-connects that value to the entry state. The final `solve` closes the
-postcondition and returns ownership of the array.
-
-The graph does not infer that the store is disjoint, and equality of this one
-read does not make the states interchangeable.
+The store writes `p[k]`. The element-separation law uses `i != k` to prove that
+the store misses `p[i]`, and `preserve` checks that the read keeps its entry
+value. The next `have` rewrites the current index from `j` to `i` using
+`i == j`, then closes with the saved read equality. The implicit proof tail
+closes the postcondition and returns ownership of the array.
 
 ```c filename=transported_int32_loads.c
 void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
@@ -42,7 +39,8 @@ void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
         preserve(memory(p[i]), statement(0));
     }
     have p[j] == at(entry, p[i]) by {
-        normalize() using { };
+        rewrite(j, i);
+        known();
     }
 }
 ```

@@ -299,7 +299,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
         if let [index] = indices {
-            let arm = driver_proof.enter_pure_match_case(plan, *index)?;
+            let (arm, constructor_equation) = driver_proof.enter_pure_match_case(plan, *index)?;
             let marker = arm.checkpoint();
             let written = source.arms[*index].tactics.len();
             let mut pending = None;
@@ -341,7 +341,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             };
             certificates.push(done.certificate_since(&marker)?);
             if let Some(trace) = trace {
-                trace.arms[*index] = Some(done.pure_match_arm_trace(&arm, &marker, source, *index));
+                let equation = constructor_equation
+                    .as_ref()
+                    .expect("traced match arm retains its constructor equation");
+                trace.arms[*index] =
+                    Some(done.pure_match_arm_trace(&arm, &marker, source, *index, equation));
             }
             return Ok(Some(done.leave_pure_match_case(plan, *index)?));
         }

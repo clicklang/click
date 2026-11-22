@@ -20069,9 +20069,9 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn normalize_using_transported_int32_loads_expands_and_rechecks() {
+fn transported_int32_load_congruence_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/normalize_using_transported_int32_loads.md");
+        .join("mdtests/transported_int32_load_congruence.md");
     let fixture =
         crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
     let c_sources = fixture
@@ -20091,7 +20091,8 @@ fn normalize_using_transported_int32_loads_expands_and_rechecks() {
     .expect("transport composition should expand");
     verify_c_sources(&expanded, &c_sources).expect("expanded transport composition should recheck");
     assert!(expanded.contains("preserve("));
-    assert!(expanded.contains("normalize() using"));
+    assert!(expanded.contains("rewrite(j, i)"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     let omitted_indices = source.replace("requires i == j;", "");
     assert_ne!(omitted_indices, source);
     assert!(verify_c_sources(&omitted_indices, &c_sources).is_err());

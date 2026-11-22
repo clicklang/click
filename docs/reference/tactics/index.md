@@ -1711,7 +1711,8 @@ evidence that excludes the signed minimum divided by `-1` when the signs
 alone leave that pair possible.
 A full-width unsigned index agrees with its signed low word when both use
 the same base and stride and the full-width index is at most `INT32_MAX`.
-`known()` checks this bound on the full-width index itself.
+`known()` checks this bound on the full-width index itself. See
+[`uint64_int32_owned_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_owned_index_alias.md) for a store through the full-width index and a read through the signed index.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
@@ -1963,7 +1964,7 @@ cited premise is accepted:
   elements: `(bytes + prefix) + 3 == bytes + total` from
   `to_integer(total) == to_integer(prefix) + 3`. A native sum
   (`total == prefix + suffix`) does not, because it may wrap
-  ([`normalize_using_adds_element_indices_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_element_indices_by_a_cited_integer_sum.md),
+  ([`element_offsets_from_exact_index_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/element_offsets_from_exact_index_sum.md),
   [`normalize_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_wrapping_index_sum_for_an_address.md)).
 - For a top-level read equality of any width, a pointer read equality, or a
   pointer-offset equality, the cited conditions can justify the read's
@@ -2027,7 +2028,7 @@ Expansion retains the normalization step and cited evidence; checking
 reconstructs the graph from the surrounding checked proof context. Work
 follows the selected expression and premises.
 
-**Checked examples:** [`normalize_using.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using.md), [`normalize_using_graph_conditions.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_graph_conditions.md), [`normalize_using_rejects_ambient.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_rejects_ambient.md), [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_owned_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_owned_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
+**Checked examples:** [`normalize_using.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using.md), [`normalize_using_graph_conditions.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_graph_conditions.md), [`normalize_using_rejects_ambient.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_rejects_ambient.md), [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
 
 ### Arithmetic search
 

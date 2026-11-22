@@ -2517,6 +2517,40 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
 }
 
 #[test]
+fn induction_failure_trace_retains_the_constructor_equation() {
+    let source = r#"
+        spec enum Chain { End, Next(Chain), }
+        function empty(xs: Chain) -> int32 {
+            match xs {
+                Chain::End => 1,
+                Chain::Next(tail) => 0,
+            }
+        }
+        theorem induction_trace(xs: Chain) {
+            ensures empty(xs) == 2 by {
+                let ih = induct(xs);
+                match xs {
+                    Chain::End => {
+                        unfold(empty(Chain::End));
+                        known();
+                    },
+                    Chain::Next(tail) => {
+                        unfold(empty(Chain::Next(tail)));
+                        known();
+                    },
+                }
+            }
+        }
+    "#;
+    with_proof_trace("induction_trace", || {
+        let error = verify_click_theorems(source).expect_err("the false claim must be refused");
+        assert!(error.message().contains("`known` requires"), "{error}");
+        let trace = error.trace_context_report().expect("failure trace");
+        assert!(trace.contains("adds: xs == Chain::End"), "{trace}");
+    });
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: wide uint64 theorem tactic attribution and bounded work"]
 fn pure_theorem_wide_arithmetic_has_attributed_work_at_growing_sizes() {
