@@ -2959,6 +2959,38 @@ int32 read_first(int32 m) {
         assert!(syntax_error.concise_report().starts_with("syntax error:"));
     }
 
+    #[test]
+    fn solve_work_exhaustion_reports_unsuccessful_search() {
+        let (root, click_path) = temporary_project(
+            "solve-work-limit",
+            "int32 f(int32 x) { return x; }",
+            r#"verifying "program.c";
+               int32 f(int32 x) { ensures result == x; } by {
+                   step();
+                   solve();
+               }
+            "#,
+        );
+        let error = click::instrumentation::with_tactic_work_limits(
+            click::instrumentation::TacticWorkLimits {
+                smart: 0,
+                ..Default::default()
+            },
+            || entry_with([click_path.display().to_string()]),
+        )
+        .expect_err("the written solve has no work allowance");
+        fs::remove_dir_all(&root).unwrap();
+        assert!(error.starts_with("unsuccessful search"), "{error}");
+        assert!(
+            error.contains("tactic `solve`") && error.contains("smart work budget"),
+            "{error}"
+        );
+        assert!(
+            error.contains("goal:") && error.contains("To get a trace:"),
+            "{error}"
+        );
+    }
+
     /// The crash-containment bound is installed before the run loads its
     /// sources, so even the first C parse, for the external-dependency
     /// summary, stops at a checkpoint once the bound has expired.

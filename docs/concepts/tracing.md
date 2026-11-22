@@ -280,6 +280,8 @@ The procedure ends at exactly one of these:
 | `contract-bug` | Click refuses a contract that satisfies the documented rule. Quote the clause and exact refusal and show how the contract satisfies the rule. Click maintainers follow up. |
 | `tactic-bug` | Click refuses a minimized simple tactic whose written premises justify its goal and whose documented **Accepts** list covers the link. Report a Click bug. |
 | `unclear-trace` | You could not determine what the output says was refused. Quote the output and identify what you could not determine. |
+| `work-limit-reached` | Click exhausted the entire run’s `--work-limit`. Report the budget and the operation where it stopped. |
+| `timed-out` | The wall-clock containment bound stopped Click before a verdict. Report the bound and the last reported operation, if available. |
 | `internal-error` | Click printed `internal error`. Tell the user immediately that Click detected a verifier failure. A proof goal or a minimized tactic link is optional evidence. |
 
 The `proof refusal:` heading locates a refusal. The outcome depends on what

@@ -34,11 +34,9 @@ it; shrink them if you can, but a report need not wait for that.
   Otherwise stop at `unsupported` and explain how the user can request support.
 - `internal error`: stop at `internal-error`. Click has reported its own
   failure. Capture the error, version, command, and inputs.
-- `work limit reached`: stop and report the overall `--work-limit` and where
-  Click stopped. The proof remains unchecked past that point. Profile the
-  run if the work is unexpected.
-- `timed out`: stop and report the wall-clock limit and where Click stopped.
-  If the run was hung, follow the `hang` workflow above.
+- `work limit reached`: stop at `work-limit-reached`.
+- `timed out`: stop at `timed-out`. If the run was hung, follow the `hang`
+  workflow above.
 - `tactic error`: read `click docs TACTIC` and check whether the tactic is valid
   at the reported point. Correct an invalid invocation. If the invocation and
   its premises satisfy the documented rule and Click still refuses, report
@@ -249,6 +247,11 @@ Stop at exactly one outcome:
   Describe any supported route and the documented path to supporting the
   original case. The proof author can choose the supported route or request
   support from Click maintainers.
+- `work-limit-reached`: Click reached the overall `--work-limit`. Give the
+  work limit and the operation where checking stopped. Profile the run if
+  the work is unexpected.
+- `timed-out`: wall-clock containment stopped Click before a verdict. Give
+  the time limit and the last reported operation, if available.
 - `internal-error`: Click itself reports `internal error`. Tell the user
   immediately that Click detected a verifier failure. Use the original
   diagnostic. A proof goal and a minimized tactic link are optional evidence.

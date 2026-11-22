@@ -401,18 +401,8 @@ impl Drop for TacticWorkLimitGuard {
         TACTIC_WORK_LIMITS.with(|limits| {
             limits.borrow_mut().pop();
         });
-        clear_pending_limit(VerificationStop::Search);
-        clear_pending_limit(VerificationStop::Checking);
+        PENDING_LIMIT.with(|pending| *pending.borrow_mut() = None);
     }
-}
-
-fn clear_pending_limit(kind: VerificationStop) {
-    PENDING_LIMIT.with(|pending| {
-        let mut pending = pending.borrow_mut();
-        if pending.as_ref().is_some_and(|pending| pending.kind == kind) {
-            *pending = None;
-        }
-    });
 }
 
 fn tactic_limit_guidance(class: &str) -> &'static str {
@@ -447,25 +437,18 @@ pub fn with_default_tactic_limits<R>(operation: impl FnOnce() -> R) -> R {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct RunWorkLimit {
     used: usize,
     limit: usize,
-    exhausted: bool,
+    stop_context: Option<String>,
 }
 
 struct RunWorkLimitGuard;
 
 impl Drop for RunWorkLimitGuard {
     fn drop(&mut self) {
-        let enclosing_exhausted = RUN_WORK_LIMITS.with(|limits| {
-            let mut limits = limits.borrow_mut();
-            limits.pop();
-            limits.iter().any(|limit| limit.exhausted)
-        });
-        if !enclosing_exhausted {
-            clear_pending_limit(VerificationStop::RunWork);
-        }
+        RUN_WORK_LIMITS.with(|limits| limits.borrow_mut().pop());
     }
 }
 
@@ -481,7 +464,7 @@ pub fn with_run_work_limit<R>(limit: usize, operation: impl FnOnce() -> R) -> R 
         limits.borrow_mut().push(RunWorkLimit {
             used: 0,
             limit,
-            exhausted: false,
+            stop_context: None,
         })
     });
     let _guard = RunWorkLimitGuard;
@@ -501,7 +484,7 @@ pub fn run_work_exhaustion() -> Option<(usize, usize)> {
         limits
             .borrow()
             .last()
-            .filter(|limit| limit.exhausted)
+            .filter(|limit| limit.stop_context.is_some())
             .map(|limit| (limit.used, limit.limit))
     })
 }
@@ -532,41 +515,34 @@ fn active_phase_description() -> Option<String> {
 }
 
 /// Charges `units` to every whole-run budget. Returns `false` when one is
-/// exhausted; the first exhaustion leaves a pending limit naming the budget
-/// and what was running.
+/// exhausted and saves the location where each budget first stopped.
 fn charge_run_work(units: usize) -> bool {
-    let exhausted = RUN_WORK_LIMITS.with(|limits| {
+    RUN_WORK_LIMITS.with(|limits| {
         let mut limits = limits.borrow_mut();
-        let mut first = None;
-        let mut any = false;
-        for limit in limits.iter_mut() {
-            limit.used = limit.used.saturating_add(units);
-            if limit.used > limit.limit {
-                any = true;
-                if !limit.exhausted {
-                    limit.exhausted = true;
-                    first.get_or_insert((limit.used, limit.limit));
-                }
-            }
-        }
-        (any, first)
-    });
-    let (any, first) = exhausted;
-    if let Some((used, limit)) = first {
-        let active = active_work_description();
-        PENDING_LIMIT.with(|pending| {
-            let mut pending = pending.borrow_mut();
-            if !pending.as_ref().is_some_and(|stop| stop.kind == VerificationStop::RunWork) {
-                *pending = Some(PendingLimit {
-                    kind: VerificationStop::RunWork,
-                    message: format!(
-                        "the run exhausted its deterministic whole-run work budget after {used} units ({limit} limit) while running {active}; use `click profile` to see where the run spent its work"
-                    ),
+        let mut can_continue = true;
+        for budget in limits.iter_mut() {
+            budget.used = budget.used.saturating_add(units);
+            if budget.used > budget.limit {
+                can_continue = false;
+                budget.stop_context.get_or_insert_with(|| {
+                    format!(
+                        "the run exhausted its deterministic whole-run work budget after {} units ({} limit) while running {}. Use `click profile` to see where the run spent its work.",
+                        budget.used, budget.limit, active_work_description(),
+                    )
                 });
             }
-        });
-    }
-    !any
+        }
+        can_continue
+    })
+}
+
+pub(crate) fn exhausted_run_work_context() -> Option<String> {
+    RUN_WORK_LIMITS.with(|limits| {
+        limits
+            .borrow()
+            .iter()
+            .find_map(|budget| budget.stop_context.clone())
+    })
 }
 
 thread_local! {
@@ -1389,17 +1365,11 @@ pub(crate) fn exceeded_verification_stop() -> Option<(VerificationStop, String)>
             ),
         ));
     }
+    if let Some(context) = exhausted_run_work_context() {
+        return Some((VerificationStop::RunWork, context));
+    }
     if let Some(pending) = PENDING_LIMIT.with(|pending| pending.borrow().clone()) {
         return Some((pending.kind, pending.message));
-    }
-    if let Some((used, limit)) = run_work_exhaustion() {
-        return Some((
-            VerificationStop::RunWork,
-            format!(
-                "the run exhausted its deterministic whole-run work budget after {used} units ({limit} limit) while running {}",
-                active_work_description()
-            ),
-        ));
     }
     ACTIVE_TACTICS.with(|active| {
         let active = active.borrow();
