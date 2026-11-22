@@ -35,5 +35,5 @@ int32 differs(int32* held) {
 ```
 
 ```expect
-fail
+fail: `ensures result == 1` failed for `differs.ensures_0`
 ```
