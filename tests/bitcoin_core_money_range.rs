@@ -5620,13 +5620,15 @@ const SPANREADER_IGNORE_CPP: &str =
     include_str!("../integrations/bitcoin-core-money-range/SpanReaderIgnore.cpp");
 
 fn pinned_streams_fixture(name: &str) -> (PathBuf, PreparedCppImport) {
-    pinned_streams_selected_fixture(name, "span-probe.cpp", "probe")
+    pinned_streams_selected_fixture(name, "span-probe.cpp", "probe", SPANREADER_IGNORE_CPP, &[])
 }
 
 fn pinned_streams_selected_fixture(
     name: &str,
     logical_source: &str,
     function: &str,
+    probe_source: &str,
+    additional_dependencies: &[&str],
 ) -> (PathBuf, PreparedCppImport) {
     let root = std::env::temp_dir().join(format!(
         "click-bitcoin-streams-{name}-{}",
@@ -5670,7 +5672,7 @@ fn pinned_streams_selected_fixture(
         );
     }
     fs::create_dir_all(root.join("bitcoin-build/src")).unwrap();
-    fs::write(root.join("span-probe.cpp"), SPANREADER_IGNORE_CPP).unwrap();
+    fs::write(root.join("span-probe.cpp"), probe_source).unwrap();
     let clang = pinned_clang();
     // Explicitly select the same pinned Clang resource headers once. Adding
     // a second resource directory alongside the exporter's own would break
@@ -5690,21 +5692,27 @@ fn pinned_streams_selected_fixture(
     let exporter = root.join("click-cpp-exporter");
     fs::copy(std::env::var("CLICK_CPP_EXPORTER").unwrap(), &exporter).unwrap();
     let header = "sysroot/usr/include/c++/12/bits/ios_base.h";
-    let mut config = serde_json::json!({
+    let mut dependencies = vec![
+        "bitcoin-src/src/streams.h",
+        "clang-resource/include/__stddef_size_t.h",
+        header,
+        "sysroot/usr/include/c++/12/cstddef",
+        "sysroot/usr/include/c++/12/span",
+        "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+    ];
+    dependencies.extend_from_slice(additional_dependencies);
+    dependencies.retain(|dependency| *dependency != logical_source);
+    dependencies.sort_unstable();
+    let config = serde_json::json!({
         "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
         "exceptions": true, "rtti": true, "exception_behavior": "ios_failure", "exporter": exporter,
         "compilation_database": "compile_commands.json", "working_directory": ".",
         "source": "span-probe.cpp", "logical_source": logical_source,
-        "dependencies": ["bitcoin-src/src/streams.h", "clang-resource/include/__stddef_size_t.h", header,
-            "sysroot/usr/include/c++/12/cstddef", "sysroot/usr/include/c++/12/span", "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"],
+        "dependencies": dependencies,
         "library_assertions": [{"kind": "opaque_exception_constructor", "function": "std::ios_base::failure::failure",
             "header": header, "sha256": sha256(&fs::read(root.join(header)).unwrap())}],
         "function": function, "artifact": "span.click-cpp.json"
     });
-    config["dependencies"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|dependency| dependency.as_str() != Some(logical_source));
     let config_path = root.join("span.import-description.json");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     refresh_import(&config_path).unwrap();
@@ -5715,10 +5723,47 @@ fn pinned_streams_selected_fixture(
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: capture the pinned Bitcoin decoder with a throwing span consumer"]
+fn pinned_spanreader_read32_captures_the_exact_instantiation() {
+    let (root, import) = pinned_streams_selected_fixture(
+        "read32",
+        "span-probe.cpp",
+        "probe",
+        r#"#include <streams.h>
+uint32_t probe(SpanReader& reader) { return ser_readdata32(reader); }
+"#,
+        &[
+            "bitcoin-src/src/compat/endian.h",
+            "bitcoin-src/src/serialize.h",
+            "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+            "sysroot/usr/include/x86_64-linux-gnu/bits/types.h",
+        ],
+    );
+    let functions = &import.export().reachable_functions;
+    assert!(
+        functions
+            .iter()
+            .any(|function| function.path == ["ser_readdata32<SpanReader>"])
+    );
+    assert!(
+        functions
+            .iter()
+            .any(|function| function.path == ["SpanReader", "read"] && !function.declared_noexcept)
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned Bitcoin reader verification and expansion replay"]
 fn pinned_spanreader_read_verifies_and_replays_both_outcomes_offline() {
-    let (root, import) =
-        pinned_streams_selected_fixture("read", "bitcoin-src/src/streams.h", "SpanReader::read");
+    let (root, import) = pinned_streams_selected_fixture(
+        "read",
+        "bitcoin-src/src/streams.h",
+        "SpanReader::read",
+        SPANREADER_IGNORE_CPP,
+        &[],
+    );
     assert_eq!(import.export().functions[0].path, ["SpanReader", "read"]);
     assert!(import.export().reachable_functions.iter().any(|function| {
         function.axiom.as_ref().is_some_and(|axiom| {
