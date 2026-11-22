@@ -44,12 +44,14 @@ fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
         input_pointer_parameter(input_scope("certificate-other"), &pointer),
         None
     );
+    // The type belongs to the term, not the value: a retyped view of the
+    // input is the same input.
     assert_eq!(
         input_pointer_parameter(
             selected,
             &pointer.clone().with_type(ProgramType::Int8Pointer)
         ),
-        None
+        Some(1)
     );
     let mut wrong_stride = pointer.clone();
     wrong_stride.replace_pointer(Address {
