@@ -251,9 +251,20 @@ impl SpecValue {
             } else {
                 comparison::logical_condition_for_operand_views(format, relation, [left, right])
             };
+            // A comparison over a compound operand is the Integer comparison
+            // of its observations here. Read it as the native comparison, as
+            // `to_integer(a) < to_integer(b)` over the same operands lowers,
+            // so both spellings lower to one term. A comparison the operands'
+            // type range decides keeps its Integer form.
+            let (condition, truth) = match conditional_guard.then_some(None).unwrap_or_else(|| {
+                comparison::structural_native_comparison_of_integer_observation(&condition, true)
+            }) {
+                Some((native @ ConditionTerm::Compare { .. }, truth)) => (native, truth),
+                _ => (condition, true),
+            };
             return Ok(Some(Proposition::condition_is(
                 StoredConditionTerm::from_minted(condition),
-                op != ComparisonOperator::NotEqual,
+                truth == (op != ComparisonOperator::NotEqual),
             )));
         }
         if matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual) {
