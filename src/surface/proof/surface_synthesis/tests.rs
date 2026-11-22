@@ -987,11 +987,11 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
 /// count left as the written `(k + 1) - k`.
 fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Proposition {
     let index = MachineTerm::Variable(binder);
-    Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
@@ -1038,8 +1038,8 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                 .into(),
                 wide: false,
             }),
-        )),
-    }
+        ),
+    )
 }
 
 fn external_symbolic_element_context(
@@ -1606,11 +1606,11 @@ fn strlen_quantified_element_range_requirement_round_trips() {
     let memory = SymbolicMemory::new().with_block("strlen:quantified-bytes", 16);
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
     let binder = Variable(100_002);
-    let requirement = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    let requirement = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
@@ -1632,8 +1632,8 @@ fn strlen_quantified_element_range_requirement_round_trips() {
                 )),
             )),
             Box::new(external_symbolic_element_requirement(memory, binder)),
-        )),
-    };
+        ),
+    );
     let synthesized = {
         let _budget = SurfaceSynthesisScope::enter();
         synthesize_surface_proposition(
@@ -1791,7 +1791,7 @@ fn external_argument_range_loadability_round_trips_through_the_range_form() {
     let Proposition::ForAll { var, .. } = &lowered else {
         panic!("re-lowering keeps the universal: {lowered:?}");
     };
-    assert_eq!(lowered, external_byte_range_requirement(*var, &length));
+    assert_eq!(lowered, external_byte_range_requirement(**var, &length));
 }
 
 #[test]
@@ -2004,15 +2004,12 @@ fn forall_loadable_range_call_requirement_is_spellable() {
 fn exists_loadable_range_call_requirement_is_spellable() {
     let (parameters, arguments, state) = external_byte_range_caller();
     let witness = Variable(3_100_000);
-    let requirement = Proposition::Exists {
-        name: "len".to_string(),
-        var: witness,
-        sort: Sort::ProgramInt32,
-        body: Box::new(external_byte_range_requirement(
-            Variable(3_100_001),
-            &MachineTerm::Variable(witness),
-        )),
-    };
+    let requirement = crate::kernel::quantifiers::test_exists(
+        "len".to_string(),
+        witness,
+        Sort::ProgramInt32,
+        external_byte_range_requirement(Variable(3_100_001), &MachineTerm::Variable(witness)),
+    );
     let _budget = SurfaceSynthesisScope::enter();
     let spelled = synthesize_surface_proposition(
         &requirement,
@@ -2785,11 +2782,11 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
         Box::new(MachineTerm::Variable(variable)),
         Box::new(MachineTerm::constant(1)),
     );
-    let requirement = Proposition::Exists {
-        name: "len".to_string(),
-        var: variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::And(
+    let requirement = crate::kernel::quantifiers::test_exists(
+        "len".to_string(),
+        variable,
+        Sort::ProgramInt32,
+        Proposition::And(
             Box::new(Proposition::signed_arithmetic_domain(
                 MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::Add,
@@ -2805,8 +2802,8 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
                 },
                 true,
             )),
-        )),
-    };
+        ),
+    );
     let state = ExecutionState::new();
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
         .expect("strlen requirement should synthesize");
@@ -2828,11 +2825,11 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
 #[test]
 fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
     let variable = Variable(1);
-    let requirement = Proposition::Exists {
-        name: "len".to_string(),
-        var: variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::And(
+    let requirement = crate::kernel::quantifiers::test_exists(
+        "len".to_string(),
+        variable,
+        Sort::ProgramInt32,
+        Proposition::And(
             Box::new(Proposition::signed_arithmetic_domain(
                 MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::Add,
@@ -2848,8 +2845,8 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
                 },
                 true,
             )),
-        )),
-    };
+        ),
+    );
     let state = ExecutionState::new();
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
         .expect("the negative shape should remain spellable");
@@ -2899,12 +2896,12 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
         for _ in 0..guard_count {
             body = Proposition::And(Box::new(guard.clone()), Box::new(body));
         }
-        Proposition::Exists {
-            name: "len".to_string(),
-            var: variable,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body),
-        }
+        crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            variable,
+            Sort::ProgramInt32,
+            body,
+        )
     }
 
     let samples = [1, 2, 4, 8].map(|guard_count| {

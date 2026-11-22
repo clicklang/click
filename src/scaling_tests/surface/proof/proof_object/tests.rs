@@ -2367,12 +2367,12 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
         let root = Proof::for_pure_surface_goal(
             "typed intro spelling",
             &facts,
-            Proposition::ForAll {
-                name: Default::default(),
-                var: Variable(0),
-                sort: Sort::machine_integer(MachineIntegerType::UInt8),
-                body: Box::new(truth.clone()),
-            },
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(0),
+                Sort::machine_integer(MachineIntegerType::UInt8),
+                truth.clone(),
+            ),
             ClickProposition::ForAll {
                 click_type: ClickType::Program(crate::languages::interface::InterfaceType::UInt8),
                 name: "byte".into(),
@@ -3093,10 +3093,11 @@ fn check_local_predicate_unfold_scaling(quantified: bool, present: bool) {
     let selected_surface = target(0);
     let selected = lower(&selected_surface);
     let mut selected_fact = selected.clone();
-    if let Proposition::ForAll { var, name, .. } = &mut selected_fact {
-        *var = Variable(8_998_000);
+    // A quantified fact that differs from the goal only in its binder is
+    // the same value: binders are numbered by height, not by who wrote them.
+    // Only the printed name differs.
+    if let Proposition::ForAll { name, .. } = &mut selected_fact {
         *name = crate::kernel::BinderName::written("other");
-        assert_ne!(selected_fact, selected);
     }
     for same_predicate in [false, true] {
         let mut samples = Vec::new();

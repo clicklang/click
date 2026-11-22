@@ -188,23 +188,27 @@ int32 id(int32 x) {
 
     #[test]
     fn comparing_alpha_equivalent_binders_does_not_charge_the_observed_proof() {
-        let quantified = |var| Proposition::Exists {
-            name: "x".into(),
-            var,
-            sort: crate::kernel::Sort::ProgramInt32,
-            body: Box::new(Proposition::MemoryLoadable {
-                memory: crate::kernel::SymbolicMemory::new().with_declared_scalar_block(
-                    "local:word".into(),
-                    4,
-                    crate::kernel::ProgramType::Int32,
-                ),
-                base: crate::kernel::Address::symbolic(Variable(700)),
-                bytes: (MachineTerm::Variable(var)).into(),
-                wide: false,
-            }),
+        // The two differ in their display names only, so they are
+        // alpha-equivalent but not one value, and comparing them is work.
+        let quantified = |var: Variable, name: &str| {
+            crate::kernel::quantifiers::test_exists(
+                name.into(),
+                var,
+                crate::kernel::Sort::ProgramInt32,
+                Proposition::MemoryLoadable {
+                    memory: crate::kernel::SymbolicMemory::new().with_declared_scalar_block(
+                        "local:word".into(),
+                        4,
+                        crate::kernel::ProgramType::Int32,
+                    ),
+                    base: crate::kernel::Address::symbolic(Variable(700)),
+                    bytes: (MachineTerm::Variable(var)).into(),
+                    wide: false,
+                },
+            )
         };
-        let left = quantified(Variable(701));
-        let right = quantified(Variable(702));
+        let left = quantified(Variable(701), "x");
+        let right = quantified(Variable(702), "y");
         let (equal, comparison_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::api::contract_certification::propositions_alpha_equivalent(&left, &right)
         });

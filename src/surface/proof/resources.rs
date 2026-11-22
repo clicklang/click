@@ -467,7 +467,7 @@ fn dynamic_body_fact_dependency(
                         state,
                         assumptions,
                         temporary_views,
-                        Some((*var, guard)),
+                        Some((**var, guard)),
                         selected,
                     )
                 }
@@ -5939,28 +5939,30 @@ void child_release(struct child* obj) {
             },
             true,
         );
-        let quantified = |guard: Proposition| Proposition::ForAll {
-            name: Default::default(),
-            var: index,
-            sort: crate::kernel::Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
-                Box::new(guard),
-                Box::new(Proposition::MemoryReadDefined {
-                    at: None,
-                    memory: memory.clone(),
-                    pointer: Address {
-                        base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::Int32Scaled {
-                            value: crate::kernel::SharedMachineIntegerTerm::index(
-                                crate::kernel::MachineIntegerType::Int32,
-                                *index_term(),
-                            ),
-                            byte_width: 4,
+        let quantified = |guard: Proposition| {
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                index,
+                crate::kernel::Sort::ProgramInt32,
+                Proposition::Implies(
+                    Box::new(guard),
+                    Box::new(Proposition::MemoryReadDefined {
+                        at: None,
+                        memory: memory.clone(),
+                        pointer: Address {
+                            base: AddressBase::ExternalArgument,
+                            offset: AddressOffset::Int32Scaled {
+                                value: crate::kernel::SharedMachineIntegerTerm::index(
+                                    crate::kernel::MachineIntegerType::Int32,
+                                    *index_term(),
+                                ),
+                                byte_width: 4,
+                            },
                         },
-                    },
-                    value_type: crate::kernel::ProgramType::Int32,
-                }),
-            )),
+                        value_type: crate::kernel::ProgramType::Int32,
+                    }),
+                ),
+            )
         };
         let range = MemoryRange::new(base, MachineTerm::constant(0), MachineTerm::constant(4));
         let own = ResourceFact::own_memory(range.clone());

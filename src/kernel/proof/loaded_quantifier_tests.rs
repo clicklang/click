@@ -56,18 +56,18 @@ fn loaded_fact_of_format(
         }),
         LoadKind::Int32,
     );
-    Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::machine_integer(format),
-        body: Box::new(Proposition::Implies(
+    crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::machine_integer(format),
+        Proposition::Implies(
             Box::new(Proposition::condition_is(guard, true)),
             Box::new(Proposition::condition_is(
                 ConditionTerm::equal(read, MachineTerm::constant(0)),
                 true,
             )),
-        )),
-    }
+        ),
+    )
 }
 
 #[test]

@@ -1707,7 +1707,7 @@ fn synthesize_surface_quantified_proposition(
                 ));
             let name = SurfaceBinder::fresh();
             let _binder =
-                folds::Binding::enter((folds::BinderCarrier::Program, *var), name.clone());
+                folds::Binding::enter((folds::BinderCarrier::Program, **var), name.clone());
             let body = Box::new(synthesize_surface_proposition_with_bound_variables(
                 body,
                 parameter_binding,

@@ -11667,9 +11667,9 @@ fn string_literal_fact_value(
                 let constant = range.constant(value);
                 let instance =
                     crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
-                        body, *var, &constant,
+                        body, **var, &constant,
                     );
-                bindings.push((*var, constant));
+                bindings.push((**var, constant));
                 let holds = string_literal_fact_value(&instance, bindings);
                 bindings.pop();
                 if holds != Some(true) {

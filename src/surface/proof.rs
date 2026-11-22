@@ -307,11 +307,11 @@ mod certificate_tests {
             base: "target".into(),
             offset: AddressOffset::Constant(0),
         };
-        let kernel = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(7),
-            sort: Sort::Bitvector32,
-            body: Box::new(Proposition::condition_is(
+        let kernel = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(7),
+            Sort::Bitvector32,
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -325,8 +325,8 @@ mod certificate_tests {
                     right: Box::new(MachineTerm::Variable(Variable(7))),
                 },
                 true,
-            )),
-        };
+            ),
+        );
         let early = ProgramPointRef {
             region: CodeRegionRef::Region(0),
             kind: ProgramPointKind::Entry,

@@ -106,29 +106,30 @@ impl ScopedExistential {
     /// Compatibility boundary for the existing proof consumers. Do not move
     /// any requirement outside this binder or combine alternatives' domains:
     /// both would allow the requirement and body to use different witnesses.
-    pub(super) fn into_checked_path(self) -> SpecPropositionPath {
+    pub(super) fn into_checked_path(self) -> ExecutionResult<SpecPropositionPath> {
         let body = proposition_or_all(
             self.branches
                 .into_iter()
                 .map(ScopedExistentialBranch::into_checked_body)
                 .collect(),
         );
-        SpecPropositionPath {
-            proposition: Proposition::Exists {
-                name: BinderName::binding(&self.name)
+        Ok(SpecPropositionPath {
+            proposition: crate::kernel::quantifiers::close_exists(
+                BinderName::binding(&self.name)
                     .as_str()
                     .unwrap_or("")
                     .to_owned(),
-                var: self.variable,
-                sort: self.sort,
-                body: Box::new(body),
-            },
+                self.variable,
+                self.sort,
+                &body,
+            )
+            .ok_or(ExecutionLimit::QuantifierDoesNotClose)?,
             facts: Vec::new().into(),
             obligations: Vec::new(),
             // An introduction below this binder is unreachable until a
             // witness refines the goal. Do not export its head chain.
             introductions: LoweringIntroductions::new(),
-        }
+        })
     }
 }
 
@@ -164,15 +165,12 @@ mod tests {
     fn existential_requirements_keep_their_scope_and_diagnostic() {
         let outer = Variable(200_001);
         let inner = Variable(200_002);
-        let domain = Proposition::ForAll {
-            name: BinderName::written("i"),
-            var: inner,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
-                Box::new(equality(inner, 0)),
-                Box::new(equality(outer, 1)),
-            )),
-        };
+        let domain = crate::kernel::quantifiers::test_forall(
+            BinderName::written("i"),
+            inner,
+            Sort::ProgramInt32,
+            Proposition::Implies(Box::new(equality(inner, 0)), Box::new(equality(outer, 1))),
+        );
         let body = equality(outer, 1);
         let scoped = ScopedExistential::new(
             "k".into(),
@@ -186,17 +184,17 @@ mod tests {
             scoped.branches[0].obligations[0].context.as_deref(),
             Some("the selected witness must be in range")
         );
-        let checked = scoped.into_checked_path();
+        let checked = scoped.into_checked_path().unwrap();
         assert!(checked.obligations.is_empty());
         assert!(checked.facts.is_empty());
         assert_eq!(
             checked.proposition,
-            Proposition::Exists {
-                name: "k".into(),
-                var: outer,
-                sort: Sort::ProgramInt32,
-                body: Box::new(Proposition::And(Box::new(domain), Box::new(body))),
-            }
+            crate::kernel::quantifiers::test_exists(
+                "k".into(),
+                outer,
+                Sort::ProgramInt32,
+                Proposition::And(Box::new(domain), Box::new(body))
+            )
         );
     }
 
@@ -214,13 +212,14 @@ mod tests {
                 path(equality(variable, 1), equality(variable, 0)),
             ],
         );
-        let Proposition::Exists { body, .. } = scoped.into_checked_path().proposition else {
+        let Proposition::Exists { var, body, .. } = scoped.into_checked_path().unwrap().proposition
+        else {
             panic!("the requirements and bodies must share one binder");
         };
         for witness in [0, 1, 2] {
             let instantiated = substitute_int32_variable_in_proposition(
                 &body,
-                variable,
+                *var,
                 MachineTerm::constant(witness),
             );
             assert!(PureFactContext::new().proves_exact(&Proposition::Not(Box::new(instantiated))));

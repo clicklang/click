@@ -1314,15 +1314,12 @@ theorem add3_adds_four() {
             },
             true,
         );
-        let guarded = Proposition::ForAll {
-            var: Variable(1),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
-                Box::new(atom.clone()),
-                Box::new(atom.clone()),
-            )),
-            name: Default::default(),
-        };
+        let guarded = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(1),
+            Sort::ProgramInt32,
+            Proposition::Implies(Box::new(atom.clone()), Box::new(atom.clone())),
+        );
         assert_eq!(kind(&atom), "condition:Compare(int32 ==)");
         assert_eq!(kind(&guarded), "forall/implies/condition:Compare(int32 ==)");
         assert_eq!(

@@ -1979,7 +1979,7 @@ pub(crate) fn proposition_has_free_bitvector_variable(
         }
         Proposition::Not(body) => proposition_has_free_bitvector_variable(body, variable),
         Proposition::ForAll { var, body, .. } | Proposition::Exists { var, body, .. } => {
-            *var != variable && proposition_has_free_bitvector_variable(body, variable)
+            **var != variable && proposition_has_free_bitvector_variable(body, variable)
         }
         proposition => {
             let mut variables = BTreeSet::new();
@@ -5966,7 +5966,7 @@ impl PureFactContext {
                     var, body: inner, ..
                 } = body
                 {
-                    bound.insert(*var);
+                    bound.insert(**var);
                     body = inner;
                 }
                 let (variable, variant, _) = scrutinee_and_constructor(body, &bound)?;
@@ -7793,6 +7793,16 @@ impl PureFactContext {
         }
         crate::kernel::eval::check_canonical_at_creation(&condition, value);
         if cfg!(debug_assertions) {
+            // A quantifier's bound variable has no meaning outside its
+            // quantifier: assuming a condition over one means a body was used
+            // without opening it, and two such bodies would share a variable.
+            if let Ok(used) = crate::kernel::condition_variable_widths(&condition)
+                && let Some((variable, _)) = used.iter().find(|(variable, _)| variable.is_bound())
+            {
+                panic!(
+                    "an assumed condition mentions the bound variable {variable:?}: {condition:?}"
+                );
+            }
             let widths = &mut self.variable_widths;
             crate::kernel::debug_assert_widths(
                 "an assumed condition",
@@ -8176,7 +8186,7 @@ impl PureFactContext {
         let Proposition::Implies(antecedent, consequent) = body.as_ref() else {
             return None;
         };
-        let native = self.shared_conjunct_reading(antecedent, *var)?;
+        let native = self.shared_conjunct_reading(antecedent, **var)?;
         Some(Proposition::ForAll {
             var: *var,
             sort: sort.clone(),
@@ -8932,16 +8942,22 @@ impl PropositionDerivation {
                 proof.conclusion == Proposition::Not(Box::new(expected_antecedent.as_ref().clone()))
                     && proof.check(available)
             }
-            PropositionDerivationRule::ForAllBody(proof) => {
-                let Proposition::ForAll { var, body, .. } = &self.conclusion else {
+            PropositionDerivationRule::ForAllBody { witness, proof } => {
+                let Proposition::ForAll {
+                    var, sort, body, ..
+                } = &self.conclusion
+                else {
                     return false;
                 };
-                proof.conclusion == **body
-                    && (!proposition_has_free_bitvector_variable(body, *var)
-                        || proof
-                            .context_premises()
-                            .iter()
-                            .all(|premise| !proposition_has_free_bitvector_variable(premise, *var)))
+                !witness.is_bound()
+                    && crate::kernel::quantifiers::rename_quantified_variable(
+                        body, **var, *witness, sort,
+                    )
+                    .is_some_and(|opened| proof.conclusion == opened)
+                    && proof
+                        .context_premises()
+                        .iter()
+                        .all(|premise| !proposition_has_free_bitvector_variable(premise, *witness))
                     && proof.check(available)
             }
             PropositionDerivationRule::ExistsFromFact { source, body } => {
@@ -8972,8 +8988,8 @@ impl PropositionDerivation {
                 let Some(renamed_source_body) =
                     crate::kernel::api::substitute_quantified_body_capture_free(
                         source_body,
-                        *source_var,
-                        *var,
+                        **source_var,
+                        **var,
                         sort,
                     )
                 else {
@@ -9002,7 +9018,7 @@ impl PropositionDerivation {
                     return false;
                 }
                 let instantiated =
-                    substitute_bitvector_variable_in_proposition(expected_body, *var, witness);
+                    substitute_bitvector_variable_in_proposition(expected_body, **var, witness);
                 body.conclusion == instantiated && body.check(available)
             }
             PropositionDerivationRule::ForAllLoadableRange { source } => {
@@ -11292,12 +11308,32 @@ impl SymbolicConditionEvaluationPath {
 mod stated_requirement_tests {
     use super::*;
 
+    /// An existential requirement no other `id` gives: its body compares
+    /// with `id` itself. Facts that differ only in their binder are one fact,
+    /// so unrelated facts differ in content.
+    fn distinct_requirement(id: u64, name: &str) -> Proposition {
+        crate::kernel::quantifiers::test_exists(
+            name.into(),
+            Variable(id),
+            Sort::Bitvector32,
+            Proposition::condition_is(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(MachineTerm::Variable(Variable(id))),
+                    right: Box::new(MachineTerm::constant(id as u32)),
+                },
+                true,
+            ),
+        )
+    }
+
     fn requirement(var: u64, name: &str) -> Proposition {
-        Proposition::Exists {
-            name: name.into(),
-            var: Variable(var),
-            sort: Sort::Bitvector32,
-            body: Box::new(Proposition::condition_is(
+        crate::kernel::quantifiers::test_exists(
+            name.into(),
+            Variable(var),
+            Sort::Bitvector32,
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -11305,8 +11341,8 @@ mod stated_requirement_tests {
                     right: Box::new(MachineTerm::constant(4)),
                 },
                 true,
-            )),
-        }
+            ),
+        )
     }
 
     #[test]
@@ -12286,18 +12322,18 @@ mod integer_observation_tests {
 
     /// `forall (k: uint64) { antecedent implies word(832) == 0 }`.
     fn quantified_over_k(antecedent: Proposition) -> Proposition {
-        Proposition::ForAll {
-            var: Variable(830),
-            sort: Sort::ProgramInteger(MachineIntegerType::UInt64),
-            body: Box::new(Proposition::Implies(
+        crate::kernel::quantifiers::test_forall(
+            BinderName::written("k"),
+            Variable(830),
+            Sort::ProgramInteger(MachineIntegerType::UInt64),
+            Proposition::Implies(
                 Box::new(antecedent),
                 Box::new(Proposition::condition_is(
                     ConditionTerm::equal(word(832), MachineTerm::constant(0)),
                     true,
                 )),
-            )),
-            name: BinderName::written("k"),
-        }
+            ),
+        )
     }
 
     #[test]

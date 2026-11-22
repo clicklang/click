@@ -754,7 +754,7 @@ fn source_range_capability_is_supported(proposition: &Proposition) -> Option<boo
             return None;
         };
         let guard = |p: &Proposition| {
-            matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, false) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, _)) if (left.as_ref() == &MachineTerm::Variable(*var)
+            matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, false) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, _)) if (left.as_ref() == &MachineTerm::Variable(**var)
                     && right.as_ref() == &MachineTerm::constant(1))))
         };
         let range = if guard(left) {
@@ -803,7 +803,7 @@ fn has_explicit_existential_byte_range(proposition: &Proposition) -> bool {
     else {
         return false;
     };
-    let width = MachineTerm::add(MachineTerm::Variable(*var), MachineTerm::constant(1));
+    let width = MachineTerm::add(MachineTerm::Variable(**var), MachineTerm::constant(1));
     let mut work = vec![body.as_ref()];
     let mut visited = 0;
     while let Some(part) = work.pop() {
@@ -1391,28 +1391,28 @@ mod tests {
             bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         };
-        let quantified = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(3_100_000),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
+        let quantified = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(3_100_000),
+            Sort::ProgramInt32,
+            Proposition::Implies(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 )),
                 Box::new(range.clone()),
-            )),
-        };
+            ),
+        );
         assert!(
             source_backed_requirement_is_supported(&quantified, Some(0), false, None,).unwrap()
         );
         assert!(!source_backed_requirement_is_supported(&range, Some(0), false, None,).unwrap());
 
-        let guarded = Proposition::Exists {
-            name: "len".to_string(),
-            var: Variable(3_100_001),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::And(
+        let guarded = crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            Variable(3_100_001),
+            Sort::ProgramInt32,
+            Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
@@ -1423,30 +1423,30 @@ mod tests {
                     false,
                 )),
                 Box::new(quantified.clone()),
-            )),
-        };
+            ),
+        );
         assert!(
             source_backed_requirement_is_supported(&guarded, Some(0), false, None,).unwrap(),
             "a checked successor guard belongs to the quantified external-range capability"
         );
 
-        let existential_range = Proposition::Exists {
-            name: "len".to_string(),
-            var: Variable(3_100_001),
-            sort: Sort::ProgramInt32,
-            body: Box::new(quantified.clone()),
-        };
+        let existential_range = crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            Variable(3_100_001),
+            Sort::ProgramInt32,
+            quantified.clone(),
+        );
         assert!(
             source_backed_requirement_is_supported(&existential_range, Some(0), false, None,)
                 .unwrap(),
             "an existential wrapper around the exact byte range remains supported"
         );
 
-        let unsupported_polarity = Proposition::Exists {
-            name: "len".to_string(),
-            var: Variable(3_100_001),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::And(
+        let unsupported_polarity = crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            Variable(3_100_001),
+            Sort::ProgramInt32,
+            Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
@@ -1457,19 +1457,19 @@ mod tests {
                     true,
                 )),
                 Box::new(quantified.clone()),
-            )),
-        };
+            ),
+        );
         assert!(
             !source_backed_requirement_is_supported(&unsupported_polarity, Some(0), false, None,)
                 .unwrap(),
             "an overflow condition rather than a definedness guard remains unsupported"
         );
 
-        let load_variable_guard = Proposition::Exists {
-            name: "len".to_string(),
-            var: Variable(3_100_001),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::And(
+        let load_variable_guard = crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            Variable(3_100_001),
+            Sort::ProgramInt32,
+            *Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
@@ -1481,7 +1481,7 @@ mod tests {
                 )),
                 Box::new(quantified.clone()),
             )),
-        };
+        );
         assert!(
             !source_backed_requirement_is_supported(&load_variable_guard, Some(0), false, None,)
                 .unwrap(),
@@ -1492,12 +1492,12 @@ mod tests {
             Proposition::Exists { body, .. } => body.clone(),
             _ => unreachable!(),
         };
-        let wrong_width = Proposition::Exists {
-            name: "len".to_string(),
-            var: Variable(3_100_001),
-            sort: Sort::ProgramInt64,
-            body: guarded_body.clone(),
-        };
+        let wrong_width = crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            Variable(3_100_001),
+            Sort::ProgramInt64,
+            *guarded_body.clone(),
+        );
         assert!(
             !source_backed_requirement_is_supported(&wrong_width, Some(0), false, None,).unwrap()
         );
@@ -1509,11 +1509,11 @@ mod tests {
         {
             *bytes = MachineTerm::constant(2).into();
         }
-        let wide_guarded = Proposition::Exists {
-            name: "len".to_string(),
-            var: Variable(3_100_001),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::And(
+        let wide_guarded = crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            Variable(3_100_001),
+            Sort::ProgramInt32,
+            Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
@@ -1524,8 +1524,8 @@ mod tests {
                     false,
                 )),
                 Box::new(wide_range),
-            )),
-        };
+            ),
+        );
         assert!(
             !source_backed_requirement_is_supported(&wide_guarded, Some(0), false, None,).unwrap()
         );
@@ -1538,11 +1538,11 @@ mod tests {
             base.offset =
                 AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(1 << 40)), 1);
         }
-        let unregistered_guarded = Proposition::Exists {
-            name: "len".to_string(),
-            var: Variable(3_100_001),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::And(
+        let unregistered_guarded = crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            Variable(3_100_001),
+            Sort::ProgramInt32,
+            Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
@@ -1553,18 +1553,18 @@ mod tests {
                     false,
                 )),
                 Box::new(unregistered_range),
-            )),
-        };
+            ),
+        );
         assert!(
             !source_backed_requirement_is_supported(&unregistered_guarded, Some(0), false, None,)
                 .unwrap()
         );
 
-        let nested_guarded = Proposition::Exists {
-            name: "len".to_string(),
-            var: Variable(3_100_001),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::And(
+        let nested_guarded = crate::kernel::quantifiers::test_exists(
+            "len".to_string(),
+            Variable(3_100_001),
+            Sort::ProgramInt32,
+            Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
@@ -1581,8 +1581,8 @@ mod tests {
                         true,
                     )),
                 )),
-            )),
-        };
+            ),
+        );
         assert!(
             !source_backed_requirement_is_supported(&nested_guarded, Some(0), false, None,)
                 .unwrap()

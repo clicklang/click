@@ -4725,14 +4725,14 @@ pub fn forall_instantiation_candidate_values(
     let mut candidates = match target {
         Proposition::ConditionIs(condition, _) => {
             PureFactContext::guided_forall_condition_candidates(
-                *var,
+                **var,
                 body,
                 condition.native_compat(),
             )
         }
         _ => BTreeSet::new(),
     };
-    let variables = vec![*var];
+    let variables = vec![**var];
     if let Some(ranges) = crate::kernel::reasoning::finite_forall_ranges(&variables, body)
         && let [range] = ranges.as_slice()
         && let Ok(width) = usize::try_from(range.upper - range.lower + 1)
@@ -4762,7 +4762,7 @@ pub fn forall_guided_instantiation_candidate_values(
     match target {
         Proposition::ConditionIs(condition, _) => {
             PureFactContext::guided_forall_condition_candidates(
-                *var,
+                **var,
                 body,
                 condition.native_compat(),
             )
@@ -7621,16 +7621,11 @@ fn universally_close_pure_implication(
         .fold(conclusion, |body, requirement| {
             Proposition::Implies(Box::new(requirement), Box::new(body))
         });
-    let proposition =
-        variables
-            .into_iter()
-            .rev()
-            .fold(implication, |body, var| Proposition::ForAll {
-                name: Default::default(),
-                var,
-                sort: Sort::ProgramInt32,
-                body: Box::new(body),
-            });
+    let binders = variables
+        .into_iter()
+        .map(|var| (Default::default(), var, Sort::ProgramInt32))
+        .collect::<Vec<_>>();
+    let proposition = crate::kernel::quantifiers::close_foralls(&binders, &implication)?;
     Some(VerifiedPureTheorem {
         theorem: Theorem::new(proposition),
     })
@@ -7888,15 +7883,12 @@ pub(crate) fn prove_program_function_contract_refinement(
                 )
                 .collect(),
             };
-            Proposition::ForAll {
-                name: Default::default(),
-                var: *variable,
-                sort: Sort::ProgramPointer(context.pointer.program_type()),
-                body: Box::new(Proposition::Implies(
-                    Box::new(premise),
-                    Box::new(conclusion),
-                )),
-            }
+            crate::kernel::quantifiers::close_forall(
+                Default::default(),
+                *variable,
+                Sort::ProgramPointer(context.pointer.program_type()),
+                &Proposition::Implies(Box::new(premise), Box::new(conclusion)),
+            )?
         }
     };
     Some(VerifiedPureTheorem {
@@ -8018,12 +8010,12 @@ pub(crate) fn prove_executed_contract_refinement(
         implication = Proposition::Implies(Box::new(premise), Box::new(implication));
     }
     Some(VerifiedPureTheorem {
-        theorem: Theorem::new(Proposition::ForAll {
-            name: Default::default(),
-            var: variable,
-            sort: Sort::ProgramPointer(pointer.program_type()),
-            body: Box::new(implication),
-        }),
+        theorem: Theorem::new(crate::kernel::quantifiers::close_forall(
+            Default::default(),
+            variable,
+            Sort::ProgramPointer(pointer.program_type()),
+            &implication,
+        )?),
     })
 }
 

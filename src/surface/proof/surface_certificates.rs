@@ -361,7 +361,7 @@ pub(super) fn plan_explicit_forall_instantiation(
             let Some(argument) = contract_expression_for_instantiation_value(&value) else {
                 continue;
             };
-            let instantiated = substitute_int32_variable_in_proposition(body, *var, value.clone());
+            let instantiated = substitute_int32_variable_in_proposition(body, **var, value.clone());
             let Ok((_, conclusion)) =
                 discharge_instantiated_guards(instantiated.clone(), &other_kernels)
             else {
@@ -472,7 +472,7 @@ fn plan_explicit_universal_conclusion_discharge(
         return None;
     };
     let instantiated =
-        substitute_int32_variable_in_proposition(premise_body, *premise_var, argument_term);
+        substitute_int32_variable_in_proposition(premise_body, **premise_var, argument_term);
     let (_, conclusion) =
         discharge_instantiated_guards(instantiated.clone(), discharge_kernels).ok()?;
     let closes_by_known =
@@ -636,13 +636,17 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ForAll {
         var: goal_var,
-        sort: Sort::ProgramInt32,
+        sort: sort @ Sort::ProgramInt32,
         body: goal_body,
         ..
     } = goal
     else {
         return None;
     };
+    // Compare the goal's body as `intro` will open it: at a fresh variable.
+    let (goal_witness, goal_body) =
+        crate::kernel::quantifiers::open_quantifier(*goal_var, sort, goal_body)?;
+    let goal_body = Box::new(goal_body);
     let ClickProposition::ForAll {
         name: binder_name,
         body: surface_body,
@@ -680,7 +684,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
         let Some(mut body_tactics) = plan_explicit_universal_conclusion_discharge(
             kernel,
             surface,
-            MachineTerm::Variable(*goal_var),
+            MachineTerm::Variable(goal_witness),
             &ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 (binder_name.clone()).into(),
             )),

@@ -62,6 +62,7 @@ pub(crate) use fact_keys::{alpha_proposition_key_visits, reset_alpha_proposition
 pub(in crate::kernel) use facts::clear_selected_atom_cache;
 #[cfg(test)]
 pub(crate) use facts::reserved_fact_variable_entries;
+pub(crate) use facts::restore_range_span_spelling;
 #[cfg(test)]
 pub(crate) use facts::take_fact_entry_counts;
 pub(crate) use facts::{PropositionSource, PureFactStore, is_definedness_guard};

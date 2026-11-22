@@ -678,7 +678,7 @@ impl PropositionDerivation {
             | PropositionDerivationRule::OrRight(proof)
             | PropositionDerivationRule::DoubleNegation(proof)
             | PropositionDerivationRule::ImpliesFalseAntecedent(proof)
-            | PropositionDerivationRule::ForAllBody(proof) => {
+            | PropositionDerivationRule::ForAllBody { proof, .. } => {
                 proof.collect_context_premises(premises);
             }
             PropositionDerivationRule::ExistsFromFact { source, body } => {
@@ -694,10 +694,10 @@ impl PropositionDerivation {
                     && let Some(renamed) =
                         crate::kernel::api::substitute_quantified_body_capture_free(
                             source_body,
-                            *source_var,
+                            **source_var,
                             match &self.conclusion {
-                                Proposition::Exists { var, .. } => *var,
-                                _ => *source_var,
+                                Proposition::Exists { var, .. } => **var,
+                                _ => **source_var,
                             },
                             sort,
                         )

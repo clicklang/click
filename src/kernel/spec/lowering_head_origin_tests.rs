@@ -154,16 +154,16 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
         )
         .expect("the existential lowers on one path");
 
-    let overflows = Proposition::signed_arithmetic_domain(
-        crate::kernel::MachineIntegerType::Int32,
-        crate::kernel::MachineBinaryOp::Add,
-        &MachineTerm::Variable(Variable(41)),
-        &MachineTerm::constant(1),
-    );
     let Proposition::Exists { var, body, .. } = &goal else {
         panic!("the lowered goal is an existential, got {goal:?}");
     };
-    assert_eq!(*var, Variable(41));
+    assert!(var.is_bound());
+    let overflows = Proposition::signed_arithmetic_domain(
+        crate::kernel::MachineIntegerType::Int32,
+        crate::kernel::MachineBinaryOp::Add,
+        &MachineTerm::Variable(**var),
+        &MachineTerm::constant(1),
+    );
     // A guard restricts an existential's witness, so it is a conjunct of
     // the quantified body, not an antecedent: an implication would make
     // the claim vacuously true of every witness the guard excludes.
@@ -182,7 +182,7 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
         let Proposition::Exists { var, .. } = obligation else {
             panic!("an obligation escaped its binder: {obligation:?}");
         };
-        assert_eq!(*var, Variable(41));
+        assert!(var.is_bound());
     }
 
     // The head chain describes what an introduction reaches first. The

@@ -196,11 +196,11 @@ impl PropositionKey {
                 }
                 Proposition::ForAll { var, sort, .. } => {
                     let (key, observes) = completed.pop().expect("visited body");
-                    (Self::ForAll(*var, sort.clone(), Box::new(key)), observes)
+                    (Self::ForAll(**var, sort.clone(), Box::new(key)), observes)
                 }
                 Proposition::Exists { var, sort, .. } => {
                     let (key, observes) = completed.pop().expect("visited body");
-                    (Self::Exists(*var, sort.clone(), Box::new(key)), observes)
+                    (Self::Exists(**var, sort.clone(), Box::new(key)), observes)
                 }
                 _ => (Self::Exact(proposition.clone()), false),
             };

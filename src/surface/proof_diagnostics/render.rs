@@ -1549,11 +1549,11 @@ impl Renderer<'_> {
             Proposition::ForAll {
                 var, sort, body, ..
             } => {
-                let name = self.variable_name(*var, "bound");
+                let name = self.variable_name(**var, "bound");
                 self.fmt(format_args!("∀{name}:"));
                 self.sort(sort);
                 self.push(". ");
-                self.bound_names.push((*var, name));
+                self.bound_names.push((**var, name));
                 self.proposition(body);
                 self.bound_names.pop();
             }
@@ -1564,14 +1564,14 @@ impl Renderer<'_> {
                 body,
             } => {
                 let binder = if name.is_empty() {
-                    self.variable_name(*var, "bound")
+                    self.variable_name(**var, "bound")
                 } else {
                     name.clone()
                 };
                 self.fmt(format_args!("∃{binder}:"));
                 self.sort(sort);
                 self.push(". ");
-                self.bound_names.push((*var, binder));
+                self.bound_names.push((**var, binder));
                 self.proposition(body);
                 self.bound_names.pop();
             }
@@ -3035,15 +3035,15 @@ mod tests {
             SharedIntegerTerm::from(IntegerTerm::from(2)),
             SharedIntegerTerm::from(IntegerTerm::from(3)),
         );
-        let proposition = Proposition::ForAll {
-            name: Default::default(),
-            var: crate::kernel::Variable(7),
-            sort: crate::kernel::Sort::Integer,
-            body: Box::new(Proposition::Equal(
+        let proposition = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            crate::kernel::Variable(7),
+            crate::kernel::Sort::Integer,
+            Proposition::Equal(
                 Term::Integer(integer.into()),
                 Term::Integer(IntegerTerm::from(5).into()),
-            )),
-        };
+            ),
+        );
         let rendered = render_proposition(&proposition);
         assert!(rendered.contains("∀bound A:Integer"), "{rendered}");
         assert!(rendered.contains("2"));
@@ -3098,15 +3098,12 @@ mod tests {
         let mut path = crate::kernel::AlgebraicType::parameter("Path".into());
         path.rigid = false;
         path.arguments = vec![AlgebraicValueType::Integer];
-        let proposition = Proposition::Exists {
-            name: "path".into(),
-            var: Variable(7),
-            sort: Sort::Algebraic(path),
-            body: Box::new(Proposition::condition_is(
-                ConditionTerm::Constant(true),
-                true,
-            )),
-        };
+        let proposition = crate::kernel::quantifiers::test_exists(
+            "path".into(),
+            Variable(7),
+            Sort::Algebraic(path),
+            Proposition::condition_is(ConditionTerm::Constant(true), true),
+        );
         let rendered = render_proposition(&proposition);
         assert!(rendered.starts_with("∃path:Path<Integer>. "), "{rendered}");
         assert!(!rendered.contains("AlgebraicSchemas"), "{rendered}");
