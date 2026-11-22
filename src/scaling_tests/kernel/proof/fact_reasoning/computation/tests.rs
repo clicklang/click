@@ -20,7 +20,9 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
                 AlgebraicValueType::Integer => {
                     AlgebraicValue::Integer(IntegerTerm::var(Variable(992_300 + i as u64)))
                 }
-                _ => AlgebraicValue::Program(int32(i as u32)),
+                _ => AlgebraicValue::Program(int32(MachineTerm::Variable(Variable(
+                    992_300 + i as u64,
+                )))),
             })
             .collect::<Vec<_>>();
         scrutinee.node = constructor(fields.clone());
@@ -78,7 +80,8 @@ fn nested_constructor_payload_check_scales_with_selected_arms() {
     for depth in [4, 8, 16] {
         let _session = VerificationSession::enter();
         let original = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
-        let value = |index| AlgebraicValue::Integer(IntegerTerm::var(Variable(993_000 + index)));
+        let value =
+            |index: u64| AlgebraicValue::Integer(IntegerTerm::var(Variable(993_000 + index)));
         let constructor = |index| AlgebraicTerm {
             algebraic_type: original.algebraic_type.clone(),
             node: AlgebraicTermNode::Constructor {

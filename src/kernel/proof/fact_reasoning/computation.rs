@@ -937,12 +937,19 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
                     AlgebraicValue::Integer(IntegerTerm::Constant(_)),
                 ) => (variable, field),
                 (
+                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))),
+                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(source))),
+                )
+                | (
                     AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
                     AlgebraicValue::Integer(IntegerTerm::Variable(source)),
-                ) => match payloads.get(source).copied().unwrap_or(field) {
-                    payload @ AlgebraicValue::Integer(_) => (variable, payload),
-                    _ => return false,
-                },
+                ) => {
+                    let payload = payloads.get(source).copied().unwrap_or(field);
+                    if std::mem::discriminant(payload) != std::mem::discriminant(field) {
+                        return false;
+                    }
+                    (variable, payload)
+                }
                 _ => return false,
             };
             bindings.push((*variable, payload));

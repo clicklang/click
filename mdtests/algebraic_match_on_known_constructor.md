@@ -23,6 +23,17 @@ theorem rewritten(p: Packet) {
         solve();
     }
 }
+
+theorem rewritten_symbolic(p: Packet, value: int32) {
+    requires p == Packet::Full(value);
+    ensures (match p {
+        Packet::Empty => Output::NoValue,
+        Packet::Full(n) => Output::Value(n),
+    }) == Output::Value(value) by {
+        rewrite(p, Packet::Full(value));
+        solve();
+    }
+}
 ```
 
 ```expect
