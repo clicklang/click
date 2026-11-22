@@ -855,7 +855,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_distinct_cons
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_single_store_read_rewrite	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_single_store_read_rewrite	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_indexed_read_preservation	1
-src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_indexed_read_preservation	try_single_memory_write_separation	2
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_indexed_read_preservation	try_single_memory_write_separation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_single_memory_write_separation	driver	4
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_single_memory_write_separation	try_indexed_separation_restriction	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_indexed_separation_restriction	try_resource_separation_restriction_closure	1

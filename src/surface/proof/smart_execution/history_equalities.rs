@@ -122,29 +122,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )?;
             let separated = match separated {
                 Some(separated) => Some(separated),
-                None if returned && loop_exit && footprint.members.len() == 1 => {
-                    Self::try_single_memory_write_separation(
-                        &proof,
-                        footprint.members.front().expect("one footprint member"),
-                        &kept,
-                        &separation,
-                    )?
-                }
-                None if returned && footprint.members.len() == 1 => {
-                    Self::try_distinct_indexed_store_separation(
-                        &proof,
-                        footprint.members.front().expect("one footprint member"),
-                        &kept,
-                        &separation,
-                    )?
-                }
-                None if derive_separation && footprint.members.len() == 1 => {
-                    Self::try_single_memory_write_separation(
-                        &proof,
-                        footprint.members.front().expect("one footprint member"),
-                        &kept,
-                        &separation,
-                    )?
+                None if (returned || derive_separation) && footprint.members.len() == 1 => {
+                    let written = footprint.members.front().expect("one footprint member");
+                    if returned
+                        && !loop_exit
+                        && let Some(separated) = Self::try_distinct_indexed_store_separation(
+                            &proof,
+                            written,
+                            &kept,
+                            &separation,
+                        )?
+                    {
+                        Some(separated)
+                    } else {
+                        attempt::candidate_outcome(Self::try_single_memory_write_separation(
+                            &proof,
+                            written,
+                            &kept,
+                            &separation,
+                        ))?
+                        .flatten()
+                    }
                 }
                 None => None,
             };
