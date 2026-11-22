@@ -253,6 +253,10 @@ enum VariableOrigin {
     /// A free variable a quantifier was opened at where no proof state
     /// reserves identities, numbered per verification session.
     Opening,
+    /// A match arm's binder, numbered by the lowering budget that built the
+    /// arm. No other producer mints one, so an occurrence in an arm body is a
+    /// bound occurrence of that arm's binder.
+    MatchBinder,
 }
 
 impl std::fmt::Debug for Variable {
@@ -265,6 +269,9 @@ impl std::fmt::Debug for Variable {
                 .finish(),
             VariableOrigin::Bound => formatter.debug_tuple("Bound").field(&self.0).finish(),
             VariableOrigin::Opening => formatter.debug_tuple("Opening").field(&self.0).finish(),
+            VariableOrigin::MatchBinder => {
+                formatter.debug_tuple("MatchBinder").field(&self.0).finish()
+            }
         }
     }
 }
@@ -308,6 +315,19 @@ impl Variable {
     /// Whether this is a quantifier's bound variable.
     pub(crate) fn is_bound(&self) -> bool {
         self.origin == VariableOrigin::Bound
+    }
+
+    /// The `number`th match-arm binder a lowering budget allocated.
+    pub(in crate::kernel) const fn match_binder(number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::MatchBinder,
+        }
+    }
+
+    /// Whether this is a match arm's binder.
+    pub(in crate::kernel) fn is_match_binder(&self) -> bool {
+        self.origin == VariableOrigin::MatchBinder
     }
 
     /// Mint a free symbolic identity. This stream is process-wide so nested
@@ -8671,11 +8691,9 @@ pub struct ExecutionBudget {
     pub(super) paths: usize,
     pub(super) next_opaque_call: u64,
     pub(super) next_kernel_variable: u64,
-    /// This lowering's own counter for match-arm binders, counting through
-    /// [`ExecutionBudget::MATCH_BINDER_VARIABLE_BASE`]. Binders are bound
-    /// variables, so they are drawn from a range no execution, quantifier,
-    /// fold, load or pointer producer can reach rather than from the
-    /// execution counter beside them.
+    /// This lowering's own counter for match-arm binders. Binders have
+    /// their own origin, so no execution, quantifier, fold, load or pointer
+    /// producer can mint one.
     pub(super) next_match_binder_variable: u64,
     /// Whether this budget refuses to invent an execution identity at all.
     /// Set by `ExecutionBudget::beside_live_state`, whose state belongs to an
