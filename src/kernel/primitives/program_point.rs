@@ -1637,14 +1637,12 @@ impl ProgramPoint {
     /// therefore leaves the caller cell it designates at the entry version.
     fn entry_read_through_loaded_pointer(&self, pointer: &Address) -> Option<Self> {
         let loaded = pointer.as_loaded_value()?;
-        let current = self.path.0.as_ref()?;
         if !self.has_certified_read_view() {
             return None;
         }
-        if current.function_entry {
-            return Some(self.clone().for_exact_read());
-        }
         let entry = self.parameter_read_start(&AddressBase::ExternalArgument);
+        // The pointer itself must name this entry even for a read at entry.
+        // Copied parameter fields and model values can have another source.
         let root = entry.path.0.as_ref()?;
         (root.function_entry
             && entry.has_certified_read_view()
@@ -2060,6 +2058,31 @@ mod tests {
                 .store(pointer_slot, ProgramValue::Int32(MachineTerm::constant(7))),
         );
         assert_eq!(select(&after_external_store), None);
+    }
+
+    #[test]
+    fn int32_through_an_unanchored_pointer_does_not_claim_an_entry_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let point = entry.program_point();
+        let slot = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let pointer = Pointer::from_point_read(
+            point.clone().for_legacy_read(),
+            ProgramType::Int32Pointer,
+            &slot,
+        );
+        assert!(matches!(
+            pointer.address().base,
+            AddressBase::LoadedPointer(_)
+        ));
+        assert!(
+            point
+                .ordinary_typed_version(pointer.address(), ProgramType::Int32)
+                .is_none()
+        );
     }
 
     #[test]
