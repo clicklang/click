@@ -3417,6 +3417,11 @@ fn no_single_path_message<T>(what: &str, paths: &[T], budget: &ExecutionBudget) 
                 ),
             }
         }
+        (0, None) if let Some(behavior) = budget.dropped_undefined_behavior() => format!(
+            "the kernel {what} produced no path: every evaluation path ended in undefined \
+             behavior: {}",
+            behavior.description()
+        ),
         (0, None) if budget.dropped_comparison.is_some() => {
             "the comparison could not be constructed for its operand values".to_string()
         }
