@@ -496,11 +496,6 @@ pub(in crate::surface) fn initial_call_state(
     composite_definitions: &[CompositeResourceDefinition],
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(ExecutionState, Vec<ProgramExpression>, PureFactContext), ClickError> {
-    if parameters.len() as u64 >= POINTER_ARGUMENT_VARIABLE_BASE {
-        return Err(ClickError::new(
-            "function parameter variable namespace exhausted",
-        ));
-    }
     let aggregate_parameters = parameters
         .iter()
         .filter(|parameter| parameter.is_struct_value())

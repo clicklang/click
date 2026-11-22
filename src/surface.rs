@@ -191,7 +191,6 @@ pub fn accepted_proof_trace(
     })
 }
 
-const POINTER_ARGUMENT_VARIABLE_BASE: u64 = 100_000;
 /// Maximum UTF-8 bytes in an ordinary verifier error message. Set
 /// `CLICK_FULL_DIAGNOSTICS=1` when an engine investigation needs unbounded
 /// internal state.
