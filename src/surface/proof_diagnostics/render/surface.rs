@@ -2971,7 +2971,7 @@ impl Printer<'_> {
             _ if !self.source_mode() => None,
             IntegerTerm::Machine(value) => {
                 let hint = Hint::of_machine(value.ty());
-                let value = self.bitvector(value.value(), hint, depth)?;
+                let value = self.operand_as(value.value(), hint, depth)?;
                 Some(atom(format!("to_integer({})", value.text)))
             }
             IntegerTerm::TruncatingQuotient(a, b) | IntegerTerm::TruncatingRemainder(a, b) => {
