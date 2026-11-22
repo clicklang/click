@@ -365,13 +365,13 @@ int32 vector_grow(struct vector* owner) {
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
-            have at(region(14).entry, 0) <= at(region(14).entry, k) and at(region(14).entry, k) < at(region(14).entry, owner->len);
-            instantiate(forall (__click_q0: int32) { at(region(14).entry, 0) <= at(region(14).entry, __click_q0) and at(region(14).entry, __click_q0) < at(region(14).entry, owner->len) implies at(region(14).entry, new_data[__click_q0]) == at(region(14).entry, old_data[__click_q0]) }, k);
+            have at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len);
+            instantiate(forall (__click_q0: int32) { at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, __click_q0) and at(statement(10).call(vector_copy, 0).entry, __click_q0) < at(statement(10).call(vector_copy, 0).entry, owner->len) implies at(statement(10).call(vector_copy, 0).exit, new_data[__click_q0]) == at(statement(10).call(vector_copy, 0).entry, old_data[__click_q0]) }, k);
             have &owner->data[k] == at(region(14).entry, &new_data[k]) by {
                 known();
             }
             have separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
-            have at(region(14).entry, old_data[k]) == old(owner->data[k]) by { known(); }
+            have at(statement(10).call(vector_copy, 0).entry, old_data[k]) == old(owner->data[k]) by { known(); }
             have k < new_capacity by { solve(); }
             have separate(memory(*owner), memory(new_data[0..new_capacity])) by { solve(); }
             have contains(memory(*owner), memory(owner->data)) by { normalize(); }
@@ -402,8 +402,15 @@ int32 vector_grow(struct vector* owner) {
                 preserve(memory(new_data[k]), statement(13));
             }
             have owner->data == new_data by { known(); }
-            have new_data[k] == at(region(14).entry, new_data[k]) by { known(); }
-            have new_data[k] == old(owner->data[k]) by { known(); }
+            have new_data[k] == at(statement(10).call(vector_copy, 0).exit, new_data[k]) by { known(); }
+            have at(statement(10).call(vector_copy, 0).exit, new_data[k]) == at(statement(10).call(vector_copy, 0).entry, old_data[k]) by {
+                apply(at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len) implies at(statement(10).call(vector_copy, 0).exit, new_data[k]) == at(statement(10).call(vector_copy, 0).entry, old_data[k])) using { at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len); };
+            }
+            have new_data[k] == old(owner->data[k]) by {
+                rewrite(new_data[k], at(statement(10).call(vector_copy, 0).exit, new_data[k]));
+                rewrite(old(owner->data[k]), at(statement(10).call(vector_copy, 0).entry, old_data[k]));
+                known();
+            }
             have &owner->data[k] == &new_data[k] by {
                 known();
             }
