@@ -32,7 +32,7 @@ int32 explicit(int32* q, int32 j) {
 } by {
     have &q[j] != &q[0] by {
         have j != 0 by { known(); }
-        apply(click::separation::distinct_elements(q, j, 0)) using { j != 0; };
+        apply(click::separation::distinct_elements(q, j, 0));
     }
 }
 ```

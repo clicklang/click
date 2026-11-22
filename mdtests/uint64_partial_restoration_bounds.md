@@ -14,7 +14,7 @@ theorem partial_restoration(whole: uint64, removed: uint64, restored: uint64, up
         have to_integer(removed) <= to_integer(whole) by solve() using { removed <= whole; };
         have to_integer(restored) <= to_integer(removed) by solve() using { restored <= removed; };
         have to_integer(whole) <= to_integer(upper) by solve() using { whole <= upper; };
-        apply(integer::uint64_subtract_to_integer(whole, removed)) using { to_integer(removed) <= to_integer(whole); };
+        apply(integer::uint64_subtract_to_integer(whole, removed));
         have to_integer(whole - removed) + to_integer(restored) <= to_integer(upper) by solve() using {
             to_integer(whole - removed) == to_integer(whole) - to_integer(removed);
             to_integer(restored) <= to_integer(removed);
@@ -25,7 +25,7 @@ theorem partial_restoration(whole: uint64, removed: uint64, restored: uint64, up
             to_integer(whole - removed) + to_integer(restored) <= to_integer(upper);
             to_integer(upper) <= 18446744073709551615;
         };
-        apply(integer::uint64_add_to_integer(whole - removed, restored)) using { to_integer(whole - removed) + to_integer(restored) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(whole - removed, restored));
         rewrite(to_integer((whole - removed) + (restored)), to_integer(whole - removed) + to_integer(restored));
         known();
     }
@@ -33,7 +33,7 @@ theorem partial_restoration(whole: uint64, removed: uint64, restored: uint64, up
         have to_integer(removed) <= to_integer(whole) by solve() using { removed <= whole; };
         have to_integer(restored) <= to_integer(removed) by solve() using { restored <= removed; };
         have to_integer(whole) <= to_integer(upper) by solve() using { whole <= upper; };
-        apply(integer::uint64_subtract_to_integer(whole, removed)) using { to_integer(removed) <= to_integer(whole); };
+        apply(integer::uint64_subtract_to_integer(whole, removed));
         have to_integer(restored) + to_integer(whole - removed) <= to_integer(upper) by solve() using {
             to_integer(whole - removed) == to_integer(whole) - to_integer(removed);
             to_integer(restored) <= to_integer(removed);
@@ -44,7 +44,7 @@ theorem partial_restoration(whole: uint64, removed: uint64, restored: uint64, up
             to_integer(restored) + to_integer(whole - removed) <= to_integer(upper);
             to_integer(upper) <= 18446744073709551615;
         };
-        apply(integer::uint64_add_to_integer(restored, whole - removed)) using { to_integer(restored) + to_integer(whole - removed) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(restored, whole - removed));
         rewrite(to_integer((restored) + (whole - removed)), to_integer(restored) + to_integer(whole - removed));
         known();
     }

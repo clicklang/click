@@ -20,13 +20,13 @@ uint64 remainder(uint64 length, uint64 mid) {
     have to_integer(0u64) < to_integer(length - mid) by {
         have to_integer(mid) < to_integer(length) by solve() using { mid < length; };
         have to_integer(mid) <= to_integer(length) by solve() using { to_integer(mid) < to_integer(length); };
-        apply(integer::uint64_subtract_to_integer(length, mid)) using { to_integer(mid) <= to_integer(length); };
+        apply(integer::uint64_subtract_to_integer(length, mid));
         rewrite(to_integer(length - mid), to_integer(length) - to_integer(mid));
         solve() using { to_integer(mid) < to_integer(length); };
     }
     have to_integer(length - mid) <= to_integer(length) by {
         have to_integer(mid) <= to_integer(length) by solve() using { mid <= length; };
-        apply(integer::uint64_subtract_to_integer(length, mid)) using { to_integer(mid) <= to_integer(length); };
+        apply(integer::uint64_subtract_to_integer(length, mid));
         rewrite(to_integer(length - mid), to_integer(length) - to_integer(mid));
         have 0 <= to_integer(mid) by known();
         solve() using { 0 <= to_integer(mid); };

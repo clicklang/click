@@ -17,18 +17,16 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
         have 1 <= hi by { solve() using { 0 <= lo; lo < hi; }; }
         have lo <= hi by { solve() using { lo < hi; }; }
         have defined(hi - 1) by {
-            apply(integer::int32_nonnegative_subtract_within_value_is_defined(hi, 1))
-                using { 0 <= 1; 1 <= hi; };
+            apply(integer::int32_nonnegative_subtract_within_value_is_defined(hi, 1));
         }
         have defined(hi - lo) by {
-            apply(integer::int32_nonnegative_subtract_within_value_is_defined(hi, lo))
-                using { 0 <= lo; lo <= hi; };
+            apply(integer::int32_nonnegative_subtract_within_value_is_defined(hi, lo));
         }
         have to_integer(hi - 1) == to_integer(hi) - 1 by {
-            apply(integer::int32_subtract_to_integer(hi, 1)) using { defined(hi - 1); };
+            apply(integer::int32_subtract_to_integer(hi, 1));
         }
         have to_integer(hi - lo) == to_integer(hi) - to_integer(lo) by {
-            apply(integer::int32_subtract_to_integer(hi, lo)) using { defined(hi - lo); };
+            apply(integer::int32_subtract_to_integer(hi, lo));
         }
         have to_integer(lo) <= to_integer(hi - 1) by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
@@ -43,7 +41,7 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
         }
         have defined(hi - 1 - lo) by { known(); }
         have to_integer(hi - 1 - lo) == to_integer(hi - 1) - to_integer(lo) by {
-            apply(integer::int32_subtract_to_integer(hi - 1, lo)) using { defined(hi - 1); defined(hi - 1 - lo); };
+            apply(integer::int32_subtract_to_integer(hi - 1, lo));
         }
         have 0 <= to_integer(hi - 1) by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);

@@ -38,20 +38,13 @@ void copy_beside_view(uint8* dst, uint8* src, const uint8* q) {
             intro();
             intro();
             have contains(memory(src[0u64..4u64]), memory(src[k])) by {
-                apply(click::separation::contains_element(src, 0u64, 4u64, k)) using { 0u64 <= k; k < 4u64; };
+                apply(click::separation::contains_element(src, 0u64, 4u64, k));
             }
             have contains(memory(src[0..4]), memory(src[k])) by {
-                apply(click::separation::contains_trans(memory(src[0..4]), memory(src[0u64..4u64]), memory(src[k]))) using {
-                    contains(memory(src[0..4]), memory(src[0u64..4u64]));
-                    contains(memory(src[0u64..4u64]), memory(src[k]));
-                };
+                apply(click::separation::contains_trans(memory(src[0..4]), memory(src[0u64..4u64]), memory(src[k])));
             }
             have separate(statement(0).footprint, memory(src[k])) by {
-                apply(click::separation::separate_restrict(statement(0).footprint, memory(src[0..4]), statement(0).footprint, memory(src[k]))) using {
-                    separate(statement(0).footprint, memory(src[0..4]));
-                    contains(statement(0).footprint, statement(0).footprint);
-                    contains(memory(src[0..4]), memory(src[k]));
-                };
+                apply(click::separation::separate_restrict(statement(0).footprint, memory(src[0..4]), statement(0).footprint, memory(src[k])));
             }
             have src[k] == at(statement(0).entry, src[k]) by {
                 preserve(memory(src[k]), statement(0));
