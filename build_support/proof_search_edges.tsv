@@ -866,3 +866,4 @@ src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_single_store_read_rewrite	try_distinct_indexed_store_separation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_distinct_indexed_store_separation	try_index_disequality_from_order	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_index_disequality_from_order	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_single_store_read_rewrite	try_single_memory_write_separation	1

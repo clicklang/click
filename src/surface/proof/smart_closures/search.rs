@@ -6303,14 +6303,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_single_store_read_rewrite");
         let ClickProposition::Comparison {
             left,
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::IntegerLiteral(_),
+            operator,
+            right,
         } = target
         else {
             return Ok(None);
         };
+        let field_bound = *operator == ComparisonOperator::LessEqual;
+        let left = match (operator, left, right) {
+            (ComparisonOperator::Equal, left, ContractExpression::IntegerLiteral(_)) => left,
+            (
+                ComparisonOperator::LessEqual,
+                field @ ContractExpression::Field { .. },
+                ContractExpression::IntegerLiteral(_),
+            )
+            | (
+                ComparisonOperator::LessEqual,
+                ContractExpression::IntegerLiteral(_),
+                field @ ContractExpression::Field { .. },
+            ) => field,
+            _ => return Ok(None),
+        };
         let read = match left {
             read @ ContractExpression::Index(..) => read,
+            read @ ContractExpression::Field { .. } if field_bound => read,
             ContractExpression::BitwiseAnd(read, mask)
                 if matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
                     && matches!(
@@ -6336,7 +6352,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             _ => return Ok(None),
         };
-        let Some(view) = search_input.execution_proposition_fixed_state_view() else {
+        let view = if field_bound {
+            search_input.premise_fixed_state_view()
+        } else {
+            search_input.execution_proposition_fixed_state_view()
+        };
+        let Some(view) = view else {
             return Ok(None);
         };
         let state = view.fixed_state.state;
@@ -6358,7 +6379,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } else {
             let Some((
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                    format,
                     left,
                     right,
                     ..
@@ -6368,31 +6389,54 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
-            let address = [left, right].into_iter().find_map(|term| {
-                let MachineTerm::Binary {
-                    op: crate::kernel::MachineBinaryOp::BitwiseAnd,
-                    left,
-                    right,
-                    ..
-                } = term.as_ref()
-                else {
-                    return None;
-                };
-                [left, right].into_iter().find_map(|operand| {
-                    let load = match operand.as_ref() {
+            let load_address =
+                |term: &MachineTerm, valid_kind: fn(crate::kernel::LoadKind) -> bool| {
+                    let load = match term {
                         MachineTerm::Variable(variable) => {
                             crate::kernel::registered_load_term_for_variable(variable)?
                         }
                         term => term.clone(),
                     };
                     match load {
-                        MachineTerm::MemoryLoad(_, address, crate::kernel::LoadKind::Bits64) => {
+                        MachineTerm::MemoryLoad(_, address, kind) if valid_kind(kind) => {
                             Some(address)
                         }
                         _ => None,
                     }
-                })
-            });
+                };
+            let (address, count, width) = match (field_bound, format) {
+                (true, MachineIntegerType::Int32 | MachineIntegerType::UInt32) => (
+                    [left, right].into_iter().find_map(|term| {
+                        load_address(term, |kind| {
+                            matches!(
+                                kind,
+                                crate::kernel::LoadKind::Int32 | crate::kernel::LoadKind::UInt32
+                            )
+                        })
+                    }),
+                    1u32,
+                    4,
+                ),
+                (false, MachineIntegerType::Int64 | MachineIntegerType::UInt64) => (
+                    [left, right].into_iter().find_map(|term| {
+                        let MachineTerm::Binary {
+                            op: crate::kernel::MachineBinaryOp::BitwiseAnd,
+                            left,
+                            right,
+                            ..
+                        } = term.as_ref()
+                        else {
+                            return None;
+                        };
+                        [left, right].into_iter().find_map(|operand| {
+                            load_address(operand, |kind| kind == crate::kernel::LoadKind::Bits64)
+                        })
+                    }),
+                    8u32,
+                    1,
+                ),
+                _ => return Ok(None),
+            };
             let Some(address) = address else {
                 return Ok(None);
             };
@@ -6400,8 +6444,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 crate::kernel::MemoryRange::new_with_element_width(
                     *address,
                     0u32.into(),
-                    8u32.into(),
-                    1,
+                    count.into(),
+                    width,
                 ),
             )) else {
                 return Ok(None);
@@ -6455,6 +6499,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let mut steps = Vec::new();
             let proof = if matches!(read, ContractExpression::Index(..)) {
                 let Some(proof) = Self::try_distinct_indexed_store_separation(
+                    search_input,
+                    written,
+                    &kept,
+                    &footprint_separation,
+                )?
+                else {
+                    continue;
+                };
+                proof
+            } else if field_bound {
+                let Some(proof) = Self::try_single_memory_write_separation(
                     search_input,
                     written,
                     &kept,

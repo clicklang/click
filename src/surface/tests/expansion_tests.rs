@@ -6008,6 +6008,15 @@ fn branch_interface_service_solve_expands_and_rechecks() {
             )
         },
     );
+
+    let claim = "service_step.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("rewrite(owner->phase, at("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]

@@ -319,7 +319,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// Restrict a separated range to the selected read before checking a
     /// footprint with one memory member.
-    fn try_single_memory_write_separation(
+    pub(in crate::surface::proof) fn try_single_memory_write_separation(
         search_input: &Proof<'a>,
         written: &Resource,
         kept: &ResourceSubject,
