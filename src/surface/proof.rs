@@ -777,15 +777,14 @@ mod certificate_tests {
         );
         assert!(matches!(
             verified[2].proof_tactics().as_deref(),
-            Some([ProofTactic::ApplyTheoremUsing { .. }])
+            Some([ProofTactic::ApplyTheorem(_)])
         ));
         assert!(matches!(
             verified[3].proof_tactics().as_deref(),
             Some([
-                ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
-                ProofTactic::ApplyTheoremUsing { application, premises },
+                ProofTactic::ApplyTheorem(application),
                 ProofTactic::Known,
-            ]) if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "required" && premises.len() == 1
+            ]) if application.name == "required"
         ));
         assert_eq!(
             verified[4].proof_tactics().as_deref(),

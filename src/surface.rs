@@ -77,6 +77,7 @@ mod lowering;
 mod modules;
 mod names;
 mod parser;
+pub(crate) use parser::written_apply_is_theorem;
 mod pointer_result_types;
 pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
@@ -6568,7 +6569,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "apply-theorem",
         syntax: "apply(theorem(args))",
-        class: "smart",
+        class: "simple",
     },
     PublicTacticForm {
         id: "apply-theorem-using",

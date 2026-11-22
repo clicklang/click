@@ -504,6 +504,17 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
     true
 }
 
+/// Distinguish the operand that selects a theorem from a written fact
+/// when classifying a standalone `apply` spelling for diagnostics.
+pub(crate) fn written_apply_is_theorem(source: &str) -> Option<bool> {
+    let mut parser = Parser::new(source).ok()?;
+    match parser.parse_proof_tactic().ok()? {
+        ProofTactic::ApplyTheorem(_) => Some(true),
+        ProofTactic::ApplyFact(_) => Some(false),
+        _ => None,
+    }
+}
+
 /// Parses file items under the default target, for tests.
 #[cfg(test)]
 pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {

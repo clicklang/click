@@ -340,6 +340,7 @@ fn chosen_step_text(step: &ProofStep) -> Option<String> {
     if !matches!(
         step,
         ProofStep::ApplyTheoremUsing { .. }
+            | ProofStep::ApplyPlannedTheorem { .. }
             | ProofStep::ApplyInductionUsing { .. }
             | ProofStep::TransportUsing { .. }
     ) {

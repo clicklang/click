@@ -31,7 +31,9 @@ work expands into simple tactics:
   arithmetic over them before a final indexed one-theorem search; a miss
   adds arithmetic's reason. Theorem discovery infers arguments from a
   structurally matching conclusion and checks prerequisites against only the
-  listed facts. It expands to ordinary `apply(...) using { ... }`.
+  listed facts. Expansion writes an ordinary `apply(...)` when its
+  prerequisites can replay directly, and writes selected evidence for
+  applications that still need it.
   A failed discovery reports a bounded sample from candidates already examined:
   a missing listed prerequisite (instantiated with the inferred arguments), an
   argument the goal does not determine (use explicit `apply`), no conclusion
@@ -39,7 +41,7 @@ work expands into simple tactics:
   structural miss does not mean that no theorem could prove the goal; discovery
   does not invent witnesses or chain applications. Successful search discards
   failed alternatives' explanations.
-  Integer composition expands to ordinary `have`, `apply(...) using`, and
+  Integer composition expands to ordinary `have`, theorem applications, and
   explicit normalization steps. Signed intervals, definedness, and specialized
   arithmetic likewise expand to ordinary proof steps.
 - The *implicit tail* ends every proof script, including the empty script of

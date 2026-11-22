@@ -99,6 +99,12 @@ pub enum ProofStep {
         application: TheoremApplication,
         premises: Vec<ClickProposition>,
     },
+    /// The planner must check its selected premises. A checked step can
+    /// retain the bare application if the current facts also justify it.
+    ApplyPlannedTheorem {
+        application: TheoremApplication,
+        premises: Vec<ClickProposition>,
+    },
     ObserveResource(ResourceClause),
     ObserveSubject(ResourceSubject),
     /// Checked operation on iterated guarded ownership.
@@ -940,6 +946,10 @@ impl ProofStep {
             Self::ApplyTheoremUsing {
                 application,
                 premises,
+            }
+            | Self::ApplyPlannedTheorem {
+                application,
+                premises,
             } => ProofTactic::ApplyTheoremUsing {
                 application: application.clone(),
                 premises: premises.clone(),
@@ -1205,7 +1215,8 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
         ProofStep::ApplyFactUsing { .. }
         | ProofStep::ApplyTheorem(_)
-        | ProofStep::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
+        | ProofStep::ApplyTheoremUsing { .. }
+        | ProofStep::ApplyPlannedTheorem { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
         ProofStep::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
         ProofStep::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
         ProofStep::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),

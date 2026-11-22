@@ -209,7 +209,7 @@ impl Words<'_, '_> {
         self.record(
             a,
             b,
-            vec![ProofStep::ApplyTheoremUsing {
+            vec![ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
                     name: format!("click::integer::{name}"),
                     arguments,
@@ -959,7 +959,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 distinct,
                 vec![ProofStep::Known],
             ));
-            words.steps.push(ProofStep::ApplyTheoremUsing {
+            words.steps.push(ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
                     name: "click::integer::uint64_add_distinct".into(),
                     arguments: vec![base, x.clone(), y.clone()],

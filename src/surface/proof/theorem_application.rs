@@ -677,7 +677,7 @@ pub(in crate::surface::proof) fn population_member_count_zero_step(
         // The checked application names the expected shape.
         _ => Vec::new(),
     };
-    Some(ProofStep::ApplyTheoremUsing {
+    Some(ProofStep::ApplyPlannedTheorem {
         application: application.clone(),
         premises,
     })
@@ -1672,12 +1672,15 @@ mod observed_integer_argument_tests {
         let expanded = expand_c_claim_source_by_label(source, &[], "observed.ensures_0").unwrap();
         crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         let apply_start = expanded.find("apply(reflexive(").unwrap();
-        let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
-        let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
+        let apply_end = apply_start + expanded[apply_start..].find(";\n").unwrap();
+        assert!(
+            !expanded[apply_start..apply_end].contains(" using {"),
+            "{expanded}"
+        );
         let erased = format!(
-            "{}using {{}}{}",
-            &expanded[..using_start],
-            &expanded[using_end..]
+            "{} using {{}}{}",
+            &expanded[..apply_end],
+            &expanded[apply_end..]
         );
         assert!(crate::surface::without_implicit_solve(|| verify_c_sources(&erased, &[])).is_err());
         assert!(verify_c_sources(&source.replace("requires defined(x + 1);", ""), &[]).is_err());
@@ -1701,12 +1704,15 @@ mod observed_integer_argument_tests {
             verify_c_sources(&expanded, &[]).unwrap();
             if ty != "int128" {
                 let apply_start = expanded.find("apply(reflexive(").unwrap();
-                let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
-                let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
+                let apply_end = apply_start + expanded[apply_start..].find(";\n").unwrap();
+                assert!(
+                    !expanded[apply_start..apply_end].contains(" using {"),
+                    "{expanded}"
+                );
                 let erased = format!(
-                    "{}using {{}}{}",
-                    &expanded[..using_start],
-                    &expanded[using_end..]
+                    "{} using {{}}{}",
+                    &expanded[..apply_end],
+                    &expanded[apply_end..]
                 );
                 assert!(
                     verify_c_sources(&erased, &[]).is_err(),
@@ -1767,12 +1773,15 @@ theorem nested_count(value: int32) {
         crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .expect("the explicit application must cold-check with its selected guard");
         let apply_start = expanded.find("apply(count_less(").unwrap();
-        let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
-        let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
+        let apply_end = apply_start + expanded[apply_start..].find(";\n").unwrap();
+        assert!(
+            !expanded[apply_start..apply_end].contains(" using {"),
+            "{expanded}"
+        );
         let erased = format!(
-            "{}using {{ to_integer(count(Count::At(value - 1))) == to_integer(value) - 1; }}{}",
-            &expanded[..using_start],
-            &expanded[using_end..]
+            "{} using {{ to_integer(count(Count::At(value - 1))) == to_integer(value) - 1; }}{}",
+            &expanded[..apply_end],
+            &expanded[apply_end..]
         );
         assert!(
             crate::surface::without_implicit_solve(|| verify_c_sources(&erased, &[])).is_err(),
@@ -1812,12 +1821,15 @@ theorem nested_count(value: int32) {
                 expand_c_claim_source_by_label(&source, &[], "guarded.ensures_0").unwrap();
             crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
             let apply_start = expanded.find("apply(known_count(").unwrap();
-            let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
-            let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
+            let apply_end = apply_start + expanded[apply_start..].find(";\n").unwrap();
+            assert!(
+                !expanded[apply_start..apply_end].contains(" using {"),
+                "{expanded}"
+            );
             let erased = format!(
-                "{}using {{ to_integer(count_value({argument})) == 0; }}{}",
-                &expanded[..using_start],
-                &expanded[using_end..]
+                "{} using {{ to_integer(count_value({argument})) == 0; }}{}",
+                &expanded[..apply_end],
+                &expanded[apply_end..]
             );
             assert!(
                 crate::surface::without_implicit_solve(|| verify_c_sources(&erased, &[])).is_err(),

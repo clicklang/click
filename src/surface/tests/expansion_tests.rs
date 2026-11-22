@@ -12724,8 +12724,8 @@ fn linear_open_have_retains_the_selected_theorem_application() {
                             SourceProof::Script(body)
                                 if matches!(
                                     body.as_slice(),
-                                    [ProofTactic::ApplyTheoremUsing { application, premises }]
-                                        if application.name == "int32_reflexive" && premises.is_empty()
+                                    [ProofTactic::ApplyTheorem(application)]
+                                        if application.name == "int32_reflexive"
                                 )
                         )
                 )
@@ -12865,11 +12865,9 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                 if matches!(
                     open.tactics.as_slice(),
                     [
-                        ProofTactic::Have(have),
-                        ProofTactic::ApplyTheoremUsing { application, premises },
+                        ProofTactic::ApplyTheorem(application),
                         ProofTactic::Step,
-                    ] if application.name == "ordered_is_less_equal" && premises.len() == 1
-                        && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Known]))
+                    ] if application.name == "ordered_is_less_equal"
                 )
         ),
         "{tactics:#?}"
@@ -13555,14 +13553,12 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             Some(ProofTactic::Branch(branch))
                 if matches!(
                     branch.then_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "ordered_is_less_equal" && premises.len() == 1
-                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Known]))
+                    [ProofTactic::Step, ProofTactic::ApplyTheorem(application)]
+                        if application.name == "ordered_is_less_equal"
                 ) && matches!(
                     branch.else_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
-                        if application.name == "ordered_is_less_equal" && premises.len() == 1
-                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Known]))
+                    [ProofTactic::Step, ProofTactic::ApplyTheorem(application)]
+                        if application.name == "ordered_is_less_equal"
                 )
         ),
         "{tactics:#?}"
@@ -13629,8 +13625,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             [
                 ProofTactic::Step,
                 ProofTactic::Branch(branch),
-                ProofTactic::Have(have),
-                ProofTactic::ApplyTheoremUsing { application, premises },
+                ProofTactic::ApplyTheorem(application),
                 ProofTactic::Step,
                 ..
             ] if matches!(
@@ -13643,8 +13638,6 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 && matches!(branch.then_tactics.as_slice(), [ProofTactic::Step])
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
                 && application.name == "ordered_is_less_equal"
-                && premises.len() == 1
-                && have.proposition == premises[0]
         ),
         "{tactics:#?}"
     );
@@ -13818,12 +13811,9 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                     // The theorem concludes `0 <= selected`; the mirrored
                     // `selected >= 0` closes by `known`.
                     [
-                        ProofTactic::Have(premise),
-                        ProofTactic::ApplyTheoremUsing { application, premises },
+                        ProofTactic::ApplyTheorem(application),
                         ProofTactic::Known,
                     ] if application.name == "positive_is_nonnegative"
-                            && premises.len() == 1
-                            && premise.proposition == premises[0]
                 )
         ),
         "{tactics:#?}"
@@ -14169,8 +14159,8 @@ fn branch_arms_retain_nested_have_proofs() {
                     SourceProof::Script(body)
                         if matches!(
                             body.as_slice(),
-                            [ProofTactic::ApplyTheoremUsing { application, premises }]
-                                if application.name == "int32_reflexive" && premises.is_empty()
+                            [ProofTactic::ApplyTheorem(application)]
+                                if application.name == "int32_reflexive"
                         )
                 )
         )
@@ -23419,7 +23409,7 @@ fn ambiguous_view_bucket_search_expands_to_selected_transport() {
         .expect("the selected view should expand");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.contains("viewable_restrict"), "{expanded}");
-    assert!(expanded.contains("using {"), "{expanded}");
+    assert!(!expanded.contains("using {"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("explicit transport must check without the implicit search");
@@ -23447,7 +23437,7 @@ fn alias_view_selection_expands_to_explicit_equality_and_transport() {
     assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.contains("viewable_restrict"), "{expanded}");
-    assert!(expanded.contains("using {"), "{expanded}");
+    assert!(!expanded.contains("using {"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("selected aliases must check without implicit search");
     for premise in [
@@ -25343,11 +25333,12 @@ fn pure_apply_obligations_expand_to_explicit_have_and_bare_application() {
     .unwrap_err();
     assert!(error.contains("has an unproved obligation"), "{error}");
 
-    for (application, claim) in [
-        ("apply(nonnegative(n))", "positive.ensures_0"),
+    for (application, claim, proves_premise) in [
+        ("apply(nonnegative(n))", "positive.ensures_0", true),
         (
             "apply(nonpositive(-9223372036854775809))",
             "integer_literal_argument.ensures_0",
+            false,
         ),
     ] {
         let offset = source.find(application).unwrap();
@@ -25361,7 +25352,7 @@ fn pure_apply_obligations_expand_to_explicit_have_and_bare_application() {
         assert_eq!(selected.tactic_name, "apply");
         assert_eq!(selected.claim_label, claim);
         let expanded = expand_c_tactic_source_at(&source, &[], line, column).unwrap();
-        assert!(expanded.contains("have "), "{expanded}");
+        assert_eq!(expanded.contains("have "), proves_premise, "{expanded}");
         assert!(expanded.contains(&format!("{application};")), "{expanded}");
         assert!(
             !expanded.contains(&format!("{application} using")),
@@ -25372,6 +25363,37 @@ fn pure_apply_obligations_expand_to_explicit_have_and_bare_application() {
         })
         .unwrap();
     }
+}
+
+#[test]
+fn solve_discovered_theorem_expands_to_a_bare_application() {
+    let (source, _) = mdtest_sources("mdtests/solve_using_discovers_one_theorem.md");
+    let claim = "use_bound.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], claim).unwrap();
+    assert!(
+        expanded.contains("apply(shifted_bound(value));"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim(claim, || {
+        verify_click_theorems(&expanded).map_err(|error| error.report())
+    })
+    .unwrap();
+    let unlisted = source.replace("solve() using { 0 <= value; };", "solve() using {};");
+    assert_ne!(unlisted, source);
+    assert!(verify_click_theorems(&unlisted).is_err());
+}
+
+#[test]
+fn argument_obligation_arithmetic_expands_to_bare_applications() {
+    let (source, _) = mdtest_sources("mdtests/pure_apply_argument_obligations.md");
+    let claim = "use_argument.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], claim).unwrap();
+    assert!(expanded.contains("apply(click::integer::"), "{expanded}");
+    assert!(!expanded.contains(" using {"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_click_theorems(&expanded).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]

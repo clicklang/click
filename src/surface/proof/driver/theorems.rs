@@ -79,10 +79,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let mut current = self.proof.clone();
         let step = ProofStep::ApplyTheorem(application.clone());
         for requirement in &prepared.obligations {
-            if current
-                .facts()
-                .pure_known_available(&requirement.proposition)
-            {
+            if current.theorem_obligation_available(requirement) {
                 continue;
             }
             let surface = current

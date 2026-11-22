@@ -986,7 +986,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &application_context,
             &premises,
         )?);
-        Ok(ProofStep::ApplyTheoremUsing {
+        Ok(ProofStep::ApplyPlannedTheorem {
             application: written_application.clone(),
             premises,
         })
@@ -1197,7 +1197,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &application_context,
             &premises,
         )?);
-        Ok(ProofStep::ApplyTheoremUsing {
+        Ok(ProofStep::ApplyPlannedTheorem {
             application: written_application.clone(),
             premises,
         })

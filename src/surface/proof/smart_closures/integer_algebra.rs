@@ -262,7 +262,7 @@ impl<'p, 'a> Algebra<'p, 'a> {
             a,
             b,
             vec![
-                ProofStep::ApplyTheoremUsing {
+                ProofStep::ApplyPlannedTheorem {
                     application: TheoremApplication {
                         name: format!("click::integer::{name}"),
                         arguments: args,

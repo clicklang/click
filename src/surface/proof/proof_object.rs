@@ -3910,7 +3910,8 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::UserTactic(_) => "tactic application",
         ProofStep::ApplyFactUsing { .. }
         | ProofStep::ApplyTheorem(_)
-        | ProofStep::ApplyTheoremUsing { .. } => "apply",
+        | ProofStep::ApplyTheoremUsing { .. }
+        | ProofStep::ApplyPlannedTheorem { .. } => "apply",
         ProofStep::ApplyInductionUsing { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
