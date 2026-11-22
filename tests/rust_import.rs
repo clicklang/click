@@ -4815,6 +4815,42 @@ fn front(bytes: &[u8]) -> usize {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: refreshes a Charon capture"]
+fn rust_refuses_unclassified_compiler_storage_and_accepts_written_names() {
+    let p = Project::new(
+        "fn read(word: &u32) -> u32 { *word }
+         pub fn named(x: u32) -> u32 {
+             let __rust_mir_4 = x % 4;
+             read(&__rust_mir_4)
+         }",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    ProgramVerificationSession::new_program_prepared(
+        r#"verifying "borrow.rs";
+fn read(word: &u32) -> u32 { views *word; ensures result == *word; }
+fn named(x: u32) -> u32 { ensures result == x % 4u32; }
+"#,
+        &prepared,
+    )
+    .unwrap();
+
+    let p = Project::new(
+        "macro_rules! borrowed { ($x:expr) => { &($x % 4) } }
+         fn read(word: &u32) -> u32 { *word }
+         pub fn unclassified(x: u32) -> u32 { read(borrowed!(x)) }",
+    );
+    let error = p.refresh().unwrap_err();
+    assert!(error.contains("unsupported Rust construct"), "{error}");
+    assert!(
+        error.contains("unnamed compiler local requires storage"),
+        "{error}"
+    );
+    assert!(!error.contains("__rust_mir_"), "{error}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
 fn rust_borrowed_scalar_expressions_use_written_storage_occurrences() {
     let p = Project::new(
         "fn read(word: &u32) -> u32 { *word }

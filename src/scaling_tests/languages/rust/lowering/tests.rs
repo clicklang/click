@@ -19,7 +19,7 @@ fn narrow_remainder_lowering_has_bounded_selected_and_linear_total_work() {
     let selected = export
         .functions
         .iter()
-        .find(|f| f.name == "parity_u8")
+        .find(|f| f.name == "remainder_u8")
         .unwrap()
         .clone();
     let mut samples = Vec::new();
@@ -28,7 +28,7 @@ fn narrow_remainder_lowering_has_bounded_selected_and_linear_total_work() {
         export.functions = (0..count)
             .map(|index| {
                 let mut f = selected.clone();
-                f.name = format!("parity_{index}");
+                f.name = format!("remainder_{index}");
                 f
             })
             .collect();
