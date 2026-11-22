@@ -11,6 +11,7 @@ struct pr { int32 a; int32 b; };
 int32 explicit_proof(struct pr *p, int32 n) { return n; }
 int32 implicit_proof(struct pr *p, int32 n) { return n; }
 void void_proof(struct pr *p) {}
+void by_child_path(struct pr *p) {}
 int32 returned_from_branch(struct pr *p, int32 flag) {
     if (flag != 0) {
         return 7;
@@ -37,6 +38,10 @@ resource first(p: struct pr*) {
 resource second(p: struct pr*) {
     field tag: int32;
     owns p->b;
+}
+
+resource wrapper(p: struct pr*) {
+    owns child: first(p);
 }
 
 tactic divide(p: struct pr*, n: int32) {
@@ -73,6 +78,8 @@ int32 explicit_proof(struct pr* p, int32 n) {
         solve();
     }
     check_tag(p, result, { item: y });
+    unfold(y);
+    fold(y);
 }
 
 int32 implicit_proof(struct pr* p, int32 n) {
@@ -94,6 +101,16 @@ void void_proof(struct pr* p) {
 } by {
     step_until(function.exit);
     let { y: y, z: z } = divide(p, 4, { x: x });
+}
+
+void by_child_path(struct pr* p) {
+    owns r: wrapper(p);
+    requires r.child.tag == 5;
+} by {
+    step_until(function.exit);
+    unfold(r);
+    check_tag(p, 5, { item: r.child });
+    fold(r);
 }
 
 int32 returned_from_branch(struct pr* p, int32 flag) {

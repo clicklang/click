@@ -194,8 +194,10 @@ impl<'a> Proof<'a> {
         supplied: Option<&mut BTreeSet<crate::kernel::ResourceBinder>>,
     ) -> Result<bool, ClickError> {
         let identity = self
-            .execution()
-            .and_then(|execution| binding.resolve_identity(&execution.core.state))
+            .focused_outcome_data()
+            .map(|outcome| &*outcome.core.state)
+            .or_else(|| self.execution().map(|execution| &*execution.core.state))
+            .and_then(|state| binding.resolve_identity(state))
             .ok_or_else(|| {
                 self.step_error(format!(
                     "{map} requires a held resource `{}`",

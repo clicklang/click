@@ -331,7 +331,7 @@ impl ExecutionProofCore {
         let FunctionOutcome::Return { state, .. } = &mut producer.visible else {
             return Err("an outcome tactic application requires a visible return".into());
         };
-        **state = prepared.after_state;
+        **state = prepared.after_state.clone();
         let facts = semantic_facts
             .iter()
             .fold(proved_facts.clone(), |facts, fact| {
@@ -346,7 +346,10 @@ impl ExecutionProofCore {
             name: prepared.name,
             before_state: before.clone(),
             after_state: retained,
-            return_facts: Some(semantic_facts),
+            return_effect: Some(ReturnTacticEffect {
+                presented: Arc::new(prepared.after_state),
+                facts: semantic_facts,
+            }),
         };
         trace.push(CheckedExecutionEvent::TacticApplication(Box::new(
             application,

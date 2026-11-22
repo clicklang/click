@@ -188,10 +188,11 @@ impl ExecutionEvidence {
                             .map(|presentation| Arc::new(presentation.rewrite.after_state.clone()))
                     });
             }
-            CheckedExecutionEvent::TacticApplication(application)
-                if application.return_facts.is_some() =>
-            {
-                self.retained = Some(Arc::new(application.after_state.clone()));
+            CheckedExecutionEvent::TacticApplication(application) => {
+                if let Some(effect) = &application.return_effect {
+                    self.retained = Some(Arc::new(application.after_state.clone()));
+                    self.presented = Some(effect.presented.clone());
+                }
             }
             _ => {}
         }
@@ -437,7 +438,13 @@ pub(crate) struct CheckedTacticApplication {
     name: String,
     before_state: ExecutionState,
     after_state: ExecutionState,
-    return_facts: Option<Vec<Proposition>>,
+    return_effect: Option<ReturnTacticEffect>,
+}
+
+#[derive(Clone)]
+struct ReturnTacticEffect {
+    presented: Arc<ExecutionState>,
+    facts: Vec<Proposition>,
 }
 
 impl CheckedTacticApplication {
@@ -7719,14 +7726,14 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
             }
             CheckedExecutionEvent::TacticApplication(application) => {
                 fallthrough = None;
-                if let Some(facts) = &application.return_facts {
+                if let Some(effect) = &application.return_effect {
                     let Some((StatementOutcome::Return { state, .. }, executed_under)) =
                         &mut completed
                     else {
                         return Err("an outcome tactic application requires a returned state");
                     };
                     **state = application.after_state.clone();
-                    for fact in facts {
+                    for fact in &effect.facts {
                         *executed_under =
                             std::mem::take(executed_under).assume_proposition(fact.clone());
                     }
@@ -10804,7 +10811,7 @@ impl ExecutionProofCore {
             name,
             before_state,
             after_state,
-            return_facts: None,
+            return_effect: None,
         };
         if self.evidence_state.is_some() {
             self.evidence_state = Some(application.after_state.clone());
@@ -12269,7 +12276,7 @@ impl ExecutionProofCore {
                 .rposition(|event| {
                     !matches!(
                         *event,
-                        CheckedExecutionEvent::TacticApplication(application) if application.return_facts.is_some()
+                        CheckedExecutionEvent::TacticApplication(application) if application.return_effect.is_some()
                     ) && !matches!(
                         *event,
                         CheckedExecutionEvent::ReturnProposition(_)
