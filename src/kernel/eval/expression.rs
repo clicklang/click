@@ -2036,7 +2036,23 @@ fn evaluate_program_cast_paths(
                 let first_conversion_obligation = obligations.len();
                 let float_to_integer =
                     matches!(value, ProgramValue::Float32(_) | ProgramValue::Float64(_))
-                        && MachineIntegerType::from_program_type(target_type).is_some()
+                        && matches!(
+                            target_type,
+                            ProgramType::Int8
+                                | ProgramType::UInt8
+                                | ProgramType::Int16
+                                | ProgramType::UInt16
+                                | ProgramType::Int32
+                                | ProgramType::UInt32
+                                | ProgramType::Int64
+                                | ProgramType::UInt64
+                        )
+                        && matches!(
+                            integer_mode,
+                            IntegerCastMode::Standard
+                                | IntegerCastMode::CConversion
+                                | IntegerCastMode::ResultConversion
+                        )
                         && !SpecificationAccessScope::is_active();
                 let pointer_operand = matches!(&value, ProgramValue::Pointer(_));
                 let implicit_pointer_conversion = matches!(
@@ -2137,6 +2153,7 @@ fn evaluate_program_cast_paths(
                     // Evaluation cannot assume them on its tentative path.
                     for obligation in &mut obligations[first_conversion_obligation..] {
                         obligation.assumable = false;
+                        obligation.float_to_integer_bound = true;
                     }
                 }
                 if let (Some(source), Ok(converted)) = (&checked_source, &coerced) {
@@ -2222,6 +2239,11 @@ fn evaluate_program_cast_paths(
                                 ));
                         ExpressionOutcome::Value(
                             value.with_pointer_pointee_constant(pointee_constant),
+                        )
+                    }
+                    Err(RuntimeError::TypeMismatch) if float_to_integer => {
+                        ExpressionOutcome::UndefinedBehavior(
+                            UndefinedBehavior::FloatToIntegerOutOfRange,
                         )
                     }
                     Err(error) => ExpressionOutcome::RuntimeError(error),

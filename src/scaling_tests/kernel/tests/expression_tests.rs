@@ -353,38 +353,150 @@ fn rust_bool_values_do_not_split_paths() {
 
 #[test]
 fn unsigned_division_domain_generation_ignores_ambient_facts() {
+    for width in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let assumptions = (0..count).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_condition(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(993_000 + index)),
+                        MachineTerm::constant(index as u32),
+                    ),
+                    true,
+                )
+            });
+            let (dividend, divisor) = (Variable(992_001), Variable(992_002));
+            let zero = match width {
+                MachineIntegerType::UInt32 => MachineTerm::constant(0),
+                MachineIntegerType::UInt64 => MachineTerm::uint64_constant(0),
+                _ => unreachable!(),
+            };
+            let known_zero = assumptions.clone().assume_condition(
+                ConditionTerm::machine_compare(
+                    width,
+                    CompareRelation::Equal,
+                    MachineTerm::Variable(divisor),
+                    zero,
+                ),
+                true,
+            );
+            let mut runs = Vec::new();
+            for (assumptions, expected_zero) in [(&assumptions, false), (&known_zero, true)] {
+                let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    crate::kernel::eval::apply_program_divide(
+                        width.symbolic_value(dividend),
+                        width.symbolic_value(divisor),
+                        vec![].into(),
+                        vec![],
+                        assumptions,
+                    )
+                });
+                assert_eq!(paths.len(), 1);
+                assert!(matches!(paths[0].outcome, ExpressionOutcome::Value(_)));
+                assert_eq!(paths[0].obligations.len(), 1);
+                let (known_zero, checked_work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        paths[0].obligations[0].has_known_zero_divisor(assumptions)
+                    });
+                assert_eq!(known_zero, expected_zero);
+                runs.push((work, checked_work));
+            }
+            samples.push((count, runs));
+        }
+        assert!(
+            samples.iter().all(|(_, work)| *work == samples[0].1),
+            "{width:?}: {samples:?}"
+        );
+        assert_eq!(samples[0].1[0].0, samples[0].1[1].0, "{width:?}");
+    }
+}
+
+#[test]
+fn signed_addition_does_not_walk_the_operands_equality_class() {
     let mut samples = Vec::new();
-    for count in [4_u64, 16, 64, 256] {
+    for count in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let assumptions = (0..count).fold(PureFactContext::new(), |facts, index| {
+        let operand = MachineTerm::Variable(Variable(994_001));
+        let unrelated = MachineTerm::Variable(Variable(994_002));
+        for root in [&operand, &unrelated] {
+            let mut facts = PureFactContext::new().assume_condition(
+                ConditionTerm::signed_less_than(
+                    operand.clone(),
+                    MachineTerm::constant(i32::MAX as u32),
+                ),
+                true,
+            );
+            for index in 0..count {
+                facts = facts.assume_condition(
+                    ConditionTerm::equal(
+                        root.clone(),
+                        MachineTerm::Variable(Variable(994_100 + index)),
+                    ),
+                    true,
+                );
+            }
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::eval::apply_program_int32_add(
+                    operand.clone(),
+                    MachineTerm::constant(1),
+                    vec![].into(),
+                    vec![],
+                    &facts,
+                )
+            });
+            assert_eq!(paths.len(), 1);
+            assert!(matches!(paths[0].outcome, ExpressionOutcome::Value(_)));
+            samples.push(work);
+        }
+    }
+    for sample in samples.chunks_exact(2) {
+        assert_eq!(sample, &samples[..2], "{samples:?}");
+    }
+}
+
+#[test]
+fn float_cast_refutation_uses_fixed_fact_keys() {
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let operand = MachineTerm::Variable(Variable(994_400));
+        let cutoff = MachineTerm::uint64_constant(2147483648.0_f64.to_bits());
+        let condition =
+            |operator| ConditionTerm::float64_compare(operand.clone(), cutoff.clone(), operator);
+        let mut obligation = ProofObligation::verification_condition(Proposition::condition_is(
+            condition(ComparisonOperator::LessThan),
+            true,
+        ));
+        obligation.float_to_integer_bound = true;
+        let facts = (0..count).fold(PureFactContext::new(), |facts, index| {
             facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(993_000 + index)),
-                    MachineTerm::constant(index as u32),
+                ConditionTerm::float64_compare(
+                    operand.clone(),
+                    MachineTerm::uint64_constant(f64::from(index + 2).to_bits()),
+                    ComparisonOperator::GreaterThan,
                 ),
                 true,
             )
         });
-        let mut runs = Vec::new();
-        for _ in 0..3 {
-            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::eval::apply_program_divide(
-                    ProgramValue::UInt32(MachineTerm::Variable(Variable(992_001))),
-                    ProgramValue::UInt32(MachineTerm::Variable(Variable(992_002))),
-                    vec![].into(),
-                    vec![],
-                    &assumptions,
-                )
+        let refuted = facts
+            .clone()
+            .assume_condition(condition(ComparisonOperator::Equal), true);
+        let mut work = Vec::new();
+        for (context, expected) in [
+            (&facts, None),
+            (&refuted, Some(UndefinedBehavior::FloatToIntegerOutOfRange)),
+        ] {
+            let (result, units) = crate::instrumentation::measure_deterministic_work(|| {
+                obligation.known_undefined_behavior(context)
             });
-            assert_eq!(paths.len(), 1);
-            assert_eq!(paths[0].obligations.len(), 1);
-            runs.push(work);
+            assert_eq!(result, expected);
+            work.push(units);
         }
-        samples.push((count, runs));
+        samples.push(work);
     }
-    eprintln!("unsigned division domain generation: {samples:?}");
     assert!(
-        samples.iter().all(|(_, work)| *work == samples[0].1),
+        samples.iter().all(|sample| sample == &samples[0]),
         "{samples:?}"
     );
 }
