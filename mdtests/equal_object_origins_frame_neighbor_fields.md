@@ -171,7 +171,23 @@ void inner(struct rb_node* node) {
                     step(); step();
                     have separate(memory(parent->rb_right), memory(node->rb_left)) by { known(); }
                     have separate(memory(parent->rb_right), memory(p->__rb_parent_color)) by { known(); }
-                    have parent->rb_right == 0 by { known(); }
+                    have separate(statement(1).statement(4).footprint, at(after_store, memory(parent->rb_right))) by {
+                        normalize() using { separate(memory(parent->rb_right), memory(node->rb_left)); };
+                    }
+                    have separate(statement(1).statement(5).footprint, at(statement(1).statement(4).exit, memory(parent->rb_right))) by {
+                        normalize() using { separate(memory(parent->rb_right), memory(p->__rb_parent_color)); };
+                    }
+                    have at(statement(1).statement(4).exit, parent->rb_right) == at(after_store, parent->rb_right) by {
+                        preserve(at(after_store, memory(parent->rb_right)), statement(1).statement(4));
+                    }
+                    have parent->rb_right == at(statement(1).statement(4).exit, parent->rb_right) by {
+                        preserve(at(statement(1).statement(4).exit, memory(parent->rb_right)), statement(1).statement(5));
+                    }
+                    have parent->rb_right == 0 by {
+                        rewrite(parent->rb_right, at(statement(1).statement(4).exit, parent->rb_right));
+                        rewrite(at(statement(1).statement(4).exit, parent->rb_right), at(after_store, parent->rb_right));
+                        known();
+                    }
                     have p->rb_right == 0 by { known(); }
                     let state = fold(inner_state(node), { phase: InnerPhase::After(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model), gs: gs, ps: ps, ns: ns });
                     have state.phase == inner_finish(old(state.phase)) by {
