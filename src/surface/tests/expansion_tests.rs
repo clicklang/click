@@ -26754,3 +26754,54 @@ fn explicit_produced_view_release_expands_and_reverifies() {
     })
     .expect("replay the explicit view release");
 }
+
+/// A null pointer the expansion states in a requirement, here a fold's
+/// field, is Click's null pointer constant `0`, which lowers back to the
+/// typed null pointer; the diagnostic `NULL` is a C macro a sidecar cannot
+/// assume.
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expands and replays a fold with a null pointer field"]
+fn a_null_pointer_requirement_argument_expands_as_zero() {
+    let c_source = r#"
+        struct holder { int* cell; };
+        void detach(struct holder* n) { n->cell = 0; }
+    "#;
+    let click_source = r#"verifying "detach.c";
+        spec enum Slot { Held(int32*) }
+        resource cell_at(n: struct holder*) {
+            field model: Slot;
+            match model {
+                Slot::Held(cell) => {
+                    owns n->cell;
+                    fact aligned(cell, 4);
+                    fact n->cell == cell;
+                },
+            }
+        }
+        void detach(struct holder* n) {
+            consumes before: cell_at(n);
+            produces after: cell_at(n);
+            ensures after.model == Slot::Held(0);
+        } by {
+            match before.model {
+                Slot::Held(cell) => {
+                    unfold(before);
+                    step_until(function.exit);
+                    let after = fold(cell_at(n), { model: Slot::Held(0) });
+                    solve();
+                },
+            }
+        }
+    "#;
+    let sources = [("detach.c", c_source)];
+    verify_c_sources(click_source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(click_source, &sources, "detach.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("aligned(0, 4)"), "{expanded}");
+    assert!(!expanded.contains("NULL"), "{expanded}");
+    without_implicit_solve_for_claim("detach.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}

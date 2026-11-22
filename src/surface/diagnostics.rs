@@ -5407,10 +5407,12 @@ pub(in crate::surface) fn describe_pointer(
         // A named object (a local, global or static, or the object a
         // parameter points into) is spelled by the name the source gave it,
         // never by the block's internal spelling (`local:frame:3:x@0`).
+        // The null pointer is Click's null pointer constant, `0`, in every
+        // sidecar language; `NULL` is a C macro a sidecar cannot assume.
         AddressBase::Concrete(name)
             if name == "null" && pointer.offset == AddressOffset::Constant(0) =>
         {
-            "NULL".to_string()
+            "0".to_string()
         }
         block => match named_object_block(block, parameter_binding) {
             Some(name) if pointer.offset == AddressOffset::Constant(0) => format!("&{name}"),
