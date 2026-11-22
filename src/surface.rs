@@ -8982,7 +8982,6 @@ pub enum ProofRefusal {
     IncompleteProof,
     Contract,
     ContractEntry,
-    ExecutionPrerequisite,
     Execution,
 }
 
@@ -8994,7 +8993,6 @@ impl ProofRefusal {
             Self::IncompleteProof => "incomplete proof",
             Self::Contract => "contract error",
             Self::ContractEntry => "contract entry refused",
-            Self::ExecutionPrerequisite => "execution prerequisite unmet",
             Self::Execution => "execution refused",
         }
     }
@@ -11343,15 +11341,17 @@ impl ClickError {
     }
 
     pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {
-        // Preserve the innermost operation's classification through wrappers.
+        // Preserve the innermost refusal through wrappers. The implicit closer
+        // can replace a checked tactic's refusal after searching for its requirement.
         if self.proof_refusal.is_none()
-            || matches!(
-                self.proof_refusal,
-                Some(ProofRefusal::Execution | ProofRefusal::ExecutionPrerequisite)
-            ) && matches!(
-                refusal,
-                ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
-            )
+            || self.proof_refusal == Some(ProofRefusal::Execution)
+                && matches!(
+                    refusal,
+                    ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
+                )
+            || self.proof_refusal == Some(ProofRefusal::Tactic)
+                && refusal == ProofRefusal::ImplicitStatementSearch
+                && self.unresolved_requirement.is_some()
         {
             self.proof_refusal = Some(refusal);
         }

@@ -22,10 +22,9 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `work limit reached` | The run exhausted the overall `--work-limit`. | Record the limit and the operation that reached it. Profile the run if the work is unexpected. |
 | `timed out` | Wall-clock crash containment stopped the run before a verdict. | Record the time limit and reported phase. If Click was hung, follow the procedure below. |
 | `contract error` | Click identified a rule it believes a written contract clause violates. | Check the rule under the contract’s requirements. Correct the clause or report a supported `contract-bug`. |
-| `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
+| `tactic error` | A written tactic or implicit proof step was refused. | Check `click docs TACTIC` and establish any evidence the operation requires at that program point. |
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
 | `incomplete proof` | The proof ended with a requirement outstanding. | Establish the named requirement before closing, such as a resource promised on return. |
-| `execution prerequisite unmet` | A checked operation needs evidence at its program point. | Record the requirement and follow the procedure below. |
 | `contract entry refused` | Click could not enter a contract. | Inspect the named clauses and work from the available goal. |
 | `execution refused` | Click identified an execution operation that could not proceed. | Investigate the reported cause. |
 

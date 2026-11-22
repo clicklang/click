@@ -478,11 +478,21 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let surface = spelling.surface.clone();
             current.debug_assert_spelling_relowers(requirement, &surface);
             let checkpoint = current.checkpoint();
-            let Ok(have) = current.driver().open_have(surface.clone()) else {
-                return Ok(Err(MissedObligation {
-                    index,
-                    searched: false,
-                }));
+            let have = match current.driver().open_have(surface.clone()) {
+                Ok(have) => have,
+                Err(error)
+                    if error.kind() != crate::surface::ClickErrorKind::Proof
+                        || crate::instrumentation::exceeded_verification_limit_context()
+                            .is_some() =>
+                {
+                    return Err(error);
+                }
+                Err(_) => {
+                    return Ok(Err(MissedObligation {
+                        index,
+                        searched: false,
+                    }));
+                }
             };
             let Some(closed) = have.driver().try_solve_closure()? else {
                 return Ok(Err(MissedObligation {
