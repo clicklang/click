@@ -6874,10 +6874,7 @@ impl<'a> TermRewrite<'a> {
                     });
                 // An exact read names its written point. Use that point
                 // and the original width with the rewritten address.
-                if memory.is_exact_read()
-                    && memory.has_certified_read_view()
-                    && self.pointer_exact.is_some()
-                {
+                if memory.is_exact_read() && memory.has_certified_read_view() {
                     return crate::kernel::eval::scalar_read_for_exact_cell_at(
                         memory, &rewritten, *kind, bytes,
                     );

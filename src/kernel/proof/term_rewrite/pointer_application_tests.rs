@@ -44,6 +44,39 @@ fn rewriting_an_exact_scalar_read_keeps_its_named_point() {
 }
 
 #[test]
+fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
+    let _session = VerificationSession::enter();
+    let point = ProgramPoint::starting_at(&SymbolicMemory::new()).for_exact_read();
+    let pointer = Address::symbolic(Variable(1008324));
+    let read = |address: Address| {
+        MachineTerm::MemoryLoad(point.clone(), Box::new(address), LoadKind::UInt32)
+    };
+    let from = AddressOffset::Constant(0);
+    let to = AddressOffset::Constant(4);
+    let expected = read(pointer.offset_by_bytes(4));
+    assert_eq!(
+        TermRewrite::for_pointer_offset_exact(&from, &to).bits(&read(pointer.clone())),
+        expected
+    );
+
+    let variable = MachineTerm::Variable(Variable(1008325));
+    let replacement = MachineTerm::constant(4);
+    let indexed = Address {
+        base: pointer.base,
+        offset: AddressOffset::Int32Scaled {
+            value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, variable.clone()),
+            byte_width: 1,
+        },
+    };
+    let new_address = TermRewrite::for_bits_checked(&variable, &replacement).pointer(&indexed);
+    assert_ne!(new_address, indexed);
+    assert_eq!(
+        TermRewrite::for_bits_checked(&variable, &replacement).bits(&read(indexed)),
+        read(new_address)
+    );
+}
+
+#[test]
 fn pure_pointer_calls_preserve_identity_and_do_not_imply_separation() {
     let p = Address::symbolic(Variable(410));
     let q = Address::symbolic(Variable(411));
