@@ -257,6 +257,9 @@ enum VariableOrigin {
     /// arm. No other producer mints one, so an occurrence in an arm body is a
     /// bound occurrence of that arm's binder.
     MatchBinder,
+    /// A specification fold's accumulator or item, one per written binder
+    /// name and role, numbered in allocation order.
+    SpecFoldBinder,
 }
 
 impl std::fmt::Debug for Variable {
@@ -272,6 +275,10 @@ impl std::fmt::Debug for Variable {
             VariableOrigin::MatchBinder => {
                 formatter.debug_tuple("MatchBinder").field(&self.0).finish()
             }
+            VariableOrigin::SpecFoldBinder => formatter
+                .debug_tuple("SpecFoldBinder")
+                .field(&self.0)
+                .finish(),
         }
     }
 }
@@ -323,6 +330,19 @@ impl Variable {
             number: (number,),
             origin: VariableOrigin::MatchBinder,
         }
+    }
+
+    /// The `number`th specification fold binder.
+    pub(in crate::kernel) const fn spec_fold_binder(number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::SpecFoldBinder,
+        }
+    }
+
+    /// Whether this is a specification fold's binder.
+    pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
+        self.origin == VariableOrigin::SpecFoldBinder
     }
 
     /// Whether this is a match arm's binder.

@@ -17,8 +17,8 @@ fn typed_let_program_value(
 }
 
 // The lowerers share these two finite bands. Refusing at each ceiling keeps
-// quantifiers, algebraic binders, pointer identities, and spec fold binders
-// structurally separate even for unusually large source terms.
+// quantifiers, algebraic binders and pointer identities structurally separate
+// even for unusually large source terms.
 const SURFACE_QUANTIFIER_VARIABLE_CEILING: u64 = 4_000_000;
 const ALGEBRAIC_VARIABLE_BASE: u64 = SURFACE_QUANTIFIER_VARIABLE_CEILING;
 const ALGEBRAIC_VARIABLE_CEILING: u64 = 4_000_000_000;
