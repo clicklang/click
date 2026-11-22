@@ -604,7 +604,7 @@ mod tests {
         let apply = lookup("apply").unwrap();
         assert!(
             apply.contains(&format!(
-                "- `apply(theorem(args))`: smart; {SEARCH_MISS_MEANING}, as `apply(theorem(args)) using {{ P; ... }}` does."
+                "- `apply(fact)`: smart; {SEARCH_MISS_MEANING}, as `apply(fact) using {{ P; ... }}` does."
             )),
             "{apply}"
         );
