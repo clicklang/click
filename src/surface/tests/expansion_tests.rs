@@ -3235,24 +3235,38 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
 }
 
 #[test]
-fn reordered_integer_constructor_payloads_expand_to_known() {
+fn integer_constructor_arm_fields_expand_to_known() {
     let (source, _) = mdtest_sources("mdtests/algebraic_integer_match_bindings.md");
-    let label = "swaps.ensures_0";
-    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
-    let (_, proof) = expanded.split_once("theorem swaps").unwrap();
-    let (proof, _) = proof.split_once("theorem captures").unwrap();
-    assert!(proof.contains("known();"), "{expanded}");
-    assert!(!proof.contains("normalize()"), "{expanded}");
-    without_implicit_solve_for_claim(label, || {
-        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
-    })
-    .unwrap();
-    let wrong = expanded.replace(
-        "ensures swap(p) == Pair::Pair(b, a)",
-        "ensures swap(p) == Pair::Pair(a, b)",
-    );
-    assert_ne!(wrong, expanded);
-    assert!(verify_c_sources(&wrong, &[]).is_err());
+    for (theorem, result, wrong_result) in [
+        (
+            "swaps",
+            "swap(p) == Pair::Pair(b, a)",
+            "swap(p) == Pair::Pair(a, b)",
+        ),
+        (
+            "captures",
+            "capture(b, ambient) == Pair::Pair(payload, ambient)",
+            "capture(b, ambient) == Pair::Pair(payload, payload)",
+        ),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
+        let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
+        let proof = proof.split("\ntheorem ").next().unwrap();
+        assert!(proof.contains("known();"), "{expanded}");
+        assert!(!proof.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+        let wrong = expanded.replace(result, wrong_result);
+        assert_ne!(wrong, expanded);
+        let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
+        assert!(
+            error.contains("`known` requires the current goal"),
+            "{error}"
+        );
+    }
 }
 
 #[test]

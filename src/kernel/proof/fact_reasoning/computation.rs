@@ -897,8 +897,8 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
 }
 
 /// Check a selected constructor arm that forwards scalar payloads directly
-/// into its result. Compare the written fields without substituting into
-/// arbitrary expressions or building a rewritten match.
+/// into its result, possibly alongside captured Integer variables. Compare
+/// the written fields without building a rewritten match.
 fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
     let (
         AlgebraicTermNode::Match { scrutinee, arms },
@@ -953,15 +953,21 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         .iter()
         .zip(expected_fields)
         .all(|(field, expected)| {
-            let variable = match field {
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable)))
-                | AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => variable,
+            let (variable, captured) = match field {
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))) => {
+                    (variable, None)
+                }
+                AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => (variable, Some(field)),
                 _ => return false,
             };
-            payloads.get(variable).is_some_and(|payload| {
-                std::mem::discriminant(*payload) == std::mem::discriminant(field)
-                    && *payload == expected
-            })
+            payloads
+                .get(variable)
+                .copied()
+                .or(captured)
+                .is_some_and(|payload| {
+                    std::mem::discriminant(payload) == std::mem::discriminant(field)
+                        && payload == expected
+                })
         })
         && matched.is_well_formed()
         && expected.is_well_formed()

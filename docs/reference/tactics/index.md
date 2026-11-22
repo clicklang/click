@@ -1686,9 +1686,10 @@ decided guard and otherwise bounds both arms. Its arithmetic uses only the
 operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
-builds a constructor directly from its bound fields. The payloads can be
-literal `int32` values or `Integer` literals and variables. The check compares
-the result fields with the corresponding written payloads.
+builds a constructor directly from its bound fields or captured `Integer`
+variables. The payloads can be literal `int32` values or `Integer` literals
+and variables. The check compares each result field with the corresponding
+written payload or captured variable.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
