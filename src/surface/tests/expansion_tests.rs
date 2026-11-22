@@ -1,6 +1,20 @@
 use super::*;
 
 #[test]
+fn mixed_unfold_outputs_survive_expansion_replay() {
+    let (source, program) = mdtest_sources("mdtests/unfold_binds_witness_and_child.md");
+    let program = crate::cli::source_refs(&program);
+    for claim in ["by_name.contract", "by_call.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn outcome_if_keeps_its_obtain_scopes_in_expansion() {
     let (source, program) = mdtest_sources("mdtests/obtain_outcome_binding_is_local_to_its_arm.md");
     let branched_source = source.replace(

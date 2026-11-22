@@ -1301,7 +1301,7 @@ impl<'a> Proof<'a> {
                     ))
                 })?;
             let transition =
-                self.apply_instance_rewrite(binding, &resource, true, Some(instance))?;
+                self.apply_instance_rewrite(binding, &resource, true, Some(instance), &[])?;
             let introduced = transition.added_facts.clone();
             let state = self.publish_checked_transition(transition)?;
             (

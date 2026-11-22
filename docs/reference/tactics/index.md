@@ -3709,14 +3709,13 @@ Bare predicate names are rejected. Owned resource bindings keep their existing
 **Core.** Replace the exact held composite resource with one supported body
 layer. For an `authorized` family it destroys one member and requires that
 family's owned `authority(...)`; `unfold(authority(R(..)))` retires a population
-whose count is zero. `let { slot: name, ... } = unfold(resource)` names the
-opened children and C-typed fields; it is the one binding form.
-
-On a declared resource the slots are the body's `let ... where` witnesses, bound
-to the values the body binds them to, so a later `fold` writes a body fact over
-a witness with its name
-([`unfold_names_a_witness_for_a_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_names_a_witness_for_a_fold_body_fact.md));
-this form needs an execution frontier before function exit.
+whose count is zero. In `let { label: name, ... } = unfold(resource)`, the
+resource definition determines what each label names. A child slot binds
+the opened child instance, a C-typed field binds its folded value, and a
+`let ... where` witness binds the value used to open the body. One pattern
+can mix these labels whether the resource is selected by name or by a family
+call. Witness bindings need a live execution frontier before function exit.
+See [`unfold_binds_witness_and_child.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_binds_witness_and_child.md).
 
 **Accepts** a declared resource with a body that the current state holds
 directly, owned or viewed, in a C function proof (at the execution frontier
@@ -3725,9 +3724,7 @@ before exit, or at a function outcome after the C has returned) or in a `tactic`
 
 - The arguments name the held instance up to equality by current facts:
   under `requires p == q;`, `unfold(cell(q))` opens a held `cell(p)`.
-  `unfold(name
-([`unfold_names_a_witness_for_a_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_names_a_witness_for_a_fold_body_fact.md)))` on an instance binding opens that instance, its field names
-  denoting the instance's fields.
+  `unfold(name)` on an instance binding opens that exact instance.
 - The body's `if` guard, or its `match` arm, must be decided by current facts;
   a decided false guard opens an empty body.
 - It consumes the folded fact and adds each clause of the selected body as a
