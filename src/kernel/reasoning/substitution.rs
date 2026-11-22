@@ -61,12 +61,6 @@ trait VariableSubstitution {
     fn spec_integer(&self, expression: &SpecIntegerExpression) -> SpecIntegerExpression;
     fn spec_proposition(&self, proposition: &SpecProposition) -> SpecProposition;
     /// A quantifier's binder and body, renamed away from the replacement.
-    fn quantifier_body(
-        &self,
-        binder: Variable,
-        sort: &Sort,
-        body: &Proposition,
-    ) -> (Variable, Proposition);
     /// Held across one whole proposition.
     fn proposition_scope(&self) -> Option<SubstitutedMemoryScope>;
 
@@ -155,14 +149,6 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn spec_proposition(&self, proposition: &SpecProposition) -> SpecProposition {
         substitute_bitvector_variable_in_spec_proposition(proposition, self.from, self.to)
     }
-    fn quantifier_body(
-        &self,
-        binder: Variable,
-        _sort: &Sort,
-        body: &Proposition,
-    ) -> (Variable, Proposition) {
-        capture_avoiding_quantifier_body(binder, body, self.from, self.to)
-    }
     fn proposition_scope(&self) -> Option<SubstitutedMemoryScope> {
         // Hold the state memo open across the whole proposition, so two
         // sibling load terms over one state rewrite it once between them.
@@ -234,16 +220,6 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     }
     fn spec_proposition(&self, proposition: &SpecProposition) -> SpecProposition {
         substitute_pointer_variable_in_spec_proposition(proposition, self.from, self.to)
-    }
-    fn quantifier_body(
-        &self,
-        binder: Variable,
-        sort: &Sort,
-        body: &Proposition,
-    ) -> (Variable, Proposition) {
-        let (body, binder) =
-            pointer_capture_avoiding_quantifier_body(binder, sort, body, self.from, self.to);
-        (binder, body)
     }
     fn proposition_scope(&self) -> Option<SubstitutedMemoryScope> {
         None
@@ -1534,18 +1510,22 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             Box::new(walk_proposition(left, s)),
             Box::new(walk_proposition(right, s)),
         ),
+        // A substituted term mentions only the variables of quantifiers
+        // that enclose this one, which are all taller than it, so a binder
+        // is never captured and is kept.
         Proposition::ForAll {
             var,
             sort,
             body,
             name,
-        } if *var != s.from() => {
-            let (var, body) = s.quantifier_body(*var, sort, body);
+        } if **var != s.from() => {
+            let body = walk_proposition(body, s);
+            debug_assert!(crate::kernel::quantifiers::binder_covers_body(*var, &body));
             Proposition::ForAll {
-                var,
+                var: *var,
                 sort: sort.clone(),
                 name: name.clone(),
-                body: Box::new(walk_proposition(&body, s)),
+                body: Box::new(body),
             }
         }
         Proposition::Exists {
@@ -1553,13 +1533,14 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             var,
             sort,
             body,
-        } if *var != s.from() => {
-            let (var, body) = s.quantifier_body(*var, sort, body);
+        } if **var != s.from() => {
+            let body = walk_proposition(body, s);
+            debug_assert!(crate::kernel::quantifiers::binder_covers_body(*var, &body));
             Proposition::Exists {
                 name: name.clone(),
-                var,
+                var: *var,
                 sort: sort.clone(),
-                body: Box::new(walk_proposition(&body, s)),
+                body: Box::new(body),
             }
         }
         proposition => proposition.clone(),
@@ -2304,70 +2285,28 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
             sort,
             body,
             name,
-        } if *var != from => {
-            let (var, body) = capture_avoiding_algebraic_quantifier_body(*var, body, from, to);
-            Proposition::ForAll {
-                var,
-                sort: sort.clone(),
-                name: name.clone(),
-                body: Box::new(substitute_algebraic_variable_in_proposition(
-                    &body, from, to,
-                )),
-            }
-        }
+        } if **var != from => Proposition::ForAll {
+            var: *var,
+            sort: sort.clone(),
+            name: name.clone(),
+            body: Box::new(substitute_algebraic_variable_in_proposition(body, from, to)),
+        },
         Proposition::Exists {
             name,
             var,
             sort,
             body,
-        } if *var != from => {
-            let (var, body) = capture_avoiding_algebraic_quantifier_body(*var, body, from, to);
-            Proposition::Exists {
-                name: name.clone(),
-                var,
-                sort: sort.clone(),
-                body: Box::new(substitute_algebraic_variable_in_proposition(
-                    &body, from, to,
-                )),
-            }
-        }
+        } if **var != from => Proposition::Exists {
+            name: name.clone(),
+            var: *var,
+            sort: sort.clone(),
+            body: Box::new(substitute_algebraic_variable_in_proposition(body, from, to)),
+        },
         // Kernel execution propositions cannot contain algebraic terms except
         // through their proposition-valued specification fields, and those
         // are never legal directly under a Surface algebraic quantifier.
         proposition => proposition.clone(),
     }
-}
-
-fn capture_avoiding_algebraic_quantifier_body(
-    binder: Variable,
-    body: &Proposition,
-    substituted: Variable,
-    replacement: &AlgebraicTerm,
-) -> (Variable, Proposition) {
-    let replacement_probe = Proposition::Equal(
-        Term::Algebraic(replacement.clone().into()),
-        Term::Algebraic(replacement.clone().into()),
-    );
-    let replacement_variables = crate::kernel::proposition_variables(&replacement_probe);
-    if !replacement_variables.contains(&binder) {
-        return (binder, body.clone());
-    }
-
-    let mut reserved = replacement_variables;
-    reserved.extend(crate::kernel::proposition_variables(body));
-    collect_proposition_bound_variables(body, &mut reserved);
-    reserved.insert(binder);
-    reserved.insert(substituted);
-    let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
-    let renamed = substitute_algebraic_variable_in_proposition(
-        body,
-        binder,
-        &AlgebraicTerm {
-            algebraic_type: replacement.algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(fresh),
-        },
-    );
-    (fresh, renamed)
 }
 
 /// Applies a finite substitution to free variables simultaneously.
@@ -2419,30 +2358,6 @@ pub(in crate::kernel) fn substitute_bitvector_variables_in_proposition(
     result
 }
 
-fn capture_avoiding_quantifier_body(
-    binder: Variable,
-    body: &Proposition,
-    substituted: Variable,
-    replacement: &MachineTerm,
-) -> (Variable, Proposition) {
-    let mut replacement_variables = BTreeSet::new();
-    collect_bitvector_variables(replacement, &mut replacement_variables);
-    if !replacement_variables.contains(&binder) {
-        return (binder, body.clone());
-    }
-
-    let mut reserved = replacement_variables;
-    collect_proposition_bitvector_variables(body, &mut reserved);
-    collect_proposition_bound_variables(body, &mut reserved);
-    reserved.insert(binder);
-    reserved.insert(substituted);
-    let mut variables = KernelVariableGenerator::fresh_for(0, reserved);
-    let fresh = variables.next();
-    let renamed =
-        substitute_bitvector_variable_in_proposition(body, binder, &MachineTerm::Variable(fresh));
-    (fresh, renamed)
-}
-
 pub(in crate::kernel) fn collect_proposition_bound_variables(
     proposition: &Proposition,
     variables: &mut BTreeSet<Variable>,
@@ -2463,9 +2378,11 @@ pub(in crate::kernel) fn collect_proposition_bound_variables(
                     pending.push(right);
                     pending.push(left);
                 }
-                Proposition::Not(body)
-                | Proposition::ForAll { body, .. }
-                | Proposition::Exists { body, .. } => pending.push(body),
+                Proposition::Not(body) => pending.push(body),
+                Proposition::ForAll { var, body, .. } | Proposition::Exists { var, body, .. } => {
+                    variables.insert(**var);
+                    pending.push(body);
+                }
                 proposition => collect_proposition_bound_variables_one(proposition, variables),
             }
         }
@@ -2631,7 +2548,7 @@ fn collect_proposition_bound_variables_one(
         }
         Proposition::Not(body) => collect_proposition_bound_variables(body, variables),
         Proposition::ForAll { var, body, .. } | Proposition::Exists { var, body, .. } => {
-            variables.insert(*var);
+            variables.insert(**var);
             collect_proposition_bound_variables(body, variables);
         }
     }
@@ -3821,8 +3738,8 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
         Term::Sequence(sequence) => Term::Sequence(substitute_bitvector_variable_in_sequence(
             sequence, from, to,
         )),
-        Term::Algebraic(term) => Term::Algebraic(
-            AlgebraicTerm {
+        Term::Algebraic(term) => {
+            let rewritten = AlgebraicTerm {
                 algebraic_type: term.native_compat().algebraic_type.clone(),
                 node: match &term.native_compat().node {
                     AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
@@ -3920,9 +3837,22 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                         )),
                     },
                 },
+            };
+            // Keep the original term, with its shared root, when nothing in
+            // it named `from`.
+            if rewritten == *term.native_compat() {
+                Term::Algebraic(term.clone())
+            } else if term.root().is_some() {
+                // A shared term stays shared, as lowering it would make it.
+                let root = crate::kernel::KernelTermImport::default().algebraic(&rewritten);
+                Term::Algebraic(
+                    crate::kernel::StoredAlgebraicTerm::from_root(root)
+                        .unwrap_or_else(|| rewritten.into()),
+                )
+            } else {
+                Term::Algebraic(rewritten.into())
             }
-            .into(),
-        ),
+        }
         Term::ArrayReadPoint(point) => {
             Term::ArrayReadPoint(point.with_renamed_memory(crate::kernel::intern_memory(
                 substitute_bitvector_variable_in_memory(point.memory(), from, to),
@@ -4077,7 +4007,6 @@ fn collect_integer_bound_variables_seen(
 pub(crate) enum IntegerPureSubstitutionError {
     UnsupportedCarrier,
     UnsupportedSort,
-    FreshVariableExhausted,
     WorkLimitExceeded,
 }
 
@@ -4090,7 +4019,6 @@ impl std::fmt::Display for IntegerPureSubstitutionError {
             Self::UnsupportedSort => {
                 "the substituted value has a sort the substitution does not support"
             }
-            Self::FreshVariableExhausted => "the substitution ran out of fresh variable names",
             Self::WorkLimitExceeded => "the substitution exceeded its work limit",
         })
     }
@@ -4252,7 +4180,7 @@ fn validate_integer_pure_proposition(
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
-            variables.insert(*var);
+            variables.insert(**var);
             validate_integer_pure_proposition(body, variables, collector)
         }
         Proposition::Exists {
@@ -4270,7 +4198,7 @@ fn validate_integer_pure_proposition(
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
-            variables.insert(*var);
+            variables.insert(**var);
             validate_integer_pure_proposition(body, variables, collector)
         }
         _ => Err(IntegerPureSubstitutionError::UnsupportedCarrier),
@@ -4358,7 +4286,7 @@ enum IntegerPropositionRewriteTask<'a> {
         exists: bool,
         name: Option<String>,
         sort: Sort,
-        new_var: Variable,
+        binder: QuantifierBinder,
         scope: IntegerPropositionScope,
     },
 }
@@ -4568,7 +4496,7 @@ fn substitute_pure_proposition_with_walker(
                 exists,
                 name,
                 sort,
-                new_var,
+                binder,
                 scope,
             } => {
                 match scope {
@@ -4586,13 +4514,13 @@ fn substitute_pure_proposition_with_walker(
                 if exists {
                     rewritten.push(Proposition::Exists {
                         name: name.unwrap_or_default(),
-                        var: new_var,
+                        var: binder,
                         sort,
                         body: Box::new(body),
                     });
                 } else {
                     rewritten.push(Proposition::ForAll {
-                        var: new_var,
+                        var: binder,
                         sort,
                         body: Box::new(body),
                         name: BinderName::written(name.as_deref().unwrap_or_default()),
@@ -4609,7 +4537,7 @@ fn substitute_pure_proposition_with_walker(
 fn queue_integer_quantifier_rewrite<'a>(
     exists: bool,
     name: Option<&str>,
-    var: Variable,
+    binder: QuantifierBinder,
     sort: &Sort,
     body: &'a Proposition,
     from: Variable,
@@ -4631,31 +4559,24 @@ fn queue_integer_quantifier_rewrite<'a>(
         return Err(IntegerPureSubstitutionError::UnsupportedSort);
     }
 
-    let renamed = if is_integer {
-        !shadowed && var != from && walker.replacement_contains_integer_variable(var)
-    } else if is_algebraic {
-        walker.replacement_contains_algebraic_variable(var)
-    } else {
-        walker.replacement_contains_program_variable(var)
-    };
+    // A quantifier's binder is a `Bound` variable, and a replacement
+    // mentions only taller quantifiers' variables, so it never captures the
+    // binder: the binder is kept.
+    let var = *binder;
+    debug_assert!(
+        !(if is_integer {
+            !shadowed && var != from && walker.replacement_contains_integer_variable(var)
+        } else if is_algebraic {
+            walker.replacement_contains_algebraic_variable(var)
+        } else {
+            walker.replacement_contains_program_variable(var)
+        }),
+        "a substituted term mentions the quantifier it is substituted under"
+    );
     if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
-    let new_var = if renamed {
-        let Some(variable) = walker.fresh_integer_substitution_variable() else {
-            return if walker.work_exhausted() {
-                Err(IntegerPureSubstitutionError::WorkLimitExceeded)
-            } else {
-                Err(IntegerPureSubstitutionError::FreshVariableExhausted)
-            };
-        };
-        variable
-    } else {
-        var
-    };
-    if walker.work_exhausted() {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
+    let new_var = var;
 
     let (scope, child_shadowed) = if is_integer {
         (
@@ -4683,7 +4604,7 @@ fn queue_integer_quantifier_rewrite<'a>(
         exists,
         name: name.map(str::to_owned),
         sort: sort.clone(),
-        new_var,
+        binder,
         scope,
     });
     tasks.push(IntegerPropositionRewriteTask::Visit {
@@ -6003,10 +5924,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             let (op, left, right) = condition
                 .as_bitvector_comparison()
                 .expect("every other condition has its own arm");
-            op.build(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            )
+            let left = substitute_bitvector_variable(left, from, to);
+            let right = substitute_bitvector_variable(right, from, to);
+            if crate::kernel::proof::term_rewrite::renaming() {
+                op.build_raw(left, right)
+            } else {
+                op.build(left, right)
+            }
         }
     }
 }
@@ -6216,6 +6140,13 @@ pub(crate) fn substitute_bitvector_variable(
                     return term.clone();
                 }
                 // The selected entry is empty, so only the address changes.
+                // The rewritten read is an access at its new address, as a
+                // read lowered there would record.
+                crate::kernel::eval::record_load_access_width(
+                    entry.memory(),
+                    &rewritten_pointer,
+                    kind.byte_width(),
+                );
                 return crate::kernel::eval::scalar_read_for_exact_cell_at(
                     &entry,
                     &rewritten_pointer,
@@ -6253,6 +6184,17 @@ pub(crate) fn substitute_bitvector_variable(
                     *kind,
                 ));
             }
+            // Opening a quantifier renames its bound variable in the reads
+            // of its body. Record the access at the renamed address, as a
+            // read lowered there would, so a walk from it frames with this
+            // read's width rather than the widest one.
+            if rewritten_pointer != **pointer {
+                crate::kernel::eval::record_load_access_width(
+                    rewritten_memory.memory(),
+                    &rewritten_pointer,
+                    read.bytes,
+                );
+            }
             crate::kernel::eval::scalar_read_for_exact_cell(
                 &rewritten_memory,
                 &rewritten_pointer,
@@ -6268,12 +6210,26 @@ pub(crate) fn substitute_bitvector_variable(
             value: substitute_bitvector_variable_in_integer(value.as_ref(), from, to).into(),
             destination: *destination,
         },
+        // A rename rebuilds a node as written: folding `0 + k` to `k` would
+        // change the term a lowering produced.
         term => match (term.as_binary(), term.as_unary()) {
-            (Some((op, left, right)), _) => op.build(
-                substitute_bitvector_variable(left, from, to),
-                substitute_bitvector_variable(right, from, to),
-            ),
-            (_, Some((op, value))) => op.build(substitute_bitvector_variable(value, from, to)),
+            (Some((op, left, right)), _) => {
+                let left = substitute_bitvector_variable(left, from, to);
+                let right = substitute_bitvector_variable(right, from, to);
+                if crate::kernel::proof::term_rewrite::renaming() {
+                    op.build_raw(left, right)
+                } else {
+                    op.build(left, right)
+                }
+            }
+            (_, Some((op, value))) => {
+                let value = substitute_bitvector_variable(value, from, to);
+                if crate::kernel::proof::term_rewrite::renaming() {
+                    op.build_raw(value)
+                } else {
+                    op.build(value)
+                }
+            }
             _ => unreachable!("every other variant has its own arm"),
         },
     }
@@ -6531,6 +6487,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_memory(
     let substituted = rewrite_memory_state(memory, from, to);
     if crate::kernel::intern_memory(substituted.clone()) == shared {
         record_memory_lacks_variable(identity, from);
+        // Keep the original value: its shared parts let a later comparison
+        // stop at their identity instead of walking equal contents.
+        return memory.clone();
     }
     substituted
 }
@@ -6591,6 +6550,13 @@ fn rewrite_memory_state(
         "substitution: state rewrite",
         || substitute_bitvector_variable_in_memory_contents(memory, from, to),
     )
+}
+
+/// Forgets which states lack which variables. A restored arena reuses the
+/// identities of states created after its capture, so an answer about one of
+/// them would describe a different state.
+pub(crate) fn clear_memory_lacks_variable() {
+    MEMORY_LACKS_VARIABLE.with(|absent| absent.borrow_mut().clear());
 }
 
 fn memory_lacks_variable(identity: (u32, u32), from: Variable) -> bool {
@@ -6907,39 +6873,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_value(
             }))
         }
     }
-}
-
-fn pointer_capture_avoiding_quantifier_body(
-    binder: Variable,
-    sort: &Sort,
-    body: &Proposition,
-    from: Variable,
-    replacement: &Address,
-) -> (Proposition, Variable) {
-    let mut replacement_variables = BTreeSet::new();
-    collect_pointer_bound_variables(replacement, &mut replacement_variables);
-    if !replacement_variables.contains(&binder)
-        || !matches!(
-            sort,
-            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _)
-        )
-    {
-        return (body.clone(), binder);
-    }
-    let mut reserved = crate::kernel::proposition_variables(body);
-    reserved.insert(from);
-    reserved.insert(binder);
-    reserved.extend(replacement_variables);
-    let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
-    let pointer = match sort {
-        Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => Address::symbolic_function(fresh),
-        Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Address::symbolic(fresh),
-        _ => unreachable!("pointer capture avoidance only handles pointer binders"),
-    };
-    (
-        substitute_pointer_variable_in_proposition(body, binder, &pointer),
-        fresh,
-    )
 }
 
 fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address) -> Term {
@@ -8971,17 +8904,17 @@ mod integer_mixed_quantifier_tests {
     fn integer_atom_capture_avoidance_preserves_program_variable_carrier() {
         let from = Variable(88);
         let bound = Variable(89);
-        let source = Proposition::ForAll {
-            name: Default::default(),
-            var: bound,
-            sort: Sort::Integer,
-            body: Box::new(Proposition::Equal(
+        let source = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            bound,
+            Sort::Integer,
+            Proposition::Equal(
                 Term::Integer(
                     application(IntegerTerm::var(from), MachineTerm::Variable(bound)).into(),
                 ),
                 Term::Integer(IntegerTerm::var(bound).into()),
-            )),
-        };
+            ),
+        );
         let result = substitute_integer_variable_in_pure_proposition(
             &source,
             from,
@@ -8994,14 +8927,14 @@ mod integer_mixed_quantifier_tests {
         else {
             panic!("quantifier lost")
         };
-        assert_ne!(fresh, bound);
+        assert_ne!(*fresh, bound);
         assert_eq!(
             *body,
             Proposition::Equal(
                 Term::Integer(
                     application(IntegerTerm::var(bound), MachineTerm::Variable(bound)).into()
                 ),
-                Term::Integer(IntegerTerm::var(fresh).into()),
+                Term::Integer(IntegerTerm::var(*fresh).into()),
             )
         );
     }
@@ -9035,15 +8968,15 @@ mod integer_mixed_quantifier_tests {
             MachineIntegerType::Int32,
             MachineTerm::Variable(load),
         ));
-        let proposition = Proposition::Exists {
-            name: "nested".into(),
-            var: free_index,
-            sort: Sort::Integer,
-            body: Box::new(Proposition::Equal(
+        let proposition = crate::kernel::quantifiers::test_exists(
+            "nested".into(),
+            free_index,
+            Sort::Integer,
+            Proposition::Equal(
                 Term::Integer(IntegerTerm::var(source).into()),
                 Term::Integer(IntegerTerm::var(free_index).into()),
-            )),
-        };
+            ),
+        );
 
         let rewritten =
             substitute_integer_variable_in_pure_proposition(&proposition, source, &replacement)
@@ -9055,13 +8988,13 @@ mod integer_mixed_quantifier_tests {
             panic!("existential binder was dropped")
         };
         assert_ne!(
-            fresh, free_index,
+            *fresh, free_index,
             "replacement pointer variable was not reserved"
         );
         let Proposition::Equal(Term::Integer(left), Term::Integer(right)) = *body else {
             panic!("witness body changed carrier")
         };
-        assert_eq!(right, IntegerTerm::var(fresh).into());
+        assert_eq!(right, IntegerTerm::var(*fresh).into());
         let IntegerTerm::Machine(machine) = left.into_native_compat() else {
             panic!("witness replacement changed Integer carrier")
         };
@@ -9096,18 +9029,18 @@ mod integer_mixed_quantifier_tests {
             MachineIntegerType::Int32,
             MachineTerm::Variable(c_binder),
         ));
-        let proposition = Proposition::ForAll {
-            name: Default::default(),
-            var: c_binder,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::And(
+        let proposition = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            c_binder,
+            Sort::ProgramInt32,
+            Proposition::And(
                 Box::new(Proposition::Equal(
                     Term::Integer(IntegerTerm::var(source).into()),
                     Term::Integer(IntegerTerm::constant_i64(0).into()),
                 )),
                 Box::new(program_int_equality(c_binder, c_binder)),
-            )),
-        };
+            ),
+        );
 
         let Proposition::ForAll {
             var: fresh, body, ..
@@ -9116,7 +9049,7 @@ mod integer_mixed_quantifier_tests {
         else {
             panic!("C quantifier was lost")
         };
-        assert_ne!(fresh, c_binder);
+        assert_ne!(*fresh, c_binder);
         let Proposition::And(integer_goal, c_goal) = *body else {
             panic!("nested C proposition shape changed")
         };
@@ -9125,24 +9058,24 @@ mod integer_mixed_quantifier_tests {
                 term_source_0 @ Term::Integer(_),
                 term_source_1 @ Term::Integer(_)
             ) if matches!((term_source_0.integer_native(), term_source_1.integer_native()), (Some(IntegerTerm::Machine(_)), Some(IntegerTerm::Constant(_))))));
-        assert_eq!(*c_goal, program_int_equality(fresh, fresh));
+        assert_eq!(*c_goal, program_int_equality(*fresh, *fresh));
     }
 
     #[test]
     fn integer_source_is_not_shadowed_by_same_id_program_binder() {
         let source = Variable(9_210);
-        let proposition = Proposition::ForAll {
-            name: Default::default(),
-            var: source,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::And(
+        let proposition = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            source,
+            Sort::ProgramInt32,
+            Proposition::And(
                 Box::new(Proposition::Equal(
                     Term::Integer(IntegerTerm::var(source).into()),
                     Term::Integer(IntegerTerm::constant_i64(0).into()),
                 )),
                 Box::new(program_int_equality(source, source)),
-            )),
-        };
+            ),
+        );
         let Proposition::ForAll { var, body, .. } =
             substitute_integer_variable_in_pure_proposition(
                 &proposition,
@@ -9153,7 +9086,9 @@ mod integer_mixed_quantifier_tests {
         else {
             panic!("C quantifier was lost")
         };
-        assert_eq!(var, source);
+        // The C binder is its own bound variable; only the Integer `source`
+        // was substituted.
+        assert!(var.is_bound());
         let Proposition::And(integer_goal, c_goal) = *body else {
             panic!("nested C proposition shape changed")
         };
@@ -9164,7 +9099,7 @@ mod integer_mixed_quantifier_tests {
                 Term::Integer(IntegerTerm::constant_i64(0).into()),
             )
         );
-        assert_eq!(*c_goal, program_int_equality(source, source));
+        assert_eq!(*c_goal, program_int_equality(*var, *var));
     }
 
     #[test]
@@ -9190,19 +9125,19 @@ mod integer_mixed_quantifier_tests {
                 .into(),
             )
         };
-        let proposition = Proposition::ForAll {
-            name: Default::default(),
-            var: outer_c,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Exists {
-                name: "inner".into(),
-                var: inner_integer,
-                sort: Sort::Integer,
-                body: Box::new(Proposition::ForAll {
-                    name: Default::default(),
-                    var: inner_pointer,
-                    sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
-                    body: Box::new(Proposition::And(
+        let proposition = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            outer_c,
+            Sort::ProgramInt32,
+            crate::kernel::quantifiers::test_exists(
+                "inner".into(),
+                inner_integer,
+                Sort::Integer,
+                crate::kernel::quantifiers::test_forall(
+                    Default::default(),
+                    inner_pointer,
+                    Sort::ProgramPointer(ProgramType::Int32Pointer),
+                    Proposition::And(
                         Box::new(Proposition::Equal(
                             Term::Integer(IntegerTerm::var(source).into()),
                             Term::Integer(IntegerTerm::var(inner_integer).into()),
@@ -9211,10 +9146,10 @@ mod integer_mixed_quantifier_tests {
                             pointer_value(outer_c),
                             pointer_value(inner_pointer),
                         )),
-                    )),
-                }),
-            }),
-        };
+                    ),
+                ),
+            ),
+        );
         let Proposition::ForAll {
             var: outer_after,
             body,
@@ -9224,7 +9159,9 @@ mod integer_mixed_quantifier_tests {
         else {
             panic!("outer C quantifier was lost")
         };
-        assert_eq!(outer_after, outer_c);
+        // Each quantifier keeps its own bound variable: distinct heights, so
+        // the C, Integer and pointer scopes stay apart without renaming.
+        assert!(outer_after.is_bound());
         let Proposition::Exists {
             var: integer_after,
             body,
@@ -9233,7 +9170,8 @@ mod integer_mixed_quantifier_tests {
         else {
             panic!("Integer quantifier was lost")
         };
-        assert_eq!(integer_after, inner_integer);
+        assert!(integer_after.is_bound());
+        assert_ne!(*integer_after, *outer_after);
         let Proposition::ForAll {
             var: pointer_after,
             body,
@@ -9242,7 +9180,8 @@ mod integer_mixed_quantifier_tests {
         else {
             panic!("pointer quantifier was lost")
         };
-        assert_ne!(pointer_after, inner_pointer);
+        assert!(pointer_after.is_bound());
+        assert_ne!(*pointer_after, *integer_after);
         let Proposition::And(integer_goal, pointer_goal) = *body else {
             panic!("nested scope proposition shape changed")
         };
@@ -9250,7 +9189,7 @@ mod integer_mixed_quantifier_tests {
             *integer_goal), Proposition::Equal(term_source_0 @ Term::Integer(_), Term::Integer(_)) if matches!((term_source_0.integer_native(),), (Some(IntegerTerm::Machine(_)),))));
         assert_eq!(
             *pointer_goal,
-            Proposition::Equal(pointer_value(outer_c), pointer_value(pointer_after))
+            Proposition::Equal(pointer_value(*outer_after), pointer_value(*pointer_after))
         );
     }
 
@@ -9275,22 +9214,23 @@ mod integer_mixed_quantifier_tests {
     fn integer_substitution_keeps_algebraic_and_integer_binders_separate() {
         let from = Variable(9_232);
         let algebraic_type = AlgebraicType::parameter("Flag".into());
-        let algebraic = algebraic_variable(&algebraic_type, from);
-        let source = Proposition::Exists {
-            name: "flag".into(),
-            var: from,
-            sort: Sort::Algebraic(algebraic_type),
-            body: Box::new(Proposition::And(
+        let algebraic_type_bound = algebraic_type.clone();
+        let algebraic_free = algebraic_variable(&algebraic_type, from);
+        let source = crate::kernel::quantifiers::test_exists(
+            "flag".into(),
+            from,
+            Sort::Algebraic(algebraic_type.clone()),
+            Proposition::And(
                 Box::new(Proposition::Equal(
                     Term::Integer(IntegerTerm::var(from).into()),
                     Term::Integer(IntegerTerm::constant_i64(3).into()),
                 )),
                 Box::new(Proposition::Equal(
-                    Term::Algebraic(algebraic.clone().into()),
-                    Term::Algebraic(algebraic.clone().into()),
+                    Term::Algebraic(algebraic_free.clone().into()),
+                    Term::Algebraic(algebraic_free.into()),
                 )),
-            )),
-        };
+            ),
+        );
         let Proposition::Exists { var, body, .. } =
             substitute_integer_variable_in_pure_proposition(
                 &source,
@@ -9301,7 +9241,10 @@ mod integer_mixed_quantifier_tests {
         else {
             panic!("the algebraic existential was lost");
         };
-        assert_eq!(var, from);
+        // The existential binds its algebraic variable as its own bound
+        // variable; the Integer `from` with the same number stays free.
+        assert!(var.is_bound());
+        let algebraic = algebraic_variable(&algebraic_type_bound, *var);
         assert_eq!(
             *body,
             Proposition::And(
@@ -9328,12 +9271,12 @@ mod integer_mixed_quantifier_tests {
             Term::Integer(replacement.clone().into()),
         );
         let source = Proposition::And(
-            Box::new(Proposition::ForAll {
-                name: Default::default(),
-                var: bound,
-                sort: Sort::Algebraic(algebraic_type.clone()),
-                body: Box::new(leaf.clone()),
-            }),
+            Box::new(crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                bound,
+                Sort::Algebraic(algebraic_type.clone()),
+                leaf.clone(),
+            )),
             Box::new(leaf),
         );
         let Proposition::And(quantifier, sibling) =
@@ -9344,12 +9287,12 @@ mod integer_mixed_quantifier_tests {
         let Proposition::ForAll { var, body, .. } = *quantifier else {
             panic!("the algebraic universal was lost");
         };
-        assert_ne!(var, bound);
+        assert_ne!(*var, bound);
         assert_eq!(
             *body,
             Proposition::Equal(
                 Term::Integer(replacement.clone().into()),
-                Term::Integer(algebraic_projection(&algebraic_type, var).into())
+                Term::Integer(algebraic_projection(&algebraic_type, *var).into())
             )
         );
         assert_eq!(
@@ -9363,15 +9306,15 @@ mod integer_mixed_quantifier_tests {
 
     #[test]
     fn integer_substitution_rejects_non_term_nested_sort() {
-        let proposition = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(9_230),
-            sort: Sort::Condition,
-            body: Box::new(Proposition::Equal(
+        let proposition = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(9_230),
+            Sort::Condition,
+            Proposition::Equal(
                 Term::Integer(IntegerTerm::var(Variable(9_231)).into()),
                 Term::Integer(IntegerTerm::constant_i64(0).into()),
-            )),
-        };
+            ),
+        );
         assert_eq!(
             substitute_integer_variable_in_pure_proposition(
                 &proposition,
@@ -10054,30 +9997,30 @@ mod checked_singleton_substitution_tests {
             )
         );
 
-        let source = Proposition::ForAll {
-            name: Default::default(),
-            var: captured,
-            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
-            body: Box::new(leaf.clone()),
-        };
+        let source = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            captured,
+            Sort::ProgramPointer(ProgramType::Int32Pointer),
+            leaf.clone(),
+        );
         let Proposition::ForAll { var, body, .. } =
             substitute_pointer_value_in_proposition(&source, from, &pointer_value(captured))
                 .unwrap()
         else {
             panic!("the quantifier must survive");
         };
-        assert_ne!(var, captured);
+        assert_ne!(*var, captured);
         assert_eq!(
             *body,
-            Proposition::Equal(pointer_term(captured), pointer_term(var))
+            Proposition::Equal(pointer_term(captured), pointer_term(*var))
         );
 
-        let shadowed = Proposition::Exists {
-            name: "shadowed".into(),
-            var: from,
-            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
-            body: Box::new(leaf),
-        };
+        let shadowed = crate::kernel::quantifiers::test_exists(
+            "shadowed".into(),
+            from,
+            Sort::ProgramPointer(ProgramType::Int32Pointer),
+            leaf,
+        );
         assert_eq!(
             substitute_pointer_value_in_proposition(&shadowed, from, &pointer_value(captured))
                 .unwrap(),
@@ -10116,19 +10059,19 @@ mod checked_singleton_substitution_tests {
             for exists in [false, true] {
                 let wrap = |body| {
                     if exists {
-                        Proposition::Exists {
-                            name: "bound".into(),
-                            var: variable,
-                            sort: sort.clone(),
-                            body: Box::new(body),
-                        }
+                        crate::kernel::quantifiers::test_exists(
+                            "bound".into(),
+                            variable,
+                            sort.clone(),
+                            body,
+                        )
                     } else {
-                        Proposition::ForAll {
-                            name: Default::default(),
-                            var: variable,
-                            sort: sort.clone(),
-                            body: Box::new(body),
-                        }
+                        crate::kernel::quantifiers::test_forall(
+                            Default::default(),
+                            variable,
+                            sort.clone(),
+                            body,
+                        )
                     }
                 };
                 let expected = if sort == Sort::ProgramInt32 {
@@ -10239,12 +10182,15 @@ mod checked_singleton_substitution_tests {
     fn checked_singleton_substitution_bounds_deep_quantifier_setup() {
         let variable = Variable(70_105);
         let mut source = proposition(variable);
+        // The body mentions none of these binders, so each quantifier is
+        // built over its bound variable directly: closing 2048 of them one at
+        // a time would rename through the growing chain each time.
         for index in 0..2048 {
             source = Proposition::ForAll {
-                name: Default::default(),
-                var: Variable(80_000 + index),
+                var: QuantifierBinder::of_height(index),
                 sort: Sort::ProgramInt32,
                 body: Box::new(source),
+                name: Default::default(),
             };
         }
         // Borrow the source so its recursive drop occurs on the parent stack.

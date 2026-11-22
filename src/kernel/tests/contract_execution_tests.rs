@@ -3677,11 +3677,13 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
         truth(true)
     );
     // A quantifier folds its body, and over a constant body is the constant.
-    let quantified = |body: Proposition| Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(3),
-        sort: Sort::ProgramInt32,
-        body: Box::new(body),
+    let quantified = |body: Proposition| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(3),
+            Sort::ProgramInt32,
+            body,
+        )
     };
     assert_eq!(
         completion_key(&quantified(equal(&x, &x, true))),
@@ -4403,11 +4405,11 @@ fn path_exists_at_program_point(
     memory: SymbolicMemory,
     target: u32,
 ) -> Proposition {
-    Proposition::Exists {
-        name: "path".into(),
-        var: Variable(binder),
-        sort: Sort::Algebraic(ty.clone()),
-        body: Box::new(Proposition::condition_is(
+    crate::kernel::quantifiers::test_exists(
+        "path".into(),
+        Variable(binder),
+        Sort::Algebraic(ty.clone()),
+        Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::ClickFunctionApplication {
                     name: "walk".into(),
@@ -4429,8 +4431,8 @@ fn path_exists_at_program_point(
                 target.into(),
             ),
             true,
-        )),
-    }
+        ),
+    )
 }
 
 #[test]
@@ -4516,11 +4518,11 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         },
         true,
     );
-    let goal = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let goal = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -4528,8 +4530,8 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
                 right: Box::new(MachineTerm::constant(0)),
             },
             true,
-        )),
-    };
+        ),
+    );
     let facts = PureFactContext::new().assume_proposition(assumed);
     assert!(!crate::kernel::PureFactContext::settles_exactly(
         &facts, &goal
@@ -4560,15 +4562,15 @@ fn conditional_path_universal(
         unreachable!()
     };
     Proposition::Implies(
-        Box::new(Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(binder + 1),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::condition_is(
+        Box::new(crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(binder + 1),
+            Sort::ProgramInt32,
+            Proposition::condition_is(
                 ConditionTerm::equal(MachineTerm::Variable(Variable(binder + 1)), 0.into()),
                 true,
-            )),
-        }),
+            ),
+        )),
         Box::new(Proposition::ForAll {
             name: Default::default(),
             var,

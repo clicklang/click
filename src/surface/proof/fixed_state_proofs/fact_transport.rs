@@ -750,7 +750,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                         if let Proposition::ForAll { var, .. } = kernel
                             && let Some(name) = quantifier_binder_name(surface)
                         {
-                            labels.source_name(*var, name);
+                            labels.source_name(**var, name);
                         }
                     }
                     let had = render::render_proposition_labeled(from, &mut labels);
@@ -1262,7 +1262,27 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
                 ..
             },
         ) if source_var == target_var && source_sort == target_sort => {
-            return certified_fact_transport_reaches(source_body, target_body, after, assumptions);
+            // Open both bodies at one fresh variable: the binder means nothing
+            // outside its quantifier, and the antecedents below are assumed.
+            let Some((witness, source_body)) =
+                crate::kernel::quantifiers::open_quantifier(*source_var, source_sort, source_body)
+            else {
+                return false;
+            };
+            let Some(target_body) = crate::kernel::quantifiers::rename_quantified_variable(
+                target_body,
+                **target_var,
+                witness,
+                target_sort,
+            ) else {
+                return false;
+            };
+            return certified_fact_transport_reaches(
+                &source_body,
+                &target_body,
+                after,
+                assumptions,
+            );
         }
         (
             Proposition::Implies(source_antecedent, source_consequent),

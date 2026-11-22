@@ -249,8 +249,9 @@ Opaque function rules have a narrower boundary:
   postcondition, resource, or effect claim is certified;
 - all recorded contract claims must have checked evidence for that same exact
   function before `VerifiedFunctionRule` can be constructed;
-- contract instantiation uses simultaneous, capture-avoiding substitution,
-  and alpha-equivalence freshens both sides before comparing bound bodies;
+- contract instantiation uses simultaneous substitution; quantifier binders
+  are numbered by height (below), so substitution cannot capture and two
+  quantifiers with the same body have the same binder;
 - composite-resource fold facts are rechecked against the kernel resource
   state even when a resource body has a guard, so surface lowering cannot
   turn a captured fact into resource authority.
@@ -1672,7 +1673,7 @@ stays within its own range:
 | Range | Producer |
 | --- | --- |
 | `1_000_000 .. 2_000_000` | the execution's fresh-identity counter |
-| `2_000_000 .. 4_000_000` | the surface's quantifier variables; lowering refuses at the ceiling |
+| `2_000_000 .. 4_000_000` | the surface's quantifier variables while a body is lowered, before it is closed; lowering refuses at the ceiling |
 | `4_000_000 .. 4_000_000_000`, stepping by `65_536` | the surface's algebraic binders; lowering refuses at the ceiling |
 | `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
@@ -1714,7 +1715,24 @@ facts' unused identities
 `a_freshened_universal_witness_never_takes_a_program_identity`). A proof that
 exhausts it refuses rather than reusing an identity.
 
-Freshening a binder is a renaming, so it must not change what the proposition
+Quantifier binders are not drawn from any of these ranges. A `ForAll` or
+`Exists` binds a `QuantifierBinder`, a variable of origin `Bound` numbered by
+its height: 0 for an innermost quantifier, otherwise one more than the
+tallest quantifier nested in its body (`src/kernel/quantifiers.rs`). Closing
+a body over a free variable (`close_forall`, `close_exists`, and
+`close_foralls` for a nest in one pass) renames that variable to the binder
+of the computed height; opening (`open_quantifier`, `intro`) always renames
+the binder to a fresh witness. A free variable is never `Bound`, and a
+replacement substituted under a quantifier mentions only taller binders, so
+no substitution captures and no binder is ever freshened: the same body
+closes to the same quantifier, which is what fact keys compare. A rename
+travels through every carrier the binder can occur in (machine terms,
+pointer bases, Integer and algebraic terms) and runs under
+`without_match_reduction`, so renaming never reduces a match or folds a
+conditional. A debug build panics if an assumed condition mentions a `Bound`
+variable (`mdtests/an_introduced_binder_is_not_the_identity_a_later_quantifier_binds.md`).
+
+Opening or closing a quantifier is a renaming, so it must not change what the proposition
 says *or its form*: a proof state matches a goal against a fact
 syntactically, and a goal that quietly moves to another canonical form stops
 matching the surface's re-lowering of the same written range. That is why a

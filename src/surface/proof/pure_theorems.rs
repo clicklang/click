@@ -559,16 +559,17 @@ pub(super) fn pure_induction_hypothesis(
         );
         body = Proposition::Implies(Box::new(nonnegative), Box::new(body));
     }
-    Ok(Proposition::ForAll {
-        name: Default::default(),
-        var: variable,
-        sort: if unsigned {
+    crate::kernel::quantifiers::close_forall(
+        Default::default(),
+        variable,
+        if unsigned {
             Sort::ProgramInteger(MachineIntegerType::UInt64)
         } else {
             Sort::ProgramInt32
         },
-        body: Box::new(body),
-    })
+        &body,
+    )
+    .ok_or_else(|| ClickError::new("the induction hypothesis's quantifier does not close"))
 }
 
 fn prepare_pure_induction_tactics(
@@ -1015,21 +1016,19 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
             ) else {
                 continue;
             };
-            let fact = variables.iter().rev().fold(
-                context
-                    .requires
-                    .iter()
-                    .rev()
-                    .fold(conclusion, |body, requirement| {
-                        Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
-                    }),
-                |body, variable| Proposition::ForAll {
-                    name: Default::default(),
-                    var: *variable,
-                    sort: Sort::ProgramInt32,
-                    body: Box::new(body),
-                },
-            );
+            let body = context
+                .requires
+                .iter()
+                .rev()
+                .fold(conclusion, |body, requirement| {
+                    Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
+                });
+            let binders = variables
+                .iter()
+                .map(|variable| (Default::default(), *variable, Sort::ProgramInt32))
+                .collect::<Vec<_>>();
+            let fact = crate::kernel::quantifiers::close_foralls(&binders, &body)
+                .ok_or_else(|| ClickError::new("a theorem's quantifier does not close"))?;
             assumptions.push((theorem.name().to_string(), fact, authority));
         }
     }

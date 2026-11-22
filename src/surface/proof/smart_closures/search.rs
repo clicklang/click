@@ -7074,7 +7074,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Some(closed) =
                 crate::kernel::search::ProofSearch::try_constructor_witness_exists_closure(
                     search_input,
-                    *var,
+                    **var,
                     body,
                     introduced_surfaces,
                 )?
@@ -10156,7 +10156,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         continue;
                     };
                     let instantiated =
-                        substitute_int32_variable_in_proposition(body, *var, value.clone());
+                        substitute_int32_variable_in_proposition(body, **var, value.clone());
                     let mut guard_facts = Vec::new();
                     let mut current = &instantiated;
                     let mut guards_available = true;

@@ -1374,7 +1374,7 @@ fn lower_spec_universal_chain_in(
         paths = paths
             .into_iter()
             .map(|path| wrap_spec_universal_path(path, &binder, assumptions))
-            .collect();
+            .collect::<ExecutionResult<_>>()?;
     }
     Ok(Some(paths))
 }
@@ -1389,7 +1389,7 @@ fn wrap_spec_universal_path(
     path: SpecPropositionPath,
     binder: &SpecUniversalBinder,
     assumptions: &PureFactContext,
-) -> SpecPropositionPath {
+) -> ExecutionResult<SpecPropositionPath> {
     let (body, guards) = wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
     let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
         name: binder.name.clone(),
@@ -1399,13 +1399,17 @@ fn wrap_spec_universal_path(
     }];
     introductions.extend(guards);
     introductions.extend(path.introductions);
-    SpecPropositionPath {
-        proposition: Proposition::ForAll {
-            var: binder.variable,
-            sort: binder.sort.clone(),
-            body: Box::new(body),
-            name: BinderName::binding(&binder.name),
-        },
+    let close = |body: &Proposition| {
+        crate::kernel::quantifiers::close_forall(
+            BinderName::binding(&binder.name),
+            binder.variable,
+            binder.sort.clone(),
+            body,
+        )
+        .ok_or(ExecutionLimit::QuantifierDoesNotClose)
+    };
+    Ok(SpecPropositionPath {
+        proposition: close(&body)?,
         facts: Vec::new().into(),
         obligations: path
             .obligations
@@ -1423,16 +1427,16 @@ fn wrap_spec_universal_path(
                     )
             })
             .map(|obligation| {
-                obligation.map_proposition(|proposition| Proposition::ForAll {
-                    var: binder.variable,
-                    sort: binder.sort.clone(),
-                    name: BinderName::binding(&binder.name),
-                    body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
-                })
+                let closed = close(&wrap_path_context(
+                    obligation.proposition().clone(),
+                    &path.facts,
+                    &[],
+                ))?;
+                Ok(obligation.map_proposition(|_| closed))
             })
-            .collect(),
+            .collect::<ExecutionResult<_>>()?,
         introductions,
-    }
+    })
 }
 
 /// Lowers the common right-associated implication shape iteratively. The
@@ -1766,30 +1770,34 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             }];
             introductions.extend(guards);
             introductions.extend(path.introductions);
-            SpecPropositionPath {
-                proposition: Proposition::ForAll {
-                    var: *variable,
-                    name: BinderName::binding(name),
-                    sort: Sort::Integer,
-                    body: Box::new(body),
-                },
+            let close = |body: &Proposition| {
+                crate::kernel::quantifiers::close_forall(
+                    BinderName::binding(name),
+                    *variable,
+                    Sort::Integer,
+                    body,
+                )
+                .ok_or(ExecutionLimit::QuantifierDoesNotClose)
+            };
+            Ok(SpecPropositionPath {
+                proposition: close(&body)?,
                 facts: Vec::new().into(),
                 obligations: path
                     .obligations
                     .into_iter()
                     .map(|obligation| {
-                        obligation.map_proposition(|proposition| Proposition::ForAll {
-                            var: *variable,
-                            name: BinderName::binding(name),
-                            sort: Sort::Integer,
-                            body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
-                        })
+                        let closed = close(&wrap_path_context(
+                            obligation.proposition().clone(),
+                            &path.facts,
+                            &[],
+                        ))?;
+                        Ok(obligation.map_proposition(|_| closed))
                     })
-                    .collect(),
+                    .collect::<ExecutionResult<_>>()?,
                 introductions,
-            }
+            })
         })
-        .collect()),
+        .collect::<ExecutionResult<_>>()?),
         SpecProposition::ForAllAlgebraic {
             name,
             variable,
@@ -1813,30 +1821,34 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             }];
             introductions.extend(guards);
             introductions.extend(path.introductions);
-            SpecPropositionPath {
-                proposition: Proposition::ForAll {
-                    var: *variable,
-                    name: BinderName::binding(name),
-                    sort: Sort::Algebraic(algebraic_type.clone()),
-                    body: Box::new(body),
-                },
+            let close = |body: &Proposition| {
+                crate::kernel::quantifiers::close_forall(
+                    BinderName::binding(name),
+                    *variable,
+                    Sort::Algebraic(algebraic_type.clone()),
+                    body,
+                )
+                .ok_or(ExecutionLimit::QuantifierDoesNotClose)
+            };
+            Ok(SpecPropositionPath {
+                proposition: close(&body)?,
                 facts: Vec::new().into(),
                 obligations: path
                     .obligations
                     .into_iter()
                     .map(|obligation| {
-                        obligation.map_proposition(|proposition| Proposition::ForAll {
-                            var: *variable,
-                            name: BinderName::binding(name),
-                            sort: Sort::Algebraic(algebraic_type.clone()),
-                            body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
-                        })
+                        let closed = close(&wrap_path_context(
+                            obligation.proposition().clone(),
+                            &path.facts,
+                            &[],
+                        ))?;
+                        Ok(obligation.map_proposition(|_| closed))
                     })
-                    .collect(),
+                    .collect::<ExecutionResult<_>>()?,
                 introductions,
-            }
+            })
         })
-        .collect()),
+        .collect::<ExecutionResult<_>>()?),
         SpecProposition::ForAllMachineInteger {
             name,
             variable,
@@ -1879,7 +1891,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     assumptions,
                 )
             })
-            .collect())
+            .collect::<ExecutionResult<_>>()?)
         }
         SpecProposition::ForAllPointer {
             name,
@@ -1904,30 +1916,34 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             }];
             introductions.extend(guards);
             introductions.extend(path.introductions);
-            SpecPropositionPath {
-                proposition: Proposition::ForAll {
-                    var: *variable,
-                    name: BinderName::binding(name),
-                    sort: Sort::ProgramPointer(*program_type),
-                    body: Box::new(body),
-                },
+            let close = |body: &Proposition| {
+                crate::kernel::quantifiers::close_forall(
+                    BinderName::binding(name),
+                    *variable,
+                    Sort::ProgramPointer(*program_type),
+                    body,
+                )
+                .ok_or(ExecutionLimit::QuantifierDoesNotClose)
+            };
+            Ok(SpecPropositionPath {
+                proposition: close(&body)?,
                 facts: Vec::new().into(),
                 obligations: path
                     .obligations
                     .into_iter()
                     .map(|obligation| {
-                        obligation.map_proposition(|proposition| Proposition::ForAll {
-                            var: *variable,
-                            name: BinderName::binding(name),
-                            sort: Sort::ProgramPointer(*program_type),
-                            body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
-                        })
+                        let closed = close(&wrap_path_context(
+                            obligation.proposition().clone(),
+                            &path.facts,
+                            &[],
+                        ))?;
+                        Ok(obligation.map_proposition(|_| closed))
                     })
-                    .collect(),
+                    .collect::<ExecutionResult<_>>()?,
                 introductions,
-            }
+            })
         })
-        .collect()),
+        .collect::<ExecutionResult<_>>()?),
         SpecProposition::ExistsInteger {
             name,
             variable,
@@ -1947,7 +1963,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     Sort::Integer,
                     body_paths,
                 )
-                .into_checked_path(),
+                .into_checked_path()?,
             ])
         }
         SpecProposition::ExistsAlgebraic {
@@ -1969,7 +1985,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     Sort::Algebraic(algebraic_type.clone()),
                     body_paths,
                 )
-                .into_checked_path(),
+                .into_checked_path()?,
             ])
         }
         SpecProposition::ExistsMachineInteger {
@@ -2012,7 +2028,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     Sort::machine_integer(integer_type),
                     paths,
                 )
-                .into_checked_path(),
+                .into_checked_path()?,
             ])
         }
         SpecProposition::ExistsPointer {
@@ -2034,7 +2050,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     Sort::ProgramPointer(*program_type),
                     paths,
                 )
-                .into_checked_path(),
+                .into_checked_path()?,
             ])
         }
         SpecProposition::MutexHeld(mutex) => {
@@ -2553,22 +2569,21 @@ fn evaluate_spec_integer_expression_paths_in(
                             );
                             continue;
                         }
-                        let body_obligations = body_path
-                            .obligations
-                            .iter()
-                            .filter_map(|obligation| {
-                                let proposition = drop_verified_load_definition_conjuncts(
-                                    obligation.proposition().clone(),
-                                )?;
-                                let scoped = integer_range_fold_body_obligation(
-                                    proposition,
-                                    &index,
-                                    *accumulator,
-                                    *item,
-                                );
-                                Some(obligation.clone().map_proposition(|_| scoped))
-                            })
-                            .collect::<Vec<_>>();
+                        let mut body_obligations = Vec::new();
+                        for obligation in &body_path.obligations {
+                            let Some(proposition) = drop_verified_load_definition_conjuncts(
+                                obligation.proposition().clone(),
+                            ) else {
+                                continue;
+                            };
+                            let scoped = integer_range_fold_body_obligation(
+                                proposition,
+                                &index,
+                                *accumulator,
+                                *item,
+                            )?;
+                            body_obligations.push(obligation.clone().map_proposition(|_| scoped));
+                        }
                         let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                             &facts,
                             &obligations,
@@ -2682,24 +2697,21 @@ fn integer_range_fold_body_obligation(
     index: &IntegerFoldIndexResult,
     accumulator: Variable,
     item: Variable,
-) -> Proposition {
+) -> ExecutionResult<Proposition> {
     let (item_sort, guard) = integer_range_fold_item_domain(index, item);
     let body = Proposition::Implies(Box::new(guard), Box::new(proposition.clone()));
-    let body = Proposition::ForAll {
-        name: Default::default(),
-        var: item,
-        sort: item_sort,
-        body: Box::new(body),
-    };
+    let body = crate::kernel::quantifiers::close_forall(Default::default(), item, item_sort, &body)
+        .ok_or(ExecutionLimit::QuantifierDoesNotClose)?;
     if proposition_mentions_integer_variable(&proposition, accumulator) {
-        Proposition::ForAll {
-            name: Default::default(),
-            var: accumulator,
-            sort: Sort::Integer,
-            body: Box::new(body),
-        }
+        crate::kernel::quantifiers::close_forall(
+            Default::default(),
+            accumulator,
+            Sort::Integer,
+            &body,
+        )
+        .ok_or(ExecutionLimit::QuantifierDoesNotClose)
     } else {
-        body
+        Ok(body)
     }
 }
 
@@ -3032,7 +3044,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         | Proposition::Exists {
             var, sort, body, ..
         } => {
-            (*var != variable || *sort != Sort::Integer)
+            (**var != variable || *sort != Sort::Integer)
                 && proposition_mentions_integer_variable(body, variable)
         }
         // These proposition forms can contain machine payloads in their C
@@ -4536,12 +4548,14 @@ fn guard_scalar_match_obligation(
                 }
             }
         };
-        obligation = obligation.map_proposition(|body| Proposition::ForAll {
-            var: *variable,
-            name: BinderName::binding(name),
+        let closed = crate::kernel::quantifiers::close_forall(
+            BinderName::binding(name),
+            *variable,
             sort,
-            body: Box::new(body),
-        });
+            obligation.proposition(),
+        )
+        .ok_or(ExecutionLimit::QuantifierDoesNotClose)?;
+        obligation = obligation.map_proposition(|_| closed);
     }
     Ok(obligation)
 }

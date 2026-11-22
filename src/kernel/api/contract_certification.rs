@@ -991,14 +991,14 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             else {
                 return false;
             };
-            let exact_target = target_variables.contains(fact_var).then_some(*fact_var);
+            let exact_target = target_variables.contains(&**fact_var).then_some(**fact_var);
             exact_target
                 .into_iter()
                 .chain(
                     target_variables
                         .iter()
                         .copied()
-                        .filter(|target| target != fact_var),
+                        .filter(|target| *target != **fact_var),
                 )
                 .any(|target_var| {
                     if crate::kernel::assumptions::reasoning_interrupted() {
@@ -1006,7 +1006,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                     }
                     let Some(instantiated) = substitute_quantified_body_capture_free(
                         body,
-                        *fact_var,
+                        **fact_var,
                         target_var,
                         &Sort::ProgramInt32,
                     ) else {
@@ -1082,16 +1082,24 @@ pub(in crate::kernel) fn certification_proves_exists_obligation_from_facts(
         if fact_sort != sort {
             return false;
         }
-        let Some(renamed) =
-            substitute_quantified_body_capture_free(fact_body, *fact_var, *var, sort)
-        else {
+        // Open the fact and the obligation at one fresh witness: their
+        // binders are bound variables, which mean nothing outside them.
+        let Some(witness) = crate::kernel::quantifiers::opening_witness() else {
+            return false;
+        };
+        let (Some(opened_fact), Some(opened_goal)) = (
+            crate::kernel::quantifiers::rename_quantified_variable(
+                fact_body, **fact_var, witness, sort,
+            ),
+            crate::kernel::quantifiers::rename_quantified_variable(body, **var, witness, sort),
+        ) else {
             return false;
         };
         let mut witness_facts = Vec::new();
-        proposition_conjuncts(&renamed, &mut witness_facts);
+        proposition_conjuncts(&opened_fact, &mut witness_facts);
         let witness_assumptions = assumptions_with_propositions(assumptions, &witness_facts);
         let mut goals = Vec::new();
-        proposition_conjuncts(body, &mut goals);
+        proposition_conjuncts(&opened_goal, &mut goals);
         goals.iter().all(|goal| {
             PureFactContext::settles_exactly(&witness_assumptions, goal)
                 || loadable_covered_by_fact(&witness_assumptions, goal)
@@ -3162,7 +3170,11 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
         ) => {
             left_sort == right_sort && {
                 let (left_body, right_body) = freshen_proposition_bodies(
-                    left_sort, *left_var, left_body, *right_var, right_body,
+                    left_sort,
+                    **left_var,
+                    left_body,
+                    **right_var,
+                    right_body,
                 );
                 propositions_alpha_equivalent(&left_body, &right_body)
             }
@@ -3183,7 +3195,11 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
         ) => {
             left_sort == right_sort && {
                 let (left_body, right_body) = freshen_proposition_bodies(
-                    left_sort, *left_var, left_body, *right_var, right_body,
+                    left_sort,
+                    **left_var,
+                    left_body,
+                    **right_var,
+                    right_body,
                 );
                 propositions_alpha_equivalent(&left_body, &right_body)
             }

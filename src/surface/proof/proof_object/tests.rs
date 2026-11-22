@@ -500,11 +500,11 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
         base: "sum".into(),
         offset: AddressOffset::Constant(0),
     };
-    let loadable = Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(30),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    let loadable = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        Variable(30),
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
@@ -531,8 +531,8 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 bytes: (MachineTerm::Variable(Variable(30))).into(),
                 wide: false,
             }),
-        )),
-    };
+        ),
+    );
     let fold = IntegerTerm::range_fold(
         IntegerRangeFoldIndex::Integer {
             start: SharedIntegerTerm::from(IntegerTerm::constant_i64(0)),
@@ -1050,23 +1050,25 @@ fn both_and_preserves_exact_binders_and_saved_states() {
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
     );
-    let conjunct = |binder| Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(binder),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::ProgramPoint::of_memory(&memory),
-                    Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Int32,
-                )),
-                right: Box::new(MachineTerm::Variable(Variable(binder))),
-            },
-            true,
-        )),
+    let conjunct = |binder| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(binder),
+            Sort::ProgramInt32,
+            Proposition::condition_is(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(MachineTerm::MemoryLoad(
+                        crate::kernel::ProgramPoint::of_memory(&memory),
+                        Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Int32,
+                    )),
+                    right: Box::new(MachineTerm::Variable(Variable(binder))),
+                },
+                true,
+            ),
+        )
     };
     // The same saved value is bound in the left goal but free in the right.
     // Opening child scopes must preserve this distinction without re-lowering.
@@ -1854,7 +1856,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
             variable,
             pointer: false,
             integer: false,
-        }) if name.is_named("written") && *variable == actual_variable
+        }) if name.is_named("written") && *variable == *actual_variable
     ));
     assert!(adapted.body().certificate().steps().is_empty());
     assert_eq!(
@@ -2041,11 +2043,11 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
     };
     let root = pure_have_presentation_root(surface.clone());
     let scope = root.driver().open_have(surface).expect("have should open");
-    let reported = Proposition::Exists {
-        name: "different_display_name".to_string(),
-        var: Variable(8_765_432),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let reported = crate::kernel::quantifiers::test_exists(
+        "different_display_name".to_string(),
+        Variable(8_765_432),
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2053,8 +2055,8 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
                 right: Box::new(MachineTerm::constant(7)),
             },
             true,
-        )),
-    };
+        ),
+    );
     scope
         .with_reported_goal_introductions(&reported, None)
         .expect("alpha-renamed existential should match");
@@ -2609,19 +2611,23 @@ fn proof_fact_predicate_index_ignores_unrelated_context() {
 
 #[test]
 fn outcome_fact_deltas_share_ambient_universal_facts() {
-    let universal = |index| Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(index),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(index))),
-                right: Box::new(MachineTerm::Variable(Variable(index))),
-            },
-            true,
-        )),
+    let universal = |index| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(index),
+            Sort::ProgramInt32,
+            Proposition::condition_is(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(MachineTerm::Variable(Variable(index))),
+                    // Each universal differs in content: facts that differ
+                    // only in their binder are one fact.
+                    right: Box::new(MachineTerm::constant(index as u32)),
+                },
+                true,
+            ),
+        )
     };
     for size in [8_u64, 16, 32, 64] {
         let ambient = (0..size)
@@ -4162,16 +4168,16 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         panic!("a universal antecedent must remain quantified");
     };
     let available_variable = Variable(8_200_000);
-    let available_antecedent = Proposition::ForAll {
-        name: Default::default(),
-        var: available_variable,
-        sort: sort.clone(),
-        body: Box::new(substitute_int32_variable_in_proposition(
+    let available_antecedent = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        available_variable,
+        sort.clone(),
+        substitute_int32_variable_in_proposition(
             body,
-            *var,
+            **var,
             MachineTerm::Variable(available_variable),
-        )),
-    };
+        ),
+    );
     let selected_implication = Proposition::Implies(
         Box::new(required_antecedent.clone()),
         Box::new(target.clone()),
@@ -4232,7 +4238,13 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
         assert_eq!(extracted.certificate().steps(), &[step]);
-        assert_eq!(extracted.added_facts(), std::slice::from_ref(&target));
+        // With binders numbered by height the renamed antecedent is the
+        // required one exactly, and the step closes the goal on the spot,
+        // which leaves no added fact; any fact it does report is the target.
+        assert!(
+            extracted.added_facts().is_empty()
+                || extracted.added_facts() == std::slice::from_ref(&target)
+        );
         assert!(extracted.is_complete());
 
         let missing_antecedent = Proof::for_pure_goal(

@@ -171,7 +171,7 @@ impl<'a> ProofScope<'a> {
                     cursor = body;
                     Ok(crate::kernel::LoweringIntroduction::WrittenUniversal {
                         name,
-                        variable: *variable,
+                        variable: **variable,
                         pointer,
                         integer,
                     })

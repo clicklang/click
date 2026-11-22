@@ -302,7 +302,10 @@ int fill_parallel(int output[4]) {
                 known();
             }
             have output[0] == 11;
-            have output[1] == 11;
+            have output[1] == 11 by {
+                instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, 1);
+                known();
+            }
             step_until(function.exit);
             solve();
         }
@@ -338,7 +341,10 @@ int fill_parallel(int output[4]) {
         known();
     }
     have output[0] == 11;
-    have output[1] == 11;
+    have output[1] == 11 by {
+        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, 1);
+        known();
+    }
     step();
     unfold(filled_range(output, 2, 4, 22));
     have range_filled(&second_job);

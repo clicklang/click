@@ -268,7 +268,7 @@ impl super::ProofSearch<PureFactContext> {
                     || crate::kernel::search::ProofSearch::derive_forall_rule(
                         context,
                         proposition,
-                        *var,
+                        **var,
                         body,
                         false,
                     )
@@ -984,7 +984,7 @@ impl super::ProofSearch<PureFactContext> {
                 crate::kernel::search::ProofSearch::derive_forall_rule(
                     context,
                     proposition,
-                    *var,
+                    **var,
                     body,
                     extended_rules,
                 )
@@ -992,11 +992,11 @@ impl super::ProofSearch<PureFactContext> {
             Proposition::Exists {
                 var, sort, body, ..
             } => crate::kernel::search::ProofSearch::derive_exists_from_witness(
-                context, *var, sort, body,
+                context, **var, sort, body,
             )
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_exists_from_fact(
-                    context, *var, sort, body,
+                    context, **var, sort, body,
                 )
             }),
             _ => crate::kernel::search::ProofSearch::derive_atomic_rule(
@@ -1129,19 +1129,30 @@ impl super::ProofSearch<PureFactContext> {
     ) -> Option<PropositionDerivationRule> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("derive_forall_rule");
-        let body_uses_binder = crate::kernel::proposition_has_free_bitvector_variable(body, var);
-        let body_derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
-            context,
-            body,
-            extended_rules,
-        )
-        .filter(|proof| {
-            !body_uses_binder
-                || proof.context_premises().iter().all(|premise| {
-                    !crate::kernel::proposition_has_free_bitvector_variable(premise, var)
-                })
-        })
-        .map(PropositionDerivationRule::ForAllBody);
+        // Derive the body opened at a fresh witness: the binder is a bound
+        // variable, which means nothing outside its quantifier.
+        let body_derivation = match proposition {
+            Proposition::ForAll { sort, .. } => crate::kernel::quantifiers::opening_witness()
+                .and_then(|witness| {
+                    let opened = crate::kernel::quantifiers::rename_quantified_variable(
+                        body, var, witness, sort,
+                    )?;
+                    crate::kernel::search::ProofSearch::derive_proposition_using(
+                        context,
+                        &opened,
+                        extended_rules,
+                    )
+                    .filter(|proof| {
+                        proof.context_premises().iter().all(|premise| {
+                            !crate::kernel::proposition_has_free_bitvector_variable(
+                                premise, witness,
+                            )
+                        })
+                    })
+                    .map(|proof| PropositionDerivationRule::ForAllBody { witness, proof })
+                }),
+            _ => None,
+        };
         body_derivation
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_forall_loadable_range(
@@ -1275,7 +1286,7 @@ impl super::ProofSearch<PureFactContext> {
                 }
                 let renamed = crate::kernel::api::substitute_quantified_body_capture_free(
                     source_body,
-                    *source_var,
+                    **source_var,
                     var,
                     sort,
                 )?;
@@ -1648,12 +1659,12 @@ mod monotone_forall_tests {
         let old_is_zero = equality(MachineTerm::Variable(outer), MachineTerm::constant(0));
         let old_equals_other = equality(MachineTerm::Variable(outer), MachineTerm::Variable(other));
         let body = equality(MachineTerm::Variable(other), MachineTerm::constant(0));
-        let goal = Proposition::ForAll {
-            name: Default::default(),
-            var: outer,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body),
-        };
+        let goal = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            outer,
+            Sort::ProgramInt32,
+            body,
+        );
         let facts = PureFactContext::new()
             .assume_proposition(old_is_zero.clone())
             .assume_proposition(old_equals_other);
@@ -1661,12 +1672,12 @@ mod monotone_forall_tests {
             .expect("a binder-free body may use the outer variable's facts");
         assert!(derivation.check(&facts));
 
-        let invalid = Proposition::ForAll {
-            name: Default::default(),
-            var: outer,
-            sort: Sort::ProgramInt32,
-            body: Box::new(old_is_zero),
-        };
+        let invalid = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            outer,
+            Sort::ProgramInt32,
+            old_is_zero,
+        );
         assert!(
             crate::kernel::search::ProofSearch::derive_proposition(&(facts), &invalid).is_none(),
             "an outer fact cannot establish a body that uses the new binder"
@@ -2500,12 +2511,12 @@ mod shared_atomic_premise_tests {
             for index in 1..size {
                 body = Proposition::And(Box::new(body), Box::new(predicate(index)));
             }
-            let source = Proposition::ForAll {
-                name: Default::default(),
-                var: Variable(900_000),
-                sort: Sort::ProgramInt32,
-                body: Box::new(body),
-            };
+            let source = crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                Variable(900_000),
+                Sort::ProgramInt32,
+                body,
+            );
             let (context, clones) = crate::kernel::count_proposition_clone_nodes(|| {
                 let context = PureFactContext::new().assume_proposition(source.clone());
                 let (_, selected, _, _) =

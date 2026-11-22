@@ -1165,24 +1165,28 @@ impl PureFactStore {
         (next < ceiling).then_some(Variable(next))
     }
 
+    /// The witness `intro` opens a universal over `binder` with, and the body
+    /// with `binder` renamed to it. The witness is always fresh: `binder` is a
+    /// quantifier's bound variable, which no free occurrence may share.
+    fn opened_forall_body(
+        &self,
+        binder: Variable,
+        sort: &Sort,
+        body: &Proposition,
+    ) -> Option<(Variable, Proposition)> {
+        let body_variables = crate::kernel::proposition_variables(body);
+        let fresh = self.fresh_universal_witness(&body_variables)?;
+        let renamed =
+            crate::kernel::quantifiers::rename_quantified_variable(body, binder, fresh, sort)?;
+        Some((fresh, renamed))
+    }
+
     pub(crate) fn freshen_int32_forall_body(
         &self,
         binder: Variable,
         body: &Proposition,
     ) -> Option<(Variable, Proposition)> {
-        if !self.reserved_variables.contains(&binder) {
-            return Some((binder, body.clone()));
-        }
-        let body_variables = crate::kernel::proposition_variables(body);
-        let fresh = self.fresh_universal_witness(&body_variables)?;
-        let renamed = crate::kernel::substitute_int32_variable_in_proposition(
-            body,
-            binder,
-            MachineTerm::Variable(fresh),
-        );
-        let renamed =
-            restore_range_span_spelling(body, renamed, binder, &MachineTerm::Variable(fresh));
-        Some((fresh, renamed))
+        self.opened_forall_body(binder, &Sort::ProgramInt32, body)
     }
 
     pub(crate) fn freshen_integer_forall_body(
@@ -1190,21 +1194,7 @@ impl PureFactStore {
         binder: Variable,
         body: &Proposition,
     ) -> Option<(Variable, Proposition)> {
-        if !self.reserved_variables.contains(&binder) {
-            // No renaming is needed. In particular, do not send an identity
-            // substitution through a later quantifier of a different sort.
-            return Some((binder, body.clone()));
-        }
-        let body_variables = crate::kernel::proposition_variables(body);
-        let fresh = self.fresh_universal_witness(&body_variables)?;
-        let replacement = crate::kernel::IntegerTerm::var(fresh);
-        let body = super::super::reasoning::substitute_integer_variable_in_pure_proposition(
-            body,
-            binder,
-            &replacement,
-        )
-        .ok()?;
-        Some((fresh, body))
+        self.opened_forall_body(binder, &Sort::Integer, body)
     }
 
     pub(crate) fn freshen_algebraic_forall_body(
@@ -1213,21 +1203,7 @@ impl PureFactStore {
         algebraic_type: &crate::kernel::AlgebraicType,
         body: &Proposition,
     ) -> Option<(Variable, Proposition)> {
-        if !self.reserved_variables.contains(&binder) {
-            return Some((binder, body.clone()));
-        }
-        let body_variables = crate::kernel::proposition_variables(body);
-        let fresh = self.fresh_universal_witness(&body_variables)?;
-        let replacement = crate::kernel::AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: crate::kernel::AlgebraicTermNode::Variable(fresh),
-        };
-        let body = crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-            body,
-            binder,
-            &replacement,
-        );
-        Some((fresh, body))
+        self.opened_forall_body(binder, &Sort::Algebraic(algebraic_type.clone()), body)
     }
 
     pub(crate) fn reserves_variable(&self, variable: Variable) -> bool {
@@ -1302,21 +1278,7 @@ impl PureFactStore {
         program_type: ProgramType,
         body: &Proposition,
     ) -> Option<(Variable, Proposition)> {
-        if !self.reserved_variables.contains(&binder) {
-            return Some((binder, body.clone()));
-        }
-        let body_variables = crate::kernel::proposition_variables(body);
-        let fresh = self.fresh_universal_witness(&body_variables)?;
-        let pointer = if matches!(program_type, ProgramType::FunctionPointer(_)) {
-            Address::symbolic_function(fresh)
-        } else {
-            Address::symbolic(fresh)
-        };
-        // A pointer binder never occurs in a range's element endpoints, which
-        // are `int32` terms, so the span has nothing to put back here.
-        let body =
-            crate::kernel::substitute_pointer_variable_in_proposition(body, binder, &pointer);
-        Some((fresh, body))
+        self.opened_forall_body(binder, &Sort::ProgramPointer(program_type), body)
     }
 
     /// Materializes only the separations selected by this explicit goal.
@@ -2436,7 +2398,7 @@ impl PureFactStore {
 ///
 /// This walks only the logical structure the two propositions share, and only
 /// as far as the range leaves; it changes no other term and decides nothing.
-fn restore_range_span_spelling(
+pub(crate) fn restore_range_span_spelling(
     original: &Proposition,
     renamed: Proposition,
     from: Variable,
@@ -3768,11 +3730,11 @@ mod integer_equality_fact_index_tests {
                 )),
             )
         });
-        Proposition::ForAll {
-            name: Default::default(),
-            var: binder,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::MemoryLoadable {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            binder,
+            Sort::ProgramInt32,
+            Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Address {
                     base: block.into(),
@@ -3780,8 +3742,8 @@ mod integer_equality_fact_index_tests {
                 },
                 bytes: (MachineTerm::constant(bytes)).into(),
                 wide: false,
-            }),
-        }
+            },
+        )
     }
 
     fn loadable_exists(
@@ -3802,11 +3764,11 @@ mod integer_equality_fact_index_tests {
                 )),
             )
         });
-        Proposition::Exists {
-            name: name.into(),
-            var: binder,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::MemoryLoadable {
+        crate::kernel::quantifiers::test_exists(
+            name.into(),
+            binder,
+            Sort::ProgramInt32,
+            Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Address {
                     base: block.into(),
@@ -3814,8 +3776,8 @@ mod integer_equality_fact_index_tests {
                 },
                 bytes: (MachineTerm::constant(bytes)).into(),
                 wide: false,
-            }),
-        }
+            },
+        )
     }
 
     #[test]
@@ -4046,7 +4008,9 @@ mod integer_equality_fact_index_tests {
                     base: "quantified-viewable".into(),
                     offset: AddressOffset::Constant(0),
                 },
-                ProgramValue::Int32(MachineTerm::Variable(Variable(207_000))),
+                // A value the binder does not name: an occurrence of the
+                // binder inside the body's state would be bound too.
+                ProgramValue::Int32(MachineTerm::Variable(Variable(207_900))),
             );
         let changed_memory = memory.clone().store(
             Address {
@@ -4153,17 +4117,21 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_predicate_alpha_lookup_checks_state_after_memory_bucket() {
-        let predicate = |name: &str, binder: Variable, state: ExecutionState| Proposition::Exists {
-            name: name.to_string(),
-            var: binder,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Predicate {
-                name: "sample".to_string(),
-                arguments: vec![
-                    Term::ExecutionState(Box::new(state)),
-                    Term::ProgramValue((ProgramValue::Int32(MachineTerm::Variable(binder))).into()),
-                ],
-            }),
+        let predicate = |name: &str, binder: Variable, state: ExecutionState| {
+            crate::kernel::quantifiers::test_exists(
+                name.to_string(),
+                binder,
+                Sort::ProgramInt32,
+                Proposition::Predicate {
+                    name: "sample".to_string(),
+                    arguments: vec![
+                        Term::ExecutionState(Box::new(state)),
+                        Term::ProgramValue(
+                            (ProgramValue::Int32(MachineTerm::Variable(binder))).into(),
+                        ),
+                    ],
+                },
+            )
         };
         let state =
             ExecutionState::new().with_local("x", ProgramValue::Int32(MachineTerm::constant(7)));
@@ -4221,23 +4189,25 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn implication_extract_renames_path_inside_function_equality() {
         let path_type = crate::kernel::AlgebraicType::parameter("Path".into());
-        let path_reaches = |name: &str, binder: Variable| Proposition::Exists {
-            name: name.into(),
-            var: binder,
-            sort: Sort::Algebraic(path_type.clone()),
-            body: Box::new(Proposition::Equal(
-                Term::Bitvector32(
-                    MachineTerm::ClickFunctionApplication {
-                        name: "walk".into(),
-                        arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
-                            algebraic_type: path_type.clone(),
-                            node: AlgebraicTermNode::Variable(binder),
-                        })],
-                    }
-                    .into(),
+        let path_reaches = |name: &str, binder: Variable| {
+            crate::kernel::quantifiers::test_exists(
+                name.into(),
+                binder,
+                Sort::Algebraic(path_type.clone()),
+                Proposition::Equal(
+                    Term::Bitvector32(
+                        MachineTerm::ClickFunctionApplication {
+                            name: "walk".into(),
+                            arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
+                                algebraic_type: path_type.clone(),
+                                node: AlgebraicTermNode::Variable(binder),
+                            })],
+                        }
+                        .into(),
+                    ),
+                    Term::Bitvector32(MachineTerm::constant(1).into()),
                 ),
-                Term::Bitvector32(MachineTerm::constant(1).into()),
-            )),
+            )
         };
         let source = path_reaches("callee_path", Variable(207_750));
         let required = path_reaches("caller_path", Variable(207_751));
@@ -5078,15 +5048,12 @@ mod quantified_conjunct_projection_tests {
     }
     /// `forall var { var <= bound implies conclusion(var) }`.
     fn guarded(var: u64, bound: u32, conclusion: impl Fn(u64) -> Proposition) -> Proposition {
-        Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(var),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
-                Box::new(at_most(var, bound)),
-                Box::new(conclusion(var)),
-            )),
-        }
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(var),
+            Sort::ProgramInt32,
+            Proposition::Implies(Box::new(at_most(var, bound)), Box::new(conclusion(var))),
+        )
     }
 
     #[test]

@@ -7649,18 +7649,18 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     let variable = |id: u64| MachineTerm::Variable(Variable(id));
     let index = Variable(480_000);
     // forall index. index < exit ==> data[index] == index
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: index,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    let quantified = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        index,
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(less(variable(480_000), variable(480_001), true)),
             Box::new(equal(
                 load(AddressOffset::scaled_int32_node(variable(480_000), 4)),
                 variable(480_000),
             )),
-        )),
-    };
+        ),
+    );
     // not (exit < 3), so index 2 is below exit.
     let bound = less(variable(480_001), MachineTerm::constant(3), false);
     let goal = equal(load(AddressOffset::Constant(8)), MachineTerm::constant(2));

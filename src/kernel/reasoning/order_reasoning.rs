@@ -155,7 +155,7 @@ pub(crate) fn collect_forall_chain<'a>(
             body,
             ..
         } => {
-            variables.push(*var);
+            variables.push(**var);
             collect_forall_chain(body, variables)
         }
         proposition => proposition,

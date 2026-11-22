@@ -564,8 +564,7 @@ fn record_theorem_certification_authority(
             .parameters()
             .iter()
             .enumerate()
-            .rev()
-            .fold(implication, |body, (index, parameter)| {
+            .map(|(index, parameter)| {
                 let sort = match parameter.interface_type() {
                     InterfaceType::Int32 => crate::kernel::Sort::ProgramInt32,
                     InterfaceType::FunctionPointer(_) => crate::kernel::Sort::ProgramPointer(
@@ -573,13 +572,17 @@ fn record_theorem_certification_authority(
                     ),
                     _ => unreachable!("the theorem binder filter admits only supported types"),
                 };
-                Proposition::ForAll {
-                    var: crate::kernel::Variable(index as u64),
+                (
+                    crate::kernel::BinderName::written(parameter.name()),
+                    crate::kernel::Variable(index as u64),
                     sort,
-                    body: Box::new(body),
-                    name: crate::kernel::BinderName::written(parameter.name()),
-                }
-            });
+                )
+            })
+            .collect::<Vec<_>>();
+        let fact = crate::kernel::quantifiers::close_foralls(&fact, &implication);
+        let Some(fact) = fact else {
+            continue;
+        };
         facts
             .entry(theorem.theorem_definition.name().to_string())
             .or_default()

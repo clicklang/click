@@ -463,12 +463,12 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
         name: "holds".into(),
         arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder).into())],
     };
-    let goal = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::machine_integer(MachineIntegerType::UInt8),
-        body: Box::new(body),
-    };
+    let goal = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::machine_integer(MachineIntegerType::UInt8),
+        body,
+    );
     let sample = |size: u64, related: bool| {
         let ambient = (0..size)
             .map(|index| {
@@ -1172,22 +1172,26 @@ fn apply_fact_uses_only_selected_implication_and_evidence() {
 #[test]
 fn known_quantified_identity_uses_selected_keys() {
     type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
-    let quantified = |binder, index| Proposition::ForAll {
-        var: Variable(binder),
-        sort: crate::kernel::Sort::ProgramInt32,
-        body: Box::new(Proposition::Predicate {
-            name: "quantified_identity".into(),
-            arguments: vec![
-                Term::ProgramValue(
-                    (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(binder))))
+    let quantified = |binder, index| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(binder),
+            crate::kernel::Sort::ProgramInt32,
+            Proposition::Predicate {
+                name: "quantified_identity".into(),
+                arguments: vec![
+                    Term::ProgramValue(
+                        (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(
+                            binder,
+                        ))))
                         .into(),
-                ),
-                Term::ProgramValue(
-                    (crate::kernel::ProgramValue::Int32(MachineTerm::constant(index))).into(),
-                ),
-            ],
-        }),
-        name: Default::default(),
+                    ),
+                    Term::ProgramValue(
+                        (crate::kernel::ProgramValue::Int32(MachineTerm::constant(index))).into(),
+                    ),
+                ],
+            },
+        )
     };
     let mut samples = Vec::new();
     for size in [4u32, 16, 64, 256] {
@@ -1249,22 +1253,26 @@ fn apply_fact_quantified_sources_use_selected_alpha_keys() {
         name: "selected_guard".into(),
         arguments: vec![],
     };
-    let quantified = |binder, value| Proposition::Exists {
-        name: Default::default(),
-        var: Variable(binder),
-        sort: crate::kernel::Sort::ProgramInt32,
-        body: Box::new(Proposition::Predicate {
-            name: "selected_body".into(),
-            arguments: vec![
-                Term::ProgramValue(
-                    (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(binder))))
+    let quantified = |binder, value| {
+        crate::kernel::quantifiers::test_exists(
+            Default::default(),
+            Variable(binder),
+            crate::kernel::Sort::ProgramInt32,
+            Proposition::Predicate {
+                name: "selected_body".into(),
+                arguments: vec![
+                    Term::ProgramValue(
+                        (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(
+                            binder,
+                        ))))
                         .into(),
-                ),
-                Term::ProgramValue(
-                    (crate::kernel::ProgramValue::Int32(MachineTerm::constant(value))).into(),
-                ),
-            ],
-        }),
+                    ),
+                    Term::ProgramValue(
+                        (crate::kernel::ProgramValue::Int32(MachineTerm::constant(value))).into(),
+                    ),
+                ],
+            },
+        )
     };
     let implication = |body| Proposition::Implies(Box::new(guard.clone()), Box::new(body));
     let mut samples = Vec::new();

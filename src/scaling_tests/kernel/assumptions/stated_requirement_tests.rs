@@ -7,11 +7,11 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn stated_query_work_is_independent_of_unrelated_facts() {
-    let goal = Proposition::Exists {
-        name: "goal".into(),
-        var: Variable(300),
-        sort: Sort::Bitvector32,
-        body: Box::new(Proposition::condition_is(
+    let goal = crate::kernel::quantifiers::test_exists(
+        "goal".into(),
+        Variable(300),
+        Sort::Bitvector32,
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -19,12 +19,12 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
                 right: Box::new(MachineTerm::constant(5)),
             },
             true,
-        )),
-    };
+        ),
+    );
     let small = PureFactContext::new().assume_proposition(requirement(301, "fact"));
     let mut large = small.clone();
     for index in 0..128 {
-        large = large.assume_proposition(requirement(10_000 + index, "unrelated"));
+        large = large.assume_proposition(distinct_requirement(10_000 + index, "unrelated"));
         large = large.assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -53,8 +53,10 @@ fn stated_query_scaling_ignores_unrelated_same_sort_quantifiers() {
     for size in [4usize, 8, 16, 32] {
         let mut context = PureFactContext::new().assume_proposition(goal.clone());
         for index in 0..size {
-            context = context
-                .assume_proposition(requirement(50_000 + index as u64, "same-sort-unrelated"));
+            context = context.assume_proposition(distinct_requirement(
+                50_000 + index as u64,
+                "same-sort-unrelated",
+            ));
         }
         context.build_stated_proposition_index();
         let (available, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -77,7 +79,7 @@ fn stated_index_keys_each_fact_once_and_only_when_asked() {
     let goal = requirement(45_000, "goal");
     let mut base = PureFactContext::new().assume_proposition(goal.clone());
     for index in 0..64 {
-        base = base.assume_proposition(requirement(46_000 + index, "unrelated"));
+        base = base.assume_proposition(distinct_requirement(46_000 + index, "unrelated"));
     }
     let key_work = |context: &PureFactContext| {
         crate::instrumentation::measure_deterministic_work(|| {
@@ -85,13 +87,18 @@ fn stated_index_keys_each_fact_once_and_only_when_asked() {
         })
         .1
     };
-    let left = base.clone().assume_proposition(requirement(47_000, "left"));
+    let left = base
+        .clone()
+        .assume_proposition(distinct_requirement(47_000, "left"));
     let right = base
         .clone()
-        .assume_proposition(requirement(47_001, "right"));
+        .assume_proposition(distinct_requirement(47_001, "right"));
+    let unasked_fact = distinct_requirement(47_002, "unasked");
+    // A new fact's comparison observations are interned when it is first
+    // assumed anywhere; warm that so the measurement is the assumption alone.
+    let _ = PureFactContext::new().assume_proposition(unasked_fact.clone());
     let (_, unasked) = crate::instrumentation::measure_deterministic_work(|| {
-        base.clone()
-            .assume_proposition(requirement(47_002, "unasked"))
+        base.clone().assume_proposition(unasked_fact.clone())
     });
     let first = key_work(&left);
     let sibling = key_work(&right);
@@ -207,7 +214,8 @@ fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
                     .assume_proposition((**second).clone());
             }
             for offset in 0..count {
-                context = context.assume_proposition(requirement(890_000 + offset, "unrelated"));
+                context =
+                    context.assume_proposition(distinct_requirement(890_000 + offset, "unrelated"));
             }
             // Deliberately leave the stated-proposition index cold.
             let (established, work) = crate::instrumentation::measure_deterministic_work(|| {

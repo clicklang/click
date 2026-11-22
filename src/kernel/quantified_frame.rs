@@ -214,14 +214,14 @@ impl Framer<'_> {
                 } else {
                     crate::kernel::substitute_int32_variable_in_proposition(
                         to_body,
-                        *to_var,
-                        MachineTerm::Variable(*from_var),
+                        **to_var,
+                        MachineTerm::Variable(**from_var),
                     )
                 };
                 let both = Proposition::And(from_body.clone(), Box::new(to_body));
                 let (fresh, renamed) = self
                     .facts
-                    .freshen_int32_forall_body(*from_var, &both)
+                    .freshen_int32_forall_body(**from_var, &both)
                     .ok_or(QuantifiedFrameRefusal::BinderExhausted)?;
                 // The identity is fresh for the proof's facts; the context
                 // also holds effect and resource facts, and a guard on an
@@ -237,7 +237,25 @@ impl Framer<'_> {
                     leaf: contexts.leaf.clone(),
                     fresh_binder: true,
                 };
+                // A refused leaf is reported as the quantifier writes it: at
+                // its binder, which the report names, not at the witness.
                 self.prove(&from_body, &to_body, &contexts)
+                    .map_err(|refusal| match refusal {
+                        QuantifiedFrameRefusal::LeafNotCarried { from, to } => {
+                            let restore = |leaf: Box<Proposition>| {
+                                crate::kernel::quantifiers::rename_quantified_variable(
+                                    &leaf, fresh, **from_var, from_sort,
+                                )
+                                .map(Box::new)
+                                .unwrap_or(leaf)
+                            };
+                            QuantifiedFrameRefusal::LeafNotCarried {
+                                from: restore(from),
+                                to: restore(to),
+                            }
+                        }
+                        other => other,
+                    })
             }
             (
                 Proposition::Implies(from_antecedent, from_consequent),

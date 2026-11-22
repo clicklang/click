@@ -102,7 +102,9 @@ fn quantified_loadable_alpha_query_ignores_unrelated_state_size() {
                 base: "quantified-viewable-work-0".into(),
                 offset: AddressOffset::Constant(0),
             },
-            ProgramValue::Int32(MachineTerm::Variable(Variable(209_000))),
+            // A value the binder does not name, as the alpha query compares
+            // the retained state exactly.
+            ProgramValue::Int32(MachineTerm::Variable(Variable(209_900))),
         );
         let source = loadable_forall(
             &source_memory,

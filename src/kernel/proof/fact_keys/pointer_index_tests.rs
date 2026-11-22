@@ -35,12 +35,12 @@ fn fact(offset: AddressOffset) -> Proposition {
     )
 }
 fn quantified(variable: Variable, offset: AddressOffset) -> Proposition {
-    Proposition::ForAll {
-        var: variable,
-        name: crate::kernel::BinderName::written("index"),
-        sort: Sort::ProgramInteger(MachineIntegerType::Int32),
-        body: Box::new(fact(offset)),
-    }
+    crate::kernel::quantifiers::test_forall(
+        crate::kernel::BinderName::written("index"),
+        variable,
+        Sort::ProgramInteger(MachineIntegerType::Int32),
+        fact(offset),
+    )
 }
 fn bindings() -> AlphaBindings {
     AlphaBindings {
