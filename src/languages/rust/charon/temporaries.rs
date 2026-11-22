@@ -3206,7 +3206,9 @@ fn expression_uses(
             }
         }
         E::Borrow { place, .. } => place_uses(place, reads, named),
-        E::Field { base, .. } | E::EnumField { base, .. } => place_uses(base, reads, named),
+        E::Field { base, .. } => place_uses(base, reads, named),
+        // An enum payload projected from a value reads the enum's value.
+        E::EnumField { base, .. } => expression_uses(base, reads, named),
         E::Index { slice, index } => {
             place_uses(slice, reads, named);
             expression_uses(index, reads, named);
@@ -4066,6 +4068,37 @@ mod tests {
         );
         assert!(locals.contains(&"t1".to_string()));
         assert!(locals.contains(&"t2".to_string()));
+    }
+
+    #[test]
+    fn an_enum_payload_read_can_use_the_original_value() {
+        let field = E::EnumField {
+            base: Box::new(local("t1")),
+            name: "Result".into(),
+            variant: "Err".into(),
+            index: 0,
+        };
+        let (locals, block) = substituted(
+            vec![assign("t1", local("a")), assign("x", field.clone())],
+            T::Return,
+        );
+        assert!(!locals.iter().any(|name| name == "t1"));
+        assert!(matches!(block.statements.as_slice(),
+            [S::Assign { value: E::EnumField { base, .. }, .. }]
+                if matches!(base.as_ref(), E::Local { name } if name == "a")));
+
+        let borrow = E::Borrow {
+            place: Box::new(field),
+            value_type: Type::Reference {
+                mutable: false,
+                pointee: Box::new(Type::U32),
+            },
+        };
+        let (locals, _) = substituted(
+            vec![assign("t1", local("a")), assign("x", borrow)],
+            T::Return,
+        );
+        assert!(locals.iter().any(|name| name == "t1"));
     }
 
     fn block(statements: Vec<S>, terminator: T) -> MirBlock {
