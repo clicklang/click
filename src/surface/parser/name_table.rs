@@ -205,11 +205,9 @@ pub(super) enum NameKind {
     ReferenceParameter,
     /// A declaration's type parameter.
     TypeParameter,
-    /// The callable hypothesis introduced by an `induct` tactic.
-    InductionHypothesis,
 }
 
-const KINDS: usize = 10;
+const KINDS: usize = 9;
 
 impl NameKind {
     /// The kinds that bind a value a proposition can read by name, which a
@@ -244,7 +242,6 @@ impl NameKind {
             NameKind::StructArrayParameter => 6,
             NameKind::ReferenceParameter => 7,
             NameKind::TypeParameter => 8,
-            NameKind::InductionHypothesis => 9,
         }
     }
 }

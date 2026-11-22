@@ -520,16 +520,10 @@ pub(super) fn describe_unavailable_theorem_requirement_spelled(
     )
 }
 
-/// The line an elided `apply` adds to a requirement it could not supply.
-///
-/// The elided form looks each requirement up among the available facts and
-/// proves none, and the lookup is a search: when it finds nothing, that is a
-/// search miss, and the fix is the fact it would have found, stated before
-/// the `apply`. The explicit `apply(...) using { ... }` then cites it and
-/// searches nothing. `fact` is the missing fact as the proof can write it.
+/// Advise how to state the requirement a premise search could not supply.
 pub(super) fn requirement_search_miss(fact: &str) -> String {
     format!(
-        "\n  this is a search miss, not a refusal; no available fact states the requirement, and the elided `apply` proves none; if it holds, state it first with `have {} by {{ ... }}`",
+        "\n  this is a search miss: no available fact states the requirement; if it holds, state it first with `have {} by {{ ... }}`",
         fact.trim_matches('`')
     )
 }

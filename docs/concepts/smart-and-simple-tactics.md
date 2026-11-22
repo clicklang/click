@@ -74,13 +74,12 @@ with the argument written is simple:
 
 | Elided form (smart) | Written form (simple) | What the search fills |
 |---|---|---|
-| `apply(ih(m))` | `apply(ih(m)) using { P; ... }` | the hypothesis's premises |
 | `transport(P, Q)` | `transport(P, Q) using { R; ... }` | the frame evidence |
 
 Implication application checks antecedents in scope. When the ordinary
 implicit closer proves a missing one, expansion writes its `have` before
-`apply(fact)`. The searches for induction premises and frame evidence look
-facts up. When a lookup finds nothing, the refusal is a
+`apply(fact)`. Induction application checks the hypothesis's own premises
+in scope. When transport cannot find its frame evidence, the refusal is a
 **search miss**: it says "this is a search miss", names the fact it did not
 find, and tells you to write it (with `have P by { ... }` first, or in the
 `using` form). A search miss is never a Click bug; only the written form's

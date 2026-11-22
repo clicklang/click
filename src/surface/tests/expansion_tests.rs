@@ -2034,18 +2034,15 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
         "carry_seed_returns_the_same_integer.ensures_0",
     )
     .unwrap();
-    verify_click_theorems(&expanded).unwrap();
-    let start = expanded.find("apply(ih(").unwrap();
-    let end = start + expanded[start..].find("};").unwrap() + 2;
-    let application = &expanded[start..end];
-    assert!(application.contains("0 < seed;"), "{expanded}");
-    let missing_guard = format!(
-        "{}{}{}",
-        &expanded[..start],
-        application.replace("0 < seed;", ""),
-        &expanded[end..],
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    assert!(expanded.contains("apply(ih((n - 1)));"), "{expanded}");
+    let guarded_family = source.replace("requires 0 < seed;", "requires to_integer(n) < seed;");
+    let error = verify_click_theorems(&guarded_family).unwrap_err();
+    assert!(
+        error.to_string().contains("induction hypothesis"),
+        "{error}"
     );
-    assert!(verify_click_theorems(&missing_guard).is_err());
+    assert!(error.to_string().contains("seed"), "{error}");
     let wrong_result = source.replacen(
         "ensures carry_seed(n, seed) == seed",
         "ensures carry_seed(n, seed) == seed + 1",

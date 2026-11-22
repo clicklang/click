@@ -7,11 +7,8 @@ a use by its own induction, owes them.
 
 The range here does not move with the induction variable, so the halves the
 hypothesis owes, `0 <= n - lo` and `n - lo <= 1073741823`, are the theorem's
-own, available beside the stated range. Listing the range cites both of its
-halves, by the rule every `apply using` shares, so the list names only what
-the clause above it wrote. A theorem application is the same: the last theorem
-lists `viewable(v[lo..n])` alone, although the theorem it applies owes both
-halves of its `views` range and nothing else here states them. The negative,
+own, available beside the stated range. Both induction and theorem application
+can use the range and its span facts from scope. The negative,
 where a moved range's halves are not available, is
 `induction_hypothesis_owes_the_range_span.md`.
 
@@ -34,13 +31,7 @@ theorem hypothesis_cites_the_range_span(v: int32[], lo: int32, n: int32, hi: int
             have 0 <= to_integer(hi - 1) by { solve() using { 0 < hi; }; }
             have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 < hi; }; }
             have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 < hi; hi <= n; }; }
-            apply(ih(hi - 1)) using {
-                0 <= to_integer(hi - 1);
-                to_integer(hi - 1) < to_integer(hi);
-                0 <= lo;
-                to_integer(hi - 1) <= to_integer(n);
-                n >= 0 and viewable(v[lo..n]);
-            };
+            apply(ih(hi - 1));
             known();
         }
     }

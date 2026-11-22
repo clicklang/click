@@ -937,22 +937,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 describe_induction_arguments(arguments)
             ),
         ),
-        ProofTactic::ApplyInductionUsing {
-            hypothesis,
-            arguments,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "apply({hypothesis}({})) using {{",
-                    describe_induction_arguments(arguments)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
         ProofTactic::ApplyTheorem(application)
         | ProofTactic::ApplyTheoremUsing { application, .. } => line(
             output,

@@ -60,7 +60,7 @@ theorem adler_weight_shift(bytes: uint8[], n: int32, w0: int32, w1: int32) {
    have to_integer(n - 1) < to_integer(n) by { solve() using { 0 < n; }; }
    have to_integer(n - 1) < 2147483647 by { solve() using { 0 < n; }; }
    have defined(n - 1) by { solve() using { 0 < n; }; }
-   apply(ih(n - 1)) using { defined(n - 1); 0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(n); };
+   apply(ih(n - 1));
    unfold(adler_weighted_sum(bytes, n, w1));
    unfold(adler_weighted_sum(bytes, n, w0));
    unfold(adler_byte_sum(bytes, n));
@@ -124,7 +124,7 @@ theorem adler_sum_nonnegative(bytes: uint8[], n: int32) {
    have 0 <= to_integer(n - 1) by { solve() using { 0 < n; }; }
    have to_integer(n - 1) < to_integer(n) by { solve() using { 0 < n; }; }
    have defined(n - 1) by { solve() using { 0 < n; }; }
-   apply(ih(n - 1)) using { defined(n - 1); 0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(n); };
+   apply(ih(n - 1));
    apply(adler_byte_bounds(bytes[n - 1]));
    apply(adler_sum_append(bytes, n));
    rewrite(adler_byte_sum(bytes, n), adler_byte_sum(bytes, n - 1) + to_integer(bytes[n - 1] as int32));
@@ -144,7 +144,7 @@ theorem adler_weighted_nonnegative(bytes: uint8[], n: int32) {
    have 0 <= to_integer(n - 1) by { solve() using { 0 < n; }; }
    have to_integer(n - 1) < to_integer(n) by { solve() using { 0 < n; }; }
    have defined(n - 1) by { solve() using { 0 < n; }; }
-   apply(ih(n - 1)) using { defined(n - 1); 0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(n); };
+   apply(ih(n - 1));
    apply(adler_sum_nonnegative(bytes, n));
    apply(adler_weighted_prefix_step(bytes, n));
    rewrite(adler_weighted_sum(bytes, n, n), adler_weighted_sum(bytes, n - 1, n - 1) + adler_byte_sum(bytes, n));
@@ -460,7 +460,7 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
    have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { known(); }
    have defined(prefix + (suffix - 1));
    have defined(prefix + (suffix - 1)) by { known(); }
-   apply(ih(suffix - 1)) using { 0 <= prefix; 0 <= to_integer(suffix - 1); to_integer(suffix - 1) < to_integer(suffix); to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)); defined(prefix + (suffix - 1)); };
+   apply(ih(suffix - 1));
    have 0 < to_integer(prefix + suffix) by { solve() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(suffix - 1); 0 <= to_integer(suffix - 1); defined(2147483647 - suffix); defined(2147483647 - (suffix - 1)); }; }
    have 1 <= to_integer(prefix + suffix) by { solve() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(2147483647 - suffix); }; }
    have defined((prefix + suffix) - 1);
@@ -535,7 +535,7 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
    have to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)) by { known(); }
    have defined(prefix + (suffix - 1));
    have defined(prefix + (suffix - 1)) by { known(); }
-   apply(ih(suffix - 1)) using { 0 <= prefix; 0 <= to_integer(suffix - 1); to_integer(suffix - 1) < to_integer(suffix); defined(weight_end - prefix); to_integer(prefix) <= to_integer(2147483647 - (suffix - 1)); defined(prefix + (suffix - 1)); };
+   apply(ih(suffix - 1));
    have 0 < to_integer(prefix + suffix) by { solve() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(suffix - 1); 0 <= to_integer(suffix - 1); defined(2147483647 - suffix); defined(2147483647 - (suffix - 1)); }; }
    have 1 <= to_integer(prefix + suffix) by { solve() using { 0 <= prefix; 0 <= suffix; 0 < suffix; to_integer(prefix) <= to_integer(2147483647 - suffix); suffix <= 2147483647; defined(prefix + suffix); defined(2147483647 - suffix); }; }
    have defined((prefix + suffix) - 1);
@@ -913,10 +913,7 @@ theorem adler_sums_extensional(left: uint8[], right: uint8[], bound: int32, n: i
    have to_integer(n - 1) < to_integer(n) by solve() using { 0 < n; };
    have to_integer(n - 1) <= to_integer(bound) by solve() using { n <= bound; 0 < n; };
    have to_integer(n - 1) < to_integer(bound) by solve() using { n <= bound; 0 < n; };
-   apply(ih(n - 1)) using {
-    0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(n); to_integer(n - 1) <= to_integer(bound);
-    forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] };
-   };
+   apply(ih(n - 1));
    have 0 <= (n - 1) and (n - 1) < bound;
    instantiate(forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] }, n - 1);
    apply(adler_sum_append(left, n));

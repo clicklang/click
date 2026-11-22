@@ -85,10 +85,9 @@ pub enum ProofStep {
         parameter: String,
         hypothesis: String,
     },
-    ApplyInductionUsing {
+    ApplyInduction {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
-        premises: Vec<ClickProposition>,
     },
     ApplyFact(ClickProposition),
     ApplyFactUsing {
@@ -603,9 +602,6 @@ impl ProofStep {
                     })
                     .collect(),
             },
-            ProofTactic::ApplyInduction { .. } => {
-                unreachable!("bare induction application is smart")
-            }
             ProofTactic::CloseInvariants => {
                 unreachable!("bare invariant closure is smart")
             }
@@ -748,14 +744,12 @@ impl ProofStep {
                 parameter: parameter.clone(),
                 hypothesis: hypothesis.clone(),
             },
-            ProofTactic::ApplyInductionUsing {
+            ProofTactic::ApplyInduction {
                 hypothesis,
                 arguments,
-                premises,
-            } => Self::ApplyInductionUsing {
+            } => Self::ApplyInduction {
                 hypothesis: hypothesis.clone(),
                 arguments: arguments.clone(),
-                premises: premises.clone(),
             },
             ProofTactic::ApplyTheorem(application) => Self::ApplyTheorem(application.clone()),
             ProofTactic::ApplyTheoremUsing {
@@ -935,14 +929,12 @@ impl ProofStep {
                     })
                     .collect(),
             })),
-            Self::ApplyInductionUsing {
+            Self::ApplyInduction {
                 hypothesis,
                 arguments,
-                premises,
-            } => ProofTactic::ApplyInductionUsing {
+            } => ProofTactic::ApplyInduction {
                 hypothesis: hypothesis.clone(),
                 arguments: arguments.clone(),
-                premises: premises.clone(),
             },
             Self::ApplyTheorem(application) => ProofTactic::ApplyTheorem(application.clone()),
             Self::ApplyTheoremUsing {
@@ -1179,7 +1171,6 @@ pub(super) fn smart_site_spelling(site: SmartSite) -> &'static str {
         SmartSite::Engine(SmartTacticKind::Arithmetic) => "arithmetic",
         SmartSite::Engine(SmartTacticKind::Solve) => "solve",
         SmartSite::Engine(SmartTacticKind::Execute) => "implicit tail",
-        SmartSite::Elided(ElidedArgument::InductionPremises) => "apply",
         SmartSite::Elided(ElidedArgument::FrameEvidence) => "transport",
         SmartSite::CloseInvariants => "close_invariants",
         SmartSite::Implicit => "implicit tail",
@@ -1213,7 +1204,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
         ProofStep::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
-        ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
+        ProofStep::ApplyInduction { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
         ProofStep::ApplyFact(_)
         | ProofStep::ApplyFactUsing { .. }
         | ProofStep::ApplyTheorem(_)

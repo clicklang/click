@@ -39,15 +39,7 @@ theorem same_through(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             have 0 <= to_integer(hi - 1) by { solve(); }
             have to_integer(hi - 1) < to_integer(hi) by { solve(); }
             have to_integer(hi - 1) <= to_integer(n) by { solve(); }
-            apply(ih(hi - 1)) using {
-                0 <= to_integer(hi - 1);
-                to_integer(hi - 1) < to_integer(hi);
-                0 <= lo;
-                to_integer(hi - 1) <= to_integer(n);
-                viewable(p[0..n]);
-                viewable(q[0..n]);
-                forall (k: int32) { lo <= k and k < n implies p[k] == q[k] };
-            };
+            apply(ih(hi - 1));
             have to_integer(hi - 1) < to_integer(n) by { solve(); }
             have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
             have lo <= (hi - 1) and (hi - 1) < n;

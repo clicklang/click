@@ -10,9 +10,8 @@ The refusal used to blame the proof's shape: "It reached tactic 0 (nested
 `have`), which is not implemented in this execution context", naming a
 tactic that is not at fault and no premise at all. It now names the `apply`,
 the requirement as the lemma writes it, what its parameter was bound to, and
-the fact it instantiates to. It ends by calling the refusal a search miss,
-since the elided `apply` looked the premise up and found nothing, and names
-the `have` that supplies it.
+the fact it instantiates to. State and prove that fact with `have` before the
+application.
 
 ```c filename=apply_refusal_names_the_premise_a_removed_have_supplied.c
 int32 first(int32 *a, int32 n) {

@@ -504,16 +504,6 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
     true
 }
 
-/// Whether the written tactic is a bare application.
-pub(crate) fn is_written_bare_apply(source: &str) -> bool {
-    Parser::new(source).is_ok_and(|mut parser| {
-        matches!(
-            parser.parse_proof_tactic(),
-            Ok(ProofTactic::ApplyTheorem(_) | ProofTactic::ApplyFact(_))
-        )
-    })
-}
-
 /// Parses file items under the default target, for tests.
 #[cfg(test)]
 pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
@@ -10700,8 +10690,6 @@ impl Parser {
             let parameter = self.expect_ident("induction parameter")?;
             self.expect(Token::RParen)?;
             self.expect(Token::Semicolon)?;
-            self.names
-                .set_scoped(NameKind::InductionHypothesis, &name, true);
             return Ok(ProofTactic::Induct {
                 parameter,
                 hypothesis: name,
@@ -11751,21 +11739,12 @@ impl Parser {
                 }
                 let application = application.unwrap();
                 self.expect(Token::RParen)?;
-                if self.peek_ident() != Some("using") {
-                    ProofTactic::ApplyTheorem(application)
-                } else {
-                    if !self.names.contains(NameKind::InductionHypothesis, &application.name) {
-                        return Err(self.error(
-                            "named theorem application takes no `using` list; write `apply(theorem(args))`",
-                        ));
-                    }
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::ApplyTheoremUsing {
-                        application,
-                        premises,
-                    });
+                if self.peek_ident() == Some("using") {
+                    return Err(self.error(
+                        "application takes no `using` list; write `apply(name(args))`",
+                    ));
                 }
+                ProofTactic::ApplyTheorem(application)
             }
             "observe" => {
                 self.expect(Token::LParen)?;
@@ -19384,7 +19363,6 @@ mod tactic_classification_tests {
             "match value { List::Nil => { normalize(); } }",
         ),
         ("apply-induction", "apply(ih(m));"),
-        ("apply-induction-using", "apply(ih(m)) using { m == 1; };"),
         ("apply-fact", "apply(x > 0 implies y > 0);"),
         ("apply-theorem", "apply(theorem(x));"),
         ("have", "have x == 1 by { normalize(); }"),
@@ -19479,7 +19457,7 @@ mod tactic_classification_tests {
         assert!(
             error
                 .message()
-                .contains("named theorem application takes no `using` list")
+                .contains("application takes no `using` list")
         );
     }
 
@@ -19512,11 +19490,6 @@ mod tactic_classification_tests {
                     },
                 )]);
                 parser.tactic_names.insert("name".to_string());
-                if form.id == "apply-induction-using" {
-                    parser
-                        .names
-                        .insert(NameKind::InductionHypothesis, "ih".into());
-                }
                 for callee in ["f", "name"] {
                     parser
                         .callee_resource_binders
@@ -19556,17 +19529,6 @@ mod tactic_classification_tests {
                         arguments: application.arguments,
                     }
                 }
-                (
-                    "apply-induction-using",
-                    ProofTactic::ApplyTheoremUsing {
-                        application,
-                        premises,
-                    },
-                ) => ProofTactic::ApplyInductionUsing {
-                    hypothesis: application.name,
-                    arguments: application.arguments,
-                    premises,
-                },
                 (_, tactic) => tactic,
             };
             let class = tactic.class();

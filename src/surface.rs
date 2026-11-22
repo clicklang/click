@@ -77,7 +77,6 @@ mod lowering;
 mod modules;
 mod names;
 mod parser;
-pub(crate) use parser::is_written_bare_apply;
 mod pointer_result_types;
 pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
@@ -6181,11 +6180,6 @@ pub enum ProofTactic {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
     },
-    ApplyInductionUsing {
-        hypothesis: String,
-        arguments: Vec<ContractExpression>,
-        premises: Vec<ClickProposition>,
-    },
     /// Apply an established implication, proving its antecedents.
     ApplyFact(ClickProposition),
     ApplyFactUsing {
@@ -6359,7 +6353,6 @@ pub enum SmartTacticKind {
 pub enum ElidedArgument {
     /// `apply(theorem(args))`: the theorem's premises.
     /// `apply(ih(m))`: the hypothesis's premises.
-    InductionPremises,
     /// `transport(P, Q)`: the frame evidence.
     FrameEvidence,
 }
@@ -6368,7 +6361,6 @@ impl ElidedArgument {
     /// The simple tactic the elided form is, once its argument is written.
     pub fn written_form(self) -> SimpleTactic {
         match self {
-            Self::InductionPremises => SimpleTactic::ApplyInduction,
             Self::FrameEvidence => SimpleTactic::FactTransport,
         }
     }
@@ -6547,11 +6539,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "apply-induction",
         syntax: "apply(ih(m))",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "apply-induction-using",
-        syntax: "apply(ih(m)) using",
         class: "simple",
     },
     PublicTacticForm {
@@ -6825,10 +6812,7 @@ impl ProofTactic {
             }
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
-            Self::ApplyInduction { .. } => {
-                TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
-            }
-            Self::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
+            Self::ApplyInduction { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
             Self::ApplyFact(_)
             | Self::ApplyFactUsing { .. }
             | Self::ApplyTheorem(_)

@@ -1,6 +1,5 @@
 antecedent_is_refuted
 apply_normalization_closure
-apply_smart_induction
 argument_guard_premises
 atomic_derivation_premises
 available_rewrite_equality

@@ -3260,7 +3260,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::Induct { .. }
             | ProofTactic::ApplyInduction { .. }
-            | ProofTactic::ApplyInductionUsing { .. }
             | ProofTactic::ApplyFact(_)
             | ProofTactic::ApplyFactUsing { .. }
             | ProofTactic::ApplyTheorem(_)
@@ -3379,7 +3378,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Induct { .. } => "induct",
         ProofTactic::Match(_) => "match",
         ProofTactic::ApplyInduction { .. } => "apply",
-        ProofTactic::ApplyInductionUsing { .. } => "apply",
         ProofTactic::ApplyTheorem(_) | ProofTactic::ApplyTheoremUsing { .. } => "apply",
         ProofTactic::Have(_) => "have",
         ProofTactic::Open(_) => "with",

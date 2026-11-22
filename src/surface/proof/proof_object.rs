@@ -3916,7 +3916,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::ApplyTheorem(_)
         | ProofStep::ApplyTheoremUsing { .. }
         | ProofStep::ApplyPlannedTheorem { .. } => "apply",
-        ProofStep::ApplyInductionUsing { .. } => "apply",
+        ProofStep::ApplyInduction { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
         ProofStep::Instantiate { .. } => "instantiate",

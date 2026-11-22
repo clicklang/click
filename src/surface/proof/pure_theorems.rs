@@ -386,7 +386,6 @@ pub(super) struct PureInductionSetup {
 #[derive(Clone, Debug)]
 pub(super) struct PureStructuralInductionApplication {
     /// The selected theorem's exact requirements at this child instance.
-    pub(super) surface_premises: Vec<ClickProposition>,
     pub(super) kernel_premises: Vec<Proposition>,
     pub(super) implication: Proposition,
     pub(super) conclusion: Proposition,
@@ -678,16 +677,6 @@ fn prepare_pure_induction_tactics(
                         arguments: application.arguments.clone(),
                     })
                 }
-                ProofTactic::ApplyTheoremUsing {
-                    application,
-                    premises,
-                } if active && application.name == hypothesis => {
-                    Ok(ProofTactic::ApplyInductionUsing {
-                        hypothesis: hypothesis.to_string(),
-                        arguments: application.arguments.clone(),
-                        premises: premises.clone(),
-                    })
-                }
                 ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                     condition: proof_if.condition.clone(),
                     ensuring: proof_if.ensuring.clone(),
@@ -759,11 +748,9 @@ fn prepare_pure_induction_tactics(
                             .collect::<Result<_, ClickError>>()?,
                     })))
                 }
-                ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
-                    Err(ClickError::new(
-                        "internal induction-application syntax is not accepted directly",
-                    ))
-                }
+                ProofTactic::ApplyInduction { .. } => Err(ClickError::new(
+                    "internal induction-application syntax is not accepted directly",
+                )),
                 tactic => Ok(tactic.clone()),
             })
             .collect()
@@ -3136,8 +3123,14 @@ pub(super) fn induction_application_surface_premises(
             &BTreeMap::from([(setup.parameter.clone(), argument.clone())]),
         )
         .map_err(ClickError::new)?;
-        if !premises.contains(&substituted) {
-            premises.push(substituted);
+        let mut pending = vec![substituted];
+        while let Some(premise) = pending.pop() {
+            if let ClickProposition::And(left, right) = premise {
+                pending.push(*right);
+                pending.push(*left);
+            } else if !premises.contains(&premise) {
+                premises.push(premise);
+            }
         }
     }
     Ok(premises)
@@ -3728,11 +3721,20 @@ mod tests {
             crate::surface::expand_c_claim_source_by_label(source, &[], "guarded_count.ensures_0")
                 .unwrap();
         crate::surface::verify_c_sources(&expanded, &[]).unwrap();
-        let missing_evidence = source.replace(
-            "apply(ih(n - 1));",
-            "apply(ih(n - 1)) using { 0 <= n - 1; n - 1 < n; }",
+        let missing_evidence = source
+            .lines()
+            .filter(|line| {
+                !line.contains("have n - 1 <= 1000000")
+                    && !line.contains("have to_integer(n - 1) <= 1000000")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let refusal = crate::surface::verify_c_sources(&missing_evidence, &[]).unwrap_err();
+        assert!(
+            refusal.message().contains("1000000"),
+            "{}",
+            refusal.report()
         );
-        assert!(crate::surface::verify_c_sources(&missing_evidence, &[]).is_err());
         let false_claim = source.replace(
             "ensures guarded_countdown(n) == 0 and",
             "ensures guarded_countdown(n) == 1 and",

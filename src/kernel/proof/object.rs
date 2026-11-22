@@ -1686,7 +1686,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let mut selected = crate::kernel::PureFactContext::new();
         for premise in premises.unwrap_or_default() {
             if !facts.listed_premise_available(premise, &[], true) {
-                return Err("`apply(fact) using` lists a premise that is not available");
+                return Err("selected implication evidence contains an unavailable premise");
             }
             selected = selected.assume_proposition(premise.clone());
         }
