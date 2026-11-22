@@ -3504,6 +3504,52 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery(
             "try_solve_closure_after_direct_with_surfaces_and_function_unfold",
         );
+        if let (Some(surface_goal), Some(goal)) = (search_input.surface_goal(), search_input.goal())
+        {
+            // Check the two written order spellings of positivity at this
+            // fixed state. The normalizer checks the cited premise before
+            // recording it in the expanded step proof.
+            if let ClickProposition::Comparison {
+                left: written_left,
+                operator: ComparisonOperator::NotEqual,
+                right: written_right,
+            } = surface_goal
+                && let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    },
+                    false,
+                )) = goal.condition_native()
+                && [left, right]
+                    .iter()
+                    .any(|operand| operand.bitvector64_as_const() == Some(0))
+            {
+                for (divisor, zero) in
+                    [(written_left, written_right), (written_right, written_left)]
+                {
+                    for (left, operator, right) in [
+                        (divisor, ComparisonOperator::GreaterThan, zero),
+                        (zero, ComparisonOperator::LessThan, divisor),
+                    ] {
+                        let premise = ClickProposition::Comparison {
+                            left: left.clone(),
+                            operator,
+                            right: right.clone(),
+                        };
+                        if let Some(proof) = attempt::candidate_outcome(
+                            search_input
+                                .driver()
+                                .apply_step(ProofStep::NormalizeUsing(vec![premise])),
+                        )? {
+                            return Ok(Some(proof));
+                        }
+                    }
+                }
+            }
+        }
         if let Some(goal) = search_input.goal()
             && !(exclude_exact_goal && search_input.facts().contains(goal))
             && let Some(chain) = crate::kernel::search::ProofSearch::signed_order_chain_premises(
@@ -4200,52 +4246,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         }
                     }
                 };
-                // A positive unsigned divisor supplies one explicit premise
-                // for the nonzero requirement raised by statement execution.
-                if let Some((
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
-                        relation: crate::kernel::CompareRelation::Equal,
-                        left,
-                        right,
-                    },
-                    false,
-                )) = goal.condition_native()
-                    && let Some(divisor) = match (left.uint64_as_const(), right.uint64_as_const()) {
-                        (Some(0), None) => Some(right.as_ref()),
-                        (None, Some(0)) => Some(left.as_ref()),
-                        _ => None,
-                    }
-                {
-                    let bounds = [
-                        ConditionTerm::uint64_less_than(
-                            MachineTerm::uint64_constant(0),
-                            divisor.clone(),
-                        ),
-                        ConditionTerm::uint64_less_equal(
-                            MachineTerm::uint64_constant(1),
-                            divisor.clone(),
-                        ),
-                    ];
-                    for bound in bounds {
-                        let premise = Proposition::condition_is(bound, true);
-                        if search_input.facts().contains(&premise)
-                            && let Some(surface) = Self::available_surface_fact(
-                                search_input,
-                                surface_facts,
-                                premise_anchor,
-                                &premise,
-                            )
-                            && let Some(proof) = attempt::candidate_outcome(
-                                search_input
-                                    .driver()
-                                    .apply_step(ProofStep::NormalizeUsing(vec![surface])),
-                            )?
-                        {
-                            return Ok(Some(proof));
-                        }
-                    }
-                }
                 search_input
                     .facts()
                     .special_candidates_mentioning(goal)
