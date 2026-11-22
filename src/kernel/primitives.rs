@@ -8230,6 +8230,8 @@ pub enum RuntimeError {
     EnumVariant(String),
     IndeterminatePointeeType,
     UnsupportedPointerSubtractionOffsets,
+    UnsupportedPointerComparisonOffsets,
+    UnsupportedFunctionPointerOffset,
     WrongArity {
         expected: usize,
         actual: usize,

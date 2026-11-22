@@ -1070,6 +1070,12 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::UnsupportedPointerSubtractionOffsets => {
             "Click does not yet support pointer subtraction with these offsets".into()
         }
+        RuntimeError::UnsupportedPointerComparisonOffsets => {
+            "Click does not yet support ordered pointer comparison with these offsets".into()
+        }
+        RuntimeError::UnsupportedFunctionPointerOffset => {
+            "Click does not support adding a byte offset to a function pointer".into()
+        }
         RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")
         }

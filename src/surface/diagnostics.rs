@@ -1844,9 +1844,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::RuntimeError::IndeterminatePointeeType => {
             "pointer operation has no known pointee type".to_string()
         }
-        crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets => {
-            "Click does not yet support pointer subtraction with these offsets".to_string()
-        }
+        crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets
+        | crate::kernel::RuntimeError::UnsupportedPointerComparisonOffsets
+        | crate::kernel::RuntimeError::UnsupportedFunctionPointerOffset => error.kernel_summary(),
         crate::kernel::RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")
         }

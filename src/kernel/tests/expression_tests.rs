@@ -2078,7 +2078,7 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
 }
 
 #[test]
-fn function_pointer_operations_report_indeterminate_pointee_type() {
+fn function_pointer_object_operations_report_their_model_errors() {
     let pointer = Address::function("callback");
     let function_type = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
         ProgramType::Int32,
@@ -2102,7 +2102,11 @@ fn function_pointer_operations_report_indeterminate_pointee_type() {
         ),
     ];
 
-    for expression in expressions {
+    for (expression, error) in expressions.into_iter().zip([
+        RuntimeError::IndeterminatePointeeType,
+        RuntimeError::IndeterminatePointeeType,
+        RuntimeError::UnsupportedFunctionPointerOffset,
+    ]) {
         let theorem = prove_program_expression_evaluation(state.clone(), expression.clone())
             .expect("a function-pointer object operation should produce a model error");
         assert_eq!(
@@ -2110,7 +2114,7 @@ fn function_pointer_operations_report_indeterminate_pointee_type() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
+                outcome: ExpressionOutcome::RuntimeError(error),
             }
         );
     }
