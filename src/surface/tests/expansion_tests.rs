@@ -16711,6 +16711,26 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the separated-array store and call"]
+fn quantified_read_expands_through_store_and_call_preservation() {
+    let (source, sources) = mdtest_sources(
+        "mdtests/quantified_frame_carries_a_separated_array_past_a_store_and_a_call.md",
+    );
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "walk").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
+    without_implicit_solve_for_claim("walk.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn masked_64_bit_field_expands_through_explicit_store_preservation() {
     for fixture in [
         "mdtests/int64_read_survives_store_and_resource_call.md",

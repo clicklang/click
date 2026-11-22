@@ -443,7 +443,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_projected_sta
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_pure_signed_arithmetic	try_indexed_signed_arithmetic	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_quantified_conjunct_projection_closure	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_quantified_conjunct_projection_closure	resolve_solve_premises	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	try_direct_logical_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	try_solve_closure_with_surfaces	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_star_separation_closure	driver	5
@@ -857,3 +857,9 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transpo
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_history_indexed_equalities	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_masked_field_preservation	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_masked_field_preservation	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_indexed_read_preservation	1
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_indexed_read_preservation	try_single_write_indexed_separation	1
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_single_write_indexed_separation	driver	3
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_single_write_indexed_separation	try_indexed_separation_restriction	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_indexed_separation_restriction	try_resource_separation_restriction_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	indexed_containment_step	1
