@@ -18,8 +18,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         Address::symbolic(Variable(1008501)),
         ProgramType::Int32Pointer,
     )
-    .with_pointee_constant(true)
-    .with_pointee_volatile(true);
+    .with_pointee_constant(true);
     let arguments = vec![
         PureFunctionArgument::Algebraic(algebraic.clone()),
         PureFunctionArgument::Value(ProgramValue::Parameter(Box::new(algebraic))),

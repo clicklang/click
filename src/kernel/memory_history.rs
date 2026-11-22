@@ -673,7 +673,6 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
                 ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
                     pointer
                         .map_addresses(canonicalize_pointer_loads)
-                        .with_pointee_volatile(false)
                         .with_pointee_constant(false),
                 ),
             };
@@ -744,7 +743,6 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
             ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
                 pointer
                     .map_addresses(canonicalize_pointer_loads)
-                    .with_pointee_volatile(false)
                     .with_pointee_constant(false),
             ),
         };

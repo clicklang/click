@@ -686,8 +686,7 @@ mod tests {
                 Address::symbolic(Variable(1024100)),
                 ProgramType::Int32Pointer,
             )
-            .with_pointee_constant(true)
-            .with_pointee_volatile(true),
+            .with_pointee_constant(true),
         ));
         let cast = |expression: ProgramExpression, target_type| ProgramExpression::Cast {
             expression: Box::new(expression),
@@ -765,8 +764,7 @@ mod tests {
                 Address::symbolic(Variable(1023000)),
                 ProgramType::Int32Pointer,
             )
-            .with_pointee_constant(true)
-            .with_pointee_volatile(true),
+            .with_pointee_constant(true),
         ));
         let index = ProgramExpression::Add(
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
@@ -864,8 +862,7 @@ mod tests {
             Address::symbolic(Variable(1022000)),
             ProgramType::Int32Pointer,
         )
-        .with_pointee_constant(true)
-        .with_pointee_volatile(true);
+        .with_pointee_constant(true);
         let source = ProgramExpression::Value(ProgramValue::Pointer(pointer));
         let mut expressions = vec![
             ProgramExpression::Value(ProgramValue::typed_pointer(
@@ -1132,13 +1129,10 @@ mod tests {
             )
             .with_pointee_constant(true),
         );
-        let right = ProgramValue::Pointer(
-            Pointer::new(
-                Address::symbolic(Variable(1026201)),
-                ProgramType::Int32Pointer,
-            )
-            .with_pointee_volatile(true),
-        );
+        let right = ProgramValue::Pointer(Pointer::new(
+            Address::symbolic(Variable(1026201)),
+            ProgramType::Int32Pointer,
+        ));
         let expression = ProgramExpression::Ternary {
             condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(1026202)),
@@ -1166,10 +1160,6 @@ mod tests {
             assert_eq!(
                 value.pointer().unwrap().pointee_constant(),
                 pointer.pointee_constant()
-            );
-            assert_eq!(
-                value.pointer().unwrap().pointee_volatile(),
-                pointer.pointee_volatile()
             );
             assert_eq!(path.into_native(), native);
         }

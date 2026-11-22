@@ -876,6 +876,41 @@ pub(super) fn substitute_literals(
     temporaries: &BTreeSet<String>,
     parameters: &BTreeMap<String, super::super::schema::Type>,
 ) {
+    substitute_invariant_values(locals, blocks, temporaries, parameters, None);
+}
+
+/// Bind a variant split to its unchanged source parameter once the earlier
+/// passes have exposed the copy that feeds the split.
+pub(super) fn bind_copied_enum_scrutinees(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+    parameters: &BTreeMap<String, Type>,
+) {
+    if !parameters
+        .values()
+        .any(|ty| matches!(ty, Type::Enum { .. }))
+    {
+        return;
+    }
+    let scrutinees: BTreeSet<_> = blocks
+        .iter()
+        .filter_map(|block| enum_switch_local(&block.terminator))
+        .filter(|name| temporaries.contains(*name))
+        .cloned()
+        .collect();
+    if !scrutinees.is_empty() {
+        substitute_invariant_values(locals, blocks, temporaries, parameters, Some(&scrutinees));
+    }
+}
+
+fn substitute_invariant_values(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+    parameters: &BTreeMap<String, Type>,
+    enum_scrutinees: Option<&BTreeSet<String>>,
+) {
     let mut reads = BTreeMap::<String, usize>::new();
     let mut named = BTreeSet::<String>::new();
     let mut assignments = BTreeMap::<String, Vec<E>>::new();
@@ -893,7 +928,11 @@ pub(super) fn substitute_literals(
                     .push(value.clone());
             }
         }
-        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if !enum_scrutinees.is_some_and(|scrutinees| {
+            enum_switch_local(&block.terminator).is_some_and(|name| scrutinees.contains(name))
+        }) {
+            terminator_uses(&block.terminator, &mut reads, &mut named);
+        }
         if let Some(destination) = call_destination(&block.terminator) {
             named.insert(destination.clone());
         }
@@ -909,6 +948,17 @@ pub(super) fn substitute_literals(
         .into_iter()
         .filter(|(name, values)| {
             temporaries.contains(name) && !named.contains(name) && values.len() == 1
+        })
+        // A variant split needs a binding. Only replace its copy with an
+        // unchanged source parameter of the same enum type.
+        .filter(|(name, values)| {
+            enum_scrutinees.is_none_or(|scrutinees| {
+                scrutinees.contains(name)
+                    && matches!(values.as_slice(), [E::Local { name: source }]
+                    if unchanged.contains(source)
+                        && matches!(types.get(name), Some(Type::Enum { .. }))
+                        && types.get(name).copied() == parameters.get(source))
+            })
         })
         .filter_map(|(name, mut values)| Some((name, values.pop()?)))
         .collect();
@@ -2634,6 +2684,16 @@ pub(super) fn call_steps(
         }
         if let Some(destination) = call_destination(&block.terminator) {
             *assigned.entry(destination.clone()).or_default() += 1;
+            // Pointer calls still require their destination during lowering.
+            if matches!(
+                block.terminator,
+                T::Call {
+                    through_pointer: true,
+                    ..
+                }
+            ) {
+                named.insert(destination.clone());
+            }
         }
         for target in successors(&block.terminator) {
             if let Some(count) = predecessors.get_mut(target) {
@@ -2735,17 +2795,22 @@ pub(super) fn call_steps(
         let Some(ty) = types.get(destination.as_str()) else {
             continue;
         };
-        if !temporaries.contains(&destination)
-            || named.contains(&destination)
-            || assigned.get(&destination) != Some(&1)
-        {
+        if !temporaries.contains(&destination) || named.contains(&destination) {
             continue;
         }
-        if ty.is_scalar() && !reads.contains_key(&destination) {
+        // Alternative calls can write the same unused result slot. With no
+        // other write or use, each call can discard its result independently.
+        if ty.is_scalar()
+            && !reads.contains_key(&destination)
+            && !mentions.contains_key(&destination)
+        {
             if let T::Call { destination, .. } = &mut blocks[index].terminator {
                 *destination = None;
             }
             removed.insert(destination);
+            continue;
+        }
+        if assigned.get(&destination) != Some(&1) {
             continue;
         }
         let Some(&(1, reader)) = reads.get(&destination) else {
@@ -3147,13 +3212,7 @@ fn substitute_target(target: &mut E, pending: &mut Pending) {
     }
 }
 
-fn terminator_uses(
-    terminator: &T,
-    reads: &mut BTreeMap<String, usize>,
-    named: &mut BTreeSet<String>,
-) {
-    // A `match` on an enum splits a proof by its scrutinee's variants, and
-    // that split names a local; the scrutinee stays one.
+fn enum_switch_local(terminator: &T) -> Option<&String> {
     if let T::Switch {
         scrutinee: E::Local { name },
         cases,
@@ -3166,6 +3225,20 @@ fn terminator_uses(
             )
         })
     {
+        Some(name)
+    } else {
+        None
+    }
+}
+
+fn terminator_uses(
+    terminator: &T,
+    reads: &mut BTreeMap<String, usize>,
+    named: &mut BTreeSet<String>,
+) {
+    // A match splits a proof by its scrutinee's variants. This use must
+    // continue to name a binding.
+    if let Some(name) = enum_switch_local(terminator) {
         named.insert(name.clone());
     }
     let mut terminator = terminator.clone();
@@ -4071,6 +4144,50 @@ mod tests {
     }
 
     #[test]
+    fn enum_match_can_use_an_unchanged_parameter() {
+        let enum_type = Type::Enum {
+            name: "Option".into(),
+        };
+        let parameters = BTreeMap::from([("x".into(), enum_type.clone())]);
+        for changed in [false, true] {
+            let mut locals = vec![Place {
+                value_type: enum_type.clone(),
+                ..place("t1")
+            }];
+            let mut statements = vec![assign("t1", local("x"))];
+            statements.extend(changed.then(|| assign("x", local("y"))));
+            let mut blocks = [
+                block(
+                    statements,
+                    T::Switch {
+                        scrutinee: local("t1"),
+                        cases: vec![SwitchCase {
+                            label: SwitchLabel::Variant {
+                                name: "Some".into(),
+                            },
+                            target: 1,
+                        }],
+                        otherwise: Some(1),
+                    },
+                ),
+                block(vec![], T::Return),
+            ];
+            super::bind_copied_enum_scrutinees(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+                &parameters,
+            );
+            assert_eq!(locals.is_empty(), !changed);
+            let expected = if changed { "t1" } else { "x" };
+            assert!(
+                matches!(&blocks[0].terminator, T::Switch { scrutinee: E::Local { name }, .. }
+                if name == expected)
+            );
+        }
+    }
+
+    #[test]
     fn an_enum_payload_read_can_use_the_original_value() {
         let field = E::EnumField {
             base: Box::new(local("t1")),
@@ -4106,6 +4223,50 @@ mod tests {
             terminator_site: None,
             statements,
             terminator,
+        }
+    }
+
+    #[test]
+    fn alternative_calls_can_discard_their_shared_result() {
+        let call = |function: &str, through_pointer| T::Call {
+            function: function.into(),
+            arguments: vec![],
+            owned_arguments: vec![],
+            destination: Some("t1".into()),
+            target: 3,
+            through_pointer,
+            result: None,
+        };
+        for (pointer_call, other_write) in [(false, false), (true, false), (false, true)] {
+            let mut locals = vec![place("t1")];
+            let mut blocks = [
+                block(
+                    vec![],
+                    T::If {
+                        condition: local("x"),
+                        then_target: 1,
+                        else_target: 2,
+                    },
+                ),
+                block(vec![], call("f", false)),
+                block(vec![], call("g", pointer_call)),
+                block(
+                    other_write
+                        .then(|| assign("t1", local("x")))
+                        .into_iter()
+                        .collect(),
+                    T::Return,
+                ),
+            ];
+            super::call_steps(&mut locals, &mut blocks, &BTreeSet::from(["t1".into()]));
+            let discarded = !pointer_call && !other_write;
+            assert_eq!(locals.is_empty(), discarded);
+            for (block, expected) in blocks[1..3].iter().zip(["f", "g"]) {
+                assert!(
+                    matches!(&block.terminator, T::Call { function, destination, result: None, .. }
+                    if function == expected && destination.is_none() == discarded)
+                );
+            }
         }
     }
 

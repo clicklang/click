@@ -9,7 +9,6 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
     );
     let opaque = Pointer::new(base.clone(), ProgramType::Int32Pointer)
         .with_pointee_constant(true)
-        .with_pointee_volatile(true)
         .with_object_class(Some(class.clone()));
     let member = opaque
         .clone()
@@ -41,7 +40,6 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
             unreachable!()
         };
         assert!(actual.pointee_constant());
-        assert!(actual.pointee_volatile());
         assert!(actual.supports_object_class(&class));
         let native = ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(ProgramValue::Pointer(

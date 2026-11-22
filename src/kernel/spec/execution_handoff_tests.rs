@@ -420,7 +420,6 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
     )
     .with_address(Address::symbolic(Variable(999981)))
     .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(999983)))))
-    .with_pointee_volatile(true)
     .with_pointee_constant(true)
     .with_bounds(Some(SubobjectBounds {
         start: Address::symbolic(Variable(999984)),
