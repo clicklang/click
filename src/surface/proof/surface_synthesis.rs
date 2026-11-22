@@ -8035,6 +8035,36 @@ fn synthesize_surface_pointer_expression(
             synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
         return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
     }
+    if matches!(
+        &pointer.offset,
+        AddressOffset::Int32Scaled { byte_width: 1, .. }
+            | AddressOffset::Int64Scaled { byte_width: 1, .. }
+    ) && let Some(read) = pointer.as_loaded_value()
+        && read.value_type.is_none()
+    {
+        // The raw read's address carrier has no pointee type. Its stored
+        // displacement is in bytes, so reproduce it with a byte pointer.
+        let origin = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        let cell = pointer_read_address_in_state(&origin, state)?;
+        let cell = synthesize_surface_pointer_expression(
+            &cell,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        let base = synthesize_memory_load(cell, ProgramType::UInt8Pointer);
+        let index = synthesis_element_index(pointer, &origin, 1)?;
+        let index = pointer_indices::raise(
+            index.operand_view(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
+    }
     // A pointer a pure function returns is that call: its base retains the
     // function and the arguments it was applied to. A kernel-internal
     // function (`$...`) has no Surface spelling.

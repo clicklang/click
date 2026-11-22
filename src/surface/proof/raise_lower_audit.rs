@@ -194,6 +194,58 @@ int32 alg_if(int32 x) {
     }
 
     #[test]
+    fn indexed_field_view_read_definedness_round_trips_at_entry() {
+        for index_type in ["int32", "uint64"] {
+            let c = format!(
+                r#"
+struct Input {{ const uint8 *data; }};
+struct Options {{ uint64 flags; }};
+int32 probe(const struct Input *src, {index_type} n, {index_type} k, struct Options options) {{
+    int32 result = n != 0;
+    return result;
+}}
+"#
+            );
+            let zero = if index_type == "uint64" { "0u64" } else { "0" };
+            let source = format!(
+                r#"
+verifying "indexed_view.c";
+int32 probe(const struct Input* src, {index_type} n, {index_type} k, struct Options options) {{
+    views src->data;
+    views src->data[0..n];
+    requires {zero} <= k;
+    requires k < n;
+    ensures result >= 0;
+}} by {{
+    step();
+    have at(function.entry, defined(load<uint8>(src->data + k))) by {{
+        instantiate(at(function.entry, forall (i: {index_type}) {{
+            {zero} <= i and i < n implies defined(load<uint8>(src->data + i))
+        }}), k);
+        known();
+    }}
+    step();
+}}
+"#
+            );
+            let lines = capture(|| {
+                crate::surface::verify_c_sources(&source, &[("indexed_view.c", &c)]).unwrap();
+            });
+            for kind in ["implies/MemoryReadDefined", "MemoryReadDefined"] {
+                let prefix = format!("same\tfact\t{kind}\tprobe.contract\tinstantiate\t");
+                assert!(
+                    lines.iter().any(|line| line.starts_with(&prefix)
+                        && line
+                            .split('\t')
+                            .nth(7)
+                            .is_some_and(|raised| raised.contains("at(function.entry,"))),
+                    "{index_type}: missing {kind} round trip in {lines:#?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_round_trip_is_classified_by_the_term_it_lowers_to() {
         let less = compare(CompareRelation::LessThan, true);
         assert_eq!(classify(&less, &less), RoundTrip::Same);
