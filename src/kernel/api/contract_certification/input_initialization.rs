@@ -59,8 +59,10 @@ pub(in crate::kernel) fn initialized_input_range_fact(
     {
         return Ok(None);
     }
-    let var = Variable::allocate_fresh().ok_or("initialization binder identity exhausted")?;
-    let index = MachineTerm::Variable(var);
+    // The body below holds no quantifier, so it is built over the innermost
+    // binder directly.
+    let binder = crate::kernel::quantifiers::innermost_binder();
+    let index = MachineTerm::Variable(*binder);
     let (format, sort, lo, hi) = match range.wide_bounds() {
         Some((lo, hi)) => (
             MachineIntegerType::UInt64,
@@ -103,10 +105,10 @@ pub(in crate::kernel) fn initialized_input_range_fact(
         value_type,
     };
     Ok(Some(Proposition::ForAll {
-        name: BinderName::written("k"),
-        var,
+        var: binder,
         sort,
         body: Box::new(Proposition::Implies(Box::new(guard), Box::new(defined))),
+        name: BinderName::written("k"),
     }))
 }
 

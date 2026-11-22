@@ -2,6 +2,8 @@
 //! audits (`docs/internals/raise-lower-principle.md`). Each verifies every
 //! proof container the expansion audit walks with its records switched on,
 //! then reports one headline: how many of the items it checked fail.
+//! `click audit legacy-walk` runs the same way and counts the reads still
+//! named by the legacy version walk (`kernel::resource_tracker::legacy_walk_audit`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -27,6 +29,7 @@ pub(super) fn name(audit: LoweringAudit) -> &'static str {
     match audit {
         LoweringAudit::RaiseLower => "raise-lower",
         LoweringAudit::FactStability => "fact-stability",
+        LoweringAudit::LegacyWalk => "legacy-walk",
     }
 }
 
@@ -76,10 +79,12 @@ pub(super) fn run(
     let counts = match audit {
         LoweringAudit::RaiseLower => raise_lower_counts(&lines),
         LoweringAudit::FactStability => fact_stability_counts(&lines, checked),
+        LoweringAudit::LegacyWalk => legacy_walk_counts(&lines, targets.len()),
     };
     let failures = match audit {
         LoweringAudit::RaiseLower => raise_lower_failures(&lines),
         LoweringAudit::FactStability => fact_stability_failures(&lines),
+        LoweringAudit::LegacyWalk => legacy_walk_failures(&lines),
     };
     write_failures(audit, &failures, records)?;
     let unexpected_outcomes = unexpected
@@ -146,6 +151,7 @@ impl Failure {
                 cli::shell_quote(&self.place)
             ),
             LoweringAudit::FactStability => format!("click audit fact-stability {container}"),
+            LoweringAudit::LegacyWalk => format!("click audit legacy-walk {container}"),
         }
     }
 }
@@ -201,6 +207,85 @@ fn fact_stability_failures(lines: &str) -> Vec<Failure> {
     failures
 }
 
+/// One legacy-walk record: `queries, work, site, resource, storage, extent,
+/// container`.
+struct LegacyWalkRecord<'a> {
+    queries: usize,
+    work: usize,
+    site: &'a str,
+    read: String,
+    container: &'a str,
+}
+
+fn legacy_walk_records(lines: &str) -> impl Iterator<Item = LegacyWalkRecord<'_>> {
+    lines.lines().filter_map(|line| {
+        let fields = line.split('\t').collect::<Vec<_>>();
+        let [queries, work, site, resource, storage, extent, container] = fields[..] else {
+            return None;
+        };
+        let read = [resource, storage, extent]
+            .into_iter()
+            .filter(|field| !field.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        Some(LegacyWalkRecord {
+            queries: queries.parse().ok()?,
+            work: work.parse().ok()?,
+            site,
+            read,
+            container,
+        })
+    })
+}
+
+/// Each calling site and read kind that reaches the legacy walk, the most
+/// work first, then the most queries. Its container is the one with the most
+/// such queries.
+fn legacy_walk_failures(lines: &str) -> Vec<Failure> {
+    #[derive(Default)]
+    struct Group<'a> {
+        queries: usize,
+        work: usize,
+        containers: BTreeMap<&'a str, usize>,
+    }
+    let mut groups = BTreeMap::<(&str, String), Group<'_>>::new();
+    for record in legacy_walk_records(lines) {
+        let group = groups.entry((record.site, record.read)).or_default();
+        group.queries += record.queries;
+        group.work += record.work;
+        *group.containers.entry(record.container).or_default() += record.queries;
+    }
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    groups.sort_by(|left, right| {
+        (right.1.work, right.1.queries)
+            .cmp(&(left.1.work, left.1.queries))
+            .then(left.0.cmp(&right.0))
+    });
+    groups
+        .into_iter()
+        .map(|((site, read), group)| {
+            let container = group
+                .containers
+                .iter()
+                .max_by(|left, right| left.1.cmp(right.1).then(right.0.cmp(left.0)))
+                .map_or("", |(container, _)| container);
+            Failure {
+                outcome: format!("{} queries", group.queries),
+                kind: read.clone(),
+                container: container.to_string(),
+                place: site.to_string(),
+                original: read,
+                other: format!(
+                    "{} work units in {} containers",
+                    group.work,
+                    group.containers.len()
+                ),
+                lowered: String::new(),
+            }
+        })
+        .collect()
+}
+
 /// `<records>.failures.tsv`: outcome, kind, container, claim or site,
 /// original, raised form or fact-free lowering, lowered form, and the
 /// command that reproduces it, one failure per line.
@@ -235,6 +320,7 @@ fn render_failures(audit: LoweringAudit, failures: &[Failure], records: &Path) -
     let (original, other) = match audit {
         LoweringAudit::RaiseLower => ("fact", "raised"),
         LoweringAudit::FactStability => ("with facts", "without facts"),
+        LoweringAudit::LegacyWalk => ("read", "cost"),
     };
     let mut text = String::new();
     for (index, failure) in failures.iter().take(PRINTED_FAILURES).enumerate() {
@@ -262,6 +348,31 @@ fn render_failures(audit: LoweringAudit, failures: &[Failure], records: &Path) -
         ));
     }
     text
+}
+
+/// Every legacy-walk query is a read still to migrate. `checked` is the
+/// number of containers verified, `tracked` those with any query.
+fn legacy_walk_counts(lines: &str, containers: usize) -> Counts {
+    let mut queries = 0;
+    let mut work = 0;
+    let mut reached = BTreeSet::new();
+    let mut sites = BTreeSet::new();
+    let mut outcomes = BTreeMap::<String, usize>::new();
+    for record in legacy_walk_records(lines) {
+        queries += record.queries;
+        work += record.work;
+        reached.insert(record.container);
+        sites.insert(record.site);
+        *outcomes.entry(record.read).or_default() += record.queries;
+    }
+    outcomes.insert("work".to_string(), work);
+    outcomes.insert("sites".to_string(), sites.len());
+    Counts {
+        failing: queries,
+        checked: containers,
+        tracked: reached.len(),
+        outcomes,
+    }
 }
 
 /// What one lowering audit counted.
@@ -319,6 +430,15 @@ fn headline(audit: LoweringAudit, counts: &Counts, records: &Path) -> String {
             counts.checked,
             percent(counts.failing, counts.checked),
             counts.tracked,
+            records.display()
+        ),
+        LoweringAudit::LegacyWalk => format!(
+            "legacy-walk audit: {} queries named a read with the legacy version walk, charging {} work units, from {} call sites in {} of {} proof containers; records: {}",
+            counts.failing,
+            counts.outcomes.get("work").copied().unwrap_or(0),
+            counts.outcomes.get("sites").copied().unwrap_or(0),
+            counts.tracked,
+            counts.checked,
             records.display()
         ),
     }
@@ -490,6 +610,29 @@ mod tests {
             headline.contains("1 unraised, 0 unlowered, 1 differs, 0 polarity"),
             "{headline}"
         );
+    }
+
+    /// Legacy-walk records sum per site and read, and the headline counts
+    /// every query.
+    #[test]
+    fn the_legacy_walk_headline_counts_every_query() {
+        let lines = "3\t40\tsrc/a.rs:1\tcell\tautomatic\t4\tx.md\n\
+                     2\t0\tsrc/a.rs:1\tcell\tautomatic\t4\ty.md\n\
+                     5\t9\tsrc/b.rs:2\tblock\tstatic\t\ty.md\n";
+        let counts = legacy_walk_counts(lines, 4);
+        let headline = headline(LoweringAudit::LegacyWalk, &counts, Path::new("l.tsv"));
+        assert!(
+            headline.starts_with(
+                "legacy-walk audit: 10 queries named a read with the legacy version walk, charging 49 work units, from 2 call sites in 2 of 4 proof containers"
+            ),
+            "{headline}"
+        );
+        let failures = legacy_walk_failures(lines);
+        assert_eq!(failures.len(), 2);
+        assert_eq!(failures[0].outcome, "5 queries");
+        assert_eq!(failures[0].original, "cell automatic 4");
+        assert_eq!(failures[0].container, "x.md");
+        assert_eq!(failures[1].original, "block static");
     }
 
     /// A fact-dependent term or path choice fails; a refusal is tracked.

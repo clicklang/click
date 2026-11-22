@@ -531,7 +531,7 @@ fn kernel_identities(
             Proposition::Not(_) => child(first).map(KernelConnective::Not),
             Proposition::ForAll { var, sort, .. } => {
                 child(first).map(|body| KernelConnective::ForAll {
-                    var: *var,
+                    var: **var,
                     sort: sort.clone(),
                     body,
                 })
@@ -540,7 +540,7 @@ fn kernel_identities(
                 name, var, sort, ..
             } => child(first).map(|body| KernelConnective::Exists {
                 name: name.clone(),
-                var: *var,
+                var: **var,
                 sort: sort.clone(),
                 body,
             }),

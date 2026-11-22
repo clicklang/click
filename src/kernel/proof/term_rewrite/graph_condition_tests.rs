@@ -134,12 +134,12 @@ fn check_binder_bodies(scalar: bool) {
             body: integer_body.into(),
         }],
     };
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(51),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(guard(), true)),
-    };
+    let quantified = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        Variable(51),
+        Sort::ProgramInt32,
+        Proposition::condition_is(guard(), true),
+    );
     // Both cited facts and graph facts are from the enclosing scope.
     for conditions in [&empty, &cited] {
         for mut rewrite in [

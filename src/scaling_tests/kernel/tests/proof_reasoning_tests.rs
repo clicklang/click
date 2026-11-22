@@ -24,15 +24,12 @@ fn nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack() {
                     true,
                 );
                 // Keep real quantified/atomic work below the connective spine.
-                let mut goal = Proposition::ForAll {
-                    name: Default::default(),
-                    var: variable,
-                    sort: Sort::ProgramInt32,
-                    body: Box::new(Proposition::Implies(
-                        Box::new(positive),
-                        Box::new(nonnegative),
-                    )),
-                };
+                let mut goal = crate::kernel::quantifiers::test_forall(
+                    Default::default(),
+                    variable,
+                    Sort::ProgramInt32,
+                    Proposition::Implies(Box::new(positive), Box::new(nonnegative)),
+                );
                 let truth = Proposition::condition_is(
                     ConditionTerm::equal(MachineTerm::constant(0), MachineTerm::constant(0)),
                     true,
@@ -569,15 +566,15 @@ fn forall_integer_instantiation_preserves_repeated_squaring_as_a_shared_expressi
             let child: SharedIntegerTerm = term.into();
             term = IntegerTerm::Multiply(child.clone(), child);
         }
-        let quantified = Proposition::ForAll {
-            name: Default::default(),
-            var: binder,
-            sort: Sort::Integer,
-            body: Box::new(Proposition::Equal(
+        let quantified = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            binder,
+            Sort::Integer,
+            Proposition::Equal(
                 Term::Integer(term.into()),
                 Term::Integer(IntegerTerm::constant_i64(0).into()),
-            )),
-        };
+            ),
+        );
         let (instance, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::proof::fact_reasoning::instantiate_universal(
                 &quantified,
@@ -624,12 +621,12 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
                 Box::new(body),
             );
         }
-        let quantified = Proposition::ForAll {
-            name: Default::default(),
-            var: binder,
-            sort: Sort::Integer,
-            body: Box::new(body),
-        };
+        let quantified = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            binder,
+            Sort::Integer,
+            body,
+        );
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::proof::fact_reasoning::instantiate_universal(
                 &quantified,

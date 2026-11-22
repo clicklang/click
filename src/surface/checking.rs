@@ -461,13 +461,13 @@ pub(super) fn apply_witness_tactic(
                 crate::kernel::integer_c_value!(v) => v,
                 _ => unreachable!("witness type was checked above"),
             };
-            substitute_int32_variable_in_proposition(&body, var, value)
+            substitute_int32_variable_in_proposition(&body, *var, value)
         }
         (
             Sort::ProgramPointer(expected) | Sort::ProgramObjectPointer(expected, _),
             ProgramValue::Pointer(pointer),
         ) if expected.accepts(&ProgramValue::Pointer(pointer.clone())) => {
-            crate::kernel::substitute_pointer_value_in_proposition(&body, var, &pointer)
+            crate::kernel::substitute_pointer_value_in_proposition(&body, *var, &pointer)
                 .map_err(ClickError::new)?
         }
         _ => {

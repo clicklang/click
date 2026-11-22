@@ -423,13 +423,13 @@ fn rewrite_with_admitted_equality_reading(
         BuildNot,
         BuildImplies,
         BuildForAll {
-            var: Variable,
+            var: QuantifierBinder,
             sort: Sort,
             name: BinderName,
         },
         BuildExists {
             name: String,
-            var: Variable,
+            var: QuantifierBinder,
             sort: Sort,
         },
     }
@@ -3166,11 +3166,11 @@ mod tests {
         let word = MachineTerm::Variable(variable);
         let source = IntegerTerm::from_machine(MachineIntegerType::Int32, word.clone()).unwrap();
         let cited = integer_equality(source, IntegerTerm::var(Variable(74_152)));
-        let goal = Proposition::ForAll {
-            name: Default::default(),
-            var: variable,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::condition_is(
+        let goal = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            variable,
+            Sort::ProgramInt32,
+            Proposition::condition_is(
                 observed_native_condition(
                     MachineIntegerType::Int32,
                     1,
@@ -3178,8 +3178,8 @@ mod tests {
                     observed_native_bound(MachineIntegerType::Int32),
                 ),
                 true,
-            )),
-        };
+            ),
+        );
         assert!(rewrite_with_admitted_equality(&goal, &cited).is_err());
     }
 
@@ -3639,30 +3639,35 @@ mod tests {
         let cited = integer_equality(x.clone(), y.clone());
         let facts = PureFactStore::default().with_fact(cited.clone());
         let goal = integer_equality(IntegerTerm::multiply(x.clone(), x.clone()), y.clone());
-        for variable in [Variable(193_011), Variable(193_012)] {
-            let quantified = Proposition::ForAll {
-                name: Default::default(),
-                var: variable,
-                sort: Sort::Integer,
-                body: Box::new(goal.clone()),
-            };
-            assert!(facts.check_equality_rewrite(&quantified, &cited).is_err());
-        }
-        let unrelated = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(193_013),
-            sort: Sort::Integer,
-            body: Box::new(goal.clone()),
-        };
-        let expected = Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(193_013),
-            sort: Sort::Integer,
-            body: Box::new(integer_equality(
-                IntegerTerm::multiply(y.clone(), y.clone()),
-                y.clone(),
-            )),
-        };
+        // Quantifying `x` binds every occurrence the equality could rewrite.
+        let over_x = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(193_011),
+            Sort::Integer,
+            goal.clone(),
+        );
+        assert!(facts.check_equality_rewrite(&over_x, &cited).is_err());
+        // Quantifying `y` binds `y` as its own bound variable, so rewriting
+        // the free `x` to `y` captures nothing.
+        let over_y = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(193_012),
+            Sort::Integer,
+            goal.clone(),
+        );
+        assert!(facts.check_equality_rewrite(&over_y, &cited).is_ok());
+        let unrelated = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(193_013),
+            Sort::Integer,
+            goal.clone(),
+        );
+        let expected = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(193_013),
+            Sort::Integer,
+            integer_equality(IntegerTerm::multiply(y.clone(), y.clone()), y.clone()),
+        );
         assert_eq!(
             facts
                 .check_equality_rewrite(&unrelated, &cited)
@@ -4215,11 +4220,13 @@ mod tests {
             )
         };
         let variable = |id| MachineTerm::Variable(id);
-        let quantified = |body| Proposition::ForAll {
-            name: Default::default(),
-            var: bound,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body),
+        let quantified = |body| {
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                bound,
+                Sort::ProgramInt32,
+                body,
+            )
         };
 
         let shadowed = atom(variable(bound), MachineTerm::constant(0));
@@ -4229,26 +4236,33 @@ mod tests {
             "an outer equality cannot replace the bound occurrence"
         );
 
+        // The quantifier binds its own bound variable, never `bound`, so a
+        // replacement that mentions `bound` cannot be captured: the rewrite
+        // holds and `bound` stays free in it.
         let capturing = atom(variable(free), variable(bound));
         let capturing_goal = quantified(atom(variable(free), MachineTerm::constant(0)));
-        assert!(
-            checked_rewrite(
-                &capturing_goal,
-                &capturing,
-                std::slice::from_ref(&capturing),
-            )
-            .is_err(),
-            "the replacement's free variable cannot become bound"
-        );
-        let existential = Proposition::Exists {
-            name: "witness".to_string(),
-            var: bound,
-            sort: Sort::ProgramInt32,
-            body: Box::new(atom(variable(free), MachineTerm::constant(0))),
+        let rewritten = checked_rewrite(
+            &capturing_goal,
+            &capturing,
+            std::slice::from_ref(&capturing),
+        )
+        .expect("the replacement's free variable stays free");
+        let Proposition::ForAll { var, body, .. } = &rewritten else {
+            panic!("the quantifier survives the rewrite");
         };
+        assert!(var.is_bound());
+        assert!(crate::kernel::proposition_has_free_bitvector_variable(
+            body, bound
+        ));
+        let existential = crate::kernel::quantifiers::test_exists(
+            "witness".to_string(),
+            bound,
+            Sort::ProgramInt32,
+            atom(variable(free), MachineTerm::constant(0)),
+        );
         assert!(
-            checked_rewrite(&existential, &capturing, std::slice::from_ref(&capturing),).is_err(),
-            "existential binders obey the same capture rule"
+            checked_rewrite(&existential, &capturing, std::slice::from_ref(&capturing),).is_ok(),
+            "an existential's binder is not captured either"
         );
 
         let hidden_capture = atom(
@@ -4266,8 +4280,8 @@ mod tests {
                 &hidden_capture,
                 std::slice::from_ref(&hidden_capture),
             )
-            .is_err(),
-            "a variable inside a pure-function argument must not become bound"
+            .is_ok(),
+            "a variable inside a pure-function argument stays free"
         );
 
         let safe = atom(variable(free), MachineTerm::constant(0));

@@ -103,11 +103,11 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                             (32 + premise as u32).into(),
                         );
                         let cell = guard_cell_value(&state, &template, &index, &facts).unwrap();
-                        facts = facts.assume_proposition(Proposition::ForAll {
-                            name: Default::default(),
+                        facts = facts.assume_proposition(crate::kernel::quantifiers::test_forall(
+                            Default::default(),
                             var,
-                            sort: Sort::ProgramInt32,
-                            body: Box::new(Proposition::Implies(
+                            Sort::ProgramInt32,
+                            Proposition::Implies(
                                 Box::new(Proposition::And(
                                     Box::new(Proposition::condition_is(lower, true)),
                                     Box::new(Proposition::condition_is(upper, true)),
@@ -116,8 +116,8 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                                     ConditionTerm::equal(cell, 0u32.into()),
                                     true,
                                 )),
-                            )),
-                        });
+                            ),
+                        ));
                     }
                     assert!(
                         prepare_iterated_clause_unfold(&state, &template, &facts).is_err(),
@@ -136,11 +136,11 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         .assume_condition(lower.clone(), true)
                         .assume_condition(upper.clone(), true);
                     let value = guard_cell_value(&state, &template, &index, &hypotheses).unwrap();
-                    facts = facts.assume_proposition(Proposition::ForAll {
-                        name: Default::default(),
+                    facts = facts.assume_proposition(crate::kernel::quantifiers::test_forall(
+                        Default::default(),
                         var,
-                        sort: Sort::ProgramInt32,
-                        body: Box::new(Proposition::Implies(
+                        Sort::ProgramInt32,
+                        Proposition::Implies(
                             Box::new(Proposition::And(
                                 Box::new(Proposition::condition_is(lower, true)),
                                 Box::new(Proposition::condition_is(upper, true)),
@@ -154,8 +154,8 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                                 },
                                 true,
                             )),
-                        )),
-                    });
+                        ),
+                    ));
                 }
                 let range = if unfold_clause {
                     template.covering_range().unwrap()

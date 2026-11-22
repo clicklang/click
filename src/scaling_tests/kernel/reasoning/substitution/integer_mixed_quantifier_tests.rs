@@ -70,19 +70,19 @@ fn integer_substitution_nested_carrier_scopes_scale_with_shared_body() {
         for index in (0..depth).rev() {
             let variable = Variable(9_300 + (index / 2) as u64);
             body = if index % 2 == 0 {
-                Proposition::ForAll {
-                    name: Default::default(),
-                    var: variable,
-                    sort: Sort::ProgramInt32,
-                    body: Box::new(body),
-                }
+                crate::kernel::quantifiers::test_forall(
+                    Default::default(),
+                    variable,
+                    Sort::ProgramInt32,
+                    body,
+                )
             } else {
-                Proposition::Exists {
-                    name: format!("integer{index}"),
-                    var: variable,
-                    sort: Sort::Integer,
-                    body: Box::new(body),
-                }
+                crate::kernel::quantifiers::test_exists(
+                    format!("integer{index}"),
+                    variable,
+                    Sort::Integer,
+                    body,
+                )
             };
         }
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -115,12 +115,12 @@ fn integer_substitution_algebraic_capture_scales_with_nested_scopes() {
             Term::Integer(replacement.clone().into()),
         );
         for _ in 0..depth {
-            source = Proposition::ForAll {
-                name: Default::default(),
-                var: bound,
-                sort: Sort::Algebraic(algebraic_type.clone()),
-                body: Box::new(source),
-            };
+            source = crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                bound,
+                Sort::Algebraic(algebraic_type.clone()),
+                source,
+            );
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             substitute_integer_variable_in_pure_proposition(&source, from, &replacement).unwrap()
@@ -132,9 +132,9 @@ fn integer_substitution_algebraic_capture_scales_with_nested_scopes() {
             let Proposition::ForAll { var, body, .. } = remaining else {
                 panic!("quantifier was lost");
             };
-            assert_ne!(var, bound);
+            assert_ne!(*var, bound);
             assert!(issued.insert(var));
-            innermost = var;
+            innermost = *var;
             remaining = *body;
         }
         assert_eq!(

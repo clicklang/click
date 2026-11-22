@@ -49,6 +49,7 @@ mod population_authority;
 pub(crate) use population_authority::storage_creation::CheckedPopulationAuthorityExchange;
 pub(crate) use population_authority::storage_creation::CheckedPopulationMemberExchange;
 mod quantified_frame;
+pub(crate) mod quantifiers;
 mod resource_description;
 mod thread_confinement;
 pub(crate) use functions::ResourceBodyClauseRecord;
@@ -369,6 +370,7 @@ pub struct VerificationSessionState {
     fold_reads: fold_read_summary::FoldReadSummariesState,
     conjunctions: resource_conjunction::Registry,
     required_constructions: spec::required_constructions::RequiredConstructionsState,
+    opening_witnesses: u64,
 }
 
 /// One verification's worth of kernel thread-local state.
@@ -405,6 +407,8 @@ impl VerificationSession {
             proof::equality_rewrite::clear_shared_exact_rewrite_cache();
             primitives::clear_shared_machine_variable_cache();
             reasoning::order_reasoning::clear_fold_affine_bases();
+            quantifiers::reset_opening_witnesses(0);
+            reasoning::clear_memory_lacks_variable();
             VERIFICATION_SESSION_GENERATION
                 .with(|generation| generation.set(generation.get().wrapping_add(1)));
 
@@ -458,6 +462,7 @@ impl VerificationSession {
             fold_reads: fold_read_summary::capture_fold_read_summaries(),
             conjunctions: resource_conjunction::capture(),
             required_constructions: spec::required_constructions::capture_required_constructions(),
+            opening_witnesses: quantifiers::opening_witness_count(),
         }
     }
 
@@ -494,6 +499,8 @@ impl VerificationSession {
         model_fields::restore_model_field_registry(&state.model_fields);
         primitives::restore_block_registries(&state.blocks);
         fold_read_summary::restore_fold_read_summaries(&state.fold_reads);
+        quantifiers::reset_opening_witnesses(state.opening_witnesses);
+        reasoning::clear_memory_lacks_variable();
         eval::clear_load_canonicalization_caches();
         memory_history::clear_canonical_form_caches();
         memory_history::clear_load_equality_memos();

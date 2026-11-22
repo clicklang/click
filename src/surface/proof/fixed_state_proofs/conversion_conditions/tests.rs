@@ -450,14 +450,13 @@ fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
         },
         true,
     );
-    let guard = |conclusion| Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(760_000),
-        sort: crate::kernel::Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
-            Box::new(premise.clone()),
-            Box::new(conclusion),
-        )),
+    let guard = |conclusion| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(760_000),
+            crate::kernel::Sort::ProgramInt32,
+            Proposition::Implies(Box::new(premise.clone()), Box::new(conclusion)),
+        )
     };
     assert!(established_condition(
         &PureFactContext::new(),

@@ -1036,11 +1036,13 @@ fn pure_theorem_completion_issues_universally_closed_authority() {
             .fold(scenario.conclusion.clone(), |body, requirement| {
                 Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
             }),
-        |body, var| Proposition::ForAll {
-            name: Default::default(),
-            var: *var,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body),
+        |body, var| {
+            crate::kernel::quantifiers::test_forall(
+                Default::default(),
+                *var,
+                Sort::ProgramInt32,
+                body,
+            )
         },
     );
     assert_eq!(authority.theorem.proposition(), &expected);
@@ -3976,11 +3978,11 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
     let load_1 = indexed_load(MachineTerm::constant(1));
     let load_2 = indexed_load(MachineTerm::constant(2));
     let load_1_again = load_1.clone();
-    let finite_order_fact = Proposition::ForAll {
-        name: Default::default(),
-        var: k,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    let finite_order_fact = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        k,
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::signed_less_equal(MachineTerm::constant(0), k_bits.clone()),
@@ -3995,8 +3997,8 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
                 ConditionTerm::signed_less_equal(load_k, load_1.clone()),
                 true,
             )),
-        )),
-    };
+        ),
+    );
     let assumptions = PureFactContext::new()
         .assume_proposition(finite_order_fact)
         .assume_condition(
@@ -4072,11 +4074,11 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
     );
     let pivot = MachineTerm::Variable(Variable(191));
     let successor = MachineTerm::Variable(Variable(192));
-    let induction_hypothesis = Proposition::ForAll {
-        name: Default::default(),
-        var: k,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    let induction_hypothesis = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        k,
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_than(k_bits.clone(), j.clone()),
                 true,
@@ -4085,8 +4087,8 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
                 ConditionTerm::signed_less_equal(value_at_k.clone(), pivot.clone()),
                 true,
             )),
-        )),
-    };
+        ),
+    );
     let assumptions = PureFactContext::new()
         .assume_proposition(induction_hypothesis)
         .assume_condition(
@@ -4124,14 +4126,13 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
 #[test]
 fn a_binder_name_never_distinguishes_two_universals() {
     use std::hash::{Hash, Hasher};
-    let universal = |name: &str| Proposition::ForAll {
-        var: Variable(530),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::Constant(true),
-            true,
-        )),
-        name: crate::kernel::BinderName::written(name),
+    let universal = |name: &str| {
+        crate::kernel::quantifiers::test_forall(
+            crate::kernel::BinderName::written(name),
+            Variable(530),
+            Sort::ProgramInt32,
+            Proposition::condition_is(ConditionTerm::Constant(true), true),
+        )
     };
     let hash = |proposition: &Proposition| {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -4156,15 +4157,12 @@ fn forall_int32_instantiation_concludes_the_exact_substituted_body() {
         true,
     );
     let conclusion = Proposition::condition_is(ConditionTerm::equal(bound.clone(), bound), true);
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
-            Box::new(premise),
-            Box::new(conclusion),
-        )),
-    };
+    let quantified = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::ProgramInt32,
+        Proposition::Implies(Box::new(premise), Box::new(conclusion)),
+    );
     let value = MachineTerm::Variable(Variable(501));
     let instantiated_premise = Proposition::condition_is(
         ConditionTerm::signed_greater_equal(value.clone(), MachineTerm::constant(0)),
@@ -4197,11 +4195,11 @@ fn forall_int32_instantiation_rejects_a_premise_that_does_not_give_its_guard() {
     // `v >= -1` (the signed reading of `u32::MAX`) does not give `v >= 0`.
     let binder = Variable(510);
     let bound = MachineTerm::Variable(binder);
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    let quantified = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(Proposition::condition_is(
                 ConditionTerm::signed_greater_equal(bound.clone(), MachineTerm::constant(0)),
                 true,
@@ -4210,8 +4208,8 @@ fn forall_int32_instantiation_rejects_a_premise_that_does_not_give_its_guard() {
                 ConditionTerm::equal(bound.clone(), bound),
                 true,
             )),
-        )),
-    };
+        ),
+    );
     let wrong = Proposition::condition_is(
         ConditionTerm::signed_greater_equal(
             MachineTerm::Variable(Variable(511)),
@@ -4234,20 +4232,20 @@ fn forall_int32_instantiation_rejects_a_premise_that_does_not_give_its_guard() {
 fn forall_int32_instantiation_avoids_capturing_the_argument_variable() {
     let outer = Variable(520);
     let inner = Variable(521);
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: outer,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ForAll {
-            name: Default::default(),
-            var: inner,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::condition_is(
+    let quantified = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        outer,
+        Sort::ProgramInt32,
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            inner,
+            Sort::ProgramInt32,
+            Proposition::condition_is(
                 ConditionTerm::equal(MachineTerm::Variable(outer), MachineTerm::Variable(inner)),
                 true,
-            )),
-        }),
-    };
+            ),
+        ),
+    );
     let Ok(Proposition::ForAll {
         var: renamed, body, ..
     }) = instantiate_universal(
@@ -4257,13 +4255,13 @@ fn forall_int32_instantiation_avoids_capturing_the_argument_variable() {
     else {
         panic!("nested quantifier should remain in the instance");
     };
-    assert_ne!(renamed, inner, "the inner binder must be renamed");
+    assert_ne!(*renamed, inner, "the inner binder must be renamed");
     assert!(
         matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(
             _,
             true
         ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right }, _)) if (left.as_ref() == &MachineTerm::Variable(inner)
-            && right.as_ref() == &MachineTerm::Variable(renamed))))
+            && right.as_ref() == &MachineTerm::Variable(*renamed))))
     );
 }
 
@@ -4282,15 +4280,12 @@ fn forall_integer_instantiation_keeps_the_exact_guard_and_a_wide_argument() {
         ConditionTerm::IntegerEqual(bound.clone().into(), bound.clone().into()),
         true,
     );
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::Integer,
-        body: Box::new(Proposition::Implies(
-            Box::new(premise),
-            Box::new(conclusion),
-        )),
-    };
+    let quantified = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::Integer,
+        Proposition::Implies(Box::new(premise), Box::new(conclusion)),
+    );
     let wide = IntegerTerm::parse_constant("340282366920938463463374607431768211457")
         .expect("wide integer constant");
     let instantiated_premise = Proposition::condition_is(
@@ -4334,18 +4329,18 @@ fn forall_integer_instantiation_rejects_a_missing_guard_or_another_sort() {
         ),
         true,
     );
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::Integer,
-        body: Box::new(Proposition::Implies(
+    let quantified = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::Integer,
+        Proposition::Implies(
             Box::new(guard),
             Box::new(Proposition::condition_is(
                 ConditionTerm::IntegerEqual(bound.clone().into(), bound.into()),
                 true,
             )),
-        )),
-    };
+        ),
+    );
     let value = InstanceArgument::Integer(IntegerTerm::var(Variable(612)));
     let changed = Proposition::condition_is(
         ConditionTerm::IntegerGreaterEqual(
@@ -4371,15 +4366,12 @@ fn forall_integer_instantiation_rejects_a_missing_guard_or_another_sort() {
         ),
         Err(ForallInstantiationError::ArgumentSort)
     ));
-    let machine = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::Constant(true),
-            true,
-        )),
-    };
+    let machine = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::ProgramInt32,
+        Proposition::condition_is(ConditionTerm::Constant(true), true),
+    );
     assert!(matches!(
         instantiate_universal(
             &machine,
@@ -4393,29 +4385,25 @@ fn forall_integer_instantiation_rejects_a_missing_guard_or_another_sort() {
 fn forall_integer_instantiation_renames_nested_forall_and_exists_once() {
     let outer = Variable(620);
     let repeated = Variable(621);
-    let body = Proposition::ForAll {
-        name: Default::default(),
-        var: repeated,
-        sort: Sort::Integer,
-        body: Box::new(Proposition::Exists {
-            name: "repeated".into(),
-            var: repeated,
-            sort: Sort::Integer,
-            body: Box::new(Proposition::condition_is(
+    let body = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        repeated,
+        Sort::Integer,
+        crate::kernel::quantifiers::test_exists(
+            "repeated".into(),
+            repeated,
+            Sort::Integer,
+            Proposition::condition_is(
                 ConditionTerm::IntegerEqual(
                     IntegerTerm::var(outer).into(),
                     IntegerTerm::var(repeated).into(),
                 ),
                 true,
-            )),
-        }),
-    };
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: outer,
-        sort: Sort::Integer,
-        body: Box::new(body),
-    };
+            ),
+        ),
+    );
+    let quantified =
+        crate::kernel::quantifiers::test_forall(Default::default(), outer, Sort::Integer, body);
     let Ok(Proposition::ForAll {
         var: renamed_forall,
         body,
@@ -4435,12 +4423,12 @@ fn forall_integer_instantiation_renames_nested_forall_and_exists_once() {
     else {
         panic!("nested exists should remain in the instance");
     };
-    assert_ne!(renamed_forall, repeated);
-    assert_ne!(*renamed_exists, repeated);
+    assert_ne!(*renamed_forall, repeated);
+    assert_ne!(**renamed_exists, repeated);
     assert_ne!(renamed_forall, *renamed_exists);
     assert!(
         matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(left, right), _)) if (left.as_ref() == &IntegerTerm::var(repeated)
-                && right.as_ref() == &IntegerTerm::var(*renamed_exists))))
+                && right.as_ref() == &IntegerTerm::var(**renamed_exists))))
     );
 }
 
@@ -4448,47 +4436,44 @@ fn forall_integer_instantiation_renames_nested_forall_and_exists_once() {
 fn forall_integer_instantiation_supports_nested_machine_sorts_and_refuses_unsupported_carriers() {
     let binder = Variable(630);
     let one = InstanceArgument::Integer(IntegerTerm::constant_i64(1));
-    let unsupported = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::Integer,
-        body: Box::new(Proposition::Predicate {
+    let unsupported = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::Integer,
+        Proposition::Predicate {
             name: "unsupported_integer_application".into(),
             arguments: vec![],
-        }),
-    };
+        },
+    );
     assert!(matches!(
         instantiate_universal(&unsupported, &one),
         Err(ForallInstantiationError::SubstitutionRefused(_))
     ));
-    let nested_machine_sort = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::Integer,
-        body: Box::new(Proposition::ForAll {
-            name: Default::default(),
-            var: Variable(631),
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::condition_is(
+    let nested_machine_sort = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::Integer,
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            Variable(631),
+            Sort::ProgramInt32,
+            Proposition::condition_is(
                 ConditionTerm::IntegerEqual(
                     IntegerTerm::var(binder).into(),
                     IntegerTerm::constant_i64(0).into(),
                 ),
                 true,
-            )),
-        }),
-    };
+            ),
+        ),
+    );
     assert!(instantiate_universal(&nested_machine_sort, &one).is_ok());
 
-    let true_body = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::Integer,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::Constant(true),
-            true,
-        )),
-    };
+    let true_body = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::Integer,
+        Proposition::condition_is(ConditionTerm::Constant(true), true),
+    );
     assert!(instantiate_universal(&true_body, &one).is_ok());
 }
 
@@ -4538,15 +4523,12 @@ fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
             ProgramValue::Pointer(pointer(variable, ProgramType::Int32Pointer)).into(),
         )
     };
-    let quantified = Proposition::ForAll {
-        name: Default::default(),
-        var: binder,
-        sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
-        body: Box::new(Proposition::Equal(
-            pointer_term(binder),
-            pointer_term(binder),
-        )),
-    };
+    let quantified = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        binder,
+        Sort::ProgramPointer(ProgramType::Int32Pointer),
+        Proposition::Equal(pointer_term(binder), pointer_term(binder)),
+    );
     let argument = InstanceArgument::Pointer(pointer(Variable(641), ProgramType::Int32Pointer));
     assert_eq!(
         check_forall_instantiation(&quantified, &argument, &[]).ok(),
@@ -4586,19 +4568,10 @@ fn nested_integer_forall(depth: usize, capture: bool) -> Proposition {
         } else {
             Variable(701 + index as u64)
         };
-        body = Proposition::ForAll {
-            name: Default::default(),
-            var,
-            sort: Sort::Integer,
-            body: Box::new(body),
-        };
+        body =
+            crate::kernel::quantifiers::test_forall(Default::default(), var, Sort::Integer, body);
     }
-    Proposition::ForAll {
-        name: Default::default(),
-        var: outer,
-        sort: Sort::Integer,
-        body: Box::new(body),
-    }
+    crate::kernel::quantifiers::test_forall(Default::default(), outer, Sort::Integer, body)
 }
 
 #[test]
@@ -4641,24 +4614,24 @@ fn alpha_equivalence_rejects_free_variable_capture() {
     let free = Variable(550);
     let left_binder = Variable(551);
     let right_binder = free;
-    let left = Proposition::ForAll {
-        name: Default::default(),
-        var: left_binder,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let left = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        left_binder,
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::Variable(free), MachineTerm::constant(5)),
             true,
-        )),
-    };
-    let right = Proposition::ForAll {
-        name: Default::default(),
-        var: right_binder,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+        ),
+    );
+    let right = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        right_binder,
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::Variable(free), MachineTerm::constant(5)),
             true,
-        )),
-    };
+        ),
+    );
 
     assert!(!propositions_alpha_equivalent(&left, &right));
 }
@@ -8380,11 +8353,11 @@ fn atomic_derivation_memo_is_keyed_by_the_dag_modes() {
 #[test]
 fn universal_consequents_ignore_unrelated_propositions() {
     let bound = Variable(94_000);
-    let universal = Proposition::ForAll {
-        name: Default::default(),
-        var: bound,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
+    let universal = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        bound,
+        Sort::ProgramInt32,
+        Proposition::Implies(
             Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_than(
                     MachineTerm::Variable(bound),
@@ -8399,8 +8372,8 @@ fn universal_consequents_ignore_unrelated_propositions() {
                 ),
                 true,
             )),
-        )),
-    };
+        ),
+    );
     let query = (
         MachineTerm::Variable(Variable(94_002)),
         MachineTerm::constant(1),
@@ -8455,11 +8428,11 @@ fn universal_consequents_ignore_unrelated_propositions() {
 fn universal_instantiation_ignores_universals_of_other_shapes() {
     let ordered = |index: u32| {
         let bound = Variable(96_000 + u64::from(index));
-        Proposition::ForAll {
-            name: Default::default(),
-            var: bound,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            bound,
+            Sort::ProgramInt32,
+            Proposition::Implies(
                 Box::new(Proposition::condition_is(
                     ConditionTerm::signed_less_than(
                         MachineTerm::Variable(bound),
@@ -8474,8 +8447,8 @@ fn universal_instantiation_ignores_universals_of_other_shapes() {
                     ),
                     true,
                 )),
-            )),
-        }
+            ),
+        )
     };
     let cell = MachineTerm::Variable(Variable(95_900));
     let goal = Proposition::condition_is(
@@ -8483,15 +8456,15 @@ fn universal_instantiation_ignores_universals_of_other_shapes() {
         true,
     );
     let bound = Variable(95_901);
-    let universal_goal = Proposition::ForAll {
-        name: Default::default(),
-        var: bound,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let universal_goal = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        bound,
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::Variable(bound), cell.clone()),
             true,
-        )),
-    };
+        ),
+    );
     let work = [16_u32, 64, 256]
         .into_iter()
         .map(|unrelated| {
@@ -8584,18 +8557,18 @@ fn offset_and_existential_matches_ignore_unrelated_facts() {
         crate::kernel::LoadKind::Int32,
     );
     let scaled = AddressOffset::scaled_int32_node(load, 4);
-    let existential = Proposition::Exists {
-        name: String::new(),
-        var: Variable(97_000),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let existential = crate::kernel::quantifiers::test_exists(
+        String::new(),
+        Variable(97_000),
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::signed_less_than(
                 MachineTerm::Variable(Variable(97_000)),
                 MachineTerm::Variable(Variable(97_001)),
             ),
             true,
-        )),
-    };
+        ),
+    );
     let work = [16_u64, 64, 256]
         .into_iter()
         .map(|unrelated| {
@@ -8609,18 +8582,18 @@ fn offset_and_existential_matches_ignore_unrelated_facts() {
                         ),
                         true,
                     )
-                    .assume_proposition(Proposition::Exists {
-                        name: String::new(),
-                        var: Variable(97_000),
-                        sort: Sort::ProgramInt32,
-                        body: Box::new(Proposition::condition_is(
+                    .assume_proposition(crate::kernel::quantifiers::test_exists(
+                        String::new(),
+                        Variable(97_000),
+                        Sort::ProgramInt32,
+                        Proposition::condition_is(
                             ConditionTerm::equal(
                                 MachineTerm::Variable(Variable(97_000)),
                                 MachineTerm::Variable(Variable(97_600 + index)),
                             ),
                             true,
-                        )),
-                    });
+                        ),
+                    ));
             }
             // Keying the facts assumed since the last query is index upkeep.
             context.build_stated_proposition_index();
@@ -8696,17 +8669,19 @@ fn selected_universal_equality_keeps_bounds_orientation_and_branch_context() {
             )),
         )
     };
-    let source = |truth| Proposition::ForAll {
-        name: Default::default(),
-        var: bound,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Implies(
-            Box::new(bounds(bound, 0)),
-            Box::new(Proposition::condition_is(
-                ConditionTerm::equal(7u32.into(), cell(bound)),
-                truth,
-            )),
-        )),
+    let source = |truth| {
+        crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            bound,
+            Sort::ProgramInt32,
+            Proposition::Implies(
+                Box::new(bounds(bound, 0)),
+                Box::new(Proposition::condition_is(
+                    ConditionTerm::equal(7u32.into(), cell(bound)),
+                    truth,
+                )),
+            ),
+        )
     };
     let parent = PureFactContext::new();
     let branch = parent.clone().assume_proposition(source(true));

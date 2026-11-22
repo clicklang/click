@@ -737,11 +737,20 @@ pub(crate) static FACT_STABILITY_RECORDS: AuditRecords = AuditRecords::new("CLIC
 /// The raise-lower audit's records: `CLICK_RAISE_LOWER`.
 pub(crate) static RAISE_LOWER_RECORDS: AuditRecords = AuditRecords::new("CLICK_RAISE_LOWER");
 
+/// The legacy-walk audit's records: `CLICK_LEGACY_WALK`, which the resource
+/// tracker's version-walk entries append to
+/// (`kernel::resource_tracker::legacy_walk_audit`).
+pub(crate) static LEGACY_WALK_RECORDS: AuditRecords = AuditRecords::new("CLICK_LEGACY_WALK");
+
 /// A lowering audit `click audit` can run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LoweringAudit {
     FactStability,
     RaiseLower,
+    /// Not a lowering promise: the reads still named by the legacy version
+    /// walk, which the program-point migration is removing. It runs like
+    /// the lowering audits, one verification per container with records on.
+    LegacyWalk,
 }
 
 impl LoweringAudit {
@@ -749,6 +758,7 @@ impl LoweringAudit {
         match self {
             LoweringAudit::FactStability => &FACT_STABILITY_RECORDS,
             LoweringAudit::RaiseLower => &RAISE_LOWER_RECORDS,
+            LoweringAudit::LegacyWalk => &LEGACY_WALK_RECORDS,
         }
     }
 

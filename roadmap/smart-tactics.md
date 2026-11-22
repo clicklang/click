@@ -85,6 +85,18 @@ For each read slice, test which point it selects, its raise/lower round trip,
 and bounded work as unrelated history grows. Use `cell_version_on_path` for
 diagnostic comparisons in tests. Keep production selection indexed.
 
+The legacy snapshot walk (`resource_tracker::last_same_version_point` and
+the entries beside it) is deleted at the end of step 15, not kept as a
+fallback. Its cost for a cell no store wrote is the stores into that block
+since its last version, so `n` such reads cost quadratic work in total
+(`legacy_walk_naming_of_fresh_cells_still_grows_with_same_block_stores`). A
+replacement must keep each step's irreducible work, ignoring obligations,
+within `O(log n)` of the history per read, so `n` steps stay near `n log n`.
+`click audit legacy-walk` counts the queries that still reach the walk, by
+calling site, resource and storage class; migrate the routes in order of
+that count. `known_legacy_fresh_reads_through_a_loaded_pointer_cost_the_same_at_every_position`
+is a step shape that still reaches it.
+
 Named scalar observations and read congruence use indexed versions where the
 producer has a recorded typed write or one of the supported entry versions.
 Concrete resource cells and compact runs can retain their source point.
