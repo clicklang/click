@@ -294,6 +294,7 @@ fn printer(labels: &mut MemoryStateLabels, mode: Mode) -> Printer<'_> {
         remaining: 512,
         bound: Vec::new(),
         before_return: false,
+        spelled_load_type: None,
     }
 }
 
@@ -307,6 +308,11 @@ struct Printer<'a> {
     /// outcome state. `result` does not exist before the return, so a read
     /// there is not spelled through it.
     before_return: bool,
+    /// The type the last spelled load's place states: a field's declared
+    /// type, or a typed read's explicit type. A 64-bit load carries no
+    /// signedness of its own, so a context of the other signedness needs a
+    /// conversion only this spelling can show.
+    spelled_load_type: Option<crate::kernel::ProgramType>,
 }
 
 impl Printer<'_> {
@@ -1252,7 +1258,7 @@ impl Printer<'_> {
             uint64_constant!(bits) if hint == Hint::Int64 => {
                 atom(format!("{}i64", constant_u64(*bits) as i64))
             }
-            _ => self.bitvector(value, inner_hint, depth)?,
+            _ => self.operand_as(value, inner_hint, depth)?,
         };
         if !needs_cast {
             return Some(spelled_value);
@@ -1265,6 +1271,37 @@ impl Printer<'_> {
             Hint::Narrow { .. } => return Some(spelled_value),
         };
         Some(cast(name, spelled_value))
+    }
+
+    /// `value` spelled as an operand read as `hint`. A 64-bit load is
+    /// signless, so the type its place states decides whether the operand
+    /// shows a conversion: a `size_t` field in an `int64` sum is
+    /// `(b->offset as int64) + 1i64`.
+    fn operand_as(
+        &mut self,
+        value: &MachineTerm,
+        hint: Option<Hint>,
+        depth: usize,
+    ) -> Option<Spelled> {
+        self.spelled_load_type = None;
+        let spelled_value = self.bitvector(value, hint, depth)?;
+        let wanted = match hint {
+            Some(Hint::Int64) => "int64",
+            Some(Hint::UInt64) => "uint64",
+            _ => return Some(spelled_value),
+        };
+        let converted = matches!(
+            value,
+            MachineTerm::MemoryLoad(_, _, crate::kernel::LoadKind::Bits64)
+        ) && self
+            .spelled_load_type
+            .and_then(Hint::of_type)
+            .is_some_and(|spelled| Some(spelled) != hint);
+        Some(if converted {
+            cast(wanted, spelled_value)
+        } else {
+            spelled_value
+        })
     }
 
     /// The source type of a term, where it shows.
@@ -1616,8 +1653,8 @@ impl Printer<'_> {
                     self.float_operand(right, false, depth)?,
                 ),
                 _ => (
-                    self.bitvector(left, operand_hint, depth)?,
-                    self.bitvector(right, right_hint, depth)?,
+                    self.operand_as(left, operand_hint, depth)?,
+                    self.operand_as(right, right_hint, depth)?,
                 ),
             };
             return Some(spelled(
@@ -1876,15 +1913,17 @@ impl Printer<'_> {
                 pointer,
                 kind,
                 ParameterBinding::new(&naming.0, &naming.1),
-            )
-            .or_else(|| {
+            ) {
+                return Some((model, None));
+            }
+            if let Some((field, field_type)) =
                 crate::surface::diagnostics::diagnostic_aggregate_parameter_load_cell(
                     pointer,
                     kind,
                     ParameterBinding::new(&naming.0, &naming.1),
                 )
-            }) {
-                return Some(model);
+            {
+                return Some((field, Some(field_type)));
             }
             // An address spelling alone does not establish the type of a
             // read. Keep only bases whose declared element has this exact
@@ -1918,39 +1957,52 @@ impl Printer<'_> {
                     ParameterBinding::new(&naming.0, &naming.1),
                 )
             })
+            .map(|cell| (cell, None))
         });
-        let place = match cell {
-            Some(cell) if !(self.source_mode() && cell.contains('+')) => atom(cell),
+        // The type a typed read's own spelling states, `*(p as (int64 *))`.
+        let typed_read =
+            (kind == crate::kernel::LoadKind::Bits64).then_some(crate::kernel::ProgramType::Int64);
+        let (place, spelled_type) = match cell {
+            Some((cell, field_type)) if !(self.source_mode() && cell.contains('+')) => {
+                (atom(cell), field_type)
+            }
             None if !self.source_mode() => return None,
             _ => {
                 let address = self.pointer(pointer, depth)?;
                 if let Some(place) = address.text.strip_prefix("the caller's ") {
                     // A by-value aggregate argument's field is a place of
                     // the caller's.
-                    atom(format!("the caller's {place}"))
+                    (atom(format!("the caller's {place}")), None)
                 } else if address.text.starts_with("(char *)") && kind.byte_width() != 1 {
                     // A read at a byte offset reads the load's own type.
-                    atom(format!(
-                        "*({} *)({})",
-                        load_type_spelling(kind),
-                        address.text
-                    ))
+                    (
+                        atom(format!(
+                            "*({} *)({})",
+                            load_type_spelling(kind),
+                            address.text
+                        )),
+                        typed_read,
+                    )
                 } else if self.source_mode()
                     && Self::declared_element_differs(naming, pointer, kind)
                 {
                     // A read whose type is not the named pointer's own
                     // element, a `uint8` read through a plain `char *`,
                     // states its type: a bare `*` reads the element type.
-                    atom(format!(
-                        "*({} as ({} *))",
-                        address.text,
-                        load_type_spelling(kind)
-                    ))
+                    (
+                        atom(format!(
+                            "*({} as ({} *))",
+                            address.text,
+                            load_type_spelling(kind)
+                        )),
+                        typed_read,
+                    )
                 } else {
-                    atom(dereference(address))
+                    (atom(dereference(address)), None)
                 }
             }
         };
+        self.spelled_load_type = spelled_type;
         Some(place)
     }
 
