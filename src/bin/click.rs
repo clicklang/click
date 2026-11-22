@@ -1623,7 +1623,12 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
 } by {
     mark before_call;
     let { result: r } = step(child);
-    have defined(at(before_call, a[i])) by { solve(); }
+    have defined(at(before_call, a[i])) by {
+        instantiate(at(before_call, forall (k: int32) {
+            0 <= k and k < n implies defined(a[k])
+        }), i);
+        known();
+    }
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])
     } by {
