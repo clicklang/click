@@ -39,7 +39,24 @@ const LIBRARY_FUNCTIONS: &[(&[&str], &str)] = &[
     (&["Result", "unwrap"], CORE_LIBRARY),
     (&["Result", "expect"], CORE_LIBRARY),
     (&["Result", "unwrap_or"], CORE_LIBRARY),
+    (&["Box", "new"], CORE_LIBRARY),
+    (&["Box", "drop"], CORE_LIBRARY),
 ];
+
+/// The `core_method` of `Box::new`, which moves a value into a new box.
+pub(super) const BOX_NEW: &str = "Box::new";
+
+/// The `core_method` of a box's free, `<Box<T> as Drop>::drop`.
+pub(super) const BOX_DROP: &str = "Box::drop";
+
+/// The importer name of the library's `Box` function `method` at the crate
+/// struct `record`, `Box::new<R>`.
+pub(super) fn box_function(method: &str, record: &str) -> String {
+    let (ty, name) = method.split_once("::").expect("a `Box::` method");
+    let mut function = super::names::qualified_name([ty, name]);
+    super::names::push_type_argument(&mut function, record);
+    function
+}
 
 /// The Click library file that states the integer core methods, one
 /// single-line `fn` per method and type, `u32::min`.

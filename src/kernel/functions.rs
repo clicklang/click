@@ -9767,6 +9767,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
 }
 
 mod contract_refinement;
+pub(crate) use contract_refinement::ContractRefinementPreparationError;
 use contract_refinement::*;
 
 #[cfg(test)]
@@ -10506,8 +10507,10 @@ fn apply_verified_heap_allocation_delta(
                     RuntimeError::InvalidFree(InvalidFree::NonHeapPointer),
                 ))?;
         }
+        // The caller's retained frame was just checked separate from the
+        // allocation's whole extent, so the free keeps what it covers.
         memory = memory
-            .free_heap_block(&base, assumptions)
+            .free_heap_block_with_owned_frame(&base, assumptions, &preserved)
             .map_err(|error| {
                 VerifiedAllocationDeltaError::Runtime(RuntimeError::InvalidFree(error))
             })?;
@@ -11880,12 +11883,8 @@ pub(crate) fn guard_contract_refusal(
 }
 
 fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
-    ResourceFact::own_memory(MemoryRange::new_with_element_width(
-        slot,
-        MachineTerm::constant(0),
-        MachineTerm::constant(layout.size_bytes()),
-        1,
-    ))
+    // A symbolic struct's storage is its whole object, `sizeof(S)` bytes.
+    ResourceFact::own_memory(MemoryRange::object(slot, layout.size()))
 }
 
 fn with_private_aggregate_parameter_owners(
@@ -16529,7 +16528,7 @@ pub(super) fn expand_composite_resource_fact(
 pub(crate) fn checked_composite_projection_evidence(
     viewed: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
     // Projection checks the selected head alone. Checked construction attaches
@@ -16540,13 +16539,8 @@ pub(crate) fn checked_composite_projection_evidence(
         .ok()?;
     #[cfg(test)]
     head.observe_composite_context();
-    let (_, children, _) = expand_composite_resource_fact_with_children(
-        &head,
-        viewed,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    )?;
+    let (_, children, _) =
+        expand_composite_resource_fact_with_children(&head, viewed, definitions, at, assumptions)?;
     CompositeProjectionEvidence::from_checked_expansion(viewed.clone(), children)
 }
 
@@ -19404,7 +19398,6 @@ fn resource_clause_supply_with_fact(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> (ResourceContext, Vec<ResourceFact>) {
-    let memory = state.memory();
     let mut added = Vec::new();
     if !supply.facts().contains(&fact) {
         supply = supply.unchecked_with_fact(fact.clone());
@@ -19434,6 +19427,7 @@ fn resource_clause_supply_with_fact(
             added.push(view);
         }
     }
+    let at = state.program_point();
     let mut pending = VecDeque::from([fact]);
     let mut seen = BTreeSet::new();
     while let Some(composite) = pending.pop_front() {
@@ -19445,7 +19439,7 @@ fn resource_clause_supply_with_fact(
             &expansion_context,
             &composite,
             definitions,
-            &crate::kernel::ProgramPoint::of_memory(memory),
+            &at,
             assumptions,
         ) else {
             continue;

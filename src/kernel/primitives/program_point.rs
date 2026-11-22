@@ -12,8 +12,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use crate::kernel::MachineIntegerType;
-use crate::persistent::PersistentMap;
+use crate::persistent::{PersistentMap, PersistentSet};
 
+use super::cell_version_intervals::CellVersionIntervals;
 use super::{
     Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, MemoryRange,
     ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory, intern_memory,
@@ -285,6 +286,16 @@ struct ReadVersionPoint {
     memory: SharedMemory,
 }
 
+impl ReadVersionPoint {
+    fn read(&self, read: ReadSelection) -> Option<ProgramPoint> {
+        Some(ProgramPoint {
+            memory: self.memory.clone(),
+            path: PathLink(Some(self.point.upgrade()?), self.view.clone()),
+            read,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ArrayBlockVersions {
     /// A fresh lineage after an unclassified effect prevents a join from
@@ -295,11 +306,22 @@ struct ArrayBlockVersions {
 }
 
 #[derive(Clone, Debug)]
-struct ArrayBlockWrite(Weak<PointNode>);
+struct ArrayBlockWrite {
+    point: Weak<PointNode>,
+    /// Bytes written since the entry anchor. None means this block had an
+    /// effect without a known footprint, or diverging branch versions.
+    static_writes: Option<StaticPointWrites>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct StaticPointWrites {
+    stores: PersistentSet<i64>,
+    calls: CellVersionIntervals<()>,
+}
 
 impl PartialEq for ArrayBlockWrite {
     fn eq(&self, other: &Self) -> bool {
-        Weak::ptr_eq(&self.0, &other.0)
+        Weak::ptr_eq(&self.point, &other.point)
     }
 }
 
@@ -342,9 +364,13 @@ impl ArrayBlockVersions {
                 if block.is_static_storage_block()
                     || (left.is_some() && right.is_some() && result.writes.get(block).is_some())
                 {
-                    result
-                        .writes
-                        .insert(block.clone(), ArrayBlockWrite(joined.clone()));
+                    result.writes.insert(
+                        block.clone(),
+                        ArrayBlockWrite {
+                            point: joined.clone(),
+                            static_writes: None,
+                        },
+                    );
                 } else {
                     // An automatic or heap object must exist on every
                     // arm. Its entry cannot stand for another lifetime.
@@ -412,21 +438,47 @@ impl ArrayBlockVersions {
             self.writes.remove(block);
             return Some(());
         }
-        let mut record_object = |block: &AddressBase| {
+        let mut record_object = |block: &AddressBase, range: Option<&MemoryRange>| {
             if indexed_array_object(block) {
-                self.writes
-                    .insert(block.clone(), ArrayBlockWrite(point.clone()));
+                let static_writes = self.static_entry.as_ref().and_then(|_| {
+                    let mut written = match self.writes.get(block) {
+                        Some(prior) => prior.static_writes.clone()?,
+                        None => StaticPointWrites::default(),
+                    };
+                    if let Some(range) = range {
+                        if !matches!(step, MemoryDerivation::CallHavoc { .. }) {
+                            return None;
+                        }
+                        let (span, _) = super::static_call_range(range)?;
+                        written.calls.write(span, ());
+                    } else {
+                        let (pointer, extent) = step.single_write_extent()?;
+                        let span = super::static_cell_byte_span(pointer, extent.bytes()?)?;
+                        for byte in span {
+                            crate::instrumentation::record_deterministic_work(1);
+                            written.stores = written.stores.with_value(byte);
+                        }
+                    }
+                    Some(written)
+                });
+                self.writes.insert(
+                    block.clone(),
+                    ArrayBlockWrite {
+                        point: point.clone(),
+                        static_writes,
+                    },
+                );
                 true
             } else {
                 matches!(block, AddressBase::Temporary(_))
             }
         };
         match effect {
-            BlockVersionEffect::Object(block, _) if record_object(block) => Some(()),
+            BlockVersionEffect::Object(block, _) if record_object(block, None) => Some(()),
             BlockVersionEffect::WriteSet(ranges)
                 if ranges.iter().all(|range| {
                     crate::instrumentation::record_deterministic_work(1);
-                    record_object(&range.base().base)
+                    record_object(&range.base().base, Some(range))
                 }) =>
             {
                 Some(())
@@ -595,7 +647,23 @@ impl PathLink {
         let id = ProgramPointId::fresh();
         let point_read_index =
             join_point_read_indexes(points).unwrap_or_else(|| PointReadIndex::empty(id));
-        let external_read_start = joined_external_entry(points);
+        let external_read_start = joined_external_entry(points).or_else(|| {
+            // A single exit still has a successor point of its own. When it
+            // carries the predecessor's certified view, the join adds no
+            // effect that could change the version of caller storage.
+            let [predecessor] = points else { return None };
+            if predecessor.memory.arena_id() != memory.arena_id()
+                || !predecessor.has_certified_read_view()
+            {
+                return None;
+            }
+            let anchor = predecessor.parameter_read_start(&AddressBase::ExternalArgument);
+            Some(ReadVersionPoint {
+                point: Arc::downgrade(anchor.path.0.as_ref()?),
+                view: anchor.path.1.clone(),
+                memory: anchor.memory,
+            })
+        });
         Self(
             Some(Arc::new_cyclic(|joined| PointNode {
                 id,
@@ -1184,6 +1252,7 @@ enum ReadSelection {
     Exact,
     Entry,
     CallOutput,
+    IndexedCell,
     IndexedWrite(Arc<MemoryDerivation>),
 }
 
@@ -1509,8 +1578,8 @@ impl ProgramPoint {
             return Some(self.clone().for_exact_read());
         }
         let versions = current.array_block_versions.as_ref()?;
-        if let Some(ArrayBlockWrite(version)) = versions.writes.get(block) {
-            let version = version.upgrade()?;
+        if let Some(write) = versions.writes.get(block) {
+            let version = write.point.upgrade()?;
             return Some(Self {
                 memory: version.memory.clone(),
                 path: PathLink(Some(version), IndexedView::Recorded),
@@ -1520,12 +1589,7 @@ impl ProgramPoint {
         if !block.is_static_storage_block() {
             return None;
         }
-        let entry = versions.static_entry.as_ref()?;
-        Some(Self {
-            memory: entry.memory.clone(),
-            path: PathLink(Some(entry.point.upgrade()?), entry.view.clone()),
-            read: ReadSelection::Exact,
-        })
+        versions.static_entry.as_ref()?.read(ReadSelection::Exact)
     }
 
     /// A scalar supplied by the caller can have a version even when no
@@ -1618,11 +1682,12 @@ impl ProgramPoint {
             | ProgramType::UInt16
             | ProgramType::Int32
             | ProgramType::UInt32
+            | ProgramType::Int64
+            | ProgramType::UInt64
             | ProgramType::Int128
-            | ProgramType::UInt128 => self.external_entry_read(pointer, true),
-            ProgramType::Int64 | ProgramType::UInt64 => self
+            | ProgramType::UInt128 => self
                 .external_entry_read(pointer, true)
-                .or_else(|| self.entry_read_through_loaded_pointer(pointer)),
+                .or_else(|| self.entry_read_through_loaded_pointer(pointer, value_type)),
             value_type if value_type.is_pointer() => self.external_entry_read(pointer, true),
             ProgramType::Parameter(parameter) if !parameter.is_enum() => {
                 self.external_entry_read(pointer, true)
@@ -1634,13 +1699,20 @@ impl ProgramPoint {
     /// A pointer read at this function's entry cannot designate a local
     /// created later. A suffix already known to affect only local storage
     /// therefore leaves the caller cell it designates at the entry version.
-    fn entry_read_through_loaded_pointer(&self, pointer: &Address) -> Option<Self> {
+    fn entry_read_through_loaded_pointer(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<Self> {
         let loaded = pointer.as_loaded_value()?;
         let current = self.path.0.as_ref()?;
         if !self.has_certified_read_view() {
             return None;
         }
-        if current.function_entry {
+        // The existing 64-bit model-pointer reads use the current entry
+        // name. Other widths need the pointer's own recorded entry load.
+        if current.function_entry && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64)
+        {
             return Some(self.clone().for_exact_read());
         }
         let entry = self.parameter_read_start(&AddressBase::ExternalArgument);
@@ -1650,6 +1722,103 @@ impl ProgramPoint {
             && loaded.point.has_certified_read_view()
             && loaded.point.read_version_id() == entry.id())
         .then(|| entry.for_exact_read())
+    }
+
+    pub(in crate::kernel) fn supports_static_entry_version(
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> bool {
+        pointer.base.is_static_storage_block()
+            && MachineIntegerType::from_program_type(value_type).is_some()
+    }
+
+    /// The entry version of a static integer cell for which the recorded
+    /// path has no writes to any byte it reads.
+    pub(in crate::kernel) fn unwritten_static_scalar_version(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<Self> {
+        if !Self::supports_static_entry_version(pointer, value_type)
+            || !self.has_certified_read_view()
+        {
+            return None;
+        }
+        let current = self.path.0.as_ref()?;
+        if current.function_entry {
+            let mut entry = self.clone();
+            entry.read = ReadSelection::IndexedCell;
+            return Some(entry);
+        }
+        let versions = current.array_block_versions.as_ref()?;
+        if let Some(write) = versions.writes.get(&pointer.base) {
+            let written = write.static_writes.as_ref()?;
+            let mut span = super::static_cell_byte_span(pointer, value_type.byte_width())?;
+            // Indexed call ranges have signed 32-bit byte endpoints. A
+            // fixed scalar offset can use the rest of the address space.
+            let limit = i64::from(i32::MAX);
+            let changed_by_call = span.start < limit
+                && written
+                    .calls
+                    .latest(span.start as u32..span.end.min(limit) as u32)
+                    .is_some();
+            if changed_by_call
+                || span.any(|byte| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    written.stores.contains(&byte)
+                })
+            {
+                return None;
+            }
+        }
+        versions
+            .static_entry
+            .as_ref()?
+            .read(ReadSelection::IndexedCell)
+    }
+
+    /// Connect an entry read already established by the legacy path resolver
+    /// to the recorded entry on this execution path. The resolved view can
+    /// be the entry itself or the recorded input of the last block write.
+    /// The view only certifies the choice; the entry point identifies the read.
+    pub(in crate::kernel) fn static_entry_matching_resolved_read(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+        resolved: &SharedMemory,
+    ) -> Option<Self> {
+        if !self.has_certified_read_view() {
+            return None;
+        }
+        let entry = self
+            .path
+            .0
+            .as_ref()?
+            .array_block_versions
+            .as_ref()?
+            .static_entry
+            .as_ref()?;
+        if entry.memory.arena_id() == resolved.arena_id() {
+            return entry.read(ReadSelection::IndexedCell);
+        }
+        let latest = self.indexed_array_version(&pointer.base)?;
+        let transition = latest.path.0.as_ref()?;
+        let [before] = transition.predecessors.as_ref() else {
+            return None;
+        };
+        let steps = transition.steps.as_ref()?;
+        if !steps.contiguous
+            || steps.first_base.arena_id() != resolved.arena_id()
+            || !before.matches_indexed_view(&steps.first_base)
+        {
+            return None;
+        }
+        Self {
+            memory: steps.first_base.clone(),
+            path: before.clone(),
+            read: ReadSelection::Legacy,
+        }
+        .unwritten_static_scalar_version(pointer, value_type)
     }
 
     pub(crate) fn ordinary_typed_version(
@@ -1662,6 +1831,7 @@ impl ProgramPoint {
                 MachineIntegerType::from_program_type(value_type)?;
                 self.call_output_integer_version(pointer, LoadKind::of_type(value_type)?)
             })
+            .or_else(|| self.unwritten_static_scalar_version(pointer, value_type))
             .or_else(|| self.entry_cell_version(pointer, value_type))
     }
 
@@ -1674,6 +1844,9 @@ impl ProgramPoint {
         pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
+        if pointer.base.is_static_storage_block() {
+            return self.whole_static_call_output(pointer, kind.byte_width());
+        }
         if !Self::supports_local_call_output(pointer) {
             return None;
         }
@@ -1686,6 +1859,36 @@ impl ProgramPoint {
                 } if kind.reads_word_of(*output)
             )
         })
+    }
+
+    /// A call with one complete static scalar in its checked footprint creates
+    /// that word's next version, even though the caller does not know its bits.
+    fn whole_static_call_output(&self, pointer: &Address, bytes: u32) -> Option<Self> {
+        use crate::kernel::effective_type::CAccessClass;
+
+        let memory = self.memory();
+        if pointer.offset != AddressOffset::Constant(0)
+            || memory.block_size(&pointer.base)?.as_const()? != bytes
+            || !matches!(
+                memory.declared_class(pointer),
+                Some(CAccessClass::Scalar(_))
+            )
+        {
+            return None;
+        }
+        let mut version = self.indexed_block_array_version(&pointer.base)?;
+        let source = &version.path.0.as_ref()?.steps.as_ref()?.step;
+        let MemoryDerivation::CallHavoc { mutable_ranges, .. } = source.as_ref() else {
+            return None;
+        };
+        let [range] = mutable_ranges.as_slice() else {
+            return None;
+        };
+        if range.base().base != pointer.base || super::static_call_range(range)?.0 != (0..bytes) {
+            return None;
+        }
+        version.read = ReadSelection::CallOutput;
+        Some(version)
     }
 
     pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {
@@ -1967,6 +2170,31 @@ mod tests {
     }
 
     #[test]
+    fn a_single_loop_exit_keeps_the_caller_array_read_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let block = AddressBase::ExternalArgument;
+        let cell = Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        let effect = entry.clone().with_memory(
+            entry
+                .memory()
+                .clone()
+                .store(cell, ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        let mut joined = effect.clone();
+        joined.join_loop_exit_program_points(&[&effect]);
+        assert_ne!(joined.program_point_id(), effect.program_point_id());
+        let selected = joined
+            .program_point()
+            .indexed_array_version(&block)
+            .expect("the join keeps the caller array version");
+        assert_eq!(selected.read_version_id(), effect.program_point_id());
+    }
+
+    #[test]
     fn an_entry_read_names_its_point_without_a_store_receipt() {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
@@ -2021,6 +2249,69 @@ mod tests {
             &pointer,
             LoadKind::Int32,
         ));
+    }
+
+    #[test]
+    fn int32_through_an_entry_pointer_keeps_entry_after_a_local_store() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let pointer_slot = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let pointer = Pointer::from_point_read(
+            entry.program_point().for_exact_read(),
+            ProgramType::Int32Pointer,
+            &pointer_slot,
+        );
+        assert!(matches!(
+            pointer.address().base,
+            AddressBase::LoadedPointer(_)
+        ));
+        let declared = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(slot().base, 4));
+        let after_local_store = stored(&declared, 3);
+        let select = |state: &ExecutionState| {
+            state
+                .program_point()
+                .ordinary_typed_version(pointer.address(), ProgramType::Int32)
+                .and_then(|version| version.read_version_id())
+        };
+        assert_eq!(select(&after_local_store), entry.program_point().id());
+
+        let after_external_store = after_local_store.clone().with_memory(
+            after_local_store
+                .memory()
+                .clone()
+                .store(pointer_slot, ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        assert_eq!(select(&after_external_store), None);
+    }
+
+    #[test]
+    fn int32_through_an_unanchored_pointer_does_not_claim_an_entry_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let point = entry.program_point();
+        let slot = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let pointer = Pointer::from_point_read(
+            point.clone().for_legacy_read(),
+            ProgramType::Int32Pointer,
+            &slot,
+        );
+        assert!(matches!(
+            pointer.address().base,
+            AddressBase::LoadedPointer(_)
+        ));
+        assert!(
+            point
+                .ordinary_typed_version(pointer.address(), ProgramType::Int32)
+                .is_none()
+        );
     }
 
     #[test]

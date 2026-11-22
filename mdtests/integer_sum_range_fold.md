@@ -48,9 +48,7 @@ int32 sum(int32 a[], int32 n) {
         known();
     }
     have (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0 by {
-        apply(integer_range_fold_empty((0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }))) using {
-            0 <= 0;
-        };
+        apply(integer_range_fold_empty((0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) })));
     }
     have 0 == (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
         known();
@@ -127,19 +125,13 @@ int32 sum(int32 a[], int32 n) {
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 have -1000 * to_integer(i) <= 0 by { known(); }
                 apply(click::integer::le_transitive(-1000 * to_integer(i), 0,
-                    (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) }))) using {
-                    -1000 * to_integer(i) <= 0;
-                    0 <= (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) });
-                };
+                    (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) })));
             }
             have (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)) by {
                 have 0 <= 1000 * to_integer(i) by { known(); }
                 apply(click::integer::le_transitive(
                     (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) }), 0,
-                    1000 * to_integer(i))) using {
-                    (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) }) <= 0;
-                    0 <= 1000 * to_integer(i);
-                };
+                    1000 * to_integer(i)));
             }
         }
         maintain by {
@@ -158,19 +150,11 @@ int32 sum(int32 a[], int32 n) {
             }
             have (-1000 * to_integer(i)) <= to_integer(total) by {
                 have (-1000 * to_integer(i)) == (-1000 * to_integer(i)) by { known(); }
-                apply(click::integer::le_substitute((-1000 * to_integer(i)), (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), (-1000 * to_integer(i)), to_integer(total))) using {
-                    (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    (-1000 * to_integer(i)) == (-1000 * to_integer(i));
-                    to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                };
+                apply(click::integer::le_substitute((-1000 * to_integer(i)), (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), (-1000 * to_integer(i)), to_integer(total)));
             }
             have to_integer(total) <= (1000 * to_integer(i)) by {
                 have (1000 * to_integer(i)) == (1000 * to_integer(i)) by { known(); }
-                apply(click::integer::le_substitute((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), (1000 * to_integer(i)), to_integer(total), (1000 * to_integer(i)))) using {
-                    (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i));
-                    to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    (1000 * to_integer(i)) == (1000 * to_integer(i));
-                };
+                apply(click::integer::le_substitute((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), (1000 * to_integer(i)), to_integer(total), (1000 * to_integer(i))));
             }
             have ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])) by {
                 solve() using { (-1000 * to_integer(i)) <= to_integer(total); -1000 <= to_integer(a[i]); };
@@ -208,9 +192,7 @@ int32 sum(int32 a[], int32 n) {
             have to_integer(total + a[i]) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[i]) by {
                 have to_integer(a[i]) == to_integer(a[i]) by { known(); }
                 have to_integer(total) + to_integer(a[i]) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[i]) by {
-                    apply(click::integer::equal_add(to_integer(total), (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), to_integer(a[i]), to_integer(a[i]))) using {
-                        to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); to_integer(a[i]) == to_integer(a[i]);
-                    };
+                    apply(click::integer::equal_add(to_integer(total), (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), to_integer(a[i]), to_integer(a[i])));
                 }
                 known();
             }
@@ -261,26 +243,14 @@ int32 sum(int32 a[], int32 n) {
                 known();
             }
             have (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(iter, i)])) by {
-                apply(integer_range_fold_append((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }))) using {
-                    0 <= at(iter, i);
-                    at(iter, i) < n;
-                    at(iter, i) < 2147483647;
-                    viewable(a[0..n]);
-                    0 <= n;
-                    n <= 1073741823;
-                    forall (k: int32) { 0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000 };
-                };
+                apply(integer_range_fold_append((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) })));
             }
             have 0 <= i;
             have i <= n;
             have to_integer(total) == (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 have (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by { known(); }
                 have (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == to_integer(total) by {
-                    apply(click::integer::equal_substitute((0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }), ((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(iter, i)])), (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }), to_integer(total))) using {
-                        (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(iter, i)]));
-                        (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                        to_integer(total) == ((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(iter, i)]));
-                    };
+                    apply(click::integer::equal_substitute((0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }), ((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(iter, i)])), (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }), to_integer(total)));
                 }
                 known();
             }

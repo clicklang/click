@@ -31,7 +31,7 @@ void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
     step();
     have p[i] == at(entry, p[i]) by {
         have separate(memory(p[k]), memory(p[i])) by {
-            apply(click::separation::separate_elements(p, k, i)) using { i != k; };
+            apply(click::separation::separate_elements(p, k, i));
         }
         have separate(statement(0).footprint, memory(p[i])) by {
             solve() using { separate(memory(p[k]), memory(p[i])); };

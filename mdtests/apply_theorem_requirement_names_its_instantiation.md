@@ -33,14 +33,12 @@ int32 raise_head(int32 box[1]) {
     owns box[0..1];
     ensures unreported_requirement: old(box[0]) < 2 by {
         step_until(function.exit);
-        apply(head_below_one_is_below_two(old(box), 7)) using {
-            old(box[0]) == 7;
-        };
+        apply(head_below_one_is_below_two(old(box), 7));
         known();
     }
 }
 ```
 
 ```expect
-fail: requirement 2 `a[0] < 1` with a = old(box) instantiates to old(box)[0] < 1
+fail: has an unproved obligation: `old(box)[0] < 1`
 ```

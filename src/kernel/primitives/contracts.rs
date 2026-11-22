@@ -844,6 +844,7 @@ impl FunctionContractInterface {
             object_type_requirements: Default::default(),
             return_object_type_guarantee: None,
             return_aggregate_layout: None,
+            fresh_result_allocation: false,
             aggregate_return_mode: AggregateReturnMode::Copy,
             construction_parameter: None,
             exceptional_signature: ExceptionalSignature::None,
@@ -895,6 +896,10 @@ impl FunctionContractInterface {
 
     pub fn return_pointee_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
         self.return_pointee_class.clone()
+    }
+
+    pub fn fresh_result_allocation(&self) -> bool {
+        self.fresh_result_allocation
     }
 
     pub fn return_aggregate_layout(&self) -> Option<&AggregateLayout> {
@@ -1127,6 +1132,7 @@ impl FunctionContractInterface {
         self.return_type == other.return_type
             && self.return_pointee_constant == other.return_pointee_constant
             && self.return_aggregate_layout == other.return_aggregate_layout
+            && self.fresh_result_allocation == other.fresh_result_allocation
             && self.aggregate_return_mode == other.aggregate_return_mode
             && self.construction_parameter == other.construction_parameter
             && self.exceptional_signature == other.exceptional_signature
@@ -1164,6 +1170,7 @@ impl FunctionContractInterface {
             && self.return_type == other.return_type
             && self.return_pointee_constant == other.return_pointee_constant
             && self.return_aggregate_layout == other.return_aggregate_layout
+            && self.fresh_result_allocation == other.fresh_result_allocation
             && self.aggregate_return_mode == other.aggregate_return_mode
             && self.construction_parameter == other.construction_parameter
             // A function that never throws implements a contract that may.
@@ -1589,6 +1596,13 @@ impl ProgramFunction {
 
     pub fn return_aggregate_layout(&self) -> Option<&AggregateLayout> {
         self.contract_interface.return_aggregate_layout()
+    }
+
+    /// Records the contract's `allocates(result, n)`: each call returns a
+    /// block the call creates, as `malloc` does.
+    pub fn with_fresh_result_allocation(mut self, fresh: bool) -> Self {
+        Arc::make_mut(&mut self.contract_interface).fresh_result_allocation = fresh;
+        self
     }
 
     pub fn with_return_aggregate_layout(mut self, layout: AggregateLayout) -> Self {

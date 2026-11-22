@@ -2,8 +2,7 @@
 
 `three_bounds` guarantees `x >= 0`, `x <= 10`, and `x != 11`. Each proof below
 applies it where one of those guarantees is the goal itself, and then needs a
-sibling guarantee: as the requirement of a second theorem, as a listed
-`using` premise, or restated by `have`. An application adds every guarantee
+sibling guarantee through a second theorem or a `have` step. An application adds every guarantee
 of its theorem, whichever one the goal happens to be.
 
 ```click
@@ -61,13 +60,8 @@ theorem goal_is_the_middle_conclusion(x: int32) {
     requires small(x);
 
     ensures x <= 10 by {
-        apply(three_bounds(x)) using {
-            small(x);
-        };
-        apply(needs_both_siblings(x)) using {
-            x >= 0;
-            x != 11;
-        };
+        apply(three_bounds(x));
+        apply(needs_both_siblings(x));
         known();
     }
 }

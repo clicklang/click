@@ -8,18 +8,20 @@ int use_obtain(int n) { return n; }
 verifying "obtain_guard.c";
 
 int32 use_obtain(int32 n) {
-    requires exists (k: int32) { k < n };
+    requires (0..n).any(|i| { i != 1 });
     ensures exists (k: int32) { k < result };
 } by {
     step_until(function.exit);
-    let k = obtain(exists (k: int32) { k < n });
+    let k = obtain((0..n).any(|i| { i != 1 }));
+    have 0 <= k by known();
+    have k != 1 by known();
     if k < n {
         have k < n by known();
     } else {
         have false by known();
     }
     if result == n {
-        let j = obtain(exists (j: int32) { j < n });
+        let j = obtain(at(function.entry, (0..n).any(|j| { j != 1 })));
         if j >= n {
             have false by known();
         } else {

@@ -937,42 +937,12 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 describe_induction_arguments(arguments)
             ),
         ),
-        ProofTactic::ApplyInductionUsing {
-            hypothesis,
-            arguments,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "apply({hypothesis}({})) using {{",
-                    describe_induction_arguments(arguments)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
-        ProofTactic::ApplyTheorem(application) => line(
+        ProofTactic::ApplyTheorem(application)
+        | ProofTactic::ApplyTheoremUsing { application, .. } => line(
             output,
             &prefix,
             &format!("apply({});", format_theorem_application(application)),
         ),
-        ProofTactic::ApplyTheoremUsing {
-            application,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "apply({}) using {{",
-                    format_theorem_application(application)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
         ProofTactic::Have(have) => {
             output.push_str(&prefix);
             output.push_str("have ");
@@ -1220,16 +1190,10 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CheckTerminationCallbacks => {
             line(output, &prefix, "check_termination_callbacks();")
         }
-        ProofTactic::ApplyFact(fact) => line(
+        ProofTactic::ApplyFact(fact) | ProofTactic::ApplyFactUsing { fact, .. } => line(
             output,
             &prefix,
             &format!("apply({});", source_click_proposition(fact)),
-        ),
-        ProofTactic::ApplyFactUsing { fact, premises } => write_using_premises(
-            output,
-            &format!("apply({})", source_click_proposition(fact)),
-            premises,
-            indent,
         ),
         ProofTactic::Known => line(output, &prefix, "known();"),
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),

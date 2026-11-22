@@ -43,15 +43,12 @@ int32 clear_head(int32 box[2]) {
         have box[0] < 1 by {
             solve();
         }
-        apply(head_small_doubles(old(box))) using {
-            to_integer(0 - 1) < to_integer(box[0]);
-            box[0] < 1;
-        };
+        apply(head_small_doubles(old(box)));
         known();
     }
 }
 ```
 
 ```expect
-fail: required exact fact for theorem `head_small_doubles` is unavailable
+fail: has an unproved obligation: `old(box)[0] < 1`
 ```

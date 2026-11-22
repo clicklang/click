@@ -6,14 +6,11 @@ theorem backwards(A: Resource, B: Resource) {
     requires viewable(A);
     requires contains(B, A);
     ensures viewable(B) by {
-        apply(separation::viewable_restrict(A, B)) using {
-            viewable(A);
-            contains(B, A);
-        };
+        apply(separation::viewable_restrict(A, B));
     }
 }
 ```
 
 ```expect
-fail: requirement 2 `contains(A, B)`
+fail: has an unproved obligation: `contains(A, B)`
 ```

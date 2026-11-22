@@ -21,10 +21,10 @@ void decrement(int32 a) {
 } by {
     step();
     have old(to_integer(a)) <= 10 by {
-        apply(observed_identity(old(to_integer(a)))) using { old(to_integer(a)) == 10; };
+        apply(observed_identity(old(to_integer(a))));
     }
     have at(region(0).entry, to_integer(a)) <= 10 by {
-        apply(observed_identity(at(region(0).entry, to_integer(a)))) using { at(region(0).entry, to_integer(a)) == 10; };
+        apply(observed_identity(at(region(0).entry, to_integer(a))));
     }
 }
 ```

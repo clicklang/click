@@ -688,24 +688,21 @@ fn parses_apply_theorem_proof_tactic() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_06")]
-fn parses_apply_theorem_with_explicit_premises() {
+fn rejects_apply_theorem_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
         "== 2;",
         "== 2 by {
             step_until(function.exit);
-            apply(nonnegative(result)) using {
-                result >= 0;
-            }
+            apply(nonnegative(result)) using { 0 <= result; };
             solve();
         }",
     );
-    let file = parse(&source).expect("explicit-premise theorem application should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert!(matches!(
-        &ensure.proof().tactics().expect("expected tactics")[1],
-        ProofTactic::ApplyTheoremUsing { premises, .. } if premises.len() == 1
-    ));
+    let error = parse(&source).expect_err("named theorem application uses the facts in scope");
+    assert!(
+        error
+            .message()
+            .contains("application takes no `using` list")
+    );
 }
 
 #[test]
@@ -1466,7 +1463,7 @@ test_batches! {
         parses_execute_until_proof_tactic,
         parses_unfold_proof_tactic,
         parses_apply_theorem_proof_tactic,
-        parses_apply_theorem_with_explicit_premises,
+        rejects_apply_theorem_with_explicit_premises,
     ],
     control_batch_07: [
         parses_transport_with_explicit_premises,

@@ -42,15 +42,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
             have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
-            apply(ih(hi - 1)) using {
-                0 <= to_integer(hi - 1);
-                to_integer(hi - 1) < to_integer(hi);
-                0 <= lo;
-                to_integer(hi - 1) <= to_integer(n);
-                n >= 0 and viewable(v[lo..n]);
-                0 <= to_integer(n - lo);
-                to_integer(n - lo) <= 1073741823;
-            };
+            apply(ih(hi - 1));
             have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) < to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
             have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }

@@ -443,14 +443,17 @@ pub(super) fn function_contract_refinement_implementation_state(
 
 pub(in crate::kernel) fn prepare_contract_refinement_obligations(
     context: &FunctionContractRefinementContext,
-) -> Option<FunctionContractRefinementObligations> {
+) -> Result<FunctionContractRefinementObligations, ContractRefinementPreparationError> {
+    use ContractRefinementPreparationError as Refusal;
     let target = context.contract.interface();
     let source = &context.function_interface;
     // The theorem's obligation states the normal outcome only; a source that
     // may throw owes its exceptional guarantees too, which it does not
     // carry yet, so that refinement is left to the automatic route.
     if !source.exceptional_signature().is_empty() {
-        return None;
+        return Err(Refusal::Unsupported(
+            "the source contract may throw, and explicit refinement theorems only support normal returns",
+        ));
     }
     let mut budget = ExecutionBudget::continuing_from(context.next_kernel_variable);
     let entry = function_contract_refinement_entry_state(context);
@@ -462,10 +465,8 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         target.contract_requires(),
         &mut assumptions,
         &mut budget,
-    )
-    .ok()?
-    {
-        return None;
+    )? {
+        return Err(Refusal::evaluating("the target contract's preconditions"));
     }
     let mut type_arguments = context.argument_values.clone();
     if crate::kernel::object_types::check_requirements(
@@ -478,7 +479,9 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
     )
     .is_some()
     {
-        return None;
+        return Err(Refusal::Incompatible(
+            "the target contract's preconditions do not establish the object bounds required by the source contract",
+        ));
     }
     // A single conservative post memory covers every possible source write.
     // This does not enumerate guard combinations or assert that a guarded
@@ -489,10 +492,10 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         &assumptions,
         &mut budget,
         false,
-    )
-    .ok()??;
+    )?
+    .ok_or_else(|| Refusal::evaluating("the source contract's allowed write ranges"))?;
     let memory = entry.memory().clone().with_call_memory_havoc(
-        budget.allocate_kernel_variable().ok()?,
+        budget.allocate_kernel_variable()?,
         &ranges,
         &assumptions,
         None,
@@ -505,7 +508,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         set_contract_result(&mut post, target, result.clone());
         set_contract_result(&mut source_post, source, result);
     }
-    if !compatible_resource_and_effect_interfaces(
+    check_refinement_interfaces(
         target,
         source,
         &entry,
@@ -514,11 +517,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         &source_post,
         &assumptions,
         &mut budget,
-    )
-    .ok()?
-    {
-        return None;
-    }
+    )?;
     fn conjunction(items: Vec<Proposition>) -> Proposition {
         items
             .into_iter()
@@ -533,8 +532,9 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         specs: &[SpecProposition],
         state: &ExecutionState,
         entry: &ExecutionState,
+        clause: &'static str,
         budget: &mut ExecutionBudget,
-    ) -> Option<Proposition> {
+    ) -> Result<Proposition, ContractRefinementPreparationError> {
         let definitions = interface
             .predicate_unfoldings()
             .iter()
@@ -545,19 +545,17 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
             let spec = definitions.get(spec).copied().unwrap_or(spec);
             // Each clause is its own term, so a clause both callback contracts
             // state lowers identically, inline `match` binders included.
-            let paths = budget
-                .with_match_binders_from_base(|budget| {
-                    lower_spec_proposition_at_state_with_loop_entry(
-                        state,
-                        spec,
-                        Some(entry),
-                        &PureFactContext::new(),
-                        budget,
-                    )
-                })
-                .ok()?;
+            let paths = budget.with_match_binders_from_base(|budget| {
+                lower_spec_proposition_at_state_with_loop_entry(
+                    state,
+                    spec,
+                    Some(entry),
+                    &PureFactContext::new(),
+                    budget,
+                )
+            })?;
             let [path] = paths.as_slice() else {
-                return None;
+                return Err(Refusal::evaluating(clause));
             };
             // Lowering facts name reads and other definitional intermediates;
             // they are not clauses of either callback contract. Both sides
@@ -569,13 +567,14 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
             );
             propositions.push(path.proposition.clone());
         }
-        Some(conjunction(propositions))
+        Ok(conjunction(propositions))
     }
     let target_requires = lower(
         target,
         target.contract_requires(),
         &entry,
         &entry,
+        "the target contract's preconditions",
         &mut budget,
     )?;
     let source_requires = lower(
@@ -583,6 +582,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         source.contract_requires(),
         &source_entry,
         &source_entry,
+        "the source contract's preconditions",
         &mut budget,
     )?;
     let source_ensures = lower(
@@ -590,6 +590,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         source.contract_ensures(),
         &source_post,
         &source_entry,
+        "the source contract's postconditions",
         &mut budget,
     )?;
     let target_ensures = lower(
@@ -597,6 +598,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         target.contract_ensures(),
         &post,
         &entry,
+        "the target contract's postconditions",
         &mut budget,
     )?;
     let proposition = Proposition::Implies(
@@ -609,7 +611,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
             )),
         )),
     );
-    Some(FunctionContractRefinementObligations {
+    Ok(FunctionContractRefinementObligations {
         context: context.clone(),
         entry,
         post,

@@ -398,10 +398,7 @@ fn certification_checks_only_the_cited_library_theorem() {
             ensures to_integer(value % bound) == truncating_remainder(to_integer(value), to_integer(bound));
         } by {
             have to_integer(value % bound) == truncating_remainder(to_integer(value), to_integer(bound)) by {
-                apply(integer::int32_remainder_to_integer(value, bound)) using {
-                    defined(value % bound);
-                    to_integer(bound) != 0;
-                }
+                apply(integer::int32_remainder_to_integer(value, bound));
             }
             step_until(function.exit);
             solve();

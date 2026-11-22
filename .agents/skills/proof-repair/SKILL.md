@@ -56,7 +56,7 @@ it; shrink them if you can, but a report need not wait for that.
   `obligation-bug` procedure.
 - `execution prerequisite unmet`: record the exact prerequisite at the
   operation's pre-state and continue with that goal.
-- `contract entry refused` or `contract refinement refused`: inspect the named resource clauses, effect, or refinement.
+- `contract entry refused`: inspect the named resource clauses and effects.
   Continue with the reported obligation when the diagnostic gives one. For
   an entry refusal, use `contract-bug` if you can show that the original
   contract satisfies the documented rule Click applied.

@@ -504,17 +504,6 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
     true
 }
 
-/// Distinguish the operand that selects a theorem from a written fact
-/// when classifying a standalone `apply` spelling for diagnostics.
-pub(crate) fn written_apply_is_theorem(source: &str) -> Option<bool> {
-    let mut parser = Parser::new(source).ok()?;
-    match parser.parse_proof_tactic().ok()? {
-        ProofTactic::ApplyTheorem(_) => Some(true),
-        ProofTactic::ApplyFact(_) => Some(false),
-        _ => None,
-    }
-}
-
 /// Parses file items under the default target, for tests.
 #[cfg(test)]
 pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
@@ -1919,12 +1908,14 @@ impl Parser {
             )?;
             // A reference parameter's type grants the authority a safe
             // caller holds over its referent.
-            let (tokens, positions) = rust_reference_authority::derive_reference_authority(
-                tokens,
-                positions,
-                &parser.struct_layouts,
-                &parser.rust_enum_types,
-            )?;
+            let (tokens, positions, written) =
+                rust_reference_authority::derive_reference_authority(
+                    tokens,
+                    positions,
+                    written,
+                    &parser.struct_layouts,
+                    &parser.rust_enum_types,
+                )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
             parser.positions = positions;
@@ -5339,6 +5330,7 @@ impl Parser {
         let mut ensures = Vec::new();
         // The kind each written postcondition clause was written as, which
         // its claim label counts it among.
+        let mut allocates_result = false;
         let mut ensure_kinds = Vec::new();
         let mut clause_positions = Vec::new();
         let mut exceptional_ensures = Vec::new();
@@ -5768,6 +5760,54 @@ impl Parser {
                     requires.push(
                         apply_contract_lets_to_requirement(
                             Requirement::Resource(resource),
+                            &contract_lets,
+                        )
+                        .map_err(|message| self.error(message))?,
+                    );
+                }
+                // `allocates(result, n)` is `produces allocation(result, n)`
+                // of an allocation the call creates: no pointer that existed
+                // before the call reaches it, as none reaches `malloc`'s.
+                Some("allocates") if self.peek_next() == Some(&Token::LParen) => {
+                    let at = self.position;
+                    if !matches!(self.tokens.get(at + 2), Some(Token::Ident(word)) if word == "result")
+                        || self.tokens.get(at + 3) != Some(&Token::Comma)
+                    {
+                        return Err(self.error(
+                            "`allocates` names the allocation the function returns: `allocates(result, n)`",
+                        ));
+                    }
+                    if allocates_result {
+                        return Err(self.error("a function states `allocates` once"));
+                    }
+                    allocates_result = true;
+                    self.tokens[at] = Token::Ident("allocation".to_string());
+                    let resource = self.parse_function_contract_memory_binding();
+                    self.tokens[at] = Token::Ident("allocates".to_string());
+                    let resource = resource?;
+                    let proof = self.parse_proof_clause_or_default()?;
+                    let binder_resource =
+                        apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
+                            .map_err(|message| self.error(message))?;
+                    self.record_callee_resource_binder(
+                        signature.name(),
+                        &binder_resource,
+                        &parameter_names_in_order,
+                        CalleeResourceBinderKind::Produced,
+                    );
+                    ensure_kinds.push(ClaimClauseKind::Produces);
+                    clause_positions.push(clause_start.clone());
+                    ensures.push(
+                        apply_contract_lets_to_ensure_clause(
+                            EnsureClause {
+                                proof_bindings: Vec::new(),
+                                name: None,
+                                ensure: Ensure::Resource(resource),
+                                proof,
+                                borrowed: false,
+                                view_source: None,
+                                condition: None,
+                            },
                             &contract_lets,
                         )
                         .map_err(|message| self.error(message))?,
@@ -6221,6 +6261,7 @@ impl Parser {
             parameter_field_places,
             pointee_field_places,
             witness_count,
+            allocates_result,
         })
     }
 
@@ -9399,6 +9440,16 @@ impl Parser {
             };
             self.expect(Token::Comma)?;
             let alignment = match self.next() {
+                // `alignof(type)`: the type's alignment, a number for every
+                // type a contract names but an abstract one.
+                Some(Token::Ident(word))
+                    if word == "alignof" && self.peek() == Some(&Token::LParen) =>
+                {
+                    self.position += 1;
+                    let alignment = self.parse_alignof_operand()?;
+                    self.expect(Token::RParen)?;
+                    alignment
+                }
                 Some(Token::Number(alignment)) if alignment.is_power_of_two() => alignment,
                 Some(token) => {
                     return Err(self.error(format!(
@@ -10991,26 +11042,30 @@ impl Parser {
         };
         let mut bindings = Vec::with_capacity(names.len());
         let previous_integer_context = self.integer_literal_context;
-        for name in names {
-            let ClickProposition::Exists {
-                click_type, body, ..
-            } = source
-            else {
-                return Err(self.error(
+        let binding_count = names.len();
+        for (index, name) in names.into_iter().enumerate() {
+            let (click_type, body) = match source {
+                ClickProposition::Exists {
+                    click_type, body, ..
+                } => (Some(click_type.clone()), body.as_ref()),
+                ClickProposition::RangeAny { body, .. } if index + 1 == binding_count => {
+                    (None, body.as_ref())
+                }
+                _ => return Err(self.error(
                     "`obtain` needs an existential proposition with at least one binder per output",
-                ));
+                )),
             };
             self.refuse_cast_type_binder(&name)?;
             if self.names.contains(NameKind::ProofBinder, &name) {
                 return Err(self.error(format!("`{name}` is already in scope")));
             }
             self.bind_proof_name(&name, false)?;
-            let integer = *click_type == ClickType::Integer;
+            let integer = click_type == Some(ClickType::Integer);
             self.names
                 .set_scoped(NameKind::ContractBinding, &name, !integer);
             self.names.set_scoped(NameKind::IntegerLet, &name, integer);
             self.names.insert(NameKind::ProofBinder, name.clone());
-            bindings.push((name, click_type.clone()));
+            bindings.push((name, click_type));
             source = body;
         }
         self.integer_literal_context = previous_integer_context;
@@ -11741,25 +11796,21 @@ impl Parser {
                     let fact = self.parse_proposition()?;
                     self.expect(Token::RParen)?;
                     if self.peek_ident() == Some("using") {
-                        let premises = self.parse_exact_premises()?;
-                        self.skip_redundant_semicolon();
-                        return Ok(ProofTactic::ApplyFactUsing { fact, premises });
+                        return Err(self.error(
+                            "implication application takes no `using` list; write `apply(fact)`",
+                        ));
                     }
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ApplyFact(fact));
                 }
                 let application = application.unwrap();
                 self.expect(Token::RParen)?;
-                if self.peek_ident() != Some("using") {
-                    ProofTactic::ApplyTheorem(application)
-                } else {
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::ApplyTheoremUsing {
-                        application,
-                        premises,
-                    });
+                if self.peek_ident() == Some("using") {
+                    return Err(self.error(
+                        "application takes no `using` list; write `apply(name(args))`",
+                    ));
                 }
+                ProofTactic::ApplyTheorem(application)
             }
             "observe" => {
                 self.expect(Token::LParen)?;
@@ -14416,6 +14467,40 @@ impl Parser {
             },
         );
         Ok(name)
+    }
+
+    /// The alignment of the type `alignof(...)` names, after its `(`: a
+    /// struct's layout alignment or a scalar's ABI alignment. An abstract
+    /// type's alignment is no number and is refused.
+    fn parse_alignof_operand(&mut self) -> Result<u32, ClickError> {
+        let struct_alignment = |parser: &Self, name: &str| {
+            parser
+                .struct_layouts
+                .get(name)
+                .map(crate::languages::interface::RecordLayout::alignment_bytes)
+                .ok_or_else(|| parser.error(format!("unknown struct declaration `{name}`")))
+        };
+        if self.peek_ident() == Some("struct") {
+            self.position += 1;
+            let name = self.expect_ident("struct name")?;
+            return struct_alignment(self, &name);
+        }
+        let parsed_type = if self.verifies_rust() {
+            self.parse_rust_type()?
+        } else {
+            self.parse_type()?
+        };
+        if let InterfaceType::Parameter(parameter) = parsed_type.interface_type
+            && parameter.has_abstract_size()
+        {
+            return Err(self.error(
+                "the alignment of an abstract type is not one number; name a concrete type",
+            ));
+        }
+        match &parsed_type.struct_name {
+            Some(name) if !parsed_type.struct_pointer => struct_alignment(self, name),
+            _ => Ok(parsed_type.interface_type.abi_alignment_bytes()),
+        }
     }
 
     /// A struct value written by its fields: `(struct pair){ .x = a, .y = b }`
@@ -18977,7 +19062,8 @@ fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickPropo
 
 /// The alignment fact a required complete-object clause carries: a live
 /// object of a struct type is placed at that type's alignment, so a
-/// required `*p` states `aligned(p, alignof(struct))`, which the
+/// required `*p` (but not `uninitialized(*p)`, which is storage and no live
+/// object) states `aligned(p, alignof(struct))`, which the
 /// caller proves and the function relies on. A produced object and a
 /// resource body state alignment explicitly (`ensures aligned(result, n)`,
 /// `fact aligned(p, n)`): a function may return an object it received
@@ -18990,6 +19076,11 @@ fn object_alignment_fact(
     let (ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment)) = clause else {
         return None;
     };
+    // `uninitialized(*p)` is the object's storage, not a live object of its
+    // type: freeing it, as `Box::drop` does, needs no alignment.
+    if segment.uninitialized {
+        return None;
+    }
     let alignment = match &segment.surface {
         ContractSegmentSurface::Object(struct_name) => {
             struct_layouts.get(struct_name)?.alignment_bytes()
@@ -19378,17 +19469,8 @@ mod tactic_classification_tests {
             "match value { List::Nil => { normalize(); } }",
         ),
         ("apply-induction", "apply(ih(m));"),
-        ("apply-induction-using", "apply(ih(m)) using { m == 1; };"),
         ("apply-fact", "apply(x > 0 implies y > 0);"),
-        (
-            "apply-fact-using",
-            "apply(x > 0 implies y > 0) using { x > 0; };",
-        ),
         ("apply-theorem", "apply(theorem(x));"),
-        (
-            "apply-theorem-using",
-            "apply(theorem(x)) using { x == 1; };",
-        ),
         ("have", "have x == 1 by { normalize(); }"),
         ("with", "with(reference(p)) { normalize(); }"),
         ("if", "if x == 1 { normalize(); } else { normalize(); }"),
@@ -19474,6 +19556,17 @@ mod tactic_classification_tests {
         }
     }
 
+    #[test]
+    fn named_theorem_application_rejects_an_evidence_list() {
+        let mut parser = Parser::new("apply(lemma(x)) using { x == 1; };").unwrap();
+        let error = parser.parse_proof_tactic().unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("application takes no `using` list")
+        );
+    }
+
     /// Catches a tactic whose class is stored inconsistently: the registry
     /// (and through `tests/documentation.rs` the reference table), the parsed
     /// tactic's `class()`, and the class of the certificate step it prints as
@@ -19542,17 +19635,6 @@ mod tactic_classification_tests {
                         arguments: application.arguments,
                     }
                 }
-                (
-                    "apply-induction-using",
-                    ProofTactic::ApplyTheoremUsing {
-                        application,
-                        premises,
-                    },
-                ) => ProofTactic::ApplyInductionUsing {
-                    hypothesis: application.name,
-                    arguments: application.arguments,
-                    premises,
-                },
                 (_, tactic) => tactic,
             };
             let class = tactic.class();

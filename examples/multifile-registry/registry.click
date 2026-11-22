@@ -120,6 +120,10 @@ int32 registry_run() {
     step();
     step();
     have third == 102;
+    have at(statement(2).call(record_beta, 0).entry, counters[1].value) == 20;
+    have counters[1].value == at(statement(2).call(record_beta, 0).entry, counters[1].value) + 1 by {
+        known();
+    }
     step();
     step();
     step();

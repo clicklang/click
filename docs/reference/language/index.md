@@ -1332,9 +1332,8 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
 
 Nothing is lent by writing it and nothing is returned. Like every stated range
 it carries its valid-span facts, which the theorem's proof assumes and an
-application owes; see [Viewable ranges](../../concepts/viewability.md). An
-`apply ... using` list holds propositions, so the premise is named there as
-`viewable(v[lo..hi])`.
+application owes; see [Viewable ranges](../../concepts/viewability.md). The
+range premise can be stated with `have viewable(v[lo..hi]);`.
 
 Pure theorem scripts can simplify, unfold predicates and pure functions, apply
 theorems, introduce logical structure, rewrite, use exact assumptions, and
@@ -1376,11 +1375,9 @@ goal remains focused. The facts available at that step must establish that
 its parameter is nonnegative. `ih(m)` is available after that declaration and
 requires `m` to be nonnegative and strictly smaller, plus all theorem
 requirements after substituting `m` for the induction parameter. Other theorem
-parameters remain fixed. This is a pure proposition rule, not C execution or
-C termination evidence. Bare `apply(ih(m))` is smart: it looks those fixed
-obligations up among the available facts, proving none, and expansion emits
-`apply(ih(m)) using { ... }`. The `using` form is
-the simple checked operation and accepts only the exact listed obligations.
+parameters remain fixed. This is a pure proposition rule. `apply(ih(m))` checks
+those fixed obligations against the facts already in scope. Use `have` to
+establish a missing premise. Expansion keeps the same application.
 
 Pure-function calls can be opened explicitly with
 `unfold(function(args))`. This simple operation exposes one defining equation
@@ -1777,7 +1774,8 @@ proposition, and an unmet one is reported by its text. An `ensures` label
 names its postcondition claim. A loop `invariant` may be labeled the same
 way, and the label names it where a failure reports it: "loop 0 invariant
 `bounded` entry" for `invariant bounded: i <= n;`. To open an available existential precondition, write its
-proposition with `let k = obtain(exists (x: Type) { ... });`.
+proposition with `let k = obtain(exists (x: Type) { ... });` or
+`let k = obtain((lo..hi).any(|i| { ... }));`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
 integer element ranges. The byte count is derived from the base pointer's
@@ -3502,7 +3500,9 @@ instance supplies the fact that `base[0..bytes]` lies inside one block. The base
 argument accepts any modeled data, pointer-array or struct pointer; the owned
 range keeps the pointer's own element width. An `extern` allocator contract
 writes `produces allocation(result, bytes);`
-([C allocation](c.md#heap-allocation)).
+([C allocation](c.md#heap-allocation)), or `allocates(result, bytes);` when
+the allocation is new, a block no earlier pointer reaches
+([fresh allocations](c.md#fresh-allocations)).
 
 The declared byte count is an `int32`, and argument 1 also accepts a
 `uint64` (`size_t`) count, as argument 0 accepts any data pointer. `malloc`,

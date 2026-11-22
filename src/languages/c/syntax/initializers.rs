@@ -109,6 +109,8 @@ impl Parser {
         for (_, value) in &mut written {
             convert_integer_constant(element_type, value);
         }
+        // Each element of a volatile array object is a volatile lvalue.
+        let volatile = self.variable_object_is_volatile(name);
         let store = |index: u32, value: CExpression| CStatement::Store {
             pointer: CExpression::Add(
                 Box::new(CExpression::Variable(name.clone())),
@@ -117,6 +119,7 @@ impl Parser {
             value,
             value_type: Some(element_type),
             lvalue_class: None,
+            volatile,
             pointee_constant: false,
             site: CSite::NONE,
         };
@@ -1048,6 +1051,7 @@ impl Parser {
                     value,
                     value_type: Some(element_type),
                     lvalue_class: None,
+                    volatile: false,
                     pointee_constant: false,
                     site: CSite::NONE,
                 })
@@ -1065,6 +1069,7 @@ impl Parser {
             value,
             value_type: Some(field.interface_type),
             lvalue_class: None,
+            volatile: false,
             pointee_constant: field.pointee_constant,
             site: CSite::NONE,
         }])
@@ -1315,6 +1320,7 @@ impl Parser {
                     value: zero_initializer_value(element_type),
                     value_type: Some(element_type),
                     lvalue_class: None,
+                    volatile: false,
                     pointee_constant: false,
                     site: CSite::NONE,
                 })
@@ -1326,6 +1332,7 @@ impl Parser {
             value: zero_initializer_value(field.interface_type),
             value_type: Some(field.interface_type),
             lvalue_class: None,
+            volatile: false,
             pointee_constant: field.pointee_constant,
             site: CSite::NONE,
         }]

@@ -1754,12 +1754,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                         apply(rb_ctx_linked_from_parent(right_identity, right_parent,
                                 right_color, right_left, right_right, Context::Right(node,
                                     entry_parent, entry_color, entry_left, old(c.model)),
-                                node)) using {
-                            rb_parent_is(RbTree::Node(right_identity, right_parent, right_color,
-                                    right_left, right_right), node) == 1;
-                            ctx_node_is(Context::Right(node, entry_parent, entry_color,
-                                    entry_left, old(c.model)), node) == 1;
-                        };
+                                node));
                         known();
                     }
                     have plug(Context::Right(node, entry_parent, entry_color, entry_left,
@@ -1937,15 +1932,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                                 left_left, left_right,
                                                                 Context::Left(node, par, color,
                                                                     right_model, ctx.model),
-                                                                node)) using {
-                                                            rb_parent_is(RbTree::Node(left_identity,
-                                                                    left_parent, left_color,
-                                                                    left_left, left_right),
-                                                                node) == 1;
-                                                            ctx_node_is(Context::Left(node, par,
-                                                                    color, right_model,
-                                                                    ctx.model), node) == 1;
-                                                        };
+                                                                node));
                                                         known();
                                                     }
                                                     have rb_ctx_linked(left_model,
@@ -2018,20 +2005,13 @@ struct rb_node* rb_next(struct rb_node* node) {
                                     have rb_list_starts_with(rb_inorder(sub.model),
                                         node) == 1 by {
                                         apply(rb_inorder_first_at_leftmost(sub.model,
-                                                node)) using {
-                                            rb_left(sub.model) == RbTree::Empty;
-                                            rb_identity_is(sub.model, node) == 1;
-                                        };
+                                                node));
                                         known();
                                     }
                                     have rb_list_adjacent(rb_inorder(plug(ctx.model,
                                                 sub.model)), old(node), node) == 1 by {
                                         apply(plug_successor(ctx.model, sub.model, old(node),
-                                                node)) using {
-                                            ctx_descends_from(ctx.model, old(node)) == 1;
-                                            rb_list_starts_with(rb_inorder(sub.model),
-                                                node) == 1;
-                                        };
+                                                node));
                                         known();
                                     }
                                     have plug(ctx.model, sub.model) == plug(old(c.model),
@@ -2078,12 +2058,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                 entry_color, entry_left, entry_right)), node) == 1 by {
                         apply(rb_inorder_last_at_rightmost(RbTree::Node(entry_identity,
                                     entry_parent, entry_color, entry_left, entry_right),
-                                node)) using {
-                            rb_right(RbTree::Node(entry_identity, entry_parent, entry_color,
-                                    entry_left, entry_right)) == RbTree::Empty;
-                            rb_identity_is(RbTree::Node(entry_identity, entry_parent,
-                                    entry_color, entry_left, entry_right), node) == 1;
-                        };
+                                node));
                         known();
                     }
                     unfold(entry_r);
@@ -2179,10 +2154,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                         known();
                                     }
                                     have ctx_node_is(c.model, parent) == 1 by {
-                                        apply(ctx_node_is_same(c.model, par, parent)) using {
-                                            ctx_node_is(c.model, par) == 1;
-                                            par == parent;
-                                        };
+                                        apply(ctx_node_is_same(c.model, par, parent));
                                         known();
                                     }
                                     match c.model {
@@ -2197,9 +2169,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 known();
                                             }
                                             have parent == 0 by {
-                                                apply(ctx_node_is_top(parent)) using {
-                                                    ctx_node_is(Context::Top, parent) == 1;
-                                                };
+                                                apply(ctx_node_is_top(parent));
                                                 known();
                                             }
                                             step();
@@ -2218,11 +2188,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                             have frame_identity == parent by {
                                                 apply(ctx_node_is_left(frame_identity,
                                                         frame_parent, frame_color, frame_right,
-                                                        above, parent)) using {
-                                                    ctx_node_is(Context::Left(frame_identity,
-                                                            frame_parent, frame_color,
-                                                            frame_right, above), parent) == 1;
-                                                };
+                                                        above, parent));
                                                 known();
                                             }
                                             have ctx_is_right(Context::Left(frame_identity,
@@ -2367,11 +2333,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                             have frame_identity == parent by {
                                                 apply(ctx_node_is_right(frame_identity,
                                                         frame_parent, frame_color, frame_left,
-                                                        above, parent)) using {
-                                                    ctx_node_is(Context::Right(frame_identity,
-                                                            frame_parent, frame_color,
-                                                            frame_left, above), parent) == 1;
-                                                };
+                                                        above, parent));
                                                 known();
                                             }
                                             have rb_ctx_linked(RbTree::Node(identity, par,
@@ -2390,13 +2352,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                             par, color, left_model,
                                                             right_model), frame_identity,
                                                         frame_parent, frame_color, frame_left,
-                                                        above)) using {
-                                                    rb_ctx_linked(RbTree::Node(identity, par,
-                                                            color, left_model, right_model),
-                                                        Context::Right(frame_identity,
-                                                            frame_parent, frame_color,
-                                                            frame_left, above)) == 1;
-                                                };
+                                                        above));
                                                 known();
                                             }
                                             have rb_parent_is(RbTree::Node(identity, par, color,
@@ -2404,12 +2360,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 apply(rb_parent_is_same(RbTree::Node(identity,
                                                             par, color, left_model,
                                                             right_model), frame_identity,
-                                                        parent)) using {
-                                                    rb_parent_is(RbTree::Node(identity, par,
-                                                            color, left_model, right_model),
-                                                        frame_identity) == 1;
-                                                    frame_identity == parent;
-                                                };
+                                                        parent));
                                                 known();
                                             }
                                             have rb_list_ends_with(rb_inorder(RbTree::Node(frame_identity,
@@ -2421,11 +2372,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                         frame_parent, frame_color, frame_left,
                                                         RbTree::Node(identity, par, color,
                                                             left_model, right_model),
-                                                        old(node))) using {
-                                                    rb_list_ends_with(rb_inorder(RbTree::Node(identity,
-                                                                par, color, left_model,
-                                                                right_model)), old(node)) == 1;
-                                                };
+                                                        old(node)));
                                                 known();
                                             }
                                             have plug(above, RbTree::Node(frame_identity,
@@ -2490,9 +2437,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                 known();
                             }
                             have parent == 0 by {
-                                apply(ctx_node_is_top(parent)) using {
-                                    ctx_node_is(Context::Top, parent) == 1;
-                                };
+                                apply(ctx_node_is_top(parent));
                                 known();
                             }
                             have plug(Context::Top, t.model) == plug(old(c.model),
@@ -2538,9 +2483,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                             }
                             have frame_identity == parent by {
                                 apply(ctx_node_is_left(frame_identity, frame_parent, frame_color,
-                                        frame_right, above, parent)) using {
-                                    ctx_node_is(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above), parent) == 1;
-                                };
+                                        frame_right, above, parent));
                                 known();
                             }
                             have rb_ctx_linked(t.model, Context::Left(frame_identity, frame_parent, frame_color, frame_right, above)) == 1 by {
@@ -2549,16 +2492,11 @@ struct rb_node* rb_next(struct rb_node* node) {
                             }
                             have rb_parent_is(t.model, frame_identity) == 1 by {
                                 apply(rb_ctx_linked_left_parent(t.model, frame_identity,
-                                        frame_parent, frame_color, frame_right, above)) using {
-                                    rb_ctx_linked(t.model, Context::Left(frame_identity, frame_parent, frame_color, frame_right, above)) == 1;
-                                };
+                                        frame_parent, frame_color, frame_right, above));
                                 known();
                             }
                             have rb_parent_is(t.model, parent) == 1 by {
-                                apply(rb_parent_is_same(t.model, frame_identity, parent)) using {
-                                    rb_parent_is(t.model, frame_identity) == 1;
-                                    frame_identity == parent;
-                                };
+                                apply(rb_parent_is_same(t.model, frame_identity, parent));
                                 known();
                             }
                             have plug(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above), t.model) == plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)) by {
@@ -2572,16 +2510,11 @@ struct rb_node* rb_next(struct rb_node* node) {
                             }
                             have rb_list_adjacent(rb_inorder(RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)), old(node), parent) == 1 by {
                                 apply(rb_inorder_adjacent_above(frame_identity, frame_parent,
-                                        frame_color, t.model, frame_right, old(node), parent)) using {
-                                    rb_list_ends_with(rb_inorder(t.model), old(node)) == 1;
-                                    parent == frame_identity;
-                                };
+                                        frame_color, t.model, frame_right, old(node), parent));
                                 known();
                             }
                             have rb_list_adjacent(rb_inorder(plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right))), old(node), parent) == 1 by {
-                                apply(plug_keeps_adjacent(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right), old(node), parent)) using {
-                                    rb_list_adjacent(rb_inorder(RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)), old(node), parent) == 1;
-                                };
+                                apply(plug_keeps_adjacent(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right), old(node), parent));
                                 known();
                             }
                             have rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), old(node),

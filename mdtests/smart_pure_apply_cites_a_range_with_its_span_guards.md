@@ -1,13 +1,8 @@
-# Smart pure `apply` cites a range together with its span guards
+# Applying a theorem checks a stated range with its span guards
 
-A theorem that `views next[0..n]` owes its caller the range and the range's
-two span guards, `0 <= n` and `n <= 1073741823`. A pure theorem that states
-the same range has all three facts. Smart `apply` proposes the range
-requirement, and the checker accepts it because citing a range cites both of
-its halves: the guards join the evidence exactly where they are available.
-Search and the checker share that one rule, so the candidate search selects
-is the candidate the checker accepts. An explicit `apply using` that names
-the range without restating its guards is accepted by the same rule.
+A theorem that states `views next[0..n]` owes the range and its span guards,
+`0 <= n` and `n <= 1073741823`. A caller that states the same range supplies
+all three facts.
 
 ```c filename=smart_pure_apply_cites_a_range_with_its_span_guards.c
 int32 identity(int32 x) {
@@ -79,15 +74,7 @@ theorem explicit_walk_use(a: int32[], n: int32, from: int32, fuel: Nat) {
         0 <= k and k < n implies 0 <= a[k] and a[k] < n
     };
     ensures 0 <= walk(a, from, fuel) by {
-        apply(walk_in_range(a, n, from, fuel)) using {
-            0 <= from;
-            from < n;
-            n <= 1073741823;
-            viewable(a[0..n]);
-            forall (k: int32) {
-                0 <= k and k < n implies 0 <= a[k] and a[k] < n
-            };
-        };
+        apply(walk_in_range(a, n, from, fuel));
     }
 }
 

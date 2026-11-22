@@ -569,7 +569,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 ProofTactic::ApplyFact(_)
                     | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
-                    | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
@@ -585,16 +584,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
-                ProofTactic::ApplyInduction {
-                    hypothesis,
-                    arguments,
-                } => {
-                    proof = crate::kernel::search::ProofSearch::apply_smart_induction(
-                        &(proof),
-                        hypothesis,
-                        arguments,
-                    )?;
-                }
                 ProofTactic::ApplyFact(fact) => {
                     proof = proof.driver().apply_fact_application(fact)?;
                 }
@@ -986,7 +975,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheorem(_)
                     | ProofTactic::ApplyTheoremUsing { .. }
-                    | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }

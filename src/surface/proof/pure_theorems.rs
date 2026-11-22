@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::AlgebraicValueType;
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
-use crate::kernel::program_function_contract_refinement_obligations;
+use crate::kernel::check_program_function_contract_refinement_obligations;
 
 mod execution_theorems;
 use execution_theorems::verify_execution_theorem;
@@ -386,7 +386,6 @@ pub(super) struct PureInductionSetup {
 #[derive(Clone, Debug)]
 pub(super) struct PureStructuralInductionApplication {
     /// The selected theorem's exact requirements at this child instance.
-    pub(super) surface_premises: Vec<ClickProposition>,
     pub(super) kernel_premises: Vec<Proposition>,
     pub(super) implication: Proposition,
     pub(super) conclusion: Proposition,
@@ -678,16 +677,6 @@ fn prepare_pure_induction_tactics(
                         arguments: application.arguments.clone(),
                     })
                 }
-                ProofTactic::ApplyTheoremUsing {
-                    application,
-                    premises,
-                } if active && application.name == hypothesis => {
-                    Ok(ProofTactic::ApplyInductionUsing {
-                        hypothesis: hypothesis.to_string(),
-                        arguments: application.arguments.clone(),
-                        premises: premises.clone(),
-                    })
-                }
                 ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                     condition: proof_if.condition.clone(),
                     ensuring: proof_if.ensuring.clone(),
@@ -759,11 +748,9 @@ fn prepare_pure_induction_tactics(
                             .collect::<Result<_, ClickError>>()?,
                     })))
                 }
-                ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
-                    Err(ClickError::new(
-                        "internal induction-application syntax is not accepted directly",
-                    ))
-                }
+                ProofTactic::ApplyInduction { .. } => Err(ClickError::new(
+                    "internal induction-application syntax is not accepted directly",
+                )),
                 tactic => Ok(tactic.clone()),
             })
             .collect()
@@ -1683,6 +1670,67 @@ fn verify_theorem_ensure(
     })
 }
 
+fn refinement_preparation_error(
+    error: crate::kernel::ContractRefinementPreparationError,
+) -> ClickError {
+    use crate::kernel::{ContractRefinementPreparationError as PreparationError, ExecutionLimit};
+    use crate::surface::{ClickErrorKind, ProofRefusal};
+
+    match error {
+        PreparationError::Unsupported(detail) => {
+            ClickError::new(detail).with_proof_refusal(ProofRefusal::UnsupportedProof)
+        }
+        PreparationError::Incompatible(detail) => {
+            ClickError::new(detail).with_proof_refusal(ProofRefusal::Contract)
+        }
+        PreparationError::Evaluation { clause, detail } => {
+            let message = match detail {
+                Some(detail) => format!("could not evaluate {clause}: {detail}"),
+                None => format!("could not evaluate {clause}"),
+            };
+            ClickError::new(message).with_proof_refusal(ProofRefusal::IncompleteProof)
+        }
+        PreparationError::Stopped(stop) => {
+            let error = ClickError::new(format!(
+                "preparing refinement obligations stopped at {}",
+                stop.describe()
+            ));
+            match stop {
+                ExecutionLimit::ExecutionIdentityBesideLiveState => {
+                    error.with_kind(ClickErrorKind::Internal)
+                }
+                ExecutionLimit::Deadline
+                | ExecutionLimit::ExpressionSteps
+                | ExecutionLimit::StatementSteps
+                | ExecutionLimit::FunctionCalls
+                | ExecutionLimit::LoopUnrolls
+                | ExecutionLimit::KernelVariables { .. }
+                | ExecutionLimit::MatchBinderVariables { .. } => {
+                    error.with_kind(ClickErrorKind::Limit)
+                }
+                ExecutionLimit::UnsupportedPureFunctionResult(_)
+                | ExecutionLimit::BoolComparedWithInteger
+                | ExecutionLimit::BoolOrdered
+                | ExecutionLimit::BoolArithmetic
+                | ExecutionLimit::MixedBoolArms => {
+                    error.with_proof_refusal(ProofRefusal::UnsupportedProof)
+                }
+                ExecutionLimit::Paths
+                | ExecutionLimit::LoopIterationsUnbound
+                | ExecutionLimit::ResourceFieldInstanceUnavailable
+                | ExecutionLimit::AuthorityCountNeedsExactPointer
+                | ExecutionLimit::AuthorityCountNeedsResolvedMember
+                | ExecutionLimit::AuthorityCountNeedsOwnership
+                | ExecutionLimit::AuthorityCountLentToWorker
+                | ExecutionLimit::AuthorityCountPendingLockedWorker
+                | ExecutionLimit::DisjunctionRightUndefined => {
+                    error.with_proof_refusal(ProofRefusal::IncompleteProof)
+                }
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn verify_contract_refinement_theorem(
     theorem: &TheoremDefinition,
@@ -1695,6 +1743,9 @@ fn verify_contract_refinement_theorem(
     theorem_environment: &TheoremEnvironment,
     function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Option<VerifiedPureTheorem>, ClickError> {
+    use super::smart_closures::LinearScriptDecline;
+    use crate::surface::{ClickErrorKind, ProofRefusal};
+
     let ClickProposition::PredicateCall { name, arguments } = surface_goal else {
         return Ok(None);
     };
@@ -1816,7 +1867,7 @@ fn verify_contract_refinement_theorem(
             .expect("a refinement theorem has a recognized subject");
         return Err(ClickError::new(format!(
             "`{claim_label}`: proving `{name}({subject})` requires an explicit contract-refinement proof"
-        )));
+        )).with_proof_refusal(ProofRefusal::IncompleteProof));
     };
     // Contract refinement opens explicitly selected contract applications.
     // Compare the lowered applications, including callback and value arguments.
@@ -1835,7 +1886,7 @@ fn verify_contract_refinement_theorem(
     let Some((prefix, proof_tactics)) = tactics.split_at_checked(count) else {
         return Err(ClickError::new(format!(
             "`{claim_label}`: contract refinement must begin by unfolding its selected contract applications"
-        )));
+        )).with_proof_refusal(ProofRefusal::IncompleteProof));
     };
     let mut expected = vec![goal.clone()];
     if source_contract.is_some() {
@@ -1849,7 +1900,7 @@ fn verify_contract_refinement_theorem(
         let Some(selected) = selected_application(tactic)? else {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: contract refinement requires explicit `unfold(contract(callback))` applications"
-            )));
+            )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic(tactic_name(tactic)));
         };
         let Some(index) = expected
             .iter()
@@ -1857,7 +1908,9 @@ fn verify_contract_refinement_theorem(
         else {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: unfold selects a different contract application"
-            )));
+            ))
+            .with_proof_refusal(ProofRefusal::Tactic)
+            .with_failed_tactic(tactic_name(tactic)));
         };
         expected.remove(index);
     }
@@ -1914,18 +1967,15 @@ fn verify_contract_refinement_theorem(
             "`{claim_label}`: contract parameter count does not match its lowered function"
         )));
     }
-    let refinement_failure = || {
-        let subject = concrete_target
-            .map(|target| format!("&{target}"))
-            .or_else(|| symbolic_binding.map(str::to_string))
-            .expect("refinement subject");
-        ClickError::new(format!(
-            "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
-        ))
-        .with_proof_refusal(crate::surface::ProofRefusal::ContractRefinement)
-    };
-    let obligations = program_function_contract_refinement_obligations(&refinement)
-        .ok_or_else(refinement_failure)?;
+    let subject = concrete_target
+        .map(|target| format!("&{target}"))
+        .or_else(|| symbolic_binding.map(str::to_string))
+        .expect("refinement subject");
+    let summary = format!(
+        "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
+    );
+    let obligations = check_program_function_contract_refinement_obligations(&refinement)
+        .map_err(|error| refinement_preparation_error(error).with_context(&summary))?;
     let arguments = argument_values
         .iter()
         .cloned()
@@ -1953,6 +2003,7 @@ fn verify_contract_refinement_theorem(
             ClickError::new(format!(
                 "`{claim_label}`: cannot present contract-refinement obligations"
             ))
+            .with_kind(ClickErrorKind::Internal)
         })?;
     // Expansion prints this presentation as source. A native comparison over
     // arithmetic is spelled through its Integer observations, as written
@@ -1993,37 +2044,67 @@ fn verify_contract_refinement_theorem(
         theorem_environment,
     );
     let mut search = super::attempt::search_scope("contract refinement");
-    let attempted = match root.driver().try_authoritative_linear_script_reporting(
+    let mut declined = None;
+    let mut unfinished = None;
+    let sites = claim_script_sites(&root, proof_tactics, count);
+    let attempted = match root.driver().try_addressed_linear_script(
         proof_tactics,
-        &mut None,
-        None,
+        &sites,
+        &mut declined,
+        Some(&mut unfinished),
         true,
     ) {
         Ok(attempted) => attempted,
         Err(error) => {
             return Err(error
-                .with_context(refinement_failure().message())
+                .with_context(&summary)
                 .with_search_failures(search.finish()));
         }
     };
-    let proof = match attempted {
-        Some(proof) => {
-            search.succeed();
-            proof
-        }
-        None => return Err(refinement_failure().with_search_failures(search.finish())),
+    let Some(proof) = attempted else {
+        check_verification_deadline()?;
+        let focused = unfinished.as_ref().unwrap_or(&root);
+        let error = match declined {
+            Some(LinearScriptDecline::Shape) if proof_tactics.is_empty() => focused
+                .step_error("the proof ended without proving the refinement obligations")
+                .with_proof_refusal(ProofRefusal::IncompleteProof),
+            Some(LinearScriptDecline::Shape) => focused
+                .step_error("the proof contains an unsupported operation or control-flow shape")
+                .with_proof_refusal(ProofRefusal::UnsupportedProof),
+            Some(
+                LinearScriptDecline::Step(index) | LinearScriptDecline::UnsuccessfulSearch(index),
+            ) => {
+                let refusal = match declined {
+                    Some(LinearScriptDecline::UnsuccessfulSearch(_)) => {
+                        ProofRefusal::UnsuccessfulSearch
+                    }
+                    _ => ProofRefusal::Tactic,
+                };
+                focused
+                    .at_site(&sites[index])
+                    .step_error(format!(
+                        "could not complete `{}`",
+                        tactic_name(&proof_tactics[index])
+                    ))
+                    .with_proof_refusal(refusal)
+            }
+            None => focused
+                .step_error("the proof ended with a refinement obligation still open")
+                .with_proof_refusal(ProofRefusal::IncompleteProof),
+        };
+        return Err(error
+            .with_context(&summary)
+            .with_search_failures(search.finish()));
     };
+    search.succeed();
     let checked = proof.completed_proposition()?;
     let kernel_authority =
         prove_program_function_contract_refinement(&obligations, goal.clone(), &checked)
             .ok_or_else(|| {
-                let subject = concrete_target
-                    .map(|target| format!("&{target}"))
-                    .or_else(|| symbolic_binding.map(str::to_string))
-                    .expect("refinement theorem has a subject");
                 ClickError::new(format!(
-            "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
-        )).with_proof_refusal(crate::surface::ProofRefusal::ContractRefinement)
+                    "{summary}: Click could not issue a theorem from the completed proof of the refinement obligations"
+                ))
+                .with_kind(ClickErrorKind::Internal)
             })?;
     let mut certificate_steps =
         ProofCertificate::from_proof_tactics(&tactics[..tactics.len() - proof_tactics.len()])
@@ -3042,8 +3123,14 @@ pub(super) fn induction_application_surface_premises(
             &BTreeMap::from([(setup.parameter.clone(), argument.clone())]),
         )
         .map_err(ClickError::new)?;
-        if !premises.contains(&substituted) {
-            premises.push(substituted);
+        let mut pending = vec![substituted];
+        while let Some(premise) = pending.pop() {
+            if let ClickProposition::And(left, right) = premise {
+                pending.push(*right);
+                pending.push(*left);
+            } else if !premises.contains(&premise) {
+                premises.push(premise);
+            }
         }
     }
     Ok(premises)
@@ -3634,11 +3721,20 @@ mod tests {
             crate::surface::expand_c_claim_source_by_label(source, &[], "guarded_count.ensures_0")
                 .unwrap();
         crate::surface::verify_c_sources(&expanded, &[]).unwrap();
-        let missing_evidence = source.replace(
-            "apply(ih(n - 1));",
-            "apply(ih(n - 1)) using { 0 <= n - 1; n - 1 < n; }",
+        let missing_evidence = source
+            .lines()
+            .filter(|line| {
+                !line.contains("have n - 1 <= 1000000")
+                    && !line.contains("have to_integer(n - 1) <= 1000000")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let refusal = crate::surface::verify_c_sources(&missing_evidence, &[]).unwrap_err();
+        assert!(
+            refusal.message().contains("1000000"),
+            "{}",
+            refusal.report()
         );
-        assert!(crate::surface::verify_c_sources(&missing_evidence, &[]).is_err());
         let false_claim = source.replace(
             "ensures guarded_countdown(n) == 0 and",
             "ensures guarded_countdown(n) == 1 and",

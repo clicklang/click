@@ -6886,6 +6886,9 @@ pub struct FunctionContractInterface {
     /// declared return type (`design/effective-types.md`).
     pub(crate) return_pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) return_aggregate_layout: Option<AggregateLayout>,
+    /// The contract states `allocates(result, n)`: a call's result is a
+    /// fresh heap block, distinct from every block that existed before.
+    pub(crate) fresh_result_allocation: bool,
     pub(crate) aggregate_return_mode: AggregateReturnMode,
     pub(crate) construction_parameter: Option<(usize, AggregateLayout)>,
     pub(crate) exceptional_signature: ExceptionalSignature,
@@ -8227,6 +8230,8 @@ pub enum RuntimeError {
     EnumVariant(String),
     IndeterminatePointeeType,
     UnsupportedPointerSubtractionOffsets,
+    UnsupportedPointerComparisonOffsets,
+    UnsupportedFunctionPointerOffset,
     WrongArity {
         expected: usize,
         actual: usize,

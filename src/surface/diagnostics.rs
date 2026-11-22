@@ -1473,12 +1473,40 @@ pub(super) fn local_naming_tables(
     Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,
 ) {
-    value_naming_tables(
-        &local_naming_entries(state)
-            .into_iter()
-            .map(|(spelling, (_, value))| (spelling, value))
+    local_naming_tables_with_declarations(state, &[])
+}
+
+/// [`local_naming_tables`], naming each local that one of `declarations`
+/// declares by that declaration: a struct-pointer parameter keeps its
+/// pointee layout, so its fields still spell as `p->f`. Declarations match
+/// by binding, never by printed name, and the value still comes from
+/// `state`, so a reassigned parameter names what it holds here.
+pub(super) fn local_naming_tables_with_declarations(
+    state: &ExecutionState,
+    declarations: &[crate::languages::interface::ImportedParameter],
+) -> (
+    Vec<crate::languages::interface::ImportedParameter>,
+    Vec<ProgramExpression>,
+) {
+    let entries = local_naming_entries(state);
+    let (mut parameters, arguments) = value_naming_tables(
+        &entries
+            .iter()
+            .map(|(spelling, (_, value))| (spelling.clone(), value.clone()))
             .collect(),
-    )
+    );
+    if !declarations.is_empty() {
+        let declared = declarations
+            .iter()
+            .map(|declaration| (declaration.binding_name(), declaration))
+            .collect::<BTreeMap<_, _>>();
+        for (parameter, (_, (binding, _))) in parameters.iter_mut().zip(&entries) {
+            if let Some(declaration) = declared.get(binding) {
+                *parameter = (*declaration).clone();
+            }
+        }
+    }
+    (parameters, arguments)
 }
 
 /// The result of step `step`, as the statements as written name it: a call
@@ -1816,9 +1844,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::RuntimeError::IndeterminatePointeeType => {
             "pointer operation has no known pointee type".to_string()
         }
-        crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets => {
-            "Click does not yet support pointer subtraction with these offsets".to_string()
-        }
+        crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets
+        | crate::kernel::RuntimeError::UnsupportedPointerComparisonOffsets
+        | crate::kernel::RuntimeError::UnsupportedFunctionPointerOffset => error.kernel_summary(),
         crate::kernel::RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")
         }

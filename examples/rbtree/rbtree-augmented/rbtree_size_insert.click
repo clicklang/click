@@ -96,13 +96,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 requires node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1) by known();
             };
             apply(sized_recolor_preserves_model_fields(old(tree.model), tree.model, node, 0, parent,
-                sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)))) using {
-                old(tree.model) == SizedTree::Node(node, 0, Color::Red,
-                    sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)));
-                tree.model == SizedTree::Node(node, parent, Color::Black,
-                    sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)));
-                parent == 0;
-            };
+                sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model))));
             step();
         }
     }

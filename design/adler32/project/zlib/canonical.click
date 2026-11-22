@@ -15,7 +15,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   have to_integer(len as uint32 as int32) == to_integer(len) by {
    solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
   }
-  apply(adler_spec_checksum_bridge(buf, len as uint32 as int32, len, to_integer(zlib_seed_a(adler)), to_integer(zlib_seed_b(adler)))) using { to_integer(len as uint32 as int32) == to_integer(len); };
+  apply(adler_spec_checksum_bridge(buf, len as uint32 as int32, len, to_integer(zlib_seed_a(adler)), to_integer(zlib_seed_b(adler))));
 apply(zlib_seed_bounds(adler));
  have old(len as uint32 as int32) == 1 by solve();
  have viewable(buf[0u64..1u64]) by solve();
@@ -152,7 +152,7 @@ apply(zlib_seed_bounds(adler));
   have to_integer(len as uint32 as int32) == to_integer(len) by {
    solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
   }
-  apply(adler_spec_checksum_bridge(buf, len as uint32 as int32, len, to_integer(zlib_seed_a(adler)), to_integer(zlib_seed_b(adler)))) using { to_integer(len as uint32 as int32) == to_integer(len); };
+  apply(adler_spec_checksum_bridge(buf, len as uint32 as int32, len, to_integer(zlib_seed_a(adler)), to_integer(zlib_seed_b(adler))));
 have viewable(buf[0u64..len]) by solve();
  apply(zlib_seed_bounds(adler));
  unfold(zlib_seed_a(adler)); unfold(zlib_seed_b(adler));

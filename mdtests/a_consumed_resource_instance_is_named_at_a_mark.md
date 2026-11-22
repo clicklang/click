@@ -33,9 +33,7 @@ void caller(struct node* child, int32* slot) {
     mark before_call;
     let { c: c } = step(touch, { b: b });
     have separate(at(before_call, b), memory(*slot)) by { known(); }
-    apply(separation::separate_symm(at(before_call, b), memory(*slot))) using {
-        separate(at(before_call, b), memory(*slot));
-    };
+    apply(separation::separate_symm(at(before_call, b), memory(*slot)));
 }
 ```
 

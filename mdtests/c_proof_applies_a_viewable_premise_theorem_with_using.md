@@ -1,27 +1,8 @@
-# A C proof applies a `viewable`-premise theorem with `using`
+# Applying a theorem checks a readable range and its span
 
-`mdtests/sweep_maintains_a_zero_unmarked_count.md` applies a theorem with
-`viewable` premises from a C proof, and states every span bound the
-application owes as its own `using` entry. Naming the range and then restating
-the bound the range already carries was not a style choice: an `apply … using`
-list that named only the range was refused with
-
-```text
-theorem `...` requirement 1 `(n >= 0 && viewable(v[0..n]))` states a memory
-range, so applying it needs that range to be a valid 32-bit byte span here:
-`n <= 1073741823 is true` is not an available fact
-```
-
-although the contract states exactly that bound.
-
-Citing a stated range cites what the range says. `viewable(p[a..b])` means both
-that `a..b` is a valid 32-bit byte span and that those bytes are viewable, so
-a `using` list that names the range has named both halves. `transport … using`
-already reads a cited range that way; `apply … using` now does too. The
-relaxation is one-sided: a guard joins the evidence set only where it is
-already available at this point, in whichever spelling is available — the
-endpoint form of the `fits` bound is an unsigned comparison the surface cannot
-write at all.
+A C contract's stated range supplies its readability and the bounds that
+make it a valid byte span. The theorem application checks both from those
+facts in scope.
 
 ```c filename=c_proof_applies_a_loadable_premise_theorem_with_using.c
 int32 probe(int32 a[], int32 n) {
@@ -47,9 +28,7 @@ int32 probe(int32 a[], int32 n) {
     have n >= 0;
     have viewable(a[0..n]);
     have n >= 0 and viewable(a[0..n]) by known();
-    apply(viewable_range_is_nonnegative(a, n)) using {
-        n >= 0 and viewable(a[0..n]);
-    };
+    apply(viewable_range_is_nonnegative(a, n));
     solve();
 }
 ```

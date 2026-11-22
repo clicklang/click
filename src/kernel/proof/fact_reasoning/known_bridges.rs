@@ -88,6 +88,25 @@ fn guard_holds(
     {
         return true;
     }
+    // Lowering can store a negated native order as its complementary order.
+    // Query it using the same retained operands as the conditional guard.
+    if let Some((format, relation, operands)) = guard.comparison() {
+        let complement = match relation {
+            CompareRelation::LessThan => Some(CompareRelation::GreaterEqual),
+            CompareRelation::LessEqual => Some(CompareRelation::GreaterThan),
+            CompareRelation::GreaterThan => Some(CompareRelation::LessEqual),
+            CompareRelation::GreaterEqual => Some(CompareRelation::LessThan),
+            CompareRelation::Equal => None,
+        };
+        if let Some(complement) = complement {
+            let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format, complement, operands,
+            );
+            if holds(&condition.truth_claim(!truth), available) {
+                return true;
+            }
+        }
+    }
     let Some([left, right]) = guard.algebraic_equality() else {
         return false;
     };
@@ -132,6 +151,40 @@ fn integer_arm(
     [(true, &arms[0]), (false, &arms[1])]
         .into_iter()
         .any(|(truth, arm)| arm.as_ref() == Some(other) && guard_holds(condition, truth, available))
+}
+
+/// Select a narrow machine arm at its written format. Promoted Integer
+/// readings need not preserve a narrow conditional at the comparison root.
+fn narrow_machine_arm(
+    condition: &StoredConditionTerm,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let Some((format, CompareRelation::Equal, [left, right])) =
+        condition.operand_view().comparison()
+    else {
+        return false;
+    };
+    if format.format().bits() >= 32 {
+        return false;
+    }
+    for (conditional, other) in [(left, right), (right, left)] {
+        let Some((condition, [then_arm, else_arm])) = conditional.conditional_view() else {
+            continue;
+        };
+        let Some(other) = other.observe(format) else {
+            continue;
+        };
+        for (truth, arm) in [(true, then_arm), (false, else_arm)] {
+            if arm
+                .observe(format)
+                .is_some_and(|arm| arm.value_read() == other.value_read())
+                && guard_holds(condition, truth, available)
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn identity(
@@ -496,6 +549,9 @@ pub(crate) fn known_bridge_leaf(
         return true;
     }
     match goal {
+        Proposition::ConditionIs(condition, true) if narrow_machine_arm(condition, available) => {
+            true
+        }
         Proposition::ConditionIs(condition, truth)
             if let Some(reduced) =
                 super::closed_integer_if_comparison(condition.native_compat())

@@ -681,7 +681,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(proof));
         }
         if let Some(proof) =
-            Self::try_indexed_read_preservation(input, MAX_TRANSPORT_SOURCE_POINTS)?
+            Self::try_indexed_read_preservation(input, MAX_TRANSPORT_SOURCE_POINTS, false)?
         {
             return Ok(Some(proof));
         }
@@ -2700,7 +2700,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let Some(chosen) = attempt::candidate_outcome(search_input.driver().apply_step(
             ProofStep::LetSatisfy(ProofLetSatisfy {
-                bindings: vec![(choice_name.clone(), click_type)],
+                bindings: vec![(choice_name.clone(), Some(click_type))],
                 proposition: source,
             }),
         ))?
@@ -3137,7 +3137,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// Proves `&p[i] != &p[j]` from `i != j`: states the index disequality
     /// with `have i != j`, proved by `solve`, then closes the goal with
-    /// `apply(click::separation::distinct_elements(p, i, j)) using { i != j; }`.
+    /// `apply(click::separation::distinct_elements(p, i, j))`.
     /// `p` is the written goal's base; `i` and `j` are spelled from the
     /// kernel's two index words as the store search spells its index
     /// disequality (`((m - 1) as int32)`, `n - 1u64`, `0u64`), so the steps
@@ -3561,6 +3561,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 search_input,
                 surface_goal,
                 introduced_surfaces,
+                false,
             )?
         {
             return Ok(Some(proof));
@@ -6351,8 +6352,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Introduce the index and its guard before framing this read. Reuse
         // the ordinary indexed equality proof rather than transporting the
         // entire quantified postcondition from function entry.
-        if search_input.focused_outcome_data().is_some()
-            && let ClickProposition::ForAll { body, .. } = surface_goal
+        if let ClickProposition::ForAll { body, .. } = surface_goal
             && let ClickProposition::Implies(_, consequent) = body.as_ref()
             && let ClickProposition::Comparison {
                 left: read @ ContractExpression::Index(..),
@@ -6360,6 +6360,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right: ContractExpression::Old(entry_read),
             } = consequent.as_ref()
             && read == entry_read.as_ref()
+            && (search_input.focused_outcome_data().is_some()
+                || search_input
+                    .execution_proposition_fixed_state_view()
+                    .is_some())
             && let Some(introduced) = attempt::candidate_outcome(
                 search_input
                     .driver()
@@ -6370,10 +6374,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if introduced.is_complete() {
                 return Ok(Some(introduced));
             }
-            if let Some(goal) = introduced.surface_goal()
+            if search_input.focused_outcome_data().is_some()
+                && let Some(goal) = introduced.surface_goal()
                 && let Some(source) = old_reflexive_transport_source(goal)
                 && let Some(proof) =
                     Self::try_history_indexed_equalities(&introduced, &source, goal)?
+            {
+                return Ok(Some(proof));
+            }
+            if let Some(proof) =
+                Self::try_indexed_read_preservation(&introduced, MAX_TRANSPORT_SOURCE_POINTS, true)?
+                && proof.is_complete()
             {
                 return Ok(Some(proof));
             }
@@ -7020,6 +7031,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_goal: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
+        indexed_read: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_resource_separation_restriction_closure");
@@ -7135,6 +7147,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     // Never recursively search for a larger separation here.
                     let closed = if index == 0 {
                         scope.driver().try_direct_logical_closure()?
+                    } else if indexed_read
+                        && let Some(step) = Self::indexed_containment_step(premise)
+                        && let Some(closed) =
+                            attempt::candidate_outcome(scope.driver().apply_step(step))?
+                    {
+                        Some(closed)
                     } else {
                         scope
                             .driver()
@@ -10967,7 +10985,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         attempt::record_theorem_discovery_note(
                             SearchFailureKind::UndeterminedArgument,
                             format!(
-                                "theorem `{}`: argument `{name}` cannot be inferred from the goal; supply it with explicit apply(...) using {{ ... }}",
+                                "theorem `{}`: argument `{name}` cannot be inferred from the goal; supply it with explicit apply(...)",
                                 candidate.name
                             ),
                         );
@@ -12252,87 +12270,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .flatten()
             .flatten()?;
         proof.focused_discharged().then_some(proof)
-    }
-
-    /// Plan a numeric induction application against the current checked facts.
-    /// Each missing domain premise is a checked have; no source-wide premise
-    /// pool or parallel induction executor participates in acceptance.
-    pub(in crate::surface::proof) fn apply_smart_induction(
-        search_input: &Proof<'a>,
-        hypothesis: &str,
-        arguments: &[ContractExpression],
-    ) -> Result<Proof<'a>, ClickError> {
-        #[cfg(test)]
-        crate::kernel::search::record_discovery("apply_smart_induction");
-        let ProofContext::Pure(context) = search_input.context.as_ref() else {
-            return Err(
-                search_input.step_error("induction application requires a pure theorem proof")
-            );
-        };
-        let Some(setup) = context.induction_setup.as_ref() else {
-            return Err(search_input.step_error("induction hypothesis is not active"));
-        };
-        if hypothesis != setup.hypothesis {
-            return Err(
-                search_input.step_error(format!("unknown induction hypothesis `{hypothesis}`"))
-            );
-        }
-        let cited = if setup.structural_parameters.is_some() {
-            search_input
-                .structural_induction_instance(hypothesis, arguments)?
-                .surface_premises
-        } else {
-            let [argument] = arguments else {
-                return Err(search_input.step_error(format!(
-                    "induction hypothesis `{hypothesis}` expects one argument"
-                )));
-            };
-            let mut premises =
-                pure_theorems::induction_application_surface_premises(setup, argument)?;
-            let mut cited = Vec::with_capacity(premises.len());
-            for mut premise in premises.drain(..) {
-                let premise = &mut premise;
-                let lowered =
-                    search_input.lower_cited_surface_proposition(premise, "induction premise")?;
-                // The explicit form discharges a premise that evaluates to true,
-                // such as `0 <= n - 1u64`, without evidence; cite none for it.
-                if matches!(normalize_proposition(&lowered), NormalizedProposition::True) {
-                    continue;
-                }
-                // A native premise at the argument's arithmetic, `0 <= n - 1`, is
-                // cited by the observations it compares.
-                *premise = observed_native_arithmetic(&lowered, premise);
-                // A proof states that premise in the spelling the refusal names,
-                // whose lowering cites the same observations.
-                // As in a `using` list, the same order claim stated from the
-                // other side, `n >= 0` for `0 <= n`, is the premise.
-                let available = crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
-                    .iter()
-                    .chain(std::iter::once(&lowered))
-                    .any(|form| search_input.facts().contains(form))
-                    || search_input
-                        .lower_cited_surface_proposition(premise, "induction premise")
-                        .is_ok_and(|cited| search_input.facts().contains(&cited));
-                if !available {
-                    return Err(search_input.step_error(format!(
-                    "induction hypothesis `{hypothesis}` found no available fact for premise `{}`{}",
-                    describe_click_proposition(premise),
-                    crate::surface::proof::theorem_application::requirement_search_miss(
-                        &crate::surface::printing::source_click_proposition(premise),
-                    ),
-                )));
-                }
-                cited.push(premise.clone());
-            }
-            cited
-        };
-        search_input
-            .driver()
-            .apply_step(ProofStep::ApplyInductionUsing {
-                hypothesis: hypothesis.to_string(),
-                arguments: arguments.to_vec(),
-                premises: cited,
-            })
     }
 
     /// Applies one statement step, retaining one newly proved non-load

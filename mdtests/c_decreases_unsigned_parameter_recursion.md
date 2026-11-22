@@ -32,9 +32,7 @@ uint32 gcd(uint32 a, uint32 b) {
         false => {}
     }
     have a % b < b by {
-        apply(integer::uint32_remainder_less_than_divisor(a, b)) using {
-            b != 0u32;
-        };
+        apply(integer::uint32_remainder_less_than_divisor(a, b));
     }
     step();
     step();

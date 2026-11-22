@@ -1475,19 +1475,10 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.apply-induction"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.apply-induction-using"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
 id = "tactic-form.apply-fact"
 path = "reference/tactics/index.md#fact-application"
 [[item]]
-id = "tactic-form.apply-fact-using"
-path = "reference/tactics/index.md#fact-application"
-[[item]]
 id = "tactic-form.apply-theorem"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.apply-theorem-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.have"
@@ -2497,6 +2488,14 @@ path = "reference/library/index.md#stdspant"
 [[item]]
 id = "library.cpp.std::span<T>::subspan"
 path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.rust.Box::drop"
+path = "reference/library/index.md#boxt"
+
+[[item]]
+id = "library.rust.Box::new"
+path = "reference/library/index.md#boxt"
 
 [[item]]
 id = "library.rust.Option::expect"
