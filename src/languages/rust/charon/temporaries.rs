@@ -34,6 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// followed by reads in its continuation. The final reader ends the result. A slot read
 /// through its address, written by another operation, or live across a
 /// control-flow edge where other paths can enter still needs storage.
+/// A box pointer copied from a field solely for drop can also be retained.
 pub(in crate::languages::rust) fn scalar_expression_operands(
     mir: &MirBody,
     loop_tests: &BTreeSet<usize>,
@@ -130,6 +131,9 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                         | S::Initialize { .. }
                         | S::SliceSplit { .. }
                 )
+            } else if let T::BoxFree { local, .. } = &code.terminator {
+                reads.insert(local.clone(), 1);
+                true
             } else {
                 terminator_uses(&code.terminator, &mut reads, &mut excluded);
                 excluded.extend(call_destination(&code.terminator).cloned());
@@ -167,14 +171,26 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
         .iter()
         .filter_map(|local| {
             let name = &local.name;
-            if !local.value_type.is_scalar() || excluded.contains(name) {
+            if excluded.contains(name) {
                 return None;
             }
             let &(first, last, last_read_count) = reads_by_local.get(name)?;
             if last_read_count != 1 {
                 return None;
             }
-            let reaches_reader = match definitions.get(name.as_str())?.as_slice() {
+            let producers = definitions.get(name.as_str())?.as_slice();
+            if !local.value_type.is_scalar()
+                && !(matches!(local.value_type, Type::Box { .. } | Type::OptionBox { .. })
+                    && first == last
+                    && matches!(&mir.blocks[last.block].terminator, T::BoxFree { local, .. }
+                        if local == name && last.statement == mir.blocks[last.block].statements.len())
+                    && matches!(producers, [producer]
+                        if matches!(&mir.blocks[producer.block].statements[producer.statement],
+                            S::Assign { value: E::Field { .. }, .. })))
+            {
+                return None;
+            }
+            let reaches_reader = match producers {
                 [producer] => {
                     fragments[producer.block] == fragments[first.block] && *producer < first
                 }

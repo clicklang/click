@@ -450,6 +450,7 @@ pub(super) fn lower(
         cx.mir_point = matches!(
             terminator,
             T::ReturnValue { .. }
+                | T::BoxFree { .. }
                 | T::Call {
                     through_pointer: false,
                     ..
@@ -499,20 +500,38 @@ pub(super) fn lower(
             } => {
                 // The library's `Box::drop<R>` frees the allocation, after
                 // the record's glue; a `None` box, null, drops nothing.
-                let boxed = || crate::kernel::program_expression::variable(cx.binding(local));
+                let boxed = cx.expr(&E::Local {
+                    name: local.clone(),
+                })?;
                 let free = program_call(
                     &super::super::standard_library::box_function(
                         super::super::standard_library::BOX_DROP,
                         record,
                     ),
-                    vec![boxed()],
+                    vec![boxed.clone()],
                 );
                 let drop = match glue {
-                    Some(glue) => program_seq(program_call(glue, vec![boxed()]), free),
+                    Some(glue) => program_seq(
+                        program_call(glue, vec![observe_operand(boxed.clone())]),
+                        free,
+                    ),
                     None => free,
                 };
                 if *optional {
-                    crate::kernel::program_if(boxed(), drop, program_skip())
+                    // The free ends the capture on the non-null path.
+                    // A null box must end it without invoking drop.
+                    let none = if matches!(&boxed, ProgramExpression::StepResult { ends: true, .. })
+                    {
+                        typed_value_step(
+                            Vec::new(),
+                            boxed.clone(),
+                            ProgramType::Int32Pointer,
+                            false,
+                        )
+                    } else {
+                        program_skip()
+                    };
+                    crate::kernel::program_if(observe_operand(boxed), drop, none)
                 } else {
                     drop
                 }
