@@ -3416,13 +3416,10 @@ impl OpenedContractEntry {
             propositions.push(byte_order);
             source_origins.push(None);
         }
-        let cases = Arc::new(
-            crate::kernel::prepare_function_contract_entry_cases(
-                contract,
-                environment.byte_order_fact(),
-            )
-            .map_err(crate::kernel::ContractEntryRefusal::into_runtime_error)?,
-        );
+        let cases = Arc::new(crate::kernel::prepare_function_contract_entry_cases(
+            contract,
+            environment.byte_order_fact(),
+        ));
         let mut facts = PureFactStore::from_ordered(&propositions);
         facts.prepare_entry_resources(caller_state.resources());
         let entry_state =
