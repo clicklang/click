@@ -2,23 +2,26 @@
 //! covered subtree is replaced in one operation, including on a fork.
 use std::{ops::Range, sync::Arc};
 
-#[derive(Clone, Default)]
-pub(super) struct CellVersionIntervals {
-    earlier: Option<Arc<Node>>,
+#[derive(Clone, Debug, Default)]
+pub(super) struct CellVersionIntervals<Value = u32> {
+    earlier: Option<Arc<Node<Value>>>,
     // Keep the latest interval at the root so repeated writes to one range
     // replace it without copying a path through the interval tree.
-    newest: Option<(Range<u32>, u32)>,
+    newest: Option<(Range<u32>, Value)>,
 }
 
-enum Node {
-    Written(u32),
-    Split(Option<Arc<Node>>, Option<Arc<Node>>),
+#[derive(Debug)]
+enum Node<Value> {
+    Written(Value),
+    Split(Option<Arc<Node<Value>>>, Option<Arc<Node<Value>>>),
 }
 
 const COORDINATES: Range<u32> = 0..(1 << 31);
 
-impl CellVersionIntervals {
-    pub(super) fn write(&mut self, range: Range<u32>, version: u32) {
+impl<Value: Copy + Ord> CellVersionIntervals<Value> {
+    /// Assign a range. Versions are recorded in nondecreasing order. Unit
+    /// values track which bytes were written without naming a version.
+    pub(super) fn write(&mut self, range: Range<u32>, version: Value) {
         debug_assert!(range.start < range.end && range.end <= COORDINATES.end);
         crate::instrumentation::record_deterministic_work(1);
         if let Some((earlier, earlier_version)) = self.newest.replace((range.clone(), version))
@@ -30,8 +33,8 @@ impl CellVersionIntervals {
     }
 
     /// The query spans at most one scalar, so it visits only its bounded
-    /// number of byte paths. IDs increase along the indexed memory history.
-    pub(super) fn latest(&self, range: Range<u32>) -> Option<u32> {
+    /// number of byte paths.
+    pub(super) fn latest(&self, range: Range<u32>) -> Option<Value> {
         debug_assert!(range.start < range.end && range.end <= COORDINATES.end);
         if let Some((newest, version)) = &self.newest {
             crate::instrumentation::record_deterministic_work(1);
@@ -51,12 +54,12 @@ fn covers(outer: &Range<u32>, inner: &Range<u32>) -> bool {
     outer.start <= inner.start && inner.end <= outer.end
 }
 
-fn assign(
-    node: Option<&Arc<Node>>,
+fn assign<Value>(
+    node: Option<&Arc<Node<Value>>>,
     span: Range<u32>,
     write: &Range<u32>,
-    written: &Arc<Node>,
-) -> Option<Arc<Node>> {
+    written: &Arc<Node<Value>>,
+) -> Option<Arc<Node<Value>>> {
     crate::instrumentation::record_deterministic_work(1);
     if disjoint(&span, write) {
         return node.cloned();
@@ -75,7 +78,11 @@ fn assign(
     )))
 }
 
-fn latest(node: Option<&Node>, span: Range<u32>, read: &Range<u32>) -> Option<u32> {
+fn latest<Value: Copy + Ord>(
+    node: Option<&Node<Value>>,
+    span: Range<u32>,
+    read: &Range<u32>,
+) -> Option<Value> {
     let node = node?;
     crate::instrumentation::record_deterministic_work(1);
     if disjoint(&span, read) {
