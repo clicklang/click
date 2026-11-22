@@ -9,7 +9,7 @@ resource, check what the contract promises and what the return path holds. For a
 whether the clause satisfies the documented rule under its requirements.
 Correct an invalid clause or report `contract-bug` with evidence that the
 original clause satisfies the rule. For a contract-entry, execution,
-contract-exit, or termination refusal, inspect the specific reported check.
+or termination refusal, inspect the specific reported check.
 
 Use the [proof repair procedure](tracing.md) when the diagnostic gives a
 goal. A statement requirement is a goal at the statement’s pre-state.

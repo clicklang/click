@@ -6148,6 +6148,164 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         .map(|proof| proof.filter(Proof::is_complete))
     }
 
+    /// Preserve a masked 64-bit field read across the store that reaches the
+    /// current frontier. The ordinary certificate names both byte ranges.
+    fn try_masked_field_preservation(
+        search_input: &Proof<'a>,
+        target: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_masked_field_preservation");
+        let ClickProposition::Comparison {
+            left: ContractExpression::BitwiseAnd(read, mask),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::IntegerLiteral(_),
+        } = target
+        else {
+            return Ok(None);
+        };
+        if !matches!(read.as_ref(), ContractExpression::Field { .. })
+            || !matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
+        {
+            return Ok(None);
+        }
+        let Some(view) = search_input.execution_proposition_fixed_state_view() else {
+            return Ok(None);
+        };
+        let Some((
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                left,
+                right,
+                ..
+            },
+            true,
+        )) = search_input.goal().and_then(Proposition::condition_native)
+        else {
+            return Ok(None);
+        };
+        let address = [left, right].into_iter().find_map(|term| {
+            let MachineTerm::Binary {
+                op: crate::kernel::MachineBinaryOp::BitwiseAnd,
+                left,
+                right,
+                ..
+            } = term.as_ref()
+            else {
+                return None;
+            };
+            [left, right].into_iter().find_map(|operand| {
+                let load = match operand.as_ref() {
+                    MachineTerm::Variable(variable) => {
+                        crate::kernel::registered_load_term_for_variable(variable)?
+                    }
+                    term => term.clone(),
+                };
+                match load {
+                    MachineTerm::MemoryLoad(_, address, crate::kernel::LoadKind::Bits64) => {
+                        Some(address)
+                    }
+                    _ => None,
+                }
+            })
+        });
+        let Some(address) = address else {
+            return Ok(None);
+        };
+        let state = view.fixed_state.state;
+        let records = view.fixed_state.recorded_states;
+        let spell = |resource: &Resource| {
+            super::surface_synthesis::synthesize_surface_resource_subject(
+                resource,
+                view.parameter_binding,
+                state,
+                &BTreeMap::new(),
+            )
+        };
+        let Some(kept) = spell(&Resource::Memory(
+            crate::kernel::MemoryRange::new_with_element_width(
+                *address,
+                0u32.into(),
+                8u32.into(),
+                1,
+            ),
+        )) else {
+            return Ok(None);
+        };
+        let current = crate::kernel::intern_memory_ref(state.memory());
+        for (selector, _) in records.recent(MAX_TRANSPORT_SOURCE_POINTS) {
+            check_verification_deadline()?;
+            let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: region @ CodeRegionRef::Region(_),
+                kind: ProgramPointKind::Exit,
+            }) = selector
+            else {
+                continue;
+            };
+            let Ok(Resource::Footprint(footprint)) = records.footprint(region) else {
+                continue;
+            };
+            if !footprint.complete
+                || footprint.members.len() != 1
+                || crate::kernel::intern_memory_ref(&footprint.after) != current
+                || crate::kernel::intern_memory_ref(&footprint.before) == current
+            {
+                continue;
+            }
+            let Some(written @ Resource::Memory(_)) = footprint.members.front() else {
+                continue;
+            };
+            let Some(written) = spell(written) else {
+                continue;
+            };
+            let separate = ClickProposition::Separate {
+                left: written,
+                right: kept.clone(),
+            };
+            let footprint_separation = ClickProposition::Separate {
+                left: ResourceSubject::Footprint(region.clone()),
+                right: kept.clone(),
+            };
+            let equality = ClickProposition::Comparison {
+                left: read.as_ref().clone(),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::At {
+                    selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                        region: region.clone(),
+                        kind: ProgramPointKind::Entry,
+                    }),
+                    expression: read.clone(),
+                },
+            };
+            let have = |proposition, step| ProofStep::Have {
+                proposition,
+                proof: Box::new(
+                    ProofCertificate::from_steps(vec![step])
+                        .expect("ordinary field-preservation step"),
+                ),
+            };
+            let steps = vec![
+                have(separate.clone(), ProofStep::Known),
+                have(
+                    footprint_separation.clone(),
+                    ProofStep::NormalizeUsing(vec![separate]),
+                ),
+                have(equality.clone(), ProofStep::Preserve(footprint_separation)),
+                ProofStep::Rewrite(equality),
+                ProofStep::Known,
+            ];
+            if let Some(proof) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_ordinary_transport_steps(target, steps),
+            )? && proof.is_complete()
+            {
+                return Ok(Some(proof));
+            }
+        }
+        Ok(None)
+    }
+
     /// Tries the focused branch goal itself as one explicit fact transport from a
     /// recorded program point. This also applies to proposition scopes opened
     /// mid-execution, such as loop-invariant initialization and preservation.
@@ -6187,6 +6345,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_state_transport_closure_candidates");
+        if let Some(proof) = Self::try_masked_field_preservation(search_input, surface_goal)? {
+            return Ok(Some(proof));
+        }
         // Introduce the index and its guard before framing this read. Reuse
         // the ordinary indexed equality proof rather than transporting the
         // entire quantified postcondition from function entry.
@@ -6297,12 +6458,61 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .into_iter()
                 .map(|(selector, _)| selector.clone()),
         );
+        let pointer_field = match surface_goal {
+            ClickProposition::Comparison {
+                left: read @ ContractExpression::Field { .. },
+                operator: ComparisonOperator::Equal,
+                right,
+            } if matches!(right, ContractExpression::IntegerLiteral(value) if value == "0")
+                && matches!(
+                    search_input.goal().and_then(Proposition::condition_native),
+                    Some((
+                        ConditionTerm::PointerEqual(..) | ConditionTerm::AddressEqual(..),
+                        true
+                    ))
+                ) =>
+            {
+                Some(read)
+            }
+            _ => None,
+        };
         let mut tried = BTreeSet::new();
         for selector in selectors {
             if (names_result && !crate::surface::program_point_can_name_result(Some(&selector)))
                 || !tried.insert(selector.clone())
             {
                 continue;
+            }
+            // An exact equality between the two reads lets the historical
+            // null fact close by rewrite. Both facts must check in the
+            // ordinary proof; a failed candidate leaves the goal alone.
+            if let Some(read) = pointer_field {
+                let equality = ClickProposition::Comparison {
+                    left: read.clone(),
+                    operator: ComparisonOperator::Equal,
+                    right: ContractExpression::At {
+                        selector: selector.clone(),
+                        expression: Box::new(read.clone()),
+                    },
+                };
+                let proof = ProofCertificate::from_steps(vec![ProofStep::Known])
+                    .expect("known is an ordinary certificate step");
+                let steps = vec![
+                    ProofStep::Have {
+                        proposition: equality.clone(),
+                        proof: Box::new(proof),
+                    },
+                    ProofStep::Rewrite(equality),
+                    ProofStep::Known,
+                ];
+                if let Some(proof) = attempt::candidate_outcome(
+                    search_input
+                        .driver()
+                        .apply_ordinary_transport_steps(surface_goal, steps),
+                )? && proof.is_complete()
+                {
+                    return Ok(Some(proof));
+                }
             }
             let source = ClickProposition::At {
                 selector,

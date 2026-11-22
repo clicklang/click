@@ -28,21 +28,16 @@ closure.rs	__rust_q_I7_impl_fn_I5_shift	2	28	__rust_mir_6
 closure.rs	__rust_q_I7_impl_fn_I5_twice	30	10	__rust_mir_3
 closure.rs	__rust_q_I7_impl_fn_I6_caller	6	11	__rust_mir_3
 closure.rs	__rust_q_I8_closures_I5_apply	2	5	__rust_mir_3
-control.rs	count_evens	28	12	__rust_mir_8
 copies.rs	collision	16	9	__rust_mir_9
 copies.rs	copy_right	3	9	__rust_mir_8
 copies.rs	reassign_left	8	9	__rust_mir_9
 enumerate.rs	last_index	3	24	__rust_mir_15
-enumerate.rs	last_pair	16	16	__rust_mir_19
 errors.rs	describe	27	11	__rust_mir_2
 errors.rs	doubled	22	13	__rust_mir_3
 errors.rs	doubled	22	21	__rust_mir_8
 errors.rs	forwarded	17	13	__rust_mir_3
 errors.rs	forwarded	17	21	__rust_mir_8
 errors.rs	unwrapped	39	11	__rust_mir_2
-exits.rs	find_pair	26	16	__rust_mir_11
-exits.rs	has_zero	4	12	__rust_mir_7
-exits.rs	position	14	12	__rust_mir_13
 fields.rs	borrowed_byte	12	57	__rust_mir_2
 fields.rs	empty_len	13	44	__rust_mir_2
 held.rs	__rust_q_I11_held_values_I4_peek	10	11	__rust_mir_4
@@ -62,7 +57,6 @@ list.rs	__rust_q_I14_recursive_drop_T36___rust_q_I14_recursive_drop_I5_Stack_I4_
 list.rs	__rust_q_I14_recursive_drop_T36___rust_q_I14_recursive_drop_I5_Stack_I4_push	17	21	__rust_mir_5
 list.rs	__rust_q_I14_recursive_drop_T36___rust_q_I14_recursive_drop_I5_Stack_I4_push	17	26	__rust_mir_6
 list.rs	__rust_q_I14_recursive_drop_T36___rust_q_I14_recursive_drop_I5_Stack_I5_clear	27	9	__rust_mir_3
-methods.rs	swap_bytes	56	8	__rust_mir_3
 options.rs	__rust_q_I12_option_boxes_I5_maybe	6	28	__rust_mir_5
 options.rs	__rust_q_I12_option_boxes_I7_dropped	14	29	__rust_mir_5
 options.rs	__rust_q_I13_option_values_I3_sum	68	13	__rust_mir_4
@@ -85,9 +79,6 @@ results.rs	__rust_q_I13_result_values_I8_plus_one	17	14	__rust_mir_7
 shapes.rs	__rust_q_I13_trait_objects_I13_tag_after_dyn	107	5	__rust_mir_3
 shapes.rs	__rust_q_I13_trait_objects_I15_tag_after_bound	113	5	__rust_mir_3
 shapes.rs	__rust_q_I4_bags_I11_through_dyn	38	5	__rust_mir_3
-slices.rs	clear_first	57	8	__rust_mir_3
-slices.rs	first	2	8	__rust_mir_3
-slices.rs	head	49	8	__rust_mir_3
 slices.rs	sum	8	15	__rust_mir_6
 slices.rs	zero	17	15	__rust_mir_5
 slots.rs	__rust_q_I14_resource_state_I11_through_dyn	43	16	__rust_mir_3
@@ -128,6 +119,3 @@ trial.rs	guarded_increment	15	38	__rust_mir_7
 trial.rs	guarded_increment	23	21	__rust_mir_14
 values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	9	__rust_mir_7
 values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	12	__rust_mir_8
-widths.rs	parity_u16	3	39	__rust_mir_2
-widths.rs	parity_u32	5	39	__rust_mir_2
-widths.rs	parity_u8	1	36	__rust_mir_2

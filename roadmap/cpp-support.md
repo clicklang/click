@@ -169,9 +169,13 @@ implementation:
   unchanged `SpanReader::ignore` now proves its normal advance and exact
   `std::ios_base::failure` path, returning borrowed authority and preserving
   backing bytes on both exits. Its modular caller also expands and replays.
-  The next application step is `SpanReader::read`, followed by serialization
-  through that real reader and typed catches; the earlier fixture reader
-  still does not model malformed input.
+  The unchanged `SpanReader::read` now verifies through the pinned `memcpy` and
+  span contracts. Its [sidecar](../integrations/bitcoin-core-money-range/SpanReaderRead.click)
+  proves the copied bytes and cursor advance on success, and the exact exception
+  and unchanged cursor on short input. The offline integration test checks
+  ordinary verification, expansion, and cold and retained-session replay.
+  The next application step is decoding through this reader, followed by typed
+  catches.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

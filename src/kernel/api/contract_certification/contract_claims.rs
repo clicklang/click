@@ -1159,21 +1159,50 @@ struct CertifiedFunctionClaimPath {
 #[derive(Clone, Debug)]
 pub(crate) struct ContractPathPreparationFailure {
     pub reason: String,
+    refusal: Box<ContractClosingRefusal>,
     #[cfg(test)]
     pub available: Vec<Proposition>,
     #[cfg(test)]
     pub available_count: usize,
 }
 
-impl From<String> for ContractPathPreparationFailure {
-    fn from(reason: String) -> Self {
+impl ContractPathPreparationFailure {
+    fn classified(reason: impl Into<String>, refusal: ContractClosingRefusal) -> Self {
         Self {
-            reason,
+            reason: reason.into(),
+            refusal: Box::new(refusal),
             #[cfg(test)]
             available: Vec::new(),
             #[cfg(test)]
             available_count: 0,
         }
+    }
+
+    fn incomplete(reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        Self::classified(reason.clone(), ContractClosingRefusal::Incomplete(reason))
+    }
+
+    fn internal(reason: &str) -> Self {
+        Self::classified(reason, ContractClosingRefusal::Internal(reason.to_owned()))
+    }
+
+    fn stopped(reason: String, stop: ExecutionLimit) -> Self {
+        Self::classified(reason, ContractClosingRefusal::from_stop(stop))
+    }
+
+    fn runtime(reason: String, error: RuntimeError) -> Self {
+        let refusal =
+            if crate::kernel::functions::is_deferred_conditional_resource_effect_error(&error) {
+                ContractClosingRefusal::Incomplete(reason.clone())
+            } else {
+                ContractClosingRefusal::Runtime(error)
+            };
+        Self::classified(reason, refusal)
+    }
+
+    fn into_closing_refusal(self) -> ContractClosingRefusal {
+        *self.refusal
     }
 }
 
@@ -1188,6 +1217,7 @@ fn unproved_contract_path_condition(
     #[cfg(test)]
     let (available, available_count) = _assumptions.diagnostic_fact_sample(8, 24);
     ContractPathPreparationFailure {
+        refusal: Box::new(ContractClosingRefusal::Incomplete(reason.clone())),
         reason,
         #[cfg(test)]
         available,
@@ -1217,21 +1247,21 @@ fn prepare_function_claim_path(
             || checked.parameters() != function.parameters()
             || checked.contract_interface() != function.contract_interface()
     }) {
-        return Err("the checked boundary transfer belongs to another function"
-            .to_string()
-            .into());
+        return Err(ContractPathPreparationFailure::internal(
+            "the checked boundary transfer belongs to another function",
+        ));
     }
     let Some((caller_state, arguments, outcome, assumptions)) =
         certified_function_path_parts(function, path)
     else {
-        return Err("the certified path does not belong to the exact function"
-            .to_string()
-            .into());
+        return Err(ContractPathPreparationFailure::internal(
+            "the certified path does not belong to the exact function",
+        ));
     };
     let Some(entry_state) = program_function_entry_state(caller_state, function, arguments) else {
-        return Err("the function entry state cannot be reconstructed"
-            .to_string()
-            .into());
+        return Err(ContractPathPreparationFailure::internal(
+            "the function entry state cannot be reconstructed",
+        ));
     };
     let mut entry_state = contract_view_of_entry(entry_state, function, arguments);
     let mut budget = ExecutionBudget::beside_live_state();
@@ -1245,16 +1275,21 @@ fn prepare_function_claim_path(
         ) {
             Ok(Ok(resources)) => resources,
             Ok(Err(error)) => {
-                return Err(
-                    format!("the required resource context cannot be evaluated: {error}").into(),
-                );
+                let reason = format!("the required resource context cannot be evaluated: {error}");
+                return Err(if error.is_contract_entry_resource_error() {
+                    ContractPathPreparationFailure::classified(
+                        reason.clone(),
+                        ContractClosingRefusal::InvalidContract(reason),
+                    )
+                } else {
+                    ContractPathPreparationFailure::runtime(reason, error)
+                });
             }
             Err(limit) => {
-                return Err(format!(
-                    "the required resource context stopped at {}",
-                    limit.describe()
-                )
-                .into());
+                return Err(ContractPathPreparationFailure::stopped(
+                    format!("the required resource context stopped at {limit}"),
+                    limit,
+                ));
             }
         };
     let expanded_required = {
@@ -1269,9 +1304,9 @@ fn prepare_function_claim_path(
         )
     };
     let Some((_, definition_facts)) = expanded_required else {
-        return Err("the required composite resources cannot be expanded"
-            .to_string()
-            .into());
+        return Err(ContractPathPreparationFailure::incomplete(
+            "the required composite resources cannot be expanded",
+        ));
     };
     let mut assumptions = assumptions_with_propositions(&assumptions, &definition_facts);
     let Some(population_facts) = evaluate_resource_population_fact_propositions(
@@ -1280,9 +1315,9 @@ fn prepare_function_claim_path(
         &entry_state,
         &assumptions,
     ) else {
-        return Err("the counted population facts cannot be evaluated"
-            .to_string()
-            .into());
+        return Err(ContractPathPreparationFailure::incomplete(
+            "the counted population facts cannot be evaluated",
+        ));
     };
     for fact in &population_facts {
         assumptions = assumptions.assume_proposition(fact.clone());
@@ -1295,9 +1330,9 @@ fn prepare_function_claim_path(
             &assumptions,
         )
     else {
-        return Err("the entry resource context cannot be expanded"
-            .to_string()
-            .into());
+        return Err(ContractPathPreparationFailure::incomplete(
+            "the entry resource context cannot be expanded",
+        ));
     };
     // The contract's own folded field-bearing instances make the cells their
     // unmatched bodies own readable, as they did while the clauses were
@@ -1372,11 +1407,9 @@ fn prepare_closing_path(
         let Some(error) = deferred_contract_exit_error.as_ref().filter(|error| {
             crate::kernel::functions::is_deferred_conditional_resource_effect_error(error)
         }) else {
-            return Err(
-                "the deferred conditional contract exit has no valid boundary error"
-                    .to_string()
-                    .into(),
-            );
+            return Err(ContractPathPreparationFailure::internal(
+                "the deferred conditional contract exit has no valid boundary error",
+            ));
         };
         let _ = error;
         match crate::kernel::functions::resolve_deferred_contract_exit(
@@ -1393,17 +1426,16 @@ fn prepare_closing_path(
         ) {
             Ok(Ok(outcome)) => Some(outcome),
             Ok(Err(error)) => {
-                return Err(format!(
-                    "the deferred conditional contract exit cannot be resolved: {error}"
-                )
-                .into());
+                return Err(ContractPathPreparationFailure::runtime(
+                    format!("the deferred conditional contract exit cannot be resolved: {error}"),
+                    error,
+                ));
             }
             Err(limit) => {
-                return Err(format!(
-                    "the deferred conditional contract exit stopped at {}",
-                    limit.describe()
-                )
-                .into());
+                return Err(ContractPathPreparationFailure::stopped(
+                    format!("the deferred conditional contract exit stopped at {limit}"),
+                    limit,
+                ));
             }
         }
     } else {
@@ -1453,7 +1485,7 @@ fn prepare_closing_path(
             return Err(if capture_failure {
                 unproved_contract_path_condition(reason, &assumptions)
             } else {
-                reason.into()
+                ContractPathPreparationFailure::incomplete(reason)
             });
         }
         return Ok(CertifiedFunctionClaimPath {
@@ -1483,30 +1515,38 @@ fn prepare_closing_path(
             (value, state, true)
         }
         FunctionOutcome::UndefinedBehavior(undefined_behavior) => {
-            return Err(format!(
-                "the certified path is not safe: undefined behavior: {}",
-                undefined_behavior.description()
-            )
-            .into());
+            return Err(ContractPathPreparationFailure::classified(
+                format!(
+                    "the certified path is not safe: undefined behavior: {}",
+                    undefined_behavior.description()
+                ),
+                ContractClosingRefusal::Execution(format!(
+                    "undefined behavior: {}",
+                    undefined_behavior.description(),
+                )),
+            ));
         }
         FunctionOutcome::RuntimeError(error) => {
-            return Err(format!(
-                "the certified path is not safe: {}",
-                super::describe_certification_runtime_error(error)
-            )
-            .into());
+            return Err(ContractPathPreparationFailure::runtime(
+                format!(
+                    "the certified path is not safe: {}",
+                    super::describe_certification_runtime_error(error)
+                ),
+                error.clone(),
+            ));
         }
         FunctionOutcome::Throw { .. } => {
-            return Err(
-                "the certified path is not safe: it throws an exception the function's signature does not permit"
-                    .to_string()
-                    .into(),
-            );
+            let reason =
+                "the return path throws an exception the function's signature does not permit";
+            return Err(ContractPathPreparationFailure::classified(
+                reason,
+                ContractClosingRefusal::Execution(reason.into()),
+            ));
         }
         FunctionOutcome::VerificationDiverges => {
-            return Err("the certified path is not safe: it does not return"
-                .to_string()
-                .into());
+            return Err(ContractPathPreparationFailure::internal(
+                "the diverging path was passed to the return checker",
+            ));
         }
     };
     if !exceptional {
@@ -1519,8 +1559,18 @@ fn prepare_closing_path(
                 &mut budget,
             ) {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => return Err(format!("{error}").into()),
-                Err(limit) => return Err(limit.describe().to_string().into()),
+                Ok(Err(error)) => {
+                    return Err(ContractPathPreparationFailure::runtime(
+                        error.to_string(),
+                        error,
+                    ));
+                }
+                Err(limit) => {
+                    return Err(ContractPathPreparationFailure::stopped(
+                        limit.describe(),
+                        limit,
+                    ));
+                }
             }
         }
         match crate::kernel::functions::check_wildcard_consumption_at_return(
@@ -1531,8 +1581,18 @@ fn prepare_closing_path(
             &mut budget,
         ) {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => return Err(format!("{error}").into()),
-            Err(limit) => return Err(limit.describe().to_string().into()),
+            Ok(Err(error)) => {
+                return Err(ContractPathPreparationFailure::runtime(
+                    error.to_string(),
+                    error,
+                ));
+            }
+            Err(limit) => {
+                return Err(ContractPathPreparationFailure::stopped(
+                    limit.describe(),
+                    limit,
+                ));
+            }
         }
     }
     let exit_memory = if exceptional {
@@ -1544,7 +1604,7 @@ fn prepare_closing_path(
             value,
             function,
         )
-        .map_err(|error| error.to_string())?
+        .map_err(|error| ContractPathPreparationFailure::runtime(error.to_string(), error))?
     };
     let mut claim_exit_state = (**raw_exit_state).clone().with_memory(exit_memory.clone());
     let post_resources = entry
@@ -1554,7 +1614,11 @@ fn prepare_closing_path(
             &mut claim_exit_state,
             &assumptions,
         )
-        .ok_or_else(|| "the exit resource context cannot be expanded".to_string())?;
+        .ok_or_else(|| {
+            ContractPathPreparationFailure::incomplete(
+                "could not expand the resources held at return",
+            )
+        })?;
     let post_resources = with_unmatched_instance_body_views(
         post_resources,
         claim_exit_state.resources().facts(),
@@ -1650,7 +1714,7 @@ fn prepare_closing_path(
         return Err(if capture_failure {
             unproved_contract_path_condition(reason, &assumptions)
         } else {
-            reason.into()
+            ContractPathPreparationFailure::incomplete(reason)
         });
     }
 
@@ -1765,10 +1829,9 @@ fn function_claim_holds_on_prepared_path(
         post_state,
         post_resources,
         assumptions,
-        effect_facts,
         checked_resource_claims,
         checked_resource_transition,
-        effect_projection,
+        ..
     } = path;
     let assumptions = checking_assumptions.unwrap_or(assumptions);
     let mut budget = ExecutionBudget::beside_live_state();
@@ -2076,214 +2139,253 @@ fn function_claim_holds_on_prepared_path(
             )
         }
         FunctionContractClaimTarget::Effect => {
-            let independent_projection;
-            let projection = if let Some(retained) = effect_projection {
-                let Ok(projection) = retained.as_ref() else {
-                    return false;
-                };
-                projection
-            } else {
-                let Ok(Ok(projection)) =
-                    crate::kernel::functions::project_contract_memory_effects_with_guard_policy(
-                        entry_state,
-                        function.contract_interface(),
-                        Some(checked_required_resources),
-                        assumptions,
-                        &mut budget,
-                        true,
-                    )
-                else {
-                    return false;
-                };
-                independent_projection = projection;
-                &independent_projection
-            };
-            let mutable_ranges = projection.ranges().to_vec();
-            // A footprint that reaches unnamed memory covers every write.
-            let covers_everything = mutable_ranges
-                .iter()
-                .any(crate::kernel::MemoryRange::is_unnamed_footprint);
-            let mut effect_memory = caller_state.memory().clone();
-            let mut seen_transitions = Vec::<(SymbolicMemory, SymbolicMemory)>::new();
-            let is_function_fresh_heap_pointer = |pointer: &Address, current: &SymbolicMemory| {
-                let matches_allocation = |memory: &SymbolicMemory| {
-                    memory.heap.live_allocations.keys().any(|base| {
-                        // Freshness is a property of the allocation, not of
-                        // the particular address selected within it. An
-                        // interior pointer into a block live at entry must
-                        // still be covered by the function's mutable frame.
-                        base.base == pointer.base
-                            || base == pointer
-                            || crate::kernel::assumptions::pointers_equal_ignoring_memories(
-                                base, pointer,
-                            )
-                            || pointers_proven_equal_for_memory_resolution(
-                                base,
-                                pointer,
-                                assumptions,
-                            )
-                    })
-                };
-                !matches_allocation(entry_state.memory())
-                    && (matches!(pointer.base, AddressBase::Heap(_)) || matches_allocation(current))
-            };
-            let effects_are_bounded = effect_facts.iter().all(|fact| match fact.proposition() {
-                Proposition::MemoryMutatesOnly {
-                    before,
-                    after,
-                    writes,
-                } => {
-                    let repeats_transition =
-                        seen_transitions.iter().any(|(seen_before, seen_after)| {
-                            program_effect_memories_definitionally_equal(
-                                seen_before,
-                                before,
-                                assumptions,
-                            ) && program_effect_memories_definitionally_equal(
-                                seen_after,
-                                after,
-                                assumptions,
-                            )
-                        });
-                    if !repeats_transition
-                        && !program_effect_memories_definitionally_equal(
-                            &effect_memory,
-                            before,
-                            assumptions,
-                        )
-                        && !program_effect_memory_advances_over_internal_heap_state(
-                            &effect_memory,
-                            before,
-                            entry_state.memory(),
-                            assumptions,
-                        )
-                    {
-                        return false;
-                    }
-                    if !repeats_transition {
-                        effect_memory = after.clone();
-                        seen_transitions.push((before.clone(), after.clone()));
-                    }
-                    writes
-                        .iter()
-                        .filter(|(pointer, _)| !pointer.base.is_local_block())
-                        .all(|(pointer, bytes)| {
-                            covers_everything
-                                || is_function_fresh_heap_pointer(pointer, before)
-                                || mutable_ranges.iter().any(|range| match bytes {
-                                    crate::kernel::AccessExtent::Bytes(bytes) => assumptions
-                                        .pointer_access_in_memory_range(pointer, *bytes, range),
-                                    extent => crate::kernel::memory_range_covers(
-                                        range,
-                                        &MemoryRange::of_access(pointer, *extent),
-                                        assumptions,
-                                    ),
-                                })
-                        })
-                }
-                Proposition::MemoryEffectSummary {
-                    before,
-                    after,
-                    mutable_ranges: nested_ranges,
-                } => {
-                    let repeats_transition =
-                        seen_transitions.iter().any(|(seen_before, seen_after)| {
-                            program_effect_memories_definitionally_equal(
-                                seen_before,
-                                before,
-                                assumptions,
-                            ) && program_effect_memories_definitionally_equal(
-                                seen_after,
-                                after,
-                                assumptions,
-                            )
-                        });
-                    if !repeats_transition
-                        && !program_effect_memories_definitionally_equal(
-                            &effect_memory,
-                            before,
-                            assumptions,
-                        )
-                        && !program_effect_memory_advances_over_internal_heap_state(
-                            &effect_memory,
-                            before,
-                            entry_state.memory(),
-                            assumptions,
-                        )
-                    {
-                        return false;
-                    }
-                    if !repeats_transition {
-                        effect_memory = after.clone();
-                        seen_transitions.push((before.clone(), after.clone()));
-                    }
-                    nested_ranges.iter().all(|nested| {
-                        covers_everything
-                            || is_function_fresh_heap_pointer(nested.base(), before)
-                            || mutable_ranges
-                                .iter()
-                                .any(|allowed| memory_range_covers(allowed, nested, assumptions))
-                    })
-                }
-                Proposition::HeapAllocationFreed {
-                    before,
-                    after,
-                    allocation_base,
-                    bytes,
-                } => {
-                    let repeats_transition =
-                        seen_transitions.iter().any(|(seen_before, seen_after)| {
-                            program_effect_memories_definitionally_equal(
-                                seen_before,
-                                before,
-                                assumptions,
-                            ) && program_effect_memories_definitionally_equal(
-                                seen_after,
-                                after,
-                                assumptions,
-                            )
-                        });
-                    if !repeats_transition
-                        && !program_effect_memories_definitionally_equal(
-                            &effect_memory,
-                            before,
-                            assumptions,
-                        )
-                        && !program_effect_memory_advances_over_internal_heap_state(
-                            &effect_memory,
-                            before,
-                            entry_state.memory(),
-                            assumptions,
-                        )
-                    {
-                        return false;
-                    }
-                    if !heap_free_effect_is_valid(before, after, allocation_base, bytes) {
-                        return false;
-                    }
-                    if !repeats_transition {
-                        effect_memory = after.clone();
-                        seen_transitions.push((before.clone(), after.clone()));
-                    }
-                    true
-                }
-                _ => true,
-            });
-            let endpoint_matches = exit_state.as_ref().is_none_or(|exit_state| {
-                program_effect_memories_definitionally_equal(
-                    &effect_memory,
-                    exit_state.memory(),
-                    assumptions,
-                ) || program_effect_memory_advances_over_internal_heap_state(
-                    &effect_memory,
-                    exit_state.memory(),
-                    entry_state.memory(),
-                    assumptions,
-                )
-            });
-            effects_are_bounded && endpoint_matches
+            check_effect_on_prepared_path(function, path, assumptions).is_ok()
         }
     }
+}
+
+fn check_effect_on_prepared_path(
+    function: &ProgramFunction,
+    path: &CertifiedFunctionClaimPath,
+    assumptions: &PureFactContext,
+) -> Result<(), ContractClosingRefusal> {
+    let CertifiedFunctionClaimPath {
+        caller_state,
+        exit_state,
+        entry_state,
+        checked_required_resources,
+        effect_facts,
+        effect_projection,
+        ..
+    } = path;
+    let independent_projection;
+    let projection = if let Some(retained) = effect_projection {
+        retained.as_ref().as_ref().map_err(|reason| {
+            ContractClosingRefusal::Incomplete(format!(
+                "could not determine the allowed write ranges: {reason}"
+            ))
+        })?
+    } else {
+        independent_projection =
+            crate::kernel::functions::project_contract_memory_effects_with_guard_policy(
+                entry_state,
+                function.contract_interface(),
+                Some(checked_required_resources),
+                assumptions,
+                &mut ExecutionBudget::beside_live_state(),
+                true,
+            )
+            .map_err(ContractClosingRefusal::from_stop)?
+            .map_err(|reason| {
+                ContractClosingRefusal::Incomplete(format!(
+                    "could not determine the allowed write ranges: {reason}"
+                ))
+            })?;
+        &independent_projection
+    };
+    let mutable_ranges = projection.ranges().to_vec();
+    // A footprint that reaches unnamed memory covers every write.
+    let covers_everything = mutable_ranges
+        .iter()
+        .any(crate::kernel::MemoryRange::is_unnamed_footprint);
+    let mut effect_memory = caller_state.memory().clone();
+    let mut seen_transitions = Vec::<(SymbolicMemory, SymbolicMemory)>::new();
+    let is_function_fresh_heap_pointer = |pointer: &Address, current: &SymbolicMemory| {
+        let matches_allocation = |memory: &SymbolicMemory| {
+            memory.heap.live_allocations.keys().any(|base| {
+                // Freshness is a property of the allocation, not of
+                // the particular address selected within it. An
+                // interior pointer into a block live at entry must
+                // still be covered by the function's mutable frame.
+                base.base == pointer.base
+                    || base == pointer
+                    || crate::kernel::assumptions::pointers_equal_ignoring_memories(base, pointer)
+                    || pointers_proven_equal_for_memory_resolution(base, pointer, assumptions)
+            })
+        };
+        !matches_allocation(entry_state.memory())
+            && (matches!(pointer.base, AddressBase::Heap(_)) || matches_allocation(current))
+    };
+    effect_facts
+        .iter()
+        .try_for_each(|fact| match fact.proposition() {
+            Proposition::MemoryMutatesOnly {
+                before,
+                after,
+                writes,
+            } => {
+                let repeats_transition =
+                    seen_transitions.iter().any(|(seen_before, seen_after)| {
+                        program_effect_memories_definitionally_equal(
+                            seen_before,
+                            before,
+                            assumptions,
+                        ) && program_effect_memories_definitionally_equal(
+                            seen_after,
+                            after,
+                            assumptions,
+                        )
+                    });
+                if !repeats_transition
+                    && !program_effect_memories_definitionally_equal(
+                        &effect_memory,
+                        before,
+                        assumptions,
+                    )
+                    && !program_effect_memory_advances_over_internal_heap_state(
+                        &effect_memory,
+                        before,
+                        entry_state.memory(),
+                        assumptions,
+                    )
+                {
+                    return Err(ContractClosingRefusal::Internal(
+                        "the recorded memory effects do not connect to one another".into(),
+                    ));
+                }
+                if !repeats_transition {
+                    effect_memory = after.clone();
+                    seen_transitions.push((before.clone(), after.clone()));
+                }
+                let uncovered = writes
+                    .iter()
+                    .filter(|(pointer, _)| !pointer.base.is_local_block())
+                    .find(|(pointer, bytes)| {
+                        !(covers_everything
+                            || is_function_fresh_heap_pointer(pointer, before)
+                            || mutable_ranges.iter().any(|range| match bytes {
+                                crate::kernel::AccessExtent::Bytes(bytes) => assumptions
+                                    .pointer_access_in_memory_range(pointer, *bytes, range),
+                                extent => crate::kernel::memory_range_covers(
+                                    range,
+                                    &MemoryRange::of_access(pointer, *extent),
+                                    assumptions,
+                                ),
+                            }))
+                    });
+                match uncovered {
+                    Some((pointer, extent)) => Err(ContractClosingRefusal::Range(
+                        MemoryRange::of_access(pointer, *extent),
+                    )),
+                    None => Ok(()),
+                }
+            }
+            Proposition::MemoryEffectSummary {
+                before,
+                after,
+                mutable_ranges: nested_ranges,
+            } => {
+                let repeats_transition =
+                    seen_transitions.iter().any(|(seen_before, seen_after)| {
+                        program_effect_memories_definitionally_equal(
+                            seen_before,
+                            before,
+                            assumptions,
+                        ) && program_effect_memories_definitionally_equal(
+                            seen_after,
+                            after,
+                            assumptions,
+                        )
+                    });
+                if !repeats_transition
+                    && !program_effect_memories_definitionally_equal(
+                        &effect_memory,
+                        before,
+                        assumptions,
+                    )
+                    && !program_effect_memory_advances_over_internal_heap_state(
+                        &effect_memory,
+                        before,
+                        entry_state.memory(),
+                        assumptions,
+                    )
+                {
+                    return Err(ContractClosingRefusal::Internal(
+                        "the recorded memory effects do not connect to one another".into(),
+                    ));
+                }
+                if !repeats_transition {
+                    effect_memory = after.clone();
+                    seen_transitions.push((before.clone(), after.clone()));
+                }
+                let uncovered = nested_ranges.iter().find(|nested| {
+                    !(covers_everything
+                        || is_function_fresh_heap_pointer(nested.base(), before)
+                        || mutable_ranges
+                            .iter()
+                            .any(|allowed| memory_range_covers(allowed, nested, assumptions)))
+                });
+                match uncovered {
+                    Some(range) => Err(ContractClosingRefusal::Range(range.clone())),
+                    None => Ok(()),
+                }
+            }
+            Proposition::HeapAllocationFreed {
+                before,
+                after,
+                allocation_base,
+                bytes,
+            } => {
+                let repeats_transition =
+                    seen_transitions.iter().any(|(seen_before, seen_after)| {
+                        program_effect_memories_definitionally_equal(
+                            seen_before,
+                            before,
+                            assumptions,
+                        ) && program_effect_memories_definitionally_equal(
+                            seen_after,
+                            after,
+                            assumptions,
+                        )
+                    });
+                if !repeats_transition
+                    && !program_effect_memories_definitionally_equal(
+                        &effect_memory,
+                        before,
+                        assumptions,
+                    )
+                    && !program_effect_memory_advances_over_internal_heap_state(
+                        &effect_memory,
+                        before,
+                        entry_state.memory(),
+                        assumptions,
+                    )
+                {
+                    return Err(ContractClosingRefusal::Internal(
+                        "the recorded memory effects do not connect to one another".into(),
+                    ));
+                }
+                if !heap_free_effect_is_valid(before, after, allocation_base, bytes) {
+                    return Err(ContractClosingRefusal::Internal(
+                        "a recorded deallocation has inconsistent memory states".into(),
+                    ));
+                }
+                if !repeats_transition {
+                    effect_memory = after.clone();
+                    seen_transitions.push((before.clone(), after.clone()));
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        })?;
+    let endpoint_matches = exit_state.as_ref().is_none_or(|exit_state| {
+        program_effect_memories_definitionally_equal(
+            &effect_memory,
+            exit_state.memory(),
+            assumptions,
+        ) || program_effect_memory_advances_over_internal_heap_state(
+            &effect_memory,
+            exit_state.memory(),
+            entry_state.memory(),
+            assumptions,
+        )
+    });
+    if !endpoint_matches {
+        return Err(ContractClosingRefusal::Internal(
+            "the recorded memory effects do not reach the function's return state".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(in crate::kernel) fn program_effect_memories_definitionally_equal(

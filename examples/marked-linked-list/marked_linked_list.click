@@ -125,6 +125,26 @@ uint32 list_count_live(struct node* node) {
             preserve(memory(node->word), statement(1).region(1));
         }
         have ((node->word & ~1) as (struct node *)) == child by { known(); }
+        step();
+        branch {
+            true => {
+                step();
+                // The masked pointer also carries the provenance of the load.
+                // Use the preserved load to cite the original witness equality.
+                have ((node->word & ~1) as (struct node *)) == child by {
+                    rewrite(
+                        *((&node->word) as (int32 **)),
+                        at(function.entry, *((&node->word) as (int32 **)))
+                    );
+                    rewrite(at(function.entry, ((node->word & ~1) as (struct node *))), child);
+                    known();
+                }
+                fold(marked_list(node));
+            }
+            false => {}
+        }
+        step();
+        fold(marked_list(node));
     }
 }
 

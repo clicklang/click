@@ -883,6 +883,23 @@ fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
 }
 
 #[test]
+fn stored_pointer_null_fact_expands_through_a_read_equality() {
+    let (source, sources) =
+        mdtest_sources("mdtests/stored_pointer_identity_survives_resource_call.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("rewrite(r->next, at("), "{expanded}");
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: viewability diagnostic and saved-premise replay"]
 fn earlier_viewable_premise_keeps_its_point_without_transport() {
@@ -16704,6 +16721,27 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .expect("the expanded indexed-read proof should check without implicit solving");
+}
+
+#[test]
+fn masked_64_bit_field_expands_through_explicit_store_preservation() {
+    for fixture in [
+        "mdtests/int64_read_survives_store_and_resource_call.md",
+        "mdtests/uint64_read_survives_store_and_resource_call.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        assert!(expanded.contains("preserve("), "{fixture}: {expanded}");
+        without_implicit_solve_for_claim("caller.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
 }
 
 #[test]

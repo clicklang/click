@@ -24,7 +24,7 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
 | `incomplete proof` | The proof ended with a requirement outstanding. | Establish the named requirement before closing, such as a resource promised on return. |
 | `execution prerequisite unmet` | A checked operation needs evidence at its program point. | Record the requirement and follow the procedure below. |
-| `contract entry refused`, `contract exit refused`, or `contract refinement refused` | A contract boundary or refinement check was refused. | Inspect the named clauses and work from the available goal. |
+| `contract entry refused` or `contract refinement refused` | A contract entry or refinement check was refused. | Inspect the named clauses and work from the available goal. |
 | `execution refused`, `termination not established`, `invalid divergence declaration`, or `unsupported proof` | Click identified a specific execution, termination, or proof-driver refusal. | Investigate the reported cause. |
 
 When a proposition had to be true at a point and Click did not prove it,
