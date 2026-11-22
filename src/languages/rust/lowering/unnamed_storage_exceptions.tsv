@@ -4,6 +4,10 @@
 ../../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	119	13	__rust_mir_6
 ../../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	120	13	__rust_mir_9
 ../../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	121	13	__rust_mir_12
+../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	118	13	__rust_mir_3
+../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	119	13	__rust_mir_6
+../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	120	13	__rust_mir_9
+../vendor/adler2-2.0.1/src/lib.rs	__rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from	121	13	__rust_mir_12
 adds.rs	__rust_q_I4_adds_I5_apply	6	5	__rust_mir_4
 borrow.rs	Node_drop_glue	848	1	__rust_mir_2
 borrow.rs	Stack_drop_glue	848	1	__rust_mir_2

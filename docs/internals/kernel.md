@@ -1566,8 +1566,9 @@ storage for a written literal or borrow. If lowering would declare a program
 variable using the raw MIR key, it reports an unsupported Rust construct at
 the local's source location. It selects this check using the importer's
 unnamed-local metadata, so source identifiers remain valid regardless of
-spelling. The [compatibility list](../../src/languages/rust/lowering/unnamed_storage_exceptions.tsv)
-identifies existing slots by source, function, line, column, and MIR key.
+spelling. The compatibility list in
+`src/languages/rust/lowering/unnamed_storage_exceptions.tsv` identifies existing
+slots by source, function, line, column, and MIR key.
 Each row can go when that slot has supported lowering.
 
 ### Paths and outcomes
