@@ -74,30 +74,17 @@ fn complete_pointer_construction_retains_shared_bounds_width_dags() {
                 [width.clone(), width],
             );
         }
-        Arc::make_mut(value.qualifiers.as_mut().unwrap())
-            .bounds
-            .as_mut()
-            .unwrap()
-            .width = width.clone();
+        let mut bounds = value.array.bounds().unwrap().clone();
+        bounds.width = width.clone();
+        value.array = value.array.with_bounds(Some(bounds));
         let exports = KernelTermExport::machine_export_count();
         let (shared, work) =
             crate::instrumentation::measure_deterministic_work(|| SharedPointer::new(value));
         assert_eq!(work, 1);
-        assert_eq!(
-            &shared
-                .node()
-                .qualifiers
-                .as_ref()
-                .unwrap()
-                .bounds
-                .as_ref()
-                .unwrap()
-                .width,
-            &width
-        );
+        assert_eq!(&shared.node().array.bounds().unwrap().width, &width);
         let equivalent = SharedPointer::new(shared.node().clone());
         let mut different = shared.node().clone();
-        Arc::make_mut(different.qualifiers.as_mut().unwrap()).bounds_known ^= true;
+        different.array = different.array.with_owner(None);
         let different = SharedPointer::new(different);
         let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
             (

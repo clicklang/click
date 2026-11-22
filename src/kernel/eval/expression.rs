@@ -3342,7 +3342,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(pointer) = state.locals.slot(name)
                     && lvalue.provenance.as_deref().is_some_and(|origin| {
                         !local_assumptions.provenance_equal(origin, &pointer.object_identity())
-                            || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
+                            || !lvalue.bounds_known() && lvalue.bounds_owner().is_some()
                     })
                     && !state.resources().permits_designated_memory_read(
                         pointer,
@@ -3503,7 +3503,7 @@ fn read_retained_lvalue_paths_without_ranges(
                     || state.memory.requires_explicit_scalar_ownership(pointer)
                     || lvalue.provenance.as_deref().is_some_and(|origin| {
                         !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
-                            || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
+                            || !lvalue.bounds_known() && lvalue.bounds_owner().is_some()
                     });
                 let require_owned = assumptions.should_require_owned_expression_loads();
                 // An aggregate a call returns by value is a fresh object the
@@ -3856,13 +3856,13 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                             let facts = lvalue_path.facts;
                             let mut address = Pointer::new(pointer, pointer_type)
                                 .with_bounds(lvalue.bounds().cloned());
-                            if lvalue.bounds_known && lvalue.bounds().is_none() {
+                            if lvalue.bounds_known() && lvalue.bounds().is_none() {
                                 address = address.with_root_bounds();
                             }
                             if let Some(provenance) = &lvalue.provenance {
                                 address = address
                                     .with_provenance(provenance.clone())
-                                    .with_bounds_owner(lvalue.bounds_owner.clone());
+                                    .with_bounds_owner(lvalue.bounds_owner().cloned());
                             }
                             let value = ProgramValue::Pointer(address);
                             ExpressionPath {
