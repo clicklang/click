@@ -3,7 +3,7 @@
 The equalities connect machine values to a mathematical Integer. Their
 unsigned observations must stay unsigned when arithmetic emits a certificate.
 
-```click
+```click quick-solve
 import click::integer;
 
 theorem unsigned_equality_chain(adler: uint64, seed: uint64, value: uint64, specification: Integer) {

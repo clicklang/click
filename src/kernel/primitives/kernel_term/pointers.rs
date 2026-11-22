@@ -12,7 +12,6 @@ pub(crate) struct KernelSubobjectBounds {
 }
 #[derive(Clone, Debug, Default)]
 pub(crate) struct KernelPointerQualifiers {
-    pub(crate) constant: bool,
     pub(crate) bounds: Option<KernelSubobjectBounds>,
     pub(crate) bounds_known: bool,
     pub(crate) object_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -62,30 +61,20 @@ impl SharedPointer {
         let qualifiers = value.qualifiers.as_deref();
         RetainedPointerMetadata {
             program_type: value.program_type,
-            constant: qualifiers.is_some_and(|q| q.constant),
             bounds_known: qualifiers.is_some_and(|q| q.bounds_known),
             declared_class: qualifiers.and_then(|q| q.object_class.as_ref()),
             evidence: qualifiers.and_then(|q| q.object_type_evidence.as_ref()),
         }
     }
-    /// Rebind only the declaration's type and `const` qualifier. Expression
-    /// children and evidence remain shared, including default qualifier shape.
-    pub(crate) fn with_binding_type_and_qualifiers(
-        &self,
-        program_type: ProgramType,
-        constant: bool,
-    ) -> Self {
+    /// Rebind only the declaration's type. Expression children and evidence
+    /// remain shared, including default qualifier shape.
+    pub(crate) fn with_binding_type(&self, program_type: ProgramType) -> Self {
         let old = self.node();
-        let old_constant = old.qualifiers.as_ref().is_some_and(|q| q.constant);
-        if old.program_type == program_type && old_constant == constant {
+        if old.program_type == program_type {
             return self.clone();
         }
         let mut value = old.clone();
         value.program_type = program_type;
-        if old_constant != constant {
-            let qualifiers = Arc::make_mut(value.qualifiers.get_or_insert_with(Default::default));
-            qualifiers.constant = constant;
-        }
         Self::new(value)
     }
     /// Whether an existing source binding retains this complete payload.
@@ -125,8 +114,7 @@ impl SharedPointer {
             }
             _ => false,
         };
-        a.constant == b.constant
-            && a.bounds_known == b.bounds_known
+        a.bounds_known == b.bounds_known
             && a.object_class == b.object_class
             && bounds_match
             && evidence_matches
@@ -160,7 +148,6 @@ impl SharedPointer {
             program_type: value.program_type,
             qualifiers: value.qualifiers.as_ref().map(|q| {
                 Arc::new(KernelPointerQualifiers {
-                    constant: q.constant,
                     bounds: q.bounds.as_ref().map(|bounds| KernelSubobjectBounds {
                         start: address(&bounds.start),
                         width: KernelTerm::retained_machine_operand(
@@ -191,7 +178,6 @@ impl SharedPointer {
                 .as_ref()
                 .map(|q| -> Result<_, &'static str> {
                     Ok(Arc::new(PointerQualifiers {
-                        constant: q.constant,
                         bounds: q
                             .bounds
                             .as_ref()
@@ -361,7 +347,6 @@ mod tests {
             bounds_owner: Some(Arc::new(Address::symbolic(Variable(1000003)))),
             program_type: ProgramType::VoidPointer,
             qualifiers: Some(Arc::new(PointerQualifiers {
-                constant: true,
                 bounds: Some(SubobjectBounds {
                     start: Address::symbolic(Variable(1000004)),
                     width: MachineTerm::Variable(Variable(1000005)),
@@ -382,7 +367,6 @@ mod tests {
         assert_eq!(output.bounds_owner, source.bounds_owner);
         let before = source.qualifiers.as_ref().unwrap();
         let after = output.qualifiers.as_ref().unwrap();
-        assert_eq!(before.constant, after.constant);
         assert_eq!(before.object_class, after.object_class);
         assert_eq!(before.object_type_evidence, after.object_type_evidence);
         assert!(!after.object_type_evidence.as_ref().unwrap().checked);
@@ -401,7 +385,6 @@ mod tests {
         let a = complete_source();
         let mut b = a.clone();
         let q = Arc::make_mut(b.qualifiers.as_mut().unwrap());
-        q.constant = false;
         q.object_class = Some(CAccessClass::Scalar(CScalarClass::Char));
         q.object_type_evidence = None;
         b.bounds_owner = None; // Ignored by logical equality when bounds_known.
@@ -409,8 +392,19 @@ mod tests {
         let left = SharedPointer::import(&a);
         let right = SharedPointer::import(&b);
         assert_ne!(left, right);
-        assert!(left.export().unwrap().qualifiers.unwrap().constant);
-        assert!(!right.export().unwrap().qualifiers.unwrap().constant);
+        assert_eq!(
+            left.export().unwrap().qualifiers.unwrap().object_class,
+            Some(CAccessClass::Scalar(CScalarClass::Int))
+        );
+        assert!(
+            right
+                .export()
+                .unwrap()
+                .qualifiers
+                .unwrap()
+                .object_class
+                .is_some()
+        );
         assert!(left.node().bounds_owner.is_some());
         assert!(right.node().bounds_owner.is_none());
     }
@@ -419,7 +413,7 @@ mod tests {
         let source = complete_source();
         let retained = SharedPointer::import(&source);
         assert!(retained.same_source_payload(&SharedPointer::import(&source)));
-        let mut variants = vec![source.clone().with_pointee_constant(false)];
+        let mut variants = Vec::new();
         let mut changed = source.clone();
         changed.bounds_owner = None;
         variants.push(changed);

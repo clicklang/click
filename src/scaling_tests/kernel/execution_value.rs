@@ -610,7 +610,7 @@ fn algebraic_storage_comparison_visits_shared_pairs_once() {
             Address::symbolic(Variable(998740)),
             ProgramType::Int32Pointer,
         );
-        let mut roots = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
+        let mut roots = [pointer.clone(), pointer].map(|pointer| {
             KernelConstructor {
                 algebraic_type: native.algebraic_type.clone(),
                 variant: "Pointer".into(),

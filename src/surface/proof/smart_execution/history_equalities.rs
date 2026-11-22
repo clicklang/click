@@ -113,7 +113,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )?
                 }
                 None if derive_separation && footprint.members.len() == 1 => {
-                    Self::try_single_write_indexed_separation(
+                    Self::try_single_memory_write_separation(
                         &proof,
                         footprint.members.front().expect("one footprint member"),
                         &kept,
@@ -146,7 +146,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// For a symbolic single-element store, the index inequality can prove
     /// separation directly. The footprint check ties the written element to
     /// the recorded store before its read equality is used.
-    fn try_distinct_indexed_store_separation(
+    pub(in crate::surface::proof) fn try_distinct_indexed_store_separation(
         search_input: &Proof<'a>,
         written: &Resource,
         kept: &ResourceSubject,
@@ -253,22 +253,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
-    /// Restrict a separated range to the indexed read before checking the
-    /// single-memory footprint. Only guarded read search needs this fallback.
-    fn try_single_write_indexed_separation(
+    /// Restrict a separated range to the selected read before checking a
+    /// footprint with one memory member.
+    fn try_single_memory_write_separation(
         search_input: &Proof<'a>,
         written: &Resource,
         kept: &ResourceSubject,
         footprint_separation: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_single_write_indexed_separation");
+        crate::kernel::search::record_discovery("try_single_memory_write_separation");
         if !matches!(written, Resource::Memory(_)) {
             return Ok(None);
         }
         let Some(view) = search_input.premise_fixed_state_view() else {
             return Ok(None);
         };
+        let _recorded_points = super::super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+            view.fixed_state.recorded_states,
+        );
         let Some(written) = super::super::surface_synthesis::synthesize_surface_resource_subject(
             written,
             view.parameter_binding,
@@ -303,6 +306,103 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .driver()
                 .apply_have_step(footprint_separation, &certificate),
         )
+    }
+
+    /// Use the named store to preserve the exact field observation across
+    /// its two endpoints. A struct's field resource can include padding,
+    /// so use the byte extent of the load selected by the checked goal.
+    pub(in crate::surface::proof) fn try_anchored_field_preservation(
+        search_input: &Proof<'a>,
+        target: &ClickProposition,
+        address: &crate::kernel::Address,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_anchored_field_preservation");
+        let ClickProposition::Comparison {
+            left:
+                ContractExpression::At {
+                    selector: ProgramPointSelector::ProgramPoint(left),
+                    expression: left_read,
+                },
+            operator: ComparisonOperator::Equal,
+            right:
+                ContractExpression::At {
+                    selector: ProgramPointSelector::ProgramPoint(right),
+                    expression: right_read,
+                },
+        } = target
+        else {
+            return Ok(None);
+        };
+        if left.region != right.region
+            || left_read != right_read
+            || !matches!(left_read.as_ref(), ContractExpression::Field { .. })
+        {
+            return Ok(None);
+        }
+        let (exit, entry) = match (left.kind, right.kind) {
+            (ProgramPointKind::Exit, ProgramPointKind::Entry) => (left, right),
+            (ProgramPointKind::Entry, ProgramPointKind::Exit) => (right, left),
+            _ => return Ok(None),
+        };
+        let Some(view) = search_input.premise_fixed_state_view() else {
+            return Ok(None);
+        };
+        let Ok(Resource::Footprint(footprint)) =
+            view.fixed_state.recorded_states.footprint(&exit.region)
+        else {
+            return Ok(None);
+        };
+        if !footprint.complete || footprint.members.len() != 1 {
+            return Ok(None);
+        }
+        let Some(written @ Resource::Memory(_)) = footprint.members.front() else {
+            return Ok(None);
+        };
+        let observation = Resource::Memory(crate::kernel::MemoryRange::new_with_element_width(
+            address.clone(),
+            0u32.into(),
+            1u32.into(),
+            4,
+        ));
+        let Some(kept) = super::super::surface_synthesis::synthesize_surface_resource_subject(
+            &observation,
+            view.parameter_binding,
+            view.fixed_state.state,
+            &std::collections::BTreeMap::new(),
+        ) else {
+            return Ok(None);
+        };
+        let separation = ClickProposition::Separate {
+            left: ResourceSubject::Footprint(exit.region.clone()),
+            right: kept.clone(),
+        };
+        let Some(proof) =
+            Self::try_single_memory_write_separation(search_input, written, &kept, &separation)?
+        else {
+            return Ok(None);
+        };
+        let at = |point: &ProgramPointRef| ContractExpression::At {
+            selector: ProgramPointSelector::ProgramPoint(point.clone()),
+            expression: left_read.clone(),
+        };
+        let equality = ClickProposition::Comparison {
+            left: at(exit),
+            operator: ComparisonOperator::Equal,
+            right: at(entry),
+        };
+        let preserve = ProofCertificate::from_steps(vec![ProofStep::Preserve(separation)])
+            .expect("ordinary field preservation");
+        attempt::candidate_outcome(proof.driver().apply_ordinary_transport_steps(
+            target,
+            vec![
+                ProofStep::Have {
+                    proposition: equality,
+                    proof: Box::new(preserve),
+                },
+                ProofStep::Known,
+            ],
+        ))
     }
 
     /// Supply containment for separation restriction from the introduced

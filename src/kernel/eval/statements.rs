@@ -654,10 +654,9 @@ fn write_program_lvalue_paths_for_initialization(
         ) {
         value
     } else {
-        let Some(converted) = crate::kernel::functions::coerce_program_value_with_pointee_constant(
+        let Some(converted) = crate::kernel::eval::coerce_program_value_to_type(
             value.native().into_owned(),
             lvalue.value_type,
-            pointee_constant,
             &mut obligations,
             &effective_assumptions,
         ) else {
@@ -4767,7 +4766,7 @@ fn execute_execution_statement_leaf_paths(
             arguments,
             result_type,
             result_aggregate_layout,
-            result_pointee_constant,
+            result_pointee_constant: _,
             callee,
             ..
         } => {
@@ -4834,10 +4833,9 @@ fn execute_execution_statement_leaf_paths(
                         retained_value.clone().into()
                     }
                     Some(program_type) => {
-                        match crate::kernel::functions::coerce_program_value_with_pointee_constant(
+                        match crate::kernel::eval::coerce_program_value_to_type(
                             retained_value.native().into_owned(),
                             *program_type,
-                            *result_pointee_constant,
                             &mut path.obligations,
                             assumptions,
                         ) {
@@ -4915,7 +4913,7 @@ fn execute_execution_statement_leaf_paths(
             steps,
             expression,
             value_type,
-            pointee_constant,
+            pointee_constant: _,
             ..
         } => {
             if let Some(layout) = aggregate_layout {
@@ -4957,17 +4955,16 @@ fn execute_execution_statement_leaf_paths(
                                     .cloned();
                                 let value = value.into_native();
                                 let value = match value_type {
-                            Some(value_type) => {
-                                crate::kernel::functions::coerce_program_value_with_pointee_constant(
-                                    value,
-                                    *value_type,
-                                    *pointee_constant,
-                                    &mut path.obligations,
-                                    assumptions,
-                                )
-                            }
-                            None => Some(value),
-                        };
+                                    Some(value_type) => {
+                                        crate::kernel::eval::coerce_program_value_to_type(
+                                            value,
+                                            *value_type,
+                                            &mut path.obligations,
+                                            assumptions,
+                                        )
+                                    }
+                                    None => Some(value),
+                                };
                                 match value {
                                     Some(value) => {
                                         let mut next = state.clone();
@@ -6137,10 +6134,9 @@ fn zero_fill_declared_array(
     for cell in zero_fill.cells.iter() {
         crate::instrumentation::record_deterministic_work(1);
         let mut obligations = Vec::new();
-        let value = crate::kernel::functions::coerce_program_value_with_pointee_constant(
+        let value = crate::kernel::eval::coerce_program_value_to_type(
             cell.zero.clone(),
             cell.value_type,
-            cell.pointee_constant,
             &mut obligations,
             &PureFactContext::new(),
         )

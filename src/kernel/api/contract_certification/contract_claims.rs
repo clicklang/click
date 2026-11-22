@@ -3863,9 +3863,7 @@ mod retained_contract_input_tests {
                 Variable(996805),
             ),
             KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)),
-            KernelTerm::shared_pointer_value(SharedPointer::import(
-                &pointer.with_pointee_constant(true),
-            )),
+            KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)),
         ];
         for root in roots {
             let input = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));

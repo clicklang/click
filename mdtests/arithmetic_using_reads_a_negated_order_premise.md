@@ -5,7 +5,7 @@ to another bound prints the sum of the pair, and the check reads the negated
 premise as that pair, so the sum is accepted as it is for `a < b`. Here the
 sum with `b`'s `int32` range shows `a + 1` defined.
 
-```click
+```click quick-solve
 theorem successor_below(a: int32, b: int32) {
     requires not (a >= b);
 

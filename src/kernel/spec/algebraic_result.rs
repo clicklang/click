@@ -137,28 +137,6 @@ impl AlgebraicFieldResult {
         let value = SpecValue::Shared(self.into_kernel()).retain_checked_pointer(value);
         Self::Imported(value.common_operand())
     }
-    pub(super) fn without_pointer_constant(self) -> Self {
-        let root = self.root();
-        if !matches!(root.ty(), KernelType::Program(ty) if ty.is_pointer()) {
-            return self;
-        }
-        if let Some(pointer) = root.pointer_payload() {
-            let payload = pointer.node();
-            let result = root.with_pointer_payload(
-                pointer.with_binding_type_and_qualifiers(payload.program_type, false),
-            );
-            match self {
-                Self::Imported(_) => Self::Imported(result),
-                Self::Shared(_) => Self::Shared(result),
-            }
-        } else {
-            Self::from_native(AlgebraicValue::Program(
-                SpecValue::Shared(self.into_kernel())
-                    .into_native()
-                    .with_pointer_pointee_constant(false),
-            ))
-        }
-    }
     pub(super) fn into_kernel(self) -> KernelTerm {
         match self {
             Self::Imported(root) | Self::Shared(root) => root,
@@ -290,9 +268,15 @@ mod storage_tests {
         else {
             unreachable!("typed pointer")
         };
-        let field = |constant| {
+        let field = |constant: bool| {
             AlgebraicValue::Program(ProgramValue::Pointer(
-                pointer.clone().with_pointee_constant(constant),
+                pointer
+                    .clone()
+                    .with_declared_object_class(constant.then(|| {
+                        crate::kernel::effective_type::CAccessClass::Scalar(
+                            crate::kernel::effective_type::CScalarClass::Int,
+                        )
+                    })),
             ))
         };
         let left_field = AlgebraicFieldResult::from_native(field(false));

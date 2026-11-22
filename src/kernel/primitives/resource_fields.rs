@@ -415,13 +415,10 @@ mod tests {
                 0x8000000000000000,
             ))),
             AlgebraicValue::Integer(IntegerTerm::Variable(Variable(10993303))),
-            AlgebraicValue::Program(
-                ProgramValue::typed_pointer(
-                    Address::symbolic(Variable(10993304)),
-                    ProgramType::Int32Pointer,
-                )
-                .with_pointer_pointee_constant(true),
-            ),
+            AlgebraicValue::Program(ProgramValue::typed_pointer(
+                Address::symbolic(Variable(10993304)),
+                ProgramType::Int32Pointer,
+            )),
         ];
         for a in &values {
             let native: NativeResourceArguments = vec![a.clone()].into();

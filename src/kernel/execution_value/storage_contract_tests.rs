@@ -330,7 +330,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
         Address::symbolic(Variable(998737)),
         ProgramType::Int32Pointer,
     );
-    for pointer in [pointer.clone(), pointer.with_pointee_constant(true)] {
+    for pointer in [pointer.clone(), pointer] {
         values.push(make(AlgebraicTermNode::Constructor {
             variant: "Pointer".into(),
             fields: vec![AlgebraicValue::Program(ProgramValue::Pointer(pointer))],
@@ -433,7 +433,7 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
     let other = Address::symbolic(Variable(998751));
     let mut values = vec![
         pointer.clone(),
-        pointer.clone().with_pointee_constant(true),
+        pointer.clone(),
         pointer.clone().with_type(ProgramType::VoidPointer),
         pointer
             .clone()

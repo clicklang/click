@@ -8,7 +8,6 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
         crate::kernel::effective_type::CStructClass::opaque("pair"),
     );
     let opaque = Pointer::new(base.clone(), ProgramType::Int32Pointer)
-        .with_pointee_constant(true)
         .with_object_class(Some(class.clone()));
     let member = opaque
         .clone()
@@ -39,7 +38,6 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
         let ProgramValue::Pointer(actual) = &path.value.clone().into_native() else {
             unreachable!()
         };
-        assert!(actual.pointee_constant());
         assert!(actual.supports_object_class(&class));
         let native = ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(ProgramValue::Pointer(

@@ -203,7 +203,7 @@ mod tests {
             ProgramType::Int32Pointer,
         );
         let a = constructor(pointer.clone());
-        let b = constructor(pointer.with_pointee_constant(true));
+        let b = constructor(pointer);
         let ar = KernelTermImport::default().algebraic(&a);
         let br = KernelTermImport::default().algebraic(&b);
         assert_ne!(ar, br);
@@ -288,7 +288,7 @@ mod tests {
         );
         let native = ConditionTerm::AlgebraicEqual(
             Box::new(constructor(pointer.clone())),
-            Box::new(constructor(pointer.with_pointee_constant(true))),
+            Box::new(constructor(pointer)),
         );
         let condition = KernelTermImport::default().condition(&native);
         let format = MachineIntegerType::Int32;

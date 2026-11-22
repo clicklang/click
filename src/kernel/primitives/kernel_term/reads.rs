@@ -223,7 +223,7 @@ mod tests {
             let ProgramValue::Pointer(pointer) = memory.symbolic_pointer_load(&address, ty) else {
                 panic!("pointer producer");
             };
-            let pointer = pointer.with_pointee_constant(true);
+            let pointer = pointer;
             let expected = SharedPointer::import(&pointer);
             let native = ProgramValue::Pointer(pointer);
             let result = crate::kernel::ExecutionValue::retain_native(native.clone());
@@ -337,7 +337,13 @@ mod tests {
             let call = SharedPureApplication::intern(
                 "read_address".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-                    pointer.clone().with_pointee_constant(constant),
+                    pointer
+                        .clone()
+                        .with_declared_object_class(constant.then(|| {
+                            crate::kernel::effective_type::CAccessClass::Scalar(
+                                crate::kernel::effective_type::CScalarClass::Int,
+                            )
+                        })),
                 ))],
             );
             let payload = call.payload_id();
@@ -364,7 +370,7 @@ mod tests {
             else {
                 panic!("pointer argument")
             };
-            assert_eq!(argument.pointee_constant(), constant);
+            assert_eq!(argument.object_class().is_some(), constant);
             roots.push(root);
             outputs.push(output);
         }

@@ -1612,6 +1612,8 @@ pub struct MdTest {
     /// body line sits, so positions inside the sidecar can be reported as
     /// positions in the markdown file.
     pub click_start_line: usize,
+    /// Whether the Click fence marks this fixture as a Quick Solve Test.
+    pub quick_solve: bool,
     /// The ```expect block, if the file has one.
     pub expectation: Option<MdTestExpectation>,
 }
@@ -1706,6 +1708,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
         cpp_source: None,
         click_source: None,
         click_start_line: 1,
+        quick_solve: false,
         expectation: None,
     };
     let lines = source.lines().collect::<Vec<_>>();
@@ -1775,7 +1778,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                     ));
                 }
             }
-            Some(BlockKind::Click) => {
+            Some(BlockKind::Click { quick_solve }) => {
                 if mdtest.click_source.replace(body).is_some() {
                     return Err(format!(
                         "`{}` has more than one ```click block",
@@ -1783,6 +1786,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                     ));
                 }
                 mdtest.click_start_line = start_line;
+                mdtest.quick_solve = quick_solve;
             }
             Some(BlockKind::Expect) => {
                 let expectation = parse_expectation(path, start_line, &body)?;
@@ -2064,7 +2068,9 @@ enum BlockKind {
         profile: String,
         templates: Vec<String>,
     },
-    Click,
+    Click {
+        quick_solve: bool,
+    },
     Expect,
 }
 
@@ -2099,6 +2105,10 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
             }))
         }
         "click" => {
+            let quick_solve = parts.clone().next() == Some("quick-solve");
+            if quick_solve {
+                parts.next();
+            }
             if let Some(extra) = parts.next() {
                 if extra.starts_with("resource_semantics=") {
                     return Err(retired_resource_semantics_setting(&format!(
@@ -2111,7 +2121,7 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
                     path.display()
                 ));
             }
-            Ok(Some(BlockKind::Click))
+            Ok(Some(BlockKind::Click { quick_solve }))
         }
         "expect" => {
             if let Some(extra) = parts.next() {

@@ -186,15 +186,12 @@ fn library_name_spelling_queries_do_not_walk_unrelated_source() {
 
 #[test]
 fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
-    let fixture =
-        include_str!("../../../../mdtests/unsigned_integer_equality_chain_keeps_its_reading.md");
-    let proof = fixture
-        .split("```click\n")
-        .nth(1)
-        .unwrap()
-        .split("```")
-        .next()
-        .unwrap();
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("mdtests/unsigned_integer_equality_chain_keeps_its_reading.md"),
+        include_str!("../../../../mdtests/unsigned_integer_equality_chain_keeps_its_reading.md"),
+    )
+    .unwrap();
+    let proof = fixture.click_source.unwrap();
     let mut source = String::from("import click::integer;\n");
     for count in [4, 16, 64, 256] {
         let unused = (0..count)

@@ -155,7 +155,7 @@ impl RecursionDeclarations {
                         return Err(declaration_error(
                             name,
                             "a recursive component cannot mix an expression measure with another measure kind",
-                        ));
+                        ).with_invalid_measure(name));
                     }
                 }
             }
@@ -183,16 +183,15 @@ impl RecursionDeclarations {
                 "`{name}` recurses through a tactic application, which only an expression \
                  `decreases` measure can rank: its descent is owed at each application. \
                  Rank `{name}` by an expression over its parameters or its binders' models"
-            )));
+            ))
+            .with_invalid_measure(name));
         }
         let mut authority = RecursionAuthority::default();
         if callees.is_empty() {
             if self.measures.contains_key(name) && !allow_unused {
-                let mut refused = error(format!(
+                return Err(error(format!(
                     "function-level `decreases` on nonrecursive function `{name}` has no recursive edge to rank"
-                ));
-                refused.superfluous_recursive_measure = true;
-                return Err(refused);
+                )).with_invalid_measure(name));
             }
             return Ok(authority);
         }
@@ -240,7 +239,8 @@ impl RecursionDeclarations {
                     let DeclaredMeasure::Structural(index) = self.measures[callee] else {
                         return Err(error(
                             "a recursive component cannot mix structural and other measures",
-                        ));
+                        )
+                        .with_invalid_measure(name));
                     };
                     authority.structural_callees.insert(callee.clone(), index);
                 }
@@ -252,7 +252,8 @@ impl RecursionDeclarations {
                     let DeclaredMeasure::Numeric { index, .. } = self.measures[member] else {
                         return Err(error(
                             "a recursive component cannot mix numeric and structural measures",
-                        ));
+                        )
+                        .with_invalid_measure(name));
                     };
                     authority
                         .parameter_indices
@@ -397,12 +398,11 @@ mod tests {
                 .expression
                 .is_none()
         );
-        assert!(
-            authority
-                .select("f", &BTreeSet::new(), false, false)
-                .unwrap_err()
-                .superfluous_recursive_measure
-        );
+        let refusal = authority
+            .select("f", &BTreeSet::new(), false, false)
+            .unwrap_err();
+        assert_eq!(refusal.kind(), TerminationErrorKind::InvalidMeasure);
+        assert!(refusal.message().contains("has no recursive edge to rank"));
     }
     mod scaling_tests {
         use super::*;

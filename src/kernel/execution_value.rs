@@ -139,25 +139,15 @@ impl ExecutionValue {
         }
     }
 
-    pub(in crate::kernel) fn with_pointer_binding(
-        self,
-        program_type: ProgramType,
-        constant: bool,
-    ) -> Self {
+    pub(in crate::kernel) fn with_pointer_binding(self, program_type: ProgramType) -> Self {
         if let Self::Shared(root) = &self
             && let Some(pointer) = root.pointer_payload()
         {
             return root
-                .with_pointer_payload(
-                    pointer.with_binding_type_and_qualifiers(program_type, constant),
-                )
+                .with_pointer_payload(pointer.with_binding_type(program_type))
                 .into();
         }
-        Self::retain_formed_pointer(
-            self.into_native()
-                .retag_pointer(program_type)
-                .with_pointer_pointee_constant(constant),
-        )
+        Self::retain_formed_pointer(self.into_native().retag_pointer(program_type))
     }
 
     /// Preserve the selected producer after an existing native conversion or
@@ -922,14 +912,14 @@ mod tests {
             false,
         );
         assert_eq!(state.locals.get("p").unwrap().shared(), Some(&root));
-        for constant in [true, false] {
+        {
             let value = ExecutionValue::Shared(root.clone())
-                .with_pointer_binding(ProgramType::Int32Pointer, constant);
+                .with_pointer_binding(ProgramType::Int32Pointer);
             assert!(matches!(
                 value.shared().unwrap().node(),
                 KernelTermNode::PointerCall { .. }
             ));
-            let expected = pointer.clone().with_pointee_constant(constant);
+            let expected = pointer.clone();
             assert!(
                 value
                     .shared()
@@ -938,10 +928,8 @@ mod tests {
                     .unwrap()
                     .same_source_payload(&SharedPointer::import(&expected))
             );
-            assert_eq!(value.pointer().unwrap().pointee_constant(), constant);
         }
-        let retagged =
-            ExecutionValue::Shared(root).with_pointer_binding(ProgramType::VoidPointer, false);
+        let retagged = ExecutionValue::Shared(root).with_pointer_binding(ProgramType::VoidPointer);
         assert_eq!(retagged.program_type(), ProgramType::VoidPointer);
         assert!(matches!(
             retagged.shared().unwrap().node(),
@@ -955,8 +943,7 @@ mod tests {
         let pointer = Pointer::new(
             Address::symbolic(Variable(1027500)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointee_constant(true);
+        );
         let native = ProgramValue::Pointer(pointer.clone());
         let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
         let retained = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
@@ -977,14 +964,6 @@ mod tests {
         assert_eq!(cells.get_retained(&address).unwrap().shared(), Some(&root));
         assert_eq!(cells.get(&address), Some(native.clone()));
         assert_eq!(cells.iter().next().unwrap().1, &native);
-        assert!(
-            cells
-                .get_retained(&address)
-                .unwrap()
-                .pointer()
-                .unwrap()
-                .pointee_constant()
-        );
     }
 
     #[test]
@@ -994,8 +973,7 @@ mod tests {
         let pointer = Pointer::new(
             Address::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointee_constant(true);
+        );
         let root = KernelTerm::shared_pointer_call(
             KernelTerm::checked_call(
                 KernelType::Program(ProgramType::Int32Pointer),
@@ -1027,7 +1005,6 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(recovered.shared(), Some(&root));
-            assert!(recovered.pointer().unwrap().pointee_constant());
             let paths = crate::kernel::eval::evaluate_retained_memory_load_paths(
                 &crate::kernel::ProgramPoint::of_memory(retained_state),
                 address.clone(),
@@ -1046,7 +1023,6 @@ mod tests {
                 panic!("retained pointer load: {:?}", paths[0].outcome);
             };
             assert_eq!(loaded.shared(), Some(&root));
-            assert!(loaded.pointer().unwrap().pointee_constant());
         }
     }
 

@@ -192,8 +192,7 @@ mod tests {
             ProgramValue::typed_pointer(
                 Address::symbolic(Variable(996937)),
                 ProgramType::Int32Pointer,
-            )
-            .with_pointer_pointee_constant(true),
+            ),
             ProgramValue::Parameter(Box::new(AlgebraicTerm {
                 algebraic_type: TypeParameterName::intern("RetainedArgumentT").algebraic_type(),
                 node: AlgebraicTermNode::Variable(Variable(996938)),

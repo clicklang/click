@@ -278,8 +278,7 @@ mod tests {
         let pointer = Pointer::new(
             Address::symbolic(Variable(996901)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointee_constant(true);
+        );
         let roots = [
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(996906)),
             KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996902)),

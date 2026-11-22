@@ -52,9 +52,9 @@ for path in sorted(glob.glob(os.path.join(report, "*.tsv"))):
     with open(path) as handle:
         for line in handle:
             fields = line.rstrip("\n").split("\t")
-            if len(fields) != 10:
+            if len(fields) != 11:
                 continue
-            harness, fixture, cls, work, outcome, name, claim, stmt, src, loc = fields
+            harness, fixture, cls, work, outcome, name, claim, stmt, src, loc, _inclusive = fields
             fixtures.setdefault(harness, set()).add(fixture)
             rows.append(dict(harness=harness, fixture=fixture, cls=cls, work=int(work),
                              outcome=outcome, name=name, claim=claim, stmt=stmt,

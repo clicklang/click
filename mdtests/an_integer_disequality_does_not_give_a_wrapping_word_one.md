@@ -5,7 +5,7 @@
 `solve` proves a word disequality from an Integer one only where the word
 equality forces the Integer equality, so it refuses this one.
 
-```click
+```click quick-solve
 theorem wrapping_word(u: uint32) {
     requires u + 1 != 0;
     ensures ((u + 1) as uint32) != 0 by {

@@ -1685,6 +1685,10 @@ expressions such as decimal lengths and their padded lengths. It follows a
 decided guard and otherwise bounds both arms. Its arithmetic uses only the
 operands in the goal, with a bounded walk and checked machine ranges.
 
+A match on a written constructor can close an equality when its selected arm
+builds a constructor directly from the bound literal `int32` fields. The check
+compares the result fields with the corresponding written payloads.
+
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
 visits only the immediate fields and uses their literal values.
@@ -3770,7 +3774,10 @@ the current C frontier without advancing it. See
 
 **Core.** Check the current pure body facts without searching the proof context,
 consume the contained resource facts, and produce the named composite resource.
-Pure facts remain available. Folding a definition whose body views memory makes
+Pure facts remain available. Refolding the same instance reuses its opening's
+`let ... where` witness values and checks their facts at the current state.
+This also applies to the closing fold of a `with` block.
+Folding a definition whose body views memory makes
 the head hold that borrow open until the head is unfolded or consumed. At a
 function outcome, `fold` also [creates an ordinary abstract
 token](#folding-abstract-tokens) with a matching `constructs` clause.

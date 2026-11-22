@@ -556,7 +556,6 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
             },
             ProgramType::Int32Pointer,
         )
-        .with_pointee_constant(true)
         .with_object_class(Some(class.clone()));
         let call = |argument| SpecExpression::PureFunctionApplication {
             name: "pointer_select".into(),
@@ -607,10 +606,6 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
             assert_eq!(
                 actual_pointer.object_origin_evidence(),
                 expected_pointer.object_origin_evidence()
-            );
-            assert_eq!(
-                actual_pointer.pointee_constant(),
-                expected_pointer.pointee_constant()
             );
             if !null {
                 let KernelTermNode::PointerCall { call, .. } =

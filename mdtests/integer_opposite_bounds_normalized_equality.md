@@ -3,7 +3,7 @@
 Negated successor bounds normalize to opposite bounds, even though their
 source operands differ. The generated equality must verify after expansion.
 
-```click
+```click quick-solve
 theorem pinned(x: Integer, b: Integer) {
     requires b <= x;
     requires not (b + 1 <= x);

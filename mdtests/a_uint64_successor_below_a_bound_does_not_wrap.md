@@ -12,7 +12,7 @@ fact that shows it here.
 `a_uint64_sum_that_may_wrap_is_not_arithmetic.md` has a sum the premises
 do not keep in range.
 
-```click
+```click quick-solve
 theorem successor(i: uint64, length: uint64) {
     requires i < length;
     ensures i + 1u64 <= length by {

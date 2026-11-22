@@ -253,6 +253,10 @@ enum VariableOrigin {
     /// A free variable a quantifier was opened at where no proof state
     /// reserves identities, numbered per verification session.
     Opening,
+    /// A match arm's binder, numbered by the lowering budget that built the
+    /// arm. No other producer mints one, so an occurrence in an arm body is a
+    /// bound occurrence of that arm's binder.
+    MatchBinder,
 }
 
 impl std::fmt::Debug for Variable {
@@ -265,6 +269,9 @@ impl std::fmt::Debug for Variable {
                 .finish(),
             VariableOrigin::Bound => formatter.debug_tuple("Bound").field(&self.0).finish(),
             VariableOrigin::Opening => formatter.debug_tuple("Opening").field(&self.0).finish(),
+            VariableOrigin::MatchBinder => {
+                formatter.debug_tuple("MatchBinder").field(&self.0).finish()
+            }
         }
     }
 }
@@ -308,6 +315,19 @@ impl Variable {
     /// Whether this is a quantifier's bound variable.
     pub(crate) fn is_bound(&self) -> bool {
         self.origin == VariableOrigin::Bound
+    }
+
+    /// The `number`th match-arm binder a lowering budget allocated.
+    pub(in crate::kernel) const fn match_binder(number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::MatchBinder,
+        }
+    }
+
+    /// Whether this is a match arm's binder.
+    pub(in crate::kernel) fn is_match_binder(&self) -> bool {
+        self.origin == VariableOrigin::MatchBinder
     }
 
     /// Mint a free symbolic identity. This stream is process-wide so nested
@@ -2471,7 +2491,6 @@ pub struct Pointer {
 
 #[derive(Clone, Debug, Default)]
 struct PointerQualifiers {
-    constant: bool,
     bounds: Option<SubobjectBounds>,
     bounds_known: bool,
     /// The class of the object the pointer was formed to designate, from the
@@ -2488,7 +2507,6 @@ struct PointerQualifiers {
 #[derive(PartialEq, Eq)]
 pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
     program_type: ProgramType,
-    constant: bool,
     bounds_known: bool,
     declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
     evidence: Option<&'a ObjectTypeEvidence>,
@@ -2814,7 +2832,6 @@ impl Pointer {
     pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
         RetainedPointerMetadata {
             program_type: self.program_type,
-            constant: self.pointee_constant(),
             bounds_known: self.bounds_are_known(),
             declared_class: self
                 .qualifiers
@@ -2822,10 +2839,6 @@ impl Pointer {
                 .and_then(|q| q.object_class.as_ref()),
             evidence: self.object_origin_evidence(),
         }
-    }
-
-    pub(crate) fn pointee_constant(&self) -> bool {
-        self.qualifiers.as_ref().is_some_and(|q| q.constant)
     }
 
     pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
@@ -2836,14 +2849,6 @@ impl Pointer {
             program_type,
             qualifiers: self.qualifiers,
         }
-    }
-
-    pub(crate) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
-        if self.pointee_constant() != pointee_constant {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).constant =
-                pointee_constant;
-        }
-        self
     }
 
     /// Respells the address as a proven-equal alias. The bounds keep their
@@ -8050,15 +8055,19 @@ impl RecursionAnchor {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TerminationErrorKind {
+    InvalidMeasure,
+    Internal,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminationError {
     pub(super) message: String,
     /// The function whose termination was being decided when the check
     /// failed, for a diagnostic to locate. It is not part of the verdict.
     pub(super) function: Option<String>,
-    /// The check refused a function-level measure because the function has
-    /// no recursive edge to rank.
-    pub(super) superfluous_recursive_measure: bool,
+    pub(super) kind: TerminationErrorKind,
 }
 
 impl VerifiedFunctionTerminationRule {}
@@ -8667,11 +8676,9 @@ pub struct ExecutionBudget {
     pub(super) paths: usize,
     pub(super) next_opaque_call: u64,
     pub(super) next_kernel_variable: u64,
-    /// This lowering's own counter for match-arm binders, counting through
-    /// [`ExecutionBudget::MATCH_BINDER_VARIABLE_BASE`]. Binders are bound
-    /// variables, so they are drawn from a range no execution, quantifier,
-    /// fold, load or pointer producer can reach rather than from the
-    /// execution counter beside them.
+    /// This lowering's own counter for match-arm binders. Binders have
+    /// their own origin, so no execution, quantifier, fold, load or pointer
+    /// producer can mint one.
     pub(super) next_match_binder_variable: u64,
     /// Whether this budget refuses to invent an execution identity at all.
     /// Set by `ExecutionBudget::beside_live_state`, whose state belongs to an
@@ -11533,7 +11540,8 @@ impl ResourceOccurrenceId {
 /// logarithmic paths in the fact store and affected indexes.
 #[derive(Default)]
 pub struct ResourceContext {
-    /// Diagnostic path state, omitted from semantic equality, hashing and ordering.
+    /// Path metadata for diagnostics and refold witness selection, omitted
+    /// from semantic equality, hashing and ordering.
     /// A shared persistent root keeps clones constant-work and never copies facts.
     instance_consumptions: Option<std::sync::Arc<PersistentMap<InstanceId, InstanceConsumption>>>,
     /// Derived trusted-kernel index. It never supplies ownership evidence.
@@ -11577,7 +11585,7 @@ impl Clone for ResourceContext {
 }
 
 impl ResourceContext {
-    /// Diagnostic metadata only; this never grants ownership or supplies a fact.
+    /// This metadata never grants ownership or supplies a fact.
     pub(crate) fn instance_consumption(
         &self,
         identity: InstanceId,
@@ -11813,6 +11821,10 @@ pub(super) struct ResourceContextStorage {
 #[derive(Clone)]
 pub(crate) enum InstanceConsumption {
     Unfold,
+    UnfoldWithWitnesses {
+        instance: std::sync::Arc<ResourceInstance>,
+        values: std::sync::Arc<[ProgramValue]>,
+    },
     FoldChild {
         parent: InstanceId,
         slot: std::sync::Arc<str>,

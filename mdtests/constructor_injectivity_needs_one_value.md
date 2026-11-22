@@ -4,7 +4,7 @@
 equality classes and nothing relates `a` to `b`. The positive is
 [`constructor_injectivity_through_an_equal_value.md`](constructor_injectivity_through_an_equal_value.md).
 
-```click
+```click quick-solve
 spec enum Box { Full(int32), Empty }
 
 theorem unrelated_values(x: Box, y: Box, a: int32, b: int32) {

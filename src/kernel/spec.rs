@@ -3456,8 +3456,8 @@ fn rewrite_integer_match_typed_body(
 /// from a free variable that happens to carry the same identity. The check
 /// that makes the substitution capture-correct is therefore on the binders:
 /// every one has to be a match-binder identity
-/// ([`ExecutionBudget::is_match_binder_variable`]), a range no execution,
-/// quantifier, fold, load or pointer producer mints from. Given that, an
+/// ([`ExecutionBudget::is_match_binder_variable`]), an origin no execution,
+/// quantifier, fold, load or pointer producer mints. Given that, an
 /// occurrence of a binder's identity in the arm body is a bound occurrence of
 /// that binder -- or of a nested match's binder that shadows it, which the
 /// rewrite walker stops at. A binder from any other range is a live free
@@ -4272,7 +4272,7 @@ fn evaluate_spec_algebraic_non_call_in(
                         // so the stored pointer carries none: a `const`
                         // parameter and a plain one build the same value,
                         // whichever route evaluated the field.
-                        next_values.push(field_path.value.without_pointer_constant());
+                        next_values.push(field_path.value);
                         next.push((next_values, merged_facts, merged_obligations));
                     }
                 }
@@ -4332,7 +4332,7 @@ fn evaluate_spec_algebraic_non_call_in(
 /// One symbolic value per field of `variant`, to bind a match arm's patterns
 /// to.
 ///
-/// The identities come from the budget's match-binder range, not from the
+/// The identities are the budget's match binders, not identities from the
 /// execution counter: they are *bound* variables of the match term being
 /// lowered, and a bound variable that happens to equal a live execution's
 /// free identity is what let the binder-elimination rewrite substitute a

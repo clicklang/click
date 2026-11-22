@@ -30,7 +30,10 @@ pub const WHOLE_RUN_CLASS: &str = "run";
 /// Runs one fixture verification, recording its tactics, and its whole
 /// verification's work as one [`WHOLE_RUN_CLASS`] row, when a report was
 /// requested.
-pub fn measure<R>(operation: impl FnOnce() -> R) -> (R, Vec<TacticWorkSample>) {
+pub fn measure<R>(
+    record_tactics: bool,
+    operation: impl FnOnce() -> R,
+) -> (R, Vec<TacticWorkSample>) {
     if report_dir().is_some() {
         let ((result, mut samples), work) = instrumentation::measure_deterministic_work(|| {
             instrumentation::collect_tactic_work(operation)
@@ -46,16 +49,19 @@ pub fn measure<R>(operation: impl FnOnce() -> R) -> (R, Vec<TacticWorkSample>) {
                 source_index: 0,
             },
             work,
+            inclusive_work: work,
             failed: false,
         });
         (result, samples)
+    } else if record_tactics {
+        instrumentation::collect_tactic_work(operation)
     } else {
         (operation(), Vec::new())
     }
 }
 
 /// Writes one fixture's samples as `harness fixture class work failed
-/// tactic claim statement source location` rows. `locate` maps a claim and
+/// tactic claim statement source location inclusive_work` rows. `locate` maps a claim and
 /// source tactic index to a one-based `line:column` in `source_path`.
 pub fn write(
     harness: &str,
@@ -95,7 +101,7 @@ pub fn write(
             "-".to_string()
         };
         rows.push_str(&format!(
-            "{harness}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{location}\n",
+            "{harness}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{location}\t{}\n",
             clean(fixture),
             clean(&sample.tactic.class),
             sample.work,
@@ -104,6 +110,7 @@ pub fn write(
             clean(&sample.tactic.claim),
             sample.tactic.statement_index,
             sample.tactic.source_index,
+            sample.inclusive_work,
         ));
     }
     let name = fixture
