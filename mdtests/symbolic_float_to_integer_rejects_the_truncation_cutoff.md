@@ -15,5 +15,5 @@ uint32 convert(double x) {
 ```
 
 ```expect
-fail: x > float64_from_bits(0xbff0000000000000u64)
+fail: undefined behavior: float-to-integer conversion is out of range
 ```

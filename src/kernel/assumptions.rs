@@ -10523,6 +10523,7 @@ impl ProofObligation {
             evaluation_domain: false,
             assertion_failure: false,
             unsigned_divisor: false,
+            float_to_integer_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10541,6 +10542,7 @@ impl ProofObligation {
             evaluation_domain: false,
             assertion_failure: false,
             unsigned_divisor: false,
+            float_to_integer_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10630,6 +10632,69 @@ impl ProofObligation {
                 endpoint,
             )) == Some(true)
         })
+    }
+
+    pub(crate) fn known_undefined_behavior(
+        &self,
+        facts: &PureFactContext,
+    ) -> Option<UndefinedBehavior> {
+        if self.has_known_zero_divisor(facts) {
+            return Some(UndefinedBehavior::DivisionByZero);
+        }
+        if !self.float_to_integer_bound {
+            return None;
+        }
+        let (condition, true) = self.proposition.condition_native()? else {
+            return None;
+        };
+        if let Some(truth) = facts.known_condition_value(condition) {
+            return (!truth).then_some(UndefinedBehavior::FloatToIntegerOutOfRange);
+        }
+        let compare: fn(MachineTerm, MachineTerm, ComparisonOperator) -> ConditionTerm;
+        let classify: fn(MachineTerm, FloatClassification) -> ConditionTerm;
+        let comparison = match condition {
+            ConditionTerm::Float32(comparison) => {
+                compare = ConditionTerm::float32_compare;
+                classify = ConditionTerm::float32_classification;
+                comparison
+            }
+            ConditionTerm::Float64(comparison) => {
+                compare = ConditionTerm::float64_compare;
+                classify = ConditionTerm::float64_classification;
+                comparison
+            }
+            _ => return None,
+        };
+        let FloatCondition::Comparison {
+            operator,
+            left,
+            right,
+        } = comparison
+        else {
+            return None;
+        };
+        use ComparisonOperator as Op;
+        let (opposite, strict) = match operator {
+            Op::LessThan => (Op::GreaterEqual, true),
+            Op::GreaterThan => (Op::LessEqual, true),
+            Op::LessEqual => (Op::GreaterThan, false),
+            Op::GreaterEqual => (Op::LessThan, false),
+            _ => return None,
+        };
+        let holds = |op| {
+            facts.known_condition_value(&compare(*left.clone(), *right.clone(), op)) == Some(true)
+        };
+        // An ordered comparison is false on NaN. A positive opposite
+        // comparison (or equality at a strict endpoint) also refutes it.
+        (holds(opposite)
+            || strict && holds(Op::Equal)
+            || facts.known_condition_value(&classify(*left.clone(), FloatClassification::Finite))
+                == Some(false)
+            || facts.known_condition_value(&classify(*left.clone(), FloatClassification::Nan))
+                == Some(true)
+            || facts.known_condition_value(&classify(*left.clone(), FloatClassification::Infinite))
+                == Some(true))
+        .then_some(UndefinedBehavior::FloatToIntegerOutOfRange)
     }
 
     pub(in crate::kernel) fn with_statement_entry_required(mut self, required: bool) -> Self {
@@ -10744,6 +10809,7 @@ impl ProofObligation {
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
             unsigned_divisor: self.unsigned_divisor,
+            float_to_integer_bound: self.float_to_integer_bound,
             statement_entry_required: self.statement_entry_required,
             live_view_write: self.live_view_write,
             call_requirement_site: None,

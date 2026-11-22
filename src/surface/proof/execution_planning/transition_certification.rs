@@ -38,14 +38,18 @@ fn missing_prerequisite_error(
     }
 }
 
-fn reject_known_zero_divisor(
-    obligation: &ProofObligation,
-    facts: &PureFactContext,
+fn reject_known_undefined_behavior<'a>(
+    obligations: &[ProofObligation],
+    facts: impl Fn(&ProofObligation) -> &'a PureFactContext,
     context_label: &str,
 ) -> Result<(), ClickError> {
-    if obligation.has_known_zero_divisor(facts) {
+    if let Some(kind) = obligations
+        .iter()
+        .find_map(|obligation| obligation.known_undefined_behavior(facts(obligation)))
+    {
         return Err(ClickError::new(format!(
-            "{context_label} produced undefined behavior: division by zero{}",
+            "{context_label} produced undefined behavior: {}{}",
+            kind.description(),
             crate::surface::diagnostics::describe_execution_statement_site()
         ))
         .with_proof_refusal(crate::surface::ProofRefusal::Execution));
@@ -328,8 +332,8 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 successor_facts = successor_facts.with_kernel_checked_fact(proposition.clone());
                 path_facts.push(proposition);
             }
+            reject_known_undefined_behavior(path.obligations(), |_| successor_facts.assumptions(), context_label)?;
             for obligation in path.obligations() {
-                reject_known_zero_divisor(obligation, successor_facts.assumptions(), context_label)?;
                 if !crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(successor_facts.assumptions(), obligation.proposition()) {
                     return Err(missing_condition_prerequisite_error(
                         context_label,
@@ -439,8 +443,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                 // facts, so their context extends the one it carried.
                 None => successor_facts.context(),
             };
+            reject_known_undefined_behavior(path.obligations(), |_| &prerequisite_assumptions, context_label)?;
             for obligation in path.obligations() {
-                reject_known_zero_divisor(obligation, &prerequisite_assumptions, context_label)?;
                 match prerequisite_policy {
                     StatementPrerequisitePolicy::Exact => {
                         if exact_fact_is_available(obligation.proposition(), pure_facts)
@@ -792,15 +796,18 @@ fn certified_transitions_from_execution(
                     ..
                 }
             );
-            for obligation in path.obligations() {
-                // A precondition cannot cite a fact produced by the
-                // transition whose validity depends on that precondition.
-                let prerequisite_assumptions = if obligation.requires_statement_entry() {
+            // A precondition cannot cite a fact produced by the
+            // transition whose validity depends on that precondition.
+            let facts_for_obligation = |obligation: &ProofObligation| {
+                if obligation.requires_statement_entry() {
                     executed_under
                 } else {
                     &prerequisite_assumptions
-                };
-                reject_known_zero_divisor(obligation, prerequisite_assumptions, context_label)?;
+                }
+            };
+            reject_known_undefined_behavior(path.obligations(), facts_for_obligation, context_label)?;
+            for obligation in path.obligations() {
+                let prerequisite_assumptions = facts_for_obligation(obligation);
                 let proposition = obligation.proposition();
                 let live_view_write = obligation.live_view_write_overlap();
                 // The call can ask for a different descriptor for the same

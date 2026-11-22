@@ -454,3 +454,49 @@ fn signed_addition_does_not_walk_the_operands_equality_class() {
         assert_eq!(sample, &samples[..2], "{samples:?}");
     }
 }
+
+#[test]
+fn float_cast_refutation_uses_fixed_fact_keys() {
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let operand = MachineTerm::Variable(Variable(994_400));
+        let cutoff = MachineTerm::uint64_constant(2147483648.0_f64.to_bits());
+        let condition =
+            |operator| ConditionTerm::float64_compare(operand.clone(), cutoff.clone(), operator);
+        let mut obligation = ProofObligation::verification_condition(Proposition::condition_is(
+            condition(ComparisonOperator::LessThan),
+            true,
+        ));
+        obligation.float_to_integer_bound = true;
+        let facts = (0..count).fold(PureFactContext::new(), |facts, index| {
+            facts.assume_condition(
+                ConditionTerm::float64_compare(
+                    operand.clone(),
+                    MachineTerm::uint64_constant(f64::from(index + 2).to_bits()),
+                    ComparisonOperator::GreaterThan,
+                ),
+                true,
+            )
+        });
+        let refuted = facts
+            .clone()
+            .assume_condition(condition(ComparisonOperator::Equal), true);
+        let mut work = Vec::new();
+        for (context, expected) in [
+            (&facts, None),
+            (&refuted, Some(UndefinedBehavior::FloatToIntegerOutOfRange)),
+        ] {
+            let (result, units) = crate::instrumentation::measure_deterministic_work(|| {
+                obligation.known_undefined_behavior(context)
+            });
+            assert_eq!(result, expected);
+            work.push(units);
+        }
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|sample| sample == &samples[0]),
+        "{samples:?}"
+    );
+}

@@ -8076,6 +8076,7 @@ pub enum UndefinedBehavior {
     SignedDivisionOverflow,
     PointerArithmetic,
     DivisionByZero,
+    FloatToIntegerOutOfRange,
     InvalidShift,
     InvalidMemory,
     UninitializedRead,
@@ -8133,6 +8134,9 @@ impl UndefinedBehavior {
                 "access outside the subobject the pointer designates".to_string()
             }
             Self::DivisionByZero => "division by zero".to_string(),
+            Self::FloatToIntegerOutOfRange => {
+                "float-to-integer conversion is out of range after truncation or the value is non-finite".to_string()
+            }
             Self::InvalidShift => "invalid shift".to_string(),
             Self::InvalidMemory => "invalid memory access".to_string(),
             Self::UninitializedRead => "read of uninitialized storage".to_string(),
@@ -16070,6 +16074,8 @@ pub struct ProofObligation {
     pub(super) assertion_failure: bool,
     /// Refuting this nonzero-divisor obligation is division by zero.
     pub(super) unsigned_divisor: bool,
+    /// An ordered range bound for an executed float-to-integer conversion.
+    pub(super) float_to_integer_bound: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
     /// Diagnostic metadata only. The proposition itself carries both ranges.
