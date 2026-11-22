@@ -4152,12 +4152,15 @@ impl<'a> TermRewrite<'a> {
                     && !self.source_disabled
                 {
                     self.changed = true;
-                    // Complete value equality preserves the designated
-                    // object's checked type. The cited equality's spelling
-                    // need not carry the evidence retained by this occurrence
-                    // (for example, a typed constructor field).
+                    // Pointer equality ignores the type, which belongs to the
+                    // term: the replacement keeps this occurrence's type, and
+                    // the designated object's checked type. The cited
+                    // equality's spelling need not carry the evidence retained
+                    // by this occurrence (for example, a typed constructor
+                    // field).
                     return ProgramValue::Pointer(
                         to.clone()
+                            .with_type(v.program_type())
                             .with_object_type_evidence(v.object_type_evidence().cloned()),
                     );
                 }

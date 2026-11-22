@@ -6,7 +6,6 @@ use super::*;
 struct PointerIdentity {
     address: SharedAddress,
     provenance: SharedAddress,
-    program_type: ProgramType,
     bounds_known: bool,
     bounds_owner: Option<SharedAddress>,
     bounds: Option<(SharedAddress, KernelTerm)>,
@@ -53,7 +52,6 @@ impl KernelPointerEquality {
             PointerIdentity {
                 address: address(&p.address),
                 provenance: address(&p.provenance),
-                program_type: p.program_type,
                 bounds_known: known,
                 bounds_owner: if known {
                     None
@@ -80,8 +78,7 @@ impl SharedPointer {
         let (a, b) = (self.node(), other.node());
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
         let known = aq.is_some_and(|q| q.bounds_known);
-        a.program_type == b.program_type
-            && known == bq.is_some_and(|q| q.bounds_known)
+        known == bq.is_some_and(|q| q.bounds_known)
             && a.address.syntax_equal(&b.address)
             && a.provenance.syntax_equal(&b.provenance)
             && (known

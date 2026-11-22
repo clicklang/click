@@ -58,8 +58,7 @@ the term's type, not the value, and `*p` takes its access type from `p`'s
 type. Pointer equality and identity compare values, so they ignore the type;
 an equality used to replace one term by another keeps the replaced term's
 type. `const` and `volatile` qualify the lvalue type of an access, which each
-access states (step 3a). Click's identity includes the type today
-(`Pointer::identity`); this model removes it.
+access states (step 3a). Step 3c removed the type from `Pointer::identity`.
 
 One conversion has a meaning of its own in C: converting to a character
 pointer forms a view of the object's bytes (C11 6.3.2.3p7). In C provenance
@@ -189,6 +188,11 @@ Each step is one PR, measured with the gate and the raise-lower audit.
      refusal on a pointer value's `const` fires. Writing a `const` object
      stays undefined behaviour that the storage's read-only status refuses
      (C11 6.7.3p6). Declarations keep their qualifiers.
+   - 3c: the type leaves pointer identity and the keys that mirror it.
+     Comparisons no longer require equal types or retype both sides first,
+     and a rewrite by a pointer equality keeps the replaced occurrence's
+     type. A cast still builds a term of the target type.
+   - 3b, remaining: subobject bounds fold into C provenance.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

@@ -3017,8 +3017,8 @@ impl Pointer {
 }
 
 impl Pointer {
-    /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, and the subobject it
+    /// Everything that is the value's identity: the address, its provenance,
+    /// and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
     /// fresh scalar id, never a structural resource or ledger key.
     /// Two values at one address with different bounds are
@@ -3029,7 +3029,6 @@ impl Pointer {
     ) -> (
         &Address,
         &Address,
-        &ProgramType,
         bool,
         Option<&Address>,
         Option<&SubobjectBounds>,
@@ -3037,7 +3036,6 @@ impl Pointer {
         (
             &self.address,
             &self.provenance,
-            &self.program_type,
             self.bounds_are_known(),
             if self.bounds_are_known() {
                 None
