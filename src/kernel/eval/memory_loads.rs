@@ -257,6 +257,7 @@ pub(in crate::kernel) fn evaluate_spec_memory_load_paths(
 
 /// Construct the value of a logical read using the shared typed load model.
 /// No C access occurs and no validity evidence is introduced.
+#[cfg(test)]
 pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     memory: &SymbolicMemory,
     pointer: Address,
@@ -265,7 +266,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
-    evaluate_logical_memory_load_paths_at(
+    evaluate_logical_memory_load_paths_in_view(
         memory,
         pointer,
         value_type,
@@ -276,7 +277,33 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     )
 }
 
+/// Read a cell from the view at the supplied program point.
 pub(in crate::kernel) fn evaluate_logical_memory_load_paths_at(
+    point: &ProgramPoint,
+    pointer: Address,
+    value_type: ProgramType,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<ExpressionPath> {
+    // Indexed ordinary versions are selected before this compatibility
+    // route. Symbolic Boolean and float reads can name the observation
+    // point directly. Other residual reads still use legacy selection.
+    let origin = (value_type == ProgramType::Bool
+        || KernelFloatType::from_program_type(value_type).is_some())
+    .then_some(point);
+    evaluate_logical_memory_load_paths_in_view(
+        point.memory(),
+        pointer,
+        value_type,
+        facts,
+        obligations,
+        assumptions,
+        origin,
+    )
+}
+
+fn evaluate_logical_memory_load_paths_in_view(
     memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
@@ -10555,13 +10582,12 @@ mod float_memory_handoff_tests {
                 let forced = ordinary.clone().force_symbolic_external_loads();
                 for assumptions in [&ordinary, &forced] {
                     let logical = evaluate_logical_memory_load_paths_at(
-                        state.memory(),
+                        &origin,
                         address.clone(),
                         value_type,
                         ExecutionFacts::new(),
                         vec![],
                         assumptions,
-                        Some(&origin),
                     );
                     let [path] = logical.as_slice() else {
                         panic!("expected one logical read");
