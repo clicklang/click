@@ -158,6 +158,13 @@ Each step is one PR, measured with the gate and the raise-lower audit.
    and provenance. Move type and qualifiers to accesses, and fold subobject
    bounds into C provenance. This is the largest kernel change: equality, the
    equality graph, effective types and the raiser all change.
+   - 3a, step 1: every C load and store states the volatility of its lvalue's
+     type (C11 6.7.3p7), which the frontend computes as it computes pointee
+     `const`. The kernel still also reads the pointer value's flag. Over the
+     gate corpus the access's flag never misses a volatility the value has;
+     it adds one where the value lost it, in Linux's `__WRITE_ONCE`
+     (`*(volatile typeof(x) *)&(x) = v`). Step 2 removes `volatile` and
+     `const` from the value.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

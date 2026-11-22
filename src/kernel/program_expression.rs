@@ -364,15 +364,18 @@ pub(crate) fn qualified_typed_load_with_source(
 
 /// A load of a `value_type` lvalue whose access class the kernel type cannot
 /// give (`design/effective-types.md`).
+/// A C access of `value_type` through `pointer`, with the access class and
+/// volatility its lvalue's type gives (C11 6.5p7, 6.7.3p7).
 pub(crate) fn classed_load(
     pointer: ProgramExpression,
     value_type: ProgramType,
     access_class: Option<crate::kernel::effective_type::CAccessClass>,
+    volatile: bool,
 ) -> ProgramExpression {
     ProgramExpression::TypedLoad {
         pointer: Box::new(pointer),
         value_type,
-        volatile: false,
+        volatile,
         pointee_constant: false,
         access_class,
         source: crate::kernel::ExpressionLoadSource::none(),
