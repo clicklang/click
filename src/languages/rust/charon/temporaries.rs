@@ -2634,6 +2634,16 @@ pub(super) fn call_steps(
         }
         if let Some(destination) = call_destination(&block.terminator) {
             *assigned.entry(destination.clone()).or_default() += 1;
+            // Pointer calls still require their destination during lowering.
+            if matches!(
+                block.terminator,
+                T::Call {
+                    through_pointer: true,
+                    ..
+                }
+            ) {
+                named.insert(destination.clone());
+            }
         }
         for target in successors(&block.terminator) {
             if let Some(count) = predecessors.get_mut(target) {
@@ -2735,17 +2745,22 @@ pub(super) fn call_steps(
         let Some(ty) = types.get(destination.as_str()) else {
             continue;
         };
-        if !temporaries.contains(&destination)
-            || named.contains(&destination)
-            || assigned.get(&destination) != Some(&1)
-        {
+        if !temporaries.contains(&destination) || named.contains(&destination) {
             continue;
         }
-        if ty.is_scalar() && !reads.contains_key(&destination) {
+        // Alternative calls can write the same unused result slot. With no
+        // other write or use, each call can discard its result independently.
+        if ty.is_scalar()
+            && !reads.contains_key(&destination)
+            && !mentions.contains_key(&destination)
+        {
             if let T::Call { destination, .. } = &mut blocks[index].terminator {
                 *destination = None;
             }
             removed.insert(destination);
+            continue;
+        }
+        if assigned.get(&destination) != Some(&1) {
             continue;
         }
         let Some(&(1, reader)) = reads.get(&destination) else {
@@ -4106,6 +4121,50 @@ mod tests {
             terminator_site: None,
             statements,
             terminator,
+        }
+    }
+
+    #[test]
+    fn alternative_calls_can_discard_their_shared_result() {
+        let call = |function: &str, through_pointer| T::Call {
+            function: function.into(),
+            arguments: vec![],
+            owned_arguments: vec![],
+            destination: Some("t1".into()),
+            target: 3,
+            through_pointer,
+            result: None,
+        };
+        for (pointer_call, other_write) in [(false, false), (true, false), (false, true)] {
+            let mut locals = vec![place("t1")];
+            let mut blocks = [
+                block(
+                    vec![],
+                    T::If {
+                        condition: local("x"),
+                        then_target: 1,
+                        else_target: 2,
+                    },
+                ),
+                block(vec![], call("f", false)),
+                block(vec![], call("g", pointer_call)),
+                block(
+                    other_write
+                        .then(|| assign("t1", local("x")))
+                        .into_iter()
+                        .collect(),
+                    T::Return,
+                ),
+            ];
+            super::call_steps(&mut locals, &mut blocks, &BTreeSet::from(["t1".into()]));
+            let discarded = !pointer_call && !other_write;
+            assert_eq!(locals.is_empty(), discarded);
+            for (block, expected) in blocks[1..3].iter().zip(["f", "g"]) {
+                assert!(
+                    matches!(&block.terminator, T::Call { function, destination, result: None, .. }
+                    if function == expected && destination.is_none() == discarded)
+                );
+            }
         }
     }
 
