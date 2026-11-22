@@ -3419,6 +3419,88 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter(|proof| proof.is_complete() || proof.goal() != search_input.goal()))
     }
 
+    /// Exclude two distinct constants for the same signed word. This closes
+    /// the overflow guard of `x / x` and `x % x` with one explicit proof split.
+    fn try_distinct_constant_exclusion(
+        search_input: &Proof<'a>,
+        left: &Proposition,
+        right: &Proposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_distinct_constant_exclusion");
+        let (
+            Some((
+                left_equality @ ConditionTerm::Compare {
+                    format: format @ (MachineIntegerType::Int32 | MachineIntegerType::Int64),
+                    relation: CompareRelation::Equal,
+                    left: left_word,
+                    right: left_literal,
+                },
+                false,
+            )),
+            Some((
+                ConditionTerm::Compare {
+                    format: right_format,
+                    relation: CompareRelation::Equal,
+                    left: right_word,
+                    right: right_literal,
+                },
+                false,
+            )),
+        ) = (left.condition_native(), right.condition_native())
+        else {
+            return Ok(None);
+        };
+        if format != right_format
+            || left_word != right_word
+            || !format
+                .constant_from_term(left_literal)
+                .zip(format.constant_from_term(right_literal))
+                .is_some_and(|(left, right)| left != right)
+        {
+            return Ok(None);
+        }
+        let equality = Proposition::condition_is(left_equality.clone(), true);
+        let (Some(condition), Some(other_exclusion)) = (
+            search_input.structural_proposition_candidate(&equality),
+            search_input.structural_proposition_candidate(right),
+        ) else {
+            return Ok(None);
+        };
+        let Some((proof, split, ids)) =
+            attempt::candidate_outcome(search_input.split_focused_if(condition.clone()))?
+        else {
+            return Ok(None);
+        };
+        let marker = proof.checkpoint();
+        let then_arm = proof.focus_branch(ids[0])?;
+        let Some(scope) = attempt::candidate_outcome(then_arm.driver().open_have(other_exclusion))?
+        else {
+            return Ok(None);
+        };
+        let Some(proved) = attempt::candidate_outcome(
+            scope
+                .driver()
+                .apply_step(ProofStep::NormalizeUsing(vec![condition.clone()])),
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(then_done) =
+            attempt::candidate_outcome(proved.join()?.driver().apply_step(ProofStep::Known))?
+        else {
+            return Ok(None);
+        };
+        let else_arm = then_done.focus_branch(ids[1])?;
+        let Some(done) =
+            attempt::candidate_outcome(else_arm.driver().apply_step(ProofStep::Known))?
+        else {
+            return Ok(None);
+        };
+        done.join_focused_if(&marker, split, ids, condition)
+            .map(Some)
+    }
+
     /// Close the small domain conjunction as ordinary checked `have` steps.
     /// In particular, `defined(cast)` is written as one term even though
     /// its lowered goal has two ordered bounds.
@@ -3435,6 +3517,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
+        if let Proposition::Or(left, right) = goal {
+            return Self::try_distinct_constant_exclusion(search_input, left, right);
+        }
         if let Some(requirements) = shift_count_mask_requirements(goal) {
             let mut proof = search_input.clone();
             let mut surfaces = Vec::with_capacity(requirements.len());
