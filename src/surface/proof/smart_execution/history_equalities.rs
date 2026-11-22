@@ -320,6 +320,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for order in orders {
             let Some(proof) =
                 attempt::candidate_outcome(search_input.driver().apply_have_step(&order, &known))?
+                    .or_else(|| Self::retain_signed_order_bounds(search_input, &order, 2))
             else {
                 continue;
             };
