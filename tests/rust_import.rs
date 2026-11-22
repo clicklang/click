@@ -4088,8 +4088,27 @@ fn charon_option_take_moves_out_and_leaves_none() {
     let p = Project::from_fixture("design/charon-trial/option-take");
     fs::write(p.root.join("borrow.click"), OPTION_TAKE_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    ProgramVerificationSession::new_program_prepared(OPTION_TAKE_SIDECAR, &prepared)
-        .unwrap_or_else(|error| panic!("{error:?}"));
+    let taken = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|function| {
+            click::languages::rust::names::rust_display_name(&function.name).as_deref()
+                == Some("option_take::taken")
+        })
+        .expect("option_take::taken in the Rust import");
+    click::surface::with_proof_trace(&taken.name, || {
+        ProgramVerificationSession::new_program_prepared(OPTION_TAKE_SIDECAR, &prepared)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        let trace = click::surface::accepted_proof_trace(
+            &|_, _| None,
+            &|_, _, _| None,
+            &|_, _, _| false,
+            None,
+        )
+        .expect("accepted option_take::taken proof trace");
+        assert!(!trace.contains("__rust_mir_"), "{trace}");
+    });
     // `o: &mut Option<u32>` owns `*o` with no clause written.
     let derived = OPTION_TAKE_SIDECAR.replacen("    owns *o;\n", "", 1);
     assert_ne!(derived, OPTION_TAKE_SIDECAR);
