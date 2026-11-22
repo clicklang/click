@@ -673,7 +673,6 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
                 ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
                     pointer
                         .map_addresses(canonicalize_pointer_loads)
-                        .with_pointee_volatile(false)
                         .with_pointee_constant(false),
                 ),
             };
@@ -744,7 +743,6 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
             ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
                 pointer
                     .map_addresses(canonicalize_pointer_loads)
-                    .with_pointee_volatile(false)
                     .with_pointee_constant(false),
             ),
         };
@@ -762,6 +760,7 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
 /// The program point a cell's load variable is named by, asked of the
 /// resource tracker: the one place that decides which resources are the same
 /// at which points (`crate::kernel::resource_tracker`).
+#[track_caller]
 fn cell_version_point(
     memory: &SharedMemory,
     pointer: &Address,

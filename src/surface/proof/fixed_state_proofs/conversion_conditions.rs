@@ -546,9 +546,7 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
     site: &StatedSite<'_>,
 ) -> Result<(), String> {
     for obligation in obligations {
-        if obligation.is_assumable()
-            || (!crate::surface::proof::theorem_application::preparing_application()
-                && established_condition(assumptions, obligation.proposition()))
+        if obligation.is_assumable() || established_condition(assumptions, obligation.proposition())
         {
             continue;
         }

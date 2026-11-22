@@ -47,15 +47,11 @@ void copy_u(uint8* dst, const uint8* src) {
         })), k);
         have separate(memory(dst[0..4]), memory(src[k])) by { known(); }
         have contains(memory(dst[0..4]), statement(0).footprint) by { known(); }
-        apply(separation::contains_refl(memory(src[k]))) using {};
+        apply(separation::contains_refl(memory(src[k])));
         apply(separation::separate_restrict(
             memory(dst[0..4]), memory(src[k]),
             statement(0).footprint, memory(src[k])
-        )) using {
-            separate(memory(dst[0..4]), memory(src[k]));
-            contains(memory(dst[0..4]), statement(0).footprint);
-            contains(memory(src[k]), memory(src[k]));
-        };
+        ));
         have at(copied, src[k]) == old(src[k]) by {
             preserve(memory(src[k]), statement(0));
         }
@@ -99,15 +95,11 @@ void copy_u_smart(uint8* dst, const uint8* src) {
         })), k);
         have separate(memory(dst[0..4]), memory(src[k])) by { known(); }
         have contains(memory(dst[0..4]), statement(0).footprint) by { known(); }
-        apply(separation::contains_refl(memory(src[k]))) using {};
+        apply(separation::contains_refl(memory(src[k])));
         apply(separation::separate_restrict(
             memory(dst[0..4]), memory(src[k]),
             statement(0).footprint, memory(src[k])
-        )) using {
-            separate(memory(dst[0..4]), memory(src[k]));
-            contains(memory(dst[0..4]), statement(0).footprint);
-            contains(memory(src[k]), memory(src[k]));
-        };
+        ));
         have at(copied, src[k]) == old(src[k]) by {
             preserve(memory(src[k]), statement(0));
         }

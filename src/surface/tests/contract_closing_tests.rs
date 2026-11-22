@@ -68,6 +68,10 @@ fn omitted_closing_steps_leave_their_obligations_open() {
         let source = proof(&format!("normalize(); {}", "known(); ".repeat(count)));
         let error = without_implicit_solve(|| verify_c_sources(&source, C))
             .expect_err("ordinary completion cannot supply an omitted proof");
+        assert_eq!(
+            error.proof_refusal(),
+            Some(crate::surface::ProofRefusal::IncompleteProof)
+        );
         assert!(
             error
                 .message()

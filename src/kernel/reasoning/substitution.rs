@@ -5554,6 +5554,42 @@ mod machine_integer_substitution_tests {
     use super::*;
 
     #[test]
+    fn instantiating_an_exact_read_index_keeps_its_program_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let point = ProgramPoint::starting_at(&SymbolicMemory::new()).for_exact_read();
+        let base = Address::symbolic(Variable(38_551));
+        let index = Variable(38_552);
+        let value = MachineTerm::Variable(Variable(38_553));
+        let read =
+            |pointer| MachineTerm::MemoryLoad(point.clone(), Box::new(pointer), LoadKind::Int32);
+        let equation = |pointer| {
+            Proposition::condition_is(
+                ConditionTerm::machine_compare(
+                    MachineIntegerType::Int32,
+                    CompareRelation::Equal,
+                    read(pointer),
+                    value.clone(),
+                ),
+                true,
+            )
+        };
+        let before = Address {
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(index), 4),
+            ..base.clone()
+        };
+        let after = base.offset_by_bytes(28);
+        let replacement = MachineTerm::constant(7);
+        assert_eq!(
+            substitute_bitvector_variable(&read(before.clone()), index, &replacement),
+            read(after.clone())
+        );
+        assert_eq!(
+            substitute_bitvector_variable_in_proposition(&equation(before), index, &replacement),
+            equation(after)
+        );
+    }
+
+    #[test]
     fn narrow_order_substitution_retains_literal_comparisons_in_both_carriers() {
         use crate::kernel::{CompareRelation as R, MachineIntegerType as T};
         for format in [T::Int8, T::UInt8, T::Int16, T::UInt16] {
@@ -6213,6 +6249,21 @@ pub(crate) fn substitute_bitvector_variable(
         },
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
             let rewritten_pointer = substitute_bitvector_variable_in_pointer(pointer, from, to);
+            // A certified exact read fixes its program point. Substitute in
+            // the address expression at that point.
+            if memory.is_exact_read() && memory.has_certified_read_view() {
+                if rewritten_pointer == **pointer {
+                    return term.clone();
+                }
+                let bytes = crate::kernel::eval::observed_scalar_read_width(memory, pointer, *kind)
+                    .unwrap_or_else(|| kind.byte_width());
+                return crate::kernel::eval::scalar_read_for_exact_cell_at(
+                    memory,
+                    &rewritten_pointer,
+                    *kind,
+                    bytes,
+                );
+            }
             if let Some(entry) = memory.entry_version_after_rewrite(&rewritten_pointer, *kind) {
                 if rewritten_pointer == **pointer {
                     return term.clone();
@@ -8460,8 +8511,7 @@ mod pointee_const_return_tests {
             Address::symbolic(Variable(918)),
             ProgramType::Int32Pointer,
         )
-        .with_pointer_pointee_constant(true)
-        .with_pointer_pointee_volatile(true);
+        .with_pointer_pointee_constant(true);
         assert_eq!(
             substitute_bitvector_variable_in_program_value(
                 &value,
@@ -8477,7 +8527,7 @@ mod pointee_const_return_tests {
         let replaced =
             substitute_pointer_variable_in_program_value(&value, Variable(918), &Address::null());
         assert!(matches!(replaced, ProgramValue::Pointer(pointer)
-            if pointer.is_null() && pointer.pointee_constant() && pointer.pointee_volatile()));
+            if pointer.is_null() && pointer.pointee_constant()));
     }
 
     #[test]

@@ -13,9 +13,7 @@ theorem reconstruct(n: Integer, d: Integer, q: Integer, r: Integer) {
     requires r <= d - 1;
     requires n == q * d + r;
     ensures truncating_remainder(n, d) == r by {
-        apply(integer::nonnegative_remainder_from_reconstruction(n, d, q, r)) using {
-            d != 0; 1 <= d; 0 <= n; 0 <= r; r <= d - 1; n == q * d + r;
-        };
+        apply(integer::nonnegative_remainder_from_reconstruction(n, d, q, r));
     }
 }
 ```

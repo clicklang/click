@@ -540,6 +540,85 @@ int32 caller(int32* data) {{
     (c, click)
 }
 
+/// Stores into one object, each followed by a read of a cell no store
+/// wrote: the read's version is the object's entry, behind every earlier
+/// store into the same object. A walk back over the object's history to
+/// name it costs the stores before it (`legacy_walk_naming_of_fresh_cells_still_grows_with_same_block_stores`
+/// in the resource tracker's scaling tests); an indexed version does not.
+fn fresh_reads_after_stores(
+    n: usize,
+    declarations: &str,
+    parameters: &str,
+    prelude: &str,
+    place: impl Fn(usize) -> String,
+    owns: &str,
+) -> (String, String) {
+    let body = lines(n, |i| {
+        format!("    {} = {i};\n    seen = {};", place(i), place(n + i))
+    });
+    let c = format!(
+        "{declarations}int32 caller({parameters}) {{
+    int32 seen;
+{prelude}{body}
+    return seen;
+}}"
+    );
+    let prelude_steps = prelude.lines().count();
+    let steps = steps(2 * n + 2 + prelude_steps);
+    let click = format!(
+        "verifying \"hunt.c\";
+
+int32 caller({parameters}) {{
+{owns}
+}} by {{
+{steps}
+}}"
+    );
+    (c, click)
+}
+
+fn struct_field_declarations(n: usize) -> String {
+    let fields = lines(2 * n, |i| format!("    int32 f{i};"));
+    format!("struct wide {{\n{fields}\n}};\n\n")
+}
+
+fn fresh_struct_fields(n: usize) -> (String, String) {
+    fresh_reads_after_stores(
+        n,
+        &struct_field_declarations(n),
+        "struct wide* w",
+        "",
+        |i| format!("w->f{i}"),
+        "    owns *w;",
+    )
+}
+
+fn fresh_array_elements(n: usize) -> (String, String) {
+    fresh_reads_after_stores(
+        n,
+        "",
+        "int32* data",
+        "",
+        |i| format!("data[{i}]"),
+        &format!("    owns data[0..{}];", 2 * n),
+    )
+}
+
+fn fresh_fields_through_a_loaded_pointer(n: usize) -> (String, String) {
+    let declarations = format!(
+        "{}struct holder {{\n    struct wide* inner;\n}};\n\n",
+        struct_field_declarations(n)
+    );
+    fresh_reads_after_stores(
+        n,
+        &declarations,
+        "struct holder* h",
+        "",
+        |i| format!("h->inner->f{i}"),
+        "    owns *h;\n    owns *(h->inner);",
+    )
+}
+
 fn many_callees(n: usize) -> (String, String) {
     let callees_c = (0..n)
         .map(|i| {
@@ -1060,6 +1139,55 @@ fn successful_steps_do_not_read_the_held_resource_list_for_diagnostics() {
 #[test]
 fn constant_index_stores_cost_the_same_at_every_position() {
     assert_no_drift("const_array", const_array, 12);
+}
+
+/// The legacy-walk queries `operation` makes: their total count.
+fn legacy_walk_queries(operation: impl FnOnce()) -> usize {
+    crate::kernel::resource_tracker::legacy_walk_audit::capture(operation)
+        .lines()
+        .filter_map(|line| line.split('\t').next()?.parse::<usize>().ok())
+        .sum()
+}
+
+/// Reads of cells no store wrote, each after stores into the same object,
+/// cost the same at every position, and an object the program point indexes
+/// name never reaches the legacy walk.
+#[test]
+fn fresh_reads_after_same_object_stores_cost_the_same_at_every_position() {
+    for (name, shape) in [
+        ("fresh_struct_fields", fresh_struct_fields as fn(usize) -> _),
+        ("fresh_array_elements", fresh_array_elements),
+    ] {
+        let mut drifting = Vec::new();
+        let queries = legacy_walk_queries(|| drifting = drifting_roles(name, &run(shape, 12)));
+        assert!(
+            drifting.is_empty(),
+            "{name}: a step's work drifts with the statements before it: {drifting:?}"
+        );
+        assert_eq!(queries, 0, "{name}: a read reached the legacy walk");
+    }
+}
+
+/// The same shape through a loaded pointer still reaches the legacy walk
+/// (`roadmap/smart-tactics.md`, "Program-point memory migration"). Its steps
+/// must not drift; once its reads have indexed versions, the second
+/// assertion fails, and this test joins the one above.
+#[test]
+fn known_legacy_fresh_reads_through_a_loaded_pointer_cost_the_same_at_every_position() {
+    let name = "fresh_fields_through_a_loaded_pointer";
+    let mut drifting = Vec::new();
+    let queries = legacy_walk_queries(|| {
+        drifting = drifting_roles(name, &run(fresh_fields_through_a_loaded_pointer, 12));
+    });
+    assert!(
+        drifting.is_empty(),
+        "{name}: a step's work drifts with the statements before it: {drifting:?}"
+    );
+    assert!(
+        queries > 0,
+        "{name}: no read reached the legacy walk; move this shape into \
+         `fresh_reads_after_same_object_stores_cost_the_same_at_every_position`"
+    );
 }
 
 #[test]

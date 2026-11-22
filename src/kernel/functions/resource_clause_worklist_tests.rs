@@ -263,3 +263,95 @@ fn concrete_waiter_block_fallback_registers_and_unregisters_symmetrically() {
             .is_empty()
     );
 }
+
+#[test]
+fn retrying_a_composite_clause_keeps_the_point_of_its_nested_bound_read() {
+    use crate::kernel::program_expression::{int32_literal, load, variable};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = SymbolicMemory::global_pointer("retry_bound");
+    let target = Address::symbolic(Variable(8_991_709));
+    let ty = ProgramType::Int32Pointer;
+    let definitions = [
+        CompositeResourceDefinition::new(
+            "retry_packet",
+            vec![
+                program_parameter("slot", ty),
+                program_parameter("target", ty),
+            ],
+            None,
+            false,
+            vec![
+                ResourceSpec::owned_memory(MemorySegment::new(
+                    variable("slot"),
+                    int32_literal(0),
+                    int32_literal(1),
+                )),
+                ResourceSpec::owned_memory(MemorySegment::new(
+                    variable("target"),
+                    int32_literal(0),
+                    load(variable("slot")),
+                )),
+            ],
+            vec![],
+        ),
+        CompositeResourceDefinition::new(
+            "retry_wrapper",
+            vec![
+                program_parameter("slot", ty),
+                program_parameter("target", ty),
+            ],
+            None,
+            false,
+            vec![ResourceSpec::composite(
+                ResourceAccessMode::Own,
+                "retry_packet".into(),
+                vec![variable("slot"), variable("target")],
+                vec![ty, ty],
+            )],
+            vec![],
+        ),
+    ];
+    let head = ResourceFact::own_composite(
+        "retry_wrapper".into(),
+        vec![
+            ProgramValue::typed_pointer(slot.clone(), ty),
+            ProgramValue::typed_pointer(target.clone(), ty),
+        ],
+    );
+    let state = ExecutionState::new().begin_function_entry_memory();
+    let state = state
+        .clone()
+        .with_function_entry_memory(state.memory().clone().with_block(slot.base.clone(), 4));
+    let assumptions = PureFactContext::new();
+    let batch = resource_clause_section_supply(
+        &state,
+        std::slice::from_ref(&head),
+        &definitions,
+        &assumptions,
+    );
+    let expected = batch
+        .facts()
+        .iter()
+        .find(|fact| {
+            fact.is_view() && fact.memory_range().is_some_and(|range| {
+                range.base() == &target
+                    && matches!(
+                        range.end(), MachineTerm::MemoryLoad(at, address, LoadKind::Int32)
+                            if **address == slot && at.read_version_id() == state.program_point_id()
+                    )
+            })
+        })
+        .expect("the section supplies the nested child using the actual point");
+    let (_, added) = resource_clause_supply_with_fact(
+        ResourceContext::new_with_equalities(&assumptions),
+        head,
+        &definitions,
+        &state,
+        &assumptions,
+    );
+    assert!(
+        added.contains(expected),
+        "retry named a different child range"
+    );
+}

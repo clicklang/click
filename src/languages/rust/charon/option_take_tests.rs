@@ -44,7 +44,11 @@ fn charon_option_take_rejects_forged_library_declarations() {
             .functions
             .iter()
             .flat_map(|f| f.mir.iter().flat_map(|mir| &mir.blocks))
-            .all(|block| !matches!(&block.terminator, T::Call { function, .. } if function.contains("take"))),
+            // The box's free names its record's crate, `option_take`.
+            .all(
+                |block| !matches!(&block.terminator, T::Call { function, .. }
+                if function.contains("take") && !function.contains("Box"))
+            ),
         "`take` leaves no library call"
     );
     for mutation in 0..4 {

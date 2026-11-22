@@ -44,7 +44,7 @@ int32 keep_first(int32* a, int32 i) {
     step();
     have a[0] == old(a[0]) by {
         have separate(memory(a[i]), memory(a[0])) by {
-            apply(click::separation::separate_elements(a, i, 0)) using { i != 0; };
+            apply(click::separation::separate_elements(a, i, 0));
         }
         have separate(statement(0).footprint, memory(a[0])) by {
             solve() using { separate(memory(a[i]), memory(a[0])); };

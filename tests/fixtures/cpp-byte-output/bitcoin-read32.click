@@ -22,44 +22,28 @@ void FixtureReader::read(std::span<std::byte> dst) {
         apply(click::separation::contains_refl(memory(this->data[0..4])));
     }
     have contains(memory(std_span_data(dst)[0..4]), memory(std_span_data(dst)[0])) by {
-        apply(click::separation::contains_element(std_span_data(dst), 0, 4, 0)) using { 0 <= 0; 0 < 4; };
+        apply(click::separation::contains_element(std_span_data(dst), 0, 4, 0));
     }
     have separate(memory(std_span_data(dst)[0]), memory(this->data[0..4])) by {
-        apply(click::separation::separate_restrict(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]), memory(std_span_data(dst)[0]), memory(this->data[0..4]))) using {
-            separate(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]));
-            contains(memory(std_span_data(dst)[0..4]), memory(std_span_data(dst)[0]));
-            contains(memory(this->data[0..4]), memory(this->data[0..4]));
-        };
+        apply(click::separation::separate_restrict(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]), memory(std_span_data(dst)[0]), memory(this->data[0..4])));
     }
     have contains(memory(std_span_data(dst)[0..4]), memory(std_span_data(dst)[1])) by {
-        apply(click::separation::contains_element(std_span_data(dst), 0, 4, 1)) using { 0 <= 1; 1 < 4; };
+        apply(click::separation::contains_element(std_span_data(dst), 0, 4, 1));
     }
     have separate(memory(std_span_data(dst)[1]), memory(this->data[0..4])) by {
-        apply(click::separation::separate_restrict(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]), memory(std_span_data(dst)[1]), memory(this->data[0..4]))) using {
-            separate(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]));
-            contains(memory(std_span_data(dst)[0..4]), memory(std_span_data(dst)[1]));
-            contains(memory(this->data[0..4]), memory(this->data[0..4]));
-        };
+        apply(click::separation::separate_restrict(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]), memory(std_span_data(dst)[1]), memory(this->data[0..4])));
     }
     have contains(memory(std_span_data(dst)[0..4]), memory(std_span_data(dst)[2])) by {
-        apply(click::separation::contains_element(std_span_data(dst), 0, 4, 2)) using { 0 <= 2; 2 < 4; };
+        apply(click::separation::contains_element(std_span_data(dst), 0, 4, 2));
     }
     have separate(memory(std_span_data(dst)[2]), memory(this->data[0..4])) by {
-        apply(click::separation::separate_restrict(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]), memory(std_span_data(dst)[2]), memory(this->data[0..4]))) using {
-            separate(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]));
-            contains(memory(std_span_data(dst)[0..4]), memory(std_span_data(dst)[2]));
-            contains(memory(this->data[0..4]), memory(this->data[0..4]));
-        };
+        apply(click::separation::separate_restrict(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]), memory(std_span_data(dst)[2]), memory(this->data[0..4])));
     }
     have contains(memory(std_span_data(dst)[0..4]), memory(std_span_data(dst)[3])) by {
-        apply(click::separation::contains_element(std_span_data(dst), 0, 4, 3)) using { 0 <= 3; 3 < 4; };
+        apply(click::separation::contains_element(std_span_data(dst), 0, 4, 3));
     }
     have separate(memory(std_span_data(dst)[3]), memory(this->data[0..4])) by {
-        apply(click::separation::separate_restrict(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]), memory(std_span_data(dst)[3]), memory(this->data[0..4]))) using {
-            separate(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]));
-            contains(memory(std_span_data(dst)[0..4]), memory(std_span_data(dst)[3]));
-            contains(memory(this->data[0..4]), memory(this->data[0..4]));
-        };
+        apply(click::separation::separate_restrict(memory(std_span_data(dst)[0..4]), memory(this->data[0..4]), memory(std_span_data(dst)[3]), memory(this->data[0..4])));
     }
     step_until(call(0).entry);
     step();
@@ -162,7 +146,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(this->data) + 1) == old(this->data[1]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[1]), memory(old(std_span_data(dst))[0])) by {
-        apply(click::separation::separate_elements(old(std_span_data(dst)), 1, 0)) using { 1 != 0; };
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 1, 0));
     }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(std_span_data(dst))[0])) by { solve(); }
     have separate(region(5).footprint, memory(old(std_span_data(dst))[0])) by {
@@ -243,7 +227,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(this->data) + 2) == old(this->data[2]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[2]), memory(old(std_span_data(dst))[0])) by {
-        apply(click::separation::separate_elements(old(std_span_data(dst)), 2, 0)) using { 2 != 0; };
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 2, 0));
     }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(std_span_data(dst))[0])) by { solve(); }
     have separate(region(8).footprint, memory(old(std_span_data(dst))[0])) by {
@@ -255,7 +239,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[2]), memory(old(std_span_data(dst))[1])) by {
-        apply(click::separation::separate_elements(old(std_span_data(dst)), 2, 1)) using { 2 != 1; };
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 2, 1));
     }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(std_span_data(dst))[1])) by { solve(); }
     have separate(region(8).footprint, memory(old(std_span_data(dst))[1])) by {
@@ -336,7 +320,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[0])) by {
-        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 0)) using { 3 != 0; };
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 0));
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[0])) by { solve(); }
     have separate(region(11).footprint, memory(old(std_span_data(dst))[0])) by {
@@ -348,7 +332,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[1])) by {
-        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 1)) using { 3 != 1; };
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 1));
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[1])) by { solve(); }
     have separate(region(11).footprint, memory(old(std_span_data(dst))[1])) by {
@@ -360,7 +344,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[2])) by {
-        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 2)) using { 3 != 2; };
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 2));
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[2])) by { solve(); }
     have separate(region(11).footprint, memory(old(std_span_data(dst))[2])) by {

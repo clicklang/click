@@ -5511,6 +5511,7 @@ pub(in crate::surface) fn build_function_environment(
                 let mut function = function
                     .to_kernel_function()
                     .with_resource_summary(resource_requires, resource_ensures)
+                    .with_fresh_result_allocation(function_block.allocates_result())
                     .with_resource_constructors(resource_constructors)
                     .with_composite_resource_definitions(composite_resource_definitions(
                         resource_environment,
@@ -8924,10 +8925,10 @@ pub(in crate::surface) fn program_contract_failure(
         ProgramContractFailure::UnfinishedBody(name) => {
             let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
             ClickError::new(format!(
-                "contract proof for `{name}` still owes its body obligations"
+                "termination checking started before Click recorded a completed body proof for `{name}`"
             ))
             .at_declaration(name)
-            .with_proof_refusal(ProofRefusal::ContractExit)
+            .with_kind(ClickErrorKind::Internal)
         }
         ProgramContractFailure::Analysis(error) => {
             let located = ClickError::new(format!("could not certify C termination: {error}"))

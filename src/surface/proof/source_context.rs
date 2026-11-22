@@ -40,8 +40,8 @@ impl SourceContext {
                 tactic,
                 ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
+                    | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Induct { .. }
-                    | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::Witness(_)

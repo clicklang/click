@@ -162,6 +162,7 @@ fn graph_reference_checks_index_growing_caller_places_once() {
                 "caller",
                 &functions,
                 &RecordIndex::default(),
+                CppExceptionBehavior::NormalOnly,
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
             )
@@ -241,6 +242,7 @@ fn call_depth_budget_accounts_for_previously_checked_subgraphs() {
                 "root",
                 &index,
                 &RecordIndex::default(),
+                CppExceptionBehavior::NormalOnly,
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
             )
@@ -759,6 +761,7 @@ fn cross_header_call_origins_have_linear_graph_work() {
                 "root",
                 &index,
                 &RecordIndex::default(),
+                CppExceptionBehavior::NormalOnly,
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
             )
@@ -777,6 +780,7 @@ fn cross_header_call_origins_have_linear_graph_work() {
                 "root",
                 &index,
                 &RecordIndex::default(),
+                CppExceptionBehavior::NormalOnly,
                 &mut Vec::new(),
                 &mut BTreeMap::new()
             )

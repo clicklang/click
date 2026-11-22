@@ -409,10 +409,7 @@ int32 owned_string_pipeline(
     have at(statement(5).entry, owner->len) == 1 by {
         known();
     }
-    apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len)) using {
-        at(statement(5).entry, owner->len) == 1;
-        owner->len == (at(statement(5).entry, owner->len) - 1);
-    };
+    apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len));
     have owner->len == 0 by {
         known();
     }

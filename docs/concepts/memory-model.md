@@ -90,7 +90,25 @@ expressions, and nonvolatile C loads can name a caller-supplied pointer cell
 at its verified function-entry point when the recorded effects preserve
 that cell. Its address, provenance, and bounds owner share that read identity.
 The same entry index names caller-supplied signed and unsigned 16-bit cells
-in logical reads, resource expressions, and nonvolatile C loads.
+in logical reads, resource expressions, and nonvolatile C loads. An integer
+read through a pointer loaded at entry can use that entry version when the
+pointer's own read names that entry and the recorded effects leave caller
+storage unchanged.
+
+When a checked call initializes a whole integer local with an unknown value,
+Click and C name a matching typed read by the call's recorded output point.
+An effect that can write the local retires that version.
+
+An integer read of static storage uses the function-entry version when the
+whole-object index shows that the object is unchanged. This includes reads
+of array elements at symbolic indices. For fixed-offset reads, the index
+also retains the entry version across disjoint fixed-width writes and
+checked calls with concrete byte ranges in the same object. An effect with
+an unknown byte footprint invalidates that byte-level entry information
+for the affected object.
+An integer read of a static block with a scalar C access class uses the
+call's version when the whole block is the call's single checked write
+range.
 
 A declared little-endian `uint32` can be read as four complete indexed byte
 reads. Each byte uses its own version. Click spells it with the bitwise OR

@@ -56,13 +56,11 @@ fn report_error(message: String) -> ! {
     if [
         "tactic error",
         "unsuccessful search",
-        "unproved goal",
+        "incomplete proof",
         "contract error",
         "contract entry refused",
         "execution prerequisite unmet",
         "execution refused",
-        "contract exit refused",
-        "contract refinement refused",
         "termination not established",
         "invalid divergence declaration",
         "unsupported proof",
@@ -2705,8 +2703,129 @@ void probe(struct node *node) {{
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("contract exit refused:\n"), "{error}");
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
         assert!(error.contains("ticket(0)"), "{error}");
+    }
+
+    #[test]
+    fn contract_refinement_reports_the_reason_it_cannot_verify() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (fixture, heading, reason) in [
+            (
+                "c_named_contract_refinement_rejects_extra_effect.md",
+                "contract error",
+                "the target contract does not supply the resources required by the source contract",
+            ),
+            (
+                "c_named_contract_refinement_rejects_insufficient_quantity.md",
+                "contract error",
+                "the target contract does not supply the resources required by the source contract",
+            ),
+            (
+                "c_named_contract_refinement_rejects_unreturned_quantity.md",
+                "contract error",
+                "the source contract does not return the resources promised by the target contract",
+            ),
+            (
+                "c_named_function_contract_refinement_theorem_requires_unfold.md",
+                "tactic error",
+                "requires explicit `unfold(contract(callback))` applications",
+            ),
+            (
+                "c_named_function_contract_refinement_rejects_missing_rewrite.md",
+                "tactic error",
+                "`all` requires a conjunction goal",
+            ),
+            (
+                "c_named_function_contract_refinement_theorem_rejects_false_claim.md",
+                "unsuccessful search",
+                "result > 0",
+            ),
+        ] {
+            let path = fixtures.join(fixture);
+            let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+            assert!(
+                error.starts_with(&format!("{heading}:\n")),
+                "{fixture}: {error}"
+            );
+            assert!(error.contains(reason), "{fixture}: {error}");
+        }
+    }
+
+    #[test]
+    fn contract_refinement_without_a_proof_is_incomplete() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(directory.path().join("f.c"), "int f(void) { return 0; }").unwrap();
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+contract int32 Zero() { ensures result == 0; }
+int32 f() { ensures result == 0; }
+theorem implements_zero() { ensures Zero(&f); }
+"#,
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
+        assert!(
+            error.contains("requires an explicit contract-refinement proof"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn return_clause_failures_report_incomplete_proofs() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("f.c");
+        let sidecar = directory.path().join("f.click");
+        for (c, contract, reason, detail) in [
+            (
+                "struct node { struct node *child; }; void f(struct node *p) {}",
+                "abstract resource ticket(p: struct node*);\nvoid f(struct node* p) { requires p != 0; produces ticket(p->child); }",
+                "could not evaluate returned resource `ticket(p->child)`",
+                "missing pure fact",
+            ),
+            (
+                "int *first(int *left, int *right) { return left; }",
+                "int32* first(int32* left, int32* right) { views *left; views *right as right_input; produces view(*left) from right_input; ensures result == left; }",
+                "The selected input `views right[0]` does not establish coverage of `views left[0]`",
+                "Requires produces views left[0..1]",
+            ),
+        ] {
+            fs::write(&source, c).unwrap();
+            fs::write(&sidecar, format!("verifying \"f.c\";\n{contract}\n")).unwrap();
+            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(error.starts_with("incomplete proof:\n"), "{error}");
+            assert!(error.contains(reason), "{error}");
+            assert!(error.contains(detail), "{error}");
+        }
+    }
+
+    #[test]
+    fn returned_memory_without_promised_initialization_is_an_incomplete_proof() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("f.c");
+        fs::write(&source, "void init(int *p) {}\n").unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+                void init(int32* p) {
+                    consumes uninitialized(p[0..1]);
+                    produces p[0..1];
+                }
+            "#,
+        )
+        .unwrap();
+        let verify = || entry(["verify".to_string(), sidecar.display().to_string()]);
+        let error = verify().unwrap_err();
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
+        assert!(error.contains("has not initialized every byte"), "{error}");
+        assert!(error.contains("Requires produces p[0]"), "{error}");
+
+        fs::write(&source, "void init(int *p) { *p = 1; }\n").unwrap();
+        verify().expect("the write supplies the promised initialized memory");
     }
 
     #[test]

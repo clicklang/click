@@ -152,21 +152,20 @@ fn contract_resource_guards(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<Vec<Proposition>, ContractEntryRefusal> {
-    let refused = || {
-        ContractEntryRefusal::Setup(
-            "could not enumerate the undecided resource guards of the contract entry".into(),
+) -> Result<Vec<Proposition>, ContractClosingRefusal> {
+    let undecidable_guard = || {
+        ContractClosingRefusal::Incomplete(
+            "could not establish the conditions needed to evaluate a resource guard".into(),
         )
     };
-    let stopped = |limit: ExecutionLimit| {
-        ContractEntryRefusal::Setup(format!(
-            "enumerating contract entry resource guards stopped at {}",
-            limit.describe(),
-        ))
+    let invalid_guard_binding = || {
+        ContractClosingRefusal::Internal(
+            "the resource guard does not match its checked definition or arguments".into(),
+        )
     };
     let entry_state =
         program_function_entry_state(caller_state, function, arguments).ok_or_else(|| {
-            ContractEntryRefusal::Internal(
+            ContractClosingRefusal::Internal(
                 "could not bind arguments while enumerating contract entry resource guards".into(),
             )
         })?;
@@ -178,12 +177,13 @@ fn contract_resource_guards(
         &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
-    .map_err(stopped)?
+    .map_err(ContractClosingRefusal::from_stop)?
     .map_err(|error| {
-        ContractEntryRefusal::from_resource_error(
-            "could not evaluate resources while enumerating contract entry guards",
-            &error,
-        )
+        if error.is_contract_entry_resource_error() {
+            ContractClosingRefusal::InvalidContract(describe_certification_runtime_error(&error))
+        } else {
+            ContractClosingRefusal::Runtime(error)
+        }
     })?;
     let mut guards = Vec::new();
     for resource in required_resources.facts() {
@@ -198,12 +198,12 @@ fn contract_resource_guards(
             .composite_resource_definitions()
             .iter()
             .find(|definition| definition.name() == name)
-            .ok_or_else(refused)?;
+            .ok_or_else(invalid_guard_binding)?;
         let Some(condition) = definition.condition() else {
             continue;
         };
         if definition.parameters().len() != resource_arguments.len() {
-            return Err(refused());
+            return Err(invalid_guard_binding());
         }
         let mut condition_state = ExecutionState::at_state(&entry_state)
             .with_resource_context(required_resources.clone());
@@ -212,9 +212,9 @@ fn contract_resource_guards(
             .iter()
             .zip(resource_arguments.iter())
         {
-            let value = value.as_program_value().ok_or_else(refused)?;
+            let value = value.as_program_value().ok_or_else(invalid_guard_binding)?;
             if parameter.program_type() != value.program_type() {
-                return Err(refused());
+                return Err(invalid_guard_binding());
             }
             condition_state.locals.set_typed(
                 parameter.binding_name().clone(),
@@ -233,14 +233,14 @@ fn contract_resource_guards(
             &lowering_assumptions,
             &mut budget,
         )
-        .map_err(stopped)?;
+        .map_err(ContractClosingRefusal::from_stop)?;
         let [path] = paths.as_slice() else {
-            return Err(refused());
+            return Err(undecidable_guard());
         };
         if !path.obligations.iter().all(|obligation| {
             crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
         }) {
-            return Err(refused());
+            return Err(undecidable_guard());
         }
         if !guards.contains(&path.proposition) {
             guards.push(path.proposition.clone());
@@ -266,14 +266,14 @@ fn contract_resource_guards(
             &lowering_assumptions,
             &mut budget,
         )
-        .map_err(stopped)?;
+        .map_err(ContractClosingRefusal::from_stop)?;
         let [path] = paths.as_slice() else {
-            return Err(refused());
+            return Err(undecidable_guard());
         };
         if !path.obligations.iter().all(|obligation| {
             crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
         }) {
-            return Err(refused());
+            return Err(undecidable_guard());
         }
         if !guards.contains(&path.proposition) {
             guards.push(path.proposition.clone());
@@ -1069,6 +1069,12 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         }
         RuntimeError::UnsupportedPointerSubtractionOffsets => {
             "Click does not yet support pointer subtraction with these offsets".into()
+        }
+        RuntimeError::UnsupportedPointerComparisonOffsets => {
+            "Click does not yet support ordered pointer comparison with these offsets".into()
+        }
+        RuntimeError::UnsupportedFunctionPointerOffset => {
+            "Click does not support adding a byte offset to a function pointer".into()
         }
         RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")

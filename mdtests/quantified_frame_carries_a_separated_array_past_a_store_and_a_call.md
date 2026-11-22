@@ -33,17 +33,13 @@ void walk(int32 *left, int32 *visited, int32 n, int32 cur) {
     ensures forall (k: int32) { 0 <= k and k < n implies left[k] == old(left[k]) };
 } by {
     have contains(memory(visited[0..n]), memory(visited[cur])) by {
-        apply(click::separation::contains_element(visited, 0, n, cur)) using { 0 <= cur; cur < n; };
+        apply(click::separation::contains_element(visited, 0, n, cur));
     }
     have contains(memory(left[0..n]), memory(left[0..n])) by {
         apply(click::separation::contains_refl(memory(left[0..n])));
     }
     have separate(memory(visited[cur]), memory(left[0..n])) by {
-        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(left[0..n]), memory(visited[cur]), memory(left[0..n]))) using {
-            separate(memory(visited[0..n]), memory(left[0..n]));
-            contains(memory(visited[0..n]), memory(visited[cur]));
-            contains(memory(left[0..n]), memory(left[0..n]));
-        };
+        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(left[0..n]), memory(visited[cur]), memory(left[0..n])));
     }
     step();
     step();

@@ -434,7 +434,6 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
     let mut values = vec![
         pointer.clone(),
         pointer.clone().with_pointee_constant(true),
-        pointer.clone().with_pointee_volatile(true),
         pointer.clone().with_type(ProgramType::VoidPointer),
         pointer
             .clone()

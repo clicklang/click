@@ -21,9 +21,7 @@ void check(struct table* table, int* p) {
     requires separate(memory(p[0..1]), memory((table as (int32 *))[0..2]));
     ensures true;
 } by {
-    apply(keep(table as (int32 *), memory(p[0..1]))) using {
-        separate(memory(p[0..1]), memory((table as (int32 *))[0..2]));
-    };
+    apply(keep(table as (int32 *), memory(p[0..1])));
 }
 ```
 

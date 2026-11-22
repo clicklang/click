@@ -43,7 +43,7 @@ uint8 byte_write_read(uint8 *bytes, uint64 wide, int32 index, uint8 value) {
     ensures result == value;
 } by {
     have bytes + wide == bytes + index by {
-        apply(exact_signed_index(wide, index)) using { to_integer(wide) == to_integer(index); };
+        apply(exact_signed_index(wide, index));
         have bytes + wide == bytes + (wide as int32) by known();
         rewrite(bytes + wide, bytes + (wide as int32));
         rewrite(wide as int32, index);
@@ -56,7 +56,7 @@ uint32 word_write_read(uint32 *words, uint64 wide, int32 index, uint32 value) {
     ensures result == value;
 } by {
     have words + index == words + wide by {
-        apply(exact_signed_index(wide, index)) using { to_integer(index) == to_integer(wide); };
+        apply(exact_signed_index(wide, index));
         have words + wide == words + (wide as int32) by known();
         rewrite(words + wide, words + (wide as int32));
         rewrite(wide as int32, index);

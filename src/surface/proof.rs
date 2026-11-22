@@ -197,7 +197,7 @@ pub(super) fn format_forall_instantiation_error(
         // tell a reader which premise to supply, and a premise the hypothesis
         // owes is exactly what they have to write down.
         Error::MissingGuard(missing) => format!(
-            "instantiated premise `{}` does not follow from the listed evidence",
+            "instantiated premise `{}` is not established by the available facts",
             spell(&missing),
         ),
         Error::SubstitutionRefused(reason) => {
@@ -713,7 +713,7 @@ mod certificate_tests {
                 theorem applied(x: int32) {
                     requires x >= 0;
                     ensures x >= 0 by {
-                        apply(required(x)) using { x >= 0; }
+                        apply(required(x));
                     }
                 }
 
@@ -777,7 +777,7 @@ mod certificate_tests {
         );
         assert!(matches!(
             verified[2].proof_tactics().as_deref(),
-            Some([ProofTactic::ApplyTheoremUsing { .. }])
+            Some([ProofTactic::ApplyTheorem(_)])
         ));
         assert!(matches!(
             verified[3].proof_tactics().as_deref(),

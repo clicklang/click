@@ -16,5 +16,5 @@ int32* identity(int32* p) {
 ```
 
 ```expect
-fail: joint returned resources obligation
+fail: must return `owns result[0..1]` to satisfy `identity.produces_0`
 ```

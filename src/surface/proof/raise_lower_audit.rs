@@ -458,8 +458,8 @@ int32 f(struct holder* h, uint64 n, uint64 k) {
             include_str!("../../../mdtests/a_call_result_is_spelled_by_its_call.md"),
         );
         for original in [
-            "statement(0).call(make, 0).result == h[0]",
-            "at(statement(0).exit, h[0]) == h[0]",
+            "statement(0).call(make, 0).result == h->p",
+            "at(statement(0).exit, h->p) == h->p",
         ] {
             assert!(
                 lines.contains(&("same".to_string(), original.to_string())),

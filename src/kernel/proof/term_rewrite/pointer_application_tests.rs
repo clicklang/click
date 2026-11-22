@@ -113,6 +113,36 @@ fn rewriting_a_scalar_store_read_keeps_its_program_point() {
 }
 
 #[test]
+fn rewriting_a_scalar_caller_store_read_keeps_its_program_point() {
+    let _session = VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(4),
+    };
+    let target = source.offset_by_bytes(8);
+    let kind = LoadKind::Int32;
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let state = entry
+        .clone()
+        .with_memory(entry.memory().clone().store(source.clone(), int32(8)));
+    let version = state
+        .program_point()
+        .indexed_integer_version(&source, kind)
+        .expect("indexed caller store");
+    assert!(version.indexed_stored_value().is_some());
+    let original = MachineTerm::MemoryLoad(version.clone(), Box::new(source.clone()), kind);
+    let rewritten = TermRewrite::for_pointer_exact(&source, &target).bits(&original);
+    let MachineTerm::MemoryLoad(point, address, load_kind) = rewritten else {
+        panic!("the rewritten term is a read");
+    };
+    assert_eq!(point.read_version_id(), version.read_version_id());
+    assert!(point.is_exact_read());
+    assert!(point.indexed_stored_value().is_none());
+    assert_eq!(*address, target);
+    assert_eq!(load_kind, kind);
+}
+
+#[test]
 fn pure_pointer_calls_preserve_identity_and_do_not_imply_separation() {
     let p = Address::symbolic(Variable(410));
     let q = Address::symbolic(Variable(411));

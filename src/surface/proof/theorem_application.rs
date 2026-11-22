@@ -160,7 +160,11 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             path_index,
             tactic_index,
             available,
-            evidence_assumptions(),
+            if preparing_application() {
+                lowering_assumptions
+            } else {
+                evidence_assumptions()
+            },
             context,
             spec_definitions,
         );
@@ -516,16 +520,10 @@ pub(super) fn describe_unavailable_theorem_requirement_spelled(
     )
 }
 
-/// The line an elided `apply` adds to a requirement it could not supply.
-///
-/// The elided form looks each requirement up among the available facts and
-/// proves none, and the lookup is a search: when it finds nothing, that is a
-/// search miss, and the fix is the fact it would have found, stated before
-/// the `apply`. The explicit `apply(...) using { ... }` then cites it and
-/// searches nothing. `fact` is the missing fact as the proof can write it.
+/// Advise how to state the requirement a premise search could not supply.
 pub(super) fn requirement_search_miss(fact: &str) -> String {
     format!(
-        "\n  this is a search miss, not a refusal; no available fact states the requirement, and the elided `apply` proves none; if it holds, state it first with `have {} by {{ ... }}`",
+        "\n  this is a search miss: no available fact states the requirement; if it holds, state it first with `have {} by {{ ... }}`",
         fact.trim_matches('`')
     )
 }
@@ -562,20 +560,24 @@ fn instantiate_integer_range_fold_theorem_application(
             application.arguments.len()
         )));
     }
-    let fold = capture_fixed_state_integer_expression(
-        &application.arguments[0],
-        context.integer_values,
-        assumptions,
-        ContractEnvironment::new(context.values, context.array_refs)
-            .with_parameters(context.parameters),
-        FixedStateFrame::new(
-            context.pre_state,
-            context.post_state,
-            context.result,
-            context.recorded_states,
-        ),
-        spec_definitions,
-    )
+    // The fold law substitutes the captured body at a new index. Check the
+    // body's scoped evaluation conditions before using that captured term.
+    let fold = with_application_preparation_mode(false, || {
+        capture_fixed_state_integer_expression(
+            &application.arguments[0],
+            context.integer_values,
+            assumptions,
+            ContractEnvironment::new(context.values, context.array_refs)
+                .with_parameters(context.parameters),
+            FixedStateFrame::new(
+                context.pre_state,
+                context.post_state,
+                context.result,
+                context.recorded_states,
+            ),
+            spec_definitions,
+        )
+    })
     .map_err(|message| {
         // The capture refusal already names which written subterm of the fold
         // carries the undischarged condition, or says that the argument did
@@ -1581,13 +1583,13 @@ mod observed_integer_argument_tests {
             theorem reverse_requirement(a: Integer, b: Integer) {
                 requires b == a;
                 ensures a == b by {
-                    apply(equal_arguments(a, b)) using { b == a; }
+                    apply(equal_arguments(a, b));
                 }
             }
             theorem reverse_citation(a: Integer, b: Integer) {
                 requires b == a;
                 ensures a == b by {
-                    apply(equal_arguments(a, b)) using { a == b; }
+                    apply(equal_arguments(a, b));
                 }
             }
             theorem reverse_transport(a: Integer, b: Integer) {
@@ -1599,9 +1601,7 @@ mod observed_integer_argument_tests {
             theorem reverse_observations(a: uint32, b: uint32) {
                 requires to_integer(b) == to_integer(a);
                 ensures to_integer(a) == to_integer(b) by {
-                    apply(equal_arguments(to_integer(a), to_integer(b))) using {
-                        to_integer(b) == to_integer(a);
-                    }
+                    apply(equal_arguments(to_integer(a), to_integer(b)));
                 }
             }
         "#;
@@ -1637,7 +1637,7 @@ mod observed_integer_argument_tests {
     }
 
     #[test]
-    fn pure_argument_obligations_solve_and_expand_without_evidence_selection() {
+    fn pure_argument_obligations_reuse_ambient_evaluation_evidence() {
         let source = r#"
             theorem identity(value: int32) { ensures value == value by known(); }
             theorem use_argument(x: int32) {
@@ -1649,14 +1649,10 @@ mod observed_integer_argument_tests {
         verify_c_sources(source, &[]).unwrap();
         let expanded =
             expand_c_claim_source_by_label(source, &[], "use_argument.ensures_0").unwrap();
-        assert!(expanded.contains("have "), "{expanded}");
+        assert!(expanded.contains("apply(identity((x + 1)));"), "{expanded}");
+        assert!(!expanded.contains("have "), "{expanded}");
         crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         assert!(verify_c_sources(&source.replace("requires x < 10;", ""), &[]).is_err());
-        let explicit_without_guard = source.replace(
-            "apply(identity(x + 1));",
-            "apply(identity(x + 1)) using {}; ",
-        );
-        assert!(verify_c_sources(&explicit_without_guard, &[]).is_err());
     }
 
     #[test]

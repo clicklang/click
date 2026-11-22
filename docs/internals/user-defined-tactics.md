@@ -119,16 +119,17 @@ the resource operations that supply their calls.
   and after its exit, loop `initialize` and `maintain`, `branch` and proof
   `if` arms, other tactic bodies, and pure theorem proofs when the tactic has
   no resource clauses.
-- **What it checks.** Every `requires`, and every consumed or owned binder
-  bound to an instance the proof holds, of the declared resource type and
-  arguments. Nothing is searched: the binder map and output pattern are the
-  only bindings, as for call steps.
+- **What it checks.** The map selects held resource instances of the
+  declared types and arguments. The step driver proves argument evaluation
+  obligations and instantiated `requires` clauses at the caller's frontier
+  using the existing statement obligation proofs.
 - **What it does.** Removes the consumed instances, adds the produced ones
   under the output names, adds the `ensures` facts. Memory is unchanged, and
   every fact the proof holds about cells remains valid.
-- **Classification.** An application is a simple tactic. `click expand` never
-  expands it, and `click audit` inventories the smart sites inside tactic
-  bodies like those in any proof.
+- **Classification.** The application is a checked step. `click expand`
+  keeps the application and writes the proofs of its call-site obligations.
+  `click audit` inventories the smart sites inside tactic bodies like those
+  in any proof.
 
 ## Kernel
 
@@ -160,13 +161,12 @@ application.
   has none. A recursion carried by such an edge owes its numeric or modeled
   structural descent at the application, through the ordinary recursion anchor.
 - **Application event.** `CheckedExecutionEvent::TacticApplication` records a
-  tactic application at a frontier. The kernel builds it only through
-  `apply_verified_tactic_rule`, which refuses any procedure whose body is not
-  exactly `return;` and applies the procedure's verified rule (or, in a
-  targeted run, its scoped assumption) through the ordinary call boundary,
-  with the proof's binder map. Inserting a call to a procedure that runs no
-  code changes nothing the program does, which is why the rule may be applied
-  with no C statement. Every precondition must already be an available fact.
+  tactic application at a frontier. `prepare_verified_tactic_rule` requires a
+  procedure whose body is `return;` and prepares the transition from its
+  verified rule or scoped assumption through the ordinary call boundary.
+  The step driver proves the requirements at the original frontier before
+  the kernel appends the event. The retained transition applies without a
+  C statement.
   The empty write frame is what leaves memory unchanged: the boundary havocs
   only the frame, and the frame was certified against the body. Trace
   certification connects the event's before and after states like any other

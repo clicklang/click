@@ -407,10 +407,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
         }
         otherwise {
             have ctx_parent_identity(c.model) == 0 by {
-                apply(reroot_at_null(c.model, parent)) using {
-                    c.model == ctx_reroot(c.model, parent);
-                    parent == 0;
-                };
+                apply(reroot_at_null(c.model, parent));
             }
             have plug(c.model, t.model) == plug(old(c.model), old(t.model)) by known();
         }

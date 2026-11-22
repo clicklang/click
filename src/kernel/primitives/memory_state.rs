@@ -1583,10 +1583,7 @@ impl LocalEnvironment {
             name,
             LocalBinding::Object {
                 storage_declared,
-                value: value
-                    .with_pointer_pointee_volatile(pointee_volatile)
-                    .with_pointer_pointee_constant(pointee_constant)
-                    .into(),
+                value: value.with_pointer_pointee_constant(pointee_constant).into(),
                 program_type,
                 slot,
                 volatile,
@@ -1732,7 +1729,7 @@ impl LocalEnvironment {
         let value = if value.program_type().is_pointer() {
             value
                 .into_value()
-                .with_pointer_binding(program_type, pointee_volatile, pointee_constant)
+                .with_pointer_binding(program_type, pointee_constant)
                 .into()
         } else {
             value
@@ -1785,7 +1782,7 @@ impl LocalEnvironment {
         let value = if value_type.is_pointer() {
             value
                 .into_value()
-                .with_pointer_binding(value_type, pointee_volatile, pointee_constant)
+                .with_pointer_binding(value_type, pointee_constant)
                 .into()
         } else {
             value
@@ -4908,6 +4905,11 @@ impl SymbolicMemory {
             offset: AddressOffset::Constant(0),
         };
         self.blocks.contains_key(&AddressBase::Heap(identity))
+            // An `allocates(result, n)` call's block, claimed by its contract.
+            || self
+                .heap
+                .live_allocations
+                .contains_key(&base(AddressBase::Heap(identity)))
             || self
                 .heap
                 .deallocated_allocations
@@ -4932,6 +4934,15 @@ impl SymbolicMemory {
                 AddressBase::Heap(identity) => Some(*identity),
                 _ => None,
             })
+            .chain(
+                self.heap
+                    .live_allocations
+                    .range(heap_base(0)..)
+                    .map_while(|(base, _)| match base.base {
+                        AddressBase::Heap(identity) => Some(identity),
+                        _ => None,
+                    }),
+            )
             .chain(
                 self.heap
                     .deallocated_allocations
@@ -7817,7 +7828,10 @@ impl SymbolicMemory {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for (pointer, width) in dropped {
-            if pointer.base.is_local_block() || !self.heap.uninitialized_objects.is_empty() {
+            if pointer.base.is_local_block()
+                || pointer.base == AddressBase::ExternalArgument
+                || !self.heap.uninitialized_objects.is_empty()
+            {
                 changed |= record.record(pointer, *width);
             }
         }

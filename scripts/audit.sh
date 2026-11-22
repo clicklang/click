@@ -3,9 +3,9 @@
 # (docs/reference/cli/audit.md). Each checks a promise Click makes about every
 # proof and ends with one headline: how many of the items it checked fail.
 #
-#   scripts/audit.sh [expansion|raise-lower|fact-stability] [PATH] [click audit options]
+#   scripts/audit.sh [expansion|raise-lower|fact-stability|legacy-walk] [PATH] [click audit options]
 #
-# With no audit named, all three run. PATH defaults to the repository root,
+# With no audit named, the first three run; `legacy-walk` runs only when named. PATH defaults to the repository root,
 # which covers `examples/` and `mdtests/`. Records go to
 # `$CLICK_NIGHTLY_REPORT_DIR` when it is set, otherwise `target/click-audit`.
 # With `CLICK_NIGHTLY_REPORT_DIR`, each lowering audit also appends, for
@@ -20,7 +20,7 @@ set -euo pipefail
 
 kind=""
 case "${1:-}" in
-    expansion | raise-lower | fact-stability)
+    expansion | raise-lower | fact-stability | legacy-walk)
         kind="$1"
         shift
         ;;

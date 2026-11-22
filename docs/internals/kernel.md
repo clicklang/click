@@ -218,7 +218,7 @@ guard and remainder laws apply the division observation axioms and the
 truncating-division lemmas), and add no kernel operation. The prelude and the kernel ship in one executable, so
 ordinary verifications apply these declarations as dependencies without
 re-checking them; expanded user proofs use the ordinary simple
-`apply(...) using { ... }` tactic.
+`apply(...)` tactic.
 
 ### Execution and contract evidence
 
@@ -1493,10 +1493,10 @@ into the loop's own iterator. `temporaries::collapse_iterator_moves` builds
 the range in the loop's iterator directly, so its state is the proof's
 `iter.start` and `iter.end` everywhere Click prints it. A crate struct moves
 the same way: `for k in Countdown { n }` builds the struct in `iter`. A
-struct built only to be boxed, `Box::new(Cell { value: x })`, is built in its
-allocation (`temporaries::box_initializers`: `MirTerminator::BoxNew` writes
-its `fields`), and an array built only as a struct's field, `[v; 4]`, is
-that field's value (`substitute_pure_values`). The blocks the
+struct built to be boxed, `Box::new(Cell { value: x })`, is built in a local
+and moved into the box by the library's `Box::new` contract, and an array
+built only as a struct's field, `[v; 4]`, is that field's value
+(`substitute_pure_values`). The blocks the
 iterator protocol splits from a `next` call come from the `for` statement,
 so their regions are named inside it.
 
@@ -1560,13 +1560,15 @@ from its storage markers and its writes of pure values, and a `()` temporary
 that is only a call's destination, which the call never writes.
 
 The importer can use numbered keys to connect MIR producers and readers.
-An unnamed local that survives normalization must lower through a supported
-representation, such as a scalar operand result, iterator state, or typed
-storage for a written literal or borrow. If lowering would declare a program
-variable using the raw MIR key, it reports an unsupported Rust construct at
-the local's source location. It selects this check using the importer's
-unnamed-local metadata, so source identifiers remain valid regardless of
-spelling. The compatibility list in
+Those keys belong to frontend bookkeeping. Surface terms, including terms
+raised from proof facts, use source names, source expressions, or selectors
+rooted in the source program. An unnamed local that survives normalization must
+lower through a supported representation, such as a scalar operand result,
+iterator state, or typed storage for a written literal or borrow. If lowering
+would declare a program variable using the raw MIR key, it reports an
+unsupported Rust construct at the local's source location. The check uses the
+importer's unnamed-local metadata, so source identifiers remain valid
+regardless of spelling. The compatibility list in
 `src/languages/rust/lowering/unnamed_storage_exceptions.tsv` identifies existing
 slots by source, function, line, column, and MIR key.
 Each row can go when that slot has supported lowering.

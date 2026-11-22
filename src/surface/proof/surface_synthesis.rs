@@ -363,13 +363,17 @@ fn program_operand(expression: ProgramExpression) -> ContractExpression {
     }
 }
 
-fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramExpression {
-    if offset_bytes == 0 {
+fn owner_field_pointer(
+    base: &ProgramExpression,
+    offset: impl Into<crate::kernel::LayoutOffset>,
+) -> ProgramExpression {
+    let offset = offset.into();
+    if offset.bytes() == Some(0) {
         base.clone()
     } else {
         ProgramExpression::PointerOffsetBytes {
             pointer: Box::new(base.clone()),
-            bytes: offset_bytes.into(),
+            bytes: offset,
         }
     }
 }
@@ -5425,6 +5429,15 @@ fn synthesize_point_read(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let place = |state: &ExecutionState| {
+        if let Some(name) = SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+            let owners = slot.borrow();
+            let (name, ty) = owners.as_ref()?.storage_scalars.get(pointer)?;
+            (*ty == value_type).then(|| name.clone())
+        }) {
+            return Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(name),
+            ));
+        }
         if let Some(field) = synthesize_owned_field_at_address(pointer, value_type, state) {
             return Some(field);
         }
@@ -7472,7 +7485,7 @@ fn synthesize_owned_field_at_address(
     let slot = state.locals().aggregate_object_pointer(&name)?;
     let layout = state.locals().aggregate_layout(&name)?;
     let field = layout.fields().iter().find(|field| {
-        field.program_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
+        field.program_type() == value_type && slot.offset_by_layout(field.offset()) == *address
     })?;
     if is_materialized_address(address) {
         return Some(synthesize_typed_load(
@@ -7486,14 +7499,14 @@ fn synthesize_owned_field_at_address(
         base: Box::new(ContractExpression::ProgramExpression(base.clone())),
         field: field.name().to_string(),
         lowered: ProgramExpression::TypedLoad {
-            pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
+            pointer: Box::new(owner_field_pointer(&base, field.offset())),
             value_type,
             volatile: false,
             pointee_constant: false,
             access_class: None,
             source: Default::default(),
         },
-        offset_bytes: field.offset_bytes().into(),
+        offset_bytes: field.offset(),
     })
 }
 

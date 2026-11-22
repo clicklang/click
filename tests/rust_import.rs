@@ -1935,6 +1935,15 @@ fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
     let p = chunk_lane_project();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(CHUNK_LANE_PROOF, &prepared).unwrap();
+    let traced = p.cli(&["verify", "--trace-proof", "quad::load"]);
+    assert!(
+        traced.status.success(),
+        "{}",
+        String::from_utf8_lossy(&traced.stderr)
+    );
+    let trace = String::from_utf8_lossy(&traced.stdout);
+    assert!(trace.contains("1 selected proof verified"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
     for (before, after) in [
         (
             "have lanes.lanes[1] == chunk[1]",
@@ -2727,6 +2736,7 @@ fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
 fn rust_move_drop_cli_proofs_expand_and_reverify() {
     let (p, _) = moves_project(MOVE_SOURCE);
     p.refresh().unwrap();
+    assert_cli(&p, &["audit", "expansion", "--claim", "restore.contract"]);
     assert_cli(&p, &["expand", "--claim", "restore.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
@@ -2740,6 +2750,10 @@ fn rust_conditional_move_and_explicit_drop_verify() {
         MOVE_SOURCE.split("    let moved = guard;").next().unwrap()
     );
     let (p, sidecar) = moves_project(&source);
+    // This implementation has different cleanup points from the example.
+    let (contract, _) = sidecar.split_once("\n} by {\n").unwrap();
+    let sidecar = format!("{contract}\n}}\n");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -4074,8 +4088,27 @@ fn charon_option_take_moves_out_and_leaves_none() {
     let p = Project::from_fixture("design/charon-trial/option-take");
     fs::write(p.root.join("borrow.click"), OPTION_TAKE_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    ProgramVerificationSession::new_program_prepared(OPTION_TAKE_SIDECAR, &prepared)
-        .unwrap_or_else(|error| panic!("{error:?}"));
+    let taken = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|function| {
+            click::languages::rust::names::rust_display_name(&function.name).as_deref()
+                == Some("option_take::taken")
+        })
+        .expect("option_take::taken in the Rust import");
+    click::surface::with_proof_trace(&taken.name, || {
+        ProgramVerificationSession::new_program_prepared(OPTION_TAKE_SIDECAR, &prepared)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        let trace = click::surface::accepted_proof_trace(
+            &|_, _| None,
+            &|_, _, _| None,
+            &|_, _, _| false,
+            None,
+        )
+        .expect("accepted option_take::taken proof trace");
+        assert!(!trace.contains("__rust_mir_"), "{trace}");
+    });
     // `o: &mut Option<u32>` owns `*o` with no clause written.
     let derived = OPTION_TAKE_SIDECAR.replacen("    owns *o;\n", "", 1);
     assert_ne!(derived, OPTION_TAKE_SIDECAR);
@@ -4146,7 +4179,7 @@ fn charon_box_fields_take_and_assign_through_self() {
         (
             "            owns allocation(p, sizeof(box_fields::Cell));\n",
             "",
-            "cannot free a pointer that is not a live heap allocation",
+            "missing resource fact `owns allocation(old(self.slot), 4)`",
         ),
     ] {
         assert!(BOX_FIELD_SIDECAR.contains(before), "{before}");
@@ -4233,7 +4266,7 @@ fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
         &prepared,
         "            owns allocation(p, sizeof(recursive_drop::Node));\n",
         "",
-        "cannot free a pointer that is not a live heap allocation",
+        "missing resource fact `owns allocation(old(self.next), 16)`",
     );
     assert_recursive_drop_refused(
         &prepared,
@@ -5848,13 +5881,8 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
     requires x <= 18446744073709551615u64 / y;
     ensures result == x * y;
 } by {
-    apply(usize::product_bound_from_division(x, y)) using {
-        y != 0u64;
-        x <= 18446744073709551615u64 / y;
-    };
-    apply(usize::multiply_to_integer(x, y)) using {
-        to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64);
-    };
+    apply(usize::product_bound_from_division(x, y));
+    apply(usize::multiply_to_integer(x, y));
     step_until(function.exit); solve();
 }"#,
     );

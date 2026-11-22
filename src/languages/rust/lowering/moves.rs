@@ -124,13 +124,20 @@ pub(super) fn lower(
     mir: &MirBody,
     owner: &LocalFunctionId,
 ) -> Result<Sited, String> {
+    if mir.blocks.is_empty() {
+        return Err("MIR body has no entry block".into());
+    }
+    let flow = flow::Flow::analyze(f, mir)?;
+    // Loop reconstruction can evaluate its test before the header statements.
+    // Ordinary branches run immediately after their block's statements.
+    let loop_tests = flow.loops.values().map(|loop_| loop_.test).collect();
     let local_types: BTreeMap<_, _> = f
         .parameters
         .iter()
         .chain(&mir.locals)
         .map(|local| (local.name.as_str(), &local.value_type))
         .collect();
-    for (name, last_use) in super::super::charon::scalar_expression_operands(mir) {
+    for (name, last_use) in super::super::charon::scalar_expression_operands(mir, &loop_tests) {
         cx.scalar_operands
             .insert(name, (cx.result_step(), last_use));
     }
@@ -418,10 +425,6 @@ pub(super) fn lower(
             declarations = program_seq(declarations, statement);
         }
     }
-    if mir.blocks.is_empty() {
-        return Err("MIR body has no entry block".into());
-    }
-    let flow = flow::Flow::analyze(f, mir)?;
     let mut escape_flags = BTreeMap::new();
     for (header, loop_) in &flow.loops {
         if loop_.escapes.is_empty() {
@@ -447,6 +450,7 @@ pub(super) fn lower(
         cx.mir_point = matches!(
             terminator,
             T::ReturnValue { .. }
+                | T::BoxFree { .. }
                 | T::Call {
                     through_pointer: false,
                     ..
@@ -485,89 +489,51 @@ pub(super) fn lower(
                 crate::kernel::program_expression::int32_literal(0),
                 format!("Rust panic `{message}`"),
             ),
-            // The allocation comes first; a failed one aborts, so the
-            // record moves into a live block, and the box is its address.
-            T::BoxNew {
-                source,
-                fields,
+            // A non-null box's record is dropped through its glue before the
+            // library's `Box::drop`, `if (box) { glue(box); drop(box); }`.
+            T::BoxFree {
+                local,
                 record,
-                destination,
+                glue,
+                optional,
                 ..
             } => {
-                if let Some(source) = source {
-                    check(source, record)?;
-                } else if fields.is_empty() {
-                    return Err("Box::new without its record".into());
-                }
-                let layout = cx
-                    .layouts
-                    .get(record.as_str())
-                    .ok_or("missing boxed record layout")?;
-                let class = layout.class().map(|class| {
-                    (
-                        crate::kernel::effective_type::CAccessClass::Struct(class.clone()),
-                        layout.size_bytes(),
-                        layout.alignment_bytes(),
-                    )
-                });
-                // A symbolic struct's allocation is its `sizeof` bytes, a
-                // 64-bit size.
-                let bytes = match layout.size() {
-                    crate::kernel::LayoutSize::Bytes(size) => {
-                        crate::kernel::program_expression::int32_literal(size)
-                    }
-                    size @ crate::kernel::LayoutSize::Of(_) => {
-                        ProgramExpression::Value(crate::kernel::ProgramValue::UInt64(size.term()))
-                    }
-                };
-                program_seq(
-                    ProgramStatement::HeapAllocate {
-                        target: (destination.clone()).into(),
-                        bytes,
-                        zeroed: false,
-                        object_type: class,
-                        ends_program_on_failure: true,
-                    },
-                    match source {
-                        Some(source) => crate::kernel::program_copy_aggregate(
-                            crate::kernel::program_expression::variable(cx.binding(destination)),
-                            crate::kernel::program_expression::cast(
-                                crate::kernel::program_expression::variable(cx.binding(source)),
-                                ProgramType::Int32Pointer,
-                            ),
-                            layout.to_kernel_aggregate_layout(),
-                        ),
-                        None => write_fields(
-                            cx,
-                            crate::kernel::program_expression::variable(cx.binding(destination)),
-                            record,
-                            fields,
-                        )?,
-                    },
-                )
-            }
-            // A non-null box's record is dropped through its glue before
-            // the free, `if (box) glue(box); free(box);`; freeing null has no
-            // effect.
-            T::BoxFree { local, glue, .. } => {
-                let free = crate::kernel::program_heap_free(
-                    crate::kernel::program_expression::variable(cx.binding(local)),
+                // The library's `Box::drop<R>` frees the allocation, after
+                // the record's glue; a `None` box, null, drops nothing.
+                let boxed = cx.expr(&E::Local {
+                    name: local.clone(),
+                })?;
+                let free = program_call(
+                    &super::super::standard_library::box_function(
+                        super::super::standard_library::BOX_DROP,
+                        record,
+                    ),
+                    vec![boxed.clone()],
                 );
-                match glue {
+                let drop = match glue {
                     Some(glue) => program_seq(
-                        crate::kernel::program_if(
-                            crate::kernel::program_expression::variable(cx.binding(local)),
-                            program_call(
-                                glue,
-                                vec![crate::kernel::program_expression::variable(
-                                    cx.binding(local),
-                                )],
-                            ),
-                            program_skip(),
-                        ),
+                        program_call(glue, vec![observe_operand(boxed.clone())]),
                         free,
                     ),
                     None => free,
+                };
+                if *optional {
+                    // The free ends the capture on the non-null path.
+                    // A null box must end it without invoking drop.
+                    let none = if matches!(&boxed, ProgramExpression::StepResult { ends: true, .. })
+                    {
+                        typed_value_step(
+                            Vec::new(),
+                            boxed.clone(),
+                            ProgramType::Int32Pointer,
+                            false,
+                        )
+                    } else {
+                        program_skip()
+                    };
+                    crate::kernel::program_if(observe_operand(boxed), drop, none)
+                } else {
+                    drop
                 }
             }
             T::Drop { local, record, .. } => {
@@ -597,11 +563,8 @@ pub(super) fn lower(
                 ..
             } => {
                 // The pointer's own type gives the arguments and result.
-                let Some(Type::FnPointer { parameters, result }) = mir
-                    .locals
-                    .iter()
-                    .find(|local| &local.name == function)
-                    .map(|local| &local.value_type)
+                let Some(Type::FnPointer { parameters, result }) =
+                    local_types.get(function.as_str()).copied()
                 else {
                     return Err("Rust pointer call target is not a function-pointer local".into());
                 };
@@ -1166,7 +1129,6 @@ fn successors(t: &T, exit: usize) -> Vec<usize> {
         T::Goto { target }
         | T::Drop { target, .. }
         | T::Call { target, .. }
-        | T::BoxNew { target, .. }
         | T::BoxFree { target, .. } => vec![*target],
         T::If {
             then_target,
@@ -1568,7 +1530,13 @@ fn region(
                     *else_target..join,
                     exits,
                 )?;
-                result = result.then(Sited::branch(site, cx.condition(condition)?, yes, no));
+                cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
+                    block,
+                    statement: mir.blocks[block].statements.len(),
+                });
+                let condition = cx.condition(condition)?;
+                cx.mir_point = None;
+                result = result.then(Sited::branch(site, condition, yes, no));
                 block = join;
             }
             T::Switch {
@@ -1600,7 +1568,6 @@ fn region(
             T::Goto { target }
             | T::Drop { target, .. }
             | T::Call { target, .. }
-            | T::BoxNew { target, .. }
             | T::BoxFree { target, .. } => block = *target,
             _ => break,
         }

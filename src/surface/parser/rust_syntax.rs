@@ -814,9 +814,13 @@ impl Parser {
             }
         }
         self.position = index + 2;
-        // A written instance is at any scalar, `Option::unwrap<i64>`.
+        // A written instance is at any scalar, `Option::unwrap<i64>`, or
+        // crate type, `Box::drop<Node>`; any other argument is abstract.
         for argument in &arguments {
-            if rust_scalar_type(argument).is_none() {
+            if rust_scalar_type(argument).is_none()
+                && !self.struct_layouts.contains_key(argument)
+                && !self.rust_enum_types.contains_key(argument)
+            {
                 self.rust_abstract_type_parameters.insert(argument.clone());
             }
         }

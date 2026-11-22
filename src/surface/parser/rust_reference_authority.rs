@@ -62,11 +62,21 @@ enum Grant {
 pub(super) fn derive_reference_authority(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
+    written: BTreeSet<usize>,
     struct_layouts: &BTreeMap<String, RecordLayout>,
     enum_types: &BTreeMap<String, crate::kernel::TypeParameterName>,
-) -> Result<(Vec<Token>, Vec<SourcePosition>), ClickError> {
+) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<usize>), ClickError> {
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
     let mut output = Vec::with_capacity(source.len());
+    // The written instances' `fn` tokens, at their indices in the output:
+    // derived clauses shift every later token.
+    let mut moved = BTreeSet::new();
+    let mut copy = |output: &mut Vec<Spanned>, at: usize| {
+        if written.contains(&at) {
+            moved.insert(output.len());
+        }
+        output.push(source[at].clone());
+    };
     let mut index = 0;
     // The type an inherent `impl` block's receivers refer to, until the
     // block's closing brace.
@@ -84,7 +94,9 @@ pub(super) fn derive_reference_authority(
                 .map(|(token, _)| token.clone())
                 .collect();
             receiver = Some((path, close));
-            output.extend(source[index..=open].iter().cloned());
+            for at in index..=open {
+                copy(&mut output, at);
+            }
             index = open + 1;
             continue;
         }
@@ -97,7 +109,9 @@ pub(super) fn derive_reference_authority(
                 .filter(|&at| source[at].0 == Token::LBrace)
             && let Some(close) = matching(&source, open)
         {
-            output.extend(source[index..=close].iter().cloned());
+            for at in index..=close {
+                copy(&mut output, at);
+            }
             index = close + 1;
             continue;
         }
@@ -120,10 +134,11 @@ pub(super) fn derive_reference_authority(
             index = next;
             continue;
         }
-        output.push(source[index].clone());
+        copy(&mut output, index);
         index += 1;
     }
-    Ok(output.into_iter().unzip())
+    let (tokens, positions) = output.into_iter().unzip();
+    Ok((tokens, positions, moved))
 }
 
 /// `impl Type {`: an inherent `impl` block, which names no trait and no
@@ -428,7 +443,7 @@ fn scalar_record(layout: &RecordLayout, structs: &BTreeMap<String, RecordLayout>
 fn resource_clause(clause: &[Spanned]) -> bool {
     clause.iter().any(|(token, _)| {
         matches!(token, Token::Ident(word)
-            if matches!(word.as_str(), "owns" | "views" | "consumes" | "produces"))
+            if matches!(word.as_str(), "owns" | "views" | "consumes" | "produces" | "allocates"))
     })
 }
 
@@ -549,7 +564,8 @@ mod tests {
             crate::kernel::TypeParameterName::intern(&path(&["m", "Shape"])),
         )]);
         let (tokens, positions) = tokenize(source, None)?;
-        let (tokens, _) = derive_reference_authority(tokens, positions, &structs, &enums)?;
+        let (tokens, _, _) =
+            derive_reference_authority(tokens, positions, BTreeSet::new(), &structs, &enums)?;
         Ok(tokens
             .iter()
             .map(|token| match token {

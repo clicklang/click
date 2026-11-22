@@ -506,25 +506,40 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             branch {
                 true => {
                     step();
-                    have heap_member(left_model, target) by {
-                        have left_model == l.model by {
-                            rewrite(l.model, left_model);
-                            known();
-                        }
-                        have heap_member(l.model, target) != false;
-                        rewrite(left_model, l.model);
+                    have (heap_member(left_model, target) as int32) != 0 by {
+                        rewrite(heap_member(left_model, target) as int32, found_left);
                         known();
+                    }
+                    have heap_member(left_model, target) by {
+                        if heap_member(left_model, target) {
+                            known();
+                        } else {
+                            have (heap_member(left_model, target) as int32) == 0 by {
+                                rewrite(heap_member(left_model, target), false);
+                                normalize();
+                            }
+                            contradiction((heap_member(left_model, target) as int32) == 0);
+                        }
                     }
                     let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model), left: l, right: r });
                     solve();
                 }
                 false => {}
             }
+            have (heap_member(left_model, target) as int32) == 0 by {
+                rewrite(heap_member(left_model, target) as int32, found_left);
+                known();
+            }
             have not heap_member(left_model, target) by {
-                solve() using {
-                    found_left == 0;
-                    found_left == heap_member(left_model, target) as int32;
-                };
+                if heap_member(left_model, target) {
+                    have (heap_member(left_model, target) as int32) != 0 by {
+                        rewrite(heap_member(left_model, target), true);
+                        normalize();
+                    }
+                    contradiction((heap_member(left_model, target) as int32) == 0);
+                } else {
+                    known();
+                }
             }
             let { result: found_right } = step(tree_contains, { t: r });
             step();

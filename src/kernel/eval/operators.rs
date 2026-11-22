@@ -2544,7 +2544,7 @@ pub(super) fn apply_program_comparison(
                     else {
                         return vec![ExpressionPath {
                             outcome: ExpressionOutcome::RuntimeError(
-                                RuntimeError::IndeterminatePointeeType,
+                                RuntimeError::UnsupportedPointerComparisonOffsets,
                             ),
                             facts,
                             obligations,
@@ -3134,7 +3134,9 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     let pointer = value.address().clone();
     if pointer.base.is_function() && bytes != crate::kernel::LayoutOffset::Bytes(0) {
         return vec![ExpressionPath {
-            outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
+            outcome: ExpressionOutcome::RuntimeError(
+                RuntimeError::UnsupportedFunctionPointerOffset,
+            ),
             facts,
             obligations,
         }];

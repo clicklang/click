@@ -22,9 +22,9 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `contract error` | Click identified a rule it believes a written contract clause violates. | Check the rule under the contract’s requirements. Correct the clause or report a supported `contract-bug`. |
 | `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
-| `unproved goal` | The proof left a required goal open. | Prove the remaining goal with the premises at the reported point. |
+| `incomplete proof` | The proof ended with a requirement outstanding. | Establish the named requirement before closing, such as a resource promised on return. |
 | `execution prerequisite unmet` | A checked operation needs evidence at its program point. | Record the requirement and follow the procedure below. |
-| `contract entry refused`, `contract exit refused`, or `contract refinement refused` | A contract boundary or refinement check was refused. | Inspect the named clauses and work from the available goal. |
+| `contract entry refused` | Click could not enter a contract. | Inspect the named clauses and work from the available goal. |
 | `execution refused`, `termination not established`, `invalid divergence declaration`, or `unsupported proof` | Click identified a specific execution, termination, or proof-driver refusal. | Investigate the reported cause. |
 
 When a proposition had to be true at a point and Click did not prove it,
@@ -114,7 +114,7 @@ that every current implementation meets the checking-cost contract.
 | Introduce an assumption or binder, split cases, or instantiate a universal fact | [Introducing a binder or premise](../reference/tactics/index.md#introducing-a-binder-or-premise), [explicit cases](../reference/tactics/index.md#explicit-cases), [instantiation with selected premises](../reference/tactics/index.md#universal-instantiation) | The connective or quantified fact, witnesses, and branch obligations |
 | Replace an equal term | [Rewriting](../reference/tactics/index.md#rewriting) | The equality, direction, and expression being rewritten |
 | Evaluate a definition or computation | [Unfolding pure functions](../reference/tactics/index.md#unfolding-pure-functions), [context-free normalization](../reference/tactics/index.md#context-free-normalization) | The named definition/application or explicit expression |
-| Apply a mathematical or separation law | [Theorem application with selected premises](../reference/tactics/index.md#theorem-application-with-selected-premises), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
+| Apply a mathematical or separation law | [Theorem application](../reference/tactics/index.md#theorem-application), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
 | Establish arithmetic | [Ordinary arithmetic proofs](../reference/tactics/index.md#ordinary-arithmetic-proofs) | Named laws, cited premises, and explicit intermediate facts |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
 | Preserve a fact across a state transition | [Preservation](../reference/tactics/index.md#preservation), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
@@ -230,8 +230,8 @@ premises; it does not by itself certify that checking is fast.
    link as primitive solely because it is one tactic call.
    The [tactic table](../reference/tactics/index.md) gives each tactic's class,
    and `click docs NAME` prints its forms and documented behavior. A refusal
-   may identify the tactic with `refused by:`; `refused by: nothing` means
-   that the proof ended with the goal open. If a written primitive is refused
+   may identify the tactic with `refused by:`. An `incomplete proof` names
+   the requirement still outstanding when the proof closes. If a written primitive is refused
    within its documented **Accepts** list, stop at `tactic-bug`.
 
    To split a link that a smart tactic proved part of, read its trace: a step
@@ -498,13 +498,13 @@ A step that a search produced says which one. A step that smart work checked
 ends its header with ``(from `implicit tail`)`` or the like, naming its
 origin: `implicit tail` for the steps the implicit tail took and for its
 closer, `solve` for a written `solve()`, and
-`implicit closer` for an obligation a `step()` or `fold` left open. A step whose `using` list a search chose, under a smart tactic or in an
-elided form such as `apply(t(x))` or a bare `transport(P, Q)`, has a `chosen:`
-line with the step written out in full, as `click expand` writes it:
+`implicit closer` for an obligation a `step()` or `fold` left open. A step
+whose arguments a search chose can have a `chosen:` line with the tactic
+written out as `click expand` writes it:
 
 ```text
 tactic@11: apply
-  chosen: apply(le_trans(x, y, z)) using { x <= y; y <= z; };
+  chosen: apply(le_trans(x, y, z));
   adds: x <= z
 ```
 

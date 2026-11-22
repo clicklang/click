@@ -95,10 +95,7 @@ int32 probe(int32 n) {
     ensures result == 0;
 } by {
     step();
-    apply(start_below(n, n)) using {
-        0 <= n;
-        n <= n;
-    };
+    apply(start_below(n, n));
     solve();
 }
 

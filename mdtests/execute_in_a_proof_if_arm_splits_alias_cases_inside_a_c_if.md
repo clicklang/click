@@ -46,9 +46,9 @@ int32 f(int32 u, int32 w) {
             if w > 0 { step_until(function.exit); } else { step_until(function.exit); }
         } else {
             have 1 <= u by { solve() using { u != 0; 0 <= u; }; }
-            have separate(memory(buf[1]), memory(buf[0])) by { apply(separation::separate_elements(buf, 1 as uint64, 0 as uint64)) using {}; }
-            have separate(memory(buf[2]), memory(buf[0])) by { apply(separation::separate_elements(buf, 2 as uint64, 0 as uint64)) using {}; }
-            have separate(memory(buf[3]), memory(buf[0])) by { apply(separation::separate_elements(buf, 3 as uint64, 0 as uint64)) using {}; }
+            have separate(memory(buf[1]), memory(buf[0])) by { apply(separation::separate_elements(buf, 1 as uint64, 0 as uint64)); }
+            have separate(memory(buf[2]), memory(buf[0])) by { apply(separation::separate_elements(buf, 2 as uint64, 0 as uint64)); }
+            have separate(memory(buf[3]), memory(buf[0])) by { apply(separation::separate_elements(buf, 3 as uint64, 0 as uint64)); }
             have separate(memory(buf[u]), memory(buf[0])) by {
                 if u == 1 {
                     rewrite(u, 1); known();
