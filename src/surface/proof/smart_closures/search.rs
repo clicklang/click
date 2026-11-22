@@ -3512,7 +3512,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            is_float_bound, shift_count_mask_requirements, signed_product_guard_requirements,
+            is_float_bound, shift_count_mask_requirements, signed_product_guard_candidates,
             signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
@@ -3568,7 +3568,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if let Proposition::And(left, right) = goal
             && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
-                is_float_bound(leaf) || signed_product_guard_requirements(leaf, false).is_some()
+                is_float_bound(leaf) || signed_product_guard_candidates(leaf).next().is_some()
             })
         {
             let mut proof = search_input.clone();
@@ -3591,10 +3591,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
         }
 
-        let mut candidates = [false, true]
-            .into_iter()
-            .filter_map(|swap| signed_product_guard_requirements(goal, swap))
-            .collect::<Vec<_>>();
+        let mut candidates = signed_product_guard_candidates(goal).collect::<Vec<_>>();
         if let Some(guard) = signed_quotient_bridge_requirement(goal) {
             candidates.push(vec![guard]);
         }
