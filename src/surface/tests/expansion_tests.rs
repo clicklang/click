@@ -5903,6 +5903,25 @@ fn branch_interface_fixture_proofs_verify_expand_and_recheck() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the service branch and store"]
+fn anchored_field_read_expands_through_store_preservation() {
+    let (source, sources) =
+        mdtest_sources("mdtests/solve_frames_a_read_across_a_separate_store.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "service_step").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
+    without_implicit_solve_for_claim("service_step.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn branch_interface_service_solve_expands_and_rechecks() {
     let source = include_str!("../../../examples/perpetual-service/perpetual_service.click");
@@ -16815,6 +16834,26 @@ fn quantified_read_expands_through_store_and_call_preservation() {
     assert!(!expanded.contains("transport("), "{expanded}");
     assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
     without_implicit_solve_for_claim("walk.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the masked array read"]
+fn masked_indexed_read_expands_through_distinct_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/an_if_form_fact_survives_a_disjoint_store.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "mark_odd.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(
+        expanded.contains("separation::separate_elements("),
+        "{expanded}"
+    );
+    assert!(expanded.contains("preserve(memory(a[m])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
