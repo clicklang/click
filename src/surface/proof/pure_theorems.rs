@@ -1733,6 +1733,9 @@ fn refinement_preparation_error(
                 | ExecutionLimit::BoolOrdered
                 | ExecutionLimit::BoolArithmetic
                 | ExecutionLimit::MixedBoolArms => error.with_kind(ClickErrorKind::Type),
+                ExecutionLimit::GuardedConjunctionTooLong => {
+                    error.with_kind(ClickErrorKind::Unsupported)
+                }
                 ExecutionLimit::UnsupportedPureFunctionResult(_) => {
                     error.with_kind(ClickErrorKind::Internal)
                 }

@@ -8528,6 +8528,10 @@ pub struct ResourceBodyFactSource {
     pub bindings: Vec<(String, ProgramValue)>,
 }
 
+/// The most earlier conjuncts a conjunction's right side may be read under
+/// while it owes evaluation domains: [`ExecutionLimit::GuardedConjunctionTooLong`].
+pub const GUARDED_CONJUNCTION_LIMIT: usize = 64;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ExecutionLimit {
     Deadline,
@@ -8549,6 +8553,11 @@ pub enum ExecutionLimit {
     BoolArithmetic,
     /// A conditional with an `int32` arm and a `Bool` arm.
     MixedBoolArms,
+    /// A conjunction whose right side owes evaluation domains read under
+    /// more than [`GUARDED_CONJUNCTION_LIMIT`] earlier conjuncts. Each such
+    /// domain carries its whole guard, so a longer chain is refused rather
+    /// than lowered slowly.
+    GuardedConjunctionTooLong,
     /// The execution's fresh-identity counter reached the first identity a
     /// producer outside the execution reserves by a constant base. Every
     /// kernel allocation counts up from one base, and the ranges above it
@@ -8631,6 +8640,9 @@ impl ExecutionLimit {
             Self::BoolOrdered => "an order on `Bool`".to_string(),
             Self::BoolArithmetic => "arithmetic on a `Bool`".to_string(),
             Self::MixedBoolArms => "a conditional with an integer and a `Bool` arm".to_string(),
+            Self::GuardedConjunctionTooLong => format!(
+                "a conjunction guarding evaluation domains by more than {GUARDED_CONJUNCTION_LIMIT} conjuncts"
+            ),
             Self::KernelVariables { ceiling } => {
                 format!("the execution's fresh-identity range, which ends below {ceiling}")
             }
