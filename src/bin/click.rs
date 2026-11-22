@@ -61,7 +61,6 @@ fn report_error(message: String) -> ! {
         "contract entry refused",
         "execution prerequisite unmet",
         "execution refused",
-        "invalid divergence declaration",
         "unsupported",
         "unclassified verification refusal",
         "syntax error",
@@ -558,7 +557,7 @@ uint64 spell(const uint8* b, uint64 n) {
             ),
             (
                 "diverges_rejects_unjustified_marker.md",
-                "invalid divergence declaration:",
+                "contract error:",
                 "remove the marker",
             ),
         ] {

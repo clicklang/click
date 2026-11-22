@@ -8992,7 +8992,7 @@ pub(in crate::surface) fn program_contract_failure(
             match goal {
                 ProgramContractGoal::DivergencePolicy(name) => {
                     let name = spelling(&name);
-                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name).with_proof_refusal(ProofRefusal::DivergenceDeclaration)
+                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name).with_proof_refusal(ProofRefusal::Contract)
                 }
                 ProgramContractGoal::CallbackSafety => {
                     let unsuitable = &verdicts.unsuitable_callbacks[0];
