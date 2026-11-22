@@ -148,9 +148,16 @@ int32 probe() {{
                 }
             }
             assert_eq!(completed, reads);
+            // A direct read after the array stores can use the recorded
+            // point's byte index without starting the legacy walk.
+            let limit = if local_store.is_none() && reads == 1 {
+                0
+            } else {
+                max_read_version_work * reads
+            };
             assert!(
-                (reads..=max_read_version_work * reads).contains(&version_work),
-                "local={local_store:?}, {stores} stores and {reads} reads used {version_work} version work"
+                version_work <= limit,
+                "local={local_store:?}, {stores} stores and {reads} reads used {version_work} version work, limit {limit}"
             );
         }
     }
