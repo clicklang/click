@@ -27,19 +27,13 @@ void copy_n(char* dst, const char* src, uint64 n) {
     have 0 <= to_integer(n - 1u64) by { solve(); }
     have to_integer(n - 1u64) < to_integer(n + 1u64) by { solve(); }
     have contains(memory(dst[0u64..n + 1u64]), memory(dst[n - 1u64])) by {
-        apply(click::separation::contains_element(dst, 0u64, n + 1u64, n - 1u64)) using {
-            0 <= to_integer(n - 1u64); to_integer(n - 1u64) < to_integer(n + 1u64);
-        };
+        apply(click::separation::contains_element(dst, 0u64, n + 1u64, n - 1u64));
     }
     have contains(memory(src[0u64..n]), memory(src[0u64..n])) by {
         apply(click::separation::contains_refl(memory(src[0u64..n])));
     }
     have separate(memory(dst[n - 1u64]), memory(src[0u64..n])) by {
-        apply(click::separation::separate_restrict(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]), memory(dst[n - 1u64]), memory(src[0u64..n]))) using {
-            separate(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]));
-            contains(memory(dst[0u64..n + 1u64]), memory(dst[n - 1u64]));
-            contains(memory(src[0u64..n]), memory(src[0u64..n]));
-        };
+        apply(click::separation::separate_restrict(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]), memory(dst[n - 1u64]), memory(src[0u64..n])));
     }
     mark copied;
     step();

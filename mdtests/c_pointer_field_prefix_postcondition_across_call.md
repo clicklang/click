@@ -72,7 +72,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             contradiction(k < old(owner->len));
         }
         have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
-            apply(click::separation::separate_elements(old(owner->data), old(owner->len), k)) using { old(owner->len) != k; };
+            apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));
         }
         have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
             solve() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
@@ -86,14 +86,10 @@ int32 vector_push(struct vector* owner, int32 value) {
         }
         have contains(memory(*owner), memory(owner->len)) by { normalize(); }
         have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
-            apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k)) using { 0 <= k; k < old(owner->cap); };
+            apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k));
         }
         have separate(memory(owner->len), memory(old(owner->data)[k])) by {
-            apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k]))) using {
-                separate(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]));
-                contains(memory(*owner), memory(owner->len));
-                contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k]));
-            };
+            apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k])));
         }
         have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
             solve() using { separate(memory(owner->len), memory(old(owner->data)[k])); };

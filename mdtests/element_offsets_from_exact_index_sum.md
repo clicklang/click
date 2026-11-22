@@ -26,9 +26,7 @@ theorem signed_offset_sum(words: int32[], prefix: int32, suffix: int32, total: i
 theorem shared_offsets_cancel(bytes: uint8[], base: uint64, prefix: uint64, suffix: uint64, total: uint64) {
     requires to_integer(total) == to_integer(prefix) + to_integer(suffix);
     ensures ((bytes + base) + prefix) + suffix == (bytes + base) + total by {
-        apply(unsigned_offset_sum(bytes + base, prefix, suffix, total)) using {
-            to_integer(total) == to_integer(prefix) + to_integer(suffix);
-        };
+        apply(unsigned_offset_sum(bytes + base, prefix, suffix, total));
     }
 }
 

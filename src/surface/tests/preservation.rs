@@ -88,8 +88,14 @@ fn preserve_checks_pointer_read() {
     let scalar_source = source.replace("source->data", "source->len");
     without_implicit_solve(|| verify_c_sources(&scalar_source, &sources)).unwrap();
     for (from, to) in [
-        ("memory(target->pos))", "memory(target->len))"),
-        ("statement(0).footprint", "statement(1).footprint"),
+        (
+            "preserve(memory(source->data), statement(0))",
+            "preserve(memory(target->pos), statement(0))",
+        ),
+        (
+            "preserve(memory(source->data), statement(0))",
+            "preserve(memory(source->data), statement(1))",
+        ),
         ("at(before, source->data)", "at(after, source->data)"),
     ] {
         let invalid = source.replace(from, to);
@@ -414,7 +420,7 @@ fn preserve_named_resource_is_a_theorem_argument() {
         "    step();",
         r#"
         have separate(memory(*p), m) by {
-            apply(keep_separation(memory(*p), m)) using { separate(memory(*p), m); };
+            apply(keep_separation(memory(*p), m));
         }
         step();"#,
         1,
@@ -575,7 +581,7 @@ fn generic_viewability_transport_expands_to_ordinary_restriction() {
     let (source, _) = mdtest_sources("mdtests/viewable_restrict_resources.md");
     let source = source.replace(
         "apply(separation::viewable_restrict(A, B))",
-        "transport(viewable(A), viewable(B))",
+        "transport(viewable(A), viewable(B)) using { viewable(A); contains(A, B); }",
     );
     verify_c_sources(&source, &[]).unwrap();
     let expanded = expand_c_claim_source_by_label(&source, &[], "restrict_view.ensures_0").unwrap();

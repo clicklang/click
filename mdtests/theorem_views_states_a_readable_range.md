@@ -18,10 +18,8 @@ Both spellings normalize to one premise, so a theorem cannot mean two things by
 the same range, and a reader who has not moved to `views` yet keeps a form that
 works.
 
-The third applies the first. A `using` list holds propositions, so the `views`
-premise is named there by its fact form, `viewable(v[0..hi])`, and the two
-valid-span facts the range carries are named beside it — this theorem's own
-`views` clause is where they come from.
+The third applies the first. Its own `views` clause supplies the
+`viewable(v[0..hi])` fact and the two valid-span facts the range carries.
 
 ```click
 theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
@@ -43,13 +41,7 @@ theorem first_cell_of_a_viewed_range(v: int32[], hi: int32) {
     requires 0 < hi;
     ensures to_integer(v[0]) == to_integer(v[0]) by {
         have 0 <= 0;
-        apply(cell_of_a_viewed_range(v, 0, hi, 0)) using {
-            viewable(v[0..hi]);
-            0 <= 0;
-            0 < hi;
-            0 <= hi;
-            hi <= 1073741823;
-        };
+        apply(cell_of_a_viewed_range(v, 0, hi, 0));
         known();
     }
 }

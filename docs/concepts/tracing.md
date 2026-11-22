@@ -114,7 +114,7 @@ that every current implementation meets the checking-cost contract.
 | Introduce an assumption or binder, split cases, or instantiate a universal fact | [Introducing a binder or premise](../reference/tactics/index.md#introducing-a-binder-or-premise), [explicit cases](../reference/tactics/index.md#explicit-cases), [instantiation with selected premises](../reference/tactics/index.md#universal-instantiation) | The connective or quantified fact, witnesses, and branch obligations |
 | Replace an equal term | [Rewriting](../reference/tactics/index.md#rewriting) | The equality, direction, and expression being rewritten |
 | Evaluate a definition or computation | [Unfolding pure functions](../reference/tactics/index.md#unfolding-pure-functions), [context-free normalization](../reference/tactics/index.md#context-free-normalization) | The named definition/application or explicit expression |
-| Apply a mathematical or separation law | [Theorem application with selected premises](../reference/tactics/index.md#theorem-application-with-selected-premises), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
+| Apply a mathematical or separation law | [Theorem application](../reference/tactics/index.md#theorem-application), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
 | Establish arithmetic | [Ordinary arithmetic proofs](../reference/tactics/index.md#ordinary-arithmetic-proofs) | Named laws, cited premises, and explicit intermediate facts |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
 | Preserve a fact across a state transition | [Preservation](../reference/tactics/index.md#preservation), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
@@ -498,13 +498,13 @@ A step that a search produced says which one. A step that smart work checked
 ends its header with ``(from `implicit tail`)`` or the like, naming its
 origin: `implicit tail` for the steps the implicit tail took and for its
 closer, `solve` for a written `solve()`, and
-`implicit closer` for an obligation a `step()` or `fold` left open. A step whose `using` list a search chose, under a smart tactic or in an
-elided form such as `apply(t(x))` or a bare `transport(P, Q)`, has a `chosen:`
-line with the step written out in full, as `click expand` writes it:
+`implicit closer` for an obligation a `step()` or `fold` left open. A step
+whose arguments a search chose can have a `chosen:` line with the tactic
+written out as `click expand` writes it:
 
 ```text
 tactic@11: apply
-  chosen: apply(le_trans(x, y, z)) using { x <= y; y <= z; };
+  chosen: apply(le_trans(x, y, z));
   adds: x <= z
 ```
 

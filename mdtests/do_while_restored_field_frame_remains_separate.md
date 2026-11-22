@@ -79,9 +79,7 @@ void walk(struct Node* p, int32* marker) {
             have separate(memory(marker[0]), memory(identity->next));
             have marker[0] == 9;
             have separate(memory(identity->next), memory(marker[0])) by {
-                apply(click::separation::separate_symm(memory(marker[0]), memory(identity->next))) using {
-                    separate(memory(marker[0]), memory(identity->next));
-                };
+                apply(click::separation::separate_symm(memory(marker[0]), memory(identity->next)));
             }
             have separate(memory(q->next), memory(marker[0])) by {
                 rewrite(q, identity);

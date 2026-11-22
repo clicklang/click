@@ -11,22 +11,14 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
         have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
         have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
         have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, 0, len, i, i + 1)) using {
-                defined(i + 1); 0 <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= len;
-            };
+            apply(separation::contains_subrange(p, 0, len, i, i + 1));
         }
         have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
-                defined(i + 1); separate(whole, memory(p[0..len])); contains(whole, kept);
-                contains(memory(p[0..len]), memory(p[i..i + 1]));
-            };
+            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1])));
         }
-        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)) using {}; }
+        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
-            defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
-            contains(memory(p[i..i + 1]), memory(p[i]));
-        };
+        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
     }
 }
 
@@ -139,22 +131,14 @@ int32 owned_segmented_buffer_set_first(
     mark before_store;
     have contains(memory(*owner), memory(owner->first_data)) by { normalize(); }
     have separate(memory(owner->first_data), memory(owner->first_data[index])) by {
-        apply(selected_array_cell(memory(*owner), memory(owner->first_data), owner->first_data, owner->first_len, index)) using {
-            separate(memory(*owner), memory(owner->first_data[0..owner->first_len]));
-            contains(memory(*owner), memory(owner->first_data));
-            0 <= index; index < owner->first_len;
-        };
+        apply(selected_array_cell(memory(*owner), memory(owner->first_data), owner->first_data, owner->first_len, index));
     }
     have contains(memory(*owner), memory(owner->second_data)) by { normalize(); }
     have separate(memory(owner->second_data), memory(owner->first_data[index])) by {
-        apply(selected_array_cell(memory(*owner), memory(owner->second_data), owner->first_data, owner->first_len, index)) using {
-            separate(memory(*owner), memory(owner->first_data[0..owner->first_len]));
-            contains(memory(*owner), memory(owner->second_data));
-            0 <= index; index < owner->first_len;
-        };
+        apply(selected_array_cell(memory(*owner), memory(owner->second_data), owner->first_data, owner->first_len, index));
     }
     have contains(memory(owner->first_data[0..owner->first_len]), memory(owner->first_data[index])) by {
-        apply(separation::contains_element(owner->first_data, 0, owner->first_len, index)) using { 0 <= index; index < owner->first_len; };
+        apply(separation::contains_element(owner->first_data, 0, owner->first_len, index));
     }
     have separate(memory(owner->first_data[index]), memory(*owner)) by { solve(); }
     step();
@@ -197,22 +181,14 @@ int32 owned_segmented_buffer_set_second(
     mark before_store;
     have contains(memory(*owner), memory(owner->first_data)) by { normalize(); }
     have separate(memory(owner->first_data), memory(owner->second_data[index])) by {
-        apply(selected_array_cell(memory(*owner), memory(owner->first_data), owner->second_data, owner->second_len, index)) using {
-            separate(memory(*owner), memory(owner->second_data[0..owner->second_len]));
-            contains(memory(*owner), memory(owner->first_data));
-            0 <= index; index < owner->second_len;
-        };
+        apply(selected_array_cell(memory(*owner), memory(owner->first_data), owner->second_data, owner->second_len, index));
     }
     have contains(memory(*owner), memory(owner->second_data)) by { normalize(); }
     have separate(memory(owner->second_data), memory(owner->second_data[index])) by {
-        apply(selected_array_cell(memory(*owner), memory(owner->second_data), owner->second_data, owner->second_len, index)) using {
-            separate(memory(*owner), memory(owner->second_data[0..owner->second_len]));
-            contains(memory(*owner), memory(owner->second_data));
-            0 <= index; index < owner->second_len;
-        };
+        apply(selected_array_cell(memory(*owner), memory(owner->second_data), owner->second_data, owner->second_len, index));
     }
     have contains(memory(owner->second_data[0..owner->second_len]), memory(owner->second_data[index])) by {
-        apply(separation::contains_element(owner->second_data, 0, owner->second_len, index)) using { 0 <= index; index < owner->second_len; };
+        apply(separation::contains_element(owner->second_data, 0, owner->second_len, index));
     }
     have separate(memory(owner->second_data[index]), memory(*owner)) by { solve(); }
     step();
@@ -341,13 +317,9 @@ int32 owned_segmented_buffer_pipeline(
         rewrite(second_data, at(statement(4).call(0).entry, owner->second_data));
         known();
     }
-    have contains(memory(first_data[0]), memory(first_data[0])) by { apply(click::separation::contains_refl(memory(first_data[0]))) using {}; }
+    have contains(memory(first_data[0]), memory(first_data[0])) by { apply(click::separation::contains_refl(memory(first_data[0]))); }
     have separate(statement(4).call(0).footprint, memory(first_data[0])) by {
-        apply(separation::separate_restrict(memory(second_data[0..1]), memory(first_data[0]), statement(4).call(0).footprint, memory(first_data[0]))) using {
-            separate(memory(second_data[0..1]), memory(first_data[0]));
-            contains(memory(second_data[0..1]), statement(4).call(0).footprint);
-            contains(memory(first_data[0]), memory(first_data[0]));
-        };
+        apply(separation::separate_restrict(memory(second_data[0..1]), memory(first_data[0]), statement(4).call(0).footprint, memory(first_data[0])));
     }
     have at(statement(4).call(0).exit, first_data[0]) == at(statement(4).call(0).entry, first_data[0]) by {
         preserve(memory(first_data[0]), statement(4).call(0));
@@ -372,10 +344,7 @@ int32 owned_segmented_buffer_pipeline(
     step();
     step();
     have first_data[0] == first_value by { known(); }
-    apply(int32_equality_transitive(program::result, first_data[0], first_value)) using {
-        program::result == first_data[0];
-        *first_data == first_value;
-    };
+    apply(int32_equality_transitive(program::result, first_data[0], first_value));
     step();
     have owner->first_data == first_data;
     known();

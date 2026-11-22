@@ -65,26 +65,18 @@ int32 caller(int32* occ, int32* other, int32 n) {
         intro();
         have 0 <= k; have k < n;
         have contains(memory(occ[0..n]), memory(occ[k])) by {
-            apply(separation::contains_element(occ, 0, n, k)) using { 0 <= k; k < n; };
+            apply(separation::contains_element(occ, 0, n, k));
         }
         have contains(memory(other[0..1]), statement(1).footprint) by { known(); }
         have separate(statement(1).footprint, memory(occ[k])) by {
-            apply(separation::separate_restrict(memory(other[0..1]), memory(occ[0..n]), statement(1).footprint, memory(occ[k]))) using {
-                separate(memory(other[0..1]), memory(occ[0..n]));
-                contains(memory(other[0..1]), statement(1).footprint);
-                contains(memory(occ[0..n]), memory(occ[k]));
-            };
+            apply(separation::separate_restrict(memory(other[0..1]), memory(occ[0..n]), statement(1).footprint, memory(occ[k])));
         }
         have occ[k] == at(b, occ[k]) by {
             preserve(memory(occ[k]), statement(1));
         }
         have contains(memory(other[0..1]), statement(0).footprint) by { known(); }
         have separate(statement(0).footprint, memory(occ[k])) by {
-            apply(separation::separate_restrict(memory(other[0..1]), memory(occ[0..n]), statement(0).footprint, memory(occ[k]))) using {
-                separate(memory(other[0..1]), memory(occ[0..n]));
-                contains(memory(other[0..1]), statement(0).footprint);
-                contains(memory(occ[0..n]), memory(occ[k]));
-            };
+            apply(separation::separate_restrict(memory(other[0..1]), memory(occ[0..n]), statement(0).footprint, memory(occ[k])));
         }
         have at(b, occ[k]) == at(a, occ[k]) by {
             preserve(memory(occ[k]), statement(0));

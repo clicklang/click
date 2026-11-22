@@ -3137,7 +3137,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// Proves `&p[i] != &p[j]` from `i != j`: states the index disequality
     /// with `have i != j`, proved by `solve`, then closes the goal with
-    /// `apply(click::separation::distinct_elements(p, i, j)) using { i != j; }`.
+    /// `apply(click::separation::distinct_elements(p, i, j))`.
     /// `p` is the written goal's base; `i` and `j` are spelled from the
     /// kernel's two index words as the store search spells its index
     /// disequality (`((m - 1) as int32)`, `n - 1u64`, `0u64`), so the steps
@@ -10967,7 +10967,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         attempt::record_theorem_discovery_note(
                             SearchFailureKind::UndeterminedArgument,
                             format!(
-                                "theorem `{}`: argument `{name}` cannot be inferred from the goal; supply it with explicit apply(...) using {{ ... }}",
+                                "theorem `{}`: argument `{name}` cannot be inferred from the goal; supply it with explicit apply(...)",
                                 candidate.name
                             ),
                         );

@@ -10,7 +10,7 @@ theorem lengths(xs: List<Integer>, ys: List<Integer>) {
         solve() using {};
     }
     ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) by {
-        apply(list::length_append(xs, ys)) using {};
+        apply(list::length_append(xs, ys));
     }
 }
 ```

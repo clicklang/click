@@ -1081,7 +1081,7 @@ fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
     let source = adler_specifications();
     let past_int32 = "theorem adler_byte_past_four_gib(bytes: uint8[]) {
  ensures adler_byte_sum_u64(bytes, 4294967297u64) == adler_byte_sum_u64(bytes, 4294967296u64) + to_integer(bytes[4294967296u64]) by {
-  apply(adler_sum_append_u64(bytes, 4294967297u64)) using { 0u64 < 4294967297u64; };
+  apply(adler_sum_append_u64(bytes, 4294967297u64));
   solve();
  }
 }";

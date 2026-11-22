@@ -693,7 +693,7 @@ struct rb_root* root, int32 color) {
             step(); step(); step();
             have ctx_node_is(d.model, parent) == 1;
             step(); step();
-            apply(aligned_parent_word_from_bit(new, color)) using { aligned(new, 8); 0 <= color; color <= 1; };
+            apply(aligned_parent_word_from_bit(new, color));
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
@@ -742,7 +742,7 @@ struct rb_root* root, int32 color) {
                 known();
             }
             step(); step();
-            apply(aligned_parent_word_from_bit(new, color)) using { aligned(new, 8); 0 <= color; color <= 1; };
+            apply(aligned_parent_word_from_bit(new, color));
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
@@ -791,7 +791,7 @@ struct rb_root* root, int32 color) {
                 known();
             }
             step(); step();
-            apply(aligned_parent_word_from_bit(new, color)) using { aligned(new, 8); 0 <= color; color <= 1; };
+            apply(aligned_parent_word_from_bit(new, color));
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
@@ -852,7 +852,7 @@ theorem aligned_parent_color_bit(p: void*, color: Color) {
             },
             Color::Black => {
                 rewrite(color, Color::Black); unfold(color_bit(Color::Black));
-                apply(aligned_parent_word_from_bit(p, 1)) using { aligned(p, 8); 0 <= 1; 1 <= 1; };
+                apply(aligned_parent_word_from_bit(p, 1));
                 rewrite((address(p) + 1), (address(p) | 1)); solve();
             },
         }
@@ -1366,7 +1366,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
     }
     apply(erase_flips_red_all_covers_deficit(c.model, Nat::Zero, Color::Black));
     have c.model == ctx_reroot(c.model, parent) by {
-        apply(ctx_reroot_fixed(c.model, parent)) using { ctx_node_is(c.model, parent) == 1; };
+        apply(ctx_reroot_fixed(c.model, parent));
         known();
     }
     step_until(loop(0).entry);
@@ -1400,9 +1400,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                         rewrite(Context::Right(id, above, pc, sm, um), c.model); known();
                     }
                     have parent == id by {
-                        apply(ctx_node_is_right_identity(id, above, pc, sm, um, parent)) using {
-                            ctx_node_is(Context::Right(id, above, pc, sm, um), parent) == 1;
-                        };
+                        apply(ctx_node_is_right_identity(id, above, pc, sm, um, parent));
                         known();
                     }
                     match sm {
@@ -1578,14 +1576,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 Color::Red => {
                                                     have ctx_rb(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, srm, slm), um), Nat::Succ(black_height(nt.model)), Color::Black) == 1 by { rewrite(Color::Red, pc); known(); }
                                                     have rb_parent_consistent(plug(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, srm, slm), um), nt.model), 0) == 1 by { rewrite(Color::Red, pc); known(); }
-                                                    apply(ctx_erase_case2_right_red_exit(above, id, sid, nt.model, srm, slm, um)) using {
-                                                        is_rb(nt.model) == 1;
-                                                        rb_root_black(nt.model) == 1;
-                                                        ctx_rb(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, srm, slm), um), Nat::Succ(black_height(nt.model)), Color::Black) == 1;
-                                                        rb_root_black(slm) == 1;
-                                                        rb_root_black(srm) == 1;
-                                                        rb_parent_consistent(plug(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, srm, slm), um), nt.model), 0) == 1;
-                                                    };
+                                                    apply(ctx_erase_case2_right_red_exit(above, id, sid, nt.model, srm, slm, um));
                                                     have (parent->__rb_parent_color & 1) == 0 by {
                                                         rewrite((parent->__rb_parent_color & 1), color_bit(pc)); rewrite(pc, Color::Red); unfold(color_bit(Color::Red)); normalize();
                                                     }
@@ -1627,7 +1618,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(at(red_flip, parent->__rb_parent_color), 1u64));
                                                         rewrite(at(red_flip, parent->__rb_parent_color), address(above)); known();
                                                     }
-                                                    apply(aligned_parent_black_tag(above)) using { aligned(above, 8); };
+                                                    apply(aligned_parent_black_tag(above));
                                                     have parent->__rb_parent_color == address(above) + 1 by {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(address(above), 1u64)); known();
                                                     }
@@ -1669,14 +1660,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um) == Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um) by { rewrite(pc, Color::Black); known(); }
                                                     have ctx_rb(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um), Nat::Succ(black_height(nt.model)), Color::Black) == 1 by { rewrite(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um), Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um)); known(); }
                                                     have rb_parent_consistent(plug(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um), nt.model), 0) == 1 by { rewrite(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um), Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um)); known(); }
-                                                    apply(ctx_erase_case2_right_black_step(above, id, sid, nt.model, srm, slm, um)) using {
-                                                        is_rb(nt.model) == 1;
-                                                        rb_root_black(nt.model) == 1;
-                                                        ctx_rb(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um), Nat::Succ(black_height(nt.model)), Color::Black) == 1;
-                                                        rb_root_black(slm) == 1;
-                                                        rb_root_black(srm) == 1;
-                                                        rb_parent_consistent(plug(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um), nt.model), 0) == 1;
-                                                    };
+                                                    apply(ctx_erase_case2_right_black_step(above, id, sid, nt.model, srm, slm, um));
                                                     have (parent->__rb_parent_color & 1) == 1 by {
                                                         rewrite((parent->__rb_parent_color & 1), color_bit(pc)); rewrite(pc, Color::Black); unfold(color_bit(Color::Black)); normalize();
                                                     }
@@ -1735,7 +1719,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     if parent == 0 {
                                                         match u.model {
                                                             Context::Top => {
-                                                                have is_rb_root(sub.model) == 1 by { apply(is_rb_root_from_parts(sub.model)) using { is_rb(sub.model) == 1; rb_root_black(sub.model) == 1; }; known(); }
+                                                                have is_rb_root(sub.model) == 1 by { apply(is_rb_root_from_parts(sub.model)); known(); }
                                                                 have plug(u.model, sub.model) == sub.model by { rewrite(u.model, Context::Top); unfold(plug(Context::Top, sub.model)); normalize(); }
                                                                 have erase_flips_red_all_result(u.model, sub.model) == sub.model by { rewrite(u.model, Context::Top); unfold(erase_flips_red_all_result(Context::Top, sub.model)); normalize(); }
                                                                 have is_rb_root(plug(u.model, sub.model)) == 1 by { rewrite(plug(u.model, sub.model), sub.model); known(); }
@@ -1746,14 +1730,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             },
                                                             Context::Right(uid, ugp, uc, usm, uum) => {
                                                                 have ctx_node_is(Context::Right(uid, ugp, uc, usm, uum), parent) == 1 by { rewrite(Context::Right(uid, ugp, uc, usm, uum), u.model); known(); }
-                                                                have parent == uid by { apply(ctx_node_is_right_identity(uid, ugp, uc, usm, uum, parent)) using { ctx_node_is(Context::Right(uid, ugp, uc, usm, uum), parent) == 1; }; known(); }
+                                                                have parent == uid by { apply(ctx_node_is_right_identity(uid, ugp, uc, usm, uum, parent)); known(); }
                                                                 let { sibling: us, up: uu } = unfold(u);
                                                                 have parent != 0 by { rewrite(parent, uid); known(); }
                                                                 contradiction(parent == 0);
                                                             },
                                                             Context::Left(uid, ugp, uc, usm, uum) => {
                                                                 have ctx_node_is(Context::Left(uid, ugp, uc, usm, uum), parent) == 1 by { rewrite(Context::Left(uid, ugp, uc, usm, uum), u.model); known(); }
-                                                                have parent == uid by { apply(ctx_node_is_left_identity(uid, ugp, uc, usm, uum, parent)) using { ctx_node_is(Context::Left(uid, ugp, uc, usm, uum), parent) == 1; }; known(); }
+                                                                have parent == uid by { apply(ctx_node_is_left_identity(uid, ugp, uc, usm, uum, parent)); known(); }
                                                                 let { sibling: us, up: uu } = unfold(u);
                                                                 have parent != 0 by { rewrite(parent, uid); known(); }
                                                                 contradiction(parent == 0);
@@ -1763,7 +1747,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have u.model != Context::Top by {
                                                             if u.model == Context::Top {
                                                                 have ctx_node_is(Context::Top, parent) == 1 by { rewrite(Context::Top, u.model); known(); }
-                                                                apply(ctx_node_is_top_null(parent)) using { ctx_node_is(Context::Top, parent) == 1; };
+                                                                apply(ctx_node_is_top_null(parent));
                                                                 contradiction(parent == 0);
                                                             } else { known(); }
                                                         }
@@ -2070,7 +2054,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                             }
                                                             have tmp2->__rb_parent_color == (color_bit(nc) | address(parent)) by { rewrite(tmp2->__rb_parent_color, ((at(near_tag, tmp2->__rb_parent_color) & 1) | address(parent))); rewrite((at(near_tag, tmp2->__rb_parent_color) & 1), color_bit(nc)); known(); }
-                                                            apply(aligned_parent_color_word(parent, nc)) using { aligned(parent, 8); };
+                                                            apply(aligned_parent_color_word(parent, nc));
                                                             have tmp2->__rb_parent_color == address(parent) + color_bit(nc) by {
                                                                 rewrite(tmp2->__rb_parent_color, (color_bit(nc) | address(parent))); known();
                                                             }
@@ -2114,7 +2098,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     fold(rb_child_links(iid, sid, parent));
                                                     fold(rb_child_links(parent, tmp2, node));
                                                     mark outer_rotation;
-                                                    apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
+                                                    apply(ctx_node_is_identity(u.model, above));
                                                     have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by known();
                                                     let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                                     step(); // The augmentation callback preserves the tree resources.
@@ -2126,7 +2110,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have iid->__rb_parent_color == address(above) + color_bit(pc) by { rewrite(iid->__rb_parent_color, at(outer_rotation, parent->__rb_parent_color)); known(); }
                                                     have (iid->__rb_parent_color & 1) == color_bit(pc) by {
                                                         rewrite(iid->__rb_parent_color, address(above) + color_bit(pc));
-                                                        apply(aligned_parent_color_bit(above, pc)) using { aligned(above, 8); }; known();
+                                                        apply(aligned_parent_color_bit(above, pc)); known();
                                                     }
                                                     have iid->__rb_parent_color == address(above) + (iid->__rb_parent_color & 1) by { rewrite((iid->__rb_parent_color & 1), color_bit(pc)); known(); }
                                                     have parent->__rb_parent_color == address(iid) + 1;
@@ -2291,7 +2275,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 fold(rb_child_links(sid, rid, parent));
                                                 fold(rb_child_links(parent, tmp2, node));
                                                 mark outer_rotation;
-                                                apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
+                                                apply(ctx_node_is_identity(u.model, above));
                                                 let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                                 step(); // The augmentation callback preserves the tree resources.
                                                 unfold(rb_child_links(sid, rid, parent));
@@ -2504,42 +2488,22 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark red_rotation;
                                             have separate(memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_left)) by known();
                                             have separate(memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_right)) by known();
-                                            apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
+                                            apply(ctx_node_is_identity(u.model, above));
                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by known();
                                             let { after: u_after } = step(__rb_rotate_set_parents, { c: u });
                                             have contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), statement(1).statement(1).statement(12).statement(4).footprint) by known();
-                                            apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_left))) using {
-                                                at(red_rotation, separate(u, memory(tmp1->rb_left)));
-                                                at(red_rotation, separate(memory(parent->__rb_parent_color), memory(tmp1->rb_left)));
-                                            };
-                                            apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_left))) using {
-                                                separate(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(tmp1->rb_left));
-                                                separate(memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_left));
-                                            };
-                                            apply(separation::contains_refl(memory(tmp1->rb_left))) using {};
-                                            apply(separation::separate_restrict((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_left), statement(1).statement(1).statement(12).statement(4).footprint, memory(tmp1->rb_left))) using {
-                                                separate((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_left));
-                                                contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), statement(1).statement(1).statement(12).statement(4).footprint);
-                                                contains(memory(tmp1->rb_left), memory(tmp1->rb_left));
-                                            };
+                                            apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_left)));
+                                            apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_left)));
+                                            apply(separation::contains_refl(memory(tmp1->rb_left)));
+                                            apply(separation::separate_restrict((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_left), statement(1).statement(1).statement(12).statement(4).footprint, memory(tmp1->rb_left)));
                                             have tmp1->rb_left == at(red_rotation, tmp1->rb_left) by {
                                                 preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(12).statement(4));
                                             }
                                             have contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), statement(1).statement(1).statement(12).statement(4).footprint) by known();
-                                            apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_right))) using {
-                                                at(red_rotation, separate(u, memory(tmp1->rb_right)));
-                                                at(red_rotation, separate(memory(parent->__rb_parent_color), memory(tmp1->rb_right)));
-                                            };
-                                            apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_right))) using {
-                                                separate(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(tmp1->rb_right));
-                                                separate(memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_right));
-                                            };
-                                            apply(separation::contains_refl(memory(tmp1->rb_right))) using {};
-                                            apply(separation::separate_restrict((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(4).footprint, memory(tmp1->rb_right))) using {
-                                                separate((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_right));
-                                                contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), statement(1).statement(1).statement(12).statement(4).footprint);
-                                                contains(memory(tmp1->rb_right), memory(tmp1->rb_right));
-                                            };
+                                            apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_right)));
+                                            apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_right)));
+                                            apply(separation::contains_refl(memory(tmp1->rb_right)));
+                                            apply(separation::separate_restrict((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(4).footprint, memory(tmp1->rb_right)));
                                             have tmp1->rb_right == at(red_rotation, tmp1->rb_right) by {
                                                 preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(4));
                                             }
@@ -2726,7 +2690,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(at(red_flip, parent->__rb_parent_color), 1u64));
                                                         rewrite(at(red_flip, parent->__rb_parent_color), address(sid)); known();
                                                     }
-                                                    apply(aligned_parent_black_tag(sid)) using { aligned(sid, 8); };
+                                                    apply(aligned_parent_black_tag(sid));
                                                     have parent->__rb_parent_color == address(sid) + 1 by {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(address(sid), 1u64)); known();
                                                     }
@@ -3041,7 +3005,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                         solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                                     }
                                                                     have tmp2->__rb_parent_color == (color_bit(nc) | address(parent)) by { rewrite(tmp2->__rb_parent_color, ((at(near_tag, tmp2->__rb_parent_color) & 1) | address(parent))); rewrite((at(near_tag, tmp2->__rb_parent_color) & 1), color_bit(nc)); known(); }
-                                                                    apply(aligned_parent_color_word(parent, nc)) using { aligned(parent, 8); };
+                                                                    apply(aligned_parent_color_word(parent, nc));
                                                                     have tmp2->__rb_parent_color == address(parent) + color_bit(nc) by {
                                                                         rewrite(tmp2->__rb_parent_color, (color_bit(nc) | address(parent))); known();
                                                                     }
@@ -3085,7 +3049,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             fold(rb_child_links(iid, zid, parent));
                                                             fold(rb_child_links(parent, tmp2, node));
                                                             mark outer_rotation;
-                                                            apply(ctx_node_is_identity(red_up.model, sid)) using { ctx_node_is(red_up.model, sid) == 1; };
+                                                            apply(ctx_node_is_identity(red_up.model, sid));
                                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == sid by known();
                                                             let { after: red_up } = step(__rb_rotate_set_parents, { c: red_up });
                                                             step(); // The augmentation callback preserves the tree resources.
@@ -3097,7 +3061,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have iid->__rb_parent_color == address(sid) + color_bit(Color::Red) by { rewrite(iid->__rb_parent_color, at(outer_rotation, parent->__rb_parent_color)); known(); }
                                                             have (iid->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                                 rewrite(iid->__rb_parent_color, address(sid) + color_bit(Color::Red));
-                                                                apply(aligned_parent_color_bit(sid, Color::Red)) using { aligned(sid, 8); }; known();
+                                                                apply(aligned_parent_color_bit(sid, Color::Red)); known();
                                                             }
                                                             have iid->__rb_parent_color == address(sid) + (iid->__rb_parent_color & 1) by { rewrite((iid->__rb_parent_color & 1), color_bit(Color::Red)); known(); }
                                                             have parent->__rb_parent_color == address(iid) + 1;
@@ -3252,7 +3216,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         fold(rb_child_links(zid, rid, parent));
                                                         fold(rb_child_links(parent, tmp2, node));
                                                         mark outer_rotation;
-                                                        apply(ctx_node_is_identity(red_up.model, sid)) using { ctx_node_is(red_up.model, sid) == 1; };
+                                                        apply(ctx_node_is_identity(red_up.model, sid));
                                                         let { after: red_up } = step(__rb_rotate_set_parents, { c: red_up });
                                                         step(); // The augmentation callback preserves the tree resources.
                                                         unfold(rb_child_links(zid, rid, parent));
@@ -3304,9 +3268,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                         rewrite(Context::Left(id, above, pc, sm, um), c.model); known();
                     }
                     have parent == id by {
-                        apply(ctx_node_is_left_identity(id, above, pc, sm, um, parent)) using {
-                            ctx_node_is(Context::Left(id, above, pc, sm, um), parent) == 1;
-                        };
+                        apply(ctx_node_is_left_identity(id, above, pc, sm, um, parent));
                         known();
                     }
                     match sm {
@@ -3481,14 +3443,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 Color::Red => {
                                                     have ctx_rb(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, slm, srm), um), Nat::Succ(black_height(nt.model)), Color::Black) == 1 by { rewrite(Color::Red, pc); known(); }
                                                     have rb_parent_consistent(plug(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, slm, srm), um), nt.model), 0) == 1 by { rewrite(Color::Red, pc); known(); }
-                                                    apply(ctx_erase_case2_left_red_exit(above, id, sid, nt.model, slm, srm, um)) using {
-                                                        is_rb(nt.model) == 1;
-                                                        rb_root_black(nt.model) == 1;
-                                                        ctx_rb(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, slm, srm), um), Nat::Succ(black_height(nt.model)), Color::Black) == 1;
-                                                        rb_root_black(slm) == 1;
-                                                        rb_root_black(srm) == 1;
-                                                        rb_parent_consistent(plug(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, slm, srm), um), nt.model), 0) == 1;
-                                                    };
+                                                    apply(ctx_erase_case2_left_red_exit(above, id, sid, nt.model, slm, srm, um));
                                                     have (parent->__rb_parent_color & 1) == 0 by {
                                                         rewrite((parent->__rb_parent_color & 1), color_bit(pc)); rewrite(pc, Color::Red); unfold(color_bit(Color::Red)); normalize();
                                                     }
@@ -3530,7 +3485,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(at(red_flip, parent->__rb_parent_color), 1u64));
                                                         rewrite(at(red_flip, parent->__rb_parent_color), address(above)); known();
                                                     }
-                                                    apply(aligned_parent_black_tag(above)) using { aligned(above, 8); };
+                                                    apply(aligned_parent_black_tag(above));
                                                     have parent->__rb_parent_color == address(above) + 1 by {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(address(above), 1u64)); known();
                                                     }
@@ -3572,14 +3527,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um) == Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, slm, srm), um) by { rewrite(pc, Color::Black); known(); }
                                                     have ctx_rb(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um), Nat::Succ(black_height(nt.model)), Color::Black) == 1 by { rewrite(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um), Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, slm, srm), um)); known(); }
                                                     have rb_parent_consistent(plug(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um), nt.model), 0) == 1 by { rewrite(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um), Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, slm, srm), um)); known(); }
-                                                    apply(ctx_erase_case2_left_black_step(above, id, sid, nt.model, slm, srm, um)) using {
-                                                        is_rb(nt.model) == 1;
-                                                        rb_root_black(nt.model) == 1;
-                                                        ctx_rb(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um), Nat::Succ(black_height(nt.model)), Color::Black) == 1;
-                                                        rb_root_black(slm) == 1;
-                                                        rb_root_black(srm) == 1;
-                                                        rb_parent_consistent(plug(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um), nt.model), 0) == 1;
-                                                    };
+                                                    apply(ctx_erase_case2_left_black_step(above, id, sid, nt.model, slm, srm, um));
                                                     have (parent->__rb_parent_color & 1) == 1 by {
                                                         rewrite((parent->__rb_parent_color & 1), color_bit(pc)); rewrite(pc, Color::Black); unfold(color_bit(Color::Black)); normalize();
                                                     }
@@ -3638,7 +3586,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     if parent == 0 {
                                                         match u.model {
                                                             Context::Top => {
-                                                                have is_rb_root(sub.model) == 1 by { apply(is_rb_root_from_parts(sub.model)) using { is_rb(sub.model) == 1; rb_root_black(sub.model) == 1; }; known(); }
+                                                                have is_rb_root(sub.model) == 1 by { apply(is_rb_root_from_parts(sub.model)); known(); }
                                                                 have plug(u.model, sub.model) == sub.model by { rewrite(u.model, Context::Top); unfold(plug(Context::Top, sub.model)); normalize(); }
                                                                 have erase_flips_red_all_result(u.model, sub.model) == sub.model by { rewrite(u.model, Context::Top); unfold(erase_flips_red_all_result(Context::Top, sub.model)); normalize(); }
                                                                 have is_rb_root(plug(u.model, sub.model)) == 1 by { rewrite(plug(u.model, sub.model), sub.model); known(); }
@@ -3649,14 +3597,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             },
                                                             Context::Left(uid, ugp, uc, usm, uum) => {
                                                                 have ctx_node_is(Context::Left(uid, ugp, uc, usm, uum), parent) == 1 by { rewrite(Context::Left(uid, ugp, uc, usm, uum), u.model); known(); }
-                                                                have parent == uid by { apply(ctx_node_is_left_identity(uid, ugp, uc, usm, uum, parent)) using { ctx_node_is(Context::Left(uid, ugp, uc, usm, uum), parent) == 1; }; known(); }
+                                                                have parent == uid by { apply(ctx_node_is_left_identity(uid, ugp, uc, usm, uum, parent)); known(); }
                                                                 let { sibling: us, up: uu } = unfold(u);
                                                                 have parent != 0 by { rewrite(parent, uid); known(); }
                                                                 contradiction(parent == 0);
                                                             },
                                                             Context::Right(uid, ugp, uc, usm, uum) => {
                                                                 have ctx_node_is(Context::Right(uid, ugp, uc, usm, uum), parent) == 1 by { rewrite(Context::Right(uid, ugp, uc, usm, uum), u.model); known(); }
-                                                                have parent == uid by { apply(ctx_node_is_right_identity(uid, ugp, uc, usm, uum, parent)) using { ctx_node_is(Context::Right(uid, ugp, uc, usm, uum), parent) == 1; }; known(); }
+                                                                have parent == uid by { apply(ctx_node_is_right_identity(uid, ugp, uc, usm, uum, parent)); known(); }
                                                                 let { sibling: us, up: uu } = unfold(u);
                                                                 have parent != 0 by { rewrite(parent, uid); known(); }
                                                                 contradiction(parent == 0);
@@ -3666,7 +3614,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have u.model != Context::Top by {
                                                             if u.model == Context::Top {
                                                                 have ctx_node_is(Context::Top, parent) == 1 by { rewrite(Context::Top, u.model); known(); }
-                                                                apply(ctx_node_is_top_null(parent)) using { ctx_node_is(Context::Top, parent) == 1; };
+                                                                apply(ctx_node_is_top_null(parent));
                                                                 contradiction(parent == 0);
                                                             } else { known(); }
                                                         }
@@ -3975,7 +3923,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                             }
                                                             have tmp2->__rb_parent_color == (color_bit(nc) | address(parent)) by { rewrite(tmp2->__rb_parent_color, ((at(near_tag, tmp2->__rb_parent_color) & 1) | address(parent))); rewrite((at(near_tag, tmp2->__rb_parent_color) & 1), color_bit(nc)); known(); }
-                                                            apply(aligned_parent_color_word(parent, nc)) using { aligned(parent, 8); };
+                                                            apply(aligned_parent_color_word(parent, nc));
                                                             have tmp2->__rb_parent_color == address(parent) + color_bit(nc) by {
                                                                 rewrite(tmp2->__rb_parent_color, (color_bit(nc) | address(parent))); known();
                                                             }
@@ -4019,7 +3967,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     fold(rb_child_links(iid, parent, sid));
                                                     fold(rb_child_links(parent, node, tmp2));
                                                     mark outer_rotation;
-                                                    apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
+                                                    apply(ctx_node_is_identity(u.model, above));
                                                     have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by known();
                                                     let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                                     step(); // The augmentation callback preserves the tree resources.
@@ -4031,7 +3979,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have iid->__rb_parent_color == address(above) + color_bit(pc) by { rewrite(iid->__rb_parent_color, at(outer_rotation, parent->__rb_parent_color)); known(); }
                                                     have (iid->__rb_parent_color & 1) == color_bit(pc) by {
                                                         rewrite(iid->__rb_parent_color, address(above) + color_bit(pc));
-                                                        apply(aligned_parent_color_bit(above, pc)) using { aligned(above, 8); }; known();
+                                                        apply(aligned_parent_color_bit(above, pc)); known();
                                                     }
                                                     have iid->__rb_parent_color == address(above) + (iid->__rb_parent_color & 1) by { rewrite((iid->__rb_parent_color & 1), color_bit(pc)); known(); }
                                                     have parent->__rb_parent_color == address(iid) + 1;
@@ -4196,7 +4144,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 fold(rb_child_links(sid, parent, rid));
                                                 fold(rb_child_links(parent, node, tmp2));
                                                 mark outer_rotation;
-                                                apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
+                                                apply(ctx_node_is_identity(u.model, above));
                                                 let { after: u } = step(__rb_rotate_set_parents, { c: u });
                                                 step(); // The augmentation callback preserves the tree resources.
                                                 unfold(rb_child_links(sid, parent, rid));
@@ -4408,42 +4356,22 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark red_rotation;
                                             have separate(memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_right)) by known();
                                             have separate(memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_left)) by known();
-                                            apply(ctx_node_is_identity(u.model, above)) using { ctx_node_is(u.model, above) == 1; };
+                                            apply(ctx_node_is_identity(u.model, above));
                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by known();
                                             let { after: u_after } = step(__rb_rotate_set_parents, { c: u });
                                             have contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), statement(1).statement(1).statement(0).statement(4).footprint) by known();
-                                            apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_right))) using {
-                                                at(red_rotation, separate(u, memory(tmp1->rb_right)));
-                                                at(red_rotation, separate(memory(parent->__rb_parent_color), memory(tmp1->rb_right)));
-                                            };
-                                            apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_right))) using {
-                                                separate(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(tmp1->rb_right));
-                                                separate(memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_right));
-                                            };
-                                            apply(separation::contains_refl(memory(tmp1->rb_right))) using {};
-                                            apply(separation::separate_restrict((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_right), statement(1).statement(1).statement(0).statement(4).footprint, memory(tmp1->rb_right))) using {
-                                                separate((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_right));
-                                                contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), statement(1).statement(1).statement(0).statement(4).footprint);
-                                                contains(memory(tmp1->rb_right), memory(tmp1->rb_right));
-                                            };
+                                            apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_right)));
+                                            apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_right)));
+                                            apply(separation::contains_refl(memory(tmp1->rb_right)));
+                                            apply(separation::separate_restrict((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_right), statement(1).statement(1).statement(0).statement(4).footprint, memory(tmp1->rb_right)));
                                             have tmp1->rb_right == at(red_rotation, tmp1->rb_right) by {
                                                 preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(0).statement(4));
                                             }
                                             have contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), statement(1).statement(1).statement(0).statement(4).footprint) by known();
-                                            apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_left))) using {
-                                                at(red_rotation, separate(u, memory(tmp1->rb_left)));
-                                                at(red_rotation, separate(memory(parent->__rb_parent_color), memory(tmp1->rb_left)));
-                                            };
-                                            apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_left))) using {
-                                                separate(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(tmp1->rb_left));
-                                                separate(memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_left));
-                                            };
-                                            apply(separation::contains_refl(memory(tmp1->rb_left))) using {};
-                                            apply(separation::separate_restrict((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(4).footprint, memory(tmp1->rb_left))) using {
-                                                separate((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_left));
-                                                contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), statement(1).statement(1).statement(0).statement(4).footprint);
-                                                contains(memory(tmp1->rb_left), memory(tmp1->rb_left));
-                                            };
+                                            apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_left)));
+                                            apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_left)));
+                                            apply(separation::contains_refl(memory(tmp1->rb_left)));
+                                            apply(separation::separate_restrict((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(4).footprint, memory(tmp1->rb_left)));
                                             have tmp1->rb_left == at(red_rotation, tmp1->rb_left) by {
                                                 preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(4));
                                             }
@@ -4629,7 +4557,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(at(red_flip, parent->__rb_parent_color), 1u64));
                                                         rewrite(at(red_flip, parent->__rb_parent_color), address(sid)); known();
                                                     }
-                                                    apply(aligned_parent_black_tag(sid)) using { aligned(sid, 8); };
+                                                    apply(aligned_parent_black_tag(sid));
                                                     have parent->__rb_parent_color == address(sid) + 1 by {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(address(sid), 1u64)); known();
                                                     }
@@ -4944,7 +4872,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                         solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                                     }
                                                                     have tmp2->__rb_parent_color == (color_bit(nc) | address(parent)) by { rewrite(tmp2->__rb_parent_color, ((at(near_tag, tmp2->__rb_parent_color) & 1) | address(parent))); rewrite((at(near_tag, tmp2->__rb_parent_color) & 1), color_bit(nc)); known(); }
-                                                                    apply(aligned_parent_color_word(parent, nc)) using { aligned(parent, 8); };
+                                                                    apply(aligned_parent_color_word(parent, nc));
                                                                     have tmp2->__rb_parent_color == address(parent) + color_bit(nc) by {
                                                                         rewrite(tmp2->__rb_parent_color, (color_bit(nc) | address(parent))); known();
                                                                     }
@@ -4988,7 +4916,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             fold(rb_child_links(iid, parent, zid));
                                                             fold(rb_child_links(parent, node, tmp2));
                                                             mark outer_rotation;
-                                                            apply(ctx_node_is_identity(red_up.model, sid)) using { ctx_node_is(red_up.model, sid) == 1; };
+                                                            apply(ctx_node_is_identity(red_up.model, sid));
                                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == sid by known();
                                                             let { after: red_up } = step(__rb_rotate_set_parents, { c: red_up });
                                                             step(); // The augmentation callback preserves the tree resources.
@@ -5000,7 +4928,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have iid->__rb_parent_color == address(sid) + color_bit(Color::Red) by { rewrite(iid->__rb_parent_color, at(outer_rotation, parent->__rb_parent_color)); known(); }
                                                             have (iid->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                                 rewrite(iid->__rb_parent_color, address(sid) + color_bit(Color::Red));
-                                                                apply(aligned_parent_color_bit(sid, Color::Red)) using { aligned(sid, 8); }; known();
+                                                                apply(aligned_parent_color_bit(sid, Color::Red)); known();
                                                             }
                                                             have iid->__rb_parent_color == address(sid) + (iid->__rb_parent_color & 1) by { rewrite((iid->__rb_parent_color & 1), color_bit(Color::Red)); known(); }
                                                             have parent->__rb_parent_color == address(iid) + 1;
@@ -5155,7 +5083,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         fold(rb_child_links(zid, parent, rid));
                                                         fold(rb_child_links(parent, node, tmp2));
                                                         mark outer_rotation;
-                                                        apply(ctx_node_is_identity(red_up.model, sid)) using { ctx_node_is(red_up.model, sid) == 1; };
+                                                        apply(ctx_node_is_identity(red_up.model, sid));
                                                         let { after: red_up } = step(__rb_rotate_set_parents, { c: red_up });
                                                         step(); // The augmentation callback preserves the tree resources.
                                                         unfold(rb_child_links(zid, parent, rid));

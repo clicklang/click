@@ -24,16 +24,9 @@ uint8 first(const uint8* p, uint64 n, uint64 k) {
     have to_integer(k + 4u64) <= to_integer(n);
     have viewable(p[k + 3u64..k + 4u64]) by {
         have contains(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64])) by {
-            apply(click::separation::contains_subrange(p, 0u64, n, k + 3u64, k + 4u64)) using {
-                0 <= to_integer(k + 3u64);
-                to_integer(k + 3u64) <= to_integer(k + 4u64);
-                to_integer(k + 4u64) <= to_integer(n);
-            };
+            apply(click::separation::contains_subrange(p, 0u64, n, k + 3u64, k + 4u64));
         }
-        apply(click::separation::viewable_restrict(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64]))) using {
-            viewable(p[0u64..n]);
-            contains(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64]));
-        };
+        apply(click::separation::viewable_restrict(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64])));
     }
     step_until(function.exit);
     solve();

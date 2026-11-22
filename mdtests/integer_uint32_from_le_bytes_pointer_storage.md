@@ -16,10 +16,7 @@ void* keep(void* p) {
 } by {
     step_until(statement(2).entry);
     have viewable(word[0..1]);
-    apply(integer::uint32_from_le_bytes(word)) using {
-        little_endian();
-        viewable(word[0..1]);
-    };
+    apply(integer::uint32_from_le_bytes(word));
 }
 ```
 

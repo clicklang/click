@@ -10,9 +10,9 @@ theorem explicit_chain(a: int32, b: int32, c: int32, d: int32) {
     requires c <= d;
     ensures a < d by {
         have a < c by {
-            apply(click::integer::int32_less_equal_less_than_transitive(a, b, c)) using { a <= b; b < c; };
+            apply(click::integer::int32_less_equal_less_than_transitive(a, b, c));
         }
-        apply(click::integer::int32_less_than_less_equal_transitive(a, c, d)) using { a < c; c <= d; };
+        apply(click::integer::int32_less_than_less_equal_transitive(a, c, d));
     }
 }
 theorem explicit_chain_through_literals(a: int32, b: int32) {
@@ -21,15 +21,15 @@ theorem explicit_chain_through_literals(a: int32, b: int32) {
     ensures a < b by {
         have 1 < 2 by { known(); }
         have a < 2 by {
-            apply(click::integer::int32_less_equal_less_than_transitive(a, 1, 2)) using { a <= 1; 1 < 2; };
+            apply(click::integer::int32_less_equal_less_than_transitive(a, 1, 2));
         }
-        apply(click::integer::int32_less_than_less_equal_transitive(a, 2, b)) using { a < 2; 2 <= b; };
+        apply(click::integer::int32_less_than_less_equal_transitive(a, 2, b));
     }
 }
 theorem explicit_weaken(a: int32, b: int32) {
     requires a < b;
     ensures a <= b by {
-        apply(click::integer::int32_less_than_implies_less_equal(a, b)) using { a < b; };
+        apply(click::integer::int32_less_than_implies_less_equal(a, b));
     }
 }
 ```

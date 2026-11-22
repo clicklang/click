@@ -37,46 +37,26 @@ void keep(const uint8* p, int32 n, int32 i) {
         Link::Node(q) => {
             unfold(h);
             have contains(memory(p[0..n]), memory(p[i..i + 4])) by {
-                apply(click::separation::contains_subrange(p, 0, n, i, i + 4)) using {
-                    0 <= i;
-                    to_integer(i) <= to_integer(i + 4);
-                    to_integer(i + 4) <= to_integer(n);
-                };
+                apply(click::separation::contains_subrange(p, 0, n, i, i + 4));
             }
             have viewable(p[i..i + 4]) by {
-                apply(click::separation::viewable_restrict(memory(p[0..n]), memory(p[i..i + 4]))) using {
-                    viewable(p[0..n]);
-                    contains(memory(p[0..n]), memory(p[i..i + 4]));
-                };
+                apply(click::separation::viewable_restrict(memory(p[0..n]), memory(p[i..i + 4])));
             }
             have viewable(q[0..4]) by {
                 rewrite(q, p + i);
                 have contains(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i])) by {
-                    apply(click::separation::contains_rebase(p, i, i + 4)) using {
-                        0 <= i;
-                        to_integer(i) <= to_integer(i + 4);
-                    };
+                    apply(click::separation::contains_rebase(p, i, i + 4));
                 }
                 have viewable((p + i)[0..(i + 4) - i]) by {
-                    apply(click::separation::viewable_restrict(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i]))) using {
-                        viewable(p[i..i + 4]);
-                        contains(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i]));
-                    };
+                    apply(click::separation::viewable_restrict(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i])));
                 }
                 have 0 <= 0 by { known(); }
                 have 0 <= 4 by { known(); }
                 have to_integer(4) <= to_integer((i + 4) - i) by { normalize(); }
                 have contains(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4])) by {
-                    apply(click::separation::contains_subrange(p + i, 0, (i + 4) - i, 0, 4)) using {
-                        0 <= 0;
-                        0 <= 4;
-                        to_integer(4) <= to_integer((i + 4) - i);
-                    };
+                    apply(click::separation::contains_subrange(p + i, 0, (i + 4) - i, 0, 4));
                 }
-                apply(click::separation::viewable_restrict(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4]))) using {
-                    viewable((p + i)[0..(i + 4) - i]);
-                    contains(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4]));
-                };
+                apply(click::separation::viewable_restrict(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4])));
             }
             let h = fold(Cell(p, n, i), { model: Link::Node(q) });
             step_until(function.exit);

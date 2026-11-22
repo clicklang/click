@@ -24,10 +24,7 @@ theorem apply_cites_the_byte_range_span(v: uint8[], lo: int32, hi: int32) {
     views v[lo..hi];
     requires defined(hi - lo);
     ensures 0 <= to_integer(hi - lo) by {
-        apply(stated_byte_range_span_is_nonnegative(v, lo, hi)) using {
-            viewable(v[lo..hi]);
-            defined(hi - lo);
-        };
+        apply(stated_byte_range_span_is_nonnegative(v, lo, hi));
     }
 }
 ```

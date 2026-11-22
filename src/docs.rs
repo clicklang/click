@@ -85,8 +85,8 @@ impl TacticClass {
 pub const SEARCH_MISS_MEANING: &str = "a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument";
 
 /// The simple form that writes the argument `form` elides: the `using` form
-/// the reference lists beside a smart form, `apply(theorem(args)) using {
-/// P; ... }` for `apply(theorem(args))`. `None` for a form that elides
+/// the reference lists beside a smart form, such as `apply(fact) using
+/// { P; ... }`. `None` for a form that elides
 /// nothing, including `solve()`, whose `using` form is smart too.
 fn explicit_form<'a>(forms: &'a [(String, TacticClass)], form: &str) -> Option<&'a str> {
     let elided = format!("{} using ", form.trim_matches('`'));
@@ -524,7 +524,6 @@ mod tests {
             apply.contains("- `apply(theorem(args))`: simple;"),
             "{apply}"
         );
-        assert!(apply.contains("- `apply(theorem(args)) using { P; ... }`: simple;"));
         let step = lookup("step").unwrap();
         assert!(
             step.contains("- `let { result: name } = step()`: simple;"),
@@ -576,7 +575,7 @@ mod tests {
         assert_eq!(class("solve();"), Some(TacticClass::Smart));
         assert_eq!(class("apply(t(x));"), Some(TacticClass::Simple));
         assert_eq!(
-            class("apply(t(x)) using { a == b; };"),
+            class("apply(a == b implies c == d) using { a == b; };"),
             Some(TacticClass::Simple)
         );
         assert_eq!(class("step();"), Some(TacticClass::Simple));
@@ -594,7 +593,7 @@ mod tests {
         assert!(written_tactic_elides_argument("apply(fact);"));
         assert!(written_tactic_elides_argument("transport(p, q);"));
         assert!(!written_tactic_elides_argument(
-            "apply(t(x)) using { a == b; };"
+            "apply(a == b implies c == d) using { a == b; };"
         ));
         assert!(!written_tactic_elides_argument("solve();"));
         assert!(!written_tactic_elides_argument(

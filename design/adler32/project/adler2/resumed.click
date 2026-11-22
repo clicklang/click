@@ -53,9 +53,7 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
   intro(); intro();
   normalize();
  }
- apply(adler_spec_extensional_u64(suffix, old(bytes + split), bytes.len() - split, to_integer((load<uint16>(state) as u32)), to_integer((load<uint16>(state + 2u64) as u32)))) using {
-  forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) };
- };
+ apply(adler_spec_extensional_u64(suffix, old(bytes + split), bytes.len() - split, to_integer((load<uint16>(state) as u32)), to_integer((load<uint16>(state + 2u64) as u32))));
  step_until(statement(6).call(0).entry);
  have to_integer(load<uint16>(state)) == at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((load<uint16>(state) as u32)))) by known();
  have to_integer(load<uint16>(state + 2u64)) == at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((load<uint16>(state) as u32)), to_integer((load<uint16>(state + 2u64) as u32)))) by known();
@@ -73,7 +71,7 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
   known();
  }
  // Compose the two updates over the uint64 specification at the split.
- apply(integer::uint64_subtract_to_integer(bytes.len(), split)) using { to_integer(split) <= to_integer(bytes.len()); };
+ apply(integer::uint64_subtract_to_integer(bytes.len(), split));
  have to_integer(split) + to_integer(bytes.len() - split) <= 18446744073709551615 by solve() using {
   to_integer(bytes.len() - split) == to_integer(bytes.len()) - to_integer(split);
   to_integer(bytes.len()) <= 18446744073709551615;

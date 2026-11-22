@@ -318,7 +318,7 @@ fn discovery_failures_identify_undetermined_arguments() {
         report.contains("theorem `hidden`: argument `witness` cannot be inferred from the goal"),
         "{report}"
     );
-    assert!(report.contains("explicit apply(...) using"), "{report}");
+    assert!(report.contains("explicit apply(...)"), "{report}");
     assert!(!report.contains("[NoMatch]"), "{report}");
 }
 

@@ -73,15 +73,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
-                apply(walk_in_range(a, n, from, previous)) using {
-                    0 <= from;
-                    from < n;
-                    n <= 1073741823;
-                    viewable(a[0..n]);
-                    forall (k: int32) {
-                        0 <= k and k < n implies 0 <= a[k] and a[k] < n
-                    };
-                };
+                apply(walk_in_range(a, n, from, previous));
                 have a[walk(a, from, previous)] == b[walk(a, from, previous)] by {
                     have 0 <= (walk(a, from, previous)) and (walk(a, from, previous)) < n;
                     instantiate(forall (k: int32) {
@@ -152,22 +144,7 @@ void mark(int32 *next, int32 *visited) {
     have 1 <= 1073741823;
     have 0 <= 1 - 0;
     have 1 - 0 <= 1073741823;
-    apply(walk_frame(at(entry, next), next, 1, 0, Nat::Succ(Nat::Zero))) using {
-        0 <= 0;
-        0 < 1;
-        1 <= 1073741823;
-        at(entry, viewable(next[0..1]));
-        viewable(next[0..1]);
-        forall (k: int32) {
-            0 <= k and k < 1 implies
-                0 <= at(entry, next[k]) and at(entry, next[k]) < 1
-        };
-        forall (k: int32) {
-            0 <= k and k < 1 implies at(entry, next[k]) == next[k]
-        };
-        0 <= 1 - 0;
-        1 - 0 <= 1073741823;
-    };
+    apply(walk_frame(at(entry, next), next, 1, 0, Nat::Succ(Nat::Zero)));
     have at(entry, walk(next, 0, Nat::Succ(Nat::Zero))) == 0;
     have walk(next, 0, Nat::Succ(Nat::Zero)) == 0 by {
         solve() using {

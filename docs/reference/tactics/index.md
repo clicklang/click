@@ -1131,7 +1131,6 @@ step is still checked.
 | `apply(fact)` | smart | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(fact) using { P; ... }` | simple | Expansion output | Apply an implication using written evidence. | [Reference](#fact-application) |
 | `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
-| `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
 | `let ih = induct(value)` | simple | Core | Introduce scalar or structural induction. | [Reference](#proposition-reasoning) |
@@ -1522,8 +1521,8 @@ Available verified theorems are reasoning rules, not extra hypotheses. If the
 existing strategies miss, restricted solve searches for one theorem application
 whose conclusion structurally matches the goal. Every value argument must be
 determined by that conclusion; generic type arguments are inferred by ordinary
-application checking. The instantiated requirements and argument guards must
-be supplied by the listed facts under the existing `apply ... using` rules.
+application checking. The solver checks the instantiated requirements and argument guards against
+the listed facts before choosing the application.
 An unconditional theorem can therefore close `solve() using {}`.
 
 Conclusion matching treats reversed `==` and `!=` operands and mirrored
@@ -1561,8 +1560,9 @@ predicate calls, definedness, and proposition expressions, including ordinary
 arithmetic and function-call operands. It does not invent arguments absent
 from the conclusion, match modulo arbitrary equality, or chain applications.
 Discovery uses an index of conclusion shapes and function/predicate symbols,
-runs under the normal solve work budget, and expands to explicit
-`apply(theorem(args)) using { ... }`. Direct existing proofs remain preferred.
+runs under the normal solve work budget, and expands to
+`apply(theorem(args))` when its obligations can be checked from the facts in
+scope. Expansion retains separate proofs for open obligations.
 
 <!-- verified-example: mdtests/solve_using_discovers_one_theorem.md -->
 ```click
@@ -2193,7 +2193,7 @@ base, `&q[j] != &q[0]`, whose indices have one width and format (`int32`, or
 `have j != 0` (written from the index words, as the store search writes its
 fact: `((m - 1) as int32) != 0`, `j != 0u64`), proves it by `solve`, and
 closes the goal with
-`apply(click::separation::distinct_elements(q, j, 0)) using { j != 0; }`.
+`apply(click::separation::distinct_elements(q, j, 0))`.
 Expansion writes that `have` and the `apply`. Where the indices may be equal
 the nested `solve` misses and the goal's ordinary refusal stands
 ([`solve_proves_element_addresses_distinct_from_their_indices.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_from_their_indices.md),
@@ -2797,7 +2797,8 @@ Theorem calls keep their existing `apply(theorem(args))` spelling.
 **Core.** Apply a verified global theorem at the written arguments. Click
 generates obligations from the instantiated theorem requirements and argument
 evaluation, in pure proofs, at the execution frontier, and on returned
-outcomes. Available facts and direct checking close these obligations.
+outcomes. Available facts and direct checking close these obligations,
+including evaluation conditions that are already established in scope.
 Ordinary implicit `solve()` proves any remaining obligations. You can
 establish a missing fact first with `have P by { ... }`.
 
@@ -2806,65 +2807,10 @@ establish a missing fact first with `have P by { ... }`.
 An unknown theorem, type mismatch, or unproved obligation fails without
 changing resources. A missing obligation names the proposition to prove.
 Expansion retains any needed `have` proofs and writes the bare
-`apply(theorem(args))`. Replay checks the generated obligations with
-`known()` rules. The explicit `using` form also checks a theorem application
-from written evidence.
+`apply(theorem(args))`. Replay checks generated obligations using ordinary
+availability and evaluation rules.
 
 **Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`pure_apply_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_apply_obligations.md), [`apply_cites_a_premise_stated_first.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_cites_a_premise_stated_first.md)
-
-### Theorem application with selected premises
-
-**Form:** `apply(theorem(args)) using { P; ... }`
-
-**Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which selects its premises; list them only to pin the proof down.
-Apply a verified global theorem using exactly the listed premises and add its
-guarantees.
-
-**Accepts** an application of a known theorem to arguments of its parameter
-types, when:
-
-- Each listed `P` is an available fact, as written, in an equivalent operand
-  form (`y > x` for `x < y`, `0 == f(x)` for `f(x) == 0`), or as a
-  conjunct of a held conjunction.
-- Each `requires` of the theorem, with the arguments substituted
-  simultaneously, either evaluates to true or matches a listed premise: as
-  written, as a conjunct of a listed conjunction (such as the no-overflow
-  conjunct of a `defined(x + y)` fact), in the other orientation of an
-  equality (`have a == b` discharges `b == a`), or as the mirrored order
-  claim in any order family (`c >= b` for `b <= c`). Listing more premises
-  than the theorem needs is allowed.
-- Mathematical `Integer` arguments may use explicit machine observations such
-  as `to_integer(a)`; fixed-state capture checks arithmetic evaluation guards
-  and preserves `old`/`at` selectors. Heap observations follow logical
-  specification read semantics and grant no access authority.
-- Guarantees: every `ensures` of the theorem at the arguments is added. When
-  one of them is the current goal, the goal closes unless other written steps
-  follow, as for any tactic that adds a fact.
-
-**Outside it**, with what to write instead:
-
-- A requirement that only follows from listed premises, such as `x < y` from
-  `x < z` and `z <= y`, or from `x == z` and `z < y`: prove it first with
-  `have` and list it.
-- An omitted requirement: list it, or use bare `apply`, which selects or
-  proves it.
-
-Bare `apply` also selects known evaluation guards for expressions nested inside
-model arguments, such as `defined(x - 1)` for `Count::At(x - 1)`. These are
-selected argument conditions, not additional theorem requirements; removing
-their evidence from an expanded `using` list can make the application fail.
-
-**Failure, checking, and tools:**
-
-An unavailable listed premise fails with "`apply using` requires an
-unavailable exact premise"; an unmet requirement fails naming it and its
-instantiation ("requirement 1 `a < b` with a = x, b = y instantiates to
-x < y"); an unknown theorem or wrong argument count fails naming it. Click
-checks the exact application with no search; expansion is unchanged, and
-profiling charges its explicit input and guarantees.
-
-**Checked examples:** [`produced_population_count_in_ensured_predicate.md`](https://github.com/clicklang/click/blob/master/mdtests/produced_population_count_in_ensured_predicate.md), [`apply_keeps_sibling_conclusions_when_one_is_the_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_keeps_sibling_conclusions_when_one_is_the_goal.md), [`apply_does_not_supply_a_conclusion_its_theorem_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_does_not_supply_a_conclusion_its_theorem_lacks.md), [`apply_using_accepts_a_constant_true_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_using_accepts_a_constant_true_premise.md), [`theorem_apply_requires_exact_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_apply_requires_exact_fact.md)
 
 ### Unfolding pure functions
 
@@ -3517,11 +3463,11 @@ Use `solve() using { L <= x; x <= U; M <= y; y <= N; }` to prove
 an exact bound on the mathematical product `x * y`. Each interval endpoint
 and the result bound must be constant, with ordered interval endpoints.
 Expansion writes four numerical corner checks with `known()`, followed by
-`apply(integer::product_lower_bound(...)) using { ... }` or
-`apply(integer::product_upper_bound(...)) using { ... }`. The library proofs
+`apply(integer::product_lower_bound(...))` or
+`apply(integer::product_upper_bound(...))`. The library proofs
 split on signs and apply multiplication order and transitivity explicitly;
-their dependencies contain no `normalize()`. No ambient fact is selected
-when replaying these applications. The same proof construction supplies
+their dependencies contain no `normalize()`. The theorem applications
+reuse the established corner bounds. The same proof construction supplies
 product bounds from machine operands' stated type ranges.
 
 The authored `normalize() using` compatibility form still checks this rule.
@@ -3618,7 +3564,7 @@ It adds `Q` as a fact and closes the goal when `Q` is the goal.
 
 For current-point `viewable(A)` to `viewable(B)` with explicitly cited
 `contains(A, B)`, expansion retains ordinary
-`apply(separation::viewable_restrict(A, B)) using { ... }` steps. When both
+`apply(separation::viewable_restrict(A, B))` steps. When both
 are memory ranges with the same written base and int32 endpoints, citing
 `lo <= inner_lo`, `inner_lo <= inner_hi`, and `inner_hi <= hi` instead
 produces an explicit `have contains(...)` using `separation::contains_subrange` first.
