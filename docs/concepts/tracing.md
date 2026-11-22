@@ -26,7 +26,7 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `incomplete proof` | The proof ended with a requirement outstanding. | Establish the named requirement before closing, such as a resource promised on return. |
 | `execution prerequisite unmet` | A checked operation needs evidence at its program point. | Record the requirement and follow the procedure below. |
 | `contract entry refused` | Click could not enter a contract. | Inspect the named clauses and work from the available goal. |
-| `execution refused`, `invalid divergence declaration`, or `unsupported proof` | Click identified a specific execution, declaration, or proof-driver refusal. | Investigate the reported cause. |
+| `execution refused` or `invalid divergence declaration` | Click identified a specific execution or declaration refusal. | Investigate the reported cause. |
 
 When a proposition had to be true at a point and Click did not prove it,
 the report prints it on a `goal:` line. That goal can come from an `ensures`

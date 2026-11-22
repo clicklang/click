@@ -2208,6 +2208,15 @@ supply the resources the source requires and cover the writes the source permits
 The resources the source returns, together with any resources it leaves
 untouched, must supply the resources the target promises to return.
 
+Framing preserves the resources the source leaves untouched. Explicit
+refinement can frame memory, composites, tokens, and owned instances of
+supported resources. Owned memory and resource instances must have unit
+quantity for this check. Other resource families, access modes, or quantities
+needed for framing report `unsupported` and name the first blocking resource
+or family. Extending this check requires using the resource family's checked
+split and composition rules, then proving that the source returns enough
+resources to reconstruct the target's promises with the untouched frame.
+
 A named contract can also take values that are fixed where it is attached to
 a function, declared in its body as `let name: type;`, with a scalar type and
 no initializer. In declaration order these are its value parameters. They are

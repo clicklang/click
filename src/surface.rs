@@ -8982,7 +8982,6 @@ pub enum ProofRefusal {
     ExecutionPrerequisite,
     Execution,
     DivergenceDeclaration,
-    UnsupportedProof,
 }
 
 impl ProofRefusal {
@@ -8996,7 +8995,6 @@ impl ProofRefusal {
             Self::ExecutionPrerequisite => "execution prerequisite unmet",
             Self::Execution => "execution refused",
             Self::DivergenceDeclaration => "invalid divergence declaration",
-            Self::UnsupportedProof => "unsupported proof",
         }
     }
 }

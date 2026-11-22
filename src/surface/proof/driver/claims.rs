@@ -590,20 +590,16 @@ fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimR
     format!("{label}: {statement}")
 }
 
-/// The terminal diagnostic for a proof no checked driver accepts. The
-/// drivers are the single verification engine; a shape they decline is a
-/// gap to close in a driver, never a reason to run a second engine. A
-/// decline records no tactic, so the message names none.
-fn unsupported_proof_shape(
+/// The terminal diagnostic when all checked drivers declined.
+fn checked_driver_refusal(
     proof_label: &str,
-    grouped: bool,
     claim_labels: &[String],
     decline: Decline,
 ) -> ClickError {
     if decline == Decline::RegionDepth {
         return ClickError::new(format!(
             "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
-        )).with_proof_refusal(crate::surface::ProofRefusal::UnsupportedProof);
+        )).with_kind(ClickErrorKind::Unsupported);
     }
     if decline == Decline::ShortOfExit {
         // The written shape is supported; what stopped the drivers is a path
@@ -623,14 +619,9 @@ fn unsupported_proof_shape(
             .join(", ");
         format!("these {} contract claims: {labels}", claim_labels.len())
     };
-    let rewrite = if grouped {
-        "Every terminal path must establish every listed claim. If `step()` reaches a maybe-throwing call, use `outcomes { returned => { ... } threw => { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
-    } else {
-        "If `step()` reaches a maybe-throwing call, use `outcomes { returned => { ... } threw => { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
-    };
     ClickError::new(format!(
-        "`{proof_label}`: no checked proof driver accepts this proof script's shape for {claim_description}, and none reported a tactic it refused. No listed claim was shown false. To find the tactic no driver supports here, remove tactics from the end of the script until it is accepted. {rewrite}"
-    )).with_proof_refusal(crate::surface::ProofRefusal::UnsupportedProof)
+        "`{proof_label}`: no checked proof driver accepts this proof script's shape for {claim_description}, and none reported a tactic it refused. Click could not identify why verification stopped."
+    )).with_kind(ClickErrorKind::Internal)
 }
 
 pub(in crate::surface) fn prove_claim_by_tactics(
@@ -1091,12 +1082,8 @@ fn prove_claims_by_checked_tactics(
         .map(|claim| diagnostic_claim_label(function_block, claim))
         .collect::<Vec<_>>();
     let decline = direct_proof.err().unwrap_or(Decline::Shape);
-    Err(unsupported_proof_shape(
-        proof_label,
-        grouped,
-        &claim_labels,
-        decline,
-    ))
+    Err(checked_driver_refusal(proof_label, &claim_labels, decline)
+        .at_declaration(function_block.signature().name()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6477,12 +6464,8 @@ mod tests {
 
     #[test]
     fn unsupported_shape_diagnostic_blames_no_tactic() {
-        let error = unsupported_proof_shape(
-            "f.ensures_0",
-            false,
-            &["f.ensures_0".to_string()],
-            Decline::Shape,
-        );
+        let error =
+            checked_driver_refusal("f.ensures_0", &["f.ensures_0".to_string()], Decline::Shape);
 
         assert!(error.message().contains("no checked proof driver accepts"));
         assert!(
@@ -6490,7 +6473,7 @@ mod tests {
                 .message()
                 .contains("none reported a tactic it refused")
         );
-        assert!(error.message().contains("No listed claim was shown false"));
+        assert_eq!(error.kind(), ClickErrorKind::Internal);
         // A decline records no tactic, so none is blamed and the script is
         // not called valid.
         assert!(!error.message().contains("It reached tactic"));

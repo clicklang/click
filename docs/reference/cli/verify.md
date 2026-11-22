@@ -181,7 +181,6 @@ Verification reports use these headings:
 | `execution refused` | The modeled operation could not proceed on this path, for example an uninitialized read. |
 | `invalid divergence declaration` | The declared divergence conflicts with checked termination evidence. |
 | `unsupported` | Click detected a documented limitation with a path to supporting it. The diagnostic identifies the unsupported case. |
-| `unsupported proof` | Click's driver does not support the reported proof shape or depth. |
 | `unclassified verification refusal` | The reported cause comes from a remaining check without a specific classification. |
 | `syntax error` | Input did not parse. |
 | `type error` | The source did not pass checking of names or types. |

@@ -65,8 +65,8 @@ it; shrink them if you can, but a report need not wait for that.
   Continue with the reported obligation when the diagnostic gives one. For
   an entry refusal, use `contract-bug` if you can show that the original
   contract satisfies the documented rule Click applied.
-- `execution refused`, `invalid divergence declaration`, or `unsupported
-  proof`: investigate the reported operation, declaration, or proof shape.
+- `execution refused` or `invalid divergence declaration`: investigate the
+  reported operation or declaration.
 - `unclassified verification refusal`: investigate the stated cause. If
   the trace leaves the refusal unclear, use `unclear-trace`.
 
