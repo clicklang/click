@@ -5,6 +5,7 @@ use super::*;
 fn selected_constructor_payload_check_scales_with_written_fields() {
     let types = [
         AlgebraicValueType::Program(ProgramType::Int32),
+        AlgebraicValueType::Program(ProgramType::UInt64),
         AlgebraicValueType::Integer,
     ];
     let sizes = [8, 32, 128];
@@ -15,25 +16,24 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
             variant: "Arm".into(),
             fields,
         };
+        let value = |id| {
+            let variable = Variable(id);
+            match ty {
+                AlgebraicValueType::Integer => AlgebraicValue::Integer(IntegerTerm::var(variable)),
+                AlgebraicValueType::Program(program_type) => AlgebraicValue::Program(
+                    MachineIntegerType::from_program_type(*program_type)
+                        .unwrap()
+                        .symbolic_value(variable),
+                ),
+                _ => unreachable!(),
+            }
+        };
         let fields = (0..size)
-            .map(|i| match ty {
-                AlgebraicValueType::Integer => {
-                    AlgebraicValue::Integer(IntegerTerm::var(Variable(992_300 + i as u64)))
-                }
-                _ => AlgebraicValue::Program(int32(i as u32)),
-            })
+            .map(|i| value(992_300 + i as u64))
             .collect::<Vec<_>>();
         scrutinee.node = constructor(fields.clone());
         let bindings = (0..size)
-            .map(|i| {
-                let variable = Variable(992_100 + i as u64);
-                match ty {
-                    AlgebraicValueType::Integer => {
-                        AlgebraicValue::Integer(IntegerTerm::var(variable))
-                    }
-                    _ => AlgebraicValue::Program(int32(MachineTerm::Variable(variable))),
-                }
-            })
+            .map(|i| value(992_100 + i as u64))
             .collect::<Vec<_>>();
         let mut expected_fields = fields.into_iter().rev().collect::<Vec<_>>();
         let mut result_fields = bindings.iter().cloned().rev().collect::<Vec<_>>();
@@ -70,6 +70,50 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
         assert!(proved);
         assert!((2 * size..=8 * size + 48).contains(&work), "{size}: {work}");
+    }
+}
+
+#[test]
+fn nested_constructor_payload_check_scales_with_selected_arms() {
+    for depth in [4, 8, 16] {
+        let _session = VerificationSession::enter();
+        let original = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
+        let value =
+            |index: u64| AlgebraicValue::Integer(IntegerTerm::var(Variable(993_000 + index)));
+        let constructor = |index| AlgebraicTerm {
+            algebraic_type: original.algebraic_type.clone(),
+            node: AlgebraicTermNode::Constructor {
+                variant: "Arm".into(),
+                fields: vec![value(index)],
+            },
+        };
+        let mut matched = constructor(depth);
+        for index in (0..depth).rev() {
+            matched = AlgebraicTerm {
+                algebraic_type: original.algebraic_type.clone(),
+                node: AlgebraicTermNode::Match {
+                    scrutinee: Box::new(constructor(index)),
+                    arms: vec![AlgebraicResultMatchArm {
+                        variant: "Arm".into(),
+                        binding_names: Default::default(),
+                        bindings: vec![value(index + 1)],
+                        body: matched,
+                    }],
+                },
+            };
+        }
+        let goal = Proposition::Equal(
+            Term::Algebraic(matched.into()),
+            Term::Algebraic(constructor(0).into()),
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
+        assert!(proved);
+        let depth = depth as usize;
+        assert!(
+            (3 * depth..=8 * depth + 48).contains(&work),
+            "{depth}: {work}"
+        );
     }
 }
 

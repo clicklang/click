@@ -1687,9 +1687,10 @@ operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
 builds a constructor directly from its bound fields or captured `Integer`
-variables. The payloads can be literal `int32` values or `Integer` literals
-and variables. The check compares each result field with the corresponding
-written payload or captured variable.
+variables. The check can follow nested matches on written constructors, keeping
+each selected arm's bindings in scope. The payloads can be machine-integer
+or `Integer` literals and variables. Machine fields retain their exact width
+and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
