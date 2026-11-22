@@ -1869,6 +1869,19 @@ fn evaluate_retained_memory_load_case(
         }];
     }
 
+    // A complete scalar call output has an indexed version, even when
+    // the call supplied no value equation. Use that same read as Click.
+    if purpose == LoadPurpose::Program
+        && value_type == ProgramType::Int32
+        && let Some(origin) = origin
+        && let Some(version) = origin.call_output_integer_version(&pointer, LoadKind::Int32)
+    {
+        return vec![
+            evaluate_indexed_read(version, origin, pointer, value_type, facts, obligations)
+                .map_value(Into::into),
+        ];
+    }
+
     // Query the actual program state. The reduced cache above is a
     // hypothetical view for this read, not another execution transition.
     if let Some(value) = cell_value_recorded_on_path(
@@ -6048,6 +6061,67 @@ mod tests {
             legacy,
             "warm compatibility path"
         );
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_initialized_its_word() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = SymbolicMemory::local_pointer("output");
+        let ty = ProgramType::Int32;
+        let start = ExecutionState::new().begin_function_entry_memory();
+        let declared =
+            start
+                .clone()
+                .with_memory(start.memory().clone().with_declared_scalar_block(
+                    cell.base.clone(),
+                    4,
+                    ty,
+                ));
+        let output = declared.clone().with_memory(
+            declared
+                .memory()
+                .clone()
+                .with_initialized_call_output(&cell, 4),
+        );
+        let next = output.clone().with_memory(
+            output
+                .memory()
+                .clone()
+                .with_block(SymbolicMemory::local_pointer("other").base, 4),
+        );
+        let next = next.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::access(cell.clone(), ty)),
+        ));
+        let expected = next
+            .program_point()
+            .ordinary_typed_version(&cell, ty)
+            .expect("the local scalar has a recorded call output");
+        assert_eq!(expected.read_version_id(), output.program_point_id());
+        assert_ne!(expected.read_version_id(), next.program_point_id());
+
+        let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+            ProgramValue::typed_pointer(cell.clone(), ProgramType::Int32Pointer),
+        )));
+        let paths = super::super::evaluate_expression_value_paths(
+            &next,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked C read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("the call initialized the cell: {:?}", path.outcome);
+        };
+        let Some(MachineTerm::MemoryLoad(version, address, LoadKind::Int32)) =
+            crate::kernel::spec::program_value_bitvector_term(&value.native())
+        else {
+            panic!("one typed word read");
+        };
+        assert_eq!(version.read_version_id(), expected.read_version_id());
+        assert_eq!(*address, cell);
     }
 
     #[test]
