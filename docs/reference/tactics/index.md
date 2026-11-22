@@ -3361,8 +3361,9 @@ remain in scope for later claims in the block.
 - One output opens the outermost binder. For example,
   `let a = obtain(exists (x: int32, y: int32) { x < y });` leaves
   `exists (y: int32) { a < y }` available.
-- For `(0..n).any(|k| { B })`, give the explicit existential, including the
-  range bounds, as the argument.
+- For a range existential, write `let k = obtain((lo..hi).any(|i| { B }));`.
+  The range determines the witness type. The proof gains `lo <= k`, `k < hi`,
+  and the predicate body at `k`.
 - To open a historical existential, write
   `let a = obtain(at(point, exists (x: int32) { P }));`.
 - Output names must be distinct and fresh in the proof block. The quantifier
@@ -3374,7 +3375,7 @@ An unavailable existential, too many outputs, or an output name already in
 scope fails. State an existential with `have` first if it needs a proof.
 Expansion retains the `let` and its source proposition.
 
-**Checked examples:** [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`obtain_requires_the_written_existential_body.md`](https://github.com/clicklang/click/blob/master/mdtests/obtain_requires_the_written_existential_body.md)
+**Checked examples:** [`obtain_range_any.md`](https://github.com/clicklang/click/blob/master/mdtests/obtain_range_any.md), [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`obtain_requires_the_written_existential_body.md`](https://github.com/clicklang/click/blob/master/mdtests/obtain_requires_the_written_existential_body.md)
 
 ## Integer multiplication order and division intervals
 

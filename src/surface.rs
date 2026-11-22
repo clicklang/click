@@ -7725,7 +7725,8 @@ impl ProofWitness {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofLetSatisfy {
-    bindings: Vec<(String, ClickType)>,
+    // Range existentials infer a machine-integer type during lowering.
+    bindings: Vec<(String, Option<ClickType>)>,
     proposition: ClickProposition,
 }
 

@@ -1523,7 +1523,7 @@ fn expand_declared_resource_proof_of(
     for tactic in tactics {
         if let ProofTactic::LetSatisfy(obtain) = &tactic {
             for (name, click_type) in &obtain.bindings {
-                bound.push(constructors.bind(name, Some(click_type.clone())));
+                bound.push(constructors.bind(name, click_type.clone()));
             }
         }
         let introduced = match &tactic {
