@@ -2807,11 +2807,11 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             for (claim_index, _, _) in &direct_resource_claims {
                 let claim_label = function_claim_label(function_block, &claims[*claim_index]);
                 let checked = required_outcome(outcome_proof)?.check_outcome_resource_claim(completed_execution, claims[*claim_index]).map_err(|error| {
-                    if error.proof_refusal() == Some(crate::surface::ProofRefusal::IncompleteProof) {
+                    if error.kind() == ClickErrorKind::Internal {
                         return error;
                     }
-                    ClickError::new(format!(
-                        "`{proof_label}` path {path_index} left `{claim_label}` unproved; establish the facts and resources it needs before the end of the proof (claim index {claim_index})\nlast closing attempt:\n{}", error.raw_summary()
+                    error.with_prefix(format!(
+                        "`{proof_label}` path {path_index} left `{claim_label}` unproved; establish the facts and resources it needs before the end of the proof (claim index {claim_index})\nlast closing attempt:\n"
                     ))
                 })?;
                 direct_resource_evidence.insert(*claim_index, checked);

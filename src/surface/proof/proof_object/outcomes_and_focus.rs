@@ -235,7 +235,7 @@ impl<'a> Proof<'a> {
             guard_active,
             guard_deferred,
         )
-        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractExit))
+        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof))
     }
 
     /// The guard decision and whether an unresolved guard defers the claim.
