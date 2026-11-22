@@ -1286,8 +1286,24 @@ fn resolve(
     let mut value = value.clone();
     put_back(&mut value, &inner);
     visiting.remove(name);
+    let temporary_type = types.get(&name.to_string()).copied();
+    // A reborrow of an unchanged record reference carries the same object
+    // through the call. The original parameter can name that reference.
+    if let E::Borrow { place, value_type } = &value
+        && let E::Deref {
+            reference,
+            value_type: record @ Type::Record { .. },
+        } = place.as_ref()
+        && matches!(value_type, Type::Reference { pointee, .. } if pointee.as_ref() == record)
+        && let E::Local { name: source } = reference.as_ref()
+        && temporary_type == Some(value_type)
+        && types.get(source).copied() == Some(value_type)
+        && unchanged.contains(source)
+    {
+        value = reference.as_ref().clone();
+    }
     let unchanging = match &value {
-        E::Borrow { place, value_type } => match types.get(&name.to_string()) {
+        E::Borrow { place, value_type } => match temporary_type {
             Some(super::super::schema::Type::Reference { .. }) => place_root(place).is_some(),
             // A shared slice borrow of a shared slice local: its pointer
             // and length never change while the borrow lives.
@@ -1309,7 +1325,7 @@ fn resolve(
             mutable: false,
         } => {
             matches!(
-                types.get(&name.to_string()),
+                temporary_type,
                 Some(
                     super::super::schema::Type::ByteSlice { mutable: false }
                         | super::super::schema::Type::ScalarSlice { mutable: false, .. }
@@ -5022,6 +5038,68 @@ mod tests {
             &blocks[1].statements[0],
             S::Assign { value: E::Local { name }, .. } if name == "p"
         ));
+    }
+
+    #[test]
+    fn a_record_reborrow_uses_only_an_unchanged_matching_parameter() {
+        let record = Type::Record {
+            name: "Slot".into(),
+        };
+        let reference = |mutable| Type::Reference {
+            mutable,
+            pointee: Box::new(record.clone()),
+        };
+        let parameters = BTreeMap::from([("slot".into(), reference(true))]);
+        for (mutable, rebind, folded) in [
+            (true, false, true),
+            (false, false, false),
+            (true, true, false),
+        ] {
+            let value_type = reference(mutable);
+            let reborrow = E::Borrow {
+                place: Box::new(E::Deref {
+                    reference: Box::new(local("slot")),
+                    value_type: record.clone(),
+                }),
+                value_type: value_type.clone(),
+            };
+            let call = |function: &str, target| T::Call {
+                function: function.into(),
+                arguments: vec![local("t1")],
+                owned_arguments: vec![],
+                destination: None,
+                target,
+                through_pointer: false,
+                result: None,
+            };
+            let mut locals = vec![Place {
+                value_type,
+                ..place("t1")
+            }];
+            let mut blocks = [
+                block(vec![assign("t1", reborrow)], call("f", 1)),
+                block(
+                    rebind
+                        .then(|| assign("slot", local("other")))
+                        .into_iter()
+                        .collect(),
+                    call("g", 2),
+                ),
+                block(vec![], T::Return),
+            ];
+            super::substitute_literals(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+                &parameters,
+            );
+            assert_eq!(locals.is_empty(), folded);
+            let expected = if folded { "slot" } else { "t1" };
+            for block in &blocks[..2] {
+                assert!(matches!(&block.terminator, T::Call { arguments, .. }
+                    if matches!(arguments.as_slice(), [E::Local { name }] if name == expected)));
+            }
+        }
     }
 
     #[test]
