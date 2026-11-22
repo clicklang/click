@@ -285,7 +285,7 @@ pub(super) fn prove_ensure_resource<'e>(
                 requirement = Some(uninitialized.clone());
                 return Err(ClickError::new(format!(
                     "`{claim_label}` failed on path {path_index}: the function produces `{uninitialized}` as initialized memory, but has not initialized every byte of it; memory a function returns unwritten is produced as `uninitialized(...)`"
-                )));
+                )).with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof));
             }
             return Ok(CheckedResourceClaim {
                 execution: checked_execution,
@@ -327,7 +327,8 @@ pub(super) fn prove_ensure_resource<'e>(
                 parameter_binding,
                 &execution_pure_facts()
             )
-        )))
+        ))
+        .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof))
     })();
     checked.map_err(|error: ClickError| {
         if borrowed {
@@ -335,10 +336,14 @@ pub(super) fn prove_ensure_resource<'e>(
         } else {
             let requirement = requirement
                 .unwrap_or_else(|| crate::surface::validation::describe_resource_clause(resource));
-            ClickError::new(format!(
+            let report = ClickError::new(format!(
                 "{}\nRequires produces {requirement}",
                 error.raw_summary()
-            ))
+            ));
+            match error.proof_refusal() {
+                Some(refusal) => report.with_proof_refusal(refusal),
+                None => report,
+            }
         }
     })
 }

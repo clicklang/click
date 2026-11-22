@@ -2747,7 +2747,7 @@ fn check_pure_script_with_proof(
             .unwrap_or(&root)
             .step_error(format!("checked pure script for `{claim_label}` {detail}"))
             .with_proof_refusal(match declined {
-                None => crate::surface::ProofRefusal::UnprovedGoal,
+                None => crate::surface::ProofRefusal::IncompleteProof,
                 Some(super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(_)) => {
                     crate::surface::ProofRefusal::UnsuccessfulSearch
                 }

@@ -8968,7 +8968,7 @@ pub enum ProofRefusal {
     Tactic,
     UnsuccessfulSearch,
     ImplicitStatementSearch,
-    UnprovedGoal,
+    IncompleteProof,
     Contract,
     ContractEntry,
     ExecutionPrerequisite,
@@ -8985,7 +8985,7 @@ impl ProofRefusal {
         match self {
             Self::Tactic => "tactic error",
             Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
-            Self::UnprovedGoal => "unproved goal",
+            Self::IncompleteProof => "incomplete proof",
             Self::Contract => "contract error",
             Self::ContractEntry => "contract entry refused",
             Self::ExecutionPrerequisite => "execution prerequisite unmet",

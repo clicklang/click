@@ -56,7 +56,7 @@ fn report_error(message: String) -> ! {
     if [
         "tactic error",
         "unsuccessful search",
-        "unproved goal",
+        "incomplete proof",
         "contract error",
         "contract entry refused",
         "execution prerequisite unmet",
@@ -2705,8 +2705,34 @@ void probe(struct node *node) {{
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("contract exit refused:\n"), "{error}");
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
         assert!(error.contains("ticket(0)"), "{error}");
+    }
+
+    #[test]
+    fn returned_memory_without_promised_initialization_is_an_incomplete_proof() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("f.c");
+        fs::write(&source, "void init(int *p) {}\n").unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+                void init(int32* p) {
+                    consumes uninitialized(p[0..1]);
+                    produces p[0..1];
+                }
+            "#,
+        )
+        .unwrap();
+        let verify = || entry(["verify".to_string(), sidecar.display().to_string()]);
+        let error = verify().unwrap_err();
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
+        assert!(error.contains("has not initialized every byte"), "{error}");
+        assert!(error.contains("Requires produces p[0]"), "{error}");
+
+        fs::write(&source, "void init(int *p) { *p = 1; }\n").unwrap();
+        verify().expect("the write supplies the promised initialized memory");
     }
 
     #[test]
