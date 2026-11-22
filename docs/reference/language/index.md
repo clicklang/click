@@ -243,7 +243,8 @@ binary64 conversion rules, including integer rounding, width conversion,
 signed zero, infinities, and NaNs. Like integer targets, these Click forms
 cast the value observed by their operand, including `old(...)` and `at(...)`.
 They do not add a conversion from mathematical `Integer` or 128-bit integers.
-Float-to-integer casts keep their existing finite/range obligations. Checked
+Float-to-integer casts require ordered bounds on the range after truncation.
+Together these bounds exclude NaN and infinities. Checked
 examples: `mdtests/float_numeric_cast_spellings.md`.
 
 `as` binds tighter than every binary operator and looser than every unary

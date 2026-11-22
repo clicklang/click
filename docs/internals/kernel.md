@@ -1299,8 +1299,8 @@ hexadecimal literals and unsupported suffixes remain rejected. The evaluator
 does not delegate symbolic semantics to host `f32` or `f64`; the operation term,
 integer-space evaluator, and certificate checker agree on the exact width,
 rounding, exceptional values, and conversion rules. Symbolic float-to-integer
-conversions retain finite and range obligations at function, assignment, and
-return boundaries.
+conversions retain the ordered bounds on the truncation range at function,
+assignment, and return boundaries. These comparisons exclude NaN and infinities.
 
 Named unions are represented on the C side as address-backed layouts. Every
 modeled member has offset zero, and a member read lowers to a kernel typed load

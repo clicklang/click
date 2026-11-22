@@ -1026,7 +1026,14 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
             MachineTerm::PureFunctionApplication { .. }
         ))
     ));
-    assert_eq!(paths[0].obligations.len(), 3);
+    // The ordered range bounds establish finiteness as well as representability.
+    assert_eq!(paths[0].obligations.len(), 2);
+    assert!(
+        paths[0]
+            .obligations
+            .iter()
+            .all(|bound| !bound.is_assumable())
+    );
 }
 
 #[test]

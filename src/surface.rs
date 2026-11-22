@@ -7488,6 +7488,10 @@ pub enum SpecialArithmeticNode {
         alignments: Vec<usize>,
         result: ClickProposition,
     },
+    FloatBound {
+        premise: usize,
+        result: ClickProposition,
+    },
     FloatReflexive {
         finite: usize,
         result: ClickProposition,
@@ -7875,6 +7879,7 @@ pub(crate) struct ParameterNaming {
     pub(crate) parameters: std::sync::Arc<[crate::languages::interface::ImportedParameter]>,
     pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
     pointer_sources: BTreeMap<Address, usize>,
+    float_sources: BTreeMap<(ProgramType, Variable), usize>,
 }
 
 impl ParameterNaming {
@@ -7883,19 +7888,45 @@ impl ParameterNaming {
         arguments: &[ProgramExpression],
     ) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
+        let mut pointer_sources = BTreeMap::new();
+        let mut float_sources = BTreeMap::new();
+        for (index, argument) in arguments.iter().enumerate() {
+            match argument {
+                ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
+                    pointer_sources
+                        .entry(pointer.address().clone())
+                        .or_insert(index);
+                }
+                ProgramExpression::Value(
+                    value @ (ProgramValue::Float32(MachineTerm::Variable(variable))
+                    | ProgramValue::Float64(MachineTerm::Variable(variable))),
+                ) => {
+                    float_sources
+                        .entry((value.program_type(), *variable))
+                        .or_insert(index);
+                }
+                _ => {}
+            }
+        }
         Self {
             parameters: parameters.into(),
             arguments: arguments.into(),
-            pointer_sources: arguments.iter().enumerate().fold(
-                BTreeMap::new(),
-                |mut sources, (index, argument)| {
-                    if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
-                        sources.entry(pointer.address().clone()).or_insert(index);
-                    }
-                    sources
-                },
-            ),
+            pointer_sources,
+            float_sources,
         }
+    }
+
+    pub(crate) fn float_source(
+        &self,
+        ty: ProgramType,
+        variable: Variable,
+    ) -> Option<(
+        &crate::languages::interface::ImportedParameter,
+        &ProgramExpression,
+    )> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.float_sources.get(&(ty, variable))?;
+        Some((self.parameters.get(index)?, self.arguments.get(index)?))
     }
 
     pub(crate) fn pointer_source(

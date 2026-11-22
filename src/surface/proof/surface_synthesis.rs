@@ -4702,6 +4702,27 @@ fn raise_kernel_term_dispatch(
                 _ => synthesize_surface_bitvector(read, parameter_binding, state, bound_variables)?,
             }
         }
+        Node::Variable(variable)
+            if let KernelType::Program(ty @ (ProgramType::Float32 | ProgramType::Float64)) =
+                term.ty() =>
+        {
+            if let Some(name) = folds::binder_name(false, *variable)
+                .or_else(|| bound_variables.get(variable).cloned())
+                .or_else(|| proof_binder_name(*variable))
+            {
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.into()))
+            } else {
+                let (parameter, argument) =
+                    parameter_binding.naming?.float_source(*ty, *variable)?;
+                let name = crate::surface::surface_parameter_binding(parameter.binding_name());
+                let expression = program_operand(ProgramExpression::Variable(name.clone()));
+                if parameter_names_its_argument(&name, argument, state) {
+                    expression
+                } else {
+                    SurfaceTerm::Old(Box::new(expression))
+                }
+            }
+        }
         Node::Variable(variable) => synthesize_surface_bitvector(
             &MachineTerm::Variable(*variable),
             parameter_binding,

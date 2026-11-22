@@ -1883,6 +1883,11 @@ For a signed `int32` order goal, the cited comparisons can form a chain in
 list order from the goal's lower endpoint to its upper endpoint. A strict
 goal needs at least one strict link. Replay checks the listed links directly.
 
+A true `float` or `double` comparison against a literal can cite one stronger
+bound on the same operand. The cited bound must have the same direction and
+width. Equal endpoints require a strict premise for a strict goal. A negated
+comparison can hold for NaN and cannot supply an ordered bound.
+
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
 Both must lie within the operation or destination format. A bound on one

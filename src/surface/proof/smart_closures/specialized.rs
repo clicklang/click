@@ -118,7 +118,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 false,
             ),
             PointerWordFromAlignment { alignments, result } => (alignments.clone(), result, false),
-            FloatReflexive { finite, result } => (vec![*finite], result, false),
+            FloatReflexive { finite, result }
+            | FloatBound {
+                premise: finite,
+                result,
+            } => (vec![*finite], result, false),
             SignedDefined { width, .. } => {
                 return Self::try_signed_definedness_bounds(proof, *width, plan.premises.clone());
             }

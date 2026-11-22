@@ -60,23 +60,12 @@ fn add_float_to_integer_obligations(
         ProgramType::UInt64 => (false, 64),
         _ => return None,
     };
-    let (precision, finite) = match source_type {
-        ProgramType::Float32 => (
-            f32::MANTISSA_DIGITS,
-            ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite),
-        ),
-        ProgramType::Float64 => (
-            f64::MANTISSA_DIGITS,
-            ConditionTerm::float64_classification(value.clone(), FloatClassification::Finite),
-        ),
+    let precision = match source_type {
+        ProgramType::Float32 => f32::MANTISSA_DIGITS,
+        ProgramType::Float64 => f64::MANTISSA_DIGITS,
         _ => return None,
     };
-    add_proof_obligation(
-        obligations,
-        assumptions,
-        Proposition::condition_is(finite, true),
-    )?;
-
+    // The ordered lower and upper comparisons also exclude NaN and infinities.
     let bound = |magnitude, negative, operator| {
         let condition = match source_type {
             ProgramType::Float32 => ConditionTerm::float32_compare(
@@ -122,8 +111,11 @@ fn add_float_to_integer_obligations(
     }
 
     let upper_magnitude = 1u128 << if signed { bits - 1 } else { bits };
-    let upper = bound(upper_magnitude, false, ComparisonOperator::LessThan);
-    add_proof_obligation(obligations, assumptions, upper)
+    add_proof_obligation(
+        obligations,
+        assumptions,
+        bound(upper_magnitude, false, ComparisonOperator::LessThan),
+    )
 }
 
 fn float_to_integer_conversion_value(
@@ -2041,6 +2033,11 @@ fn evaluate_program_cast_paths(
                     }
                     _ => None,
                 };
+                let first_conversion_obligation = obligations.len();
+                let float_to_integer =
+                    matches!(value, ProgramValue::Float32(_) | ProgramValue::Float64(_))
+                        && MachineIntegerType::from_program_type(target_type).is_some()
+                        && !SpecificationAccessScope::is_active();
                 let pointer_operand = matches!(&value, ProgramValue::Pointer(_));
                 let implicit_pointer_conversion = matches!(
                     integer_mode,
@@ -2135,6 +2132,13 @@ fn evaluate_program_cast_paths(
                         integer_pointer_origin,
                     )
                 };
+                if float_to_integer {
+                    // Cast bounds belong to the statement's proof driver.
+                    // Evaluation cannot assume them on its tentative path.
+                    for obligation in &mut obligations[first_conversion_obligation..] {
+                        obligation.assumable = false;
+                    }
+                }
                 if let (Some(source), Ok(converted)) = (&checked_source, &coerced) {
                     facts.extend(
                         checked_narrowing_identity(source, converted)
