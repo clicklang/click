@@ -6990,7 +6990,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
         crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
             operator: crate::kernel::ComparisonOperator::LessThan,
             left: Box::new(variable.clone()),
-            right: Box::new(MachineTerm::uint32_constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         });
     let source = MachineTerm::ClickFunctionApplication {
         name: "mixed_sink".into(),
