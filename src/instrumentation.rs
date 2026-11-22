@@ -206,16 +206,26 @@ struct ActiveTactic {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PendingLimitKind {
-    /// A tactic exhausted its per-class work budget.
-    Work,
-    /// A whole run exhausted its [`with_run_work_limit`] budget.
+pub(crate) enum VerificationStop {
+    Search,
+    Checking,
     RunWork,
+    WallClock,
+}
+
+impl VerificationStop {
+    fn for_tactic(class: &str) -> Self {
+        if class == "smart" {
+            Self::Search
+        } else {
+            Self::Checking
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 struct PendingLimit {
-    kind: PendingLimitKind,
+    kind: VerificationStop,
     message: String,
 }
 
@@ -391,11 +401,12 @@ impl Drop for TacticWorkLimitGuard {
         TACTIC_WORK_LIMITS.with(|limits| {
             limits.borrow_mut().pop();
         });
-        clear_pending_limit(PendingLimitKind::Work);
+        clear_pending_limit(VerificationStop::Search);
+        clear_pending_limit(VerificationStop::Checking);
     }
 }
 
-fn clear_pending_limit(kind: PendingLimitKind) {
+fn clear_pending_limit(kind: VerificationStop) {
     PENDING_LIMIT.with(|pending| {
         let mut pending = pending.borrow_mut();
         if pending.as_ref().is_some_and(|pending| pending.kind == kind) {
@@ -453,7 +464,7 @@ impl Drop for RunWorkLimitGuard {
             limits.iter().any(|limit| limit.exhausted)
         });
         if !enclosing_exhausted {
-            clear_pending_limit(PendingLimitKind::RunWork);
+            clear_pending_limit(VerificationStop::RunWork);
         }
     }
 }
@@ -545,11 +556,11 @@ fn charge_run_work(units: usize) -> bool {
         let active = active_work_description();
         PENDING_LIMIT.with(|pending| {
             let mut pending = pending.borrow_mut();
-            if pending.is_none() {
+            if !pending.as_ref().is_some_and(|stop| stop.kind == VerificationStop::RunWork) {
                 *pending = Some(PendingLimit {
-                    kind: PendingLimitKind::RunWork,
+                    kind: VerificationStop::RunWork,
                     message: format!(
-                        "the run exhausted its deterministic whole-run work budget after {used} units ({limit} limit) while running {active}; no single tactic exhausted its own budget, so the units went to many tactics or to work outside them (`click profile` shows where)"
+                        "the run exhausted its deterministic whole-run work budget after {used} units ({limit} limit) while running {active}; use `click profile` to see where the run spent its work"
                     ),
                 });
             }
@@ -976,7 +987,7 @@ fn charge_checking_work(units: usize) -> bool {
                     tactic.tactic_name, tactic.claim, tactic.statement_index, tactic.source_index)
             })).unwrap_or_else(|| " outside a written tactic".into());
             *pending = Some(PendingLimit {
-                kind: PendingLimitKind::Work,
+                kind: VerificationStop::Checking,
                 message: format!("checking operation `{name}` exhausted its deterministic work allowance after {used} units ({limit} limit){site}; expensive checking is a Click engine performance defect"),
             });
         }
@@ -1052,7 +1063,7 @@ fn charge_tactic_work(units: usize) -> bool {
             false
         } else {
             *pending = Some(PendingLimit {
-                kind: PendingLimitKind::Work,
+                kind: VerificationStop::for_tactic(&tactic.class),
                 message: format!(
                     "tactic `{}` in `{}` exhausted its deterministic {} work budget after {used} units ({limit} limit; statement {}, source tactic {})",
                     tactic.tactic_name,
@@ -1329,15 +1340,8 @@ fn capture_active_deadline_work() {
 }
 
 pub fn deadline_context() -> String {
-    if let Some(pending) = PENDING_LIMIT.with(|pending| pending.borrow().clone()) {
-        return pending.message;
-    }
-    if let Some(limit) = expired_containment_bound() {
-        return format!(
-            "{}, stopped by {}",
-            active_work_description(),
-            containment_bound_description(limit)
-        );
+    if let Some((_, context)) = exceeded_verification_stop() {
+        return context;
     }
     if let Some(active) = ACTIVE_TACTICS.with(|active| active.borrow().last().cloned()) {
         return format!(
@@ -1371,20 +1375,43 @@ pub fn containment_bound_description(limit: Duration) -> String {
 /// bounded incompleteness (reasoning fuel, depth guards, and cycle cuts) does
 /// not appear here.
 pub fn exceeded_verification_limit_context() -> Option<String> {
-    if PENDING_LIMIT.with(|pending| pending.borrow().is_some())
-        || expired_containment_bound().is_some()
-        || ACTIVE_TACTICS.with(|active| {
-            active
-                .borrow()
-                .last()
-                .is_some_and(|active| active.work_exhausted)
-        })
-        || RUN_WORK_LIMITS.with(|limits| limits.borrow().iter().any(|limit| limit.exhausted))
-    {
-        Some(deadline_context())
-    } else {
-        None
+    exceeded_verification_stop().map(|(_, context)| context)
+}
+
+pub(crate) fn exceeded_verification_stop() -> Option<(VerificationStop, String)> {
+    if let Some(limit) = expired_containment_bound() {
+        return Some((
+            VerificationStop::WallClock,
+            format!(
+                "{}, stopped by {}",
+                active_work_description(),
+                containment_bound_description(limit)
+            ),
+        ));
     }
+    if let Some(pending) = PENDING_LIMIT.with(|pending| pending.borrow().clone()) {
+        return Some((pending.kind, pending.message));
+    }
+    if let Some((used, limit)) = run_work_exhaustion() {
+        return Some((
+            VerificationStop::RunWork,
+            format!(
+                "the run exhausted its deterministic whole-run work budget after {used} units ({limit} limit) while running {}",
+                active_work_description()
+            ),
+        ));
+    }
+    ACTIVE_TACTICS.with(|active| {
+        let active = active.borrow();
+        let tactic = active.last().filter(|tactic| tactic.work_exhausted)?;
+        Some((
+            VerificationStop::for_tactic(&tactic.event.class),
+            format!(
+                "tactic `{}` in `{}` exhausted its deterministic {} work budget",
+                tactic.event.tactic_name, tactic.event.claim, tactic.event.class,
+            ),
+        ))
+    })
 }
 
 /// Runs `operation` while recording the charged work of every tactic that
@@ -2603,6 +2630,24 @@ mod checking_budget_tests {
             emit(VerificationEvent::TacticFailed(tactic));
         });
     }
+    #[test]
+    fn whole_run_stop_takes_precedence_over_search_exhaustion() {
+        with_tactic_work_limits(limits(), || {
+            with_run_work_limit(100, || {
+                let tactic = search();
+                emit(VerificationEvent::TacticStarted(tactic.clone()));
+                record_deterministic_work(101);
+                let (kind, context) = exceeded_verification_stop().unwrap();
+                assert_eq!(kind, VerificationStop::RunWork);
+                assert!(
+                    context.contains("whole-run work budget") && context.contains("solve"),
+                    "{context}"
+                );
+                emit(VerificationEvent::TacticFailed(tactic));
+            });
+        });
+    }
+
     #[test]
     fn checking_allowance_scales_with_selected_input_outside_tactics() {
         with_tactic_work_limits(limits(), || {

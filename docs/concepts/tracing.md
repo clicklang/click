@@ -19,7 +19,8 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `type error` | The sidecar parses but does not elaborate. | Fix the named declaration. |
 | `unsupported` | Click detected a documented limitation. | Use a supported route that preserves the claim, or request support for the original case. |
 | `internal error` | Click detected its own failure. | Stop at [`internal-error`](#outcomes) and capture the command, version, output, and inputs. |
-| `limit error` | A configured work limit stopped verification. | Record the limit and the operation that reached it. |
+| `work limit reached` | The run exhausted the overall `--work-limit`. | Record the limit and the operation that reached it. Profile the run if the work is unexpected. |
+| `timed out` | Wall-clock crash containment stopped the run before a verdict. | Record the time limit and reported phase. If Click was hung, follow the procedure below. |
 | `contract error` | Click identified a rule it believes a written contract clause violates. | Check the rule under the contract’s requirements. Correct the clause or report a supported `contract-bug`. |
 | `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
@@ -50,7 +51,7 @@ procedure as soon as they happen:
 | Failure | What it is |
 | --- | --- |
 | `crash` | Click exits without a report: a panic, an abort, a stack overflow, or the process being killed. |
-| `hang` | Click runs for a long time without returning. Click bounds its own work and stops with a limit error, so a run that does not finish in minutes, with no report, is a hang. |
+| `hang` | Click runs for a long time without returning. Treat a run with no output for minutes as a hang. A timeout can also result from CPU starvation, so check whether the run was making progress. |
 
 Do not change the proof, raise a limit, or retry to get past either one.
 [Report it](#reporting-a-bug) with the exact command, the `click --version`

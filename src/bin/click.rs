@@ -67,7 +67,8 @@ fn report_error(message: String) -> ! {
         "syntax error",
         "type error",
         "internal error",
-        "limit error",
+        "work limit reached",
+        "timed out",
     ]
     .iter()
     .any(|heading| {

@@ -449,9 +449,10 @@ pub fn with_run_limits<R>(
     let elapsed = started.elapsed();
     match result {
         Err(message) if elapsed >= limits.time => Err(format!(
-            "{tool} was stopped after {} by {}; rerun on a less loaded machine or raise `--time-limit`\n{message}",
+            "timed out:\n  {tool} was stopped after {} by {}; rerun on a less loaded machine or raise `--time-limit`\n{}",
             format_fractional_duration(elapsed),
             crate::instrumentation::containment_bound_description(limits.time),
+            message.strip_prefix("timed out:\n").unwrap_or(&message),
         )),
         result => report_work_exhaustion(tool, result, exhausted),
     }
@@ -538,7 +539,7 @@ impl ProcessWatchdog {
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout)
                 ) {
                     eprintln!(
-                        "click: stopped by wall-clock crash-containment bound after {}",
+                        "timed out:\n  click stopped by wall-clock crash-containment bound after {}",
                         format_fractional_duration(time)
                     );
                     std::process::exit(1);
@@ -590,18 +591,14 @@ fn report_work_exhaustion<R>(
             if result
                 .as_ref()
                 .err()
-                .is_none_or(|message| !message.contains(WHOLE_RUN_BUDGET_EXHAUSTED)) =>
+                .is_none_or(|message| !message.starts_with("work limit reached:")) =>
         {
             let below = result
                 .err()
-                .map(|message| {
-                    format!(
-                        "\nthe error below is where the verifier stopped; it may be a consequence of the exhausted budget rather than a property of the proof\n{message}"
-                    )
-                })
+                .map(|message| format!("\n  Details from where the verifier stopped:\n{message}"))
                 .unwrap_or_default();
             Err(format!(
-                "{tool} {WHOLE_RUN_BUDGET_EXHAUSTED} after {used} units ({limit} limit); raise `--work-limit` for a project larger than the calibrated corpus{below}"
+                "work limit reached:\n  {tool} {WHOLE_RUN_BUDGET_EXHAUSTED} after {used} units ({limit} limit). Use `click profile` to see where the run spent its work, or raise `--work-limit` for a project larger than the calibrated corpus.{below}"
             ))
         }
         (result, _) => result,

@@ -798,7 +798,9 @@ fn check_quick_solve(
     work_limit: Option<usize>,
 ) -> Result<(), String> {
     if let Err((_, report)) = result
-        && report.starts_with("limit error:")
+        && ["work limit reached:", "timed out:", "internal error:"]
+            .iter()
+            .any(|heading| report.starts_with(heading))
     {
         return Err(format!(
             "Quick Solve Test hit a verification limit: {report}"
@@ -857,7 +859,7 @@ fn quick_solve_caps_inclusive_work_even_for_an_expected_refusal() {
     assert!(error.contains("10 deterministic work units (limit 9)"));
     let exhausted = Err((
         "search stopped".into(),
-        "limit error:\n  search stopped".into(),
+        "work limit reached:\n  search stopped".into(),
     ));
     assert!(check_quick_solve(&samples, &exhausted, Some(10)).is_err());
 }

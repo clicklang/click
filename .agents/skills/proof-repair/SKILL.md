@@ -16,9 +16,9 @@ Two failures are bugs whatever the proof says, and end this loop at once:
 
 - `crash`: Click exits without a report: a panic, an abort, a stack
   overflow, or the process being killed.
-- `hang`: Click runs for a long time without returning. Click bounds its own
-  work and stops with a limit error, so a run that does not finish in
-  minutes, with no report, is a hang. Stop it and note how long it ran.
+- `hang`: Click runs for minutes without returning a report. Stop it and
+  note how long it ran. A wall-clock timeout can also result from CPU
+  starvation, so check whether the run was making progress.
 
 Do not change the proof, raise a limit, or retry to get past either one.
 Report it (below), labelled `crash` or `hang`, with the exact command, the
@@ -34,8 +34,11 @@ it; shrink them if you can, but a report need not wait for that.
   Otherwise stop at `unsupported` and explain how the user can request support.
 - `internal error`: stop at `internal-error`. Click has reported its own
   failure. Capture the error, version, command, and inputs.
-- `limit error`: record the limit and where Click stopped. The run did not
-  finish checking the proof.
+- `work limit reached`: stop and report the overall `--work-limit` and where
+  Click stopped. The proof remains unchecked past that point. Profile the
+  run if the work is unexpected.
+- `timed out`: stop and report the wall-clock limit and where Click stopped.
+  If the run was hung, follow the `hang` workflow above.
 - `tactic error`: read `click docs TACTIC` and check whether the tactic is valid
   at the reported point. Correct an invalid invocation. If the invocation and
   its premises satisfy the documented rule and Click still refuses, report
@@ -46,7 +49,7 @@ it; shrink them if you can, but a report need not wait for that.
   the proof author and check the intended correction. If the original contract
   satisfies the rule and Click still rejects it, stop at `contract-bug`.
 - `unsuccessful search`: explicit or implicit proof search ran and found no
-  proof. Record the goal. If it holds, write an explicit chain of smaller
+  proof. This includes search that exhausted its own work budget. Record the goal. If it holds, write an explicit chain of smaller
   links, or supply the missing argument or premises.
 - `incomplete proof`: the proof ended with a requirement still outstanding.
   Record what the report says the proof must establish and the path where it

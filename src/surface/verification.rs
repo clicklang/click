@@ -8953,7 +8953,7 @@ fn termination_analysis_error(
         }
         None => located,
     };
-    if located.work_limit_exhausted {
+    if located.verification_stopped() {
         return located;
     }
     match error.kind() {

@@ -1710,7 +1710,7 @@ fn refinement_preparation_error(
                 | ExecutionLimit::LoopUnrolls
                 | ExecutionLimit::KernelVariables { .. }
                 | ExecutionLimit::MatchBinderVariables { .. } => {
-                    error.with_kind(ClickErrorKind::Limit)
+                    error.with_kind(ClickErrorKind::Internal)
                 }
                 ExecutionLimit::UnsupportedPureFunctionResult(ProgramType::Void)
                 | ExecutionLimit::BoolComparedWithInteger

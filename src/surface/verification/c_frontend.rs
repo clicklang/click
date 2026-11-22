@@ -915,7 +915,7 @@ pub(super) fn c_layouts(
 
 fn c_parse_error_kind(error: &syntax::CSyntaxError) -> ClickErrorKind {
     if error.limit_exceeded() {
-        ClickErrorKind::Limit
+        ClickErrorKind::Internal
     } else {
         ClickErrorKind::Syntax
     }
