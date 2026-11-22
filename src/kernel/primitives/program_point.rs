@@ -1660,6 +1660,28 @@ impl ProgramPoint {
         .then(|| entry.for_exact_read())
     }
 
+    pub(in crate::kernel) fn supports_static_entry_version(
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> bool {
+        pointer.base.is_static_storage_block()
+            && MachineIntegerType::from_program_type(value_type).is_some()
+    }
+
+    /// The entry version of a static integer cell whose whole object remains
+    /// unchanged in the recorded block index.
+    pub(in crate::kernel) fn unwritten_static_scalar_version(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<Self> {
+        if !Self::supports_static_entry_version(pointer, value_type) {
+            return None;
+        }
+        let version = self.indexed_array_version(&pointer.base)?;
+        version.path.0.as_ref()?.function_entry.then_some(version)
+    }
+
     pub(crate) fn ordinary_typed_version(
         &self,
         pointer: &Address,
@@ -1670,6 +1692,7 @@ impl ProgramPoint {
                 MachineIntegerType::from_program_type(value_type)?;
                 self.call_output_integer_version(pointer, LoadKind::of_type(value_type)?)
             })
+            .or_else(|| self.unwritten_static_scalar_version(pointer, value_type))
             .or_else(|| self.entry_cell_version(pointer, value_type))
     }
 
