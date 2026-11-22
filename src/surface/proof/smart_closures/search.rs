@@ -4208,6 +4208,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                     | ConditionTerm::Float32(FloatCondition::Classification { .. })
                                     | ConditionTerm::Float64(FloatCondition::Classification { .. }), _))))
                     })
+                    .chain(crate::kernel::search::ProofSearch::select_float_bound(
+                        search_input.facts().assumptions(),
+                        goal,
+                    ))
                     .filter_map(|premise| {
                         crate::kernel::search::ProofSearch::available_surface_fact(
                             search_input,
