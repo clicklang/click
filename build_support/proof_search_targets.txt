@@ -281,3 +281,4 @@ try_masked_field_preservation
 try_single_write_indexed_separation
 try_indexed_separation_restriction
 indexed_containment_step
+try_distinct_indexed_store_separation

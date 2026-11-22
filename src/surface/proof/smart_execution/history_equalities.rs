@@ -12,15 +12,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_indexed_read_preservation");
-        let Some(ClickProposition::Comparison {
-            left,
-            operator: ComparisonOperator::Equal,
-            right,
-        }) = search_input.surface_goal()
+        let Some(
+            target @ ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            },
+        ) = search_input.surface_goal()
         else {
             return Ok(None);
         };
-        let current = match (left, right) {
+        let (current, returned) = match (left, right) {
             (
                 current,
                 ContractExpression::Old(saved)
@@ -34,7 +36,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     expression: saved, ..
                 },
                 current,
-            ) if current == saved.as_ref() => current,
+            ) if current == saved.as_ref() => (current, false),
+            (_, ContractExpression::Old(read))
+                if search_input.focused_outcome_data().is_some()
+                    && crate::surface::proposition_names_result(target) =>
+            {
+                (read.as_ref(), true)
+            }
             _ => return Ok(None),
         };
         let Some(ProgramExpression::Index(base, index)) =
@@ -96,6 +104,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )?;
             let separated = match separated {
                 Some(separated) => Some(separated),
+                None if returned && footprint.members.len() == 1 => {
+                    Self::try_distinct_indexed_store_separation(
+                        &proof,
+                        footprint.members.front().expect("one footprint member"),
+                        &kept,
+                        &separation,
+                    )?
+                }
                 None if derive_separation && footprint.members.len() == 1 => {
                     Self::try_single_write_indexed_separation(
                         &proof,
@@ -125,6 +141,117 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         Ok(None)
+    }
+
+    /// For a symbolic single-element store, the index inequality can prove
+    /// separation directly. The footprint check ties the written element to
+    /// the recorded store before its read equality is used.
+    fn try_distinct_indexed_store_separation(
+        search_input: &Proof<'a>,
+        written: &Resource,
+        kept: &ResourceSubject,
+        footprint_separation: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_distinct_indexed_store_separation");
+        let Resource::Memory(written) = written else {
+            return Ok(None);
+        };
+        let Some(width) = written.single_element_width() else {
+            return Ok(None);
+        };
+        let ResourceSubject::SavedMemory {
+            base,
+            start: read_index,
+            end: None,
+        } = kept
+        else {
+            return Ok(None);
+        };
+        let Some(view) = search_input.premise_fixed_state_view() else {
+            return Ok(None);
+        };
+        let Some(ProgramExpression::Variable(base_name)) =
+            contract_expression_as_program_expression(base)
+        else {
+            return Ok(None);
+        };
+        let binding = view.parameter_binding;
+        let state = view.fixed_state.state;
+        let pointer = state
+            .locals()
+            .get(&base_name)
+            .and_then(|value| value.pointer())
+            .or_else(|| {
+                let position = binding.index?.position(base_name.source_name())?;
+                let ProgramExpression::Value(ProgramValue::Pointer(pointer)) =
+                    binding.arguments.get(position)?
+                else {
+                    return None;
+                };
+                Some(pointer)
+            });
+        let Some(pointer) = pointer else {
+            return Ok(None);
+        };
+        if pointer
+            .program_type()
+            .pointee_type()
+            .map(ProgramType::byte_width)
+            != Some(width)
+        {
+            return Ok(None);
+        }
+        let Some(index) = written
+            .base()
+            .element_index_from_base_with_width(pointer.address(), width)
+        else {
+            return Ok(None);
+        };
+        let Some(write_index) =
+            super::super::surface_synthesis::synthesize_surface_machine_expression(
+                &index, binding, state,
+            )
+        else {
+            return Ok(None);
+        };
+        let separation = ClickProposition::Separate {
+            left: ResourceSubject::SavedMemory {
+                base: base.clone(),
+                start: write_index.clone(),
+                end: None,
+            },
+            right: kept.clone(),
+        };
+        let distinct = ClickProposition::Comparison {
+            left: read_index.clone(),
+            operator: ComparisonOperator::NotEqual,
+            right: write_index.clone(),
+        };
+        let separate_elements = ProofCertificate::from_steps(vec![ProofStep::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: "click::separation::separate_elements".into(),
+                arguments: vec![base.clone(), write_index, read_index.clone()],
+            },
+            premises: vec![distinct],
+        }])
+        .expect("ordinary indexed separation");
+        let Some(proof) = attempt::candidate_outcome(
+            search_input
+                .driver()
+                .apply_have_step(&separation, &separate_elements),
+        )?
+        else {
+            return Ok(None);
+        };
+        let normalize =
+            ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(vec![separation])])
+                .expect("ordinary footprint normalization");
+        attempt::candidate_outcome(
+            proof
+                .driver()
+                .apply_have_step(footprint_separation, &normalize),
+        )
     }
 
     /// Restrict a separated range to the indexed read before normalizing a
