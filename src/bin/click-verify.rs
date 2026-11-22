@@ -2971,14 +2971,24 @@ int32 read_first(int32 m) {
                }
             "#,
         );
-        let error = click::instrumentation::with_tactic_work_limits(
-            click::instrumentation::TacticWorkLimits {
-                smart: 0,
-                ..Default::default()
-            },
-            || entry_with([click_path.display().to_string()]),
-        )
-        .expect_err("the written solve has no work allowance");
+        let verify = |options: &[&str]| {
+            click::instrumentation::with_tactic_work_limits(
+                click::instrumentation::TacticWorkLimits {
+                    smart: 0,
+                    ..Default::default()
+                },
+                || {
+                    let arguments = options
+                        .iter()
+                        .map(|option| (*option).to_string())
+                        .chain(std::iter::once(click_path.display().to_string()));
+                    entry_with(arguments)
+                },
+            )
+            .expect_err("the written solve has no work allowance")
+        };
+        let error = verify(&[]);
+        let trace = verify(&["--trace-proof", "f"]);
         fs::remove_dir_all(&root).unwrap();
         assert!(error.starts_with("unsuccessful search"), "{error}");
         assert!(
@@ -2986,9 +2996,10 @@ int32 read_first(int32 m) {
             "{error}"
         );
         assert!(
-            error.contains("goal:") && error.contains("To get a trace:"),
+            error.contains("goal: result == x") && error.contains("To get a trace:"),
             "{error}"
         );
+        assert!(trace.contains("steps through: return x"), "{trace}");
     }
 
     /// The crash-containment bound is installed before the run loads its
