@@ -1203,8 +1203,6 @@ fn lower_guarded_conjunct_in(
     Ok(())
 }
 
-/// The obligations of a right operand read only where `left` holds, owed
-/// as `left implies obligation`.
 /// The path facts of a side read only where `guard` holds. Its logical read
 /// equations stay facts, being consequences of the values read; every other
 /// condition its evaluation selected is owed where the guard holds, as its
@@ -1231,6 +1229,8 @@ fn guard_right_facts(
     facts.filtered(|fact| fact.is_logical_read_equation())
 }
 
+/// The obligations of a right operand read only where `left` holds, owed
+/// as `left implies obligation`.
 fn guard_right_obligations(
     left: &Proposition,
     right_obligations: Vec<ProofObligation>,
