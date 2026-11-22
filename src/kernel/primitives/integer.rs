@@ -788,17 +788,6 @@ impl SharedMachineIntegerTerm {
     }
 
     pub fn intern(ty: MachineIntegerType, value: MachineTerm) -> Self {
-        Self::intern_with(ty, value, true)
-    }
-
-    /// The observation [`Self::intern`] gives `value`, for a fact identity
-    /// that reads it: an existing shared observation is not given `value`
-    /// as its written tree.
-    pub(crate) fn identity_of(ty: MachineIntegerType, value: MachineTerm) -> Self {
-        Self::intern_with(ty, value, false)
-    }
-
-    fn intern_with(ty: MachineIntegerType, value: MachineTerm, retain_written: bool) -> Self {
         // Legacy callers already supply a boxed tree. Reuse its existing
         // interned observation before importing, and retain that explicit tree
         // instead of exporting it again on the first checker read.
@@ -841,8 +830,7 @@ impl SharedMachineIntegerTerm {
             // A graph lookup may have memoized only the shared identity.
             // This constructor receives an explicit boxed input, so retain
             // that input rather than exporting the shared DAG on a later read.
-            if retain_written
-                && let MachineIntegerOperand::Shared { native_source, .. } = &found.0.operand
+            if let MachineIntegerOperand::Shared { native_source, .. } = &found.0.operand
                 && native_source.get().is_none()
                 && let MachineIntegerKey::Legacy { value, .. } = &key
             {
@@ -864,9 +852,7 @@ impl SharedMachineIntegerTerm {
             let MachineIntegerOperand::Shared { native_source, .. } = &shared.0.operand else {
                 unreachable!()
             };
-            if retain_written {
-                let _ = native_source.set(MachineIntegerNativeSource::Written(value.clone()));
-            }
+            let _ = native_source.set(MachineIntegerNativeSource::Written(value.clone()));
             shared.remember_explicit_import(key);
             return shared;
         }
@@ -878,9 +864,7 @@ impl SharedMachineIntegerTerm {
         {
             let root = KernelTerm::retained_machine_operand(ty, view);
             let shared = Self::observe_shared(ty, root).expect("retained machine observation");
-            if retain_written
-                && let MachineIntegerOperand::Shared { native_source, .. } = &shared.0.operand
-            {
+            if let MachineIntegerOperand::Shared { native_source, .. } = &shared.0.operand {
                 let _ = native_source.set(MachineIntegerNativeSource::Written(value.clone()));
             }
             shared.remember_explicit_import(key);
