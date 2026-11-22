@@ -1231,7 +1231,7 @@ fn write_program_lvalue_paths_for_initialization(
             let mut facts = facts;
             let mut store_fact = ExecutionPureFact::certified_store(
                 before_memory,
-                state.memory.clone(),
+                state.program_point(),
                 written_pointer.clone(),
                 written_value.clone(),
                 authorized_range,
