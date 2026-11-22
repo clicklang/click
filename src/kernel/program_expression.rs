@@ -115,8 +115,9 @@ pub fn bool_value(expression: ProgramExpression) -> ProgramExpression {
 }
 
 /// A Rust operator on 8- or 16-bit operands at their type `target_type`
-/// (decision G4): `operation` is the operator over the operands as written,
-/// and its value is the native node of that type, with no promotion.
+/// (decision G4): `operation` retains the operands as written. Most operators
+/// produce a native node. Signed division and remainder produce the promoted
+/// term converted back under the narrow type's overflow check.
 pub fn narrow_arithmetic(
     operation: ProgramExpression,
     target_type: ProgramType,

@@ -7,7 +7,7 @@ mod division_domains;
 mod narrow_arithmetic;
 mod spec_arithmetic;
 pub(in crate::kernel) use narrow_arithmetic::{
-    is_narrow_format, native_narrow_binary, native_narrow_not,
+    apply_rust_narrow_signed_division, is_narrow_format, native_narrow_binary, native_narrow_not,
 };
 pub(in crate::kernel) use spec_arithmetic::{
     SpecDivision, apply_spec_machine_arithmetic, apply_spec_rust_shift,

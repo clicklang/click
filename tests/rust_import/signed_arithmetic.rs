@@ -24,15 +24,27 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
         // they owe an explicit check.
         (
             "quotient8",
-            "    requires 0i8 <= x and 0i8 < y;\n",
+            "    requires y != 0i8 and (x != -128i8 or y != -1i8);\n",
             "    requires y == -1i8;\n",
             "Rust div panic check",
         ),
         (
             "remainder16",
-            "    requires 0i16 <= x and 0i16 < y;\n",
+            "    requires y != 0i16 and (x != -32768i16 or y != -1i16);\n",
             "    requires y == -1i16;\n",
             "Rust rem panic check",
+        ),
+        (
+            "quotient8",
+            "    requires y != 0i8 and (x != -128i8 or y != -1i8);\n",
+            "    requires y == 0i8;\n",
+            "division by zero",
+        ),
+        (
+            "remainder16",
+            "    requires y != 0i16 and (x != -32768i16 or y != -1i16);\n",
+            "    requires y == 0i16;\n",
+            "division by zero",
         ),
         // Negation is a subtraction from zero, with its checks.
         (
@@ -91,7 +103,12 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
         // locals, never the lowering's checked temporaries.
         if expected.ends_with("panic check") {
             let message = error.to_string();
-            assert!(message.contains("could not show `"), "{message}");
+            if matches!(expected, "Rust div panic check" | "Rust rem panic check") {
+                assert!(message.contains("unproved obligation"), "{message}");
+                assert!(message.contains(" or "), "{message}");
+            } else {
+                assert!(message.contains("could not show `"), "{message}");
+            }
             assert!(!message.contains("__rust_"), "{message}");
         }
     }

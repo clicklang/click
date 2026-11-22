@@ -17,43 +17,13 @@ fn modulo(x: i64, y: i64) -> i64 {
 }
 
 fn quotient8(x: i8, y: i8) -> i8 {
-    requires 0i8 <= x and 0i8 < y;
+    requires y != 0i8 and (x != -128i8 or y != -1i8);
     ensures result == x / y;
-} by {
-    step_until(function.exit);
-    have to_integer(y as i32) > 0 by { known(); }
-    have to_integer(y as i32) != -1 by {
-        intro();
-        solve() using { to_integer(y as i32) > 0; to_integer(y as i32) == -1; };
-    }
-    have to_integer(y as i32) != 0 by {
-        intro();
-        solve() using { to_integer(y as i32) > 0; to_integer(y as i32) == 0; };
-    }
-    have (y as i32) != 0i32 and ((x as i32) != -2147483648i32 or (y as i32) != -1i32) by {
-        known();
-    }
-
 }
 
 fn remainder16(x: i16, y: i16) -> i16 {
-    requires 0i16 <= x and 0i16 < y;
+    requires y != 0i16 and (x != -32768i16 or y != -1i16);
     ensures result == x % y;
-} by {
-    step_until(function.exit);
-    have to_integer(y as i32) > 0 by { known(); }
-    have to_integer(y as i32) != -1 by {
-        intro();
-        solve() using { to_integer(y as i32) > 0; to_integer(y as i32) == -1; };
-    }
-    have to_integer(y as i32) != 0 by {
-        intro();
-        solve() using { to_integer(y as i32) > 0; to_integer(y as i32) == 0; };
-    }
-    have (y as i32) != 0i32 and ((x as i32) != -2147483648i32 or (y as i32) != -1i32) by {
-        known();
-    }
-
 }
 
 fn negate(x: i16) -> i16 {
