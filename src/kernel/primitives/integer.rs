@@ -2304,6 +2304,130 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
+    /// The shared root a lowering builds for `tree`: leaves as retained
+    /// operands, each operation and cast as its shared node over its children.
+    fn shared_root(ty: MachineIntegerType, tree: &MachineTerm) -> KernelTerm {
+        match tree {
+            MachineTerm::Binary {
+                format,
+                op,
+                left,
+                right,
+            } => KernelTerm::machine_binary_shared_as(
+                ty,
+                *format,
+                *op,
+                [shared_root(*format, left), shared_root(*format, right)],
+            ),
+            MachineTerm::Cast {
+                spelling,
+                from,
+                to,
+                value,
+            } => KernelTerm::machine_cast_shared(*spelling, *from, *to, shared_root(*from, value)),
+            leaf => KernelTerm::retained_native_machine_operand(ty, leaf),
+        }
+    }
+
+    /// A machine value has one observation identity whether a producer
+    /// supplies it as a boxed tree or as a shared root, so a comparison can
+    /// hold the observation handle and compare operands by id.
+    #[test]
+    fn boxed_and_shared_producers_get_one_observation_identity() {
+        use MachineBinaryOp as O;
+        use MachineIntegerType as Ty;
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = |id| MachineTerm::Variable(Variable(id));
+        let binary = |format, op, left, right| MachineTerm::Binary {
+            format,
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+        let cases = [
+            (Ty::Int64, variable(954000)),
+            (
+                Ty::Int64,
+                binary(
+                    Ty::Int64,
+                    O::Add,
+                    variable(954000),
+                    MachineTerm::int64_constant(1),
+                ),
+            ),
+            (
+                Ty::Int64,
+                binary(
+                    Ty::Int64,
+                    O::Subtract,
+                    binary(
+                        Ty::Int64,
+                        O::Multiply,
+                        binary(Ty::Int64, O::Add, variable(954000), variable(954001)),
+                        MachineTerm::int64_constant(3),
+                    ),
+                    variable(954002),
+                ),
+            ),
+            (
+                Ty::Int64,
+                binary(
+                    Ty::Int64,
+                    O::Add,
+                    MachineTerm::int64_from_32(variable(954003)),
+                    variable(954000),
+                ),
+            ),
+            (
+                Ty::UInt64,
+                binary(
+                    Ty::UInt64,
+                    O::Add,
+                    MachineTerm::opaque_conversion("observed_leaf", variable(954004)),
+                    MachineTerm::uint64_constant(1),
+                ),
+            ),
+            (
+                Ty::UInt32,
+                binary(
+                    Ty::Int32,
+                    O::Add,
+                    variable(954005),
+                    MachineTerm::constant(1),
+                ),
+            ),
+        ];
+        let memory = crate::kernel::intern_memory(
+            crate::kernel::SymbolicMemory::new().with_block("cells", 16),
+        );
+        let read = MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            Box::new(crate::kernel::Address {
+                base: crate::kernel::AddressBase::Concrete("cells".into()),
+                offset: crate::kernel::AddressOffset::Constant(4),
+            }),
+            crate::kernel::LoadKind::Int32,
+        );
+        let reads = [
+            (Ty::Int32, read.clone()),
+            (
+                Ty::Int32,
+                binary(Ty::Int32, O::Subtract, read, MachineTerm::constant(1)),
+            ),
+        ];
+        for (ty, tree) in cases.into_iter().chain(reads) {
+            let boxed = SharedMachineIntegerTerm::intern(ty, tree.clone());
+            let shared = SharedMachineIntegerTerm::observe_shared(ty, shared_root(ty, &tree))
+                .expect("shared observation");
+            assert_eq!(boxed.id(), shared.id(), "{ty:?} {tree:?}");
+            assert_eq!(
+                SharedMachineIntegerTerm::intern(ty, tree.clone()).id(),
+                boxed.id(),
+                "{ty:?} {tree:?}"
+            );
+        }
+    }
+
     #[test]
     fn boxed_observation_imports_are_session_local_and_released_on_reset() {
         let value = MachineTerm::Binary {

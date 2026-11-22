@@ -1497,8 +1497,8 @@ impl ExecutionBudget {
     /// `1_000_000 .. 2_000_000`, surface quantifiers run below `4_000_000`,
     /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
     /// `4_000_000_000 .. 8_000_000_000`, load variables span
-    /// `1 << 40 .. 1 << 41`, and spec fold binders span
-    /// `1 << 43 .. 1 << 44`; match binders have their own origin. The
+    /// `1 << 40 .. 1 << 41`; match and spec fold binders have their own
+    /// origins. The
     /// kernel test
     /// `the_universal_witness_range_is_disjoint_from_every_other_producer`
     /// asserts that rather than leaving it to this comment.

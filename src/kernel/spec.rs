@@ -10530,17 +10530,16 @@ pub(super) fn concrete_spec_fold_range(start: i32, end: i32) -> std::ops::Range<
     }
 }
 
-/// The fold binder's range is above universal witnesses and below the
-/// refutation/induction producers. Surface lowerers refuse before reaching it.
-pub(super) const SPEC_FOLD_BINDER_VARIABLE_BASE: u64 = 1 << 43;
-pub(super) const SPEC_FOLD_BINDER_VARIABLE_CEILING: u64 = 1 << 44;
+/// How many specification fold binders the process may allocate: one per
+/// written binder name and role.
+pub(super) const SPEC_FOLD_BINDER_LIMIT: u64 = 1 << 40;
 
 pub(super) fn spec_fold_bound_variable(name: &BindingName, salt: u64) -> Variable {
     type Bindings = (u64, BTreeMap<(BindingName, u64), Variable>);
     static VARIABLES: std::sync::OnceLock<std::sync::Mutex<Bindings>> = std::sync::OnceLock::new();
     crate::instrumentation::record_deterministic_work(1);
     let mut bindings = VARIABLES
-        .get_or_init(|| std::sync::Mutex::new((SPEC_FOLD_BINDER_VARIABLE_BASE, BTreeMap::new())))
+        .get_or_init(|| std::sync::Mutex::new((0, BTreeMap::new())))
         .lock()
         .unwrap();
     let key = (name.clone(), salt);
@@ -10548,10 +10547,10 @@ pub(super) fn spec_fold_bound_variable(name: &BindingName, salt: u64) -> Variabl
         return *variable;
     }
     assert!(
-        bindings.0 < SPEC_FOLD_BINDER_VARIABLE_CEILING,
-        "specification fold binder identity range exhausted"
+        bindings.0 < SPEC_FOLD_BINDER_LIMIT,
+        "specification fold binder identities exhausted"
     );
-    let variable = Variable(bindings.0);
+    let variable = Variable::spec_fold_binder(bindings.0);
     bindings.0 += 1;
     bindings.1.insert(key, variable);
     variable
