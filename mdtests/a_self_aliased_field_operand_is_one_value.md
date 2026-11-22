@@ -40,11 +40,12 @@ void subtract_assign(struct FeeFrac* self, struct FeeFrac* other) {
     ensures self->size == 0;
 } by {
     step();
-    have separate(statement(0).footprint, memory((*&self->size))) by {
-        solve();
+    have separate(memory(self->fee), memory((&self->size)[0..1])) by known();
+    have separate(statement(0).footprint, memory((&self->size)[0..1])) by {
+        normalize() using { separate(memory(self->fee), memory((&self->size)[0..1])); };
     }
     have exact(self->size) == at(statement(0).entry, exact(self->size)) by {
-        preserve(memory((*&self->size)), statement(0));
+        preserve(memory((&self->size)[0..1]), statement(0));
     }
     have other->size == old(self->size) by {
         rewrite(other, self);
@@ -66,11 +67,12 @@ void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
     ensures to_integer(self->size) == to_integer(old(self->size) + old(self->size));
 } by {
     step();
-    have separate(statement(0).footprint, memory((*&self->size))) by {
-        solve();
+    have separate(memory(self->fee), memory((&self->size)[0..1])) by known();
+    have separate(statement(0).footprint, memory((&self->size)[0..1])) by {
+        normalize() using { separate(memory(self->fee), memory((&self->size)[0..1])); };
     }
     have exact(self->size) == at(statement(0).entry, exact(self->size)) by {
-        preserve(memory((*&self->size)), statement(0));
+        preserve(memory((&self->size)[0..1]), statement(0));
     }
     have other->size == old(self->size) by {
         rewrite(other, self);

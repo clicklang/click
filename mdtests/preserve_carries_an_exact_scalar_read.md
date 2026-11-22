@@ -21,9 +21,12 @@ void touch(struct Pair* p) {
     ensures true;
 } by {
     step();
-    have separate(statement(0).footprint, memory(*(&p->second))) by solve();
+    have separate(memory(p->first), memory((&p->second)[0..1])) by known();
+    have separate(statement(0).footprint, memory((&p->second)[0..1])) by {
+        normalize() using { separate(memory(p->first), memory((&p->second)[0..1])); };
+    }
     have exact(p->second) == old(exact(p->second)) by {
-        preserve(memory(*(&p->second)), statement(0));
+        preserve(memory((&p->second)[0..1]), statement(0));
     }
     step_until(function.exit);
     solve();
