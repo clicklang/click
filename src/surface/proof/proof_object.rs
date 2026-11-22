@@ -3735,12 +3735,14 @@ impl<'a> Proof<'a> {
         &self,
         error: ClickError,
     ) -> ClickError {
-        if !matches!(
-            error.kind(),
-            crate::surface::ClickErrorKind::Proof
-                | crate::surface::ClickErrorKind::Internal
-                | crate::surface::ClickErrorKind::Unsupported
-        ) || error.proof_claim_label().is_some()
+        if error.proof_claim_label().is_some()
+            || (!error.verification_stopped()
+                && !matches!(
+                    error.kind(),
+                    crate::surface::ClickErrorKind::Proof
+                        | crate::surface::ClickErrorKind::Internal
+                        | crate::surface::ClickErrorKind::Unsupported
+                ))
         {
             return error;
         }

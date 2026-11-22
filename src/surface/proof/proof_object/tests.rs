@@ -935,6 +935,10 @@ fn invariant_bundle_budget_refusal_retains_selected_obligation() {
     })
     .err()
     .expect("the direct strategy must also refuse exhaustion");
+    assert_eq!(
+        direct.kind(),
+        crate::surface::ClickErrorKind::WorkLimitReached
+    );
     assert_eq!(direct.diagnostic().unwrap().kernel_goal(), root.goal());
     let direct = execution_statements::describe_invariant_closure_error(direct);
     assert!(direct.concise_report().contains("unresolved obligation"));
