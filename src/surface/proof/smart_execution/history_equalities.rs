@@ -146,7 +146,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// For a symbolic single-element store, the index inequality can prove
     /// separation directly. The footprint check ties the written element to
     /// the recorded store before its read equality is used.
-    fn try_distinct_indexed_store_separation(
+    pub(in crate::surface::proof) fn try_distinct_indexed_store_separation(
         search_input: &Proof<'a>,
         written: &Resource,
         kept: &ResourceSubject,
