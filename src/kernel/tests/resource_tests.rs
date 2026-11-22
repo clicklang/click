@@ -1227,14 +1227,23 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
 }
 
 #[test]
-fn recursive_child_kernel_rejects_implicit_parent_handles() {
+fn recursive_child_kernel_restores_children_through_parent_handles() {
     let (instance, definition, state) = recursive_child_fixture();
     let assumptions = PureFactContext::new();
-    assert_eq!(
-        rewrite_resource_instance(&state, &instance, &definition, &assumptions, true)
-            .unwrap_err()
-            .describe(),
-        "recursive children require explicit independent child selections"
+    let opened = rewrite_resource_instance(&state, &instance, &definition, &assumptions, true)
+        .unwrap()
+        .state;
+    assert!(
+        opened
+            .resource_instance_at_path(instance.identity(), &["left".into()])
+            .is_some()
+    );
+    assert!(
+        rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
+            .unwrap()
+            .state
+            .owned_resource_instance(instance.identity())
+            .is_some()
     );
     let children = [
         ("left".into(), InstanceId::from_variable(Variable(501))),
@@ -1257,8 +1266,18 @@ fn recursive_child_kernel_rejects_implicit_parent_handles() {
             .is_none()
     );
     assert!(opened.instance_field_scope.is_empty());
+    assert_eq!(
+        opened
+            .resource_instance_at_path(instance.identity(), &["left".into()])
+            .map(ResourceInstance::identity),
+        Some(children[0].1)
+    );
     assert!(
-        rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false).is_err()
+        rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
+            .unwrap()
+            .state
+            .owned_resource_instance(instance.identity())
+            .is_some()
     );
     let mut invalid = definition.clone();
     invalid.matched.as_mut().unwrap().arms[1].children[0].field_bindings =

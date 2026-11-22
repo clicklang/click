@@ -3339,7 +3339,7 @@ fn expand_declared_resource_expression_node(
             }
             let (index, field) = member.ok_or_else(|| {
                 ClickError::new(format!(
-                    "resource `{}` has no field or witness `{}`",
+                    "resource `{}` has no field `{}`",
                     access.resource_name, access.field
                 ))
             })?;
