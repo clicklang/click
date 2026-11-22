@@ -2200,6 +2200,45 @@ impl Context<'_> {
         ))
     }
 
+    fn prepared_closure(
+        &mut self,
+        function: &str,
+        captures: &[E],
+        value_type: &Type,
+    ) -> Result<(ProgramStatement, ProgramExpression), String> {
+        let closure = self
+            .functions
+            .get(function)
+            .ok_or("Rust closure instance of an unknown closure")?;
+        let Type::FnPointer { parameters, result } = value_type else {
+            return Err("Rust closure instance requires a callable type".into());
+        };
+        if closure.captures != captures.len()
+            || closure.return_type != **result
+            || closure.parameters.len() != closure.captures + parameters.len()
+            || closure.parameters[closure.captures..]
+                .iter()
+                .zip(parameters)
+                .any(|(parameter, expected)| parameter.value_type != *expected)
+        {
+            return Err(format!(
+                "Rust closure instance of `{function}` does not have the closure's type"
+            ));
+        }
+        let mut checks = program_skip();
+        let mut values = Vec::new();
+        for capture in captures {
+            let (capture_checks, value) = self.prepared_expr(capture)?;
+            checks = program_seq(checks, capture_checks);
+            values.push(value);
+        }
+        let (call, result) = self.call_value(
+            crate::languages::rust::names::closure_instance_name(function),
+            values,
+        );
+        Ok((program_seq(checks, call), result))
+    }
+
     // Read operands once, in source order. Generated asserts are checked
     // execution obligations. The operator uses the same retained operands.
     fn prepared_expr(&mut self, e: &E) -> Result<(ProgramStatement, ProgramExpression), String> {
@@ -2213,6 +2252,11 @@ impl Context<'_> {
                     variable(&option.pointer),
                 ))
             }
+            E::ClosureInstance {
+                function,
+                captures,
+                value_type,
+            } => self.prepared_closure(function, captures, value_type),
             E::Call {
                 function,
                 arguments,
@@ -2838,7 +2882,7 @@ impl Context<'_> {
             }
             E::Call { .. } => Err("nested Rust calls outside statement lowering".into()),
             E::ClosureInstance { .. } => {
-                Err("Rust closure instance outside an assignment to a local".into())
+                Err("Rust closure instance requires prepared evaluation".into())
             }
             E::FunctionAddress {
                 function,

@@ -1965,6 +1965,15 @@ theorem restricted_view(A: Resource, B: Resource) {
         apply(separation::viewable_restrict(A, B));
     }
 }
+theorem viewed_address_is_not_null(p: uint8*, n: uint64, k: uint64) {
+    requires viewable(memory(p[0u64..n]));
+    requires 0u64 < n;
+    requires k <= n;
+    ensures &p[k] != 0 by {
+        have 0u64 <= k by { solve(); }
+        apply(separation::viewable_offset_nonnull(p, 0u64, n, k));
+    }
+}
 
 theorem use_subslice_len(a: uint64, b: uint64, n: uint64) {
     requires a <= b;

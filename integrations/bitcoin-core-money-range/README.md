@@ -815,9 +815,10 @@ storage/destruction. It exposes no message or class layout.
 
 `SpanReaderRead.click` uses the same offline inputs to verify the unchanged
 `SpanReader::read`. The source view supplies initialized bytes. On success the
-proof checks every destination byte against the corresponding entry source byte
-and checks the cursor's pointer and length after advancing. On short input the
-proof checks the exact exception and the unchanged cursor. The test authenticates
-the `memcpy` declaration, then verifies the sidecar and replays its expansion
-both cold and in a retained session. Decoding through this reader and typed
+proof checks that every destination byte is initialized and equals the
+corresponding entry source byte. It also checks the cursor's pointer and length
+after advancing. On short input the proof checks the exact exception and the
+unchanged cursor. The test authenticates the `memcpy` declaration, then
+verifies the sidecar and replays its expansion both cold and in a retained
+session. Decoding through this reader and typed
 catches are tracked in [the exceptions roadmap](../../roadmap/cpp-exceptions.md).

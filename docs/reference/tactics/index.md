@@ -1145,9 +1145,9 @@ step is still checked.
 parses only under `click verify --allow-sorry` and closes its goal without
 checking it. See [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole).
 
-When `intro` must freshen a universal binder, it uses the reserved logical-witness
-range. Existential choices use that same range, separate from C execution,
-load and binder identities. Issued witnesses remain reserved even when their
+When `intro` must freshen a universal binder, it uses a logical witness, a
+variable kind of its own. Existential choices use witnesses too, separate from
+C execution, load and binder identities. Issued witnesses remain reserved even when their
 instantiated body does not mention them, so later introductions and choices
 cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
@@ -1686,8 +1686,10 @@ decided guard and otherwise bounds both arms. Its arithmetic uses only the
 operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
-builds a constructor directly from the bound literal `int32` fields. The check
-compares the result fields with the corresponding written payloads.
+builds a constructor directly from its bound fields or captured `Integer`
+variables. The payloads can be literal `int32` values or `Integer` literals
+and variables. The check compares each result field with the corresponding
+written payload or captured variable.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check

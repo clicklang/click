@@ -49,6 +49,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                         solve() using { aligned(p, 8); };
                     }
                     have (rb->__rb_parent_color & ~3) == address(p) by {
+                        rewrite(color, 1);
                         solve() using { aligned(p, 8); };
                     }
                     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
@@ -84,6 +85,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                         rewrite(color, 0); normalize();
                     }
                     have (rb->__rb_parent_color & ~3) == address(p) by {
+                        rewrite(color, 0);
                         solve() using { aligned(p, 8); };
                     }
                     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {

@@ -3419,6 +3419,88 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter(|proof| proof.is_complete() || proof.goal() != search_input.goal()))
     }
 
+    /// Exclude two distinct constants for the same signed word. This closes
+    /// the overflow guard of `x / x` and `x % x` with one explicit proof split.
+    fn try_distinct_constant_exclusion(
+        search_input: &Proof<'a>,
+        left: &Proposition,
+        right: &Proposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_distinct_constant_exclusion");
+        let (
+            Some((
+                left_equality @ ConditionTerm::Compare {
+                    format: format @ (MachineIntegerType::Int32 | MachineIntegerType::Int64),
+                    relation: CompareRelation::Equal,
+                    left: left_word,
+                    right: left_literal,
+                },
+                false,
+            )),
+            Some((
+                ConditionTerm::Compare {
+                    format: right_format,
+                    relation: CompareRelation::Equal,
+                    left: right_word,
+                    right: right_literal,
+                },
+                false,
+            )),
+        ) = (left.condition_native(), right.condition_native())
+        else {
+            return Ok(None);
+        };
+        if format != right_format
+            || left_word != right_word
+            || !format
+                .constant_from_term(left_literal)
+                .zip(format.constant_from_term(right_literal))
+                .is_some_and(|(left, right)| left != right)
+        {
+            return Ok(None);
+        }
+        let equality = Proposition::condition_is(left_equality.clone(), true);
+        let (Some(condition), Some(other_exclusion)) = (
+            search_input.structural_proposition_candidate(&equality),
+            search_input.structural_proposition_candidate(right),
+        ) else {
+            return Ok(None);
+        };
+        let Some((proof, split, ids)) =
+            attempt::candidate_outcome(search_input.split_focused_if(condition.clone()))?
+        else {
+            return Ok(None);
+        };
+        let marker = proof.checkpoint();
+        let then_arm = proof.focus_branch(ids[0])?;
+        let Some(scope) = attempt::candidate_outcome(then_arm.driver().open_have(other_exclusion))?
+        else {
+            return Ok(None);
+        };
+        let Some(proved) = attempt::candidate_outcome(
+            scope
+                .driver()
+                .apply_step(ProofStep::NormalizeUsing(vec![condition.clone()])),
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(then_done) =
+            attempt::candidate_outcome(proved.join()?.driver().apply_step(ProofStep::Known))?
+        else {
+            return Ok(None);
+        };
+        let else_arm = then_done.focus_branch(ids[1])?;
+        let Some(done) =
+            attempt::candidate_outcome(else_arm.driver().apply_step(ProofStep::Known))?
+        else {
+            return Ok(None);
+        };
+        done.join_focused_if(&marker, split, ids, condition)
+            .map(Some)
+    }
+
     /// Close the small domain conjunction as ordinary checked `have` steps.
     /// In particular, `defined(cast)` is written as one term even though
     /// its lowered goal has two ordered bounds.
@@ -3429,11 +3511,60 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            is_float_bound, signed_product_guard_requirements, signed_quotient_bridge_requirement,
+            is_float_bound, shift_count_mask_requirements, signed_product_guard_requirements,
+            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
+        if let Proposition::Or(left, right) = goal {
+            return Self::try_distinct_constant_exclusion(search_input, left, right);
+        }
+        if let Some(requirements) = shift_count_mask_requirements(goal) {
+            let mut proof = search_input.clone();
+            let mut surfaces = Vec::with_capacity(requirements.len());
+            for required in &requirements {
+                let Some(surface) = proof.structural_proposition_candidate(required) else {
+                    return Ok(None);
+                };
+                if !proof.facts().contains(required) {
+                    let Some(scope) =
+                        attempt::candidate_outcome(proof.driver().open_have(surface.clone()))?
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(closed) = scope
+                        .driver()
+                        .try_solve_closure_with_surfaces(introduced_surfaces)?
+                    else {
+                        return Ok(None);
+                    };
+                    proof = closed.join()?;
+                }
+                surfaces.push(surface);
+            }
+            return attempt::candidate_outcome(
+                proof
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(surfaces)),
+            );
+        }
+        if let Some(identity) = signed_shift_bound_mask_identity(goal)
+            && let Some(equality) = search_input.structural_proposition_candidate(&identity)
+            && let Some(scope) =
+                attempt::candidate_outcome(search_input.driver().open_have(equality.clone()))?
+            && let Some(closed) = scope
+                .driver()
+                .try_solve_closure_with_surfaces(introduced_surfaces)?
+            && let Some(rewritten) = attempt::candidate_outcome(
+                closed
+                    .join()?
+                    .driver()
+                    .apply_step(ProofStep::Rewrite(equality)),
+            )?
+        {
+            return attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known));
+        }
         if let Proposition::And(left, right) = goal
             && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
                 is_float_bound(leaf) || signed_product_guard_requirements(leaf, false).is_some()
@@ -6303,14 +6434,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_single_store_read_rewrite");
         let ClickProposition::Comparison {
             left,
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::IntegerLiteral(_),
+            operator,
+            right,
         } = target
         else {
             return Ok(None);
         };
+        let field_bound = *operator == ComparisonOperator::LessEqual;
+        let left = match (operator, left, right) {
+            (ComparisonOperator::Equal, left, ContractExpression::IntegerLiteral(_)) => left,
+            (
+                ComparisonOperator::LessEqual,
+                field @ ContractExpression::Field { .. },
+                ContractExpression::IntegerLiteral(_),
+            )
+            | (
+                ComparisonOperator::LessEqual,
+                ContractExpression::IntegerLiteral(_),
+                field @ ContractExpression::Field { .. },
+            ) => field,
+            _ => return Ok(None),
+        };
         let read = match left {
             read @ ContractExpression::Index(..) => read,
+            read @ ContractExpression::Field { .. } if field_bound => read,
             ContractExpression::BitwiseAnd(read, mask)
                 if matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
                     && matches!(
@@ -6336,7 +6483,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             _ => return Ok(None),
         };
-        let Some(view) = search_input.execution_proposition_fixed_state_view() else {
+        let view = if field_bound {
+            search_input.premise_fixed_state_view()
+        } else {
+            search_input.execution_proposition_fixed_state_view()
+        };
+        let Some(view) = view else {
             return Ok(None);
         };
         let state = view.fixed_state.state;
@@ -6358,7 +6510,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } else {
             let Some((
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                    format,
                     left,
                     right,
                     ..
@@ -6368,31 +6520,54 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
-            let address = [left, right].into_iter().find_map(|term| {
-                let MachineTerm::Binary {
-                    op: crate::kernel::MachineBinaryOp::BitwiseAnd,
-                    left,
-                    right,
-                    ..
-                } = term.as_ref()
-                else {
-                    return None;
-                };
-                [left, right].into_iter().find_map(|operand| {
-                    let load = match operand.as_ref() {
+            let load_address =
+                |term: &MachineTerm, valid_kind: fn(crate::kernel::LoadKind) -> bool| {
+                    let load = match term {
                         MachineTerm::Variable(variable) => {
                             crate::kernel::registered_load_term_for_variable(variable)?
                         }
                         term => term.clone(),
                     };
                     match load {
-                        MachineTerm::MemoryLoad(_, address, crate::kernel::LoadKind::Bits64) => {
+                        MachineTerm::MemoryLoad(_, address, kind) if valid_kind(kind) => {
                             Some(address)
                         }
                         _ => None,
                     }
-                })
-            });
+                };
+            let (address, count, width) = match (field_bound, format) {
+                (true, MachineIntegerType::Int32 | MachineIntegerType::UInt32) => (
+                    [left, right].into_iter().find_map(|term| {
+                        load_address(term, |kind| {
+                            matches!(
+                                kind,
+                                crate::kernel::LoadKind::Int32 | crate::kernel::LoadKind::UInt32
+                            )
+                        })
+                    }),
+                    1u32,
+                    4,
+                ),
+                (false, MachineIntegerType::Int64 | MachineIntegerType::UInt64) => (
+                    [left, right].into_iter().find_map(|term| {
+                        let MachineTerm::Binary {
+                            op: crate::kernel::MachineBinaryOp::BitwiseAnd,
+                            left,
+                            right,
+                            ..
+                        } = term.as_ref()
+                        else {
+                            return None;
+                        };
+                        [left, right].into_iter().find_map(|operand| {
+                            load_address(operand, |kind| kind == crate::kernel::LoadKind::Bits64)
+                        })
+                    }),
+                    8u32,
+                    1,
+                ),
+                _ => return Ok(None),
+            };
             let Some(address) = address else {
                 return Ok(None);
             };
@@ -6400,8 +6575,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 crate::kernel::MemoryRange::new_with_element_width(
                     *address,
                     0u32.into(),
-                    8u32.into(),
-                    1,
+                    count.into(),
+                    width,
                 ),
             )) else {
                 return Ok(None);
@@ -6455,6 +6630,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let mut steps = Vec::new();
             let proof = if matches!(read, ContractExpression::Index(..)) {
                 let Some(proof) = Self::try_distinct_indexed_store_separation(
+                    search_input,
+                    written,
+                    &kept,
+                    &footprint_separation,
+                )?
+                else {
+                    continue;
+                };
+                proof
+            } else if field_bound {
+                let Some(proof) = Self::try_single_memory_write_separation(
                     search_input,
                     written,
                     &kept,
