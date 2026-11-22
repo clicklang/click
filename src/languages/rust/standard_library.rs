@@ -18,8 +18,14 @@ pub(super) const SLICE_SWAP: &str = "slice::swap";
 pub(super) const VEC: &str = "Vec::";
 
 /// The Click library file that states the core methods it models as
-/// generic `fn` blocks over their type parameters.
+/// generic `fn` blocks over their type parameters, and the type resources of
+/// the core types, `type Box<T> { ... }`.
 const CORE_LIBRARY: &str = include_str!("../../../library/rust/core.interface.click");
+
+/// The library text declaring the Rust core types' type resources.
+pub(crate) fn type_resource_library() -> &'static str {
+    CORE_LIBRARY
+}
 
 /// The core methods the Click library states as generic functions: the path
 /// of each library generic function and its file. A core method whose
