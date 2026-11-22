@@ -19,6 +19,8 @@ use click::surface::{
 mod cpp_imports;
 #[path = "support/limits.rs"]
 mod limits;
+#[path = "support/quick_solve.rs"]
+mod quick_solve;
 #[path = "support/tactic_work.rs"]
 mod tactic_work;
 
@@ -26,7 +28,6 @@ const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Rewrites the checked-in C++ imports instead of comparing them.
 const REFRESH_CPP_IMPORTS: &str = "CLICK_REFRESH_CPP_IMPORTS";
 const QUICK_SOLVE_ONLY: &str = "MDTEST_QUICK_SOLVE";
-const QUICK_SOLVE_WORK_LIMIT: usize = 50_000;
 const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
 /// Pin the explicit frame refusal under a fixed work limit.
 const PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT: usize = 250_000;
@@ -784,47 +785,9 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
         );
     }
     if mdtest.quick_solve {
-        let work_limit = std::env::var_os("CLICK_DISABLE_TACTIC_BUDGETS")
-            .is_none()
-            .then_some(QUICK_SOLVE_WORK_LIMIT);
-        check_quick_solve(&samples, &result, work_limit)?;
+        quick_solve::check_quick_solve(&samples, &result)?;
     }
     check_expectation(path, expectation, result)
-}
-
-fn check_quick_solve(
-    samples: &[instrumentation::TacticWorkSample],
-    result: &Result<(), (String, String)>,
-    work_limit: Option<usize>,
-) -> Result<(), String> {
-    if let Err((_, report)) = result
-        && report.starts_with("limit error:")
-    {
-        return Err(format!(
-            "Quick Solve Test hit a verification limit: {report}"
-        ));
-    }
-    // Program closing profiles its generated termination proof as a solve
-    // even when the fixture has no written solve at that source.
-    let mut solves = samples.iter().filter(|sample| {
-        sample.tactic.tactic_name == "solve" && sample.tactic.claim != "program.termination"
-    });
-    let Some(solve) = solves.next() else {
-        return Err("Quick Solve Test must reach one explicit `solve()`".into());
-    };
-    if solves.next().is_some() {
-        return Err("Quick Solve Test ran more than one explicit `solve()`".into());
-    }
-    let work = solve.inclusive_work;
-    if let Some(limit) = work_limit
-        && work > limit
-    {
-        return Err(format!(
-            "Quick Solve Test used {work} deterministic work units (limit {limit}) in `{}`",
-            solve.tactic.claim
-        ));
-    }
-    Ok(())
 }
 
 #[test]
@@ -852,14 +815,14 @@ fn quick_solve_caps_inclusive_work_even_for_an_expected_refusal() {
         "could not establish the goal".into(),
         "unsuccessful search".into(),
     ));
-    check_quick_solve(&samples, &refused, Some(10)).unwrap();
-    let error = check_quick_solve(&samples, &refused, Some(9)).unwrap_err();
+    quick_solve::check_quick_solve_with_limit(&samples, &refused, Some(10)).unwrap();
+    let error = quick_solve::check_quick_solve_with_limit(&samples, &refused, Some(9)).unwrap_err();
     assert!(error.contains("10 deterministic work units (limit 9)"));
     let exhausted = Err((
         "search stopped".into(),
         "limit error:\n  search stopped".into(),
     ));
-    assert!(check_quick_solve(&samples, &exhausted, Some(10)).is_err());
+    assert!(quick_solve::check_quick_solve_with_limit(&samples, &exhausted, Some(10)).is_err());
 }
 
 fn check_expectation(
