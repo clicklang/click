@@ -177,7 +177,6 @@ impl<'a> Proof<'a> {
                 self.step_error(format!(
                     "could not apply checked contract resource effect: {message}"
                 ))
-                .with_proof_refusal(crate::surface::ProofRefusal::ContractExit)
             })?;
         let updated = self.with_outcome_state(&outcome)?;
         let Some(Obligation::FunctionOutcome(goal)) = updated.focused_obligation() else {
@@ -235,7 +234,7 @@ impl<'a> Proof<'a> {
             guard_active,
             guard_deferred,
         )
-        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractExit))
+        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof))
     }
 
     /// The guard decision and whether an unresolved guard defers the claim.
@@ -401,26 +400,26 @@ impl<'a> Proof<'a> {
         let bound = self
             .state
             .bind_outcome_publication(publication.clone())
-            .map_err(|reason| self.step_error(reason))?;
+            .map_err(|reason| self.contract_closing_internal_error(reason))?;
         let bound = self.with_kernel_state(bound);
         let this = &bound;
         let Some(Obligation::FunctionOutcome(goal)) = this.focused_obligation() else {
-            return Err(self.step_error("contract closing requires an outcome goal"));
+            return Err(
+                self.contract_closing_internal_error("contract closing requires an outcome goal")
+            );
         };
         if !matches!(goal.first_open_goal(), Ok(Some(crate::kernel::proof::OutcomeGoal::Closing(selected))) if selected == kind)
         {
-            return Err(
-                self.step_error("contract closing must follow the pending source obligations")
-            );
+            return Err(self.contract_closing_internal_error(
+                "contract closing must follow the pending source obligations",
+            ));
         }
-        let closing = goal
-            .closing
-            .as_ref()
-            .ok_or_else(|| self.step_error("contract closing obligations were not generated"))?;
-        let claims = goal
-            .claims
-            .as_ref()
-            .ok_or_else(|| self.step_error("contract claim obligations were not generated"))?;
+        let closing = goal.closing.as_ref().ok_or_else(|| {
+            self.contract_closing_internal_error("contract closing obligations were not generated")
+        })?;
+        let claims = goal.claims.as_ref().ok_or_else(|| {
+            self.contract_closing_internal_error("contract claim obligations were not generated")
+        })?;
         let closing = closing
             .prove_goal(kind, execution, path, &goal.data.core, claims, this.facts())
             .map_err(|refusal| self.contract_closing_error(refusal))?;
@@ -436,12 +435,19 @@ impl<'a> Proof<'a> {
         self.state.published_contract_claim(key)
     }
 
+    fn contract_closing_internal_error(&self, reason: impl Into<String>) -> ClickError {
+        self.step_error(reason)
+            .with_kind(crate::surface::ClickErrorKind::Internal)
+    }
+
     fn contract_closing_error(&self, refusal: crate::kernel::ContractClosingRefusal) -> ClickError {
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            return self.step_error("contract closing requires an execution proof");
+            return self
+                .contract_closing_internal_error("contract closing requires an execution proof");
         };
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
-            return self.step_error("contract closing requires an outcome goal");
+            return self
+                .contract_closing_internal_error("contract closing requires an outcome goal");
         };
         use crate::kernel::ContractClosingRefusal as Refusal;
         let binding = context.parameter_binding();
@@ -453,13 +459,23 @@ impl<'a> Proof<'a> {
             }
             _ => None,
         };
+
         let message = match refusal {
-            Refusal::Claim(key) => {
-                let claim = match key {
-                            FunctionContractClaimKey::Ensure(clause_index) => match context.function_block.ensures().get(clause_index) { Some(clause) => FunctionClaimRef::Ensure(clause_index, clause), None => return self.step_error(format!("contract closing for `{label}` path {index}: unproved generated returned-storage obligation")).with_proof_refusal(crate::surface::ProofRefusal::ContractExit) },
-                            _ => return self.step_error(format!("contract closing for `{label}` path {index}: unproved boundary claim {key:?}")).with_proof_refusal(crate::surface::ProofRefusal::ContractExit),
-                        };
-                let clause = match claim.clause().ensure() {
+            Refusal::Internal(reason) => {
+                return self.contract_closing_internal_error(format!(
+                    "contract closing for `{label}` path {index}: {reason}"
+                ));
+            }
+            Refusal::Claim(FunctionContractClaimKey::Ensure(clause_index)) => {
+                let Some(clause) = context.function_block.ensures().get(clause_index) else {
+                    return self
+                        .step_error(format!(
+                            "`{label}` path {index} still needs to return the promised storage"
+                        ))
+                        .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof);
+                };
+                let claim = FunctionClaimRef::Ensure(clause_index, clause);
+                let clause = match clause.ensure() {
                     Ensure::Resource(resource) => {
                         crate::surface::validation::describe_resource_clause(resource)
                     }
@@ -467,18 +483,52 @@ impl<'a> Proof<'a> {
                         crate::surface::diagnostics::describe_click_proposition(proposition)
                     }
                 };
-                format!(
-                    "contract closing for `{label}` path {index}: unproved resource obligation {} `{clause}`",
-                    function_claim_label(context.function_block, &claim)
-                )
+                let claim_label = function_claim_label(context.function_block, &claim);
+                return self
+                    .step_error(format!(
+                        "`{label}` path {index} must return `{clause}` to satisfy `{claim_label}`"
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof);
+            }
+            Refusal::Claim(key) => {
+                return self.contract_closing_internal_error(format!(
+                    "contract closing for `{label}` path {index}: unexpected returned resource claim {key:?}"
+                ));
             }
             #[cfg(test)]
-            Refusal::Pending(kind) => format!(
-                "contract closing for `{label}` path {index}: unproved {} obligation; prove it explicitly with `known()` or supply the facts and resources needed by the implicit solver",
-                kind.description()
-            ),
-            Refusal::Resource(reason) => {
-                format!("contract closing for `{label}` path {index}: {reason}")
+            Refusal::Pending(kind) => {
+                return self
+                    .step_error(format!(
+                        "`{label}` path {index} still needs to prove {}",
+                        kind.description()
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof);
+            }
+            Refusal::Incomplete(reason) => {
+                return self
+                    .step_error(format!(
+                        "contract closing for `{label}` path {index}: {reason}"
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof);
+            }
+            Refusal::InvalidContract(reason) => {
+                return self
+                    .step_error(format!("contract for `{label}`: {reason}"))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Contract);
+            }
+            Refusal::Limit(reason) => {
+                return self
+                    .step_error(format!(
+                        "contract closing for `{label}` path {index}: {reason}"
+                    ))
+                    .with_kind(crate::surface::ClickErrorKind::Limit);
+            }
+            Refusal::Execution(reason) => {
+                return self
+                    .step_error(format!(
+                        "contract closing for `{label}` path {index}: {reason}"
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Execution);
             }
             Refusal::Runtime(error) => format!(
                 "`{label}` path {index}: C operation could not be verified: {}{}",
@@ -507,7 +557,7 @@ impl<'a> Proof<'a> {
             Some(kind) => error
                 .with_kind(kind)
                 .with_proof_refusal(crate::surface::ProofRefusal::Execution),
-            None => error.with_proof_refusal(crate::surface::ProofRefusal::ContractExit),
+            None => error.with_proof_refusal(crate::surface::ProofRefusal::Tactic),
         }
     }
 

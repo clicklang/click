@@ -20,7 +20,7 @@ pub(crate) struct ContractClosingContext {
     completion_keys: Arc<[FunctionContractClaimKey]>,
     effect_claims: Vec<FunctionContractClaim>,
     retained_entry: Option<Arc<PreparedContractEntryCases>>,
-    entry: OnceLock<Result<RetainedClosingFootprint, String>>,
+    entry: OnceLock<Result<RetainedClosingFootprint, ContractClosingRefusal>>,
 }
 
 impl ContractClosingContext {
@@ -125,7 +125,11 @@ impl ContractClosingContext {
                     Some(entry) => entry.callee_entry().clone(),
                     None => {
                         program_function_entry_state(&self.caller, &self.function, &self.arguments)
-                            .ok_or_else(|| "could not bind the contract entry".to_string())?
+                            .ok_or_else(|| {
+                                ContractClosingRefusal::Internal(
+                                    "could not bind the contract entry".into(),
+                                )
+                            })?
                     }
                 };
                 let mut budget = ExecutionBudget::beside_live_state();
@@ -140,8 +144,8 @@ impl ContractClosingContext {
                             &self.entry_assumptions.clone().assume_entry_clause_spans(),
                             &mut budget,
                         )
-                        .map_err(|limit| limit.describe().to_string())?
-                        .map_err(|error| error.kernel_summary())?;
+                        .map_err(ContractClosingRefusal::from_stop)?
+                        .map_err(ContractClosingRefusal::Runtime)?;
                         checked
                     };
                     Some(checked.into())
@@ -155,7 +159,8 @@ impl ContractClosingContext {
                     &self.entry_assumptions,
                     &mut budget,
                 )
-                .map_err(|limit| limit.describe().to_string())??;
+                .map_err(ContractClosingRefusal::from_stop)?
+                .map_err(ContractClosingRefusal::Incomplete)?;
                 Ok(RetainedClosingFootprint {
                     state,
                     resources,
@@ -164,7 +169,7 @@ impl ContractClosingContext {
                 })
             })
             .as_ref()
-            .map_err(|reason| ContractClosingRefusal::Resource(reason.clone()))
+            .map_err(Clone::clone)
     }
 }
 
@@ -210,9 +215,14 @@ impl ClosedContractExit {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum ContractClosingRefusal {
-    Resource(String),
+    /// The verifier supplied inconsistent state for this closing operation.
+    Internal(String),
+    Incomplete(String),
+    InvalidContract(String),
+    Limit(String),
+    Execution(String),
     Claim(FunctionContractClaimKey),
     Runtime(RuntimeError),
     Write(Address),
@@ -220,6 +230,25 @@ pub(crate) enum ContractClosingRefusal {
     Storage(Vec<crate::kernel::functions::StorageWriteOutsideFootprint>),
     #[cfg(test)]
     Pending(ContractClosingGoal),
+}
+
+impl ContractClosingRefusal {
+    pub(in crate::kernel) fn from_stop(stop: ExecutionLimit) -> Self {
+        use ExecutionLimit::*;
+        match stop {
+            Deadline
+            | ExpressionSteps
+            | StatementSteps
+            | FunctionCalls
+            | LoopUnrolls
+            | KernelVariables { .. }
+            | MatchBinderVariables { .. } => {
+                Self::Limit(format!("checking the contract return stopped at {stop}"))
+            }
+            ExecutionIdentityBesideLiveState => Self::Internal(stop.describe()),
+            _ => Self::Incomplete(format!("could not check the contract return: {stop}")),
+        }
+    }
 }
 
 impl ContractExitObligations {
@@ -347,12 +376,12 @@ impl ContractExitObligations {
         facts: &PureFactStore,
     ) -> Result<Self, ContractClosingRefusal> {
         if !self.outcome.same_as(&outcome.identity) {
-            return Err(ContractClosingRefusal::Resource(
+            return Err(ContractClosingRefusal::Internal(
                 "closing obligations belong to another outcome".into(),
             ));
         }
         if self.first_open_goal() != Some(kind) {
-            return Err(ContractClosingRefusal::Resource(
+            return Err(ContractClosingRefusal::Internal(
                 "the selected closing goal is not open".into(),
             ));
         }
@@ -421,32 +450,25 @@ impl ContractExitObligations {
             }
             ContractClosingGoal::WriteFootprint => {
                 if !self.context.effect_claims.is_empty() {
-                    let effects = self.effects.as_ref().ok_or_else(|| {
-                        ContractClosingRefusal::Resource(
+                    let effects = self
+                        .effects
+                        .as_ref()
+                        .ok_or(ContractClosingRefusal::Internal(
                             "the resource goal has not prepared the effect input".into(),
-                        )
-                    })?;
-                    let delta = facts.introduced_since(&effects.base).ok_or_else(|| {
-                        ContractClosingRefusal::Resource(
+                        ))?;
+                    let delta = facts.introduced_since(&effects.base).ok_or(
+                        ContractClosingRefusal::Internal(
                             "the effect goal belongs to another proof context".into(),
-                        )
-                    })?;
-                    let no_propositions = CheckedPropositionIndex::default();
+                        ),
+                    )?;
                     for prepared in &effects.paths {
                         let assumptions =
                             assumptions_with_propositions(&prepared.assumptions, &delta);
-                        for claim in &self.context.effect_claims {
-                            if !function_claim_holds_on_prepared_path(
-                                &self.context.function,
-                                claim,
-                                prepared,
-                                &no_propositions,
-                                None,
-                                Some(&assumptions),
-                            ) {
-                                return Err(ContractClosingRefusal::Claim(claim.key().clone()));
-                            }
-                        }
+                        check_effect_on_prepared_path(
+                            &self.context.function,
+                            prepared,
+                            &assumptions,
+                        )?;
                     }
                 }
                 self.prove_footprint(path, facts.assumptions())?;
@@ -551,17 +573,14 @@ impl ContractExitObligations {
         let guards = if !check_guards {
             &[][..]
         } else if let Some(entry) = retained_entry {
-            entry
-                .closing_resource_guards()
-                .map_err(ContractClosingRefusal::Resource)?
+            entry.closing_resource_guards()?
         } else {
             independent_guards = contract_resource_guards(
                 &context.caller,
                 &context.function,
                 &context.arguments,
                 &context.entry_assumptions,
-            )
-            .map_err(|error| ContractClosingRefusal::Resource(error.into_message()))?;
+            )?;
             independent_guards.as_slice()
         };
         let checked_outcome = if outcome.is_exceptional {
@@ -590,7 +609,7 @@ impl ContractExitObligations {
         let mut pending = vec![(0, Vec::new())];
         while let Some((start, mut case)) = pending.pop() {
             if crate::kernel::assumptions::reasoning_interrupted() {
-                return Err(ContractClosingRefusal::Resource(
+                return Err(ContractClosingRefusal::Limit(
                     "checking conditional resources was interrupted".into(),
                 ));
             }
@@ -626,8 +645,7 @@ impl ContractExitObligations {
                 } else {
                     case_entry = entry
                         .closing_entry
-                        .for_resource_case(&context.function, &case)
-                        .map_err(ContractClosingRefusal::Resource)?;
+                        .for_resource_case(&context.function, &case)?;
                     &case_entry
                 };
                 prepare_closing_path(
@@ -663,13 +681,17 @@ impl ContractExitObligations {
                     Some(&checked_outcome),
                 )
             }
-            .map_err(|failure| ContractClosingRefusal::Resource(failure.reason))?;
+            .map_err(ContractPathPreparationFailure::into_closing_refusal)?;
             match &prepared.outcome {
                 FunctionOutcome::RuntimeError(error) => {
-                    return Err(ContractClosingRefusal::Runtime(error.clone()));
+                    return Err(ContractPathPreparationFailure::runtime(
+                        error.to_string(),
+                        error.clone(),
+                    )
+                    .into_closing_refusal());
                 }
                 FunctionOutcome::UndefinedBehavior(error) => {
-                    return Err(ContractClosingRefusal::Resource(format!(
+                    return Err(ContractClosingRefusal::Execution(format!(
                         "undefined behavior: {}",
                         error.description()
                     )));
@@ -745,7 +767,7 @@ impl ContractExitObligations {
                 assumptions,
                 &mut budget,
             )
-            .map_err(|limit| ContractClosingRefusal::Resource(limit.describe()))?
+            .map_err(ContractClosingRefusal::from_stop)?
         }
         .map_err(ContractClosingRefusal::Runtime)?;
         if let Some(obligation) = result {
@@ -787,16 +809,16 @@ impl ContractExitObligations {
                     Some(
                         entry
                             .projection(function)
-                            .map_err(ContractClosingRefusal::Resource)?,
+                            .map_err(ContractClosingRefusal::Incomplete)?,
                     ),
                 )
-                .map_err(|limit| ContractClosingRefusal::Resource(limit.describe().to_string()))?
+                .map_err(ContractClosingRefusal::from_stop)?
                 {
                     Some(outside) if outside.is_empty() => {}
                     Some(outside) => return Err(ContractClosingRefusal::Storage(outside)),
                     None => {
-                        return Err(ContractClosingRefusal::Resource(
-                            "could not evaluate the owned write footprint".into(),
+                        return Err(ContractClosingRefusal::Incomplete(
+                            "could not determine which storage the contract allows this function to write".into(),
                         ));
                     }
                 }

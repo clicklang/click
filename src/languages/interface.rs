@@ -432,6 +432,11 @@ impl InterfaceType {
         CAbi::SUPPORTED.size_and_alignment(self).0
     }
 
+    /// The type's alignment in the supported ABI.
+    pub(crate) fn abi_alignment_bytes(self) -> u32 {
+        CAbi::SUPPORTED.size_and_alignment(self).1
+    }
+
     /// The same type with any `long long` rank replaced by `long`. Use it
     /// wherever only representation matters: arithmetic, value conversion,
     /// and matching a Click specification type (`int64`, `uint64`) against
@@ -1764,7 +1769,13 @@ impl ImportedParameter {
     }
 
     pub fn is_struct_value(&self) -> bool {
-        self.struct_name.is_some() && matches!(self.interface_type, InterfaceType::UInt8Array(_))
+        // A symbolic struct's value is an object of its `sizeof`, typed by
+        // its layout's value type (`record_value_type`).
+        self.struct_name.is_some()
+            && matches!(
+                self.interface_type,
+                InterfaceType::UInt8Array(_) | InterfaceType::Parameter(_)
+            )
     }
 }
 

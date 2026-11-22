@@ -52,7 +52,14 @@ fn split_on_undefined_behavior(
     assumptions: &PureFactContext,
     defined: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> Vec<ExpressionPath> {
-    match decide_with_facts(assumptions, &facts, &undefined) {
+    // Decide the same condition that branch admission will record, which
+    // reads a negated guard as the underlying condition at opposite polarity.
+    let decision = if let Some(condition) = undefined.bool_negation_operand() {
+        decide_with_facts(assumptions, &facts, condition).map(|value| !value)
+    } else {
+        decide_with_facts(assumptions, &facts, &undefined)
+    };
+    match decision {
         Some(true) => vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(behavior),
             facts,
@@ -561,6 +568,7 @@ pub(in crate::kernel) fn apply_program_add(
                     obligations,
                 }];
             };
+            let pointer = gnu_void_arithmetic_operand(pointer);
             let offset = canonicalized_offset_index_term(offset, &mut facts);
             pointer_offset_by_elements_paths(
                 state,
@@ -588,6 +596,7 @@ pub(in crate::kernel) fn apply_program_add(
                     obligations,
                 }];
             };
+            let pointer = gnu_void_arithmetic_operand(pointer);
             let offset = canonicalized_offset_index_term(offset, &mut facts);
             pointer_offset_by_elements_paths(
                 state,
@@ -1850,6 +1859,19 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
     }
 }
 
+/// GNU C defines arithmetic on `void *` as arithmetic on a character
+/// pointer, so its operand is the byte view that converting to a character
+/// pointer forms (C11 6.3.2.3p7): the allocation's bytes, not the member the
+/// pointer was formed from. Linux's `container_of` steps back from a member
+/// this way.
+fn gnu_void_arithmetic_operand(pointer: Pointer) -> Pointer {
+    if pointer.program_type() == ProgramType::VoidPointer {
+        pointer.with_root_bounds()
+    } else {
+        pointer
+    }
+}
+
 pub(super) fn pointer_value_step_width(
     pointer: &Pointer,
     expression_width: Option<u32>,
@@ -1909,6 +1931,150 @@ fn pointer_element_indices(
             pointer_element_index(right, byte_width)?,
         ))
     })
+}
+
+/// The displacements added after the operands' shared coordinate. Pointer
+/// formation adds to the left spine, so compare terms from the base out.
+fn pointer_difference_offsets<'a>(
+    left: &'a Address,
+    right: &'a Address,
+) -> Option<(Vec<&'a AddressOffset>, Vec<&'a AddressOffset>)> {
+    fn offset_spine(mut offset: &AddressOffset) -> Vec<&AddressOffset> {
+        let mut spine = Vec::new();
+        while let AddressOffset::Add(base, displacement) = offset {
+            spine.push(displacement.as_ref());
+            offset = base;
+        }
+        spine.push(offset);
+        spine
+    }
+
+    // Sharing provenance does not make two independently loaded addresses
+    // the same coordinate origin. External parameters, by contrast, already
+    // use one shared address space and store their coordinates in the offset.
+    if left.base != right.base {
+        return None;
+    }
+    let mut left = offset_spine(&left.offset);
+    let mut right = offset_spine(&right.offset);
+    while matches!((left.last(), right.last()), (Some(l), Some(r)) if l == r) {
+        left.pop();
+        right.pop();
+    }
+    Some((left, right))
+}
+
+fn apply_pointer_difference(
+    left: &Address,
+    right: &Address,
+    byte_width: u32,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<ExpressionPath> {
+    let mut guards = Vec::new();
+    let mut index = |offsets: Vec<&AddressOffset>| -> Option<SharedMachineIntegerTerm> {
+        // Pointer formation folds consecutive constant advances. Check an
+        // unsigned element index plus that advance in its original type:
+        // n + k fits ptrdiff_t iff n <= PTRDIFF_MAX - k for k >= 0.
+        if let [
+            AddressOffset::Constant(bytes),
+            AddressOffset::Int64Scaled {
+                value,
+                byte_width: stride,
+                unsigned: true,
+            },
+        ] = offsets.as_slice()
+            && byte_width != 0
+            && *stride == i64::from(byte_width)
+            && *bytes >= 0
+            && *bytes % stride == 0
+        {
+            let advance = *bytes / stride;
+            guards.push(PointerFormationGuard {
+                condition: crate::kernel::assumptions::wide_index_comparison(
+                    CompareRelation::LessEqual,
+                    value.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(
+                        (i64::MAX - advance) as u64,
+                    )),
+                ),
+                value: true,
+            });
+            let signed = value.checking_cast_operand(MachineIntegerType::Int64);
+            return Some(SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int64,
+                MachineTerm::int64_add(
+                    signed.value().clone(),
+                    MachineTerm::int64_constant(advance),
+                ),
+            ));
+        }
+        let mut sum: Option<SharedMachineIntegerTerm> = None;
+        for offset in offsets.into_iter().rev() {
+            let term = exact_pointer_index_i64_with_guards(offset, Some(byte_width), &mut guards)?;
+            sum = Some(match sum {
+                None => term,
+                Some(previous) => exact_offset_operation(
+                    crate::kernel::machine_integer::Operation::Add,
+                    previous.operand_view(),
+                    term.operand_view(),
+                    &mut guards,
+                ),
+            });
+        }
+        Some(sum.unwrap_or_else(|| {
+            SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int64,
+                MachineTerm::int64_constant(0),
+            )
+        }))
+    };
+    let indices = pointer_difference_offsets(left, right)
+        .and_then(|(left, right)| Some((index(left)?, index(right)?)));
+    let Some((left, right)) = indices else {
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::RuntimeError(
+                RuntimeError::UnsupportedPointerSubtractionOffsets,
+            ),
+            facts,
+            obligations,
+        }];
+    };
+    // Check the signed readings in construction order, before subtracting
+    // and checking the range of the ptrdiff_t result.
+    let conditions = guards
+        .into_iter()
+        .rev()
+        .map(|guard| {
+            debug_assert!(guard.value);
+            guard.condition
+        })
+        .collect();
+    apply_pointer_provenance_guards(
+        conditions,
+        facts,
+        obligations,
+        assumptions,
+        move |facts, obligations| {
+            let left = left.value().clone();
+            if right.operand_view().int64_constant() == Some(0) {
+                return vec![ExpressionPath {
+                    outcome: ExpressionOutcome::Value(ProgramValue::Int64(left)),
+                    facts,
+                    obligations,
+                }];
+            }
+            WideArithmetic::Subtract.apply(
+                ProgramValue::Int64(left),
+                ProgramValue::Int64(right.value().clone()),
+                ScalarWidth::Int64,
+                facts,
+                obligations,
+                assumptions,
+            )
+        },
+    )
 }
 
 pub(in crate::kernel) fn pointer_order_condition(
@@ -2376,7 +2542,7 @@ pub(super) fn apply_program_comparison(
                     else {
                         return vec![ExpressionPath {
                             outcome: ExpressionOutcome::RuntimeError(
-                                RuntimeError::IndeterminatePointeeType,
+                                RuntimeError::UnsupportedPointerComparisonOffsets,
                             ),
                             facts,
                             obligations,
@@ -2519,6 +2685,7 @@ pub(in crate::kernel) fn apply_program_subtract(
             ) else {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             };
+            let pointer = gnu_void_arithmetic_operand(pointer);
             pointer_offset_by_elements_paths(
                 state,
                 pointer,
@@ -2541,6 +2708,7 @@ pub(in crate::kernel) fn apply_program_subtract(
             ) else {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             };
+            let pointer = gnu_void_arithmetic_operand(pointer);
             let (offset, unsigned) = match right {
                 ProgramValue::UInt32(value) => (MachineTerm::uint64_from_32(value), true),
                 ProgramValue::Int64(value) => (value, false),
@@ -2612,8 +2780,10 @@ pub(in crate::kernel) fn apply_program_subtract(
             if left.program_type() != right.program_type() {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             }
-            let Some(byte_width) = pointer_operation_step_width(left_step_width, right_step_width)
-            else {
+            let Some(byte_width) = pointer_operation_step_width(
+                pointer_value_step_width(&left, left_step_width),
+                pointer_value_step_width(&right, right_step_width),
+            ) else {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             };
             // C 6.5.6p9: both pointers point into the same array object. The
@@ -2641,26 +2811,21 @@ pub(in crate::kernel) fn apply_program_subtract(
                 obligations,
                 assumptions,
                 move |left, right, facts, obligations| {
-                    let subtract = move |facts, obligations| {
-                        let Some((left, right)) =
-                            pointer_element_indices(&left, &right, byte_width)
-                        else {
-                            return vec![ExpressionPath {
-                                outcome: ExpressionOutcome::RuntimeError(
-                                    RuntimeError::IndeterminatePointeeType,
-                                ),
-                                facts,
-                                obligations,
-                            }];
-                        };
-                        apply_program_int32_subtract(left, right, facts, obligations, assumptions)
-                    };
                     apply_pointer_provenance_guards(
                         same_array.unwrap_or_default(),
                         facts,
                         obligations,
                         assumptions,
-                        subtract,
+                        |facts, obligations| {
+                            apply_pointer_difference(
+                                &left,
+                                &right,
+                                byte_width,
+                                facts,
+                                obligations,
+                                assumptions,
+                            )
+                        },
                     )
                 },
             )
@@ -2967,7 +3132,9 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     let pointer = value.address().clone();
     if pointer.base.is_function() && bytes != crate::kernel::LayoutOffset::Bytes(0) {
         return vec![ExpressionPath {
-            outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
+            outcome: ExpressionOutcome::RuntimeError(
+                RuntimeError::UnsupportedFunctionPointerOffset,
+            ),
             facts,
             obligations,
         }];
@@ -3163,18 +3330,28 @@ fn exact_pointer_offset_i64_with_guards(
     offset: &AddressOffset,
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<SharedMachineIntegerTerm> {
+    exact_pointer_index_i64_with_guards(offset, None, guards)
+}
+
+fn exact_pointer_index_i64_with_guards(
+    offset: &AddressOffset,
+    element_width: Option<u32>,
+    guards: &mut Vec<PointerFormationGuard>,
+) -> Option<SharedMachineIntegerTerm> {
     use crate::kernel::machine_integer::Operation;
     use MachineIntegerType as T;
     use MachineOperandView as V;
+    let width = i64::from(element_width.unwrap_or(1));
+    let scale = |bytes: i64| (width > 0 && bytes % width == 0).then(|| bytes / width);
     match offset {
         AddressOffset::Constant(value) => Some(SharedMachineIntegerTerm::intern(
             T::Int64,
-            MachineTerm::int64_constant(*value),
+            MachineTerm::int64_constant(scale(*value)?),
         )),
         AddressOffset::Variable(_) => None,
         AddressOffset::Add(left, right) => {
-            let left = exact_pointer_offset_i64_with_guards(left, guards)?;
-            let right = exact_pointer_offset_i64_with_guards(right, guards)?;
+            let left = exact_pointer_index_i64_with_guards(left, element_width, guards)?;
+            let right = exact_pointer_index_i64_with_guards(right, element_width, guards)?;
             Some(exact_offset_operation(
                 Operation::Add,
                 left.operand_view(),
@@ -3183,14 +3360,18 @@ fn exact_pointer_offset_i64_with_guards(
             ))
         }
         AddressOffset::Int32Scaled { value, byte_width } => {
+            let scale = scale(*byte_width)?;
             let left = value
                 .operand_view()
                 .retain(T::Int32)
                 .checking_cast_operand(T::Int64);
+            if element_width.is_some() && scale == 1 {
+                return Some(left);
+            }
             Some(exact_offset_operation(
                 Operation::Multiply,
                 left.operand_view(),
-                V::Legacy(&MachineTerm::int64_constant(*byte_width)),
+                V::Legacy(&MachineTerm::int64_constant(scale)),
                 guards,
             ))
         }
@@ -3203,8 +3384,9 @@ fn exact_pointer_offset_i64_with_guards(
             byte_width,
             unsigned,
         } => {
+            let scale = scale(*byte_width)?;
             if *unsigned {
-                let width = u64::try_from(*byte_width).ok().filter(|width| *width > 0)?;
+                let width = u64::try_from(scale).ok().filter(|width| *width > 0)?;
                 guards.push(PointerFormationGuard {
                     condition: crate::kernel::assumptions::wide_index_comparison(
                         CompareRelation::LessEqual,
@@ -3214,10 +3396,20 @@ fn exact_pointer_offset_i64_with_guards(
                     value: true,
                 });
             }
+            let signed;
+            let value = if element_width.is_some() {
+                signed = value.checking_cast_operand(T::Int64);
+                if scale == 1 {
+                    return Some(signed);
+                }
+                &signed
+            } else {
+                value
+            };
             Some(exact_offset_operation(
                 Operation::Multiply,
                 value.operand_view(),
-                V::Legacy(&MachineTerm::int64_constant(*byte_width)),
+                V::Legacy(&MachineTerm::int64_constant(scale)),
                 guards,
             ))
         }

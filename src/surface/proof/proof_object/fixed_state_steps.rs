@@ -606,6 +606,29 @@ pub(in crate::surface::proof) struct PreparedTheoremApplication {
     pub(in crate::surface::proof) obligations: Vec<UnresolvedRequirement>,
 }
 
+fn range_witness_body(
+    start: ContractExpression,
+    end: ContractExpression,
+    value: ContractExpression,
+    body: ClickProposition,
+) -> ClickProposition {
+    ClickProposition::And(
+        Box::new(ClickProposition::And(
+            Box::new(ClickProposition::Comparison {
+                left: start,
+                operator: ComparisonOperator::LessEqual,
+                right: value.clone(),
+            }),
+            Box::new(ClickProposition::Comparison {
+                left: value,
+                operator: ComparisonOperator::LessThan,
+                right: end,
+            }),
+        )),
+        Box::new(body),
+    )
+}
+
 impl<'a> Proof<'a> {
     pub(super) fn apply_theorem_using(
         &self,
@@ -676,11 +699,41 @@ impl<'a> Proof<'a> {
         })
     }
 
+    pub(in crate::surface::proof) fn theorem_obligation_available(
+        &self,
+        requirement: &UnresolvedRequirement,
+    ) -> bool {
+        self.facts().pure_known_available(&requirement.proposition)
+            || matches!(
+                normalize_proposition(&requirement.proposition),
+                NormalizedProposition::True
+            )
+    }
+
+    /// A selected application's premises were checked separately. Check that
+    /// a bare replay can reconstruct the same conclusions from the ambient
+    /// fact index, including any obligations for evaluating the arguments.
+    pub(in crate::surface::proof) fn planned_theorem_replays_bare(
+        &self,
+        application: &TheoremApplication,
+        conclusions: &[Proposition],
+    ) -> bool {
+        crate::instrumentation::with_certificate_presentation_work(|| {
+            self.prepare_theorem_application(application)
+                .is_ok_and(|prepared| {
+                    prepared.conclusions == conclusions
+                        && prepared
+                            .obligations
+                            .iter()
+                            .all(|requirement| self.theorem_obligation_available(requirement))
+                })
+        })
+    }
+
     pub(in crate::surface::proof) fn finish_prepared_theorem_application(
         &self,
         prepared: PreparedTheoremApplication,
         application: &TheoremApplication,
-        premises: Vec<ClickProposition>,
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
         let _operation =
@@ -712,10 +765,7 @@ impl<'a> Proof<'a> {
             node: ProofNode::step_child(
                 &self.node,
                 self.focused_branch_id(),
-                Arc::new(ProofStep::ApplyTheoremUsing {
-                    application: application.clone(),
-                    premises,
-                }),
+                Arc::new(ProofStep::ApplyTheorem(application.clone())),
             ),
         })
     }
@@ -1250,6 +1300,7 @@ impl<'a> Proof<'a> {
         // for premise lookups; see `ProofLocals::surface_facts`.
         let mut written_body = Some(&binding.proposition);
         let mut substitutions = BTreeMap::new();
+        let mut range_body = None;
         for (output, click_type) in &binding.bindings {
             written_body = match written_body {
                 Some(ClickProposition::Exists { name, body, .. }) => {
@@ -1257,7 +1308,7 @@ impl<'a> Proof<'a> {
                         substitutions.remove(name);
                     } else {
                         let replacement = match click_type {
-                            ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
+                            Some(ClickType::Program(_) | ClickType::CObjectPointer { .. }) => {
                                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
                                     output.clone().into(),
                                 ))
@@ -1268,15 +1319,43 @@ impl<'a> Proof<'a> {
                     }
                     Some(body.as_ref())
                 }
+                Some(ClickProposition::RangeAny {
+                    start,
+                    end,
+                    item,
+                    body,
+                    ..
+                }) => {
+                    let error = |message| {
+                        self.step_error(format!(
+                            "could not spell the opened range existential: {message}"
+                        ))
+                    };
+                    // The range binder scopes over the predicate, while the
+                    // endpoints can reference binders opened earlier.
+                    let start =
+                        substitute_contract_expression(start, &substitutions).map_err(error)?;
+                    let end = substitute_contract_expression(end, &substitutions).map_err(error)?;
+                    let value = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        output.clone().into(),
+                    ));
+                    substitutions.insert(item.clone(), value.clone());
+                    let body = substitute_click_proposition(body, &substitutions).map_err(error)?;
+                    range_body = Some(range_witness_body(start, end, value, body));
+                    None
+                }
                 _ => None,
             };
         }
-        if let (Some(written_body), Some(body)) = (written_body, checked.last()) {
+        if let Some(body) = checked.last() {
             let renamed;
-            let spelling = if substitutions.is_empty() {
-                Some(written_body)
+            let spelling = if let Some(spelling) = &range_body {
+                Some(spelling)
+            } else if substitutions.is_empty() {
+                written_body
             } else {
-                renamed = substitute_click_proposition(written_body, &substitutions).ok();
+                renamed = written_body
+                    .and_then(|body| substitute_click_proposition(body, &substitutions).ok());
                 renamed.as_ref()
             };
             if let Some(spelling) = spelling {
@@ -1755,21 +1834,7 @@ impl<'a> Proof<'a> {
                             "could not instantiate Surface range witness goal: {message}"
                         ))
                     })?;
-                Some(ClickProposition::And(
-                    Box::new(ClickProposition::And(
-                        Box::new(ClickProposition::Comparison {
-                            left: start,
-                            operator: ComparisonOperator::LessEqual,
-                            right: value.clone(),
-                        }),
-                        Box::new(ClickProposition::Comparison {
-                            left: value,
-                            operator: ComparisonOperator::LessThan,
-                            right: end,
-                        }),
-                    )),
-                    Box::new(body),
-                ))
+                Some(range_witness_body(start, end, value, body))
             }
             _ => None,
         };
@@ -2793,6 +2858,16 @@ impl<'a> Proof<'a> {
             Vec::new(),
             Vec::new(),
         ))
+    }
+
+    pub(super) fn apply_fact_from_scope(
+        &self,
+        fact: &ClickProposition,
+    ) -> Result<KernelProofHandle, ClickError> {
+        let fact = self.lower_cited_surface_proposition(fact, "`apply` fact")?;
+        self.state
+            .apply_fact_from_scope(&fact)
+            .map_err(|message| self.step_error(message))
     }
 
     pub(super) fn apply_fact_using(

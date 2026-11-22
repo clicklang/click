@@ -83,14 +83,14 @@ theorem sum(a: Integer, b: Integer, c: Integer, d: Integer) {
     requires a <= b;
     requires c <= d;
     ensures a + c <= b + d by {
-        apply(integer::add_le(a, b, c, d)) using { a <= b; c <= d; };
+        apply(integer::add_le(a, b, c, d));
     }
 }
 theorem scaled(x: Integer, y: Integer, k: Integer) {
     requires x <= y;
     requires 0 <= k;
     ensures x * k <= y * k by {
-        apply(integer::multiply_order_nonnegative(x, y, k)) using { x <= y; 0 <= k; };
+        apply(integer::multiply_order_nonnegative(x, y, k));
     }
 }
 theorem rounded(x: Integer) {
@@ -101,9 +101,7 @@ theorem rounded(x: Integer) {
             rewrite((2 * 2) + 1, 5);
             known();
         }
-        apply(integer::round_down_le(x, 2, 2, 1)) using {
-            0 < 2; 1 < 2; x * 2 <= (2 * 2) + 1;
-        };
+        apply(integer::round_down_le(x, 2, 2, 1));
     }
 }
 theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
@@ -112,7 +110,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     requires not (a + c <= b + d);
     ensures false by {
         have a + c <= b + d by {
-            apply(integer::add_le(a, b, c, d)) using { a <= b; c <= d; };
+            apply(integer::add_le(a, b, c, d));
         }
         contradiction(a + c <= b + d);
     }
@@ -137,13 +135,13 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         ] {
             let source = format!(
                 "import click::integer; theorem sign(n: Integer, d: Integer) {{ requires d != 0; requires -d != 0;
-                ensures {goal} by {{ apply(integer::{name}(n, d)) using {{ d != 0; -d != 0; }}; }} }}"
+                ensures {goal} by {{ apply(integer::{name}(n, d)); }} }}"
             );
             crate::surface::proof::without_implicit_solve(|| verify_c_sources(&source, &[]))
                 .unwrap();
             assert!(
                 verify_c_sources(
-                    &source.replace("using { d != 0; -d != 0; }", "using {}"),
+                    &source.replace("requires d != 0; requires -d != 0;", ""),
                     &[]
                 )
                 .is_err()
@@ -430,14 +428,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
                     .filter(|(index, _)| Some(*index) != omitted)
                     .map(|(_, premise)| format!("requires {premise}; "))
                     .collect::<String>();
-                let using = premises
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| Some(*index) != omitted)
-                    .map(|(_, premise)| format!("{premise}; "))
-                    .collect::<String>();
                 format!(
-                    "import click::integer; theorem test({parameters}) {{ {requires} ensures {goal} by {{ apply(integer::{name}({arguments})) using {{ {using} }}; }} }}"
+                    "import click::integer; theorem test({parameters}) {{ {requires} ensures {goal} by {{ apply(integer::{name}({arguments})); }} }}"
                 )
             };
             for index in 0..premises.len() {
@@ -553,7 +545,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
 
     #[test]
     fn int32_remainder_bridge_requires_definedness_and_expands() {
-        let source = "import click::integer; theorem remainder(a: int32, b: int32) { requires defined(a % b); requires to_integer(b) != 0; ensures to_integer(a % b) == truncating_remainder(to_integer(a), to_integer(b)) by { apply(integer::int32_remainder_to_integer(a, b)) using { defined(a % b); to_integer(b) != 0; } } }";
+        let source = "import click::integer; theorem remainder(a: int32, b: int32) { requires defined(a % b); requires to_integer(b) != 0; ensures to_integer(a % b) == truncating_remainder(to_integer(a), to_integer(b)) by { apply(integer::int32_remainder_to_integer(a, b)); } }";
         verify_c_sources(source, &[]).unwrap();
         let expanded = expand_c_claim_source_by_label(source, &[], "remainder.ensures_0").unwrap();
         verify_c_sources(&expanded, &[]).unwrap();
@@ -573,7 +565,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
 
     #[test]
     fn uint32_product_bound_guard_expands_and_rejects_wrapped_or_signed_bounds() {
-        let source = "import click::integer; theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(integer::uint32_multiply_guard_by_integer_bound(a, b)) using { to_integer(a) * to_integer(b) <= 4294967295; } } }";
+        let source = "import click::integer; theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(integer::uint32_multiply_guard_by_integer_bound(a, b)); } }";
         verify_c_sources(source, &[]).unwrap();
         let expanded = expand_c_claim_source_by_label(source, &[], "bounded.ensures_0").unwrap();
         verify_c_sources(&expanded, &[]).unwrap();
@@ -1233,7 +1225,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
 
     #[test]
     fn uint32_subtract_bridge_rechecks_guards_and_expansion() {
-        let source = "import click::integer; theorem exact(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(integer::uint32_subtract_to_integer(left, right)) using { right <= left; } } }";
+        let source = "import click::integer; theorem exact(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(integer::uint32_subtract_to_integer(left, right)); } }";
         verify_c_sources(source, &[]).unwrap();
         let expanded = expand_c_claim_source_by_label(source, &[], "exact.ensures_0").unwrap();
         verify_c_sources(&expanded, &[]).unwrap();
@@ -1241,7 +1233,6 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             source.replace("requires right <= left;", ""),
             source.replace("requires right <= left;", "requires defined(left - right);"),
             source.replace("requires right <= left;", "requires left <= right;"),
-            source.replace("using { right <= left; }", "using {}"),
             source.replace(
                 "to_integer(left) - to_integer(right) by",
                 "to_integer(left) + to_integer(right) by",
@@ -1268,7 +1259,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     #[test]
     fn uint32_subtract_bridge_verifies_executed_c_difference() {
         let c = "unsigned int difference(unsigned int left, unsigned int right) { return left - right; }";
-        let source = "import click::integer; verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { step_until(function.exit); apply(integer::uint32_subtract_to_integer(left, right)) using { right <= left; } solve(); }";
+        let source = "import click::integer; verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { step_until(function.exit); apply(integer::uint32_subtract_to_integer(left, right)); solve(); }";
         verify_c_sources(source, &[("difference.c", c)]).unwrap();
         let expanded =
             expand_c_claim_source_by_label(source, &[("difference.c", c)], "difference.contract")

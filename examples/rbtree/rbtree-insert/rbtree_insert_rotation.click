@@ -184,9 +184,7 @@ theorem insert_black_context_word(ctx: Context, p: struct rb_node*) {
             Context::Top => {
                 unfold(ctx_parent_word(Context::Top, address(p) + 1));
                 have p == 0 by {
-                    apply(ctx_node_is_identity(Context::Top, p)) using {
-                        ctx_node_is(Context::Top, p) == 1;
-                    };
+                    apply(ctx_node_is_identity(Context::Top, p));
                     unfold(ctx_identity(Context::Top));
                     rewrite(p, ctx_identity(Context::Top));
                     known();
@@ -196,9 +194,7 @@ theorem insert_black_context_word(ctx: Context, p: struct rb_node*) {
             },
             Context::Left(id, up, shade, sibling, outer) => {
                 have p == id by {
-                    apply(ctx_node_is_identity(Context::Left(id, up, shade, sibling, outer), p)) using {
-                        ctx_node_is(Context::Left(id, up, shade, sibling, outer), p) == 1;
-                    };
+                    apply(ctx_node_is_identity(Context::Left(id, up, shade, sibling, outer), p));
                     unfold(ctx_identity(Context::Left(id, up, shade, sibling, outer)));
                     rewrite(p, ctx_identity(Context::Left(id, up, shade, sibling, outer)));
                     known();
@@ -209,9 +205,7 @@ theorem insert_black_context_word(ctx: Context, p: struct rb_node*) {
             },
             Context::Right(id, up, shade, sibling, outer) => {
                 have p == id by {
-                    apply(ctx_node_is_identity(Context::Right(id, up, shade, sibling, outer), p)) using {
-                        ctx_node_is(Context::Right(id, up, shade, sibling, outer), p) == 1;
-                    };
+                    apply(ctx_node_is_identity(Context::Right(id, up, shade, sibling, outer), p));
                     unfold(ctx_identity(Context::Right(id, up, shade, sibling, outer)));
                     rewrite(p, ctx_identity(Context::Right(id, up, shade, sibling, outer)));
                     known();
@@ -282,7 +276,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             step(); step(); step();
             have ctx_node_is(d.model, parent) == 1;
             step(); step();
-            apply(aligned_parent_word_from_bit(new, color)) using { aligned(new, 8); 0 <= color; color <= 1; };
+            apply(aligned_parent_word_from_bit(new, color));
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
@@ -326,7 +320,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 known();
             }
             step(); step();
-            apply(aligned_parent_word_from_bit(new, color)) using { aligned(new, 8); 0 <= color; color <= 1; };
+            apply(aligned_parent_word_from_bit(new, color));
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
@@ -370,7 +364,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 known();
             }
             step(); step();
-            apply(aligned_parent_word_from_bit(new, color)) using { aligned(new, 8); 0 <= color; color <= 1; };
+            apply(aligned_parent_word_from_bit(new, color));
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
@@ -403,7 +397,7 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
     step();
     have rb->__rb_parent_color == (address(p) | color) by known();
     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by known();
-    apply(aligned_parent_word_from_bit(p, color)) using { aligned(p, 8); 0 <= color; color <= 1; };
+    apply(aligned_parent_word_from_bit(p, color));
     have rb->__rb_parent_color == address(p) + color by known();
     have (rb->__rb_parent_color & 1) == color by {
         if color == 0 {

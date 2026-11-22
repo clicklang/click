@@ -686,14 +686,14 @@ mod tests {
                 Address::symbolic(Variable(1024100)),
                 ProgramType::Int32Pointer,
             )
-            .with_pointee_constant(true)
-            .with_pointee_volatile(true),
+            .with_pointee_constant(true),
         ));
         let cast = |expression: ProgramExpression, target_type| ProgramExpression::Cast {
             expression: Box::new(expression),
             target_type,
             integer_mode: IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -764,8 +764,7 @@ mod tests {
                 Address::symbolic(Variable(1023000)),
                 ProgramType::Int32Pointer,
             )
-            .with_pointee_constant(true)
-            .with_pointee_volatile(true),
+            .with_pointee_constant(true),
         ));
         let index = ProgramExpression::Add(
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
@@ -863,8 +862,7 @@ mod tests {
             Address::symbolic(Variable(1022000)),
             ProgramType::Int32Pointer,
         )
-        .with_pointee_constant(true)
-        .with_pointee_volatile(true);
+        .with_pointee_constant(true);
         let source = ProgramExpression::Value(ProgramValue::Pointer(pointer));
         let mut expressions = vec![
             ProgramExpression::Value(ProgramValue::typed_pointer(
@@ -893,6 +891,7 @@ mod tests {
                 target_type: ProgramType::UInt8Pointer,
                 integer_mode: IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification,
@@ -1005,6 +1004,7 @@ mod tests {
                 target_type: ProgramType::UInt8Pointer,
                 integer_mode: IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -1129,13 +1129,10 @@ mod tests {
             )
             .with_pointee_constant(true),
         );
-        let right = ProgramValue::Pointer(
-            Pointer::new(
-                Address::symbolic(Variable(1026201)),
-                ProgramType::Int32Pointer,
-            )
-            .with_pointee_volatile(true),
-        );
+        let right = ProgramValue::Pointer(Pointer::new(
+            Address::symbolic(Variable(1026201)),
+            ProgramType::Int32Pointer,
+        ));
         let expression = ProgramExpression::Ternary {
             condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(1026202)),
@@ -1163,10 +1160,6 @@ mod tests {
             assert_eq!(
                 value.pointer().unwrap().pointee_constant(),
                 pointer.pointee_constant()
-            );
-            assert_eq!(
-                value.pointer().unwrap().pointee_volatile(),
-                pointer.pointee_volatile()
             );
             assert_eq!(path.into_native(), native);
         }
@@ -1393,6 +1386,7 @@ mod tests {
             target_type,
             integer_mode: IntegerCastMode::NarrowArithmetic,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1923,7 +1917,7 @@ mod tests {
                 .with_block(address.base.clone(), 1)
                 .store_retained(address.clone(), value.clone());
             let loaded = super::super::memory_loads::evaluate_retained_memory_load_paths(
-                &memory,
+                &crate::kernel::ProgramPoint::of_memory(&memory),
                 address,
                 ProgramType::Bool,
                 ExecutionFacts::new(),
@@ -1933,7 +1927,7 @@ mod tests {
                 false,
                 None,
                 None,
-                None,
+                false,
             );
             let ExpressionOutcome::Value(loaded) = &loaded[0].outcome else {
                 panic!("memory receipt")
@@ -2070,7 +2064,7 @@ mod tests {
             .with_block(address.base.clone(), 8)
             .store_retained(address.clone(), value.clone());
         let loaded = super::super::memory_loads::evaluate_retained_memory_load_paths(
-            &stored,
+            &crate::kernel::ProgramPoint::of_memory(&stored),
             address,
             ProgramType::Int32Pointer,
             ExecutionFacts::new(),
@@ -2080,7 +2074,7 @@ mod tests {
             false,
             None,
             None,
-            None,
+            false,
         );
         let ExpressionOutcome::Value(loaded) = &loaded[0].outcome else {
             panic!("memory receipt")

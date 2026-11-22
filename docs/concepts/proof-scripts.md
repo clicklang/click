@@ -116,11 +116,9 @@ are facts and a disjunction with one side a fact. A successful
 expansion contains only those explicit rules, ordinary arithmetic proofs, and named
 theorem applications.
 
-Bare `apply` retains explicitly proved premises in its generated `using`
-list when the simple theorem checker needs them. For example, prove a
+Expanded `apply` reads premises from scope. For example, prove a
 constructor inequality with `have ... by { normalize(); }` before applying
-a theorem that requires it. Recognizing the fact during planning does not
-replace that evidence (`mdtests/theorem_apply_retains_constructor_inequality.md`).
+a theorem that requires it. Expansion retains that proof as a separate `have` (`mdtests/theorem_apply_retains_constructor_inequality.md`).
 
 ## Pure, fixed-state, and execution proofs
 

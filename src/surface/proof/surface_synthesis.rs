@@ -321,6 +321,7 @@ fn struct_owners(
                 target_type: ProgramType::Int32Pointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: Some(struct_name.clone()),
+                pointee_struct_size: Some(layout.size_bytes()),
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -362,13 +363,17 @@ fn program_operand(expression: ProgramExpression) -> ContractExpression {
     }
 }
 
-fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramExpression {
-    if offset_bytes == 0 {
+fn owner_field_pointer(
+    base: &ProgramExpression,
+    offset: impl Into<crate::kernel::LayoutOffset>,
+) -> ProgramExpression {
+    let offset = offset.into();
+    if offset.bytes() == Some(0) {
         base.clone()
     } else {
         ProgramExpression::PointerOffsetBytes {
             pointer: Box::new(base.clone()),
-            bytes: offset_bytes.into(),
+            bytes: offset,
         }
     }
 }
@@ -484,6 +489,7 @@ fn synthesize_struct_loadable_segment(
             target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1816,6 +1822,7 @@ fn synthesize_zero_based_loadable_segment(
         target_type: element_pointer_type,
         integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
@@ -4186,27 +4193,33 @@ fn raise_constructor_pointer(
         .or_else(|| synthesize_loaded_pointer_value(pointer, parameter_binding, state))
         .map(|expression| {
             // Constructors implicitly retag object pointers
-            // without widening their views. An explicit cast
-            // is needed only for a checked root view; adding
-            // it to a saved narrow view would change the value.
+            // without widening their views. A checked root view
+            // is the byte view a character conversion forms
+            // (C11 6.3.2.3p7), retagged to `void *`; adding it to
+            // a saved narrow view would change the value.
             if pointer.program_type() == ProgramType::VoidPointer
                 && pointer.bounds_are_known()
                 && pointer.bounds().is_none()
             {
-                ContractExpression::CUnary {
+                let cast = |operand: ContractExpression, target_type| ContractExpression::CUnary {
                     lowered: ProgramExpression::Cast {
                         expression: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
                             pointer.clone(),
                         ))),
-                        target_type: ProgramType::VoidPointer,
+                        target_type,
                         integer_mode: crate::kernel::IntegerCastMode::Standard,
                         pointee_struct: None,
+                        pointee_struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,
                     },
-                    operand: Box::new(expression),
-                }
+                    operand: Box::new(operand),
+                };
+                cast(
+                    cast(expression, ProgramType::UInt8Pointer),
+                    ProgramType::VoidPointer,
+                )
             } else {
                 expression
             }
@@ -4693,6 +4706,27 @@ fn raise_kernel_term_dispatch(
                 _ => synthesize_surface_bitvector(read, parameter_binding, state, bound_variables)?,
             }
         }
+        Node::Variable(variable)
+            if let KernelType::Program(ty @ (ProgramType::Float32 | ProgramType::Float64)) =
+                term.ty() =>
+        {
+            if let Some(name) = folds::binder_name(false, *variable)
+                .or_else(|| bound_variables.get(variable).cloned())
+                .or_else(|| proof_binder_name(*variable))
+            {
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.into()))
+            } else {
+                let (parameter, argument) =
+                    parameter_binding.naming?.float_source(*ty, *variable)?;
+                let name = crate::surface::surface_parameter_binding(parameter.binding_name());
+                let expression = program_operand(ProgramExpression::Variable(name.clone()));
+                if parameter_names_its_argument(&name, argument, state) {
+                    expression
+                } else {
+                    SurfaceTerm::Old(Box::new(expression))
+                }
+            }
+        }
         Node::Variable(variable) => synthesize_surface_bitvector(
             &MachineTerm::Variable(*variable),
             parameter_binding,
@@ -4742,6 +4776,7 @@ fn raise_kernel_term_dispatch(
                             crate::kernel::IntegerCastMode::CConversion
                         },
                         pointee_struct: None,
+                        pointee_struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,
@@ -4794,6 +4829,7 @@ fn synthesize_observation_operand(
                 target_type: format,
                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -5393,6 +5429,15 @@ fn synthesize_point_read(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let place = |state: &ExecutionState| {
+        if let Some(name) = SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+            let owners = slot.borrow();
+            let (name, ty) = owners.as_ref()?.storage_scalars.get(pointer)?;
+            (*ty == value_type).then(|| name.clone())
+        }) {
+            return Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(name),
+            ));
+        }
         if let Some(field) = synthesize_owned_field_at_address(pointer, value_type, state) {
             return Some(field);
         }
@@ -5641,8 +5686,11 @@ fn synthesize_named_integer_local<'a>(
         .next()
         .filter(|name| has_surface_iterator_binding(name))
     {
-        if let Some(result) = synthesize_call_capture(state, name) {
-            return Some(result);
+        if name
+            .local_id()
+            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+        {
+            return synthesize_call_capture(state, name);
         }
         return Some(if crate::surface::is_click_value_name(name) {
             ContractExpression::ProgramBinding(name.to_string())
@@ -5917,6 +5965,7 @@ fn synthesize_surface_bitvector(
                     target_type: destination.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -6028,6 +6077,7 @@ fn synthesize_surface_bitvector(
                     target_type: ProgramType::UInt64,
                     integer_mode: crate::kernel::IntegerCastMode::Standard,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -6279,7 +6329,12 @@ fn synthesize_surface_bitvector(
                     // in that state.
                     return synthesize_at_read_origin(memory, state, |selected| {
                         Some(synthesize_memory_load(
-                            call_result_pointer_expression(kernel_pointer, selected)?,
+                            call_result_pointer_expression(
+                                kernel_pointer,
+                                parameter_binding,
+                                selected,
+                                bound_variables,
+                            )?,
                             value_type,
                         ))
                     });
@@ -6311,6 +6366,7 @@ fn synthesize_surface_bitvector(
                         target_type: ProgramType::UInt8Pointer,
                         integer_mode: crate::kernel::IntegerCastMode::Standard,
                         pointee_struct: None,
+                        pointee_struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,
@@ -6439,6 +6495,7 @@ fn synthesize_surface_bitvector(
                     },
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -6457,6 +6514,7 @@ fn synthesize_surface_bitvector(
                 target_type: ProgramType::UInt32,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -6809,6 +6867,7 @@ fn synthesize_parameter_field_indexed_int32_load(
             target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -7298,20 +7357,63 @@ fn synthesize_struct_field_load(
 /// name.
 fn call_result_pointer_expression(
     pointer: &Address,
+    parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
-    state_call_result(
+    if let Some(expression) = state_call_result(
         state,
         |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer),
-    )
-    .or_else(|| {
-        SYNTHESIS_RECORDED_POINTS.with(|points| {
-            points
-                .borrow()
-                .as_ref()?
-                .call_result_address_expression(pointer)
-        })
-    })
+    ) {
+        return Some(expression);
+    }
+    if let Some(expression) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+        points
+            .borrow()
+            .as_ref()?
+            .call_result_address_expression(pointer)
+    }) {
+        return Some(expression);
+    }
+    if !matches!(
+        pointer.offset,
+        AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
+    ) {
+        return None;
+    }
+    // Keep the call as the base and use the index at its original machine
+    // width. An exact lookup suffices for a call that introduced this base.
+    let base = Address {
+        base: pointer.base.clone(),
+        offset: AddressOffset::Constant(0),
+    };
+    let (region, width) = SYNTHESIS_RECORDED_POINTS.with(|points| {
+        let points = points.borrow();
+        let points = points.as_ref()?;
+        let region = points.call_result_naming_pointer(&base)?;
+        let ProgramValue::Pointer(result) = points.region_result_value(&region).ok()? else {
+            return None;
+        };
+        // A record pointer's stride comes from its layout, not its scalar
+        // carrier. This path raises indices over ordinary scalar pointees.
+        if matches!(
+            result.object_class(),
+            Some(crate::kernel::effective_type::CAccessClass::Struct(_))
+        ) {
+            return None;
+        }
+        Some((region, result.program_type().pointee_type()?.byte_width()))
+    })?;
+    let index = synthesis_element_index(pointer, &base, width)?;
+    Some(ContractExpression::Add(
+        Box::new(ContractExpression::RegionResult(region)),
+        Box::new(pointer_indices::raise(
+            index.operand_view(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?),
+    ))
 }
 
 /// The program type a load of `kind` reads.
@@ -7383,7 +7485,7 @@ fn synthesize_owned_field_at_address(
     let slot = state.locals().aggregate_object_pointer(&name)?;
     let layout = state.locals().aggregate_layout(&name)?;
     let field = layout.fields().iter().find(|field| {
-        field.program_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
+        field.program_type() == value_type && slot.offset_by_layout(field.offset()) == *address
     })?;
     if is_materialized_address(address) {
         return Some(synthesize_typed_load(
@@ -7397,14 +7499,14 @@ fn synthesize_owned_field_at_address(
         base: Box::new(ContractExpression::ProgramExpression(base.clone())),
         field: field.name().to_string(),
         lowered: ProgramExpression::TypedLoad {
-            pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
+            pointer: Box::new(owner_field_pointer(&base, field.offset())),
             value_type,
             volatile: false,
             pointee_constant: false,
             access_class: None,
             source: Default::default(),
         },
-        offset_bytes: field.offset_bytes().into(),
+        offset_bytes: field.offset(),
     })
 }
 
@@ -8032,6 +8134,36 @@ fn synthesize_surface_pointer_expression(
             synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
         return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
     }
+    if matches!(
+        &pointer.offset,
+        AddressOffset::Int32Scaled { byte_width: 1, .. }
+            | AddressOffset::Int64Scaled { byte_width: 1, .. }
+    ) && let Some(read) = pointer.as_loaded_value()
+        && read.value_type.is_none()
+    {
+        // The raw read's address carrier has no pointee type. Its stored
+        // displacement is in bytes, so reproduce it with a byte pointer.
+        let origin = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        let cell = pointer_read_address_in_state(&origin, state)?;
+        let cell = synthesize_surface_pointer_expression(
+            &cell,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        let base = synthesize_memory_load(cell, ProgramType::UInt8Pointer);
+        let index = synthesis_element_index(pointer, &origin, 1)?;
+        let index = pointer_indices::raise(
+            index.operand_view(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
+    }
     // A pointer a pure function returns is that call: its base retains the
     // function and the arguments it was applied to. A kernel-internal
     // function (`$...`) has no Surface spelling.
@@ -8085,20 +8217,9 @@ fn synthesize_surface_pointer_expression(
         }
         return Some(ContractExpression::ProgramExpression(pointer));
     }
-    if let Some(result) = state_call_result(
-        state,
-        |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer),
-    ) {
-        return Some(result);
-    }
-    // A pointer an earlier call returned can also name an address at a
-    // fixed byte displacement from that result.
-    if let Some(expression) = SYNTHESIS_RECORDED_POINTS.with(|points| {
-        points
-            .borrow()
-            .as_ref()?
-            .call_result_address_expression(pointer)
-    }) {
+    if let Some(expression) =
+        call_result_pointer_expression(pointer, parameter_binding, state, bound_variables)
+    {
         return Some(expression);
     }
     if parameter_binding.arguments.iter().any(|argument| {
@@ -8246,7 +8367,7 @@ fn synthesize_scalar_model_field(
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let origin = crate::kernel::model_fields::registered_model_field_origin(variable)?;
-    let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+    let owner = origin.owner_spelling()?;
     let field_at = |state: &ExecutionState| {
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
@@ -8413,6 +8534,7 @@ fn raise_float_read_place(
                 target_type: ProgramType::VoidPointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -8424,6 +8546,7 @@ fn raise_float_read_place(
             },
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -8530,7 +8653,7 @@ fn synthesize_surface_algebraic(
                 return Some(local);
             }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
-            let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+            let owner = origin.owner_spelling()?;
             let field_at = |state: &ExecutionState| {
                 let instance = state.resource_instance_at_path(origin.identity, &[])?;
                 let held = instance.fields().get(origin.field_index)?;

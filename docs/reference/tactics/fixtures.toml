@@ -93,29 +93,14 @@ path = "mdtests/pure_induction_countdown.md"
 needle = "apply(ih(n - 1));"
 
 [[form]]
-id = "apply-induction-using"
-path = "mdtests/pure_induction_countdown_explicit.md"
-needle = "apply(ih(n - 1)) using {"
-
-[[form]]
 id = "apply-fact"
 path = "mdtests/apply_implication_fact.md"
 needle = "apply(h);"
 
 [[form]]
-id = "apply-fact-using"
-path = "mdtests/apply_implication_fact.md"
-needle = "apply(x > 0 implies y > 0 implies z > 0) using"
-
-[[form]]
 id = "apply-theorem"
 path = "mdtests/pure_theorem_apply.md"
 needle = "apply(nonnegative_body(y));"
-
-[[form]]
-id = "apply-theorem-using"
-path = "mdtests/apply_keeps_sibling_conclusions_when_one_is_the_goal.md"
-needle = "apply(three_bounds(x)) using {"
 
 [[form]]
 id = "have"

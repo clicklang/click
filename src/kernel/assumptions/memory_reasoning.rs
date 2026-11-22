@@ -4960,6 +4960,18 @@ impl PureFactContext {
         let Some(origin) = value.bounds_owner() else {
             return false;
         };
+        self.opaque_domain_covers(origin, value.address(), position, bytes)
+    }
+
+    /// Coverage evidence that the opaque domain `origin` contains the
+    /// `bytes` at `position`, for a pointer at `address` in that domain.
+    pub(in crate::kernel) fn opaque_domain_covers(
+        &self,
+        origin: &Address,
+        address: &Address,
+        position: &Address,
+        bytes: u32,
+    ) -> bool {
         self.equality_graph
             .subobject_coverage_facts(origin)
             .iter()
@@ -4994,10 +5006,7 @@ impl PureFactContext {
                     }
                     let contains = |pointer| {
                         crate::kernel::primitives::pointer_formation_in_range(
-                            pointer,
-                            value.address(),
-                            &range,
-                            self,
+                            pointer, address, &range, self,
                         )
                     };
                     contains(position) && (bytes == 0 || contains(&position.offset_by_bytes(bytes)))
@@ -5015,7 +5024,7 @@ impl PureFactContext {
                         };
                         contains(position, bytes)
                             && (bytes > 0
-                                || contains(value.address(), 0)
+                                || contains(address, 0)
                                 || contains(position, 1)
                                 || self.decide(&ConditionTerm::signed_less_than(
                                     MachineTerm::constant(0),

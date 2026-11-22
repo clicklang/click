@@ -67,9 +67,7 @@ void keep(struct cell* c) {
                 known();
             }
             have up == 0 by {
-                apply(frame_null_is_null(up)) using {
-                    frame_null(Frame::Above(up)) == 1;
-                };
+                apply(frame_null_is_null(up));
                 known();
             }
             have address(up) + 1 == 1 by {

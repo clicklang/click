@@ -128,6 +128,8 @@ fn prove_next_contract_closing_goal<'a>(
     else {
         return Ok(false);
     };
+    let _origin = matches!(mode, ClosingProofMode::Implicit)
+        .then(|| crate::surface::proof_trace::TraceOrigin::enter_implicit("contract closing"));
     if input.is_none() {
         *input = Some(contract_closing_input(
             Some(root),
@@ -140,6 +142,8 @@ fn prove_next_contract_closing_goal<'a>(
     let input = input.as_ref().expect("prepared closing input");
     let proved = root.prove_contract_closing_goal(kind, execution, &input.path, &input.specification)
         .map_err(|error| match mode {
+            _ if error.kind() == ClickErrorKind::Internal
+                || error.proof_refusal() == Some(crate::surface::ProofRefusal::IncompleteProof) => error,
             ClosingProofMode::Explicit => error.with_context(format!("this tactic could not prove the {} obligation while closing the contract", kind.description())),
             ClosingProofMode::Implicit => error.with_context(format!("the implicit solver could not prove the {} obligation while closing the contract; write an explicit proof or establish the required facts and resources before closing", kind.description())),
         })?;
@@ -2074,7 +2078,7 @@ fn close_claim_directly_from_outcome<'a>(
         "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}{store_separation_miss}\n{context}"
     ));
     let refusal = match closure_search {
-        ClaimClosureSearch::None => crate::surface::ProofRefusal::UnprovedGoal,
+        ClaimClosureSearch::None => crate::surface::ProofRefusal::IncompleteProof,
         ClaimClosureSearch::Restricted(_) | ClaimClosureSearch::Solve => {
             crate::surface::ProofRefusal::UnsuccessfulSearch
         }
@@ -2803,8 +2807,11 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             for (claim_index, _, _) in &direct_resource_claims {
                 let claim_label = function_claim_label(function_block, &claims[*claim_index]);
                 let checked = required_outcome(outcome_proof)?.check_outcome_resource_claim(completed_execution, claims[*claim_index]).map_err(|error| {
-                    ClickError::new(format!(
-                        "`{proof_label}` path {path_index} left `{claim_label}` unproved; establish the facts and resources it needs before the end of the proof (claim index {claim_index})\nlast closing attempt:\n{}", error.raw_summary()
+                    if error.kind() == ClickErrorKind::Internal {
+                        return error;
+                    }
+                    error.with_prefix(format!(
+                        "`{proof_label}` path {path_index} left `{claim_label}` unproved; establish the facts and resources it needs before the end of the proof (claim index {claim_index})\nlast closing attempt:\n"
                     ))
                 })?;
                 direct_resource_evidence.insert(*claim_index, checked);
@@ -4318,9 +4325,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         let _origin = {
                             let (tactic_name, tactic_class) =
                                 post_execution_tactic_timing(post_tactic);
-                            crate::surface::proof_trace::TraceOrigin::enter(
-                                (tactic_class == "smart").then_some(tactic_name),
-                            )
+                            use crate::surface::proof_trace::TraceOrigin;
+                            if matches!(post_tactic, PostExecutionTactic::ImplicitSolve) {
+                                TraceOrigin::enter_implicit(tactic_name)
+                            } else {
+                                TraceOrigin::enter((tactic_class == "smart").then_some(tactic_name))
+                            }
                         };
                         // Match TacticTiming's normal constructor: the implicit
                         // contract closer has no selectable written source site.
@@ -4633,7 +4643,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
                                     )));
                                 };
-                                // The retained `apply using` step is prefixed to every
+                                // The retained application is prefixed to every
                                 // claim certificate, so independent verification holds the
                                 // same checked conclusions when the closer runs.
                                 for tactic in certificate.to_proof_tactics() {
@@ -5701,7 +5711,19 @@ pub(super) fn finish_ordered_proof<'a>(
                             return Err(error.clone().with_context(summary));
                         }
                         return Err(ClickError::new(summary)
-                            .with_proof_refusal(crate::surface::ProofRefusal::UnprovedGoal));
+                            .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof));
+                    }
+
+                    if let Some(root) = &outcome_proof
+                        && let Some(crate::kernel::proof::OutcomeGoal::Closing(kind)) =
+                            root.first_open_outcome_goal()?
+                    {
+                        return Err(root
+                            .step_error(format!(
+                                "outcome still owes contract closing: {}",
+                                kind.description()
+                            ))
+                            .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof));
                     }
 
                     // The checked execution producer owns the specification.

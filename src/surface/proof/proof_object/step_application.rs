@@ -340,7 +340,7 @@ fn chosen_step_text(step: &ProofStep) -> Option<String> {
     if !matches!(
         step,
         ProofStep::ApplyTheoremUsing { .. }
-            | ProofStep::ApplyInductionUsing { .. }
+            | ProofStep::ApplyPlannedTheorem { .. }
             | ProofStep::TransportUsing { .. }
     ) {
         return None;
@@ -1581,7 +1581,6 @@ impl<'a> Proof<'a> {
         &self,
         hypothesis: &str,
         arguments: &[ContractExpression],
-        surface_premises: &[ClickProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             return Err(self.step_error("induction application requires a pure theorem proof"));
@@ -1591,12 +1590,7 @@ impl<'a> Proof<'a> {
             .as_ref()
             .is_some_and(|setup| setup.structural_parameters.is_some())
         {
-            return self.apply_structural_induction_hypothesis(
-                context,
-                hypothesis,
-                arguments,
-                surface_premises,
-            );
+            return self.apply_structural_induction_hypothesis(hypothesis, arguments);
         }
         let Some(setup) = context.induction_setup.as_ref() else {
             return Err(self.step_error("induction hypothesis is not active"));
@@ -1611,22 +1605,43 @@ impl<'a> Proof<'a> {
                 "induction hypothesis `{hypothesis}` expects one argument"
             )));
         };
-        let lowered_premises = surface_premises
-            .iter()
-            .map(|premise| self.lower_surface_proposition(premise, "induction premise"))
-            .collect::<Result<Vec<_>, _>>()?;
-        // The hypothesis is the theorem's own statement, so a range premise
-        // owes its span halves beside it. Citing a stated range cites both
-        // halves, by the one rule every `apply using` shares.
-        let mut explicit_premises = Vec::with_capacity(lowered_premises.len());
-        for premise in lowered_premises {
+        let premises =
+            super::super::pure_theorems::induction_application_surface_premises(setup, argument)?;
+        let mut explicit_premises = Vec::with_capacity(premises.len());
+        for premise in premises {
+            let lowered = self.lower_cited_surface_proposition(&premise, "induction premise")?;
+            if matches!(
+                crate::surface::checking::normalize_proposition(&lowered),
+                crate::surface::checking::NormalizedProposition::True
+            ) {
+                continue;
+            }
+            let cited = if crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
+                .iter()
+                .chain(std::iter::once(&lowered))
+                .any(|form| self.facts().contains(form))
+            {
+                lowered
+            } else {
+                // Native arithmetic can be stated using its Integer observations.
+                let observed =
+                    super::super::smart_closures::observed_native_arithmetic(&lowered, &premise);
+                let cited = self.lower_cited_surface_proposition(&observed, "induction premise")?;
+                if !self.facts().contains(&cited) {
+                    return Err(self.step_error(format!(
+                        "induction hypothesis `{hypothesis}` found no available fact for premise `{}`",
+                        crate::surface::diagnostics::describe_click_proposition(&observed),
+                    )));
+                }
+                cited
+            };
             crate::surface::proof::theorem_application::cite_range_span_guards(
-                &premise,
+                &cited,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),
             );
-            if !explicit_premises.contains(&premise) {
-                explicit_premises.push(premise);
+            if !explicit_premises.contains(&cited) {
+                explicit_premises.push(cited);
             }
         }
 
@@ -1715,17 +1730,10 @@ impl<'a> Proof<'a> {
 
     fn apply_structural_induction_hypothesis(
         &self,
-        _context: &PureProofContext<'_>,
         hypothesis: &str,
         arguments: &[ContractExpression],
-        surface_premises: &[ClickProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let application = self.structural_induction_instance(hypothesis, arguments)?;
-        if surface_premises != application.surface_premises {
-            return Err(self.step_error(
-                "structural induction application changed its exact requirement premises",
-            ));
-        }
         let explicit_premises = &application.kernel_premises;
         if let Some(missing) = explicit_premises
             .iter()

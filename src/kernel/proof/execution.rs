@@ -14,9 +14,10 @@ use crate::kernel::population_authority::storage_creation::{
 use crate::kernel::{
     Address, CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
-    MemoryRange, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue, Proposition,
-    PureFactContext, Resource, ResourceContext, ResourceFact, ResourceSpec, RuntimeError,
-    SpecProposition, StatementOutcome, SymbolicMemory, Theorem, Variable, VerifiedLoopRule,
+    MemoryRange, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue,
+    ProofObligation, Proposition, PureFactContext, Resource, ResourceContext, ResourceFact,
+    ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, SymbolicMemory, Theorem,
+    Variable, VerifiedLoopRule,
 };
 use crate::kernel::{BindingName, CompareRelation, InstanceId, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
@@ -414,56 +415,25 @@ impl CheckedReturnProposition {
     }
 }
 
-/// A checked application of a verified tactic rule.
-///
-/// Only [`Self::check`] builds one, and it applies the rule itself through
-/// [`crate::kernel::functions::apply_verified_tactic_rule`], so holding the
-/// event is holding the kernel's verdict on that exact before state and fact
-/// context. Trace certification then only has to connect the states.
+/// A verified tactic's proposed state change, retained until its call-site
+/// obligations have been discharged.
 #[derive(Clone)]
-pub(crate) struct CheckedTacticApplication {
-    /// The tactic whose rule was applied: one call edge of the proof that
-    /// applied it, for the termination check.
+struct PreparedTacticApplication {
     name: String,
     before_state: ExecutionState,
-    pub(crate) after_state: ExecutionState,
-    pub(crate) after_facts: PureFactStore,
+    after_state: ExecutionState,
+}
+
+/// A tactic application admitted to the execution trace after its obligations
+/// were proved at the original frontier.
+#[derive(Clone)]
+pub(crate) struct CheckedTacticApplication {
+    name: String,
+    before_state: ExecutionState,
+    after_state: ExecutionState,
 }
 
 impl CheckedTacticApplication {
-    fn check(
-        before_state: &ExecutionState,
-        before_facts: &PureFactStore,
-        name: &str,
-        arguments: &[crate::kernel::ProgramValue],
-        environment: &crate::kernel::ExecutionEnvironment,
-        next_kernel_variable: u64,
-    ) -> Result<(Self, u64), crate::kernel::functions::TacticApplicationRefusal> {
-        let transition = crate::kernel::functions::apply_verified_tactic_rule(
-            before_state,
-            name,
-            arguments,
-            before_facts,
-            environment,
-            next_kernel_variable,
-        )?;
-        let after_facts = transition
-            .facts
-            .iter()
-            .fold(before_facts.clone(), |facts, fact| {
-                facts.with_kernel_checked_fact(fact.proposition().clone())
-            });
-        Ok((
-            Self {
-                name: name.to_string(),
-                before_state: before_state.clone(),
-                after_state: transition.state,
-                after_facts,
-            },
-            transition.next_kernel_variable,
-        ))
-    }
-
     pub(crate) fn before_state(&self) -> &ExecutionState {
         &self.before_state
     }
@@ -3416,19 +3386,15 @@ impl OpenedContractEntry {
             propositions.push(byte_order);
             source_origins.push(None);
         }
+        // Contract facts and `function.entry` must name the same observation
+        // point, including when binding by-value parameters allocated storage.
+        let entry_state = contract.argument_state().clone();
         let cases = Arc::new(crate::kernel::prepare_function_contract_entry_cases(
             contract,
             environment.byte_order_fact(),
         ));
         let mut facts = PureFactStore::from_ordered(&propositions);
         facts.prepare_entry_resources(caller_state.resources());
-        let entry_state =
-            crate::kernel::program_function_entry_state(caller_state, function, arguments)
-                .ok_or_else(|| {
-                    RuntimeError::ContractEntryInvariant(
-                        "could not bind the function entry arguments".into(),
-                    )
-                })?;
         let entry = CheckedFunctionEntry::construct(
             caller_state,
             function,
@@ -6532,6 +6498,7 @@ pub(crate) struct ExecutionProofCore {
     /// operation with several return outcomes can complete several traces at
     /// once. Forked proofs share every unchanged trace prefix.
     pub(crate) execution_evidence: super::PersistentVector<ExecutionEvidence>,
+    prepared_tactic_application: Option<Arc<PreparedTacticApplication>>,
     prepared_instance_fold: Option<Arc<PreparedResourceFold>>,
     prepared_return_fold: Option<Arc<PreparedReturnFold>>,
     /// Returned paths of summarized loops, already proved while each loop's
@@ -8340,6 +8307,7 @@ impl ExecutionProofCore {
             frontier,
             effect_facts: Default::default(),
             execution_evidence: vec![ExecutionEvidence::default()].into(),
+            prepared_tactic_application: None,
             prepared_instance_fold: None,
             prepared_return_fold: None,
             pending_loop_returns: Default::default(),
@@ -10709,10 +10677,9 @@ impl ExecutionProofCore {
         Ok(successor)
     }
 
-    /// Applies the verified rule of tactic `name` at the reached state and
-    /// records the checked application. Returns the successor state and fact
-    /// context the proof continues from.
-    pub(crate) fn record_tactic_application(
+    /// Prepare a statement-free call, withhold its trace event, and return
+    /// the obligations its transition depends on.
+    pub(crate) fn prepare_tactic_application(
         &mut self,
         function: &ProgramFunction,
         function_arguments: &[ProgramExpression],
@@ -10720,53 +10687,75 @@ impl ExecutionProofCore {
         name: &str,
         arguments: &[crate::kernel::ProgramValue],
         environment: &crate::kernel::ExecutionEnvironment,
-    ) -> Result<(ExecutionState, PureFactStore), crate::kernel::functions::TacticApplicationRefusal>
-    {
-        use crate::kernel::functions::TacticApplicationRefusal::Refused;
+    ) -> Result<(ExecutionState, PureFactStore, Vec<ProofObligation>), String> {
         if let Some(opened) = &self.descent {
-            opened
-                .accept_environment(environment)
-                .map_err(|message| Refused(message.into()))?;
+            opened.accept_environment(environment)?;
         }
         if self.evidence_completed {
-            return Err(Refused(
-                "a tactic must be applied before execution reaches function exit".into(),
-            ));
+            return Err("a tactic must be applied before execution reaches function exit".into());
         }
-        let (mut application, mark) = CheckedTacticApplication::check(
-            self.reached_state(),
-            before_facts,
+        let before_state = self.reached_state().clone();
+        let transition = crate::kernel::functions::prepare_verified_tactic_rule(
+            &before_state,
             name,
             arguments,
+            before_facts.assumptions(),
             environment,
             self.kernel_variable_mark(),
         )?;
-        self.advance_kernel_variable_mark(mark)
-            .map_err(|message| Refused(message.into()))?;
-        let result = (
-            application.after_state.clone(),
-            application.after_facts.clone(),
-        );
+        self.advance_kernel_variable_mark(transition.next_kernel_variable)?;
+        let mut prepared = PreparedTacticApplication {
+            name: name.to_string(),
+            before_state,
+            after_state: transition.state.clone(),
+        };
         // Before any evidence, the core holds the caller-side state and the
         // trace holds entry-bound states, as for a resource rewrite here.
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
-            application.before_state = crate::kernel::program_function_entry_state(
-                &application.before_state,
+            prepared.before_state = crate::kernel::program_function_entry_state(
+                &prepared.before_state,
                 function,
                 function_arguments,
             )
-            .ok_or_else(|| {
-                Refused("a tactic application could not bind the function entry state".into())
-            })?;
-            application.after_state = crate::kernel::program_function_entry_state(
-                &application.after_state,
+            .ok_or("a tactic application could not bind the function entry state")?;
+            prepared.after_state = crate::kernel::program_function_entry_state(
+                &prepared.after_state,
                 function,
                 function_arguments,
             )
-            .ok_or_else(|| {
-                Refused("a tactic application could not bind its successor entry state".into())
-            })?;
+            .ok_or("a tactic application could not bind its successor entry state")?;
         }
+        self.prepared_tactic_application = Some(Arc::new(prepared));
+        let facts = transition
+            .facts
+            .iter()
+            .fold(before_facts.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.proposition().clone())
+            });
+        Ok((transition.state, facts, transition.obligations))
+    }
+
+    pub(crate) fn has_prepared_tactic_application(&self) -> bool {
+        self.prepared_tactic_application.is_some()
+    }
+
+    /// Publish the retained transition once the driver has proved its
+    /// obligations against the unchanged pre-state.
+    pub(crate) fn finish_prepared_tactic_application(&mut self) {
+        let PreparedTacticApplication {
+            name,
+            before_state,
+            after_state,
+        } = Arc::unwrap_or_clone(
+            self.prepared_tactic_application
+                .take()
+                .expect("completion consumes a prepared tactic application"),
+        );
+        let application = CheckedTacticApplication {
+            name,
+            before_state,
+            after_state,
+        };
         if self.evidence_state.is_some() {
             self.evidence_state = Some(application.after_state.clone());
         }
@@ -10775,7 +10764,6 @@ impl ExecutionProofCore {
                 application.clone(),
             )));
         }
-        Ok(result)
     }
 
     pub(crate) fn record_resource_rewrite(

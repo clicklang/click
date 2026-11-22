@@ -1,12 +1,11 @@
 # defined pointer distance is reusable across a call
 
-Pointer subtraction between independently supplied parameters needs both
-same-object provenance and a distance representable as `int32`.
-`defined(right - left)` states both conditions using the same semantics as the
-C body. Same-array callers, including one-past endpoints, discharge it.
+`defined(right - left)` requires shared array provenance and a representable
+signed distance, using the same semantics as the C body. Same-array callers,
+including one-past endpoints, discharge it.
 
 ```c filename=c_pointer_distance_requirement.c
-int32 distance(int32 *left, int32 *right) {
+long distance(int32 *left, int32 *right) {
     return right - left;
 }
 
@@ -24,7 +23,7 @@ int32 distance_one_past(void) {
 ```click
 verifying "c_pointer_distance_requirement.c";
 
-int32 distance(int32* left, int32* right) {
+int64 distance(int32* left, int32* right) {
     requires defined(right - left);
     ensures result == (right - left);
 }

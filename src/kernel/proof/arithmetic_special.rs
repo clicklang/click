@@ -2,7 +2,8 @@
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
     Address, AddressBase, AddressOffset, ComparisonOperator, ConditionTerm, FloatClassification,
-    FloatCondition, MachineTerm, Pointer, Proposition, SignedDefinedWidth,
+    FloatCondition, FloatOperandView, KernelFloatType, MachineTerm, Pointer, Proposition,
+    SignedDefinedWidth,
 };
 
 use crate::kernel::binary_term;
@@ -646,7 +647,14 @@ pub(crate) enum SpecialArithmeticNode {
         result: Proposition,
     },
     /// Prove a reflexive IEEE comparison from one exact finite classification.
-    FloatReflexive { finite: usize, result: Proposition },
+    FloatReflexive {
+        finite: usize,
+        result: Proposition,
+    },
+    FloatBound {
+        premise: usize,
+        result: Proposition,
+    },
     /// Establish `defined(left + right)` or `defined(left - right)` over
     /// `width` (`int32` or `int64`) from each operand's range: the width
     /// range of its root constructor (a constant, or for `int64` a value
@@ -1128,6 +1136,11 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     }
     if premises.is_empty() {
         return pointer_alignment(None, goal);
+    }
+    if let [premise] = premises
+        && float_bound_weakens(premise, goal)
+    {
+        return true;
     }
     // Reject impossible arities before reading native operands. Convert each
     // explicit input once, shared by the fixed rule family, rather than once
@@ -2606,6 +2619,93 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
                 (Some(left), Some(right)) if left != right
             )
     }
+}
+
+struct FloatBound<'a> {
+    format: KernelFloatType,
+    operand: FloatOperandView<'a>,
+    endpoint: u64,
+    lower: bool,
+    strict: bool,
+}
+
+fn float_bound(proposition: &Proposition) -> Option<FloatBound<'_>> {
+    let Proposition::ConditionIs(condition, true) = proposition else {
+        return None;
+    };
+    let (format, operator, [left, right]) = condition.operand_view().float_comparison()?;
+    use ComparisonOperator as Op;
+    let (lower, strict) = match operator {
+        Op::LessThan => (false, true),
+        Op::LessEqual => (false, false),
+        Op::GreaterThan => (true, true),
+        Op::GreaterEqual => (true, false),
+        _ => return None,
+    };
+    match (left.literal_bits(), right.literal_bits()) {
+        (None, Some(endpoint)) => Some(FloatBound {
+            format,
+            operand: left,
+            endpoint,
+            lower,
+            strict,
+        }),
+        (Some(endpoint), None) => Some(FloatBound {
+            format,
+            operand: right,
+            endpoint,
+            lower: !lower,
+            strict,
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
+    float_bound(proposition).is_some()
+}
+
+/// A true ordered comparison excludes NaN in its operand. Weakening it
+/// needs one cited comparison of the same width, direction and operand.
+pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> bool {
+    let (Some(premise), Some(goal)) = (float_bound(premise), float_bound(goal)) else {
+        return false;
+    };
+    if premise.format != goal.format || premise.lower != goal.lower {
+        return false;
+    }
+    let (low, high) = if goal.lower {
+        (goal.endpoint, premise.endpoint)
+    } else {
+        (premise.endpoint, goal.endpoint)
+    };
+    let operator = if premise.strict || !goal.strict {
+        ComparisonOperator::LessEqual
+    } else {
+        ComparisonOperator::LessThan
+    };
+    let comparison = match goal.format {
+        KernelFloatType::Float32 => ConditionTerm::float32_compare(
+            MachineTerm::constant(low as u32),
+            MachineTerm::constant(high as u32),
+            operator,
+        ),
+        KernelFloatType::Float64 => ConditionTerm::float64_compare(
+            MachineTerm::uint64_constant(low),
+            MachineTerm::uint64_constant(high),
+            operator,
+        ),
+    };
+    comparison == ConditionTerm::Constant(true)
+        && match (premise.operand, goal.operand) {
+            (FloatOperandView::Shared(left), FloatOperandView::Shared(right)) if left == right => {
+                true
+            }
+            (left, right) => match (left.native_compat(), right.native_compat()) {
+                (Some(left), Some(right)) => bitvector_equal(left, right),
+                _ => false,
+            },
+        }
 }
 
 fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {

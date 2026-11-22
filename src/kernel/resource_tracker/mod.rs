@@ -62,6 +62,7 @@
 //! `docs/internals/resource-tracker.md`.
 
 pub(in crate::kernel) mod cell_source;
+pub(crate) mod legacy_walk_audit;
 pub(in crate::kernel) mod step_effect;
 
 use crate::kernel::memory_history::with_extended_dag_bridging;
@@ -665,19 +666,22 @@ fn arm_leaves_cell_back_to(
 /// The point a resource read at `at` is named by: the oldest point it is
 /// known to be the same at. This is the naming path — memoized, and the only
 /// tracker call on the hot path.
+#[track_caller]
 pub(crate) fn last_same_version_point(
     resource: TrackedResource<'_>,
     at: &ProgramPoint,
 ) -> Option<ProgramPoint> {
     match resource {
-        TrackedResource::Cell { pointer, bytes } => {
+        TrackedResource::Cell { pointer, bytes } => legacy_walk_audit::counted(&resource, || {
             cell_last_same_version_point(at.shared_memory(), pointer, bytes)
                 .map(|memory| ProgramPoint::at(&memory))
-        }
-        TrackedResource::Block(block) => Some(ProgramPoint::at(&block_last_same_version_point(
-            at.shared_memory(),
-            block,
-        ))),
+        }),
+        TrackedResource::Block(block) => legacy_walk_audit::counted(&resource, || {
+            Some(ProgramPoint::at(&block_last_same_version_point(
+                at.shared_memory(),
+                block,
+            )))
+        }),
         // No term names a memory footprint, so a footprint has no naming path
         // to be the oldest point of. Its one caller knows both ends of the
         // interval it cares about and asks [`step_effect::affects`] at every
@@ -696,11 +700,14 @@ pub(crate) fn last_same_version_point(
 /// [`last_same_version_point`] with the reason the resource walk stopped.
 /// Cell naming retains that decision alongside its endpoint; querying it
 /// must not re-run the effect check that produced it.
+#[track_caller]
 pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Option<LastSame> {
     match resource {
         TrackedResource::Cell { pointer, bytes } => last_same_named_cell(pointer, bytes, at),
         TrackedResource::Block(block) => {
-            let point = ProgramPoint::at(&block_last_same_version_point(at.shared_memory(), block));
+            let point = legacy_walk_audit::counted(&resource, || {
+                ProgramPoint::at(&block_last_same_version_point(at.shared_memory(), block))
+            });
             let stopped_by = Stop::at_point(&point, resource);
             Some(LastSame { point, stopped_by })
         }
@@ -714,12 +721,15 @@ pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Opt
 /// ([`last_same_version_point`]): the point a read there is named at, and why the
 /// walk stopped there. A caller asking about a cell a read was just named
 /// for pays no second walk.
+#[track_caller]
 pub(crate) fn last_same_named_cell(
     pointer: &Address,
     bytes: AccessExtent,
     at: &ProgramPoint,
 ) -> Option<LastSame> {
-    let version = cell_last_same_version(at.shared_memory(), pointer, bytes)?;
+    let version = legacy_walk_audit::counted(&TrackedResource::Cell { pointer, bytes }, || {
+        cell_last_same_version(at.shared_memory(), pointer, bytes)
+    })?;
     let change = version
         .memory
         .derivation()
@@ -741,6 +751,7 @@ pub(crate) fn last_same_named_cell(
 /// the naming path already decides. When they do not, the later of the two
 /// stopped first, and the step below its answer is the one that broke the
 /// chain.
+#[track_caller]
 pub(crate) fn same(
     resource: TrackedResource<'_>,
     left: &ProgramPoint,
@@ -869,7 +880,12 @@ fn replacing_change(left: &Version, right: &Version) -> Change {
     let replaced = [mint(left), mint(right)]
         .into_iter()
         .flatten()
-        .find(|mint| *mint != crate::kernel::model_fields::ModelMint::ContractEntry);
+        .find(|mint| {
+            !matches!(
+                mint,
+                crate::kernel::model_fields::ModelMint::ContractEntry { .. }
+            )
+        });
     Change::ModelReplaced { by: replaced }
 }
 
@@ -926,6 +942,7 @@ fn version_at_state(resource: TrackedResource<'_>, point: StatePoint<'_>) -> Opt
 }
 
 /// [`same`], with the bounded context a refusal prints.
+#[track_caller]
 pub(crate) fn explain(
     resource: TrackedResource<'_>,
     here: &ProgramPoint,
@@ -939,6 +956,7 @@ pub(crate) fn explain(
 /// to compare against: the step that ended the last stretch of agreement.
 /// A resource nothing has touched since the beginning of the history
 /// answers [`Sameness::Same`].
+#[track_caller]
 pub(crate) fn explain_last_same(resource: TrackedResource<'_>, here: &ProgramPoint) -> Explanation {
     let outcome = match last_same(resource, here) {
         Some(last) => match last.stopped_by.reason {
@@ -1374,26 +1392,32 @@ pub(crate) fn cell_value_on_path(
 /// steps the naming walk cannot (as in [`cell_value_on_path`]); from the
 /// state they reach, the memoized naming walk must run to the root. The
 /// state is returned, and a load there is named at the root.
+#[track_caller]
 pub(crate) fn static_cell_unwritten_since_entry_on_path(
     at: &SharedMemory,
     pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<SharedMemory> {
+) -> Option<(SharedMemory, SharedMemory)> {
     if !pointer.base.is_static_storage_block() {
         return None;
     }
-    match cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)? {
-        cell_source::MemoryDagCell::Unwritten { node, .. }
-            if node != *at
-                && node.known_value(pointer).is_none()
-                && cell_last_same_version(&node, pointer, bytes.into())
-                    .is_some_and(|version| version.reason == StopReason::HistoryEnds) =>
-        {
-            Some(node)
-        }
-        _ => None,
+    let cell_source::MemoryDagCell::Unwritten { node, .. } =
+        cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)?
+    else {
+        return None;
+    };
+    if node == *at || node.known_value(pointer).is_some() {
+        return None;
     }
+    let root = legacy_walk_audit::counted(
+        &TrackedResource::Cell {
+            pointer,
+            bytes: bytes.into(),
+        },
+        || cell_last_same_version(&node, pointer, bytes.into()),
+    )?;
+    (root.reason == StopReason::HistoryEnds).then_some((node, root.memory))
 }
 
 thread_local! {

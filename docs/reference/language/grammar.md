@@ -61,10 +61,9 @@ refused. These are literal forms, not general bit-cast functions.
 
 Both default Click and Rust sidecars accept radix prefixes and underscore
 separators inside these forms. This does not enable Rust integer syntax
-elsewhere in default Click. Exact source printing uses hexadecimal bits;
-for binary32 it preserves the existing internal carrier distinction by using
-an unsuffixed literal for the signed carrier and `u32` for the unsigned one.
-Both forms denote the same IEEE bits.
+elsewhere in default Click. A matching suffix and an unsuffixed input
+produce the same float literal. Exact source printing uses hexadecimal bits
+with an unsuffixed literal for binary32 and a `u64` suffix for binary64.
 
 Unary `-x` on a float flips its sign bit, including signed zero and NaN
 payloads. It uses the same negation as C float expressions; integer unary

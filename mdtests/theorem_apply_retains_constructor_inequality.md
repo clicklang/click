@@ -23,9 +23,7 @@ theorem concrete(child: int32) {
 theorem concrete_explicit(child: int32) {
     ensures not(Tree::Node(child) == Tree::Empty) by {
         have not(Tree::Node(child) == Tree::Empty) by known();
-        apply(nonempty(Tree::Node(child))) using {
-            not(Tree::Node(child) == Tree::Empty);
-        };
+        apply(nonempty(Tree::Node(child)));
         known();
     }
 }

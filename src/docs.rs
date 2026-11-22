@@ -85,8 +85,8 @@ impl TacticClass {
 pub const SEARCH_MISS_MEANING: &str = "a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument";
 
 /// The simple form that writes the argument `form` elides: the `using` form
-/// the reference lists beside a smart form, `apply(theorem(args)) using {
-/// P; ... }` for `apply(theorem(args))`. `None` for a form that elides
+/// the reference lists beside a smart form, such as `apply(fact) using
+/// { P; ... }`. `None` for a form that elides
 /// nothing, including `solve()`, whose `using` form is smart too.
 fn explicit_form<'a>(forms: &'a [(String, TacticClass)], form: &str) -> Option<&'a str> {
     let elided = format!("{} using ", form.trim_matches('`'));
@@ -213,8 +213,7 @@ fn tactic_entries() -> Vec<TacticEntry> {
     entries
 }
 
-/// The class of a written tactic, when its text selects one form class:
-/// `apply(t(x))` is smart and `apply(t(x)) using { ... }` simple.
+/// The class of a written tactic, when its text selects one form class.
 pub fn written_tactic_class(written: &str) -> Option<(String, TacticClass)> {
     let name = tactic_identifier(written)?;
     let entries = tactic_entries();
@@ -238,9 +237,8 @@ pub fn written_tactic_class(written: &str) -> Option<(String, TacticClass)> {
 }
 
 /// Whether a written tactic is a smart form that elides an argument a
-/// simple form of the same tactic takes written: `apply(t(x))` beside
-/// `apply(t(x)) using { ... }`, or `transport(P, Q)` beside its `using`
-/// form. Its refusal is a search miss ([`SEARCH_MISS_MEANING`]).
+/// simple form of the same tactic takes written, such as `transport(P, Q)`
+/// beside its `using` form. Its refusal is a search miss ([`SEARCH_MISS_MEANING`]).
 pub fn written_tactic_elides_argument(written: &str) -> bool {
     let Some((name, TacticClass::Smart)) = written_tactic_class(written) else {
         return false;
@@ -511,10 +509,9 @@ mod tests {
         assert!(normalize.contains("### Normalization with selected premises"));
         let apply = lookup("apply").unwrap();
         assert!(
-            apply.contains("- `apply(theorem(args))`: smart;"),
+            apply.contains("- `apply(theorem(args))`: simple;"),
             "{apply}"
         );
-        assert!(apply.contains("- `apply(theorem(args)) using { P; ... }`: simple;"));
         let step = lookup("step").unwrap();
         assert!(
             step.contains("- `let { result: name } = step()`: simple;"),
@@ -564,9 +561,9 @@ mod tests {
         let class = |written| written_tactic_class(written).map(|(_, class)| class);
         assert_eq!(class("normalize();"), Some(TacticClass::Simple));
         assert_eq!(class("solve();"), Some(TacticClass::Smart));
-        assert_eq!(class("apply(t(x));"), Some(TacticClass::Smart));
+        assert_eq!(class("apply(t(x));"), Some(TacticClass::Simple));
         assert_eq!(
-            class("apply(t(x)) using { a == b; };"),
+            class("apply(a == b implies c == d);"),
             Some(TacticClass::Simple)
         );
         assert_eq!(class("step();"), Some(TacticClass::Simple));
@@ -580,10 +577,11 @@ mod tests {
 
     #[test]
     fn an_elided_form_has_the_search_miss_meaning() {
-        assert!(written_tactic_elides_argument("apply(t(x));"));
+        assert!(!written_tactic_elides_argument("apply(t(x));"));
+        assert!(!written_tactic_elides_argument("apply(fact);"));
         assert!(written_tactic_elides_argument("transport(p, q);"));
         assert!(!written_tactic_elides_argument(
-            "apply(t(x)) using { a == b; };"
+            "apply(a == b implies c == d) using { a == b; };"
         ));
         assert!(!written_tactic_elides_argument("solve();"));
         assert!(!written_tactic_elides_argument(
@@ -591,12 +589,7 @@ mod tests {
         ));
         assert!(!written_tactic_elides_argument("solve();"));
         let apply = lookup("apply").unwrap();
-        assert!(
-            apply.contains(&format!(
-                "- `apply(theorem(args))`: smart; {SEARCH_MISS_MEANING}, as `apply(theorem(args)) using {{ P; ... }}` does."
-            )),
-            "{apply}"
-        );
+        assert!(apply.contains("- `apply(fact)`: simple;"), "{apply}");
         let solve = lookup("solve").unwrap();
         assert!(!solve.contains(SEARCH_MISS_MEANING), "{solve}");
     }

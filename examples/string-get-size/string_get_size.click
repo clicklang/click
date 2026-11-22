@@ -617,9 +617,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     step();
                     step();
                     have to_integer(remainder) <= 999 by { known(); }
-                    apply(integer::uint32_to_integer_less_equal_implies_less_equal(remainder, 999u32)) using {
-                        to_integer(remainder) <= 999;
-                    };
+                    apply(integer::uint32_to_integer_less_equal_implies_less_equal(remainder, 999u32));
                 }
                 false => {
                     have remainder <= 999u32;
@@ -747,7 +745,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         // The terminator changes one cell; preserve the earlier bytes explicitly.
                         have ((j + 1) as int32) != 0 by { rewrite(j, 1); normalize(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[0u64])) by {
-                            apply(separation::separate_elements(tmp, j + 1, 0)) using { ((j + 1) as int32) != 0; };
+                            apply(separation::separate_elements(tmp, j + 1, 0));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[0u64])) by {
                             normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
@@ -761,7 +759,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         }
                         have ((j + 1) as int32) != 1 by { rewrite(j, 1); normalize(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
-                            apply(separation::separate_elements(tmp, j + 1, 1)) using { ((j + 1) as int32) != 1; };
+                            apply(separation::separate_elements(tmp, j + 1, 1));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[1u64])) by {
                             normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
@@ -803,7 +801,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         step();
                         have ((j + 1) as int32) != 0 by { rewrite(j, 2); normalize(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[0u64])) by {
-                            apply(separation::separate_elements(tmp, j + 1, 0)) using { ((j + 1) as int32) != 0; };
+                            apply(separation::separate_elements(tmp, j + 1, 0));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[0u64])) by {
                             normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
@@ -817,7 +815,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         }
                         have ((j + 1) as int32) != 1 by { rewrite(j, 2); normalize(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
-                            apply(separation::separate_elements(tmp, j + 1, 1)) using { ((j + 1) as int32) != 1; };
+                            apply(separation::separate_elements(tmp, j + 1, 1));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[1u64])) by {
                             normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
@@ -831,7 +829,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         }
                         have ((j + 1) as int32) != 2 by { rewrite(j, 2); normalize(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[2u64])) by {
-                            apply(separation::separate_elements(tmp, j + 1, 2)) using { ((j + 1) as int32) != 2; };
+                            apply(separation::separate_elements(tmp, j + 1, 2));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[2u64])) by {
                             normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[2u64])); };

@@ -89,7 +89,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return Err(refusal());
         }
         let _timing = crate::surface::proof::timing::TacticTiming::implicit_solve();
-        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve");
         let Some(closed) = scope.driver().try_solve_closure()? else {
             return Err(
                 refusal().with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
@@ -360,9 +360,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             driver_proof.with_prepared_call_parameters(probe.as_ref().map_err(Clone::clone)?);
         if recorded.recorded.is_empty() {
             if probe.as_ref().is_ok_and(|candidate| {
-                candidate
-                    .execution()
-                    .is_some_and(|execution| execution.core.has_prepared_fold())
+                candidate.execution().is_some_and(|execution| {
+                    execution.core.has_prepared_fold()
+                        || execution.core.has_prepared_tactic_application()
+                })
             }) {
                 return driver_proof.finish_prepared_step(probe, driver_proof, &[]);
             }
@@ -383,7 +384,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let open = distinct_requirements(recorded.clone());
         if retain_order_bounds && matches!(step, ProofStep::Step) {
             let timing = crate::surface::proof::timing::TacticTiming::implicit_solve();
-            let origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
+            let origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve");
             let mut frontier = self.proof.clone();
             let mut retained = false;
             for requirement in &open {
@@ -464,7 +465,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     {
         let driver_proof = self.proof;
         let _implicit_solve = crate::surface::proof::timing::TacticTiming::implicit_solve();
-        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve");
         let mut current = driver_proof.clone();
         let mut entries = Vec::with_capacity(requirements.len());
         for (index, requirement) in requirements.iter().enumerate() {
@@ -808,7 +809,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let refusal = if body == [ProofTactic::Solve] {
                 crate::surface::ProofRefusal::UnsuccessfulSearch
             } else {
-                crate::surface::ProofRefusal::UnprovedGoal
+                crate::surface::ProofRefusal::IncompleteProof
             };
             return Err(error
                 .with_proof_refusal(refusal)

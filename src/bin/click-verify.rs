@@ -681,9 +681,14 @@ fn verification_error_report(
 ) -> String {
     let (mut report, mut context) = error.concise_report_parts();
     let source_locations = ProofSourceLocations::new(project, inputs);
-    let failure_position = error
-        .proof_source_site()
-        .and_then(|(claim, path)| source_locations.position(claim, path));
+    let implicit_tactic_error = error.implicit_tactic_step().is_some();
+    let failure_position = if implicit_tactic_error {
+        None
+    } else {
+        error
+            .proof_source_site()
+            .and_then(|(claim, path)| source_locations.position(claim, path))
+    };
     let written_tactic = project
         .entry_source()
         .zip(failure_position.as_ref())
@@ -751,7 +756,7 @@ fn verification_error_report(
             context.push(excerpt);
         }
     }
-    if error.kind() == ClickErrorKind::Proof {
+    if error.kind() == ClickErrorKind::Proof && !implicit_tactic_error {
         context.extend(refusal_class_lines(
             written_tactic.as_deref(),
             error.proof_refusal(),
@@ -854,13 +859,12 @@ fn verification_error_report(
 /// `solve` when no smart tactic reached the statement, so its refusal is a
 /// smart miss even under a written `step()`. A smart form that elides an
 /// argument, such as `apply(t(x))`, refuses by a search miss: the fix is to
-/// write the argument. A proof that ran out of steps with its goal open was
-/// refused by nothing: its last tactic succeeded.
+/// write the argument. An incomplete proof reports the open requirement so
+/// the proof author can finish the script.
 fn refusal_class_lines(written: Option<&str>, refusal: Option<ProofRefusal>) -> Vec<String> {
-    if refusal == Some(ProofRefusal::UnprovedGoal) {
+    if refusal == Some(ProofRefusal::IncompleteProof) {
         return vec![
-            "refused by: nothing (the proof ended with this goal open; add the steps that prove it)"
-                .to_owned(),
+            "help: establish the reported requirement before the proof closes".to_owned(),
             "see: click docs tracing".to_owned(),
         ];
     }
@@ -1963,7 +1967,7 @@ mod tests {
             } by {
                 let { result: r } = step(child);
                 have r < 1 by {
-                    apply(negative(r)) using { 0 <= r; }
+                    apply(negative(r));
                 }
                 step();
                 solve();

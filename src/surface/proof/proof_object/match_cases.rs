@@ -1206,7 +1206,7 @@ impl<'a> Proof<'a> {
         &self,
         plan: &PureMatchPlan,
         index: usize,
-    ) -> Result<Self, ClickError> {
+    ) -> Result<(Self, Option<Proposition>), ClickError> {
         let mut proof = self
             .with_kernel_state(self.state.with_locals(plan.locals.clone()))
             .at_site(&plan.site);
@@ -1273,10 +1273,17 @@ impl<'a> Proof<'a> {
             locals.set_values(locals.values.with_inserted(name.clone(), expression));
             proof = proof.with_kernel_state(state.with_locals(locals));
         }
+        let mut arm_trace = None;
         let state = proof
             .state
-            .apply_intro(|_, introduction, _| {
+            .apply_intro(|_, introduction, introduced| {
                 assert!(matches!(introduction, PropositionIntroduction::Implication));
+                // Induction setup and goal refinement publish their own fact deltas.
+                // Save the equation from the introduction that actually added it.
+                arm_trace = proof.new_pure_match_trace(&plan.source).map(|trace| {
+                    let equation = introduced.expect("implication introduces its antecedent");
+                    (trace, equation.clone())
+                });
                 plan.presentation.clone()
             })
             .map_err(|_| {
@@ -1301,13 +1308,19 @@ impl<'a> Proof<'a> {
         );
         // Retain the constructor equation before running the arm, so even a
         // rejected first tactic has the checked case in its failure trace.
-        if let Some(mut trace) = entered.new_pure_match_trace(&plan.source) {
+        let constructor_equation = arm_trace.map(|(mut trace, equation)| {
             let marker = entered.checkpoint();
-            trace.arms[index] =
-                Some(entered.pure_match_arm_trace(&entered, &marker, &plan.source, index));
+            trace.arms[index] = Some(entered.pure_match_arm_trace(
+                &entered,
+                &marker,
+                &plan.source,
+                index,
+                &equation,
+            ));
             crate::surface::proof_trace::record_match(Arc::as_ptr(&entered.node) as usize, trace);
-        }
-        Ok(entered)
+            equation
+        });
+        Ok((entered, constructor_equation))
     }
 
     pub(in crate::surface::proof) fn leave_pure_match_case(
@@ -1384,6 +1397,7 @@ impl<'a> Proof<'a> {
         marker: &ProofCheckpoint<'a>,
         source: &ProofMatch,
         index: usize,
+        constructor_equation: &Proposition,
     ) -> crate::surface::proof_trace::TraceMatchArm {
         crate::surface::proof_trace::TraceMatchArm {
             names: Box::new(entered.diagnostic_state()),
@@ -1391,7 +1405,7 @@ impl<'a> Proof<'a> {
                 "{}::{}",
                 source.arms[index].type_name, source.arms[index].variant
             ),
-            fact: entered.checked_trace_fact(entered.state.added_facts()[0].clone()),
+            fact: entered.checked_trace_fact(constructor_equation.clone()),
             lineage: trace_arm_lineage(&self.node, &marker.node, self.focused_branch_id()),
             _retained: Box::new(self.node.clone()),
         }

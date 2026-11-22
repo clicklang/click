@@ -581,7 +581,6 @@ mod tests {
                 .with_pointee_constant(true)
                 .with_pointee_constant(false),
             base.clone().with_pointee_constant(true),
-            base.clone().with_pointee_volatile(true),
             base.clone().with_type(ProgramType::VoidPointer),
             base.clone()
                 .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(999979)))),
@@ -631,7 +630,7 @@ mod tests {
             }
         }
         // Shared bounds must not acquire the numeric identity shortcut.
-        assert!(!Comparison::default().pointer_value(&values[8], &values[8]));
+        assert!(!Comparison::default().pointer_value(&values[7], &values[7]));
     }
 
     #[test]

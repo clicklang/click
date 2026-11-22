@@ -120,3 +120,73 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
         assert!(samples[3].1 > samples[0].1 + 128, "{samples:?}");
     }
 }
+
+#[test]
+fn exact_call_havoc_ignores_disjoint_run_slots_and_holes() {
+    let at = |offset: u32| Address {
+        base: "local:call-run-havoc".into(),
+        offset: AddressOffset::Constant(i64::from(offset)),
+    };
+    let value = ProgramValue::Int32(MachineTerm::constant(7));
+    let facts = PureFactContext::new();
+    for bytes in [1u32, 5] {
+        // Write inside the word starting at byte 4. Five bytes also reach
+        // the word starting at byte 8.
+        let ranges = [MemoryRange::new_with_element_width(
+            at(4),
+            1u32.into(),
+            (1 + bytes).into(),
+            1,
+        )];
+        let samples = [16, 64, 256, 1024].map(|count| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let start = at(0);
+            let mut before = SymbolicMemory::new()
+                .with_block(start.base.clone(), count * 4)
+                .seed_fresh_declared_runs(
+                    &start,
+                    &[ConstantRun {
+                        offset: 0,
+                        stride: 4,
+                        count,
+                        value: value.clone(),
+                    }],
+                );
+            for index in (4..count).step_by(2) {
+                Arc::make_mut(&mut before.cells).remove(&at(index * 4));
+            }
+            let transition = || {
+                let after =
+                    before
+                        .clone()
+                        .with_call_memory_havoc(Variable(944_021), &ranges, &facts, None);
+                assert!(after.matches_call_memory_havoc_result(&before, &ranges, &facts, None));
+                after
+            };
+            let (after, work) = crate::instrumentation::measure_deterministic_work(&transition);
+            assert_eq!(after.known_value(&at(4)), None);
+            assert!(after.has_initialized_bytes_at(&at(4), 4));
+            if bytes == 5 {
+                assert_eq!(after.known_value(&at(8)), None);
+                assert!(after.has_initialized_bytes_at(&at(8), 4));
+            } else {
+                assert_eq!(after.known_value(&at(8)), Some(value.clone()));
+            }
+            for offset in [0, 12, (count - 1) * 4] {
+                assert_eq!(after.known_value(&at(offset)), Some(value.clone()));
+            }
+            assert_eq!(after.known_value(&at(16)), None);
+            let (reference, reference_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    crate::kernel::reasoning::store_gap::with_store_gap_skip_disabled(transition)
+                });
+            assert_eq!(after, reference);
+            (work, reference_work)
+        });
+        assert!(
+            samples.iter().all(|(work, _)| *work <= samples[0].0 + 32),
+            "{samples:?}"
+        );
+        assert!(samples[3].1 > samples[0].1 + 128, "{samples:?}");
+    }
+}

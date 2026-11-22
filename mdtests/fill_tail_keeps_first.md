@@ -34,7 +34,7 @@ int32 fill_tail_keeps_first(int32 p[], int32 n) {
             mark before_store;
             have i != 0 by { solve() using { i >= 1; }; }
             have separate(memory(p[i]), memory(p[0])) by {
-                apply(click::separation::separate_elements(p, i, 0)) using { i != 0; };
+                apply(click::separation::separate_elements(p, i, 0));
             }
             step();
             have at(before_store, separate(statement(2).statement(0).footprint, memory(p[0]))) by {

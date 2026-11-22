@@ -4,7 +4,7 @@
 import click::separation;
 theorem mixed(p: uint8*, i: int32, j: int64) {
     ensures true by {
-        apply(separation::separate_elements(p, i, j)) using {};
+        apply(separation::separate_elements(p, i, j));
     }
 }
 ```

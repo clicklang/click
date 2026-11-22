@@ -427,11 +427,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color)) by { known(); }
                     have separate(memory(g->__rb_parent_color), memory(p->rb_right)) by { known(); }
                     have separate(memory(g->__rb_parent_color), memory(p->rb_left)) by { known(); }
-                    have separate(memory(g->__rb_parent_color), memory((p as (void *) as (struct sized_node *))->size)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory((p as (uint8 *) as (struct sized_node *))->size)) by { known(); }
                     have separate(memory(g->__rb_parent_color), memory(node->__rb_parent_color)) by { known(); }
                     have separate(memory(g->__rb_parent_color), memory(node->rb_right)) by { known(); }
                     have separate(memory(g->__rb_parent_color), memory(node->rb_left)) by { known(); }
-                    have separate(memory(g->__rb_parent_color), memory((node as (void *) as (struct sized_node *))->size)) by { known(); }
+                    have separate(memory(g->__rb_parent_color), memory((node as (uint8 *) as (struct sized_node *))->size)) by { known(); }
                     have separate(memory(g->__rb_parent_color), memory(g->rb_right)) by { known(); }
                     have at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1) by { known(); }
                     transport(at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1), old(root->rb_node)->__rb_parent_color == 1) using {
@@ -443,11 +443,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color));
                         separate(memory(g->__rb_parent_color), memory(p->rb_right));
                         separate(memory(g->__rb_parent_color), memory(p->rb_left));
-                        separate(memory(g->__rb_parent_color), memory((p as (void *) as (struct sized_node *))->size));
+                        separate(memory(g->__rb_parent_color), memory((p as (uint8 *) as (struct sized_node *))->size));
                         separate(memory(g->__rb_parent_color), memory(node->__rb_parent_color));
                         separate(memory(g->__rb_parent_color), memory(node->rb_right));
                         separate(memory(g->__rb_parent_color), memory(node->rb_left));
-                        separate(memory(g->__rb_parent_color), memory((node as (void *) as (struct sized_node *))->size));
+                        separate(memory(g->__rb_parent_color), memory((node as (uint8 *) as (struct sized_node *))->size));
                         separate(memory(g->__rb_parent_color), memory(g->rb_right));
                     };
                     let p_size = fold(size_metadata(p), { value: 1 });

@@ -21,7 +21,7 @@ void keep(struct node *p) {
     ensures p == 0;
 } by {
     have p == p by {
-        apply(node_identity(p)) using { p == 0; };
+        apply(node_identity(p));
     }
     step_until(function.exit);
     known();

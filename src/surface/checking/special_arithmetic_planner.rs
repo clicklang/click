@@ -8,8 +8,8 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::cast_term;
 use crate::kernel::proof::arithmetic_special::{
-    SpecialArithmeticNode as KernelNode, SpecialArithmeticPlan as KernelPlan,
-    signed_constant_bound_on_view, signed_definedness_query,
+    SpecialArithmeticNode as KernelNode, SpecialArithmeticPlan as KernelPlan, float_bound_weakens,
+    is_float_bound, signed_constant_bound_on_view, signed_definedness_query,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{ConditionTerm, FloatClassification, FloatCondition, Proposition};
@@ -66,6 +66,19 @@ pub(super) fn plan_special_arithmetic(
             nodes: vec![KernelNode::SignedDefined {
                 width,
                 bounds,
+                result: goal.clone(),
+            }],
+            conclusion: 0,
+        });
+    }
+    if is_float_bound(goal)
+        && let Some(premise) = premises
+            .iter()
+            .position(|premise| charge_proposition(premise) && float_bound_weakens(premise, goal))
+    {
+        return Some(KernelPlan {
+            nodes: vec![KernelNode::FloatBound {
+                premise,
                 result: goal.clone(),
             }],
             conclusion: 0,
@@ -210,6 +223,10 @@ pub(in crate::surface) fn special_plan_to_surface(
                     result: goal.clone(),
                 }
             }
+            KernelNode::FloatBound { premise, .. } => SpecialArithmeticNode::FloatBound {
+                premise: *premise,
+                result: goal.clone(),
+            },
             KernelNode::FloatReflexive { finite, .. } => SpecialArithmeticNode::FloatReflexive {
                 finite: *finite,
                 result: goal.clone(),
@@ -265,7 +282,10 @@ fn cited_premise_indices(node: &mut SpecialArithmeticNode) -> Vec<&mut usize> {
         SpecialArithmeticNode::PointerWordFromAlignment { alignments, .. } => {
             alignments.iter_mut().collect()
         }
-        SpecialArithmeticNode::FloatReflexive { finite, .. } => vec![finite],
+        SpecialArithmeticNode::FloatReflexive { finite, .. }
+        | SpecialArithmeticNode::FloatBound {
+            premise: finite, ..
+        } => vec![finite],
     }
 }
 

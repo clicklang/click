@@ -309,7 +309,7 @@ fn separately_proved_resource_clauses_cannot_duplicate_a_borrowed_unit() {
     )
     .expect_err("the last separately proved resource clause still owes its complete joint prefix");
     assert!(
-        error.message().contains("unproved resource obligation")
+        error.proof_refusal() == Some(crate::surface::ProofRefusal::IncompleteProof)
             || error.message().contains("held instance"),
         "{error}"
     );

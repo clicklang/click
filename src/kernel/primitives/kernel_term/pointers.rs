@@ -12,7 +12,6 @@ pub(crate) struct KernelSubobjectBounds {
 }
 #[derive(Clone, Debug, Default)]
 pub(crate) struct KernelPointerQualifiers {
-    pub(crate) volatile: bool,
     pub(crate) constant: bool,
     pub(crate) bounds: Option<KernelSubobjectBounds>,
     pub(crate) bounds_known: bool,
@@ -63,33 +62,28 @@ impl SharedPointer {
         let qualifiers = value.qualifiers.as_deref();
         RetainedPointerMetadata {
             program_type: value.program_type,
-            volatile: qualifiers.is_some_and(|q| q.volatile),
             constant: qualifiers.is_some_and(|q| q.constant),
             bounds_known: qualifiers.is_some_and(|q| q.bounds_known),
             declared_class: qualifiers.and_then(|q| q.object_class.as_ref()),
             evidence: qualifiers.and_then(|q| q.object_type_evidence.as_ref()),
         }
     }
-    /// Rebind only the declaration's type and cv qualifiers. Expression
+    /// Rebind only the declaration's type and `const` qualifier. Expression
     /// children and evidence remain shared, including default qualifier shape.
     pub(crate) fn with_binding_type_and_qualifiers(
         &self,
         program_type: ProgramType,
-        volatile: bool,
         constant: bool,
     ) -> Self {
         let old = self.node();
-        let old_volatile = old.qualifiers.as_ref().is_some_and(|q| q.volatile);
         let old_constant = old.qualifiers.as_ref().is_some_and(|q| q.constant);
-        if old.program_type == program_type && old_volatile == volatile && old_constant == constant
-        {
+        if old.program_type == program_type && old_constant == constant {
             return self.clone();
         }
         let mut value = old.clone();
         value.program_type = program_type;
-        if old_volatile != volatile || old_constant != constant {
+        if old_constant != constant {
             let qualifiers = Arc::make_mut(value.qualifiers.get_or_insert_with(Default::default));
-            qualifiers.volatile = volatile;
             qualifiers.constant = constant;
         }
         Self::new(value)
@@ -131,8 +125,7 @@ impl SharedPointer {
             }
             _ => false,
         };
-        a.volatile == b.volatile
-            && a.constant == b.constant
+        a.constant == b.constant
             && a.bounds_known == b.bounds_known
             && a.object_class == b.object_class
             && bounds_match
@@ -167,7 +160,6 @@ impl SharedPointer {
             program_type: value.program_type,
             qualifiers: value.qualifiers.as_ref().map(|q| {
                 Arc::new(KernelPointerQualifiers {
-                    volatile: q.volatile,
                     constant: q.constant,
                     bounds: q.bounds.as_ref().map(|bounds| KernelSubobjectBounds {
                         start: address(&bounds.start),
@@ -199,7 +191,6 @@ impl SharedPointer {
                 .as_ref()
                 .map(|q| -> Result<_, &'static str> {
                     Ok(Arc::new(PointerQualifiers {
-                        volatile: q.volatile,
                         constant: q.constant,
                         bounds: q
                             .bounds
@@ -370,7 +361,6 @@ mod tests {
             bounds_owner: Some(Arc::new(Address::symbolic(Variable(1000003)))),
             program_type: ProgramType::VoidPointer,
             qualifiers: Some(Arc::new(PointerQualifiers {
-                volatile: true,
                 constant: true,
                 bounds: Some(SubobjectBounds {
                     start: Address::symbolic(Variable(1000004)),

@@ -1,8 +1,7 @@
 # explicit induction certificate uses only checked operations
 
 This is the fully expanded form of the smart proof in
-`pure_induction_countdown.md`. The induction application names its exact side
-conditions, and recursive evaluation is exposed by one-layer function
+`pure_induction_countdown.md`. Two `have` steps state the induction premises, and recursive evaluation is exposed by one-layer function
 `unfold` operations.
 
 ```click
@@ -22,11 +21,7 @@ theorem countdown_explicit_is_zero(n: int32) {
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
-            apply(ih(n - 1)) using {
-                0 <= to_integer(n - 1);
-                to_integer(n - 1) < to_integer(n);
-                to_integer(n - 1) >= 0;
-            };
+            apply(ih(n - 1));
             unfold(countdown_explicit(n));
             rewrite(countdown_explicit(n - 1), 0);
             known();

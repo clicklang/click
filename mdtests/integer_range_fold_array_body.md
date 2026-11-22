@@ -22,10 +22,7 @@ int32 array_fold_append_at_zero(int32 a[]) {
         have 0 < 2147483647;
         apply(integer_range_fold_append(
             (0..0).fold(0, |acc, k| { acc + to_integer(a[k]) })
-        )) using {
-            0 <= 0;
-            0 < 2147483647;
-        };
+        ));
         solve();
     }
 }

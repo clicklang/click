@@ -47,23 +47,15 @@ void copy_n(char* dst, const char* src, uint64 n) {
         apply(separation::separate_restrict(
             memory(dst[0u64..n]), memory(src[0u64..n]),
             statement(0).footprint, memory((src as (uint8 *))[k])
-        )) using {
-            separate(memory(dst[0u64..n]), memory(src[0u64..n]));
-            contains(memory(dst[0u64..n]), statement(0).footprint);
-            contains(memory(src[0u64..n]), memory((src as (uint8 *))[k]));
-        };
+        ));
         have at(copied, (src as (uint8 *))[k]) == old((src as (uint8 *))[k]) by {
             preserve(memory((src as (uint8 *))[k]), statement(0));
         }
-        apply(separation::contains_refl(memory((dst as (uint8 *))[n]))) using {};
+        apply(separation::contains_refl(memory((dst as (uint8 *))[n])));
         apply(separation::separate_restrict(
             memory((dst as (uint8 *))[n]), memory(src[0u64..n]),
             memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])
-        )) using {
-            separate(memory((dst as (uint8 *))[n]), memory(src[0u64..n]));
-            contains(memory((dst as (uint8 *))[n]), memory((dst as (uint8 *))[n]));
-            contains(memory(src[0u64..n]), memory((src as (uint8 *))[k]));
-        };
+        ));
         have separate(statement(1).footprint, memory((src as (uint8 *))[k])) by {
             solve() using { separate(memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])); };
         }

@@ -92,9 +92,11 @@ enum PointerBounds {
 | Copy, local assignment, argument binding, return | same bounds |
 | Store to memory, then reload of that exact cell | same bounds: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_history.rs` must return the whole `CPointerValue`, not `Address`. |
 | Reload of an unknown cell, havoc, modular result | Fresh opaque domain; formation and access require matching bounds evidence (Phase C) |
-| Cast to a non-character object pointer type | same bounds (a cast neither narrows nor widens; D3) |
-| Cast between character-pointer types | same bounds, including signedness changes (D4 refinement) |
-| Cast from another pointer type to a character pointer, or any cast to `void*` | `Root` (byte view of the enclosing object; keeps `container_of`, D4) |
+| Conversion to `void*` or a non-character object pointer type | same bounds (a conversion neither narrows nor widens; D3, D4 revised) |
+| Conversion between character-pointer types | same bounds, including signedness changes (D4 refinement) |
+| Conversion from another pointer type, including `void*`, to a character pointer, written or implicit | `Root` (byte view of the allocation, C11 6.3.2.3p7; D4 revised) |
+| GNU arithmetic on `void*` | operand's `Root` view: GNU defines it as character arithmetic (keeps `container_of`; D4 revised) |
+| Conversion to `struct S*` of a pointer whose bounds are a member starting at its address and narrower than `S` | `Subobject[addr, addr + sizeof(S))`: a pointer to an initial member points to its struct (C11 6.7.2.1p15) |
 
 The frontend supplies each field's type and ABI size
 (`CStructField::byte_width`). C member lowering records a `CExpression::Subobject`
@@ -286,6 +288,17 @@ established while its footprint was evaluated. `EvaluatedMemorySegment` and
 publishes clause facts. Range identity and authority ignore this metadata;
 rebasing and splitting retain it, and substitution maps its variables.
 
+Bounds and bytes are separate questions at an access. A holding of the same
+provenance supplies the bytes of an access through an opaque pointer when that
+pointer's own coverage evidence contains them, even if the holding was formed
+through a wider view (2026-11-22). For example, a byte-view contract such as
+C++'s `memcpy` produces its destination's bytes through
+`destination as (uint8 *)`, and the caller's later read through its own
+`destination` is bounded by the caller's entry clause
+(`mdtests/a_byte_view_holding_supplies_a_read_its_reader_has_bounds_for.md`). The
+query reads the required domain's coverage bucket only. A wider holding still
+supplies no bytes beyond that evidence.
+
 An owned allocation supplies bounds independently of byte ownership. Entry,
 unfold and verified allocation-return producers publish its coverage, requiring
 positive ownership. The token retains complete pointer identity: a member
@@ -371,6 +384,18 @@ in the retained session.
     other pointer types to characters, and every explicit cast to `void*`,
     still select the enclosing view. This preserves C-string borrowing and
     prevents character signedness changes from widening byte-member bounds.
+  - Revised on 2026-11-21 (`design/pointer-model.md`), so that each rule is one
+    C or GNU states. Converting to a character pointer forms the byte view
+    (C11 6.3.2.3p7), written or implicit, and the view spans the allocation,
+    TS 6010's provenance granularity. A cast to `void*` keeps the value: C gives
+    that conversion no meaning beyond its round trip. GNU arithmetic on `void*`
+    is character arithmetic, so it forms the byte view; Linux's `container_of`
+    widens there. `((int32*)(void*)&p->first)[1]` is now refused, because
+    nothing in it forms a byte view. A conversion to a struct pointer of a
+    pointer to the struct's initial member gives the struct's bounds (C11
+    6.7.2.1p15). A contract spells what its C derives: `p as (void *) as
+    (struct T *)` where the C converts through `void *`, and `p as (uint8 *)
+    as (struct T *)` where it steps back from a member with `container_of`.
   - Recommended: accept, and document it in `docs/`.
 - **D5. Staging.**
   - Recommended: Phase A in three PRs:

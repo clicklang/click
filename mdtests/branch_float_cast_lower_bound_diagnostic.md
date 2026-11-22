@@ -13,7 +13,6 @@ int32 positive(double d) {
 verifying "branch_float_cast.c";
 
 int32 positive(double d) {
-    requires isfinite(d);
     ensures result >= 0;
 } by {
     branch { true => { step(); solve(); } false => {} }

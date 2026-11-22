@@ -399,6 +399,7 @@ fn int32_widening_spelling(
             target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1497,13 +1498,21 @@ fn observed_integer(operand: &ContractExpression) -> bool {
 // These split conditions come from a native int32 bound. Shield their pivot
 // arithmetic from Integer specification arithmetic when printed.
 fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression {
+    native_machine_operand(operand, crate::kernel::ProgramType::Int32)
+}
+
+fn native_machine_operand(
+    operand: ContractExpression,
+    target_type: crate::kernel::ProgramType,
+) -> ContractExpression {
     ContractExpression::CUnary {
         operand: Box::new(operand),
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(int32(0))),
-            target_type: crate::kernel::ProgramType::Int32,
+            target_type,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1514,18 +1523,7 @@ fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression
 /// [`native_int32_split_operand`] at `uint32`: the operand lowered as the
 /// native `uint32` expression it spells.
 fn native_uint32_split_operand(operand: ContractExpression) -> ContractExpression {
-    ContractExpression::CUnary {
-        operand: Box::new(operand),
-        lowered: ProgramExpression::Cast {
-            expression: Box::new(ProgramExpression::Value(int32(0))),
-            target_type: crate::kernel::ProgramType::UInt32,
-            integer_mode: crate::kernel::IntegerCastMode::CConversion,
-            pointee_struct: None,
-            pointee_volatile: false,
-            pointee_constant: false,
-            explicit_qualification: false,
-        },
-    }
+    native_machine_operand(operand, crate::kernel::ProgramType::UInt32)
 }
 
 fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option<ClickProposition> {
@@ -1899,6 +1897,7 @@ impl<'a> Proof<'a> {
                                 target_type: crate::kernel::ProgramType::Int32,
                                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                                 pointee_struct: None,
+                                pointee_struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,
@@ -1984,6 +1983,7 @@ impl<'a> Proof<'a> {
                     target_type: view.format.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -3811,9 +3811,19 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
 }
 
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
-    let mut steps = vec![ProofStep::Known, ProofStep::Normalize];
-    // Without a proposition goal every candidate is refused alike; keep the
-    // complete list so the recorded refusals are unchanged.
+    let mut steps = vec![ProofStep::Known];
+    // These goals still rely on checked constructor reduction or byte-span
+    // containment. Keep their existing certificate until each has a closer.
+    if matches!(
+        goal,
+        Some(
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+                | Proposition::ResourceContains { .. }
+        )
+    ) {
+        steps.push(ProofStep::Normalize);
+    }
+    // Without a proposition goal, keep both candidate refusals in the trace.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
         steps.push(ProofStep::Enumerate);
     }
@@ -4358,6 +4368,7 @@ fn source_call_argument_surface(
         target_type: crate::kernel::ProgramType::Int32Pointer,
         integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
+        pointee_struct_size: _,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
@@ -4397,95 +4408,104 @@ fn source_backed_call_requirement_surface(
         return None;
     }
 
-    // Confirm that the refused operation is still the exact source call that
-    // generated this carrier. This protects retries after a caller has been
-    // moved to a different frontier, and keeps source arguments authoritative
-    // rather than reconstructing them from a reduced state.
-    let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
-        execution.view(context),
-        &execution.core.state,
-        context.function,
-        context.arguments,
-        context.claim_label,
-        context.tactic_index,
-        "smart retained-have call source",
-    )
-    .ok()?;
-    // A call made while a C++ local with a destructor lives carries that
-    // destructor for its exceptional exit; the call is its body.
-    let mut statement = &statement;
-    while let ProgramStatement::UnwindCleanup { body, .. } = statement {
-        statement = body;
-    }
-    let (callee, arguments) = match statement {
-        ProgramStatement::Call {
-            function_name,
-            arguments,
-            ..
-        }
-        | ProgramStatement::CallConstruct {
-            function_name,
-            arguments,
-            ..
-        }
-        | ProgramStatement::CallResult {
-            function_name,
-            arguments,
-            ..
-        } => (function_name, arguments),
-        _ => return None,
-    };
     let source_registry = context.function_source_registry();
     let ordinary_source = source_registry.ordinary_function(site.callee.as_ref());
-    // Named callback application records the selected contract name as both
-    // callee and interface, while the C statement names the callback
-    // expression.  This is the one authorized alias for an indirect call;
-    // every other carrier must name the exact current C callee.
-    let named_interface_alias =
-        site.callee.as_str() == site.interface.as_ref() && ordinary_source.is_none();
-    let source_callee = site.source_callee.as_deref().unwrap_or(&site.callee);
-    match step {
-        ProofStep::StepContract(_) => {
-            // A named callback interface still belongs to the exact C call
-            // that produced the refusal.  The selected named-contract alias
-            // above is the only indirect representation that may differ.
-            if callee != source_callee && !named_interface_alias {
-                return None;
-            }
+    if let ProofStep::UserTactic(application) = step {
+        if application.callee() != site.callee
+            || application.arguments().len() != site.source_arguments.len()
+        {
+            return None;
         }
-        ProofStep::StepCall(transport) if transport.is_named_contract() => {
-            if callee != source_callee && !named_interface_alias {
-                return None;
-            }
+    } else {
+        // Confirm that the refused operation is still the exact source call that
+        // generated this carrier. This protects retries after a caller has been
+        // moved to a different frontier, and keeps source arguments authoritative
+        // rather than reconstructing them from a reduced state.
+        let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
+            execution.view(context),
+            &execution.core.state,
+            context.function,
+            context.arguments,
+            context.claim_label,
+            context.tactic_index,
+            "smart retained-have call source",
+        )
+        .ok()?;
+        // A call made while a C++ local with a destructor lives carries that
+        // destructor for its exceptional exit; the call is its body.
+        let mut statement = &statement;
+        while let ProgramStatement::UnwindCleanup { body, .. } = statement {
+            statement = body;
         }
-        ProofStep::StepCall(_) => {
-            // StepCall is the concrete-call operation: both the C symbol and
-            // the selected interface must be the carrier's concrete callee.
-            if callee != source_callee || site.interface.as_ref() != site.callee {
-                return None;
+        let (callee, arguments) = match statement {
+            ProgramStatement::Call {
+                function_name,
+                arguments,
+                ..
             }
-        }
-        ProofStep::Step | ProofStep::StepBind(_) => {
-            // Even an indirect callback must retain the exact function-pointer
-            // expression named by the carrier before routing through its
-            // selected interface, except for the named-contract alias above.
-            if callee != source_callee && !named_interface_alias {
-                return None;
+            | ProgramStatement::CallConstruct {
+                function_name,
+                arguments,
+                ..
             }
+            | ProgramStatement::CallResult {
+                function_name,
+                arguments,
+                ..
+            } => (function_name, arguments),
+            _ => return None,
+        };
+        // Named callback application records the selected contract name as both
+        // callee and interface, while the C statement names the callback
+        // expression.  This is the one authorized alias for an indirect call;
+        // every other carrier must name the exact current C callee.
+        let named_interface_alias =
+            site.callee.as_str() == site.interface.as_ref() && ordinary_source.is_none();
+        let source_callee = site.source_callee.as_deref().unwrap_or(&site.callee);
+        match step {
+            ProofStep::StepContract(_) => {
+                // A named callback interface still belongs to the exact C call
+                // that produced the refusal.  The selected named-contract alias
+                // above is the only indirect representation that may differ.
+                if callee != source_callee && !named_interface_alias {
+                    return None;
+                }
+            }
+            ProofStep::StepCall(transport) if transport.is_named_contract() => {
+                if callee != source_callee && !named_interface_alias {
+                    return None;
+                }
+            }
+            ProofStep::StepCall(_) => {
+                // StepCall is the concrete-call operation: both the C symbol and
+                // the selected interface must be the carrier's concrete callee.
+                if callee != source_callee || site.interface.as_ref() != site.callee {
+                    return None;
+                }
+            }
+            ProofStep::Step | ProofStep::StepBind(_) => {
+                // Even an indirect callback must retain the exact function-pointer
+                // expression named by the carrier before routing through its
+                // selected interface, except for the named-contract alias above.
+                if callee != source_callee && !named_interface_alias {
+                    return None;
+                }
+            }
+            _ => return None,
         }
-        _ => return None,
-    }
-    if arguments.as_slice()
-        != site
-            .source_invocation_arguments
-            .as_ref()
-            .unwrap_or(&site.source_arguments)
-            .as_slice()
-    {
-        return None;
+        if arguments.as_slice()
+            != site
+                .source_invocation_arguments
+                .as_ref()
+                .unwrap_or(&site.source_arguments)
+                .as_slice()
+        {
+            return None;
+        }
     }
     let arguments = site.source_arguments.as_ref().clone();
     let expected_interface = match step {
+        ProofStep::UserTactic(application) => application.callee(),
         ProofStep::StepContract(application) => application.name.as_str(),
         ProofStep::StepCall(transport) if transport.is_named_contract() => transport.callee(),
         ProofStep::Step | ProofStep::StepBind(_) | ProofStep::StepCall(_) => {
@@ -4605,11 +4625,24 @@ fn source_backed_call_requirement_surface(
         .iter()
         .zip(&source_parameter_types)
         .zip(site.source_arguments.iter())
-        .map(|((parameter, parameter_type), argument)| {
+        .enumerate()
+        .map(|(index, ((parameter, parameter_type), argument))| {
             // An identity cast of a caller parameter is that parameter: the
             // surface names it as the caller's own requirement does, with the
             // C-string bridge elaborated as its explicit byte view.
-            let argument = if source.initialization_clause.is_some()
+            let argument = if let ProofStep::UserTactic(application) = step {
+                let argument = application.arguments()[index].clone();
+                // The call supplies a machine type to its argument arithmetic.
+                // In a printed comparison that arithmetic defaults to Integer.
+                if let Some(ty) = *parameter_type
+                    && MachineIntegerType::from_program_type(ty).is_some()
+                    && crate::surface::parser::has_arithmetic_spine(&argument)
+                {
+                    native_machine_operand(argument, ty)
+                } else {
+                    argument
+                }
+            } else if source.initialization_clause.is_some()
                 && let ProgramExpression::StepResult { step, .. } = argument
                 && let Some(region) = context.constants.source_layout.step_region(*step)
             {
@@ -4718,7 +4751,7 @@ fn source_backed_call_requirement_surface(
         },
     );
     let instance_renames = match step {
-        ProofStep::StepCall(transport) => transport
+        ProofStep::StepCall(transport) | ProofStep::UserTactic(transport) => transport
             .binders()
             .iter()
             // Only instance binders are renamed; a mutex authority has no
@@ -4871,7 +4904,7 @@ fn initialized_byte_call_result(
     };
     let value = execution.core.state.step_result(*step)?;
     let pointer = value.pointer()?;
-    if pointer.program_type() != ProgramType::UInt8Pointer || pointer.pointee_volatile() {
+    if pointer.program_type() != ProgramType::UInt8Pointer {
         return None;
     }
     let region = context.constants.source_layout.step_region(*step)?;

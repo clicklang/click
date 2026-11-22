@@ -13,7 +13,7 @@ theorem integer_range_fold_empty(x: Integer) {
 
 theorem uses(n: Integer) {
     ensures (0..0).fold(n, |acc, k| { acc + 1 }) == n by {
-        apply(integer_range_fold_empty((0..0).fold(n, |acc, k| { acc + 1 }))) using { 0 <= 0; };
+        apply(integer_range_fold_empty((0..0).fold(n, |acc, k| { acc + 1 })));
     }
 }
 ```

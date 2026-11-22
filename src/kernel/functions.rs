@@ -2570,19 +2570,9 @@ pub(super) fn execute_program_function_call_paths(
 pub(crate) struct TacticRuleTransition {
     pub(crate) state: ExecutionState,
     pub(crate) facts: ExecutionFacts,
-    /// The execution's kernel-variable mark after the application, which
-    /// the caller installs so later steps cannot reuse an identity it minted.
+    pub(crate) obligations: Vec<ProofObligation>,
+    /// The execution's kernel-variable mark after the application.
     pub(crate) next_kernel_variable: u64,
-}
-
-/// Why a tactic application was refused. A missing precondition is kept as
-/// the proposition, so the surface can name it in the reader's spelling.
-#[derive(Clone, Debug)]
-pub(crate) enum TacticApplicationRefusal {
-    /// A precondition, with the kernel's own description of why it is owed
-    /// (a recursion measure's descent, for one).
-    MissingRequirement(Proposition, Option<String>),
-    Refused(String),
 }
 
 /// Whether a certified body runs no code: it is one `return;` of no value.
@@ -2606,25 +2596,23 @@ fn body_runs_no_code(body: &ProgramStatement) -> bool {
 /// instances, consume and produce them, and add the `ensures` facts. This is
 /// how a user-defined tactic is applied.
 ///
-/// Every precondition the application emits must already be an available
-/// fact in `facts`. A tactic application is a simple step: nothing is
-/// searched for.
-pub(crate) fn apply_verified_tactic_rule(
+/// Prepare the transition once. Its requirements must be proved at the
+/// original frontier before it becomes execution evidence.
+pub(crate) fn prepare_verified_tactic_rule(
     state: &ExecutionState,
     name: &str,
     arguments: &[ProgramValue],
-    facts: &crate::kernel::proof::PureFactStore,
+    assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     next_kernel_variable: u64,
-) -> Result<TacticRuleTransition, TacticApplicationRefusal> {
-    use TacticApplicationRefusal::Refused;
+) -> Result<TacticRuleTransition, String> {
     let function = environment
         .get_function(name)
-        .ok_or_else(|| Refused(format!("unknown tactic `{name}`")))?;
+        .ok_or_else(|| format!("unknown tactic `{name}`"))?;
     if !body_runs_no_code(function.body()) {
-        return Err(Refused(format!(
+        return Err(format!(
             "`{name}` is a C function, not a tactic; its rule applies only at a call"
-        )));
+        ));
     }
     // A selected tactic is certified in this run (or held as its recursion
     // hypothesis while it is); an unselected one is the run's scoped
@@ -2635,9 +2623,9 @@ pub(crate) fn apply_verified_tactic_rule(
             .get_external_function_rule(name)
             .is_some_and(ExternalFunctionRule::is_scoped_unselected)
     {
-        return Err(Refused(format!(
+        return Err(format!(
             "tactic `{name}` has no verified rule in this proof"
-        )));
+        ));
     }
     let expressions = arguments
         .iter()
@@ -2649,45 +2637,36 @@ pub(crate) fn apply_verified_tactic_rule(
         state,
         function,
         &expressions,
-        facts.assumptions(),
+        &assumptions.clone().retaining_required_obligations(),
         ExecutionContext::apply_verified_rules(environment),
         &mut budget,
     )
-    .map_err(|limit| Refused(format!("applying tactic `{name}` stopped at {limit}")))?;
+    .map_err(|limit| format!("applying tactic `{name}` stopped at {limit}"))?;
     let [path] = paths.as_slice() else {
-        return Err(Refused(format!(
+        return Err(format!(
             "applying tactic `{name}` produced {} outcomes; an application has exactly one",
             paths.len()
-        )));
+        ));
     };
     let after = match &path.outcome {
         FunctionOutcome::Return { state, .. } => state.clone(),
         FunctionOutcome::RuntimeError(error) => {
-            return Err(Refused(format!(
-                "tactic `{name}` could not be applied: {error}"
-            )));
+            return Err(format!("tactic `{name}` could not be applied: {error}"));
         }
         FunctionOutcome::UndefinedBehavior(behavior) => {
-            return Err(Refused(format!(
+            return Err(format!(
                 "tactic `{name}` could not be applied: undefined behavior: {}",
                 behavior.description()
-            )));
-        }
-        FunctionOutcome::Throw { .. } | FunctionOutcome::VerificationDiverges => {
-            return Err(Refused(format!("tactic `{name}` has no ordinary outcome")));
-        }
-    };
-    for obligation in &path.obligations {
-        if !facts.contains(&obligation.proposition) {
-            return Err(TacticApplicationRefusal::MissingRequirement(
-                obligation.proposition.clone(),
-                obligation.context.clone(),
             ));
         }
-    }
+        FunctionOutcome::Throw { .. } | FunctionOutcome::VerificationDiverges => {
+            return Err(format!("tactic `{name}` has no ordinary outcome"));
+        }
+    };
     Ok(TacticRuleTransition {
         state: *after,
         facts: path.facts.clone(),
+        obligations: path.obligations.clone(),
         next_kernel_variable: budget.next_kernel_variable(),
     })
 }
@@ -3584,38 +3563,57 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        // Each successfully lowered span bounds the bytes it can affect.
-        // For an undecided guard, the whole span is still a safe bound.
-        // An unnamed projection provides no span a caller can separate.
+        // An unnamed byte projection can still have a checked resource
+        // bound. Separate that bound from the entire retained borrow frame.
         let caller_borrows = caller_state.borrow_ledger();
-        if let Some(ledger) = caller_borrows.filter(|ledger| ledger.has_active_memory_borrows())
+        let first_write_ordinal = interface.contract_requires().len();
+        let mut write_requirements = if let Some(ledger) =
+            caller_borrows.filter(|ledger| ledger.has_active_memory_borrows())
             && transfer
                 .memory_effects
                 .iter()
                 .any(MemoryRange::is_unnamed_footprint)
         {
-            paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::UnboundedWriteWithLiveView {
-                    callee: name.to_owned(),
-                    effect_source: transfer.unbounded_write_source.take(),
-                    protected: ledger.single_protected_range().map(Box::new),
-                }),
-                facts,
-                obligations,
-            ));
-            continue;
-        }
-        let mut write_requirements = verified_call_borrow_requirements(
-            caller_borrows,
-            &transfer.memory_effects,
-            call_site,
-            interface.contract_requires().len(),
-            if suspended.is_some() {
-                CallBorrowEffect::WorkerWrite
-            } else {
-                CallBorrowEffect::CallWrite
-            },
-        );
+            let Some(requirement) = transfer
+                .resource_effect_bound
+                .as_ref()
+                .filter(|_| {
+                    suspended.is_none()
+                        && interface.aggregate_return_mode() != AggregateReturnMode::Construction
+                        && interface.construction_parameter().is_none()
+                })
+                .and_then(|bound| ledger.resource_access_requirement(bound))
+            else {
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::UnboundedWriteWithLiveView {
+                        callee: name.to_owned(),
+                        effect_source: transfer.unbounded_write_source.take(),
+                        protected: ledger.single_protected_range().map(Box::new),
+                    }),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            };
+            vec![call_borrow_requirement(
+                requirement,
+                &Arc::new(call_site()),
+                first_write_ordinal,
+                CallBorrowEffect::CallWrite,
+            )]
+        } else {
+            verified_call_borrow_requirements(
+                caller_borrows,
+                &transfer.memory_effects,
+                call_site,
+                first_write_ordinal,
+                if suspended.is_some() {
+                    CallBorrowEffect::WorkerWrite
+                } else {
+                    CallBorrowEffect::CallWrite
+                },
+            )
+        };
         // A checked mutex-use call may execute runtime lock/unlock operations.
         // Their representation writes are authorized by the selected use
         // transfer, not by the contract's ordinary mutable footprint. Keep
@@ -5434,6 +5432,19 @@ fn verified_call_borrow_requirements(
         return Vec::new();
     }
     let site = Arc::new(call_site());
+    requirements
+        .map(|(index, requirement)| {
+            call_borrow_requirement(requirement, &site, first_ordinal + index, effect)
+        })
+        .collect()
+}
+
+fn call_borrow_requirement(
+    requirement: Proposition,
+    site: &Arc<CallRequirementSite>,
+    ordinal: usize,
+    effect: CallBorrowEffect,
+) -> ProofObligation {
     let context = match effect {
         CallBorrowEffect::CallWrite => "verified call write separation",
         CallBorrowEffect::WorkerWrite => "suspended worker write separation",
@@ -5441,26 +5452,22 @@ fn verified_call_borrow_requirements(
         CallBorrowEffect::CallRetirement => "verified call allocation retirement separation",
         CallBorrowEffect::WorkerRetirement => "suspended worker allocation retirement separation",
     };
-    requirements
-        .map(|(index, requirement)| {
-            let obligation = ProofObligation::verification_condition(requirement);
-            let obligation = match effect {
-                CallBorrowEffect::CallWrite
-                | CallBorrowEffect::WorkerWrite
-                | CallBorrowEffect::MutexWrite => obligation.with_live_view_write(),
-                CallBorrowEffect::CallRetirement | CallBorrowEffect::WorkerRetirement => obligation,
-            };
-            obligation
-                .with_call_requirement_site(Arc::new(CallRequirementSource::new(
-                    site.clone(),
-                    first_ordinal + index,
-                    None,
-                    false,
-                    None,
-                )))
-                .with_context(context)
-        })
-        .collect()
+    let obligation = ProofObligation::verification_condition(requirement);
+    let obligation = match effect {
+        CallBorrowEffect::CallWrite
+        | CallBorrowEffect::WorkerWrite
+        | CallBorrowEffect::MutexWrite => obligation.with_live_view_write(),
+        CallBorrowEffect::CallRetirement | CallBorrowEffect::WorkerRetirement => obligation,
+    };
+    obligation
+        .with_call_requirement_site(Arc::new(CallRequirementSource::new(
+            site.clone(),
+            ordinal,
+            None,
+            false,
+            None,
+        )))
+        .with_context(context)
 }
 
 fn refresh_call_written_locals(
@@ -9739,6 +9746,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
 }
 
 mod contract_refinement;
+pub(crate) use contract_refinement::ContractRefinementPreparationError;
 use contract_refinement::*;
 
 #[cfg(test)]
@@ -10478,8 +10486,10 @@ fn apply_verified_heap_allocation_delta(
                     RuntimeError::InvalidFree(InvalidFree::NonHeapPointer),
                 ))?;
         }
+        // The caller's retained frame was just checked separate from the
+        // allocation's whole extent, so the free keeps what it covers.
         memory = memory
-            .free_heap_block(&base, assumptions)
+            .free_heap_block_with_owned_frame(&base, assumptions, &preserved)
             .map_err(|error| {
                 VerifiedAllocationDeltaError::Runtime(RuntimeError::InvalidFree(error))
             })?;
@@ -11852,12 +11862,8 @@ pub(crate) fn guard_contract_refusal(
 }
 
 fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
-    ResourceFact::own_memory(MemoryRange::new_with_element_width(
-        slot,
-        MachineTerm::constant(0),
-        MachineTerm::constant(layout.size_bytes()),
-        1,
-    ))
+    // A symbolic struct's storage is its whole object, `sizeof(S)` bytes.
+    ResourceFact::own_memory(MemoryRange::object(slot, layout.size()))
 }
 
 fn with_private_aggregate_parameter_owners(
@@ -13333,11 +13339,10 @@ fn initialize_produced_memory(
                 }
             }
             None if opaque_output
-                && byte_span == ProgramType::Int32.byte_width()
                 && range.element_width() == byte_span
-                && ProgramPoint::supports_local_call_word(&start) =>
+                && ProgramPoint::supports_local_call_output(&start) =>
             {
-                memory = memory.with_initialized_call_word(&start);
+                memory = memory.with_initialized_call_output(&start, byte_span);
             }
             None => memory = memory.with_initialized_object(&start, byte_span),
         }
@@ -14455,6 +14460,16 @@ pub(super) fn prepare_function_contract_entry_state_with_values(
             function.name()
         ))));
     };
+    prepare_bound_contract_entry_state(caller_state, function, callee_state, assumptions, budget)
+}
+
+pub(super) fn prepare_bound_contract_entry_state(
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    callee_state: ExecutionState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<ExecutionState, RuntimeError>> {
     let transfer = match crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
@@ -16492,7 +16507,7 @@ pub(super) fn expand_composite_resource_fact(
 pub(crate) fn checked_composite_projection_evidence(
     viewed: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
     // Projection checks the selected head alone. Checked construction attaches
@@ -16503,13 +16518,8 @@ pub(crate) fn checked_composite_projection_evidence(
         .ok()?;
     #[cfg(test)]
     head.observe_composite_context();
-    let (_, children, _) = expand_composite_resource_fact_with_children(
-        &head,
-        viewed,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    )?;
+    let (_, children, _) =
+        expand_composite_resource_fact_with_children(&head, viewed, definitions, at, assumptions)?;
     CompositeProjectionEvidence::from_checked_expansion(viewed.clone(), children)
 }
 
@@ -19367,7 +19377,6 @@ fn resource_clause_supply_with_fact(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> (ResourceContext, Vec<ResourceFact>) {
-    let memory = state.memory();
     let mut added = Vec::new();
     if !supply.facts().contains(&fact) {
         supply = supply.unchecked_with_fact(fact.clone());
@@ -19397,6 +19406,7 @@ fn resource_clause_supply_with_fact(
             added.push(view);
         }
     }
+    let at = state.program_point();
     let mut pending = VecDeque::from([fact]);
     let mut seen = BTreeSet::new();
     while let Some(composite) = pending.pop_front() {
@@ -19408,7 +19418,7 @@ fn resource_clause_supply_with_fact(
             &expansion_context,
             &composite,
             definitions,
-            &crate::kernel::ProgramPoint::of_memory(memory),
+            &at,
             assumptions,
         ) else {
             continue;

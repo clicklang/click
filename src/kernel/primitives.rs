@@ -2417,7 +2417,6 @@ pub struct Pointer {
 
 #[derive(Clone, Debug, Default)]
 struct PointerQualifiers {
-    volatile: bool,
     constant: bool,
     bounds: Option<SubobjectBounds>,
     bounds_known: bool,
@@ -2435,7 +2434,6 @@ struct PointerQualifiers {
 #[derive(PartialEq, Eq)]
 pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
     program_type: ProgramType,
-    volatile: bool,
     constant: bool,
     bounds_known: bool,
     declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
@@ -2762,7 +2760,6 @@ impl Pointer {
     pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
         RetainedPointerMetadata {
             program_type: self.program_type,
-            volatile: self.pointee_volatile(),
             constant: self.pointee_constant(),
             bounds_known: self.bounds_are_known(),
             declared_class: self
@@ -2771,10 +2768,6 @@ impl Pointer {
                 .and_then(|q| q.object_class.as_ref()),
             evidence: self.object_origin_evidence(),
         }
-    }
-
-    pub(crate) fn pointee_volatile(&self) -> bool {
-        self.qualifiers.as_ref().is_some_and(|q| q.volatile)
     }
 
     pub(crate) fn pointee_constant(&self) -> bool {
@@ -2789,14 +2782,6 @@ impl Pointer {
             program_type,
             qualifiers: self.qualifiers,
         }
-    }
-
-    pub(crate) fn with_pointee_volatile(mut self, pointee_volatile: bool) -> Self {
-        if self.pointee_volatile() != pointee_volatile {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).volatile =
-                pointee_volatile;
-        }
-        self
     }
 
     pub(crate) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
@@ -2974,7 +2959,7 @@ impl Pointer {
 
 impl Pointer {
     /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, whether the pointee is volatile, and the subobject it
+    /// viewed through, and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
     /// fresh scalar id, never a structural resource or ledger key.
     /// Two values at one address with different bounds are
@@ -2987,7 +2972,6 @@ impl Pointer {
         &Address,
         &ProgramType,
         bool,
-        bool,
         Option<&Address>,
         Option<&SubobjectBounds>,
     ) {
@@ -2995,7 +2979,6 @@ impl Pointer {
             &self.address,
             &self.provenance,
             &self.program_type,
-            self.pointee_volatile(),
             self.bounds_are_known(),
             if self.bounds_are_known() {
                 None
@@ -3964,6 +3947,11 @@ pub enum ProgramExpression {
         /// contract cast prints back as `(struct name *)` and so the parser
         /// resolves `->field` through the cast result.
         pointee_struct: Option<String>,
+        /// `sizeof` the struct `pointee_struct` names, when the cast's
+        /// producer has its layout. A pointer to a struct's initial member,
+        /// converted to the struct's type, points to the struct (C11
+        /// 6.7.2.1p15), so the result's array object is that struct's bytes.
+        pointee_struct_size: Option<u32>,
         /// Whether the cast result points at a volatile pointer-valued cell.
         /// This carries the C qualifier in `T * volatile *` into a following
         /// dereference without confusing it with volatile `T` storage.
@@ -6881,6 +6869,9 @@ pub struct FunctionContractInterface {
     /// declared return type (`design/effective-types.md`).
     pub(crate) return_pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) return_aggregate_layout: Option<AggregateLayout>,
+    /// The contract states `allocates(result, n)`: a call's result is a
+    /// fresh heap block, distinct from every block that existed before.
+    pub(crate) fresh_result_allocation: bool,
     pub(crate) aggregate_return_mode: AggregateReturnMode,
     pub(crate) construction_parameter: Option<(usize, AggregateLayout)>,
     pub(crate) exceptional_signature: ExceptionalSignature,
@@ -8221,6 +8212,9 @@ pub enum RuntimeError {
     /// whose fields do not fit its variant. The message says which.
     EnumVariant(String),
     IndeterminatePointeeType,
+    UnsupportedPointerSubtractionOffsets,
+    UnsupportedPointerComparisonOffsets,
+    UnsupportedFunctionPointerOffset,
     WrongArity {
         expected: usize,
         actual: usize,
@@ -8628,6 +8622,12 @@ pub struct ExecutionBudget {
     /// why, and this is the why (a load of the wrong width, a read no
     /// resource permits). Diagnostic only: no evaluation reads it back.
     pub(super) dropped_runtime_error: Option<RuntimeError>,
+    /// The first undefined behavior a specification evaluation dropped while
+    /// every path of some sub-evaluation ended in it and none in a runtime
+    /// error: a C operand whose operation is undefined wherever it is read,
+    /// such as `y / x` read where `x == 0`. Diagnostic only, as
+    /// [`Self::dropped_runtime_error`] is.
+    pub(super) dropped_undefined_behavior: Option<UndefinedBehavior>,
     /// The first constant element range a specification lowering dropped
     /// because it is not a valid 32-bit byte span: reversed, or wider than
     /// `u32::MAX` bytes once scaled. Such a range prunes its own evaluation
@@ -10241,9 +10241,9 @@ pub enum MemoryDerivation {
         base: SharedMemory,
         pointer: Address,
         bytes: u32,
-        /// A checked call output supplies this complete word even when
-        /// there is no known value to put in the cell.
-        call_word: bool,
+        /// The kind of complete integer cell initialized by a checked
+        /// call output whose value is unknown.
+        call_output: Option<LoadKind>,
     },
     /// `base` with some cached cell values forgotten at one program point:
     /// the write path narrows the cell map before storing

@@ -72,6 +72,27 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
             ],
         );
         let condition = written_guard(BooleanOperandView::Shared(&guard)).unwrap();
+        let (_, _, operands) = BooleanOperandView::Shared(&guard).comparison().unwrap();
+        let complementary = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            ty,
+            CompareRelation::GreaterThan,
+            operands,
+        );
+        let complementary = PureFactStore::from_ordered(&[complementary.truth_claim(true)]);
+        let narrow = MachineIntegerType::UInt8;
+        let narrow_arm =
+            KernelTerm::machine_cast_shared(MachineCastSpelling::Generic, ty, narrow, root.clone());
+        let narrow_conditional = KernelTerm::machine_if_shared(
+            narrow,
+            [guard.clone(), narrow_arm.clone(), narrow_arm.clone()],
+        );
+        let narrow_comparison = StoredConditionTerm::from_root(KernelTerm::boolean_comparison_raw(
+            narrow,
+            CompareRelation::Equal,
+            [narrow_conditional, narrow_arm],
+        ))
+        .unwrap();
+        let narrow_goal = Proposition::condition_is(narrow_comparison.clone(), true);
         let conditional = KernelTerm::machine_if_shared(ty, [guard, root.clone(), root]);
         let conditional =
             IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, conditional).unwrap());
@@ -87,7 +108,13 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
                 assert!(known_bridge_leaf(&operation_goal, &|p| facts.pure_known_available(p)));
                 assert!(!known_bridge_leaf(&operation_goal, &|p| missing.pure_known_available(p)));
                 assert!(known_bridge_leaf(&conditional_goal, &|p| facts.pure_known_available(p)));
+                assert!(known_bridge_leaf(&conditional_goal, &|p| complementary
+                    .pure_known_available(p)));
                 assert!(!known_bridge_leaf(&conditional_goal, &|p| missing.pure_known_available(p)));
+                assert!(known_bridge_leaf(&narrow_goal, &|p| complementary.pure_known_available(p)));
+                assert!(
+                    !narrow_machine_arm(&narrow_comparison, &|p| missing.pure_known_available(p))
+                );
             }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);

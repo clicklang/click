@@ -152,21 +152,20 @@ fn contract_resource_guards(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<Vec<Proposition>, ContractEntryRefusal> {
-    let refused = || {
-        ContractEntryRefusal::Setup(
-            "could not enumerate the undecided resource guards of the contract entry".into(),
+) -> Result<Vec<Proposition>, ContractClosingRefusal> {
+    let undecidable_guard = || {
+        ContractClosingRefusal::Incomplete(
+            "could not establish the conditions needed to evaluate a resource guard".into(),
         )
     };
-    let stopped = |limit: ExecutionLimit| {
-        ContractEntryRefusal::Setup(format!(
-            "enumerating contract entry resource guards stopped at {}",
-            limit.describe(),
-        ))
+    let invalid_guard_binding = || {
+        ContractClosingRefusal::Internal(
+            "the resource guard does not match its checked definition or arguments".into(),
+        )
     };
     let entry_state =
         program_function_entry_state(caller_state, function, arguments).ok_or_else(|| {
-            ContractEntryRefusal::Internal(
+            ContractClosingRefusal::Internal(
                 "could not bind arguments while enumerating contract entry resource guards".into(),
             )
         })?;
@@ -178,12 +177,13 @@ fn contract_resource_guards(
         &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
-    .map_err(stopped)?
+    .map_err(ContractClosingRefusal::from_stop)?
     .map_err(|error| {
-        ContractEntryRefusal::from_resource_error(
-            "could not evaluate resources while enumerating contract entry guards",
-            &error,
-        )
+        if error.is_contract_entry_resource_error() {
+            ContractClosingRefusal::InvalidContract(describe_certification_runtime_error(&error))
+        } else {
+            ContractClosingRefusal::Runtime(error)
+        }
     })?;
     let mut guards = Vec::new();
     for resource in required_resources.facts() {
@@ -198,12 +198,12 @@ fn contract_resource_guards(
             .composite_resource_definitions()
             .iter()
             .find(|definition| definition.name() == name)
-            .ok_or_else(refused)?;
+            .ok_or_else(invalid_guard_binding)?;
         let Some(condition) = definition.condition() else {
             continue;
         };
         if definition.parameters().len() != resource_arguments.len() {
-            return Err(refused());
+            return Err(invalid_guard_binding());
         }
         let mut condition_state = ExecutionState::at_state(&entry_state)
             .with_resource_context(required_resources.clone());
@@ -212,9 +212,9 @@ fn contract_resource_guards(
             .iter()
             .zip(resource_arguments.iter())
         {
-            let value = value.as_program_value().ok_or_else(refused)?;
+            let value = value.as_program_value().ok_or_else(invalid_guard_binding)?;
             if parameter.program_type() != value.program_type() {
-                return Err(refused());
+                return Err(invalid_guard_binding());
             }
             condition_state.locals.set_typed(
                 parameter.binding_name().clone(),
@@ -233,14 +233,14 @@ fn contract_resource_guards(
             &lowering_assumptions,
             &mut budget,
         )
-        .map_err(stopped)?;
+        .map_err(ContractClosingRefusal::from_stop)?;
         let [path] = paths.as_slice() else {
-            return Err(refused());
+            return Err(undecidable_guard());
         };
         if !path.obligations.iter().all(|obligation| {
             crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
         }) {
-            return Err(refused());
+            return Err(undecidable_guard());
         }
         if !guards.contains(&path.proposition) {
             guards.push(path.proposition.clone());
@@ -266,14 +266,14 @@ fn contract_resource_guards(
             &lowering_assumptions,
             &mut budget,
         )
-        .map_err(stopped)?;
+        .map_err(ContractClosingRefusal::from_stop)?;
         let [path] = paths.as_slice() else {
-            return Err(refused());
+            return Err(undecidable_guard());
         };
         if !path.obligations.iter().all(|obligation| {
             crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
         }) {
-            return Err(refused());
+            return Err(undecidable_guard());
         }
         if !guards.contains(&path.proposition) {
             guards.push(path.proposition.clone());
@@ -1067,6 +1067,15 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::IndeterminatePointeeType => {
             "a pointer operation has no known pointee type".to_string()
         }
+        RuntimeError::UnsupportedPointerSubtractionOffsets => {
+            "Click does not yet support pointer subtraction with these offsets".into()
+        }
+        RuntimeError::UnsupportedPointerComparisonOffsets => {
+            "Click does not yet support ordered pointer comparison with these offsets".into()
+        }
+        RuntimeError::UnsupportedFunctionPointerOffset => {
+            "Click does not support adding a byte offset to a function pointer".into()
+        }
         RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")
         }
@@ -1335,12 +1344,18 @@ pub struct ContractEntry {
 
 #[derive(Clone, Debug)]
 struct ContractEntryResources {
+    argument_state: ExecutionState,
     state: ExecutionState,
     required: ResourceContext,
     checked: Arc<[crate::kernel::functions::CheckedResourceFact]>,
 }
 
 impl ContractEntry {
+    /// The bound argument frame used to evaluate this entry.
+    pub(crate) fn argument_state(&self) -> &ExecutionState {
+        &self.resources.argument_state
+    }
+
     /// The entry facts in the order the contract yields them.
     pub fn facts(&self) -> &[ContractEntryFact] {
         &self.facts
@@ -1538,35 +1553,26 @@ fn program_function_contract_entry_facts(
         return Err(ContractEntryRefusal::InvalidResource(message.to_owned()));
     }
     let mut budget = ExecutionBudget::beside_live_state();
-    let Some(mut entry_state) = program_function_entry_state(caller_state, function, arguments)
+    let Some(argument_state) = program_function_entry_state(caller_state, function, arguments)
     else {
         return Err(ContractEntryRefusal::Internal(
             "could not build the contract entry state from the call arguments".into(),
         ));
     };
+    let mut entry_state = argument_state.clone();
     if function
         .parameters()
         .iter()
         .any(|parameter| parameter.aggregate_layout().is_some())
     {
-        let argument_values = arguments
-            .iter()
-            .map(|argument| match argument {
-                ProgramExpression::Value(value) => Some(value.clone()),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| {
-                ContractEntryRefusal::Internal(
-                    "an aggregate contract argument is not a value at the contract entry".into(),
-                )
-            })?;
-        // As in the entry-resource pass below, the callee's own clauses
-        // establish the spans they name while its proof entry is opened.
-        entry_state = match prepare_function_contract_entry_state_with_values(
+        // Resource transfer uses the same argument frame, viewed without the
+        // proof's unfolded instance fields. The callee's own clauses provide
+        // the spans while the entry resources are prepared.
+        entry_state.instance_field_scope = ResourceContext::new();
+        entry_state = match crate::kernel::functions::prepare_bound_contract_entry_state(
             caller_state,
             function,
-            &argument_values,
+            entry_state,
             &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
@@ -2313,6 +2319,7 @@ fn program_function_contract_entry_facts(
         assumptions,
         entry_facts.0,
         ContractEntryResources {
+            argument_state,
             state: entry_state,
             required: required_resources,
             checked: required_entry_clauses.into(),

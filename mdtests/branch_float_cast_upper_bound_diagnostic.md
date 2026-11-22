@@ -13,7 +13,6 @@ int32 positive(double d) {
 verifying "branch_float_cast.c";
 
 int32 positive(double d) {
-    requires isfinite(d);
     requires d >= float64_from_bits(0xc1e0000000000000u64);
     ensures result >= 0;
 } by {

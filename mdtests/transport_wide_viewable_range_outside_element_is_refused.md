@@ -27,10 +27,7 @@ uint64 f(uint8 bytes[], uint64 n) {
             have 0u64 <= k by { normalize(); }
             have to_integer(k) < to_integer(n + 1u64) by { known(); }
             have contains(memory(bytes[0u64..n + 1u64]), memory(bytes[k])) by {
-                apply(click::separation::contains_element(bytes, 0u64, n + 1u64, k)) using {
-                    0u64 <= k;
-                    to_integer(k) < to_integer(n + 1u64);
-                };
+                apply(click::separation::contains_element(bytes, 0u64, n + 1u64, k));
             }
             known();
         }

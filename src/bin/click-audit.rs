@@ -51,7 +51,7 @@ const DEFAULT_PERFORMANCE_SLACK: usize = 10_000;
 const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
 const RUN_LIMIT_EXHAUSTED: &str = "whole-run time limit exhausted";
 const USAGE: &str = "\
-usage: click audit [expansion|raise-lower|fact-stability] [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
+usage: click audit [expansion|raise-lower|fact-stability|legacy-walk] [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
 
 Each audit checks a promise Click makes about every proof in the selected
 proof containers, and ends with one headline: how many of the items it
@@ -61,11 +61,13 @@ checked fail.
   raise-lower     every fact and goal a proof step holds raises to Surface
                   syntax that lowers back to the same term
   fact-stability  lowering never depends on the facts available
+  legacy-walk     counts the reads still named by the legacy version walk,
+                  by calling site and storage; it runs only when named
 
-With no audit named, all three run on the same path and the run ends with
-their headlines. The lowering audits verify each container once with their
-records on, writing `raise-lower.tsv` and `fact-stability.tsv` under
-`--records DIR` (default `target/click-audit`). The options below are the
+With no audit named, the first three run on the same path and the run ends
+with their headlines. The lowering audits and `legacy-walk` verify each
+container once with their records on, writing `raise-lower.tsv`,
+`fact-stability.tsv` or `legacy-walk.tsv` under `--records DIR` (default `target/click-audit`). The options below are the
 expansion audit's.
 
 The expansion audit inventories smart tactics without executing proofs, then audits each
@@ -545,6 +547,7 @@ impl AuditKind {
             "expansion" => AuditKind::Expansion,
             "raise-lower" => AuditKind::Lowering(LoweringAudit::RaiseLower),
             "fact-stability" => AuditKind::Lowering(LoweringAudit::FactStability),
+            "legacy-walk" => AuditKind::Lowering(LoweringAudit::LegacyWalk),
             _ => return None,
         })
     }

@@ -37,6 +37,7 @@ pub(crate) fn parse(source: &str) -> Option<syn::File> {
 pub(crate) struct FunctionSource {
     pub(crate) statements: Vec<SourceStatement>,
     pub(crate) compound_literals: BTreeMap<(Position, Position), u32>,
+    pub(crate) borrows: BTreeMap<(Position, Position), u32>,
 }
 
 /// The written statements and compound literal occurrences of the function that covers `at`.
@@ -52,46 +53,53 @@ pub(crate) fn function_source(file: &syn::File, at: Position) -> Option<Function
             &mut statements,
         );
     }
-    let mut literals = CompoundLiterals::default();
-    literals.visit_block(body);
+    let mut storage = StorageOccurrences::default();
+    storage.visit_block(body);
     Some(FunctionSource {
         statements,
-        compound_literals: literals.positions,
+        compound_literals: storage.literals,
+        borrows: storage.borrows,
     })
 }
 
 #[derive(Default)]
-struct CompoundLiterals {
-    positions: BTreeMap<(Position, Position), u32>,
+struct StorageOccurrences {
+    literals: BTreeMap<(Position, Position), u32>,
+    borrows: BTreeMap<(Position, Position), u32>,
 }
 
-impl CompoundLiterals {
-    fn add(&mut self, expression: &impl Spanned) {
+impl StorageOccurrences {
+    fn add(positions: &mut BTreeMap<(Position, Position), u32>, expression: &impl Spanned) {
         let span = expression.span();
         let start = span.start();
         let end = span.end();
-        let ordinal = self.positions.len() as u32;
-        self.positions.insert(
+        let ordinal = positions.len() as u32;
+        positions.insert(
             ((start.line, start.column), (end.line, end.column)),
             ordinal,
         );
     }
 }
 
-impl<'ast> Visit<'ast> for CompoundLiterals {
+impl<'ast> Visit<'ast> for StorageOccurrences {
     fn visit_expr_array(&mut self, expression: &'ast syn::ExprArray) {
-        self.add(expression);
+        Self::add(&mut self.literals, expression);
         syn::visit::visit_expr_array(self, expression);
     }
 
     fn visit_expr_repeat(&mut self, expression: &'ast syn::ExprRepeat) {
-        self.add(expression);
+        Self::add(&mut self.literals, expression);
         syn::visit::visit_expr_repeat(self, expression);
     }
 
     fn visit_expr_struct(&mut self, expression: &'ast syn::ExprStruct) {
-        self.add(expression);
+        Self::add(&mut self.literals, expression);
         syn::visit::visit_expr_struct(self, expression);
+    }
+
+    fn visit_expr_reference(&mut self, expression: &'ast syn::ExprReference) {
+        Self::add(&mut self.borrows, expression);
+        syn::visit::visit_expr_reference(self, expression);
     }
 
     fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}

@@ -81,7 +81,6 @@ fn contract_interface_argument_views(
         let value = coerce_contract_argument_without_obligations(value, parameter)
             .expect("function arguments were type-checked before building contract views");
         let value = value
-            .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
         state.locals.set_typed_with_all_qualifiers(
@@ -505,6 +504,22 @@ pub(super) fn symbolic_contract_result(
             interface.return_type(),
         )
         .with_pointer_pointee_constant(interface.return_pointee_is_constant());
+    }
+    // A contract that `allocates(result, n)` returns a block the call
+    // creates, so the result takes a heap identity, which
+    // `AddressBase::proven_distinct` separates from every other block, as
+    // it does `malloc`'s. Identities come from the kernel's one variable
+    // allocator, so no other block has this one.
+    if interface.fresh_result_allocation() && interface.return_type().is_pointer() {
+        return ProgramValue::typed_pointer(
+            Address {
+                base: AddressBase::Heap(variable.0),
+                offset: AddressOffset::Constant(0),
+            },
+            interface.return_type(),
+        )
+        .with_pointer_pointee_constant(interface.return_pointee_is_constant())
+        .with_pointer_declared_object_class(interface.return_pointee_class());
     }
     symbolic_call_result(interface.return_type(), variable)
         .complete_word(Address::symbolic(variable))
@@ -1075,7 +1090,6 @@ fn bind_program_function_arguments_impl(
             continue;
         }
         let value = coerce_program_function_argument_without_obligations(value, parameter)?
-            .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
         if address_taken_parameters.contains(parameter.binding_name()) {
@@ -1250,7 +1264,6 @@ pub(super) fn bind_contract_arguments(
         let root = roots.get(index);
         let value = if let Some(value) = value {
             let value = coerce_program_function_argument_without_obligations(value, parameter)?
-                .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
                 .with_pointer_pointee_constant(parameter.pointee_is_constant())
                 .with_pointer_declared_object_class(parameter.pointee_class());
             match root {
@@ -1650,7 +1663,6 @@ mod pointer_return_tests {
             Address::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
         )
-        .with_pointee_volatile(true)
         .with_pointee_constant(true);
         let root = KernelTerm::shared_pointer_call(
             KernelTerm::checked_call(
@@ -1698,7 +1710,6 @@ mod pointer_return_tests {
         let bound = state.locals.get(CONTRACT_RESULT).unwrap();
         assert!(bound.shared().is_some());
         assert!(bound.pointer().unwrap().pointee_constant());
-        assert!(!bound.pointer().unwrap().pointee_volatile());
         state.locals.set_typed(
             "mutable",
             ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),

@@ -18,8 +18,8 @@
 //! and emptied when a `VerificationSession` starts, because a field variable's
 //! meaning belongs to the verification that issued it.
 //!
-//! Nothing reads this on a successful path. It is diagnostics only: no rule, no
-//! premise and no name a term carries depends on it.
+//! Diagnostics and proof expansion use this provenance to recover a source
+//! name. No kernel rule or premise depends on it.
 
 use crate::kernel::primitives::{
     AlgebraicTerm, AlgebraicTermNode, InstanceId, IntegerTerm, MachineTerm, Variable,
@@ -79,8 +79,10 @@ pub(crate) enum ModelMint {
     /// knows of it only what the interface's facts state.
     Join,
     /// The contract's own entry model, which `old(..)` names. This one is
-    /// minted on the surface side, where the binder is elaborated.
-    ContractEntry,
+    /// minted on the surface side, where the binder is elaborated. Keep its
+    /// spelling with the variable because a resource identity can be reused
+    /// by a different binder.
+    ContractEntry { owner: Arc<str> },
 }
 
 /// One fresh model-field variable: which instance's field it is, and why it
@@ -93,6 +95,15 @@ pub(crate) struct ModelFieldOrigin {
     pub(crate) field: Arc<str>,
     pub(crate) field_index: usize,
     pub(crate) minted_by: ModelMint,
+}
+
+impl ModelFieldOrigin {
+    pub(crate) fn owner_spelling(&self) -> Option<Arc<str>> {
+        match &self.minted_by {
+            ModelMint::ContractEntry { owner } => Some(owner.clone()),
+            _ => registered_instance_spelling(self.identity),
+        }
+    }
 }
 
 thread_local! {
@@ -178,10 +189,10 @@ pub(crate) fn registered_instance_spelling(identity: InstanceId) -> Option<Arc<s
 /// reader could search for.
 pub(crate) fn model_field_surface(variable: Variable) -> Option<String> {
     let origin = registered_model_field_origin(variable)?;
-    let owner = registered_instance_spelling(origin.identity)?;
+    let owner = origin.owner_spelling()?;
     let field = format!("{owner}.{}", origin.field);
     Some(match origin.minted_by {
-        ModelMint::ContractEntry => format!("old({field})"),
+        ModelMint::ContractEntry { .. } => format!("old({field})"),
         _ => field,
     })
 }

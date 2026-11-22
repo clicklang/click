@@ -2,9 +2,8 @@
 
 The negative twin of
 [`every_untouched_global_reads_its_entry_value.md`](every_untouched_global_reads_its_entry_value.md).
-`h` is the second global the function declares and nothing writes it, so the
-refused claim names its read at function entry, `old(h[0])`, as it would for
-the first global, rather than a read of an unnamed state.
+`h` is the second global the function declares. Its current read still uses
+the entry version, so the refused claim can name it directly as `h[0]`.
 
 ```c filename=an_untouched_later_global_spells_its_entry_read.c
 int32 g;
@@ -24,5 +23,5 @@ int32 read_h() {
 ```
 
 ```expect
-fail: left side evaluated to old(h[0]), right side evaluated to 3
+fail: left side evaluated to h[0], right side evaluated to 3
 ```

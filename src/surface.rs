@@ -705,12 +705,12 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/c/builtins.interface.click"),
     ),
     (
-        "library/c/string.interface.click",
-        include_str!("../library/c/string.interface.click"),
-    ),
-    (
         "library/integer.click",
         include_str!("../library/integer.click"),
+    ),
+    (
+        "library/c/string.interface.click",
+        include_str!("../library/c/string.interface.click"),
     ),
     (
         "library/c/stdarg.click",
@@ -1778,6 +1778,9 @@ pub struct FunctionBlock {
     /// parameters: a call supplies them from the instance a clause selects
     /// or the call map names, and the body is proved for every value.
     witness_count: usize,
+    /// The block's `allocates(result, n)`: the returned allocation is one
+    /// the call creates, a block no earlier pointer reaches.
+    allocates_result: bool,
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -6180,11 +6183,6 @@ pub enum ProofTactic {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
     },
-    ApplyInductionUsing {
-        hypothesis: String,
-        arguments: Vec<ContractExpression>,
-        premises: Vec<ClickProposition>,
-    },
     /// Apply an established implication, proving its antecedents.
     ApplyFact(ClickProposition),
     ApplyFactUsing {
@@ -6357,9 +6355,7 @@ pub enum SmartTacticKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ElidedArgument {
     /// `apply(theorem(args))`: the theorem's premises.
-    TheoremPremises,
     /// `apply(ih(m))`: the hypothesis's premises.
-    InductionPremises,
     /// `transport(P, Q)`: the frame evidence.
     FrameEvidence,
 }
@@ -6368,8 +6364,6 @@ impl ElidedArgument {
     /// The simple tactic the elided form is, once its argument is written.
     pub fn written_form(self) -> SimpleTactic {
         match self {
-            Self::TheoremPremises => SimpleTactic::ApplyTheorem,
-            Self::InductionPremises => SimpleTactic::ApplyInduction,
             Self::FrameEvidence => SimpleTactic::FactTransport,
         }
     }
@@ -6548,31 +6542,16 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "apply-induction",
         syntax: "apply(ih(m))",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "apply-induction-using",
-        syntax: "apply(ih(m)) using",
         class: "simple",
     },
     PublicTacticForm {
         id: "apply-fact",
         syntax: "apply(fact)",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "apply-fact-using",
-        syntax: "apply(fact) using",
         class: "simple",
     },
     PublicTacticForm {
         id: "apply-theorem",
         syntax: "apply(theorem(args))",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "apply-theorem-using",
-        syntax: "apply(theorem(args)) using",
         class: "simple",
     },
     PublicTacticForm {
@@ -6836,16 +6815,11 @@ impl ProofTactic {
             }
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
-            Self::ApplyInduction { .. } => {
-                TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
-            }
-            Self::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-            Self::ApplyFact(_) | Self::ApplyTheorem(_) => {
-                TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
-            }
-            Self::ApplyFactUsing { .. } | Self::ApplyTheoremUsing { .. } => {
-                TacticClass::Simple(SimpleTactic::ApplyTheorem)
-            }
+            Self::ApplyInduction { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
+            Self::ApplyFact(_)
+            | Self::ApplyFactUsing { .. }
+            | Self::ApplyTheorem(_)
+            | Self::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
             Self::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
             Self::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
@@ -7487,6 +7461,10 @@ pub enum SpecialArithmeticNode {
         alignments: Vec<usize>,
         result: ClickProposition,
     },
+    FloatBound {
+        premise: usize,
+        result: ClickProposition,
+    },
     FloatReflexive {
         finite: usize,
         result: ClickProposition,
@@ -7747,7 +7725,8 @@ impl ProofWitness {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofLetSatisfy {
-    bindings: Vec<(String, ClickType)>,
+    // Range existentials infer a machine-integer type during lowering.
+    bindings: Vec<(String, Option<ClickType>)>,
     proposition: ClickProposition,
 }
 
@@ -7874,6 +7853,7 @@ pub(crate) struct ParameterNaming {
     pub(crate) parameters: std::sync::Arc<[crate::languages::interface::ImportedParameter]>,
     pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
     pointer_sources: BTreeMap<Address, usize>,
+    float_sources: BTreeMap<(ProgramType, Variable), usize>,
 }
 
 impl ParameterNaming {
@@ -7882,19 +7862,45 @@ impl ParameterNaming {
         arguments: &[ProgramExpression],
     ) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
+        let mut pointer_sources = BTreeMap::new();
+        let mut float_sources = BTreeMap::new();
+        for (index, argument) in arguments.iter().enumerate() {
+            match argument {
+                ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
+                    pointer_sources
+                        .entry(pointer.address().clone())
+                        .or_insert(index);
+                }
+                ProgramExpression::Value(
+                    value @ (ProgramValue::Float32(MachineTerm::Variable(variable))
+                    | ProgramValue::Float64(MachineTerm::Variable(variable))),
+                ) => {
+                    float_sources
+                        .entry((value.program_type(), *variable))
+                        .or_insert(index);
+                }
+                _ => {}
+            }
+        }
         Self {
             parameters: parameters.into(),
             arguments: arguments.into(),
-            pointer_sources: arguments.iter().enumerate().fold(
-                BTreeMap::new(),
-                |mut sources, (index, argument)| {
-                    if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
-                        sources.entry(pointer.address().clone()).or_insert(index);
-                    }
-                    sources
-                },
-            ),
+            pointer_sources,
+            float_sources,
         }
+    }
+
+    pub(crate) fn float_source(
+        &self,
+        ty: ProgramType,
+        variable: Variable,
+    ) -> Option<(
+        &crate::languages::interface::ImportedParameter,
+        &ProgramExpression,
+    )> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.float_sources.get(&(ty, variable))?;
+        Some((self.parameters.get(index)?, self.arguments.get(index)?))
     }
 
     pub(crate) fn pointer_source(
@@ -8791,6 +8797,7 @@ pub enum ProofKind {
 struct ReportDetail {
     /// The prepared program's accessor spellings, retained for lazy reports.
     model_accessors: Option<diagnostics::CapturedModelAccessors>,
+    implicit_step: Option<&'static str>,
     missing_tactic_requirement: Option<String>,
     /// Instantiated declared theorem prerequisite, for discovery diagnostics only.
     missing_theorem_requirement: Option<String>,
@@ -8819,10 +8826,13 @@ struct ReportDetail {
 }
 
 impl ReportDetail {
-    fn capture_model_accessors() -> Option<std::sync::Arc<Self>> {
-        diagnostics::CapturedModelAccessors::capture().map(|model_accessors| {
+    fn capture() -> Option<std::sync::Arc<Self>> {
+        let model_accessors = diagnostics::CapturedModelAccessors::capture();
+        let implicit_step = proof_trace::implicit_step();
+        (model_accessors.is_some() || implicit_step.is_some()).then(|| {
             std::sync::Arc::new(Self {
-                model_accessors: Some(model_accessors),
+                model_accessors,
+                implicit_step,
                 ..Self::default()
             })
         })
@@ -8964,13 +8974,11 @@ pub enum ProofRefusal {
     Tactic,
     UnsuccessfulSearch,
     ImplicitStatementSearch,
-    UnprovedGoal,
+    IncompleteProof,
     Contract,
     ContractEntry,
     ExecutionPrerequisite,
     Execution,
-    ContractExit,
-    ContractRefinement,
     Termination,
     DivergenceDeclaration,
     UnsupportedProof,
@@ -8981,13 +8989,11 @@ impl ProofRefusal {
         match self {
             Self::Tactic => "tactic error",
             Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
-            Self::UnprovedGoal => "unproved goal",
+            Self::IncompleteProof => "incomplete proof",
             Self::Contract => "contract error",
             Self::ContractEntry => "contract entry refused",
             Self::ExecutionPrerequisite => "execution prerequisite unmet",
             Self::Execution => "execution refused",
-            Self::ContractExit => "contract exit refused",
-            Self::ContractRefinement => "contract refinement refused",
             Self::Termination => "termination not established",
             Self::DivergenceDeclaration => "invalid divergence declaration",
             Self::UnsupportedProof => "unsupported proof",
@@ -9529,6 +9535,11 @@ impl ContractDefinition {
 }
 
 impl FunctionBlock {
+    /// Whether the block states `allocates(result, n)`.
+    pub(in crate::surface) fn allocates_result(&self) -> bool {
+        self.allocates_result
+    }
+
     /// Where the parser read this block's clauses.
     pub(in crate::surface) fn parsed_body(&self) -> &parser::DeclarationBody {
         &self.body
@@ -10807,7 +10818,7 @@ impl ClickError {
             diagnostic: None,
             search_failures: None,
             unresolved_requirement: None,
-            report_detail: ReportDetail::capture_model_accessors(),
+            report_detail: ReportDetail::capture(),
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -10837,7 +10848,7 @@ impl ClickError {
             diagnostic: Some(std::sync::Arc::new(diagnostic)),
             search_failures: None,
             unresolved_requirement: None,
-            report_detail: ReportDetail::capture_model_accessors(),
+            report_detail: ReportDetail::capture(),
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -11024,6 +11035,9 @@ impl ClickError {
             }
         }
         let mut context = Vec::new();
+        if let Some(step) = self.implicit_tactic_step() {
+            context.push(format!("refused by: implicit step ({step})"));
+        }
         if let Some(tactic) = self.failed_tactic {
             context.push(format!("tactic: {tactic}"));
         }
@@ -11262,6 +11276,15 @@ impl ClickError {
 
     pub fn kind(&self) -> ClickErrorKind {
         self.kind
+    }
+
+    /// The implicit proof operation that refused this tactic, if any.
+    pub fn implicit_tactic_step(&self) -> Option<&'static str> {
+        if self.proof_refusal() == Some(ProofRefusal::Tactic) {
+            self.report_detail.as_ref()?.implicit_step
+        } else {
+            None
+        }
     }
 
     /// The proof refusal the terminal report attributes to this error.

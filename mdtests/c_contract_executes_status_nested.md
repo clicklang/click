@@ -37,7 +37,7 @@ theorem lift(callback: int32 (*)(int32*, int32))
         unfold(Cell(cell));
         step(Raw);
         if result != 0 {
-            have cell[0] == item by { apply(result != 0 implies cell[0] == item) using { result != 0; }; }
+            have cell[0] == item by { apply(result != 0 implies cell[0] == item); }
             if item == 0 {
                 if item != 0 {
                     have cell[0] == 123;
@@ -54,7 +54,7 @@ theorem lift(callback: int32 (*)(int32*, int32))
             }
             fold(Cell(cell)); solve();
         } else {
-            have cell[0] == old(cell[0]) by { apply(result == 0 implies cell[0] == old(cell[0])) using { result == 0; }; }
+            have cell[0] == old(cell[0]) by { apply(result == 0 implies cell[0] == old(cell[0])); }
             fold(Cell(cell)); solve();
         }
     }

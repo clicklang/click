@@ -1028,6 +1028,7 @@ fn qualified_scalar_read(
             target_type: value_type,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: true,
             pointee_constant,
             explicit_qualification: false,
@@ -1060,8 +1061,7 @@ pub(super) fn unit_qualified_objects(
         if let Some(pointer_type) = global.interface_type().pointer_type() {
             let pointer = SymbolicMemory::global_pointer(global.kernel_name());
             let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
-                .with_pointer_pointee_constant(global.is_constant())
-                .with_pointer_pointee_volatile(global.is_volatile());
+                .with_pointer_pointee_constant(global.is_constant());
             let expression = qualified_scalar_read(
                 address,
                 global.interface_type().to_kernel_type(),
@@ -1172,8 +1172,7 @@ pub(super) fn unit_qualified_objects(
             if let Some(pointer_type) = local.interface_type().pointer_type() {
                 let pointer = SymbolicMemory::static_pointer(function.name(), local.kernel_name());
                 let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
-                    .with_pointer_pointee_constant(local.is_constant())
-                    .with_pointer_pointee_volatile(local.is_volatile());
+                    .with_pointer_pointee_constant(local.is_constant());
                 let expression = qualified_scalar_read(
                     address,
                     local.interface_type().to_kernel_type(),

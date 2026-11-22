@@ -33,7 +33,7 @@ theorem rewritten_identity(x: int32, y: int32) {
 
     ensures x + 1 == y + 1 by {
         rewrite(x, y);
-        normalize();
+        known();
     }
 }
 
@@ -43,7 +43,7 @@ int32 identity(int32 x) {
 } by {
     step_until(function.exit);
     rewrite(x, 7);
-    normalize();
+    known();
 }
 ```
 

@@ -172,21 +172,13 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             } by {
                 intro(); intro();
                 have contains(memory(visited[0..n]), memory(visited[cur])) by {
-                    apply(click::separation::contains_element(visited, 0, n, cur)) using {
-                        0 <= cur; cur < n;
-                    };
+                    apply(click::separation::contains_element(visited, 0, n, cur));
                 }
                 have contains(memory(next[0..n]), memory(next[k])) by {
-                    apply(click::separation::contains_element(next, 0, n, k)) using {
-                        0 <= k; k < n;
-                    };
+                    apply(click::separation::contains_element(next, 0, n, k));
                 }
                 have separate(memory(visited[cur]), memory(next[k])) by {
-                    apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k]))) using {
-                        separate(memory(visited[0..n]), memory(next[0..n]));
-                        contains(memory(visited[0..n]), memory(visited[cur]));
-                        contains(memory(next[0..n]), memory(next[k]));
-                    };
+                    apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k])));
                 }
                 have separate(loop(0).statement(1).footprint, memory(next[k])) by {
                     solve() using { separate(memory(visited[cur]), memory(next[k])); };
@@ -213,7 +205,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 intro(); intro();
                 have cur != k by { solve() using { k < cur; }; }
                 have separate(memory(visited[cur]), memory(visited[k])) by {
-                    apply(click::separation::separate_elements(visited, cur, k)) using { cur != k; };
+                    apply(click::separation::separate_elements(visited, cur, k));
                 }
                 have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
                     solve() using { separate(memory(visited[cur]), memory(visited[k])); };
@@ -227,7 +219,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 intro(); intro();
                 have cur != k by { solve() using { cur < k; }; }
                 have separate(memory(visited[cur]), memory(visited[k])) by {
-                    apply(click::separation::separate_elements(visited, cur, k)) using { cur != k; };
+                    apply(click::separation::separate_elements(visited, cur, k));
                 }
                 have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
                     solve() using { separate(memory(visited[cur]), memory(visited[k])); };

@@ -13,7 +13,7 @@ theorem empty_using_lists(x: int32, k: int32) {
     ensures x == x by { solve() using { }; }
     ensures (x & 255) <= 255 by { solve() using { }; }
     ensures x + 0 == x + 0 by { solve() using { }; }
-    ensures x == x by { apply(reflexive(x)) using { }; }
+    ensures x == x by { apply(reflexive(x)); }
     ensures k + 0 == k by {
         instantiate(forall (j: int32) { j + 0 == j }, k);
         known();

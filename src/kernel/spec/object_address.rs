@@ -83,9 +83,7 @@ mod tests {
         let first = SymbolicMemory::global_pointer("first");
         let second = SymbolicMemory::global_pointer("second");
         let first_value = ProgramValue::Pointer(
-            Pointer::new(first.clone(), ProgramType::UInt8Pointer)
-                .with_pointee_constant(true)
-                .with_pointee_volatile(true),
+            Pointer::new(first.clone(), ProgramType::UInt8Pointer).with_pointee_constant(true),
         );
         let second_value = ProgramValue::typed_pointer(second.clone(), ProgramType::UInt8Pointer);
         let memory = SymbolicMemory::new()
@@ -132,7 +130,6 @@ mod tests {
                 panic!("an address")
             };
             assert_eq!(pointer.address(), &first.offset_by_bytes(8));
-            assert!(pointer.pointee_volatile());
         }
     }
 

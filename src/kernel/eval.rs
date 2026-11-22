@@ -81,6 +81,8 @@ pub(in crate::kernel) use memory_loads::declare_load_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::duplicate_read_names;
 #[cfg(test)]
+pub(super) use memory_loads::evaluate_logical_memory_load_paths;
+#[cfg(test)]
 pub(super) use memory_loads::evaluate_memory_load_paths;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
@@ -138,8 +140,8 @@ pub(crate) use memory_loads::{
 };
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_read,
-    evaluate_logical_memory_load_paths, evaluate_logical_memory_load_paths_at,
-    evaluate_retained_memory_load_paths, evaluate_spec_memory_load_paths, symbolic_load_value,
+    evaluate_logical_memory_load_paths_at, evaluate_retained_memory_load_paths,
+    evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(in crate::kernel) use memory_loads::{
     expected_point_named_cell_read, observe_entry_integer_cell, point_named_cell_load,

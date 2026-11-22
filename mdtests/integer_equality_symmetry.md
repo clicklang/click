@@ -15,14 +15,14 @@ theorem equal_arguments(a: Integer, b: Integer) {
 theorem reverse_requirement(a: Integer, b: Integer) {
     requires b == a;
     ensures a == b by {
-        apply(equal_arguments(a, b)) using { b == a; };
+        apply(equal_arguments(a, b));
     }
 }
 
 theorem reverse_citation(a: Integer, b: Integer) {
     requires b == a;
     ensures a == b by {
-        apply(equal_arguments(a, b)) using { a == b; };
+        apply(equal_arguments(a, b));
     }
 }
 
@@ -38,7 +38,7 @@ void unchanged(int32 x) {
     ensures 10 == old(to_integer(x));
 } by {
     step_until(function.exit);
-    apply(equal_arguments(10, old(to_integer(x)))) using { old(to_integer(x)) == 10; };
+    apply(equal_arguments(10, old(to_integer(x))));
     solve();
 }
 ```

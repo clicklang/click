@@ -80,22 +80,19 @@ void erase_mutating(struct node* node, struct node* parent,
     ensures parent->right == old(parent->right);
 } by {
     with(callback_suite(augment)) {
-        apply(separation::contains_refl(memory(*augment))) using {};
-        apply(separation::contains_subrange(augment as (int32*), 0, 6, 0, 2)) using { 0 <= 0; 0 <= 2; 2 <= 6; };
-        apply(separation::contains_subrange(augment as (int32*), 0, 6, 2, 4)) using { 0 <= 2; 2 <= 4; 4 <= 6; };
-        apply(separation::contains_subrange(augment as (int32*), 0, 6, 4, 6)) using { 0 <= 4; 4 <= 6; 6 <= 6; };
-        apply(separation::contains_subrange(parent as (int32*), 0, 4, 0, 2)) using { 0 <= 0; 0 <= 2; 2 <= 4; };
+        apply(separation::contains_refl(memory(*augment)));
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 0, 2));
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 2, 4));
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 4, 6));
+        apply(separation::contains_subrange(parent as (int32*), 0, 4, 0, 2));
         have separate(memory(parent->left), memory(*augment)) by {
             apply(separation::separate_restrict(memory(*parent), memory(*augment), memory(parent->left), memory(*augment)));
         }
-        apply(separation::contains_subrange(parent as (int32*), 0, 4, 2, 4)) using { 0 <= 2; 2 <= 4; 4 <= 4; };
+        apply(separation::contains_subrange(parent as (int32*), 0, 4, 2, 4));
         have separate(memory(parent->right), memory(*augment)) by {
             apply(separation::separate_restrict(memory(*parent), memory(*augment), memory(parent->right), memory(*augment)));
         }
-        apply(separation::separate_star(memory(parent->left), memory(parent->right), memory(*augment))) using {
-            separate(memory(parent->left), memory(*augment));
-            separate(memory(parent->right), memory(*augment));
-        };
+        apply(separation::separate_star(memory(parent->left), memory(parent->right), memory(*augment)));
         mark before_propagate;
         step_until(statement(1).entry);
         have contains(memory(parent->left), statement(0).footprint) by { known(); }

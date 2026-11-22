@@ -2412,6 +2412,9 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
     use crate::surface::proof::smart_closures::LinearScriptDecline;
     let body = nested.body().clone();
     let source_proof = have.checking_proof();
+    let _origin = source_proof
+        .uses_implicit_tail()
+        .then(|| crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve"));
     let (selected, checks) = crate::surface::proof_diagnostics::capture_check_observations(
         || -> Result<_, ClickError> {
             Ok(match source_proof.as_ref() {
@@ -2461,7 +2464,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                             .unwrap_or(nested.body())
                             .step_error(format!("`have {goal}` was not proved: {detail}"))
                             .with_proof_refusal(match declined {
-                                None => crate::surface::ProofRefusal::UnprovedGoal,
+                                None => crate::surface::ProofRefusal::IncompleteProof,
                                 Some(LinearScriptDecline::UnsuccessfulSearch(_)) => {
                                     crate::surface::ProofRefusal::UnsuccessfulSearch
                                 }
@@ -2488,7 +2491,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
             match source_proof.as_ref() {
                 SourceProof::Script(_) => body
                     .step_error("the nested proof ended with an unproved obligation")
-                    .with_proof_refusal(crate::surface::ProofRefusal::UnprovedGoal),
+                    .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof),
                 _ => body.solve_failure(),
             }
             .with_check_observations(checks),

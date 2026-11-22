@@ -70,14 +70,7 @@ void consume_population(struct owner* owner, int32 amount) {
     with(accounting(owner)) {
         unfold(valid_capacity(owner));
         have defined(owner->used + count(slot(owner)));
-        apply(subtract_from_sum(owner->capacity, owner->used, count(slot(owner)), amount)) using {
-            0 <= owner->used;
-            0 <= amount;
-            amount <= count(slot(owner));
-            owner->capacity == owner->used + count(slot(owner));
-            defined(owner->used + count(slot(owner)));
-            defined(owner->capacity - amount);
-        };
+        apply(subtract_from_sum(owner->capacity, owner->used, count(slot(owner)), amount));
         unfold(amount of slot(owner));
         step();
         have owner->capacity == owner->used + count(slot(owner));

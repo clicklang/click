@@ -1,7 +1,4 @@
-# Integer theorem application rejects an altered explicit guard
-
-The refusal names the premise as it was written; it used to print the
-kernel proposition's Debug form.
+# An Integer theorem application reports its instantiated requirement
 
 ```click
 theorem guarded(x: Integer) {
@@ -12,11 +9,11 @@ theorem guarded(x: Integer) {
 theorem altered_guard_using(x: Integer) {
     requires x == x;
     ensures x + 1 > x by {
-        apply(guarded(x)) using { x == 1; };
+        apply(guarded(x));
     }
 }
 ```
 
 ```expect
-fail: `apply using` requires an unavailable exact premise: `x == 1`
+fail: theorem `guarded` has an unproved obligation
 ```

@@ -21,60 +21,31 @@ void FixtureReader::read(std::span<std::byte> dst) {
         known();
     }
     have contains(memory(this->data[0..4]), memory(this->data[0..4])) by {
-        apply(click::separation::contains_refl(memory(this->data[0..4]))) using {
-        };
+        apply(click::separation::contains_refl(memory(this->data[0..4])));
     }
     have contains(memory(dst->_M_ptr[0..4]), memory(dst->_M_ptr[0])) by {
-        apply(click::separation::contains_element(dst->_M_ptr, 0, 4, 0)) using {
-            0 <= 0;
-            0 < 4;
-        };
+        apply(click::separation::contains_element(dst->_M_ptr, 0, 4, 0));
     }
     have separate(memory(dst->_M_ptr[0]), memory(this->data[0..4])) by {
-        apply(click::separation::separate_restrict(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]), memory(dst->_M_ptr[0]), memory(this->data[0..4]))) using {
-            separate(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]));
-            contains(memory(dst->_M_ptr[0..4]), memory(dst->_M_ptr[0]));
-            contains(memory(this->data[0..4]), memory(this->data[0..4]));
-        };
+        apply(click::separation::separate_restrict(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]), memory(dst->_M_ptr[0]), memory(this->data[0..4])));
     }
     have contains(memory(dst->_M_ptr[0..4]), memory(dst->_M_ptr[1])) by {
-        apply(click::separation::contains_element(dst->_M_ptr, 0, 4, 1)) using {
-            0 <= 1;
-            1 < 4;
-        };
+        apply(click::separation::contains_element(dst->_M_ptr, 0, 4, 1));
     }
     have separate(memory(dst->_M_ptr[1]), memory(this->data[0..4])) by {
-        apply(click::separation::separate_restrict(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]), memory(dst->_M_ptr[1]), memory(this->data[0..4]))) using {
-            separate(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]));
-            contains(memory(dst->_M_ptr[0..4]), memory(dst->_M_ptr[1]));
-            contains(memory(this->data[0..4]), memory(this->data[0..4]));
-        };
+        apply(click::separation::separate_restrict(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]), memory(dst->_M_ptr[1]), memory(this->data[0..4])));
     }
     have contains(memory(dst->_M_ptr[0..4]), memory(dst->_M_ptr[2])) by {
-        apply(click::separation::contains_element(dst->_M_ptr, 0, 4, 2)) using {
-            0 <= 2;
-            2 < 4;
-        };
+        apply(click::separation::contains_element(dst->_M_ptr, 0, 4, 2));
     }
     have separate(memory(dst->_M_ptr[2]), memory(this->data[0..4])) by {
-        apply(click::separation::separate_restrict(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]), memory(dst->_M_ptr[2]), memory(this->data[0..4]))) using {
-            separate(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]));
-            contains(memory(dst->_M_ptr[0..4]), memory(dst->_M_ptr[2]));
-            contains(memory(this->data[0..4]), memory(this->data[0..4]));
-        };
+        apply(click::separation::separate_restrict(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]), memory(dst->_M_ptr[2]), memory(this->data[0..4])));
     }
     have contains(memory(dst->_M_ptr[0..4]), memory(dst->_M_ptr[3])) by {
-        apply(click::separation::contains_element(dst->_M_ptr, 0, 4, 3)) using {
-            0 <= 3;
-            3 < 4;
-        };
+        apply(click::separation::contains_element(dst->_M_ptr, 0, 4, 3));
     }
     have separate(memory(dst->_M_ptr[3]), memory(this->data[0..4])) by {
-        apply(click::separation::separate_restrict(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]), memory(dst->_M_ptr[3]), memory(this->data[0..4]))) using {
-            separate(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]));
-            contains(memory(dst->_M_ptr[0..4]), memory(dst->_M_ptr[3]));
-            contains(memory(this->data[0..4]), memory(this->data[0..4]));
-        };
+        apply(click::separation::separate_restrict(memory(dst->_M_ptr[0..4]), memory(this->data[0..4]), memory(dst->_M_ptr[3]), memory(this->data[0..4])));
     }
     step();
     step() by {
@@ -272,9 +243,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[1]), memory(old(dst->_M_ptr)[0])) by {
-        apply(click::separation::separate_elements(old(dst->_M_ptr), 1, 0)) using {
-            1 != 0;
-        };
+        apply(click::separation::separate_elements(old(dst->_M_ptr), 1, 0));
     }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(dst->_M_ptr)[0])) by {
         known();
@@ -424,9 +393,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[2]), memory(old(dst->_M_ptr)[0])) by {
-        apply(click::separation::separate_elements(old(dst->_M_ptr), 2, 0)) using {
-            2 != 0;
-        };
+        apply(click::separation::separate_elements(old(dst->_M_ptr), 2, 0));
     }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(dst->_M_ptr)[0])) by {
         known();
@@ -443,9 +410,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[2]), memory(old(dst->_M_ptr)[1])) by {
-        apply(click::separation::separate_elements(old(dst->_M_ptr), 2, 1)) using {
-            2 != 1;
-        };
+        apply(click::separation::separate_elements(old(dst->_M_ptr), 2, 1));
     }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(dst->_M_ptr)[1])) by {
         known();
@@ -595,9 +560,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[3]), memory(old(dst->_M_ptr)[0])) by {
-        apply(click::separation::separate_elements(old(dst->_M_ptr), 3, 0)) using {
-            3 != 0;
-        };
+        apply(click::separation::separate_elements(old(dst->_M_ptr), 3, 0));
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(dst->_M_ptr)[0])) by {
         known();
@@ -614,9 +577,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[3]), memory(old(dst->_M_ptr)[1])) by {
-        apply(click::separation::separate_elements(old(dst->_M_ptr), 3, 1)) using {
-            3 != 1;
-        };
+        apply(click::separation::separate_elements(old(dst->_M_ptr), 3, 1));
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(dst->_M_ptr)[1])) by {
         known();
@@ -633,9 +594,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[3]), memory(old(dst->_M_ptr)[2])) by {
-        apply(click::separation::separate_elements(old(dst->_M_ptr), 3, 2)) using {
-            3 != 2;
-        };
+        apply(click::separation::separate_elements(old(dst->_M_ptr), 3, 2));
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(dst->_M_ptr)[2])) by {
         known();
@@ -914,29 +873,16 @@ void FixtureReader::read(std::span<std::byte> dst) {
                             known();
                         }
                         have (at(region(12).exit, to_integer(this->remaining)) - old(to_integer(this->remaining))) == 0 by {
-                            apply(click::integer::equal_difference(at(region(12).exit, to_integer(this->remaining)), old(to_integer(this->remaining)))) using {
-                                at(region(12).exit, to_integer(this->remaining)) ==
-                                    old(to_integer(this->remaining));
-                            };
+                            apply(click::integer::equal_difference(at(region(12).exit, to_integer(this->remaining)), old(to_integer(this->remaining))));
                         }
                         have (-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))) == (at(region(12).exit, to_integer(this->remaining)) - old(to_integer(this->remaining))) by {
                             known();
                         }
-                        apply(click::integer::equal_substitute((at(region(12).exit, to_integer(this->remaining)) - old(to_integer(this->remaining))), 0, (-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))), 0)) using {
-                            (at(region(12).exit, to_integer(this->remaining)) -
-                                old(to_integer(this->remaining))) == 0;
-                            (-old(to_integer(this->remaining)) + at(region(12).exit,
-                                to_integer(this->remaining))) == (at(region(12).exit,
-                                to_integer(this->remaining)) - old(to_integer(this->remaining)));
-                            (0 : Integer) == 0;
-                        };
+                        apply(click::integer::equal_substitute((at(region(12).exit, to_integer(this->remaining)) - old(to_integer(this->remaining))), 0, (-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))), 0));
                     }
                     have (old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))) <= 0 by {
                         have -(-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))) == -(0 : Integer) by {
-                            apply(click::integer::equal_negate((-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))), 0)) using {
-                                (-old(to_integer(this->remaining)) + at(region(12).exit,
-                                    to_integer(this->remaining))) == 0;
-                            };
+                            apply(click::integer::equal_negate((-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))), 0));
                         }
                         have (old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))) == 0 by {
                             have (old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))) == -(-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))) by {
@@ -945,20 +891,9 @@ void FixtureReader::read(std::span<std::byte> dst) {
                             have 0 == -(0 : Integer) by {
                                 known();
                             }
-                            apply(click::integer::equal_substitute(-(-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))), -(0 : Integer), (old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))), 0)) using {
-                                -(-old(to_integer(this->remaining)) + at(region(12).exit,
-                                    to_integer(this->remaining))) == -(0 : Integer);
-                                (old(to_integer(this->remaining)) + -at(region(12).exit,
-                                    to_integer(this->remaining))) ==
-                                    -(-old(to_integer(this->remaining)) + at(region(12).exit,
-                                    to_integer(this->remaining)));
-                                0 == -(0 : Integer);
-                            };
+                            apply(click::integer::equal_substitute(-(-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))), -(0 : Integer), (old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))), 0));
                         }
-                        apply(click::integer::equal_le((old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))), 0)) using {
-                            (old(to_integer(this->remaining)) + -at(region(12).exit,
-                                to_integer(this->remaining))) == 0;
-                        };
+                        apply(click::integer::equal_le((old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))), 0));
                     }
                     have (-old(to_integer(this->remaining)) + 4) <= 0 by {
                         have 4 <= at(function.entry, to_integer(this->remaining)) by {
@@ -967,19 +902,11 @@ void FixtureReader::read(std::span<std::byte> dst) {
                         have (-old(to_integer(this->remaining)) + 4) == (4 - at(function.entry, to_integer(this->remaining))) by {
                             known();
                         }
-                        apply(click::integer::le_difference(4, at(function.entry, to_integer(this->remaining)), (-old(to_integer(this->remaining)) + 4))) using {
-                            4 <= at(function.entry, to_integer(this->remaining));
-                            (-old(to_integer(this->remaining)) + 4) == (4 - at(function.entry,
-                                to_integer(this->remaining)));
-                        };
+                        apply(click::integer::le_difference(4, at(function.entry, to_integer(this->remaining)), (-old(to_integer(this->remaining)) + 4)));
                     }
                     have (-at(region(12).exit, to_integer(this->remaining)) + 4) <= 0 by {
                         have (old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining)) + (-old(to_integer(this->remaining)) + 4)) <= (0 + 0) by {
-                            apply(click::integer::add_le((old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))), 0, (-old(to_integer(this->remaining)) + 4), 0)) using {
-                                (old(to_integer(this->remaining)) + -at(region(12).exit,
-                                    to_integer(this->remaining))) <= 0;
-                                (-old(to_integer(this->remaining)) + 4) <= 0;
-                            };
+                            apply(click::integer::add_le((old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining))), 0, (-old(to_integer(this->remaining)) + 4), 0));
                         }
                         have (-at(region(12).exit, to_integer(this->remaining)) + 4) == (old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining)) + (-old(to_integer(this->remaining)) + 4)) by {
                             known();
@@ -987,26 +914,12 @@ void FixtureReader::read(std::span<std::byte> dst) {
                         have (0 : Integer) == (0 + 0) by {
                             known();
                         }
-                        apply(click::integer::le_substitute((old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining)) + (-old(to_integer(this->remaining)) + 4)), (0 + 0), (-at(region(12).exit, to_integer(this->remaining)) + 4), 0)) using {
-                            (old(to_integer(this->remaining)) + -at(region(12).exit,
-                                to_integer(this->remaining)) + (-old(to_integer(this->remaining)) +
-                                4)) <= (0 + 0);
-                            (-at(region(12).exit, to_integer(this->remaining)) + 4) ==
-                                (old(to_integer(this->remaining)) + -at(region(12).exit,
-                                to_integer(this->remaining)) + (-old(to_integer(this->remaining)) +
-                                4));
-                            (0 : Integer) == (0 + 0);
-                        };
+                        apply(click::integer::le_substitute((old(to_integer(this->remaining)) + -at(region(12).exit, to_integer(this->remaining)) + (-old(to_integer(this->remaining)) + 4)), (0 + 0), (-at(region(12).exit, to_integer(this->remaining)) + 4), 0));
                     }
                     have (-at(region(12).exit, to_integer(this->remaining)) + 4) == (0 - (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4)) by {
                         known();
                     }
-                    apply(click::integer::difference_le(0, (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4), (-at(region(12).exit, to_integer(this->remaining)) + 4))) using {
-                        (-at(region(12).exit, to_integer(this->remaining)) + 4) <= 0;
-                        (-at(region(12).exit, to_integer(this->remaining)) + 4) == (0 -
-                            (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) -
-                            4));
-                    };
+                    apply(click::integer::difference_le(0, (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4), (-at(region(12).exit, to_integer(this->remaining)) + 4)));
                 }
                 known();
             }
@@ -1022,25 +935,14 @@ void FixtureReader::read(std::span<std::byte> dst) {
                         have (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615) == (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - to_integer(18446744073709551615u64)) by {
                             known();
                         }
-                        apply(click::integer::le_difference(to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))), to_integer(18446744073709551615u64), (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615))) using {
-                            to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) <=
-                                to_integer(18446744073709551615u64);
-                            (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) +
-                                -18446744073709551615) == (to_integer(at(region(12).entry,
-                                load<uint64>(byte_offset(this, 8)))) -
-                                to_integer(18446744073709551615u64));
-                        };
+                        apply(click::integer::le_difference(to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))), to_integer(18446744073709551615u64), (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615)));
                     }
                     have (-4 : Integer) <= 0 by {
                         known();
                     }
                     have (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619) <= 0 by {
                         have (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4) <= (0 + 0) by {
-                            apply(click::integer::add_le((to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615), 0, -4, 0)) using {
-                                (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8))))
-                                    + -18446744073709551615) <= 0;
-                                (-4 : Integer) <= 0;
-                            };
+                            apply(click::integer::add_le((to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615), 0, -4, 0));
                         }
                         have (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619) == (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4) by {
                             known();
@@ -1048,25 +950,12 @@ void FixtureReader::read(std::span<std::byte> dst) {
                         have (0 : Integer) == (0 + 0) by {
                             known();
                         }
-                        apply(click::integer::le_substitute((to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4), (0 + 0), (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619), 0)) using {
-                            (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) +
-                                -18446744073709551615 + -4) <= (0 + 0);
-                            (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) +
-                                -18446744073709551619) == (to_integer(at(region(12).entry,
-                                load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4);
-                            (0 : Integer) == (0 + 0);
-                        };
+                        apply(click::integer::le_substitute((to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4), (0 + 0), (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619), 0));
                     }
                     have (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619) == ((to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4) - 18446744073709551615) by {
                         known();
                     }
-                    apply(click::integer::difference_le((to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4), 18446744073709551615, (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619))) using {
-                        (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) +
-                            -18446744073709551619) <= 0;
-                        (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) +
-                            -18446744073709551619) == ((to_integer(at(region(12).entry,
-                            load<uint64>(byte_offset(this, 8)))) - 4) - 18446744073709551615);
-                    };
+                    apply(click::integer::difference_le((to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4), 18446744073709551615, (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619)));
                 }
                 known();
             }

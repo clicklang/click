@@ -359,7 +359,6 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
     let known = q.is_some_and(|q| q.bounds_known);
     Some(AlphaProgramValueKey::Pointer {
         program_type: p.program_type,
-        pointee_volatile: q.is_some_and(|q| q.volatile),
         pointee_constant: q.is_some_and(|q| q.constant),
         pointer: alpha_address::<ALLOW_LOADS>(&p.address, bindings, next)?,
         provenance: alpha_address::<ALLOW_LOADS>(&p.provenance, bindings, next)?,
@@ -396,7 +395,6 @@ mod tests {
         };
         Pointer::new(address.clone(), ProgramType::VoidPointer)
             .with_provenance(Arc::new(address.clone()))
-            .with_pointee_volatile(true)
             .with_pointee_constant(true)
             .with_bounds(Some(SubobjectBounds {
                 start: address,

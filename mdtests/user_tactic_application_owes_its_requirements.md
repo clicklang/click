@@ -1,8 +1,7 @@
-# a tactic application owes the tactic's requirements as available facts
+# An unproved tactic requirement refuses the application
 
-`check_first` requires `p->a == 1`. An application is a simple step: it
-searches for nothing, so the requirement must already be an available fact.
-Here it is not, and the application is refused by naming it.
+`check_first` requires `p->a == 1`. The implicit closer cannot establish that
+requirement in this caller, so the application is refused.
 
 ```c filename=user_tactic_application_owes_its_requirements.c
 struct pr { int32 a; int32 b; };

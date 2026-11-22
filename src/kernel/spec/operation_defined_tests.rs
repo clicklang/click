@@ -118,3 +118,29 @@ fn a_conjunction_guards_its_right_sides_path_conditions() {
         );
     }
 }
+
+// `x || y / x` reads `y / x` only where `x` is zero, where the division is
+// undefined on every path. The refusal names the undefined behavior instead
+// of only counting paths.
+#[test]
+fn a_right_side_undefined_wherever_it_is_read_is_refused_by_name() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (x, y) = (int32_value(698_040), int32_value(698_041));
+    let refusal = crate::kernel::program_lower_spec_proposition_with_checked_obligations(
+        &ExecutionState::new(),
+        &SpecProposition::OperationDefined(SpecExpression::ProgramExpression(
+            ProgramExpression::Or(
+                Box::new(x.clone()),
+                Box::new(ProgramExpression::Divide(Box::new(y), Box::new(x))),
+            ),
+        )),
+        None,
+        &PureFactContext::new(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        refusal.message,
+        "the kernel lowering produced no path: every evaluation path ended in undefined \
+         behavior: division by zero"
+    );
+}

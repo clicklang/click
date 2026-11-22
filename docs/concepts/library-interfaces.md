@@ -82,7 +82,6 @@ noted, and a new interface must not copy one.
 
 | Language | Special case | Where | What replaces it |
 | --- | --- | --- | --- |
-| Rust | `Box::new` and a box's drop are importer steps, `BoxNew` and `BoxFree`; each proof writes its box's ownership resource by hand | `src/languages/rust/charon.rs`, `src/languages/rust/lowering/moves.rs` | `Box`'s contracts and ownership resource in `library/rust/` |
 | Rust | `Option::take` is rewritten into the move its implementation makes | `src/languages/rust/charon/option_take.rs` | One generic `Option::take<T>` contract |
 | Rust | `?` checks the library's own `Try` and `FromResidual` impls, then rewrites them into the `match` they define | `src/languages/rust/charon/option_try.rs`, `src/languages/rust/charon/result_try.rs` | Contracts of `branch` and `from_residual` |
 | Rust | `Range`, `slice::Iter`, `ChunksExact` and `Enumerate` are importer statements (`RangeNext`, `ChunkNext`, ...) over the iterators' fields | `src/languages/rust/charon/`, `src/languages/rust/lowering/` | Contracts of each iterator's `next` |

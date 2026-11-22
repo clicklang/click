@@ -1,7 +1,6 @@
 # An induction premise is named when it is not available
 
-A listed induction premise that is not a fact is spelled with the measure's
-name.
+A missing induction premise is spelled with the measure's name.
 
 ```c filename=an_induction_premise_is_named_when_it_is_not_available.c
 void unused(void) {}
@@ -24,12 +23,12 @@ theorem t(n: int32) {
             unfold(cd(n));
             normalize() using { n <= 0; };
         } else {
-            apply(ih(n - 1)) using { to_integer(n - 2) < to_integer(n); };
+            apply(ih(n - 1));
         }
     }
 }
 ```
 
 ```expect
-fail: induction premise is not exactly available: to_integer(n - 2) < n
+fail: found no available fact for premise `to_integer((0 as int32)) <= to_integer(((n - 1) as int32))`
 ```

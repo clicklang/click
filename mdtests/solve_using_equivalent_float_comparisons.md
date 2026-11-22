@@ -14,7 +14,7 @@ theorem positive_float(x: double) {
 theorem test(value: double) {
     ensures float64_from_bits(0) < fixed_float(value) by { solve() using {}; }
     ensures float64_from_bits(0) < fixed_float(value) by {
-        apply(positive_float(value)) using {};
+        apply(positive_float(value));
         known();
     }
 }
