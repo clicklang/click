@@ -62,12 +62,12 @@ fn report_error(message: String) -> ! {
         "execution prerequisite unmet",
         "execution refused",
         "unsupported",
-        "unsupported proof",
         "unclassified verification refusal",
         "syntax error",
         "type error",
         "internal error",
-        "limit error",
+        "work limit reached",
+        "timed out",
     ]
     .iter()
     .any(|heading| {
@@ -580,6 +580,93 @@ uint64 spell(const uint8* b, uint64 n) {
         .unwrap_err();
         assert!(traced.starts_with("unsupported:"), "{traced}");
         assert!(traced.contains("proof refusal:"), "{traced}");
+    }
+
+    #[test]
+    fn execution_region_depth_reports_unsupported() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/proof_match_nesting_bound_named.md");
+        let report = entry(["verify".to_string(), fixture.display().to_string()]).unwrap_err();
+        assert!(report.starts_with("unsupported:"), "{report}");
+        assert!(
+            report.contains("checked execution-region recursion exceeds the supported depth"),
+            "{report}"
+        );
+        assert!(!report.contains("tactic@"), "{report}");
+    }
+
+    #[test]
+    fn contract_refinement_reports_the_specific_unsupported_capability() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("refinement.click");
+        for (contracts, callback, reason) in [
+            (
+                r#"contract int32 Raw(int32 x) throws int32 {
+    ensures result == x;
+    exceptional ensures exception == 7;
+}
+contract int32 Target(int32 x) throws int32 {
+    ensures result == x;
+    exceptional ensures exception == 7;
+}"#,
+                "int32 (*)(int32)",
+                "the source contract may throw",
+            ),
+            (
+                r#"authorized resource Permit(pool: int32*) {}
+contract void Raw(int32* pool) { ensures true; }
+contract void Target(int32* pool) {
+    owns authority(Permit(pool));
+    owns Permit(pool);
+    views *pool;
+}"#,
+                "void (*)(int32*)",
+                "Click cannot frame a resource of family `population authority`",
+            ),
+        ] {
+            fs::write(
+                &sidecar,
+                format!(
+                    "{contracts}\n
+theorem lift(callback: {callback}) {{
+    requires Raw(callback);
+    ensures Target(callback) by {{
+        unfold(Raw(callback));
+        unfold(Target(callback));
+        solve();
+    }}
+}}
+"
+                ),
+            )
+            .unwrap();
+            let report = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(report.starts_with("unsupported:"), "{report}");
+            assert!(report.contains(reason), "{report}");
+        }
+    }
+
+    #[test]
+    fn induction_in_an_execution_proof_reports_a_tactic_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(directory.path().join("f.c"), "int f(int n) { return n; }").unwrap();
+        for prefix in ["", "step();"] {
+            fs::write(
+                &sidecar,
+                format!(
+                    "verifying \"f.c\";\nint32 f(int32 n) {{ requires n >= 0; ensures result == n; }} by {{\n    {prefix}\n    let ih = induct(n);\n    known();\n}}"
+                ),
+            )
+            .unwrap();
+            let report = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(report.starts_with("tactic error:"), "{report}");
+            assert!(
+                report.contains("`induct` requires a pure theorem"),
+                "{report}"
+            );
+            assert!(report.contains("let ih = induct(n);"), "{report}");
+        }
     }
 
     #[test]

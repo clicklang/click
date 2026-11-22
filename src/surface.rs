@@ -8817,6 +8817,8 @@ struct ReportDetail {
     /// `goal:` line when no unresolved requirement carries it. Diagnostics
     /// only: no planner reads it.
     goal: Option<Proposition>,
+    /// A written goal whose lowering had not completed when search stopped.
+    written_goal: Option<String>,
     /// Whether a write and a live view concretely overlap, when reporting a write prerequisite.
     live_view_write_overlap: Option<bool>,
     /// The labels a refusal that prints its own legend numbered it with, so
@@ -8917,7 +8919,7 @@ pub struct ClickError {
     kind: ClickErrorKind,
     failed_tactic: Option<&'static str>,
     proof_refusal: Option<ProofRefusal>,
-    work_limit_exhausted: bool,
+    verification_stop: Option<instrumentation::VerificationStop>,
     diagnostic: Option<std::sync::Arc<proof_diagnostics::ProofFailureDiagnostic>>,
     search_failures: Option<std::sync::Arc<Vec<proof_diagnostics::ProofSearchFailure>>>,
     unresolved_requirement: Option<std::sync::Arc<UnresolvedRequirement>>,
@@ -8950,7 +8952,8 @@ enum PathCaseSplit {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClickErrorKind {
     Syntax,
-    Limit,
+    WorkLimitReached,
+    TimedOut,
     Type,
     Proof,
     Unsupported,
@@ -8961,7 +8964,8 @@ impl ClickErrorKind {
     fn label(self) -> &'static str {
         match self {
             Self::Syntax => "syntax error",
-            Self::Limit => "limit error",
+            Self::WorkLimitReached => "work limit reached",
+            Self::TimedOut => "timed out",
             Self::Type => "type error",
             Self::Proof => "unclassified verification refusal",
             Self::Unsupported => "unsupported",
@@ -8981,7 +8985,6 @@ pub enum ProofRefusal {
     ContractEntry,
     ExecutionPrerequisite,
     Execution,
-    UnsupportedProof,
 }
 
 impl ProofRefusal {
@@ -8994,7 +8997,6 @@ impl ProofRefusal {
             Self::ContractEntry => "contract entry refused",
             Self::ExecutionPrerequisite => "execution prerequisite unmet",
             Self::Execution => "execution refused",
-            Self::UnsupportedProof => "unsupported proof",
         }
     }
 }
@@ -10794,13 +10796,13 @@ impl ClickError {
 
     fn new(message: impl Into<String>) -> Self {
         let message = Self::summary_without_rendered_diagnostic(message.into());
-        let work_limit = crate::instrumentation::exceeded_verification_limit_context();
-        let message = match &work_limit {
+        let stop = instrumentation::exceeded_verification_stop();
+        let message = match &stop {
             // Deliberate limit diagnostics already include the active context
             // and often add useful target/premise detail. Preserve those;
             // replace only an unrelated semantic error constructed from a
             // conservative false/none after the limit fired.
-            Some(context) if !message.contains(context) => {
+            Some((_, context)) if !message.contains(context) => {
                 format!("verification budget exhausted inside {context}")
             }
             _ => message,
@@ -10812,7 +10814,7 @@ impl ClickError {
             kind,
             failed_tactic: None,
             proof_refusal: None,
-            work_limit_exhausted: work_limit.is_some(),
+            verification_stop: stop.map(|(kind, _)| kind),
             diagnostic: None,
             search_failures: None,
             unresolved_requirement: None,
@@ -10828,9 +10830,9 @@ impl ClickError {
     ) -> Self {
         let summary = Self::summary_without_rendered_diagnostic(summary.into());
         diagnostic.reason = Self::summary_without_rendered_diagnostic(diagnostic.reason);
-        let work_limit = crate::instrumentation::exceeded_verification_limit_context();
-        let summary = match &work_limit {
-            Some(context) if !summary.contains(context) => {
+        let stop = instrumentation::exceeded_verification_stop();
+        let summary = match &stop {
+            Some((_, context)) if !summary.contains(context) => {
                 format!("verification budget exhausted inside {context}")
             }
             _ => summary,
@@ -10842,7 +10844,7 @@ impl ClickError {
             kind,
             failed_tactic: None,
             proof_refusal: None,
-            work_limit_exhausted: work_limit.is_some(),
+            verification_stop: stop.map(|(kind, _)| kind),
             diagnostic: Some(std::sync::Arc::new(diagnostic)),
             search_failures: None,
             unresolved_requirement: None,
@@ -10968,15 +10970,19 @@ impl ClickError {
     /// instructions in their own readable sections.
     pub fn concise_report_parts(&self) -> (String, Vec<String>) {
         let _accessors = self.report_model_accessor_scope();
-        let reason = self
-            .diagnostic
-            .as_ref()
-            .map_or(self.message.as_str(), |diagnostic| {
-                diagnostic.reason.as_str()
-            });
+        let reason = if self.verification_stopped() {
+            self.message.as_str()
+        } else {
+            self.diagnostic
+                .as_ref()
+                .map_or(self.message.as_str(), |diagnostic| {
+                    diagnostic.reason.as_str()
+                })
+        };
         let (reason, proof_context) = split_proof_context(reason);
         let requirement_reason = self
             .missing_tactic_requirement()
+            .filter(|_| !self.verification_stopped())
             .map(|required| format!("requirement `{required}` not satisfied"));
         let reason = requirement_reason.as_deref().unwrap_or(reason);
         let (mut report, reason, _certification_obligation) = if self.kind == ClickErrorKind::Proof
@@ -11177,6 +11183,14 @@ impl ClickError {
                 ));
             }
         }
+        if !context.iter().any(|line| line.starts_with("goal: "))
+            && let Some(goal) = self
+                .report_detail
+                .as_ref()
+                .and_then(|detail| detail.written_goal.as_deref())
+        {
+            context.push(format!("goal: {goal}"));
+        }
         (report, context)
     }
 
@@ -11277,7 +11291,19 @@ impl ClickError {
     }
 
     pub fn kind(&self) -> ClickErrorKind {
-        self.kind
+        use instrumentation::VerificationStop;
+        match self.verification_stop {
+            Some(VerificationStop::Search) => ClickErrorKind::Proof,
+            Some(VerificationStop::Checking) => ClickErrorKind::Internal,
+            Some(VerificationStop::RunWork) => ClickErrorKind::WorkLimitReached,
+            Some(VerificationStop::WallClock) => ClickErrorKind::TimedOut,
+            None => self.kind,
+        }
+    }
+
+    /// Whether this error came from a budget or crash-containment stop.
+    pub fn verification_stopped(&self) -> bool {
+        self.verification_stop.is_some()
     }
 
     /// The implicit proof operation that refused this tactic, if any.
@@ -11291,7 +11317,19 @@ impl ClickError {
 
     /// The proof refusal the terminal report attributes to this error.
     pub fn proof_refusal(&self) -> Option<ProofRefusal> {
-        if self.kind != ClickErrorKind::Proof || self.work_limit_exhausted {
+        match self.verification_stop {
+            Some(instrumentation::VerificationStop::Search) => {
+                return Some(match self.proof_refusal {
+                    Some(ProofRefusal::ImplicitStatementSearch) => {
+                        ProofRefusal::ImplicitStatementSearch
+                    }
+                    _ => ProofRefusal::UnsuccessfulSearch,
+                });
+            }
+            Some(_) => return None,
+            None => {}
+        }
+        if self.kind != ClickErrorKind::Proof {
             return None;
         }
         self.proof_refusal.or_else(|| {
@@ -11301,11 +11339,8 @@ impl ClickError {
     }
 
     fn report_label(&self) -> &'static str {
-        if self.kind == ClickErrorKind::Proof && self.work_limit_exhausted {
-            return ClickErrorKind::Limit.label();
-        }
         self.proof_refusal()
-            .map_or(self.kind.label(), ProofRefusal::label)
+            .map_or(self.kind().label(), ProofRefusal::label)
     }
 
     pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {
@@ -11565,6 +11600,12 @@ impl ClickError {
         self
     }
 
+    pub(in crate::surface) fn with_unlowered_goal(mut self, goal: String) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).written_goal =
+            Some(goal);
+        self
+    }
+
     pub(in crate::surface) fn with_missing_theorem_requirement(mut self, fact: String) -> Self {
         std::sync::Arc::make_mut(self.report_detail.get_or_insert_default())
             .missing_theorem_requirement = Some(fact);
@@ -11748,7 +11789,7 @@ impl ClickError {
             kind: self.kind,
             failed_tactic: self.failed_tactic,
             proof_refusal: self.proof_refusal,
-            work_limit_exhausted: self.work_limit_exhausted,
+            verification_stop: self.verification_stop,
             diagnostic: self.diagnostic,
             search_failures: self.search_failures,
             unresolved_requirement: self.unresolved_requirement,
@@ -11784,7 +11825,7 @@ impl Clone for ClickError {
             kind: self.kind,
             failed_tactic: self.failed_tactic,
             proof_refusal: self.proof_refusal,
-            work_limit_exhausted: self.work_limit_exhausted,
+            verification_stop: self.verification_stop,
             diagnostic: self.diagnostic.clone(),
             search_failures: self.search_failures.clone(),
             unresolved_requirement: self.unresolved_requirement.clone(),
@@ -11801,7 +11842,7 @@ impl PartialEq for ClickError {
             && self.kind == other.kind
             && self.failed_tactic == other.failed_tactic
             && self.proof_refusal == other.proof_refusal
-            && self.work_limit_exhausted == other.work_limit_exhausted
+            && self.verification_stop == other.verification_stop
             && self.diagnostic == other.diagnostic
             && self.search_failures == other.search_failures
             && self.unresolved_requirement == other.unresolved_requirement

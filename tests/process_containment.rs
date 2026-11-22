@@ -49,7 +49,8 @@ fn cli_watchdog_stops_a_verifier_that_does_not_poll() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("stopped by wall-clock crash-containment bound"),
+        stderr.starts_with("timed out:")
+            && stderr.contains("stopped by wall-clock crash-containment bound"),
         "{stderr}"
     );
     assert!(!stderr.contains("unsuccessful search"), "{stderr}");

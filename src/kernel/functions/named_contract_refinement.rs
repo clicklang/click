@@ -452,7 +452,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
     // carry yet, so that refinement is left to the automatic route.
     if !source.exceptional_signature().is_empty() {
         return Err(Refusal::Unsupported(
-            "the source contract may throw, and explicit refinement theorems only support normal returns",
+            "the source contract may throw, and explicit refinement theorems only support normal returns".to_owned(),
         ));
     }
     let mut budget = ExecutionBudget::continuing_from(context.next_kernel_variable);

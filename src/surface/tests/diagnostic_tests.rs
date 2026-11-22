@@ -3203,6 +3203,12 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
                 "{}",
                 error.message()
             );
+            assert_eq!(
+                error.proof_refusal(),
+                Some(super::ProofRefusal::UnsuccessfulSearch)
+            );
+            let report = error.concise_report();
+            assert!(report.starts_with("unsuccessful search:"), "{report}");
             let trace = error
                 .trace_context_report()
                 .expect("the accepted prefix must survive exhaustion");
@@ -4235,6 +4241,8 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
                 "{}",
                 error.message()
             );
+            let report = error.concise_report();
+            assert!(report.starts_with("internal error:"), "{report}");
             let trace = error
                 .trace_context_report()
                 .expect("a stopped explicit transport retains the checked predecessor");
