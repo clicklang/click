@@ -488,6 +488,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     target_type: format.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,

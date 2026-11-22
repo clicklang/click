@@ -4321,9 +4321,17 @@ fn validate_pointer_cast_operands(
                     }
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
+                // A `void *` operand recovers the object; a character
+                // pointer operand recovers it from the byte view that
+                // converting to a character pointer formed (C11 6.3.2.3p7).
                 match infer_program_expression_type(operand, variables) {
                     None | Some(InterfaceType::VoidPointer) => {}
                     Some(actual) if actual.to_kernel_type() == *target_type => {}
+                    Some(actual)
+                        if matches!(
+                            actual.to_kernel_type(),
+                            ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+                        ) => {}
                     Some(actual) => {
                         return Err(ClickError::new(format!(
                             "pointer cast in {context} expects a `void *` operand, got `{actual:?}`"

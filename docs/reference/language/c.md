@@ -2665,7 +2665,7 @@ declared return type
 The check applies to the C program's accesses only. A specification reads
 memory as a value, so a contract's reads, resource arguments included, are
 not checked: a contract may state a Linux augmented rbtree node's cached
-count as `(old as (void *) as (struct sized_node *))->size` for a `struct rb_node*`
+count as `(old as (uint8 *) as (struct sized_node *))->size` for a `struct rb_node*`
 parameter, while a C read of the same object through an unrelated struct is
 still refused
 (`mdtests/a_resource_argument_reads_the_containing_struct_as_a_value.md`,

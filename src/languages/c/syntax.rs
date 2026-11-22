@@ -2784,6 +2784,7 @@ fn widened_stride(index: CExpression, width: u32) -> CExpression {
             expression: Box::new(index),
             interface_type: InterfaceType::Int64(LongRank::Long),
             struct_name: None,
+            struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -2928,6 +2929,9 @@ pub enum CExpression {
         /// The struct tag of a pointer cast target, so field access through
         /// the cast result resolves the same layout as a declared pointer.
         struct_name: Option<String>,
+        /// `sizeof` that struct, for C11 6.7.2.1p15: a pointer to its
+        /// initial member, converted, points to the struct.
+        struct_size: Option<u32>,
         /// Volatility of the pointer-valued cell reached by this pointer.
         /// This is the qualifier in `T * volatile *`, not volatility of the
         /// storage designated by `T *`.
@@ -4527,6 +4531,7 @@ impl CExpression {
                 expression,
                 interface_type,
                 struct_name,
+                struct_size,
                 pointee_volatile,
                 pointee_constant,
                 explicit_qualification,
@@ -4536,13 +4541,20 @@ impl CExpression {
                 } else {
                     crate::kernel::program_expression::cast_with_pointee_qualifiers_and_struct
                 };
-                let lowered = cast(
+                let mut lowered = cast(
                     expression.lower_expression(),
                     interface_type.to_kernel_type(),
                     *pointee_volatile,
                     *pointee_constant,
                     struct_name.clone(),
                 );
+                if let crate::kernel::ProgramExpression::Cast {
+                    pointee_struct_size,
+                    ..
+                } = &mut lowered
+                {
+                    *pointee_struct_size = *struct_size;
+                }
                 // A C cast converts modulo 2^N wherever it is written,
                 // in C source or in a specification.
                 crate::kernel::program_expression::c_source_integer_conversion(lowered)
@@ -12058,6 +12070,7 @@ impl Parser {
                 expression: Box::new(expression),
                 interface_type: InterfaceType::Int32,
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -15160,6 +15173,7 @@ impl Parser {
                 expression: Box::new(expression),
                 interface_type,
                 struct_name: Some(struct_name.clone()),
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: self.variable_pointee_is_constant(target),
                 explicit_qualification: false,
@@ -15995,6 +16009,7 @@ impl Parser {
                 )))),
                 interface_type: InterfaceType::UInt8Pointer,
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -16433,6 +16448,7 @@ impl Parser {
                 expression,
                 interface_type,
                 struct_name,
+                struct_size,
                 pointee_volatile,
                 pointee_constant,
                 explicit_qualification,
@@ -16444,6 +16460,7 @@ impl Parser {
                         expression: Box::new(expression),
                         interface_type,
                         struct_name,
+                        struct_size,
                         pointee_volatile,
                         pointee_constant,
                         explicit_qualification,
@@ -16588,6 +16605,7 @@ impl Parser {
                                 expression: Box::new(CExpression::Variable(name)),
                                 interface_type: decay_to_pointer(interface_type),
                                 struct_name: None,
+                                struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,
@@ -16665,6 +16683,7 @@ impl Parser {
                     CExpression::Cast {
                         expression: Box::new(address),
                         interface_type: InterfaceType::Int32Pointer,
+                        struct_size: None,
                         struct_name: Some(struct_name),
                         pointee_volatile: false,
                         pointee_constant: false,
@@ -17143,6 +17162,7 @@ impl Parser {
             expression: Box::new(expression),
             interface_type: common_type,
             struct_name: None,
+            struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -17189,6 +17209,7 @@ impl Parser {
             expression: Box::new(std::mem::replace(expression, CExpression::Void)),
             interface_type: InterfaceType::UInt8Pointer,
             struct_name: None,
+            struct_size: None,
             pointee_volatile: false,
             pointee_constant: parameter.pointee_is_constant(),
             explicit_qualification: false,
@@ -17309,6 +17330,7 @@ impl Parser {
                     expression: Box::new(argument),
                     interface_type: promoted,
                     struct_name: None,
+                    struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -17592,6 +17614,7 @@ impl Parser {
                                     expression: Box::new(expression),
                                     interface_type: InterfaceType::Int32,
                                     struct_name: None,
+                                    struct_size: None,
                                     pointee_volatile: false,
                                     pointee_constant: false,
                                     explicit_qualification: false,
@@ -17995,6 +18018,7 @@ impl Parser {
             expression: Box::new(pointer),
             interface_type: InterfaceType::UInt8Pointer,
             struct_name: None,
+            struct_size: None,
             pointee_volatile: false,
             pointee_constant,
             explicit_qualification: false,
@@ -18005,6 +18029,7 @@ impl Parser {
             CExpression::Cast {
                 expression: Box::new(expression),
                 interface_type,
+                struct_size: None,
                 struct_name: Some(struct_name),
                 pointee_volatile: false,
                 pointee_constant,
@@ -18168,14 +18193,30 @@ impl Parser {
             &cast_position,
         )?;
         convert_integer_constant(interface_type, &mut expression);
+        // A cast to the operand's own struct type is not a conversion.
+        let struct_size = (self.struct_pointer_name(&expression) != struct_name)
+            .then(|| self.struct_pointer_target_size(interface_type, struct_name.as_deref()))
+            .flatten();
         Ok(CExpression::Cast {
             expression: Box::new(expression),
             interface_type,
             struct_name,
+            struct_size,
             pointee_volatile: volatile_pointer_object_cast,
             pointee_constant: parsed_type.pointee_constant,
             explicit_qualification: interface_type.is_pointer(),
         })
+    }
+
+    /// `sizeof` the struct a one-level `struct T *` cast target points to.
+    fn struct_pointer_target_size(
+        &self,
+        interface_type: InterfaceType,
+        struct_name: Option<&str>,
+    ) -> Option<u32> {
+        (interface_type == InterfaceType::Int32Pointer)
+            .then(|| self.structs.get(struct_name?).map(RecordLayout::size_bytes))
+            .flatten()
     }
 
     fn parse_unary(&mut self) -> Result<CExpression, CSyntaxError> {
@@ -18910,6 +18951,7 @@ impl Parser {
                                 expression: Box::new(expression),
                                 interface_type: InterfaceType::UInt8Pointer,
                                 struct_name: None,
+                                struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,
@@ -19579,6 +19621,7 @@ impl Parser {
                 expression: Box::new(value),
                 interface_type,
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant,
                 explicit_qualification: false,
@@ -19610,6 +19653,7 @@ impl Parser {
                 expression: Box::new(value),
                 interface_type: decay_to_pointer(expected),
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant,
                 explicit_qualification: false,

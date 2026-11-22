@@ -542,7 +542,7 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
 fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
     let _session = crate::kernel::VerificationSession::enter();
     for (source, target, keeps_bounds) in [
-        (ProgramType::VoidPointer, ProgramType::VoidPointer, false),
+        (ProgramType::VoidPointer, ProgramType::VoidPointer, true),
         (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
         (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
     ] {

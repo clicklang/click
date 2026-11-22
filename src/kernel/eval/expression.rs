@@ -960,27 +960,56 @@ pub(in crate::kernel) fn cast_program_value_to_type(
     )
 }
 
-pub(super) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
-    // Character-to-character casts retain the selected byte view.
-    // Other casts to bytes, and every void cast, widen that view.
-    let byte_to_byte = matches!(
-        pointer.program_type(),
-        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-    ) && matches!(
-        target_type,
-        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-    );
+/// A pointer conversion, written or implicit. C11 6.3.2.3p7 gives one
+/// conversion a meaning of its own: converting to a character pointer forms
+/// a view of the object's bytes. That view spans the allocation (TS 6010's
+/// provenance granularity), so it is not bounded by the member the operand
+/// was formed from. A conversion between character types keeps the existing
+/// view, and every other conversion, including to `void *`, keeps the value
+/// (`design/pointer-model.md`).
+pub(in crate::kernel) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
+    let forms_byte_view =
+        is_character_pointer(target_type) && !is_character_pointer(pointer.program_type());
     let pointer = pointer.with_type(target_type);
-    if !byte_to_byte
-        && matches!(
-            target_type,
-            ProgramType::VoidPointer | ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-        )
-    {
+    if forms_byte_view {
         pointer.with_root_bounds()
     } else {
         pointer
     }
+}
+
+/// A pointer to a structure's initial member, converted to the structure's
+/// type, points to the structure (C11 6.7.2.1p15). When the operand's array
+/// object is a member starting at its address and narrower than the struct,
+/// the result's array object is the `size` bytes of the struct there. An
+/// operand whose bounds are not yet known keeps them: they remain the opaque
+/// domain the bounds evidence of each access decides. Whether such a struct exists
+/// is the effective-type question each access through the result already
+/// asks (C11 6.5p7). Any other operand keeps its value: a pointer inside a
+/// member is not an initial member's, and an array object that already
+/// covers the struct, such as an allocation used as an array of it, is not
+/// narrowed.
+fn struct_view_of_initial_member(pointer: Pointer, size: u32) -> Pointer {
+    if pointer.is_null() || pointer.address().base.is_function() {
+        return pointer;
+    }
+    match pointer.bounds() {
+        Some(bounds)
+            if bounds.start == *pointer.address()
+                && bounds.constant_width().is_some_and(|width| width < size) =>
+        {
+            let start = pointer.address().clone();
+            pointer.with_bounds(Some(SubobjectBounds::constant(start, size)))
+        }
+        _ => pointer,
+    }
+}
+
+fn is_character_pointer(program_type: ProgramType) -> bool {
+    matches!(
+        program_type,
+        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+    )
 }
 
 fn cast_program_value_to_type_with_integer_origin(
@@ -1363,6 +1392,7 @@ pub(super) fn evaluate_native_expression_paths(
             target_type,
             integer_mode,
             pointee_struct: _,
+            pointee_struct_size,
             pointee_volatile,
             pointee_constant,
             explicit_qualification,
@@ -1371,6 +1401,7 @@ pub(super) fn evaluate_native_expression_paths(
             expression,
             *target_type,
             *integer_mode,
+            *pointee_struct_size,
             *pointee_volatile,
             *pointee_constant,
             *explicit_qualification,
@@ -1950,6 +1981,7 @@ fn evaluate_program_cast_paths(
     expression: &ProgramExpression,
     target_type: ProgramType,
     integer_mode: IntegerCastMode,
+    pointee_struct_size: Option<u32>,
     pointee_volatile: bool,
     pointee_constant: bool,
     explicit_qualification: bool,
@@ -2050,6 +2082,7 @@ fn evaluate_program_cast_paths(
                     }
                     _ => None,
                 };
+                let pointer_operand = matches!(&value, ProgramValue::Pointer(_));
                 let implicit_pointer_conversion = matches!(
                     integer_mode,
                     IntegerCastMode::CConversion | IntegerCastMode::ResultConversion
@@ -2066,7 +2099,18 @@ fn evaluate_program_cast_paths(
                                     || target_type != ProgramType::VoidPointer
                                     || pointer.program_type().is_object_pointer()) =>
                         {
-                            Ok(ProgramValue::Pointer(pointer.with_type(target_type)))
+                            // Of C's implicit pointer conversions, only one
+                            // from `void *` reaches a character pointer, and
+                            // it forms the byte view as a written one does,
+                            // as does a contract's coercion from `void *`.
+                            // Other retypes keep the value.
+                            Ok(ProgramValue::Pointer(
+                                if pointer.program_type() == ProgramType::VoidPointer {
+                                    cast_pointer_value(pointer, target_type)
+                                } else {
+                                    pointer.with_type(target_type)
+                                },
+                            ))
                         }
                         _ => Err(RuntimeError::TypeMismatch),
                     }
@@ -2193,6 +2237,12 @@ fn evaluate_program_cast_paths(
                 {
                     add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
                 }
+                let coerced = match (coerced, pointee_struct_size) {
+                    (Ok(ProgramValue::Pointer(pointer)), Some(size)) if pointer_operand => Ok(
+                        ProgramValue::Pointer(struct_view_of_initial_member(pointer, size)),
+                    ),
+                    (coerced, _) => coerced,
+                };
                 match coerced {
                     Ok(value) => {
                         // A cast the source wrote yields exactly the

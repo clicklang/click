@@ -7942,8 +7942,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 && (*target_type != ProgramType::VoidPointer
                                     || pointer.program_type().is_object_pointer()) =>
                         {
+                            // A coercion from `void *` to a byte pointer forms
+                            // the byte view, as C's conversion does; other
+                            // coercions are retypes that keep the value.
                             ExpressionOutcome::Value(ProgramValue::Pointer(
-                                pointer.with_type(*target_type),
+                                if pointer.program_type() == ProgramType::VoidPointer {
+                                    crate::kernel::eval::cast_pointer_value(pointer, *target_type)
+                                } else {
+                                    pointer.with_type(*target_type)
+                                },
                             ))
                         }
                         _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),

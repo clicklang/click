@@ -7283,6 +7283,7 @@ fn describe_untyped_array_field_read(
             target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: *volatile,
             pointee_constant: *pointee_constant,
             explicit_qualification: true,

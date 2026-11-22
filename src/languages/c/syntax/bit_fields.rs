@@ -270,6 +270,7 @@ fn scalar_cast(expression: CExpression, interface_type: InterfaceType) -> CExpre
         expression: Box::new(expression),
         interface_type,
         struct_name: None,
+        struct_size: None,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
