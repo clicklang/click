@@ -883,6 +883,23 @@ fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
 }
 
 #[test]
+fn stored_pointer_null_fact_expands_through_a_read_equality() {
+    let (source, sources) =
+        mdtest_sources("mdtests/stored_pointer_identity_survives_resource_call.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("rewrite(r->next, at("), "{expanded}");
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: viewability diagnostic and saved-premise replay"]
 fn earlier_viewable_premise_keeps_its_point_without_transport() {
