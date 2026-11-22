@@ -16306,7 +16306,10 @@ fn outcome_solve_retains_checked_unchanged_old_equality_on_the_proof() {
     .expect("the retained old equality should expand");
     // The unchanged read expands through the loop's recorded footprint, a
     // separation and a `preserve`, rather than by normalizing.
-    assert!(expanded.contains("have p[0] == old(p[0]) by {"), "{expanded}");
+    assert!(
+        expanded.contains("have p[0] == old(p[0]) by {"),
+        "{expanded}"
+    );
     assert!(expanded.contains("preserve("), "{expanded}");
     assert!(!expanded.contains("normalize()"), "{expanded}");
     verify_c_sources(&expanded, &sources)
