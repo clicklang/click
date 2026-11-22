@@ -3,7 +3,8 @@
 `boxed(box)` owns every byte of the allocation that `box_destroy` frees.
 The caller's `views q[0..1]` is backed by a separate checked borrow, so it cannot
 alias those owned bytes in a valid entry partition. The proof opens the
-composite to establish byte-range separation and supplies it to the call.
+composite to establish separation from the allocation's bytes. The call
+checks that both the box header and the allocation are separate from the view.
 `call_rejects_lending_the_allocation_it_transfers.md` rejects a caller that
 tries to supply the freed cell itself as this borrowed view.
 
@@ -46,7 +47,10 @@ void box_release(struct box* box, struct box* other, int32* q) {
     unfold(boxed(box));
     have separate(memory(((box->data as (void *)) as (uint8 *))[0..4]), memory(q[0..1])) by { solve(); }
     fold(boxed(box));
-    step() by { known(); }
+    step() {
+        requires separate(memory((box as (int32 *))[0..2]), memory(q[0..1])) by { solve(); }
+        requires separate(memory(((box->data as (void *)) as (uint8 *))[0..4]), memory(q[0..1])) by { known(); }
+    }
 }
 ```
 
