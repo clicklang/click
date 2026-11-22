@@ -41,12 +41,25 @@ pointer loaded from memory, is opaque. It is named by where the pointer came
 from, as `ExternalObject` and `LoadedPointer` names are today. Two opaque
 provenances may or may not be the same allocation.
 
-### Types and qualifiers belong to accesses, not values
+### Types belong to terms, not values
 
-A pointer's type, `const` and `volatile` are properties of the expression or
-access that uses it, not of the value. `(int *)p` and `(void *)p` are the
-same pointer value as `p`. Click's identity includes them today
-(`Pointer::identity`); this model removes them.
+In C every expression and object has a type (C11 6.5p1, 6.2.5): `p` has type
+`int *`, `(char *)p` has type `char *`, and `*p` reads an `int` because of
+`p`'s type. The value a pointer expression denotes does not carry that type:
+converting between object pointer types and back yields a pointer that
+compares equal to the original (6.3.2.3p7), and TS 6010 and Cerberus model a
+pointer value as an address and a provenance. Rust's `p as *const U` likewise
+changes the static type and keeps the value.
+
+So a kernel term keeps its type, as a C expression does, and the pointer
+value it denotes is the address and provenance. `(int *)p` and `(void *)p`
+are different terms denoting the same pointer value as `p`: a cast changes
+the term's type, not the value, and `*p` takes its access type from `p`'s
+type. Pointer equality and identity compare values, so they ignore the type;
+an equality used to replace one term by another keeps the replaced term's
+type. `const` and `volatile` qualify the lvalue type of an access, which each
+access states (step 3a). Click's identity includes the type today
+(`Pointer::identity`); this model removes it.
 
 One conversion has a meaning of its own in C: converting to a character
 pointer forms a view of the object's bytes (C11 6.3.2.3p7). In C provenance
@@ -143,7 +156,7 @@ and the raise-lower audit reports it. No new spelling is invented for it.
 | identity: address, provenance, bounds, bounds owner, type, `volatile` | address and provenance; C provenance includes the array object |
 | `same_object`: same address object, lowered to a conjunction | `same_allocation`: same provenance, one kernel fact |
 | a read's provenance set by each caller, sometimes another read (the version-point/exact mix) | provenance derived from the read |
-| the raiser guesses a read's pointer type (`int32 *`) | no type to guess |
+| the raiser guesses a read's pointer type (`int32 *`) | the term's type, recorded where the read is made |
 | `pointer<T>(address:, provenance:, bounds:)` proposed for raising | not needed; Rust `with_addr` and the C cast when supported |
 
 ## Plan
@@ -155,9 +168,10 @@ Each step is one PR, measured with the gate and the raise-lower audit.
    it a single kernel fact. Migrate its uses and the reference. Independent of
    the other steps.
 3. **Types and qualifiers off the pointer value.** Identity becomes address
-   and provenance. Move type and qualifiers to accesses, and fold subobject
-   bounds into C provenance. This is the largest kernel change: equality, the
-   equality graph, effective types and the raiser all change.
+   and provenance. Qualifiers move to accesses, the type stays on the term,
+   and subobject bounds fold into C provenance. This is the largest kernel
+   change: equality, the equality graph, effective types and the raiser all
+   change.
    - 3a, step 1: every C load and store states the volatility of its lvalue's
      type (C11 6.7.3p7), which the frontend computes as it computes pointee
      `const`. The kernel still also reads the pointer value's flag. Over the
