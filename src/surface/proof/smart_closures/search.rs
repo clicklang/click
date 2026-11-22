@@ -6286,11 +6286,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ),
             };
             let steps = vec![
-                have(separate.clone(), ProofStep::Known),
-                have(
-                    footprint_separation.clone(),
-                    ProofStep::NormalizeUsing(vec![separate]),
-                ),
+                have(separate, ProofStep::Known),
+                have(footprint_separation.clone(), ProofStep::Known),
                 have(equality.clone(), ProofStep::Preserve(footprint_separation)),
                 ProofStep::Rewrite(equality),
                 ProofStep::Known,

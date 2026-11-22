@@ -138,6 +138,25 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
         } => memory
             .indexed_read_is_defined(pointer, *value_type)
             .then_some(true),
+        Proposition::ResourceContains { parent, child }
+            if let (Resource::Memory(parent), Resource::Memory(child)) =
+                (parent.as_ref(), child.as_ref())
+                && !parent.has_holes()
+                && !child.has_holes()
+                && let Some((parent_base, parent_start, parent_end)) =
+                    crate::kernel::primitives::constant_memory_coordinates(parent)
+                && let Some((child_base, child_start, child_end)) =
+                    crate::kernel::primitives::constant_memory_coordinates(child) =>
+        {
+            // Compare complete physical intervals on the same written base,
+            // even when their element widths differ.
+            (parent_base == child_base
+                && parent_start <= parent_end
+                && child_start <= child_end
+                && parent_start <= child_start
+                && child_end <= parent_end)
+                .then_some(true)
+        }
         Proposition::ResourceSeparate { left, right }
             if let (Resource::Memory(left), Resource::Memory(right)) =
                 (left.as_ref(), right.as_ref()) =>

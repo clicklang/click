@@ -3207,6 +3207,22 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
 }
 
 #[test]
+fn constant_byte_containment_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/byte_containment_preserves_physical_width.md");
+    let label = "last_byte.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap();
+    let outside = expanded.replace("[7..8]", "[7..9]");
+    assert_ne!(outside, expanded);
+    assert!(verify_c_sources(&outside, &[]).is_err());
+}
+
+#[test]
 fn cited_narrow_conditional_bounds_expand_without_normalize() {
     let (source, _) = mdtest_sources("mdtests/a_narrow_comparison_follows_from_a_cited_bound.md");
     for claim in ["else_arm.ensures_0", "strict.ensures_0"] {
@@ -16735,6 +16751,7 @@ fn pruned_indexed_read_expands_through_distinct_store_preservation() {
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
         let expanded = expand_function_proof_source(&source, &sources, function).unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
         assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
         assert!(
             expanded.contains("separation::separate_elements("),
@@ -16763,6 +16780,7 @@ fn quantified_read_expands_through_store_and_call_preservation() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_function_proof_source(&source, &sources, "walk").unwrap();
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
     without_implicit_solve_for_claim("walk.contract", || {
@@ -16783,6 +16801,7 @@ fn masked_64_bit_field_expands_through_explicit_store_preservation() {
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
         let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
         assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
         assert!(expanded.contains("preserve("), "{fixture}: {expanded}");
         without_implicit_solve_for_claim("caller.contract", || {
