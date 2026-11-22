@@ -3987,6 +3987,13 @@ pub(super) fn decode_crate(
         temporaries::bind_copied_call_arguments(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
+        temporaries::fold_returned_slice_lengths(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_copied_enum_scrutinees(
+            &mut locals,
+            &mut blocks,
+            &temporaries,
+            &parameter_types,
+        );
         let kept: BTreeSet<_> = locals.iter().map(|local| local.name.as_str()).collect();
         spellings.retain(|key, _| kept.contains(key.as_str()));
         temporaries.retain(|key| kept.contains(key.as_str()));

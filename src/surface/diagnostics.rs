@@ -5962,15 +5962,7 @@ pub(super) fn describe_program_value(
             } else {
                 ""
             };
-            let volatile = if pointer.pointee_volatile() {
-                "volatile "
-            } else {
-                ""
-            };
-            format!(
-                "({})",
-                click_cast(&base, &format!("{constant}{volatile}{ty}"))
-            )
+            format!("({})", click_cast(&base, &format!("{constant}{ty}")))
         }
         ProgramValue::Pointer(pointer) => describe_pointer(pointer, parameter_binding),
     }
@@ -6312,7 +6304,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             let target = qualified_native_pointer_spelling(
                 crate::kernel::program_type_spelling(pointer.program_type()),
                 pointer.pointee_constant(),
-                pointer.pointee_volatile(),
+                false,
             );
             format!("({})", click_cast("0u64", &target))
         }

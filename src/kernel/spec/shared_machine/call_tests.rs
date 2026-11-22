@@ -612,10 +612,6 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
                 actual_pointer.pointee_constant(),
                 expected_pointer.pointee_constant()
             );
-            assert_eq!(
-                actual_pointer.pointee_volatile(),
-                expected_pointer.pointee_volatile()
-            );
             if !null {
                 let KernelTermNode::PointerCall { call, .. } =
                     actual.value.shared().unwrap().node()

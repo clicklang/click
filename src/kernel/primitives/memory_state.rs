@@ -1583,10 +1583,7 @@ impl LocalEnvironment {
             name,
             LocalBinding::Object {
                 storage_declared,
-                value: value
-                    .with_pointer_pointee_volatile(pointee_volatile)
-                    .with_pointer_pointee_constant(pointee_constant)
-                    .into(),
+                value: value.with_pointer_pointee_constant(pointee_constant).into(),
                 program_type,
                 slot,
                 volatile,
@@ -1732,7 +1729,7 @@ impl LocalEnvironment {
         let value = if value.program_type().is_pointer() {
             value
                 .into_value()
-                .with_pointer_binding(program_type, pointee_volatile, pointee_constant)
+                .with_pointer_binding(program_type, pointee_constant)
                 .into()
         } else {
             value
@@ -1785,7 +1782,7 @@ impl LocalEnvironment {
         let value = if value_type.is_pointer() {
             value
                 .into_value()
-                .with_pointer_binding(value_type, pointee_volatile, pointee_constant)
+                .with_pointer_binding(value_type, pointee_constant)
                 .into()
         } else {
             value

@@ -994,7 +994,8 @@ impl<'a> Proof<'a> {
     /// The tactic's verified rule is applied by the kernel with no C
     /// statement; the binder map is the whole binding, exactly as for a call
     /// step, and every argument is lowered at the frontier as a fold field
-    /// is. Every precondition must already be an available fact.
+    /// is. Argument evaluation and the tactic's requires clauses are owed at
+    /// the original frontier.
     pub(in crate::surface::proof) fn apply_execution_user_tactic(
         &self,
         step: ProofStep,
@@ -1095,12 +1096,9 @@ impl<'a> Proof<'a> {
             };
             arguments.push(value);
         }
-        let before_state = (*execution.core.state).clone();
-        let context_parameters = context.parsed_function.parameters();
-        let context_arguments = context.arguments;
-        let (state, facts) = execution
+        let (state, facts, obligations) = execution
             .core
-            .record_tactic_application(
+            .prepare_tactic_application(
                 context.function,
                 context.arguments,
                 self.facts(),
@@ -1108,32 +1106,29 @@ impl<'a> Proof<'a> {
                 &arguments,
                 &environment,
             )
-            .map_err(|refusal| match refusal {
-                crate::kernel::TacticApplicationRefusal::MissingRequirement(
-                    requirement,
-                    context,
-                ) => {
-                    let spelling = synthesize_surface_proposition(
-                        &requirement,
-                        ParameterBinding::new(context_parameters, context_arguments),
-                        &before_state,
-                    )
-                    .map(|proposition| {
-                        crate::surface::diagnostics::describe_click_proposition(&proposition)
-                    })
-                    .unwrap_or_else(|| {
-                        crate::surface::proof_diagnostics::render::render_proposition(&requirement)
-                    });
-                    let owed = context.map_or_else(String::new, |context| format!(" ({context})"));
-                    self.step_error(format!(
-                        "tactic `{callee}` requires `{spelling}`{owed}, which is not an available \
-                         fact here; establish it first, for example with `have`"
+            .map_err(|message| self.step_error(message))?;
+        for obligation in obligations {
+            if !obligation
+                .call_requirement_site()
+                .is_some_and(|source| source.source_requirement_ordinal.is_some())
+            {
+                // Generated checks such as recursive descent keep their
+                // existing exact-premise requirement.
+                if self.facts().contains(obligation.proposition()) {
+                    continue;
+                }
+                let detail = obligation.context().unwrap_or("checked prerequisite");
+                return Err(self
+                    .step_error(format!(
+                        "tactic `{callee}` requires an available fact ({detail})"
                     ))
-                }
-                crate::kernel::TacticApplicationRefusal::Refused(message) => {
-                    self.step_error(message)
-                }
-            })?;
+                    .with_unresolved_requirement(&obligation));
+            }
+            let error = self
+                .step_error(format!("tactic `{callee}` requires a call-site proof"))
+                .with_unresolved_requirement(&obligation);
+            crate::surface::proof::execution_planning::refuse_or_record_open_obligation(error)?;
+        }
         execution.core.state = state.into();
         let added_facts = facts.introduced_since(self.facts()).unwrap_or_default();
         let state = self
@@ -1369,6 +1364,9 @@ impl<'a> Proof<'a> {
                     facts.with_kernel_checked_fact(fact.clone())
                 })
         };
+        if execution.core.has_prepared_tactic_application() {
+            execution.core.finish_prepared_tactic_application();
+        }
         // `have` publication keeps its source spelling and certificate facts
         // beside the logical context. Carry only the appended suffix, preserving
         // the candidate's new call bindings, states, and typed read evidence.

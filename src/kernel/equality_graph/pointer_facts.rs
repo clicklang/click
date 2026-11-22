@@ -277,7 +277,6 @@ impl EqualityGraph {
                                     term_source_1.program_value_native() =>
                             {
                                 left.program_type() == right.program_type()
-                                    && left.pointee_volatile() == right.pointee_volatile()
                                     && self.knows_condition(
                                         &crate::kernel::ConditionTerm::PointerEqual(
                                             Box::new(left.clone()),

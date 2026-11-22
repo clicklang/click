@@ -7,7 +7,6 @@ struct PointerIdentity {
     address: SharedAddress,
     provenance: SharedAddress,
     program_type: ProgramType,
-    volatile: bool,
     bounds_known: bool,
     bounds_owner: Option<SharedAddress>,
     bounds: Option<(SharedAddress, KernelTerm)>,
@@ -55,7 +54,6 @@ impl KernelPointerEquality {
                 address: address(&p.address),
                 provenance: address(&p.provenance),
                 program_type: p.program_type,
-                volatile: q.is_some_and(|q| q.volatile),
                 bounds_known: known,
                 bounds_owner: if known {
                     None
@@ -83,7 +81,6 @@ impl SharedPointer {
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
         let known = aq.is_some_and(|q| q.bounds_known);
         a.program_type == b.program_type
-            && aq.is_some_and(|q| q.volatile) == bq.is_some_and(|q| q.volatile)
             && known == bq.is_some_and(|q| q.bounds_known)
             && a.address.syntax_equal(&b.address)
             && a.provenance.syntax_equal(&b.provenance)
@@ -218,11 +215,7 @@ impl KernelTerm {
         }
         Self::pointer_equal_raw(arguments.map(|value| {
             let p = value.node();
-            value.with_binding_type_and_qualifiers(
-                p.program_type,
-                p.qualifiers.as_ref().is_some_and(|q| q.volatile),
-                false,
-            )
+            value.with_binding_type_and_qualifiers(p.program_type, false)
         }))
     }
 }
@@ -244,7 +237,6 @@ mod tests {
             let raw = Pointer::new(pointer, ProgramType::Int32Pointer);
             values.push(raw.clone());
             values.push(raw.clone().with_pointee_constant(true));
-            values.push(raw.clone().with_pointee_volatile(true));
             values.push(raw.clone().with_root_bounds());
             values.push(raw.clone().with_bounds(Some(SubobjectBounds {
                 start: Address::symbolic(Variable(999101)),

@@ -876,6 +876,41 @@ pub(super) fn substitute_literals(
     temporaries: &BTreeSet<String>,
     parameters: &BTreeMap<String, super::super::schema::Type>,
 ) {
+    substitute_invariant_values(locals, blocks, temporaries, parameters, None);
+}
+
+/// Bind a variant split to its unchanged source parameter once the earlier
+/// passes have exposed the copy that feeds the split.
+pub(super) fn bind_copied_enum_scrutinees(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+    parameters: &BTreeMap<String, Type>,
+) {
+    if !parameters
+        .values()
+        .any(|ty| matches!(ty, Type::Enum { .. }))
+    {
+        return;
+    }
+    let scrutinees: BTreeSet<_> = blocks
+        .iter()
+        .filter_map(|block| enum_switch_local(&block.terminator))
+        .filter(|name| temporaries.contains(*name))
+        .cloned()
+        .collect();
+    if !scrutinees.is_empty() {
+        substitute_invariant_values(locals, blocks, temporaries, parameters, Some(&scrutinees));
+    }
+}
+
+fn substitute_invariant_values(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+    parameters: &BTreeMap<String, Type>,
+    enum_scrutinees: Option<&BTreeSet<String>>,
+) {
     let mut reads = BTreeMap::<String, usize>::new();
     let mut named = BTreeSet::<String>::new();
     let mut assignments = BTreeMap::<String, Vec<E>>::new();
@@ -893,7 +928,11 @@ pub(super) fn substitute_literals(
                     .push(value.clone());
             }
         }
-        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if !enum_scrutinees.is_some_and(|scrutinees| {
+            enum_switch_local(&block.terminator).is_some_and(|name| scrutinees.contains(name))
+        }) {
+            terminator_uses(&block.terminator, &mut reads, &mut named);
+        }
         if let Some(destination) = call_destination(&block.terminator) {
             named.insert(destination.clone());
         }
@@ -909,6 +948,17 @@ pub(super) fn substitute_literals(
         .into_iter()
         .filter(|(name, values)| {
             temporaries.contains(name) && !named.contains(name) && values.len() == 1
+        })
+        // A variant split needs a binding. Only replace its copy with an
+        // unchanged source parameter of the same enum type.
+        .filter(|(name, values)| {
+            enum_scrutinees.is_none_or(|scrutinees| {
+                scrutinees.contains(name)
+                    && matches!(values.as_slice(), [E::Local { name: source }]
+                    if unchanged.contains(source)
+                        && matches!(types.get(name), Some(Type::Enum { .. }))
+                        && types.get(name).copied() == parameters.get(source))
+            })
         })
         .filter_map(|(name, mut values)| Some((name, values.pop()?)))
         .collect();
@@ -1276,6 +1326,122 @@ fn only_destination(blocks: &[MirBlock], name: &str) -> bool {
         terminator_uses(&block.terminator, &mut reads, &mut named);
         statements && !reads.contains_key(name) && !named.contains(name)
     })
+}
+
+/// A length-only read of a shared slice can use its original value. Keep the
+/// copy if the slice could change before the return or if anything else reads it.
+pub(super) fn fold_returned_slice_lengths(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let slices: BTreeSet<_> = locals
+        .iter()
+        .filter(|local| {
+            local.value_type == (Type::ByteSlice { mutable: false })
+                && temporaries.contains(&local.name)
+        })
+        .map(|local| local.name.as_str())
+        .collect();
+    if slices.is_empty() {
+        return;
+    }
+    let mut predecessors = vec![0usize; blocks.len()];
+    for block in blocks.iter() {
+        for target in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(target) {
+                *count += 1;
+            }
+        }
+    }
+    let mut folds = Vec::new();
+    for (index, block) in blocks.iter().enumerate() {
+        let continuation = match &block.terminator {
+            T::ReturnValue { .. } => index,
+            T::Goto { target }
+                if *target != 0
+                    && *target != index
+                    && predecessors.get(*target) == Some(&1)
+                    && blocks[*target]
+                        .statements
+                        .iter()
+                        .all(|s| matches!(s, S::Site { .. })) =>
+            {
+                *target
+            }
+            _ => continue,
+        };
+        let T::ReturnValue {
+            value: E::SliceLength { slice },
+        } = &blocks[continuation].terminator
+        else {
+            continue;
+        };
+        let operand = match slice.as_ref() {
+            E::Borrow {
+                place,
+                value_type: Type::ByteSlice { mutable: false },
+            } => place.as_ref(),
+            operand => operand,
+        };
+        let E::Local { name } = operand else { continue };
+        if !slices.contains(name.as_str()) {
+            continue;
+        }
+        if let Some(S::Assign {
+            target: E::Local { name: destination },
+            value,
+        }) = block
+            .statements
+            .iter()
+            .rfind(|statement| !matches!(statement, S::Site { .. }))
+            && destination == name
+            && matches!(value, E::Local { name: source } | E::ChunkRemainder { iterator: source } if source != name)
+        {
+            folds.push((continuation, name.clone(), value.clone()));
+        }
+    }
+    if folds.is_empty() {
+        return;
+    }
+    let mut mentions = BTreeMap::<String, usize>::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            for name in mentioned_locals(statement) {
+                *mentions.entry(name).or_default() += 1;
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        named.extend(reads.into_keys());
+        named.extend(call_destination(&block.terminator).cloned());
+        for name in named {
+            *mentions.entry(name).or_default() += 1;
+        }
+    }
+    let mut removed = BTreeSet::new();
+    for (continuation, name, value) in folds {
+        if mentions.get(&name) == Some(&2)
+            && let T::ReturnValue {
+                value: E::SliceLength { slice },
+            } = &mut blocks[continuation].terminator
+        {
+            **slice = value;
+            removed.insert(name);
+        }
+    }
+    for block in blocks {
+        block.statements.retain(|statement| match statement {
+            S::Assign {
+                target: E::Local { name },
+                ..
+            } => !removed.contains(name),
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
 }
 
 /// Returns the value MIR writes to the return place where nothing runs
@@ -3162,13 +3328,7 @@ fn substitute_target(target: &mut E, pending: &mut Pending) {
     }
 }
 
-fn terminator_uses(
-    terminator: &T,
-    reads: &mut BTreeMap<String, usize>,
-    named: &mut BTreeSet<String>,
-) {
-    // A `match` on an enum splits a proof by its scrutinee's variants, and
-    // that split names a local; the scrutinee stays one.
+fn enum_switch_local(terminator: &T) -> Option<&String> {
     if let T::Switch {
         scrutinee: E::Local { name },
         cases,
@@ -3181,6 +3341,20 @@ fn terminator_uses(
             )
         })
     {
+        Some(name)
+    } else {
+        None
+    }
+}
+
+fn terminator_uses(
+    terminator: &T,
+    reads: &mut BTreeMap<String, usize>,
+    named: &mut BTreeSet<String>,
+) {
+    // A match splits a proof by its scrutinee's variants. This use must
+    // continue to name a binding.
+    if let Some(name) = enum_switch_local(terminator) {
         named.insert(name.clone());
     }
     let mut terminator = terminator.clone();
@@ -4086,6 +4260,50 @@ mod tests {
     }
 
     #[test]
+    fn enum_match_can_use_an_unchanged_parameter() {
+        let enum_type = Type::Enum {
+            name: "Option".into(),
+        };
+        let parameters = BTreeMap::from([("x".into(), enum_type.clone())]);
+        for changed in [false, true] {
+            let mut locals = vec![Place {
+                value_type: enum_type.clone(),
+                ..place("t1")
+            }];
+            let mut statements = vec![assign("t1", local("x"))];
+            statements.extend(changed.then(|| assign("x", local("y"))));
+            let mut blocks = [
+                block(
+                    statements,
+                    T::Switch {
+                        scrutinee: local("t1"),
+                        cases: vec![SwitchCase {
+                            label: SwitchLabel::Variant {
+                                name: "Some".into(),
+                            },
+                            target: 1,
+                        }],
+                        otherwise: Some(1),
+                    },
+                ),
+                block(vec![], T::Return),
+            ];
+            super::bind_copied_enum_scrutinees(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+                &parameters,
+            );
+            assert_eq!(locals.is_empty(), !changed);
+            let expected = if changed { "t1" } else { "x" };
+            assert!(
+                matches!(&blocks[0].terminator, T::Switch { scrutinee: E::Local { name }, .. }
+                if name == expected)
+            );
+        }
+    }
+
+    #[test]
     fn an_enum_payload_read_can_use_the_original_value() {
         let field = E::EnumField {
             base: Box::new(local("t1")),
@@ -4121,6 +4339,38 @@ mod tests {
             terminator_site: None,
             statements,
             terminator,
+        }
+    }
+
+    #[test]
+    fn a_returned_length_keeps_the_slice_snapshot_across_a_write() {
+        let shared = Type::ByteSlice { mutable: false };
+        for write in [false, true] {
+            let mut locals = vec![Place {
+                value_type: shared.clone(),
+                ..place("t1")
+            }];
+            let mut blocks = [
+                block(vec![assign("t1", local("a"))], T::Goto { target: 1 }),
+                block(
+                    write.then(|| assign("a", local("b"))).into_iter().collect(),
+                    T::ReturnValue {
+                        value: E::SliceLength {
+                            slice: Box::new(local("t1")),
+                        },
+                    },
+                ),
+            ];
+            super::fold_returned_slice_lengths(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+            );
+            assert_eq!(locals.is_empty(), !write);
+            let expected = if write { "t1" } else { "a" };
+            assert!(matches!(&blocks[1].terminator,
+                T::ReturnValue { value: E::SliceLength { slice } }
+                    if matches!(slice.as_ref(), E::Local { name } if name == expected)));
         }
     }
 

@@ -2417,7 +2417,6 @@ pub struct Pointer {
 
 #[derive(Clone, Debug, Default)]
 struct PointerQualifiers {
-    volatile: bool,
     constant: bool,
     bounds: Option<SubobjectBounds>,
     bounds_known: bool,
@@ -2435,7 +2434,6 @@ struct PointerQualifiers {
 #[derive(PartialEq, Eq)]
 pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
     program_type: ProgramType,
-    volatile: bool,
     constant: bool,
     bounds_known: bool,
     declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
@@ -2762,7 +2760,6 @@ impl Pointer {
     pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
         RetainedPointerMetadata {
             program_type: self.program_type,
-            volatile: self.pointee_volatile(),
             constant: self.pointee_constant(),
             bounds_known: self.bounds_are_known(),
             declared_class: self
@@ -2771,10 +2768,6 @@ impl Pointer {
                 .and_then(|q| q.object_class.as_ref()),
             evidence: self.object_origin_evidence(),
         }
-    }
-
-    pub(crate) fn pointee_volatile(&self) -> bool {
-        self.qualifiers.as_ref().is_some_and(|q| q.volatile)
     }
 
     pub(crate) fn pointee_constant(&self) -> bool {
@@ -2789,14 +2782,6 @@ impl Pointer {
             program_type,
             qualifiers: self.qualifiers,
         }
-    }
-
-    pub(crate) fn with_pointee_volatile(mut self, pointee_volatile: bool) -> Self {
-        if self.pointee_volatile() != pointee_volatile {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).volatile =
-                pointee_volatile;
-        }
-        self
     }
 
     pub(crate) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
@@ -2974,7 +2959,7 @@ impl Pointer {
 
 impl Pointer {
     /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, whether the pointee is volatile, and the subobject it
+    /// viewed through, and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
     /// fresh scalar id, never a structural resource or ledger key.
     /// Two values at one address with different bounds are
@@ -2987,7 +2972,6 @@ impl Pointer {
         &Address,
         &ProgramType,
         bool,
-        bool,
         Option<&Address>,
         Option<&SubobjectBounds>,
     ) {
@@ -2995,7 +2979,6 @@ impl Pointer {
             &self.address,
             &self.provenance,
             &self.program_type,
-            self.pointee_volatile(),
             self.bounds_are_known(),
             if self.bounds_are_known() {
                 None
