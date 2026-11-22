@@ -559,6 +559,7 @@ pub(super) fn lower(
                 arguments,
                 destination,
                 through_pointer: true,
+                result: result_step,
                 owned_arguments,
                 ..
             } => {
@@ -575,6 +576,8 @@ pub(super) fn lower(
                     cx.typed_arguments(parameters.clone(), arguments)?;
                 let call = if **result == Type::Unit {
                     program_call(function, arguments_values)
+                } else if let Some(step) = result_step {
+                    crate::kernel::program_call_value(*step, function, arguments_values).0
                 } else {
                     let destination = destination
                         .as_ref()
@@ -843,40 +846,8 @@ pub(super) fn lower(
                             value_type,
                         },
                 } => {
-                    let closure = cx
-                        .functions
-                        .get(function.as_str())
-                        .ok_or("Rust closure instance of an unknown closure")?;
-                    let Type::FnPointer { parameters, result } = value_type else {
-                        return Err("Rust closure instance requires a callable type".into());
-                    };
-                    if closure.captures != captures.len()
-                        || closure.return_type != **result
-                        || closure.parameters.len() != closure.captures + parameters.len()
-                        || closure.parameters[closure.captures..]
-                            .iter()
-                            .zip(parameters)
-                            .any(|(parameter, expected)| parameter.value_type != *expected)
-                    {
-                        return Err(format!(
-                            "Rust closure instance of `{function}` does not have the closure's type"
-                        ));
-                    }
-                    let mut checks = program_skip();
-                    let mut values = Vec::new();
-                    for capture in captures {
-                        let (capture_checks, value) = cx.prepared_expr(capture)?;
-                        checks = program_seq(checks, capture_checks);
-                        values.push(value);
-                    }
-                    program_seq(
-                        checks,
-                        cx.call_then_assign(
-                            name,
-                            crate::languages::rust::names::closure_instance_name(function),
-                            values,
-                        ),
-                    )
+                    let (checks, value) = cx.prepared_closure(function, captures, value_type)?;
+                    program_seq(checks, program_assign(cx.binding(name), value))
                 }
                 S::Assign {
                     target: E::Local { name },

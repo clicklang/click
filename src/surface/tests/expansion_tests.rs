@@ -6008,6 +6008,15 @@ fn branch_interface_service_solve_expands_and_rechecks() {
             )
         },
     );
+
+    let claim = "service_step.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("rewrite(owner->phase, at("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -16828,6 +16837,39 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .expect("the expanded indexed-read proof should check without implicit solving");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the symbolic indexed read"]
+fn returned_read_expands_by_restricting_range_separation_to_the_cell() {
+    let (source, sources) = mdtest_sources("mdtests/separate_symbolic_unwritten_read.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "write_i_read_j.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve(memory(p[j])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the loop-exit frame"]
+fn returned_read_expands_through_its_loop_footprint() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_break_exit_ordinary_join_keeps_post_loop_read.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve(memory(q[0])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]

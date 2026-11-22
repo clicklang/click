@@ -11,6 +11,13 @@ impl ConditionTerm {
         right: &MachineTerm,
     ) -> [Self; 2] {
         let (minimum, minus_one) = match format {
+            MachineIntegerType::Int8 | MachineIntegerType::Int16 => {
+                let bits = format.format().bits();
+                (
+                    MachineTerm::narrow_constant(format, 1 << (bits - 1)),
+                    MachineTerm::narrow_constant(format, (1 << bits) - 1),
+                )
+            }
             MachineIntegerType::Int32 => (
                 MachineTerm::constant(i32::MIN as u32),
                 MachineTerm::constant(u32::MAX),
@@ -19,7 +26,7 @@ impl ConditionTerm {
                 MachineTerm::int64_constant(i64::MIN),
                 MachineTerm::int64_constant(-1),
             ),
-            _ => unreachable!("native signed division uses int32 or int64"),
+            _ => unreachable!("unsupported signed division format"),
         };
         [
             Self::machine_compare(format, CompareRelation::Equal, left.clone(), minimum),

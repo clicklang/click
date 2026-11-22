@@ -1145,9 +1145,9 @@ step is still checked.
 parses only under `click verify --allow-sorry` and closes its goal without
 checking it. See [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole).
 
-When `intro` must freshen a universal binder, it uses the reserved logical-witness
-range. Existential choices use that same range, separate from C execution,
-load and binder identities. Issued witnesses remain reserved even when their
+When `intro` must freshen a universal binder, it uses a logical witness, a
+variable kind of its own. Existential choices use witnesses too, separate from
+C execution, load and binder identities. Issued witnesses remain reserved even when their
 instantiated body does not mention them, so later introductions and choices
 cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
@@ -3021,10 +3021,8 @@ before its declaration. Use `apply(ih(m))` at the top level and inside nested
 
 An unsupported parameter type, changed goal, repeated induction, or unproved
 signed nonnegative domain fails with a message naming the case. `induct` in
-a C function proof is refused with the generic "no checked proof driver accepts this proof
-script's shape". Click opens the
-induction rule; expansion is unchanged, and profiling charges the structural
-setup.
+a C execution proof reports a `tactic error`. Click opens the induction
+rule during checking and profiling charges the structural setup.
 
 **Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
 [`an_induction_hypothesis_applies_inside_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_a_have.md),

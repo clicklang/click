@@ -11,6 +11,10 @@ unconditionally through the original child pointer after clearing the parent
 field. These contracts preserve the original inputs and strengthen the
 resource return guarantee without changing C or the payload claim.
 
+After the release call, `parent_detach` uses the callee's payload guarantee.
+It opens the returned control resource to show that clearing the parent link
+writes a separate cell, then carries the same payload across that store.
+
 `parent_attach` stores `kid` in its typed model `ParentLink::Linked(kid)`, so
 its interface requires `kid`'s original object class to be `struct child`.
 A C pointer declaration does not supply that evidence, so `caller` states it
@@ -47,6 +51,7 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
 
 ```click
 import click::integer;
+import click::separation;
 
 spec enum ParentLink {
     Empty,
@@ -169,6 +174,29 @@ void parent_detach(struct parent* p) {
             step();
             step();
             step();
+            have old(p->kid) == kid by { known(); }
+            have kid->payload == old(p->kid->payload) by { known(); }
+            with(child_control(kid)) {
+                have separate(memory(p->kid), memory(*kid)) by { known(); }
+                have contains(memory(*kid), memory(kid->payload)) by { normalize(); }
+                apply(separation::contains_refl(memory(p->kid)));
+                apply(separation::separate_restrict(
+                    memory(p->kid), memory(*kid), memory(p->kid), memory(kid->payload)));
+                mark before_clear;
+                step();
+                have separate(statement(2).footprint, memory(kid->payload)) by {
+                    normalize() using {
+                        at(before_clear, separate(memory(p->kid), memory(kid->payload)));
+                    };
+                }
+                have kid->payload == at(before_clear, kid->payload) by {
+                    preserve(memory(kid->payload), statement(2));
+                }
+                have kid->payload == old(p->kid->payload) by {
+                    rewrite(kid->payload, at(before_clear, kid->payload));
+                    known();
+                }
+            }
             let out = fold(parent(p), { link: ParentLink::Empty });
             step_until(function.exit);
             solve();
@@ -191,6 +219,7 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     let { out: first_out } = step(parent_detach, { link: first_link });
     step();
     step(parent_read_payload, { link: second_link });
+    step();
     have second->kid == kid;
     have observed == kid->payload;
     have observed == second->kid->payload by { rewrite(second->kid, kid); solve(); }

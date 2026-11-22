@@ -3,7 +3,7 @@
 `mark_run` marks the cells `[start, end)` of an occupancy map through a
 loop that owns a field-bearing `window` instance, and the window owns the
 whole map. After the loop the proof tries to carry the value that
-`occupied[start]` had before the loop across it with `known()`, which
+`occupied[start]` had before the loop across it with `transport`, which
 would let it conclude `start < 0` from `0 <= start` once the loop's own
 store is known.
 
@@ -58,6 +58,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
     step();
     let w = fold(window(occupied, capacity, start, end), { next: start });
     mark pre;
+    have at(pre, occupied[start]) == 0 by { solve(); }
     loop {
         owns w: window(occupied, capacity, start, end);
         invariant w.next == i;
@@ -144,8 +145,8 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         }
     }
     let { next: n } = unfold(w);
-    have occupied[start] == at(pre, occupied[start]) by {
-        known();
+    transport(at(pre, occupied[start]) == 0, occupied[start] == 0) using {
+        at(pre, occupied[start]) == 0;
     }
     have n == i by solve();
     have n <= end by solve();
@@ -165,11 +166,6 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         }, start);
         known();
     }
-    have at(pre, occupied[start]) == 0 by solve();
-    have occupied[start] == 0 by {
-        rewrite(occupied[start], at(pre, occupied[start]));
-        known();
-    }
     have start < 0 by {
         contradiction(occupied[start] == 1);
     }
@@ -177,5 +173,5 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
 ```
 
 ```expect
-fail: `have` failed for `occupied[start] == at(pre, occupied[start])`
+fail: `transport using` found no frame evidence carrying its source fact
 ```

@@ -62,12 +62,12 @@ fn report_error(message: String) -> ! {
         "execution prerequisite unmet",
         "execution refused",
         "unsupported",
-        "unsupported proof",
         "unclassified verification refusal",
         "syntax error",
         "type error",
         "internal error",
-        "limit error",
+        "work limit reached",
+        "timed out",
     ]
     .iter()
     .any(|heading| {
@@ -580,6 +580,93 @@ uint64 spell(const uint8* b, uint64 n) {
         .unwrap_err();
         assert!(traced.starts_with("unsupported:"), "{traced}");
         assert!(traced.contains("proof refusal:"), "{traced}");
+    }
+
+    #[test]
+    fn execution_region_depth_reports_unsupported() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/proof_match_nesting_bound_named.md");
+        let report = entry(["verify".to_string(), fixture.display().to_string()]).unwrap_err();
+        assert!(report.starts_with("unsupported:"), "{report}");
+        assert!(
+            report.contains("checked execution-region recursion exceeds the supported depth"),
+            "{report}"
+        );
+        assert!(!report.contains("tactic@"), "{report}");
+    }
+
+    #[test]
+    fn contract_refinement_reports_the_specific_unsupported_capability() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("refinement.click");
+        for (contracts, callback, reason) in [
+            (
+                r#"contract int32 Raw(int32 x) throws int32 {
+    ensures result == x;
+    exceptional ensures exception == 7;
+}
+contract int32 Target(int32 x) throws int32 {
+    ensures result == x;
+    exceptional ensures exception == 7;
+}"#,
+                "int32 (*)(int32)",
+                "the source contract may throw",
+            ),
+            (
+                r#"authorized resource Permit(pool: int32*) {}
+contract void Raw(int32* pool) { ensures true; }
+contract void Target(int32* pool) {
+    owns authority(Permit(pool));
+    owns Permit(pool);
+    views *pool;
+}"#,
+                "void (*)(int32*)",
+                "Click cannot frame a resource of family `population authority`",
+            ),
+        ] {
+            fs::write(
+                &sidecar,
+                format!(
+                    "{contracts}\n
+theorem lift(callback: {callback}) {{
+    requires Raw(callback);
+    ensures Target(callback) by {{
+        unfold(Raw(callback));
+        unfold(Target(callback));
+        solve();
+    }}
+}}
+"
+                ),
+            )
+            .unwrap();
+            let report = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(report.starts_with("unsupported:"), "{report}");
+            assert!(report.contains(reason), "{report}");
+        }
+    }
+
+    #[test]
+    fn induction_in_an_execution_proof_reports_a_tactic_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(directory.path().join("f.c"), "int f(int n) { return n; }").unwrap();
+        for prefix in ["", "step();"] {
+            fs::write(
+                &sidecar,
+                format!(
+                    "verifying \"f.c\";\nint32 f(int32 n) {{ requires n >= 0; ensures result == n; }} by {{\n    {prefix}\n    let ih = induct(n);\n    known();\n}}"
+                ),
+            )
+            .unwrap();
+            let report = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(report.starts_with("tactic error:"), "{report}");
+            assert!(
+                report.contains("`induct` requires a pure theorem"),
+                "{report}"
+            );
+            assert!(report.contains("let ih = induct(n);"), "{report}");
+        }
     }
 
     #[test]
@@ -1316,38 +1403,29 @@ int32 check(struct link* node) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    const SHARED_POPULATION_FIXTURE: &str =
+        include_str!("../../mdtests/shared_heap_population_certification.md");
+
     #[test]
     #[ignore = "nightly: 6s in the parallel gate"]
     fn tautological_ensure_preserves_population_certification() {
-        let directory =
-            std::env::temp_dir().join(format!("click-certification-trace-{}", std::process::id()));
-        if directory.exists() {
-            fs::remove_dir_all(&directory).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let fixture = directory.path().join("shared_population.md");
+        let tautology = "    ensures old(p->kid) == old(p->kid);\n";
+        let baseline = SHARED_POPULATION_FIXTURE.replacen(tautology, "", 1);
+        assert_ne!(baseline, SHARED_POPULATION_FIXTURE);
+
+        for source in [baseline.as_str(), SHARED_POPULATION_FIXTURE] {
+            fs::write(&fixture, source).unwrap();
+            entry([
+                "verify".to_string(),
+                "--trace-proof".to_string(),
+                "parent_detach".to_string(),
+                fixture.display().to_string(),
+            ])
+            .unwrap();
         }
-        fs::create_dir(&directory).unwrap();
-        fs::write(
-            directory.join("shared_parent.c"),
-            include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        let sidecar = directory.join("shared_parent.click");
-        let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
-        let source = source.replacen(
-            "    produces p->kid;\n",
-            "    produces p->kid;\n    ensures old(p->kid) == old(p->kid);\n",
-            1,
-        );
-        assert!(source.contains("ensures old(p->kid) == old(p->kid);"));
-        fs::write(&sidecar, source).unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        entry([
-            "verify".to_string(),
-            "--trace-proof".to_string(),
-            "parent_detach".to_string(),
-            sidecar.display().to_string(),
-        ])
-        .unwrap();
-        fs::remove_dir_all(directory).unwrap();
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
     }
 
     // Simple claim closers must perform the same checked return exchange as
@@ -1355,23 +1433,22 @@ int32 check(struct link* node) {
     #[test]
     #[ignore = "nightly: 10s in the parallel gate"]
     fn shared_population_release_expansion_retains_lifetime() {
-        let directory = std::env::temp_dir().join(format!(
-            "click-population-release-expansion-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&directory).unwrap();
-        fs::write(
-            directory.join("shared_parent.c"),
-            include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        let sidecar = directory.join("shared_parent.click");
-        let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
-        fs::write(&sidecar, source).unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        let release_end = source.find("void parent_attach(").unwrap();
-        let solve = source[..release_end].rfind("        solve();").unwrap();
-        let line = source[..solve]
+        let directory = tempfile::tempdir().unwrap();
+        let fixture = directory.path().join("shared_population.md");
+        let source = SHARED_POPULATION_FIXTURE;
+        fs::write(&fixture, source).unwrap();
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
+        let click_start = source.find("```click\n").unwrap();
+        let release_start =
+            click_start + source[click_start..].find("void child_release(").unwrap();
+        let release_end =
+            release_start + source[release_start..].find("void parent_attach(").unwrap();
+        let final_release = "        solve();\n    } else {";
+        let final_closer = release_start
+            + source[release_start..release_end]
+                .find(final_release)
+                .unwrap();
+        let line = source[..final_closer]
             .bytes()
             .filter(|byte| *byte == b'\n')
             .count()
@@ -1379,11 +1456,12 @@ int32 check(struct link* node) {
         entry([
             "expand".to_string(),
             "--in-place".to_string(),
-            format!("{}:{line}:9", sidecar.display()),
+            format!("{}:{line}:9", fixture.display()),
         ])
         .unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        fs::remove_dir_all(directory).unwrap();
+        let expanded = fs::read_to_string(&fixture).unwrap();
+        assert_ne!(expanded, source);
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
     }
 
     #[test]
@@ -1632,7 +1710,12 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
 } by {
     mark before_call;
     let { result: r } = step(child);
-    have defined(at(before_call, a[i])) by { solve(); }
+    have defined(at(before_call, a[i])) by {
+        instantiate(at(before_call, forall (k: int32) {
+            0 <= k and k < n implies defined(a[k])
+        }), i);
+        known();
+    }
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])
     } by {

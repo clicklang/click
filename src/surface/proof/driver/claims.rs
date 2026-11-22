@@ -579,31 +579,30 @@ fn outcome_paths_bind_obtain(choices: &[Vec<SurfacePathChoice>]) -> bool {
 
 fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimRef<'_>) -> String {
     let label = function_claim_label(function_block, claim);
-    let statement = match claim.clause().ensure() {
+    format!("{label}: {}", diagnostic_claim_statement(claim))
+}
+
+fn diagnostic_claim_statement(claim: &FunctionClaimRef<'_>) -> String {
+    match claim.clause().ensure() {
         Ensure::Resource(resource) => {
             crate::surface::validation::describe_resource_clause(resource)
         }
         Ensure::Proposition(proposition) => {
             crate::surface::diagnostics::describe_click_proposition(proposition)
         }
-    };
-    format!("{label}: {statement}")
+    }
 }
 
-/// The terminal diagnostic for a proof no checked driver accepts. The
-/// drivers are the single verification engine; a shape they decline is a
-/// gap to close in a driver, never a reason to run a second engine. A
-/// decline records no tactic, so the message names none.
-fn unsupported_proof_shape(
+/// The terminal diagnostic when all checked drivers declined.
+fn checked_driver_refusal(
     proof_label: &str,
-    grouped: bool,
     claim_labels: &[String],
     decline: Decline,
 ) -> ClickError {
     if decline == Decline::RegionDepth {
         return ClickError::new(format!(
             "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
-        )).with_proof_refusal(crate::surface::ProofRefusal::UnsupportedProof);
+        )).with_kind(ClickErrorKind::Unsupported);
     }
     if decline == Decline::ShortOfExit {
         // The written shape is supported; what stopped the drivers is a path
@@ -623,14 +622,9 @@ fn unsupported_proof_shape(
             .join(", ");
         format!("these {} contract claims: {labels}", claim_labels.len())
     };
-    let rewrite = if grouped {
-        "Every terminal path must establish every listed claim. If `step()` reaches a maybe-throwing call, use `outcomes { returned => { ... } threw => { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
-    } else {
-        "If `step()` reaches a maybe-throwing call, use `outcomes { returned => { ... } threw => { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
-    };
     ClickError::new(format!(
-        "`{proof_label}`: no checked proof driver accepts this proof script's shape for {claim_description}, and none reported a tactic it refused. No listed claim was shown false. To find the tactic no driver supports here, remove tactics from the end of the script until it is accepted. {rewrite}"
-    )).with_proof_refusal(crate::surface::ProofRefusal::UnsupportedProof)
+        "`{proof_label}`: no checked proof driver accepts this proof script's shape for {claim_description}, and none reported a tactic it refused. Click could not identify why verification stopped."
+    )).with_kind(ClickErrorKind::Internal)
 }
 
 pub(in crate::surface) fn prove_claim_by_tactics(
@@ -1091,12 +1085,8 @@ fn prove_claims_by_checked_tactics(
         .map(|claim| diagnostic_claim_label(function_block, claim))
         .collect::<Vec<_>>();
     let decline = direct_proof.err().unwrap_or(Decline::Shape);
-    Err(unsupported_proof_shape(
-        proof_label,
-        grouped,
-        &claim_labels,
-        decline,
-    ))
+    Err(checked_driver_refusal(proof_label, &claim_labels, decline)
+        .at_declaration(function_block.signature().name()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1114,6 +1104,10 @@ pub(in crate::surface) fn prove_claims_by_implicit_tail(
 ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let mut tactics = vec![ProofTactic::SmartExecute];
     if !claims.is_empty() {
+        if let Some(split) = entry_type_resource_split(function_block, claims, resource_environment)
+        {
+            tactics = vec![split];
+        }
         tactics.push(ProofTactic::ImplicitSolve);
     }
 
@@ -1132,6 +1126,88 @@ pub(in crate::surface) fn prove_claims_by_implicit_tail(
         ProofTacticSource::GeneratedBy { source_index: 0 },
     )?;
     Ok(verified.theorems)
+}
+
+/// The implicit tail's split at entry on a conditional resource the function
+/// takes, when a claim reads the entry state: `if c { unfold(R(x)); ... }
+/// else { unfold(R(x)); }`, each arm executing to the exit.
+///
+/// A resource whose body is `if c { owns S(..); }`, as an option of a box's
+/// type resource is, holds its contents only on one side of `c`. A claim
+/// that reads those contents at entry, `old(self.slot.value)`, needs them
+/// related to the reads the program makes after it has stored to the place,
+/// and the facts that relate them are the ones the unfolded body gives at
+/// entry. Splitting there is one case analysis on the resource's own
+/// condition, written out by expansion; the closer folds at the exit.
+fn entry_type_resource_split(
+    function_block: &FunctionBlock,
+    claims: &[FunctionClaimRef<'_>],
+    resource_environment: &ResourceEnvironment,
+) -> Option<ProofTactic> {
+    let reads_entry = claims.iter().any(|claim| match claim.clause().ensure() {
+        Ensure::Proposition(proposition) => proposition_contains_old_expression(proposition),
+        Ensure::Resource(_) => false,
+    });
+    if !reads_entry {
+        return None;
+    }
+    function_block.requires().iter().find_map(|requirement| {
+        let Requirement::Resource(
+            resource @ ResourceClause::Declared {
+                kind: ResourceKind::Composite,
+                name,
+                arguments,
+                ..
+            },
+        ) = requirement
+        else {
+            return None;
+        };
+        let definition = resource_environment.get(name)?;
+        let body = definition.composite_body()?;
+        let condition = body.condition()?;
+        let [inner @ ResourceClause::Declared { .. }] = body.contains() else {
+            return None;
+        };
+        if definition.parameters().len() != arguments.len() {
+            return None;
+        }
+        let substitutions = definition
+            .parameters()
+            .iter()
+            .zip(arguments)
+            .map(|(parameter, argument)| (parameter.name.as_str(), argument.clone()))
+            .collect::<BTreeMap<&str, ContractExpression>>();
+        let condition =
+            crate::surface::lowering::substitute_click_proposition(condition, &substitutions)
+                .ok()?;
+        let inner = crate::surface::verification::substitute_resource_clause_for_summary(
+            inner,
+            &substitutions,
+        )
+        .ok()?;
+        let mut outer = resource.clone();
+        if let ResourceClause::Declared { access, .. } = &mut outer {
+            *access = ResourceAccessMode::Own;
+        }
+        let mut inner = inner;
+        if let ResourceClause::Declared { access, .. } = &mut inner {
+            *access = ResourceAccessMode::Own;
+        }
+        Some(ProofTactic::If(ProofIf {
+            condition,
+            ensuring: None,
+            then_tactics: vec![
+                ProofTactic::UnfoldResource(outer.clone()),
+                ProofTactic::UnfoldResource(inner),
+                ProofTactic::SmartExecute,
+            ],
+            else_tactics: vec![
+                ProofTactic::UnfoldResource(outer),
+                ProofTactic::SmartExecute,
+            ],
+        }))
+    })
 }
 
 /// A written script followed by the implicit tail every script ends with: a
@@ -2907,7 +2983,10 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 let mut scope = match direct_proof.driver().open_have(scope_surface_goal) {
                     Ok(scope) => scope,
                     Err(error) => {
-                        check_verification_deadline()?;
+                        if let Err(stop) = check_verification_deadline() {
+                            return Err(direct_proof.attach_step_diagnostic(stop)
+                                .with_unlowered_goal(describe_click_proposition(surface_goal)));
+                        }
                         if !require_explicit_closers {
                             selected = false;
                             break;
@@ -2976,11 +3055,13 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 });
                 let selected_scope = match selected_scope {
                     Ok(selected) => selected,
-                    Err(error) => return Err(error.with_check_observations(checks)
+                    Err(error) => return Err(scope.body().attach_step_diagnostic(error)
+                        .with_check_observations(checks)
                         .with_search_failures(search.finish())),
                 };
                 let Some(scope) = selected_scope else {
-                    check_verification_deadline()?;
+                    check_verification_deadline()
+                        .map_err(|error| scope.body().attach_step_diagnostic(error))?;
                     if !require_explicit_closers {
                         selected = false;
                         break;
@@ -5404,7 +5485,23 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut path_surface_post_tactics,
                                     &mut path_grouped_surface_closers,
                                     &mut path_deferred_capture_tactics,
-                                )?;
+                                )
+                                .map_err(|mut error| {
+                                    if error.verification_stopped()
+                                        && error.proof_claim_label().is_none()
+                                        && let Some(root) = &outcome_proof
+                                    {
+                                        if let Ok(Some(index)) =
+                                            main_goal_claim(&outcome_proof, &closures)
+                                        {
+                                            error = error.with_unlowered_goal(
+                                                diagnostic_claim_statement(&claims[index]),
+                                            );
+                                        }
+                                        error = root.attach_step_diagnostic(error);
+                                    }
+                                    error
+                                })?;
                                 if matches!(post_tactic, PostExecutionTactic::ImplicitSolve)
                                     && !super::proof_object::implicit_solve_disabled()
                                 {
@@ -6477,12 +6574,8 @@ mod tests {
 
     #[test]
     fn unsupported_shape_diagnostic_blames_no_tactic() {
-        let error = unsupported_proof_shape(
-            "f.ensures_0",
-            false,
-            &["f.ensures_0".to_string()],
-            Decline::Shape,
-        );
+        let error =
+            checked_driver_refusal("f.ensures_0", &["f.ensures_0".to_string()], Decline::Shape);
 
         assert!(error.message().contains("no checked proof driver accepts"));
         assert!(
@@ -6490,7 +6583,7 @@ mod tests {
                 .message()
                 .contains("none reported a tactic it refused")
         );
-        assert!(error.message().contains("No listed claim was shown false"));
+        assert_eq!(error.kind(), ClickErrorKind::Internal);
         // A decline records no tactic, so none is blamed and the script is
         // not called valid.
         assert!(!error.message().contains("It reached tactic"));

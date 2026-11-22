@@ -1670,7 +1670,13 @@ stays within its own range:
 | `4_000_000 .. 4_000_000_000`, stepping by `65_536` | the surface's algebraic binders; lowering refuses at the ceiling |
 | `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
-| `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
+
+Producers moved off these ranges mint their variables with
+`Variable::produced(Producer::…, n)`, numbering from zero by their own rule:
+termination-check parameters and `let` witnesses, pure-theorem pointer
+arguments, and resource `match` Integer binders. A produced variable equals no
+variable of another producer or origin, whatever its number, so these need no
+range or ceiling. The remaining ranges move the same way.
 
 An execution allocates in its range (`KERNEL_VARIABLE_BASE` up to
 `KERNEL_VARIABLE_CEILING`) from its budget's counter and must not hand out a
@@ -1696,14 +1702,16 @@ with `ExecutionLimit::MatchBinderVariables` past
 `ExecutionBudget::MATCH_BINDER_LIMIT` binders. Arm refutations start at
 `1 << 56`, and structural induction starts at `1 << 60`.
 
-The witness range carries the same obligation. `intro` on `forall v. body`
-replaces `v` by a free identity that must name nothing the state names,
-including program variables, the store, the memory state and resources,
-not only the facts; so it comes from its own range rather than from the
-facts' unused identities
-(`the_universal_witness_range_is_disjoint_from_every_other_producer`,
-`a_freshened_universal_witness_never_takes_a_program_identity`). A proof that
-exhausts it refuses rather than reusing an identity.
+Witnesses carry the same obligation. `intro` on `forall v. body` replaces `v`
+by a free identity that must name nothing the state names, including program
+variables, the store, the memory state and resources, not only the facts; so
+it has its own origin, `Variable::witness`, rather than one of the facts'
+unused identities (`a_universal_witness_is_no_other_producer_s_identity`,
+`a_freshened_universal_witness_never_takes_a_program_identity`). A new witness
+is numbered one above the highest witness the state reserves or the goal
+names; the fact store keeps its highest reserved witness as variables are
+reserved, so finding it reads no set. A proof that exhausts
+`ExecutionBudget::UNIVERSAL_WITNESS_LIMIT` refuses rather than reusing one.
 
 Quantifier binders are not drawn from any of these ranges. A `ForAll` or
 `Exists` binds a `QuantifierBinder`, a variable of origin `Bound` numbered by

@@ -6,7 +6,8 @@ recovered numeric addresses; they grant no dereference authority for them.
 The relinked-node check requires distinct parent and node addresses because
 C compares the packed word numerically. Pointer-value disequality alone can
 also distinguish different provenances at one address. Its proof masks the
-word and uses alignment to rule out the empty-node marker.
+word and uses alignment to rule out the empty-node marker. The link helper
+proves that each store preserves the fields initialized by earlier stores.
 
 ```c filename=rbtree.h
 #ifndef RBTREE_H
@@ -120,6 +121,67 @@ resource linked(node: struct rb_node*) {
 
 verifying "rb_parent_family.c";
 
+void rb_link_node(struct rb_node* node, struct rb_node* parent, struct rb_node** rb_link) {
+    requires node != 0;
+    owns node->__rb_parent_color;
+    owns node->rb_left;
+    owns node->rb_right;
+    owns rb_link[0..1];
+    ensures node->__rb_parent_color == address(parent);
+    ensures node->rb_left == 0;
+    ensures node->rb_right == 0;
+    ensures rb_link[0] == node;
+} by {
+    step();
+    step();
+    have separate(memory(node->rb_left), memory(node->__rb_parent_color)) by { known(); }
+    have separate(statement(1).footprint, memory(node->__rb_parent_color)) by {
+        normalize() using { separate(memory(node->rb_left), memory(node->__rb_parent_color)); };
+    }
+    have node->__rb_parent_color == at(statement(1).entry, node->__rb_parent_color) by {
+        preserve(memory(node->__rb_parent_color), statement(1));
+    }
+    step();
+    have separate(memory(node->rb_right), memory(node->__rb_parent_color)) by { known(); }
+    have separate(statement(2).footprint, memory(node->__rb_parent_color)) by {
+        normalize() using { separate(memory(node->rb_right), memory(node->__rb_parent_color)); };
+    }
+    have node->__rb_parent_color == at(statement(2).entry, node->__rb_parent_color) by {
+        preserve(memory(node->__rb_parent_color), statement(2));
+    }
+    have separate(memory(node->rb_right), memory(node->rb_left)) by { known(); }
+    have separate(statement(2).footprint, memory(node->rb_left)) by {
+        normalize() using { separate(memory(node->rb_right), memory(node->rb_left)); };
+    }
+    have node->rb_left == at(statement(2).entry, node->rb_left) by {
+        preserve(memory(node->rb_left), statement(2));
+    }
+    step();
+    have separate(memory(rb_link[0]), memory(node->__rb_parent_color)) by { known(); }
+    have separate(statement(3).footprint, memory(node->__rb_parent_color)) by {
+        normalize() using { separate(memory(rb_link[0]), memory(node->__rb_parent_color)); };
+    }
+    have node->__rb_parent_color == at(statement(3).entry, node->__rb_parent_color) by {
+        preserve(memory(node->__rb_parent_color), statement(3));
+    }
+    have separate(memory(rb_link[0]), memory(node->rb_left)) by { known(); }
+    have separate(statement(3).footprint, memory(node->rb_left)) by {
+        normalize() using { separate(memory(rb_link[0]), memory(node->rb_left)); };
+    }
+    have node->rb_left == at(statement(3).entry, node->rb_left) by {
+        preserve(memory(node->rb_left), statement(3));
+    }
+    have separate(memory(rb_link[0]), memory(node->rb_right)) by { known(); }
+    have separate(statement(3).footprint, memory(node->rb_right)) by {
+        normalize() using { separate(memory(rb_link[0]), memory(node->rb_right)); };
+    }
+    have node->rb_right == at(statement(3).entry, node->rb_right) by {
+        preserve(memory(node->rb_right), statement(3));
+    }
+    step();
+    solve();
+}
+
 struct rb_node* parent_of(struct rb_node* node) {
     requires node != 0;
     owns linked(node);
@@ -127,6 +189,12 @@ struct rb_node* parent_of(struct rb_node* node) {
 } by {
     unfold(linked(node));
     step_until(function.exit);
+    have address(result) == (node->__rb_parent_color & ~3) by {
+        solve() using {
+            aligned(result, 8);
+            node->__rb_parent_color == address(result) + (node->__rb_parent_color & 1);
+        };
+    }
     fold(linked(node));
     solve();
 }
@@ -166,6 +234,12 @@ struct rb_node* red_parent_of(struct rb_node* red) {
 } by {
     unfold(linked(red));
     step_until(function.exit);
+    have address(result) == red->__rb_parent_color by {
+        solve() using {
+            (red->__rb_parent_color & 1) == 0;
+            red->__rb_parent_color == address(result) + (red->__rb_parent_color & 1);
+        };
+    }
     fold(linked(red));
     solve();
 }

@@ -69,12 +69,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for (selector, _) in records.recent(point_limit) {
             check_verification_deadline()?;
             let ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                region: region @ (CodeRegionRef::Region(_) | CodeRegionRef::Path(_)),
+                region,
                 kind: ProgramPointKind::Exit,
             }) = selector
             else {
                 continue;
             };
+            let loop_exit = match region {
+                CodeRegionRef::Loop(_) => true,
+                CodeRegionRef::Region(index) if returned => {
+                    search_input.execution_context().is_some_and(|context| {
+                        context
+                            .constants
+                            .source_layout
+                            .loop_index_at_header(*index)
+                            .is_some()
+                    })
+                }
+                _ => false,
+            };
+            if !matches!(region, CodeRegionRef::Region(_) | CodeRegionRef::Path(_))
+                && !(returned && loop_exit)
+            {
+                continue;
+            }
             let Ok(Resource::Footprint(footprint)) = records.footprint(region) else {
                 continue;
             };
@@ -104,21 +122,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )?;
             let separated = match separated {
                 Some(separated) => Some(separated),
-                None if returned && footprint.members.len() == 1 => {
-                    Self::try_distinct_indexed_store_separation(
-                        &proof,
-                        footprint.members.front().expect("one footprint member"),
-                        &kept,
-                        &separation,
-                    )?
-                }
-                None if derive_separation && footprint.members.len() == 1 => {
-                    Self::try_single_memory_write_separation(
-                        &proof,
-                        footprint.members.front().expect("one footprint member"),
-                        &kept,
-                        &separation,
-                    )?
+                None if (returned || derive_separation) && footprint.members.len() == 1 => {
+                    let written = footprint.members.front().expect("one footprint member");
+                    if returned
+                        && !loop_exit
+                        && let Some(separated) = Self::try_distinct_indexed_store_separation(
+                            &proof,
+                            written,
+                            &kept,
+                            &separation,
+                        )?
+                    {
+                        Some(separated)
+                    } else {
+                        attempt::candidate_outcome(Self::try_single_memory_write_separation(
+                            &proof,
+                            written,
+                            &kept,
+                            &separation,
+                        ))?
+                        .flatten()
+                    }
                 }
                 None => None,
             };
@@ -319,7 +343,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// Restrict a separated range to the selected read before checking a
     /// footprint with one memory member.
-    fn try_single_memory_write_separation(
+    pub(in crate::surface::proof) fn try_single_memory_write_separation(
         search_input: &Proof<'a>,
         written: &Resource,
         kept: &ResourceSubject,
@@ -348,28 +372,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             left: written,
             right: kept.clone(),
         };
-        let Some(goal) =
-            attempt::candidate_outcome(search_input.driver().open_have(separation.clone()))?
-        else {
-            return Ok(None);
-        };
-        let Some(separated) = goal
-            .driver()
-            .try_indexed_separation_restriction(&separation)?
-        else {
-            return Ok(None);
-        };
-        if !separated.is_complete() {
-            return Ok(None);
-        }
-        let proof = separated.join()?;
-        let certificate = ProofCertificate::from_steps(vec![ProofStep::Known])
+        let known = ProofCertificate::from_steps(vec![ProofStep::Known])
             .expect("ordinary footprint separation");
-        attempt::candidate_outcome(
-            proof
-                .driver()
-                .apply_have_step(footprint_separation, &certificate),
-        )
+        let proof = match attempt::candidate_outcome(
+            search_input.driver().apply_have_step(&separation, &known),
+        )? {
+            Some(proof) => proof,
+            None => {
+                let Some(goal) = attempt::candidate_outcome(
+                    search_input.driver().open_have(separation.clone()),
+                )?
+                else {
+                    return Ok(None);
+                };
+                let Some(separated) = goal
+                    .driver()
+                    .try_indexed_separation_restriction(&separation)?
+                else {
+                    return Ok(None);
+                };
+                if !separated.is_complete() {
+                    return Ok(None);
+                }
+                separated.join()?
+            }
+        };
+        attempt::candidate_outcome(proof.driver().apply_have_step(footprint_separation, &known))
     }
 
     /// Use the named store to preserve the exact field observation across

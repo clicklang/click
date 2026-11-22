@@ -935,6 +935,10 @@ fn invariant_bundle_budget_refusal_retains_selected_obligation() {
     })
     .err()
     .expect("the direct strategy must also refuse exhaustion");
+    assert_eq!(
+        direct.kind(),
+        crate::surface::ClickErrorKind::WorkLimitReached
+    );
     assert_eq!(direct.diagnostic().unwrap().kernel_goal(), root.goal());
     let direct = execution_statements::describe_invariant_closure_error(direct);
     assert!(direct.concise_report().contains("unresolved obligation"));
@@ -2696,6 +2700,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
             target_type: ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,

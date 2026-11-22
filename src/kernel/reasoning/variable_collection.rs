@@ -7,6 +7,7 @@ mod retained_matches;
 #[allow(dead_code)]
 mod retained_pointers;
 use crate::kernel::spec::walk::{SpecNode, Visit, WalkBudget, walk_spec};
+use std::collections::HashMap;
 
 /// Visit only the carrier-bearing leaves of shared machine arithmetic.
 /// Conversion payloads and registered loads keep each collector's existing
@@ -4307,8 +4308,8 @@ pub(crate) fn collect_integer_capture_bitvector_variables(
 /// binders, so a fresh binder cannot collide with a name that is protected
 /// deeper in the same DAG.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct IntegerScopeSummary {
-    pub(crate) max: u64,
+struct IntegerScopeSummary {
+    max: u64,
 }
 
 impl IntegerScopeSummary {
@@ -4329,15 +4330,122 @@ impl IntegerScopeSummary {
     }
 }
 
-/// Collect summaries for an Integer DAG in one shared traversal.  The map is
-/// populated for every shared Integer node reached from `term`, so later
-/// nested-fold scopes reuse their already-computed suffix summary instead of
-/// recursively scanning that suffix again.
-pub(crate) fn collect_integer_scope_summaries(
-    term: &SharedIntegerTerm,
-    summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
-) -> IntegerScopeSummary {
-    collect_integer_scope_summary_shared(term, summaries)
+/// The maxima needed for freshening folds, memoized across the selected
+/// body and its nested folds. Native input leaves retain their own identities.
+#[derive(Default)]
+pub(crate) struct RetainedIntegerScopeSummaries {
+    retained: HashMap<u64, IntegerScopeSummary>,
+    native: HashMap<u64, IntegerScopeSummary>,
+}
+
+impl RetainedIntegerScopeSummaries {
+    pub(crate) fn maximum(&mut self, root: &KernelTerm) -> Option<u64> {
+        use KernelTermNode as Node;
+        let mut pending = vec![(root, false)];
+        let mut export = KernelTermExport::default();
+        while let Some((term, finish)) = pending.pop() {
+            if checked_collection_checkpoint() {
+                return None;
+            }
+            if self.retained.contains_key(&term.id()) {
+                continue;
+            }
+
+            let children = match term.node() {
+                Node::IntegerOperation { .. }
+                | Node::IntegerIf { .. }
+                | Node::IntegerCompare { .. }
+                | Node::BoolIf { .. }
+                | Node::BoolEqual { .. }
+                | Node::Call { .. }
+                    if matches!(term.ty(), KernelType::Integer | KernelType::Bool) =>
+                {
+                    Some(term.children())
+                }
+                Node::Fold(fold) if term.ty() == &KernelType::Integer => match fold.index {
+                    KernelFoldIndex::Integer => Some(fold.arguments.as_slice()),
+                    KernelFoldIndex::Int32 | KernelFoldIndex::UInt64 => Some(&fold.arguments[2..]),
+                },
+                Node::Match(_) if term.ty() == &KernelType::Integer => Some(term.children()),
+                _ => None,
+            };
+            let declarations = match term.node() {
+                Node::Match(matched) if term.ty() == &KernelType::Integer => {
+                    matched.arms.as_slice()
+                }
+                _ => &[],
+            };
+            let bindings = || declarations.iter().flat_map(|arm| &arm.bindings);
+            let operands = || children.into_iter().flatten().chain(bindings());
+            if !finish && children.is_some() {
+                pending.push((term, true));
+                pending.extend(operands().rev().map(|child| (child, false)));
+                continue;
+            }
+
+            let mut summary = match term.node() {
+                Node::IntegerLiteral(_) | Node::BoolLiteral(_) => IntegerScopeSummary::default(),
+                Node::Variable(variable)
+                    if matches!(term.ty(), KernelType::Integer | KernelType::Bool) =>
+                {
+                    IntegerScopeSummary::integer_variable(*variable)
+                }
+                Node::MachineObservation { format, operand } => {
+                    if let Some(machine) =
+                        SharedMachineIntegerTerm::from_shared(*format, operand.clone())
+                    {
+                        collect_machine_scope_summary(&machine, &mut self.native)
+                    } else {
+                        collect_bitvector_scope_summary(
+                            &KernelTermExport::machine(operand).ok()?,
+                            &mut self.native,
+                        )
+                    }
+                }
+                Node::Fold(fold) if term.ty() == &KernelType::Integer => {
+                    let mut summary = IntegerScopeSummary::default();
+                    summary.reserve(fold.accumulator);
+                    summary.reserve(fold.item);
+                    if fold.index != KernelFoldIndex::Integer {
+                        for endpoint in &fold.arguments[..2] {
+                            let operand =
+                                SharedIntegerRangeEndpoint::from_shared(endpoint.clone())?;
+                            summary.merge(collect_machine_scope_summary(
+                                operand.machine_operand(),
+                                &mut self.native,
+                            ));
+                        }
+                    }
+                    summary
+                }
+                Node::Legacy(payload) => {
+                    collect_scope_summary_in_argument(payload.value(), &mut self.native)
+                }
+                _ if children.is_some() => IntegerScopeSummary::default(),
+                // Existing native readers preserve the scope of C pointer
+                // metadata, registered loads and mixed algebraic arguments.
+                _ if term.ty() == &KernelType::Bool => collect_condition_scope_summary(
+                    &KernelTermExport::condition(term).ok()?,
+                    &mut self.native,
+                ),
+                _ => collect_scope_summary_in_argument(
+                    &export.argument(term).ok()?,
+                    &mut self.native,
+                ),
+            };
+            for child in operands() {
+                if checked_collection_checkpoint() {
+                    return None;
+                }
+                summary.merge(self.retained[&child.id()].clone());
+            }
+            if crate::instrumentation::checked_collection_exhausted() {
+                return None;
+            }
+            self.retained.insert(term.id(), summary);
+        }
+        Some(self.retained[&root.id()].max)
+    }
 }
 
 fn collect_integer_scope_summary_shared(

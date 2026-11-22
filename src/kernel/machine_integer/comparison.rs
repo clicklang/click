@@ -28,16 +28,19 @@ pub(crate) fn structural_boolean_comparison_view(
     condition: crate::kernel::BooleanOperandView<'_>,
 ) -> Option<StructuralComparisonView<'_>> {
     if let Some((format, relation, operands)) = condition.comparison() {
+        let [left, right] = operands.map(|operand| match operand {
+            crate::kernel::MachineOperandView::Legacy(value) => {
+                Some(ComparisonOperand::Written(value))
+            }
+            operand => operand
+                .try_retain(format)
+                .map(ComparisonOperand::Observation),
+        });
         return Some(StructuralComparisonView {
             format,
             relation,
             negated: false,
-            operands: operands.map(|operand| match operand {
-                crate::kernel::MachineOperandView::Legacy(value) => {
-                    ComparisonOperand::Written(value)
-                }
-                operand => ComparisonOperand::Observation(operand.retain(format)),
-            }),
+            operands: [left?, right?],
         });
     }
     if let Some(native) = condition.native_leaf() {

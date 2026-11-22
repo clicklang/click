@@ -333,32 +333,6 @@ fn binary_checks(
             ),
         );
     }
-    // So is narrow signed division: `MIN / -1` fits `int`, but
-    // Rust panics on it, and on its remainder.
-    if matches!(left_type, Type::I8 | Type::I16) && matches!(operator, "div" | "rem") {
-        let minimum = match left_type {
-            Type::I8 => i8::MIN as i32,
-            _ => i16::MIN as i32,
-        };
-        let l = crate::kernel::program_expression::cast(left_operand.clone(), ProgramType::Int32);
-        let r = crate::kernel::program_expression::cast(right_operand.clone(), ProgramType::Int32);
-        prefix = program_seq(
-            prefix,
-            program_labeled_assert(
-                crate::kernel::program_expression::not(crate::kernel::program_expression::and(
-                    crate::kernel::program_expression::equal(
-                        l,
-                        crate::kernel::program_expression::int32_literal(minimum as u32),
-                    ),
-                    crate::kernel::program_expression::equal(
-                        r,
-                        crate::kernel::program_expression::int32_literal(-1i32 as u32),
-                    ),
-                )),
-                format!("Rust {operator} panic check"),
-            ),
-        );
-    }
     if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
         let l = crate::kernel::program_expression::cast(left_operand.clone(), ProgramType::UInt32);
         let r = crate::kernel::program_expression::cast(right_operand.clone(), ProgramType::UInt32);
@@ -436,24 +410,27 @@ fn binary_value(
     // its own assertion (`prepared_expr`). A native shift's count
     // is a 32-bit word; a count of another width keeps the
     // promoted shift.
-    let narrow_native = narrow
-        && (matches!(
-            operator,
-            "add" | "sub" | "mul" | "bit_and" | "bit_or" | "bit_xor"
-        ) || (operator == "shl" && right_type.integer_bits() == Some(32)));
+    let narrow_signed_division =
+        matches!(left_type, Type::I8 | Type::I16) && matches!(operator, "div" | "rem");
+    let narrow_operator = narrow_signed_division
+        || narrow
+            && (matches!(
+                operator,
+                "add" | "sub" | "mul" | "bit_and" | "bit_or" | "bit_xor"
+            ) || (operator == "shl" && right_type.integer_bits() == Some(32)));
     // Keep the RHS at its source width. The shared shift evaluator
     // checks signed/nonnegative and full-width upper bounds before
     // forming its word-sized shift term. Narrowing here would lose
     // the exact relation to Rust's already checked count.
-    if narrow && !narrow_comparison && !narrow_native {
-        // Rust narrow `/ % >>` are still a 32-bit operation and
-        // a cast back (decision G4).
+    if narrow_signed_division || (narrow && !narrow_comparison && !narrow_operator) {
+        // Signed division/remainder and the remaining promoted narrow
+        // operators use a 32-bit operation and a cast back (decision G4).
         crate::kernel::machine_integer::format_audit::record(
             crate::kernel::machine_integer::format_audit::WordIdentity::PromotedNarrowArithmetic,
             std::panic::Location::caller(),
         );
     }
-    if narrow_comparison || narrow_native {
+    if narrow_comparison || narrow_operator {
     } else if matches!(left_type, Type::U8 | Type::U16) {
         // Narrow unsigned remainder fits in signed int, matching
         // the promotion used by its contract expression. Other
@@ -510,25 +487,15 @@ fn binary_value(
         // A Rust comparison or connective is a `bool` value: the
         // condition itself, with no path split (Stage 5, D5).
         Ok(crate::kernel::program_expression::bool_value(result))
-    } else if narrow_native {
+    } else if narrow_operator {
         Ok(crate::kernel::program_expression::narrow_arithmetic(
             result,
             scalar_type(left_type)?.to_kernel_type(),
         ))
     } else if narrow && matches!(operator, "div" | "rem") {
-        // Checked narrow arithmetic cannot discard bits. Its range
-        // obligation permits an exact coercion; only casts,
-        // bitwise results and shifts need explicit truncation.
-        // Convert from the operation's promoted type: `int32` for
-        // signed arithmetic and narrow unsigned remainder,
-        // `uint32` for the other unsigned operations.
-        let computed = if matches!(left_type, Type::U8 | Type::U16) {
-            result
-        } else {
-            crate::kernel::program_expression::cast(result, ProgramType::Int32)
-        };
+        // This path is the existing unsigned result conversion.
         Ok(crate::kernel::program_expression::cast(
-            computed,
+            result,
             scalar_type(left_type)?.to_kernel_type(),
         ))
     } else {
@@ -840,6 +807,24 @@ pub(crate) fn lower_with_identity(
                 &BTreeMap::new(),
             )?
         };
+        // A box field, or an option of one, holds its type resource.
+        let mut layout = layout;
+        for f in &record.fields {
+            let (optional, pointee) = match &f.value_type {
+                Type::Box { pointee } => (false, pointee),
+                Type::OptionBox { pointee } => (true, pointee),
+                _ => continue,
+            };
+            if let Type::Record { name } = pointee.as_ref() {
+                layout = layout.with_boxed_field(
+                    &f.name,
+                    crate::languages::interface::BoxedField {
+                        optional,
+                        record: name.clone(),
+                    },
+                );
+            }
+        }
         for f in &record.fields {
             if fields
                 .insert(
@@ -2200,6 +2185,45 @@ impl Context<'_> {
         ))
     }
 
+    fn prepared_closure(
+        &mut self,
+        function: &str,
+        captures: &[E],
+        value_type: &Type,
+    ) -> Result<(ProgramStatement, ProgramExpression), String> {
+        let closure = self
+            .functions
+            .get(function)
+            .ok_or("Rust closure instance of an unknown closure")?;
+        let Type::FnPointer { parameters, result } = value_type else {
+            return Err("Rust closure instance requires a callable type".into());
+        };
+        if closure.captures != captures.len()
+            || closure.return_type != **result
+            || closure.parameters.len() != closure.captures + parameters.len()
+            || closure.parameters[closure.captures..]
+                .iter()
+                .zip(parameters)
+                .any(|(parameter, expected)| parameter.value_type != *expected)
+        {
+            return Err(format!(
+                "Rust closure instance of `{function}` does not have the closure's type"
+            ));
+        }
+        let mut checks = program_skip();
+        let mut values = Vec::new();
+        for capture in captures {
+            let (capture_checks, value) = self.prepared_expr(capture)?;
+            checks = program_seq(checks, capture_checks);
+            values.push(value);
+        }
+        let (call, result) = self.call_value(
+            crate::languages::rust::names::closure_instance_name(function),
+            values,
+        );
+        Ok((program_seq(checks, call), result))
+    }
+
     // Read operands once, in source order. Generated asserts are checked
     // execution obligations. The operator uses the same retained operands.
     fn prepared_expr(&mut self, e: &E) -> Result<(ProgramStatement, ProgramExpression), String> {
@@ -2213,6 +2237,11 @@ impl Context<'_> {
                     variable(&option.pointer),
                 ))
             }
+            E::ClosureInstance {
+                function,
+                captures,
+                value_type,
+            } => self.prepared_closure(function, captures, value_type),
             E::Call {
                 function,
                 arguments,
@@ -2838,7 +2867,7 @@ impl Context<'_> {
             }
             E::Call { .. } => Err("nested Rust calls outside statement lowering".into()),
             E::ClosureInstance { .. } => {
-                Err("Rust closure instance outside an assignment to a local".into())
+                Err("Rust closure instance requires prepared evaluation".into())
             }
             E::FunctionAddress {
                 function,

@@ -32,11 +32,7 @@ pub(super) fn apply_nonzero(
             _ => None,
         }
     };
-    let behavior = match format {
-        MachineIntegerType::Int32 => UndefinedBehavior::SignedDivisionOverflow,
-        MachineIntegerType::Int64 => UndefinedBehavior::SignedOverflow,
-        _ => unreachable!("native signed division width"),
-    };
+    let behavior = UndefinedBehavior::SignedDivisionOverflow(format);
     if known == Some(true) {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(behavior),

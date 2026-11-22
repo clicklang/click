@@ -423,6 +423,7 @@ pub(super) fn substitute_pure_values(
         // borrow into a slice operation.
         fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
         fold_slice_coercion_operands(block, &substitutable, &mut removed);
+        fold_closure_argument(block, &substitutable, &mut removed);
         if !constant_initializers.is_empty() {
             fold_constant_remainder_casts(
                 &mut block.statements,
@@ -552,6 +553,40 @@ fn fold_adjacent_slice_borrows(
             }
         }
         statements.push(statement);
+    }
+}
+
+/// A closure built immediately for the first argument is evaluated there.
+/// Restrict this to the first argument so its captures still run before
+/// all other argument preparation.
+fn fold_closure_argument(
+    block: &mut MirBlock,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let T::Call {
+        arguments,
+        through_pointer: false,
+        ..
+    } = &mut block.terminator
+    else {
+        return;
+    };
+    let Some(argument @ E::Local { .. }) = arguments.first_mut() else {
+        return;
+    };
+    let Some(S::Assign {
+        target: E::Local { name },
+        value: value @ E::ClosureInstance { .. },
+    }) = block.statements.iter().rfind(
+        |statement| !matches!(statement, S::Site { site } if Some(*site) == block.terminator_site),
+    )
+    else {
+        return;
+    };
+    if matches!(argument, E::Local { name: read } if read == name) && substitutable(name) {
+        *argument = value.clone();
+        removed.insert(name.clone());
     }
 }
 
@@ -2952,6 +2987,7 @@ pub(super) fn call_steps(
 ) {
     let mut reads = BTreeMap::<String, (usize, usize)>::new();
     let mut named = BTreeSet::<String>::new();
+    let mut pointer_destinations = BTreeSet::new();
     let mut assigned = BTreeMap::<String, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
     for (index, block) in blocks.iter().enumerate() {
@@ -2972,7 +3008,8 @@ pub(super) fn call_steps(
         }
         if let Some(destination) = call_destination(&block.terminator) {
             *assigned.entry(destination.clone()).or_default() += 1;
-            // Pointer calls still require their destination during lowering.
+            // Preserve destinations of unread pointer calls, including a
+            // slot also written by a direct call on another path.
             if matches!(
                 block.terminator,
                 T::Call {
@@ -2980,7 +3017,7 @@ pub(super) fn call_steps(
                     ..
                 }
             ) {
-                named.insert(destination.clone());
+                pointer_destinations.insert(destination.clone());
             }
         }
         for target in successors(&block.terminator) {
@@ -3027,18 +3064,24 @@ pub(super) fn call_steps(
             function,
             destination: Some(destination),
             target,
-            through_pointer: false,
+            through_pointer,
             result: None,
             ..
         } = &blocks[index].terminator
         else {
             continue;
         };
-        let (function, destination, target) = (function.clone(), destination.clone(), *target);
+        let (function, destination, target, through_pointer) = (
+            function.clone(),
+            destination.clone(),
+            *target,
+            *through_pointer,
+        );
         // A result its successor tests for a variant, then reads once in the
         // arm that variant takes, as a `for` loop's `match` on `next()` does:
         // the test keeps the result and the payload read ends it.
-        if temporaries.contains(&destination)
+        if !through_pointer
+            && temporaries.contains(&destination)
             && assigned.get(&destination) == Some(&1)
             && mentions.get(&destination) == Some(&2)
             && target != index
@@ -3089,6 +3132,7 @@ pub(super) fn call_steps(
         // Alternative calls can write the same unused result slot. With no
         // other write or use, each call can discard its result independently.
         if ty.is_scalar()
+            && !pointer_destinations.contains(&destination)
             && !reads.contains_key(&destination)
             && !mentions.contains_key(&destination)
         {
@@ -3106,6 +3150,7 @@ pub(super) fn call_steps(
         };
         let boxed = matches!(ty, Type::Box { .. });
         if !(ty.is_scalar() || matches!(ty, Type::Enum { .. }) || boxed)
+            || (through_pointer && (!ty.is_scalar() || reader != target))
             || target == index
             || predecessors.get(target) != Some(&1)
         {
@@ -3897,6 +3942,44 @@ mod tests {
     }
 
     #[test]
+    fn a_closure_moves_only_into_its_immediate_first_argument() {
+        let closure = E::ClosureInstance {
+            function: "closure_body".into(),
+            captures: vec![local("a")],
+            value_type: Type::FnPointer {
+                parameters: vec![Type::U32],
+                result: Box::new(Type::U32),
+            },
+        };
+        for (arguments, intervening_write, folded) in [
+            (vec![local("t1"), local("b")], false, true),
+            (vec![local("b"), local("t1")], false, false),
+            (vec![local("t1"), local("t1")], false, false),
+            (vec![local("t1"), local("b")], true, false),
+        ] {
+            let mut statements = vec![assign("t1", closure.clone())];
+            statements.extend(intervening_write.then(|| assign("a", local("b"))));
+            let (locals, block) = substituted(
+                statements,
+                T::Call {
+                    function: "apply".into(),
+                    arguments,
+                    owned_arguments: vec![],
+                    through_pointer: false,
+                    destination: None,
+                    target: 1,
+                    result: None,
+                },
+            );
+            assert_eq!(!locals.iter().any(|name| name == "t1"), folded);
+            let T::Call { arguments, .. } = block.terminator else {
+                unreachable!("the call remains in place");
+            };
+            assert_eq!(matches!(arguments[0], E::ClosureInstance { .. }), folded);
+        }
+    }
+
+    #[test]
     fn a_nested_operand_is_its_expression_again() {
         // `t1 = b * 2; x = a + t1;` is `x = a + b * 2`.
         let (locals, block) = substituted(
@@ -4172,42 +4255,45 @@ mod tests {
     fn a_call_result_read_once_in_its_successor_is_a_call_step() {
         // `t1 = f(a) -> bb1; bb1: x = t1 + 1` reads the call's result as a
         // step, and `t1` is gone.
-        let mut locals = ["a", "x", "t1"].map(place).to_vec();
-        let mut blocks = vec![
-            MirBlock {
-                terminator_site: None,
-                statements: Vec::new(),
-                terminator: T::Call {
-                    function: "f".into(),
-                    arguments: vec![local("a")],
-                    owned_arguments: Vec::new(),
-                    destination: Some("t1".into()),
-                    target: 1,
-                    through_pointer: false,
-                    result: None,
+        for through_pointer in [false, true] {
+            let mut locals = ["a", "x", "t1"].map(place).to_vec();
+            let mut blocks = vec![
+                MirBlock {
+                    terminator_site: None,
+                    statements: Vec::new(),
+                    terminator: T::Call {
+                        function: "f".into(),
+                        arguments: vec![local("a")],
+                        owned_arguments: Vec::new(),
+                        destination: Some("t1".into()),
+                        target: 1,
+                        through_pointer,
+                        result: None,
+                    },
                 },
-            },
-            MirBlock {
-                terminator_site: None,
-                statements: vec![assign("x", binary("add", local("t1"), local("a")))],
-                terminator: T::Return,
-            },
-        ];
-        let temporaries = BTreeSet::from(["t1".to_string()]);
-        super::call_steps(&mut locals, &mut blocks, &temporaries);
-        assert!(locals.iter().all(|local| local.name != "t1"));
-        assert!(matches!(
-            blocks[0].terminator,
-            T::Call {
-                result: Some(0),
-                ..
-            }
-        ));
-        assert!(matches!(
-            blocks[1].statements.as_slice(),
-            [S::Assign { value: E::Binary { left, .. }, .. }]
-                if matches!(left.as_ref(), E::CallResult { call: 0, function, .. } if function == "f")
-        ));
+                MirBlock {
+                    terminator_site: None,
+                    statements: vec![assign("x", binary("add", local("t1"), local("a")))],
+                    terminator: T::Return,
+                },
+            ];
+            let temporaries = BTreeSet::from(["t1".to_string()]);
+            super::call_steps(&mut locals, &mut blocks, &temporaries);
+            assert!(locals.iter().all(|local| local.name != "t1"));
+            assert!(matches!(
+                blocks[0].terminator,
+                T::Call {
+                    result: Some(0),
+                    through_pointer: retained_kind,
+                    ..
+                } if retained_kind == through_pointer
+            ));
+            assert!(matches!(
+                blocks[1].statements.as_slice(),
+                [S::Assign { value: E::Binary { left, .. }, .. }]
+                    if matches!(left.as_ref(), E::CallResult { call: 0, function, .. } if function == "f")
+            ));
+        }
     }
 
     #[test]

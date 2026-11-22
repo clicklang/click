@@ -1,11 +1,6 @@
 # Existing Rust MIR storage exceptions. Remove a row when lowering gives its slot a supported identity.
 # Source	Function	Line	Column	MIR key
 boxed.rs	__rust_q_I5_boxed_I13_maybe_through	40	14	__rust_mir_3
-closure.rs	__rust_q_I18_capturing_closures_I5_moved	11	11	__rust_mir_6
-closure.rs	__rust_q_I18_capturing_closures_I6_caller	6	11	__rust_mir_3
-closure.rs	__rust_q_I7_impl_fn_I4_both	26	7	__rust_mir_7
-closure.rs	__rust_q_I7_impl_fn_I5_twice	30	10	__rust_mir_3
-closure.rs	__rust_q_I7_impl_fn_I6_caller	6	11	__rust_mir_3
 enumerate.rs	last_index	3	24	__rust_mir_15
 errors.rs	describe	27	11	__rust_mir_2
 errors.rs	doubled	22	13	__rust_mir_3

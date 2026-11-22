@@ -2697,6 +2697,9 @@ impl<'a> Proof<'a> {
                 .step_error("resource `unfold` must run before execution reaches function exit"));
         }
         let before_facts = self.facts().clone();
+        // An argument only the function's entry holds, `old(self.slot)`, is
+        // its entry value: the unfold lowers its clause at the current state.
+        let resource = &self.with_entry_arguments_resolved(resource, context, &execution)?;
         let checked = unfold_composite_resource_for_proof(
             context.resource_environment,
             resource,
@@ -2740,6 +2743,57 @@ impl<'a> Proof<'a> {
             added_facts: checked.added_facts.clone(),
             checked_facts: checked.added_facts,
         })
+    }
+
+    /// `resource` with each `old(...)` argument replaced by its value at the
+    /// function's entry, lowered once with the entry state so a later
+    /// lowering at the current state reads the same value.
+    fn with_entry_arguments_resolved(
+        &self,
+        resource: &ResourceClause,
+        context: &ExecutionProofContext<'_>,
+        execution: &ExecutionProofState,
+    ) -> Result<ResourceClause, ClickError> {
+        let ResourceClause::Declared { arguments, .. } = resource else {
+            return Ok(resource.clone());
+        };
+        if !arguments
+            .iter()
+            .any(|argument| matches!(argument, ContractExpression::Old(_)))
+        {
+            return Ok(resource.clone());
+        }
+        let Some(entry) = context.constants.function_entry_state.as_ref() else {
+            return Ok(resource.clone());
+        };
+        let lowered =
+            crate::surface::lowering::lower_resource_clause_at_current_locals_with_entry_and_assumptions(
+                resource,
+                context.parameter_binding(),
+                entry,
+                &execution.core.state,
+                None,
+                self.facts().assumptions(),
+            )?;
+        let Resource::Composite {
+            arguments: values, ..
+        } = lowered.resource()
+        else {
+            return Ok(resource.clone());
+        };
+        let values = values.native_values().into_owned();
+        let mut resolved = resource.clone();
+        if let ResourceClause::Declared { arguments, .. } = &mut resolved {
+            for (argument, value) in arguments.iter_mut().zip(values) {
+                if let (ContractExpression::Old(_), AlgebraicValue::Program(value)) =
+                    (&*argument, value)
+                {
+                    *argument =
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(value));
+                }
+            }
+        }
+        Ok(resolved)
     }
 
     /// Construct the fold successor; the driver owns its obligation proofs.

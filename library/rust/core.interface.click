@@ -92,6 +92,14 @@ fn Result::unwrap_or<T, E>(r: Result<T, E>, d: T) -> T {
     ensures result == click::rust::result::unwrap_or(r, d);
 }
 
+// What holding a `Box<T>` holds: its allocation, `sizeof(T)` bytes, and the
+// `T` in it. `self` is the box, its address. A box moved into a function is
+// consumed from the caller, and one moved out is produced for it.
+type Box<T> {
+    owns allocation(self, sizeof(T));
+    owns *self;
+}
+
 // A `Box<T>` owns its allocation, `sizeof(T)` bytes, and the value in it,
 // and it is never null. `Box::new(x)` moves `x` into a new allocation the
 // box owns. Allocation failure aborts the program rather than returning.
