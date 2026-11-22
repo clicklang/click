@@ -7479,10 +7479,28 @@ impl AnnotationLowerer<'_> {
                         byte_width: element_width,
                     });
                 }
-                Ok(SpecExpression::Add(
-                    Box::new(self.lower_contract_expression_to_spec(left, environment)?),
-                    Box::new(self.lower_contract_expression_to_spec(right, environment)?),
-                ))
+                let lowered_left =
+                    Box::new(self.lower_contract_expression_to_spec(left, environment)?);
+                let lowered_right =
+                    Box::new(self.lower_contract_expression_to_spec(right, environment)?);
+                // The copied parameter's field type is known once its
+                // recorded layout has been selected. Its parsed C fragment
+                // does not carry a type.
+                if let Some(byte_width) = copied_parameter_pointer_width(left, &lowered_left) {
+                    return Ok(SpecExpression::PointerOffset {
+                        pointer: lowered_left,
+                        elements: lowered_right,
+                        byte_width,
+                    });
+                }
+                if let Some(byte_width) = copied_parameter_pointer_width(right, &lowered_right) {
+                    return Ok(SpecExpression::PointerOffset {
+                        pointer: lowered_right,
+                        elements: lowered_left,
+                        byte_width,
+                    });
+                }
+                Ok(SpecExpression::Add(lowered_left, lowered_right))
             }
             ContractExpression::Subtract(left, right) => {
                 if let Some(element_width) = self.contract_pointer_element_width(left, environment)
@@ -11387,6 +11405,26 @@ pub(in crate::surface) fn opaque_contract_refusal_suffix(function: &str) -> Stri
 pub(in crate::surface) enum RegionParameterAccess<'a> {
     Field(&'a str),
     Index(&'a ContractExpression),
+}
+
+fn copied_parameter_pointer_width(
+    mut expression: &ContractExpression,
+    lowered: &SpecExpression,
+) -> Option<u32> {
+    let SpecExpression::MemoryLoad { value_type, .. } = lowered else {
+        return None;
+    };
+    let pointee = value_type.pointee_type()?;
+    while let ContractExpression::At {
+        expression: inner, ..
+    }
+    | ContractExpression::Old(inner)
+    | ContractExpression::Exact(inner) = expression
+    {
+        expression = inner;
+    }
+    region_parameter_read(expression)?;
+    Some(pointee.byte_width())
 }
 
 /// The call region, parameter and accesses of `expression` when it reads

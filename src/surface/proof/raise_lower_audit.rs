@@ -397,6 +397,34 @@ int32 short_sum(int32 seed) {
     }
 
     #[test]
+    fn copied_parameter_pointer_definedness_round_trips() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("copied_parameter_pointer_definedness_round_trips.md"),
+            include_str!("../../../mdtests/copied_parameter_pointer_definedness_round_trips.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(fixture.click_source.as_deref().unwrap(), &sources)
+                .unwrap();
+        });
+        assert!(
+            lines.iter().any(|line| {
+                line.starts_with("same\tfact\tMemoryReadDefined\tcaller.contract\tstep\t")
+                    && line
+                        .split('\t')
+                        .nth(7)
+                        .is_some_and(|raised| raised.contains(".parameter(b).data + k"))
+            }),
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
     fn reads_at_symbolic_indices_through_a_call_result_round_trip() {
         let c = r#"
 uint8* make(uint64 n);
