@@ -106,6 +106,8 @@ also retains the entry version across disjoint fixed-width writes and
 checked calls with concrete byte ranges in the same object. An effect with
 an unknown byte footprint invalidates that byte-level entry information
 for the affected object.
+A complete static integer cell uses the call's version when its whole
+object is the call's single checked write range.
 
 A declared little-endian `uint32` can be read as four complete indexed byte
 reads. Each byte uses its own version. Click spells it with the bitwise OR
