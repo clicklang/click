@@ -3691,10 +3691,13 @@ impl<'a> Proof<'a> {
         diagnostic_state.7 = rejected;
         diagnostic_state.10 = read_resolutions;
         diagnostic_state.11 = proposed;
-        let location = self
-            .site
-            .path()
-            .unwrap_or_else(|| format!("checked step {}", self.node.depth + 1));
+        let location = if let Some(step) = crate::surface::proof_trace::implicit_step() {
+            format!("implicit step ({step})")
+        } else {
+            self.site
+                .path()
+                .unwrap_or_else(|| format!("checked step {}", self.node.depth + 1))
+        };
         let summary = format!(
             "`{}` proof step {}: {}",
             self.context.claim_label(),

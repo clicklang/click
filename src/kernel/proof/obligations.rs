@@ -1317,6 +1317,49 @@ mod outcome_claim_goal_tests {
     }
 
     #[test]
+    fn closing_reports_invalid_outcome_and_goal_as_internal_errors() {
+        use crate::kernel::{
+            CheckedPathSpecification, ContractClosingContext, ContractClosingRefusal,
+        };
+        let execution = closing_execution();
+        let core = outcome();
+        let foreign = outcome();
+        let context = ContractClosingContext::new(&execution);
+        let closing = context.open(0, &core);
+        let path = &execution.paths()[0];
+        let specification = CheckedPathSpecification::new(execution.function(), path).unwrap();
+        let claims = OutcomeClaimGoals::open([], false);
+        let facts = super::super::PureFactStore::from_ordered(&[]);
+
+        for (selected, current, reason) in [
+            (
+                ContractClosingGoal::ReturnedResources,
+                &foreign,
+                "closing obligations belong to another outcome",
+            ),
+            (
+                ContractClosingGoal::WriteFootprint,
+                &core,
+                "the selected closing goal is not open",
+            ),
+        ] {
+            let refusal = closing.prove_goal_for_specification(
+                selected,
+                &execution,
+                path,
+                specification.specification(),
+                current,
+                &claims,
+                &facts,
+            );
+            assert!(matches!(
+                refusal,
+                Err(ContractClosingRefusal::Internal(message)) if message == reason
+            ));
+        }
+    }
+
+    #[test]
     fn closing_goal_identity_survives_out_of_order_closure_and_forks() {
         let initial = ContractClosingGoals::open();
         let last_closed = initial.close(ContractClosingGoal::WriteFootprint);

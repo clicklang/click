@@ -212,6 +212,8 @@ impl ClosedContractExit {
 
 #[derive(Debug)]
 pub(crate) enum ContractClosingRefusal {
+    /// The verifier supplied inconsistent state for this closing operation.
+    Internal(&'static str),
     Resource(String),
     Claim(FunctionContractClaimKey),
     Runtime(RuntimeError),
@@ -347,13 +349,13 @@ impl ContractExitObligations {
         facts: &PureFactStore,
     ) -> Result<Self, ContractClosingRefusal> {
         if !self.outcome.same_as(&outcome.identity) {
-            return Err(ContractClosingRefusal::Resource(
-                "closing obligations belong to another outcome".into(),
+            return Err(ContractClosingRefusal::Internal(
+                "closing obligations belong to another outcome",
             ));
         }
         if self.first_open_goal() != Some(kind) {
-            return Err(ContractClosingRefusal::Resource(
-                "the selected closing goal is not open".into(),
+            return Err(ContractClosingRefusal::Internal(
+                "the selected closing goal is not open",
             ));
         }
         let input_units = match kind {
@@ -421,16 +423,17 @@ impl ContractExitObligations {
             }
             ContractClosingGoal::WriteFootprint => {
                 if !self.context.effect_claims.is_empty() {
-                    let effects = self.effects.as_ref().ok_or_else(|| {
-                        ContractClosingRefusal::Resource(
-                            "the resource goal has not prepared the effect input".into(),
-                        )
-                    })?;
-                    let delta = facts.introduced_since(&effects.base).ok_or_else(|| {
-                        ContractClosingRefusal::Resource(
-                            "the effect goal belongs to another proof context".into(),
-                        )
-                    })?;
+                    let effects = self
+                        .effects
+                        .as_ref()
+                        .ok_or(ContractClosingRefusal::Internal(
+                            "the resource goal has not prepared the effect input",
+                        ))?;
+                    let delta = facts.introduced_since(&effects.base).ok_or(
+                        ContractClosingRefusal::Internal(
+                            "the effect goal belongs to another proof context",
+                        ),
+                    )?;
                     let no_propositions = CheckedPropositionIndex::default();
                     for prepared in &effects.paths {
                         let assumptions =

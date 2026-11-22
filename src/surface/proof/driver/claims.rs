@@ -128,6 +128,8 @@ fn prove_next_contract_closing_goal<'a>(
     else {
         return Ok(false);
     };
+    let _origin = matches!(mode, ClosingProofMode::Implicit)
+        .then(|| crate::surface::proof_trace::TraceOrigin::enter_implicit("contract closing"));
     if input.is_none() {
         *input = Some(contract_closing_input(
             Some(root),
@@ -140,6 +142,7 @@ fn prove_next_contract_closing_goal<'a>(
     let input = input.as_ref().expect("prepared closing input");
     let proved = root.prove_contract_closing_goal(kind, execution, &input.path, &input.specification)
         .map_err(|error| match mode {
+            _ if error.kind() == ClickErrorKind::Internal => error,
             ClosingProofMode::Explicit => error.with_context(format!("this tactic could not prove the {} obligation while closing the contract", kind.description())),
             ClosingProofMode::Implicit => error.with_context(format!("the implicit solver could not prove the {} obligation while closing the contract; write an explicit proof or establish the required facts and resources before closing", kind.description())),
         })?;
@@ -4318,9 +4321,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         let _origin = {
                             let (tactic_name, tactic_class) =
                                 post_execution_tactic_timing(post_tactic);
-                            crate::surface::proof_trace::TraceOrigin::enter(
-                                (tactic_class == "smart").then_some(tactic_name),
-                            )
+                            use crate::surface::proof_trace::TraceOrigin;
+                            if matches!(post_tactic, PostExecutionTactic::ImplicitSolve) {
+                                TraceOrigin::enter_implicit(tactic_name)
+                            } else {
+                                TraceOrigin::enter((tactic_class == "smart").then_some(tactic_name))
+                            }
                         };
                         // Match TacticTiming's normal constructor: the implicit
                         // contract closer has no selectable written source site.

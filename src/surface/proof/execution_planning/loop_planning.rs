@@ -637,6 +637,9 @@ fn check_loop_phase_goal<'a>(
     sites: Option<&[ProofStepSite]>,
     phase_name: &str,
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
+    let _origin = source
+        .uses_implicit_tail()
+        .then(|| crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve"));
     let did_search = !matches!(source, SourceProof::Script(_));
     let checked = match source {
         SourceProof::Tactic(SmartTactic::ImplicitTail) => scope.driver().try_solve_closure()?,

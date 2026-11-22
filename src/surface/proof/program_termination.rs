@@ -206,7 +206,7 @@ fn solve_omitted<'a>(root: &Proof<'a>, written_block: bool) -> Result<Proof<'a>,
         return Err(root.step_error("termination proof ended with an open goal; write its proof or expand `program.termination`"));
     }
     let _timing = TacticTiming::new("program.termination", 0, 0, &ProofTactic::Solve, 0);
-    let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit tail"));
+    let _origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit tail");
     crate::kernel::search::ProofSearch::try_solve_closure(root)?.ok_or_else(|| root.solve_failure())
 }
 
