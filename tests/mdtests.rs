@@ -11,8 +11,8 @@ use click::cli::{
 };
 use click::instrumentation::{self, HiddenPrerequisiteRoute};
 use click::surface::{
-    c_tactic_source_position, project_tactic_source_position, verify_c_project, verify_c_sources,
-    verify_program_prepared_project,
+    ClickError, ClickErrorKind, c_tactic_source_position, project_tactic_source_position,
+    verify_c_project, verify_c_sources, verify_program_prepared_project,
 };
 
 #[path = "support/cpp_imports.rs"]
@@ -720,7 +720,7 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
     let project = timed_mdtest_phase(path, "load-project", || {
         read_mdtest_project_if_needed(path, click_source, &inputs)
     })?;
-    let verify = || -> Result<(), (String, String)> {
+    let verify = || -> Result<(), ClickError> {
         match (&inputs, &project) {
             (VerificationInput::Bundle(sources), Some(project)) => {
                 verify_c_project(project, &source_refs(sources)).map(|_| ())
@@ -735,7 +735,6 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
                 unreachable!("every prepared mdtest input reads a Click project")
             }
         }
-        .map_err(|error| (error.message().to_string(), error.report()))
     };
 
     let (result, samples) = timed_mdtest_phase(path, "verify", || {
@@ -787,25 +786,23 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
         let work_limit = std::env::var_os("CLICK_DISABLE_TACTIC_BUDGETS")
             .is_none()
             .then_some(QUICK_SOLVE_WORK_LIMIT);
-        check_quick_solve(&samples, &result, work_limit)?;
+        if let Err(error) = &result {
+            if error.verification_stopped() || error.kind() == ClickErrorKind::Internal {
+                return Err(format!(
+                    "Quick Solve Test did not finish: {}",
+                    error.report()
+                ));
+            }
+        }
+        check_quick_solve(&samples, work_limit)?;
     }
     check_expectation(path, expectation, result)
 }
 
 fn check_quick_solve(
     samples: &[instrumentation::TacticWorkSample],
-    result: &Result<(), (String, String)>,
     work_limit: Option<usize>,
 ) -> Result<(), String> {
-    if let Err((_, report)) = result
-        && ["work limit reached:", "timed out:", "internal error:"]
-            .iter()
-            .any(|heading| report.starts_with(heading))
-    {
-        return Err(format!(
-            "Quick Solve Test hit a verification limit: {report}"
-        ));
-    }
     // Program closing profiles its generated termination proof as a solve
     // even when the fixture has no written solve at that source.
     let mut solves = samples.iter().filter(|sample| {
@@ -850,36 +847,29 @@ fn quick_solve_caps_inclusive_work_even_for_an_expected_refusal() {
     termination.tactic.claim = "program.termination".into();
     termination.inclusive_work = 100;
     samples.push(termination);
-    let refused = Err((
-        "could not establish the goal".into(),
-        "unsuccessful search".into(),
-    ));
-    check_quick_solve(&samples, &refused, Some(10)).unwrap();
-    let error = check_quick_solve(&samples, &refused, Some(9)).unwrap_err();
+    check_quick_solve(&samples, Some(10)).unwrap();
+    let error = check_quick_solve(&samples, Some(9)).unwrap_err();
     assert!(error.contains("10 deterministic work units (limit 9)"));
-    let exhausted = Err((
-        "search stopped".into(),
-        "work limit reached:\n  search stopped".into(),
-    ));
-    assert!(check_quick_solve(&samples, &exhausted, Some(10)).is_err());
 }
 
 fn check_expectation(
     path: &Path,
     expectation: &MdTestExpectation,
-    result: Result<(), (String, String)>,
+    result: Result<(), ClickError>,
 ) -> Result<(), String> {
     match (expectation, result) {
         (MdTestExpectation::Pass, Ok(())) => Ok(()),
-        (MdTestExpectation::Pass, Err((_, report))) => Err(format!(
-            "`{}` expected pass, but failed: {report}",
-            path.display()
+        (MdTestExpectation::Pass, Err(error)) => Err(format!(
+            "`{}` expected pass, but failed: {}",
+            path.display(),
+            error.report()
         )),
         (MdTestExpectation::FailContains(expected), Ok(())) => Err(format!(
             "`{}` expected failure containing `{expected}`, but passed",
             path.display()
         )),
-        (MdTestExpectation::FailContains(expected), Err((message, report))) => {
+        (MdTestExpectation::FailContains(expected), Err(error)) => {
+            let report = error.report();
             if let Some(internal) = ["SymbolicMemory {", "HeapMemory {", "pointer(pointer "]
                 .into_iter()
                 .find(|internal| report.contains(internal))
@@ -891,7 +881,7 @@ fn check_expectation(
             }
             // A failure is read as `click` prints it, with importer names
             // spelled as their source language spells them.
-            let message = click::surface::display_source_names(&message).into_owned();
+            let message = click::surface::display_source_names(error.message());
             if message.contains(expected) {
                 Ok(())
             } else {
