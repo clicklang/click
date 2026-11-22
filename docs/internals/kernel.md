@@ -1671,7 +1671,6 @@ stays within its own range:
 | `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
 | `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
-| `1 << 43 .. 1 << 44` | spec fold binders (`spec_fold_bound_variable`, base plus hash) |
 
 An execution allocates in its range (`KERNEL_VARIABLE_BASE` up to
 `KERNEL_VARIABLE_CEILING`) from its budget's counter and must not hand out a
@@ -1689,15 +1688,13 @@ Direct contract `forall` certification introduces its witness through
 counter mean `Variable(n)` cannot forge its result. New kernel rules that need
 an arbitrary fresh variable use this allocator rather than another range.
 
-The spec-fold-binder range carries a soundness obligation: a binder that
-equals an unrelated free identity can capture it. The
-`the_spec_fold_binder_range_is_disjoint_from_every_other_producer` test asserts
-its boundaries. Match binders need no range, because their origin separates
-them (`a_match_binder_is_no_other_producer_s_identity`); match lowering
-refuses with `ExecutionLimit::MatchBinderVariables` past
-`ExecutionBudget::MATCH_BINDER_LIMIT` binders. Arm refutations
-start at `1 << 56`, and structural induction starts at `1 << 60`, above the
-fold range.
+A binder that equals an unrelated free identity can capture it. Match binders
+and spec fold binders need no range, because their origins separate them
+(`a_match_binder_is_no_other_producer_s_identity`,
+`a_spec_fold_binder_is_no_other_producer_s_identity`); match lowering refuses
+with `ExecutionLimit::MatchBinderVariables` past
+`ExecutionBudget::MATCH_BINDER_LIMIT` binders. Arm refutations start at
+`1 << 56`, and structural induction starts at `1 << 60`.
 
 The witness range carries the same obligation. `intro` on `forall v. body`
 replaces `v` by a free identity that must name nothing the state names,
