@@ -8313,7 +8313,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         value_type: *value_type,
                     }));
                 }
-                let read_point = || match memory {
+                let read_point = match memory {
                     SpecPoint::At(point) => point.clone(),
                     _ => selected_state.expect("selected read state").program_point(),
                 };
@@ -8325,17 +8325,17 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         || integer_read_through_loaded_pointer
                         || ProgramPoint::supports_static_entry_version(&pointer, *value_type))
                 {
-                    read_point().ordinary_typed_version(&pointer, *value_type)
+                    read_point.ordinary_typed_version(&pointer, *value_type)
                 } else {
                     None
                 };
                 let observation = crate::kernel::eval::typed_reads::is_active()
-                    .then(|| (read_point(), pointer.clone()));
+                    .then(|| (read_point.clone(), pointer.clone()));
                 let retain_pointer = value_type.is_pointer() && (*exact || version.is_some());
                 let read_paths = if let Some(version) = version {
                     vec![crate::kernel::eval::evaluate_indexed_read(
                         version,
-                        &read_point(),
+                        &read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -8345,7 +8345,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     && *value_type == ProgramType::UInt32
                     && matches!(pointer.offset, AddressOffset::Constant(0))
                     && let Some((value, byte_facts)) = crate::kernel::eval::indexed_uint32_byte_read(
-                        &read_point(),
+                        &read_point,
                         &pointer,
                         budget.budget.program_byte_order(),
                     )
@@ -8359,7 +8359,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     }]
                 } else if *exact {
                     crate::kernel::eval::evaluate_exact_logical_memory_load_paths(
-                        read_point(),
+                        read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -8367,16 +8367,12 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     )
                 } else {
                     crate::kernel::eval::evaluate_logical_memory_load_paths_at(
-                        memory_view,
+                        &read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
                         obligations,
                         assumptions,
-                        (*value_type == ProgramType::Bool
-                            || KernelFloatType::from_program_type(*value_type).is_some())
-                        .then(read_point)
-                        .as_ref(),
                     )
                 };
                 if let Some((point, address)) = observation
