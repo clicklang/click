@@ -855,7 +855,8 @@ body to rank.
 
 The marker is required on, and only on, a function that may not return. A
 function whose every loop is ranked and whose every call descends has nothing
-to justify the marker, and declaring it `diverges` is refused; see
+to justify the marker. Declaring it `diverges` reports a `contract error`
+that asks the author to remove the marker. See
 `mdtests/diverges_rejects_unjustified_marker.md`. An `extern` contract is
 exempt, because the declaration is all that is known about it. The marker is
 contagious: an unmarked caller of a marked function is refused, and the

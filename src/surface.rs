@@ -8981,7 +8981,6 @@ pub enum ProofRefusal {
     ContractEntry,
     ExecutionPrerequisite,
     Execution,
-    DivergenceDeclaration,
     UnsupportedProof,
 }
 
@@ -8995,7 +8994,6 @@ impl ProofRefusal {
             Self::ContractEntry => "contract entry refused",
             Self::ExecutionPrerequisite => "execution prerequisite unmet",
             Self::Execution => "execution refused",
-            Self::DivergenceDeclaration => "invalid divergence declaration",
             Self::UnsupportedProof => "unsupported proof",
         }
     }
