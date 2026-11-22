@@ -896,9 +896,9 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     }
 }
 
-/// Check a selected constructor arm that forwards literal int32 payloads
-/// directly into its result. Compare the written fields without substituting
-/// into arbitrary expressions or building a rewritten match.
+/// Check a selected constructor arm that forwards scalar payloads directly
+/// into its result. Compare the written fields without substituting into
+/// arbitrary expressions or building a rewritten match.
 fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
     let (
         AlgebraicTermNode::Match { scrutinee, arms },
@@ -934,12 +934,16 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
     crate::instrumentation::record_deterministic_work(fields.len() + result_fields.len());
     let mut payloads = std::collections::HashMap::with_capacity(fields.len());
     for (binder, field) in arm.bindings.iter().zip(fields) {
-        let (
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))),
-            AlgebraicValue::Program(ProgramValue::Int32(int32_constant!(_))),
-        ) = (binder, field)
-        else {
-            return false;
+        let variable = match (binder, field) {
+            (
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))),
+                AlgebraicValue::Program(ProgramValue::Int32(int32_constant!(_))),
+            )
+            | (
+                AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
+                AlgebraicValue::Integer(IntegerTerm::Constant(_) | IntegerTerm::Variable(_)),
+            ) => variable,
+            _ => return false,
         };
         if payloads.insert(*variable, field).is_some() {
             return false;
@@ -949,14 +953,15 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         .iter()
         .zip(expected_fields)
         .all(|(field, expected)| {
-            let AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))) =
-                field
-            else {
-                return false;
+            let variable = match field {
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable)))
+                | AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => variable,
+                _ => return false,
             };
-            payloads
-                .get(variable)
-                .is_some_and(|payload| *payload == expected)
+            payloads.get(variable).is_some_and(|payload| {
+                std::mem::discriminant(*payload) == std::mem::discriminant(field)
+                    && *payload == expected
+            })
         })
         && matched.is_well_formed()
         && expected.is_well_formed()

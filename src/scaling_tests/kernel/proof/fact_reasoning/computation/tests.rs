@@ -3,24 +3,36 @@ use super::*;
 
 #[test]
 fn selected_constructor_payload_check_scales_with_written_fields() {
-    for size in [8, 32, 128] {
+    let types = [
+        AlgebraicValueType::Program(ProgramType::Int32),
+        AlgebraicValueType::Integer,
+    ];
+    let sizes = [8, 32, 128];
+    for (ty, size) in types.iter().flat_map(|ty| sizes.map(|size| (ty, size))) {
         let _session = VerificationSession::enter();
-        let mut scrutinee =
-            KernelMatch::test_scrutinee(vec![
-                AlgebraicValueType::Program(ProgramType::Int32);
-                size
-            ]);
+        let mut scrutinee = KernelMatch::test_scrutinee(vec![ty.clone(); size]);
         let constructor = |fields| AlgebraicTermNode::Constructor {
             variant: "Arm".into(),
             fields,
         };
         let fields = (0..size)
-            .map(|i| AlgebraicValue::Program(int32(i as u32)))
+            .map(|i| match ty {
+                AlgebraicValueType::Integer => {
+                    AlgebraicValue::Integer(IntegerTerm::var(Variable(992_300 + i as u64)))
+                }
+                _ => AlgebraicValue::Program(int32(i as u32)),
+            })
             .collect::<Vec<_>>();
         scrutinee.node = constructor(fields.clone());
         let bindings = (0..size)
             .map(|i| {
-                AlgebraicValue::Program(int32(MachineTerm::Variable(Variable(992_100 + i as u64))))
+                let variable = Variable(992_100 + i as u64);
+                match ty {
+                    AlgebraicValueType::Integer => {
+                        AlgebraicValue::Integer(IntegerTerm::var(variable))
+                    }
+                    _ => AlgebraicValue::Program(int32(MachineTerm::Variable(variable))),
+                }
             })
             .collect::<Vec<_>>();
         let expected = AlgebraicTerm {
