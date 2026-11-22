@@ -538,6 +538,33 @@ fn adjacent_range_separation(
         )
 }
 
+/// A declared uint32 has no invalid bit patterns. Its four initialized
+/// representation bytes suffice, even when a call reports them as facts.
+pub(in crate::kernel) fn known_uint32_from_defined_bytes(
+    goal: &Proposition,
+    mut contains: impl FnMut(&Proposition) -> bool,
+) -> bool {
+    let Proposition::MemoryReadDefined {
+        at,
+        memory,
+        pointer,
+        value_type: ProgramType::UInt32,
+    } = goal
+    else {
+        return false;
+    };
+    memory.is_live_declared_local_uint32(pointer)
+        && (0..ProgramType::UInt32.byte_width()).all(|offset| {
+            crate::instrumentation::record_deterministic_work(1);
+            contains(&Proposition::MemoryReadDefined {
+                at: *at,
+                memory: memory.clone(),
+                pointer: pointer.offset_by_bytes(offset),
+                value_type: ProgramType::UInt8,
+            })
+        })
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
@@ -742,6 +769,41 @@ mod tests {
             le(value.clone(), IntegerTerm::Constant(max)),
         ]
     }
+    #[test]
+    fn defined_local_word_checks_four_exact_bytes_among_unrelated_facts() {
+        let _session = VerificationSession::enter();
+        let word = SymbolicMemory::local_pointer("word");
+        let memory = SymbolicMemory::new().with_declared_scalar_block(
+            word.base.clone(),
+            4,
+            ProgramType::UInt32,
+        );
+        let defined = |pointer, value_type| Proposition::MemoryReadDefined {
+            at: None,
+            memory: memory.clone(),
+            pointer,
+            value_type,
+        };
+        let goal = defined(word.clone(), ProgramType::UInt32);
+        for count in [0, 16, 256] {
+            let mut premises = (0..count)
+                .map(|index| defined(Address::symbolic(Variable(index)), ProgramType::UInt8))
+                .collect::<Vec<_>>();
+            for offset in 0..4 {
+                let facts = PureFactStore::from_ordered(&premises);
+                assert!(!known_uint32_from_defined_bytes(&goal, |byte| facts.contains(byte)));
+                premises.push(defined(word.offset_by_bytes(offset), ProgramType::UInt8));
+            }
+            let facts = PureFactStore::from_ordered(&premises);
+            let mut lookups = 0;
+            assert!(known_uint32_from_defined_bytes(&goal, |byte| {
+                lookups += 1;
+                facts.contains(byte)
+            }));
+            assert_eq!(lookups, 4);
+        }
+    }
+
     #[test]
     fn known_footprint_separation_checks_selected_members() {
         let _session = VerificationSession::enter();

@@ -7361,15 +7361,21 @@ impl SymbolicMemory {
             // all its bytes are initialized, including after character writes.
             Ok(None) => {
                 value_type == ProgramType::UInt32
-                    && pointer.base.is_local_block()
-                    && pointer.offset == AddressOffset::Constant(0)
-                    && self.blocks.get(&pointer.base).is_some_and(|block| {
-                        block.declared_scalar_type == Some(value_type)
-                            && block.size().as_const() == Some(value_type.byte_width())
-                    })
+                    && self.is_live_declared_local_uint32(pointer)
                     && self.has_initialized_bytes_at(pointer, value_type.byte_width())
             }
         }
+    }
+
+    pub(in crate::kernel) fn is_live_declared_local_uint32(&self, pointer: &Address) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        pointer.base.is_local_block()
+            && pointer.offset == AddressOffset::Constant(0)
+            && !self.is_ended_local_address(pointer)
+            && self.blocks.get(&pointer.base).is_some_and(|block| {
+                block.declared_scalar_type == Some(ProgramType::UInt32)
+                    && block.size().as_const() == Some(ProgramType::UInt32.byte_width())
+            })
     }
 
     /// The integer terms held by the concrete cells this memory changed

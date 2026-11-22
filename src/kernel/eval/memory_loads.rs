@@ -1116,7 +1116,7 @@ fn evaluate_retained_memory_load_case(
         && (!memory.may_read_uninitialized_object(&pointer, value_type.byte_width())
             || purpose == LoadPurpose::Logical
             || written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
-            || assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type));
+            || assumptions.has_memory_read_defined_evidence(written, &pointer, value_type));
     // An ordinary external scalar fallback names the written state even
     // when the alias-resolution case is examining a projection of it.
     let reads_written_state = allow_symbolic_external_load
@@ -1380,7 +1380,7 @@ fn evaluate_retained_memory_load_case(
     if purpose != LoadPurpose::Logical
         && memory.is_uninitialized_heap_address(&pointer, value_type.byte_width(), assumptions)
         && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
-        && !assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type)
+        && !assumptions.has_memory_read_defined_evidence(written, &pointer, value_type)
     {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
@@ -1890,7 +1890,7 @@ fn evaluate_retained_memory_load_case(
         && ((pointer.base.is_local_block() && memory.has_block(&pointer.base))
             || memory.may_read_uninitialized_object(&pointer, value_type.byte_width()))
         && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
-        && !assumptions.has_memory_read_defined_evidence(&memory, &pointer, value_type)
+        && !assumptions.has_memory_read_defined_evidence(written, &pointer, value_type)
     {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),

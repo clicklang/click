@@ -4824,7 +4824,8 @@ impl PureFactContext {
     ///
     /// A field of a struct in a byte range `base[0..m * k]` or a struct
     /// range `base[0..m]` is placed over the struct count
-    /// ([`Self::field_access_in_wide_struct_array`]).
+    /// ([`Self::field_access_in_wide_struct_array`]). A byte range can also
+    /// cover a wider access by containing its entire byte interval.
     /// Otherwise the access must be one whole element at an exact offset `i *
     /// element_width` from the base, where `i` is an unsigned 64-bit index
     /// (or a constant), with `start <= i`, `i < end` and `end <= i64::MAX /
@@ -4848,8 +4849,12 @@ impl PureFactContext {
         };
         let base = range.base();
         let element_width = range.element_width();
-        // Only a struct array places a narrower access, as a field.
-        if byte_width != element_width && wide_struct_array_count(range).is_none() {
+        // Byte ranges may cover a wider access. Apart from byte ranges,
+        // only a struct array places an access with a different width.
+        if byte_width != element_width
+            && element_width != 1
+            && wide_struct_array_count(range).is_none()
+        {
             return false;
         }
         let resolved = if pointer == base || self.pointers_known_equal(pointer, base) {
@@ -4861,6 +4866,11 @@ impl PureFactContext {
         };
         if self.field_access_in_wide_struct_array(&resolved, byte_width, range) {
             return true;
+        }
+        if element_width == 1 && byte_width > 1 {
+            let bytes =
+                MemoryRange::new_with_element_width(resolved, 0u32.into(), byte_width.into(), 1);
+            return crate::kernel::primitives::wide_memory_range_covers(range, &bytes, self);
         }
         if byte_width != element_width {
             return false;
