@@ -3010,46 +3010,25 @@ fn a_match_binder_is_no_other_producer_s_identity() {
 }
 
 /// A universal introduction's witness is a free identity standing for an
-/// arbitrary value, and its range has to miss every producer that can appear
-/// free beside it — starting with the C identities, which the freshener used
-/// to count into from `Variable(0)`.
+/// arbitrary value, and it has to miss every producer that can appear free
+/// beside it — starting with the C identities, which the freshener used to
+/// count into from `Variable(0)`. Witnesses have their own origin, so no
+/// identity another producer mints is one, whatever its number.
 #[test]
-fn the_universal_witness_range_is_disjoint_from_every_other_producer() {
-    let witnesses = ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE
-        ..ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING;
-    let reserved: [(&str, std::ops::Range<u64>); 6] = [
-        ("the C identities below every reserved base", 0..1_000_000),
-        (
-            "the execution counter",
-            ExecutionBudget::KERNEL_VARIABLE_BASE..ExecutionBudget::KERNEL_VARIABLE_CEILING,
-        ),
-        ("surface quantifiers", 2_000_000..4_000_000),
-        ("surface algebraic binders", 4_000_000..4_000_000_000),
-        ("symbolic address bases", 4_000_000_000..8_000_000_000),
-        ("load variables", (1 << 40)..(1 << 41)),
-    ];
-    for (name, range) in reserved {
+fn a_universal_witness_is_no_other_producer_s_identity() {
+    for number in [0, 1, ExecutionBudget::KERNEL_VARIABLE_BASE, 1 << 42] {
         assert!(
-            witnesses.end <= range.start || range.end <= witnesses.start,
-            "the universal-witness range {witnesses:?} overlaps {name} at {range:?}"
+            !ExecutionBudget::is_universal_witness_variable(Variable(number)),
+            "an ordinary identity numbered {number} must never pass as a witness"
         );
+        assert!(ExecutionBudget::is_universal_witness_variable(
+            Variable::witness(number)
+        ));
+        assert_ne!(Variable::witness(number), Variable(number));
     }
-    assert!(
-        !ExecutionBudget::is_universal_witness_variable(Variable(0)),
-        "a C identity must never pass as a universal witness"
-    );
-    assert!(
-        !ExecutionBudget::is_universal_witness_variable(Variable(
-            ExecutionBudget::KERNEL_VARIABLE_BASE
-        )),
-        "an execution identity must never pass as a universal witness"
-    );
-    assert!(
-        ExecutionBudget::is_universal_witness_variable(Variable(
-            ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE
-        )),
-        "the first witness identity must be recognized as one"
-    );
+    assert!(!ExecutionBudget::is_universal_witness_variable(
+        Variable::match_binder(0)
+    ));
 }
 
 /// A loop invariant the entry lowering cannot evaluate names where it
