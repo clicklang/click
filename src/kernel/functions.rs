@@ -8605,6 +8605,7 @@ fn matched_instance_body_ownership(
     let projection = ResourceFieldProjection {
         identity: instance.identity().into(),
         children: Vec::new(),
+        field_name: None,
         field_index: matched.field_index,
         at_entry: false,
     };
@@ -11978,12 +11979,8 @@ pub(in crate::kernel) fn allocation_size_kind_refusal(
         .find(|(base, size)| {
             size.kind() != required_size.kind()
                 && crate::kernel::resource_arguments_proven_equal(
-                    &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
-                        .into(),
-                    &ProgramValue::Pointer(
-                        required_base.clone().with_type(ProgramType::Int32Pointer),
-                    )
-                    .into(),
+                    &ProgramValue::Pointer((*base).clone()).into(),
+                    &ProgramValue::Pointer(required_base.clone()).into(),
                     assumptions,
                 )
         })
@@ -15342,7 +15339,7 @@ pub(crate) fn arm_algebraic_payload_spelling<'a>(
     let AlgebraicTermNode::Variable(variable) = payload.node else {
         return None;
     };
-    (variable.0 >= 4_000_000 && (variable.0 - 4_000_000).is_multiple_of(65_536)).then_some(payload)
+    variable.algebraic_binder_index().map(|_| payload)
 }
 
 /// Reference type checking uses only the declaration and immutable reference
@@ -15628,10 +15625,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     .ok_or("instance fold/unfold requires a proved body guard case")?;
     let retained_witnesses = if !unfold && active && !definition.witnesses.is_empty() {
         match state.resources.instance_consumption(instance.identity) {
-            Some(InstanceConsumption::UnfoldWithWitnesses {
+            Some(InstanceConsumption::Opened {
                 instance: opened,
                 values,
-            }) if opened.as_ref() == instance => Some(values.as_ref()),
+                ..
+            }) if opened.as_ref() == instance && values.len() == definition.witnesses().len() => {
+                Some(values.as_ref())
+            }
             _ => None,
         }
     } else {
@@ -15640,8 +15640,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let witness_values = if let Some(values) = retained_witnesses {
         // The opening picks values, not premises. The fold checks the
         // instantiated body below at the current memory and resources.
-        for (witness, value) in definition.witnesses().iter().zip(values) {
+        for witness in definition.witnesses() {
             crate::instrumentation::record_deterministic_work(1);
+            let value = values
+                .get(witness.name())
+                .ok_or("the opening has no retained value for this witness")?;
             evaluation.locals.bind_logical_typed(
                 witness.name(),
                 value.clone(),
@@ -15690,7 +15693,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     // The selected arm's children, or the unmatched body's.
-    let body_children = if observe {
+    let body_children = if observe || !active {
         &[][..]
     } else if definition.matched.is_some() {
         selected.map_or(&[][..], |arm| arm.children.as_slice())
@@ -15698,13 +15701,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         check_unmatched_instance_children(instance, definition, definitions)?;
         definition.children.as_slice()
     };
-    if selected_children.is_none()
-        && body_children
-            .iter()
-            .any(|child| !reference_parameters.contains_key(&child.binding))
-    {
-        return Err("recursive children require explicit independent child selections".into());
-    }
+    let opening = match state.resources.instance_consumption(instance.identity) {
+        Some(InstanceConsumption::Opened { children, .. }) => Some(children),
+        _ => None,
+    };
+    let mut opening_occurrence = None;
     for child in body_children {
         if let Some(reference) = reference_parameters.get(&child.binding)
             && let Some(selected) =
@@ -15712,6 +15713,31 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             && selected != reference.identity()
         {
             return Err("selected child is not the resource argument".into());
+        }
+        if let std::collections::btree_map::Entry::Vacant(entry) =
+            explicit_children.entry(child.name.as_str())
+        {
+            if unfold {
+                let occurrence = match opening_occurrence {
+                    Some(occurrence) => occurrence,
+                    None => {
+                        let (occurrence, _) = state
+                            .resources
+                            .unique_owned_occurrence_for_fact(&folded)
+                            .ok_or("unfold requires the exact parent occurrence")?;
+                        opening_occurrence = Some(occurrence);
+                        occurrence
+                    }
+                };
+                entry.insert(
+                    crate::kernel::model_fields::opened_child_identity(occurrence, &child.name)
+                        .ok_or("too many exposed child instances in this verification")?,
+                );
+            } else if selected_children.is_none()
+                && let Some(identity) = opening.and_then(|children| children.get(&child.name))
+            {
+                entry.insert(*identity);
+            }
         }
     }
     // Name the child an author left out or added: the generic sentence
@@ -16345,13 +16371,22 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // Publish instance consumption records only after the complete rewrite is checked. It names
     // the affected identities without retaining or scanning a proof history.
     if unfold {
-        let consumption = if witness_values.is_empty() {
-            InstanceConsumption::Unfold
-        } else {
-            InstanceConsumption::UnfoldWithWitnesses {
-                instance: std::sync::Arc::new(instance.clone()),
-                values: witness_values.clone().into(),
-            }
+        let consumption = InstanceConsumption::Opened {
+            instance: std::sync::Arc::new(instance.clone()),
+            children: std::sync::Arc::new(
+                explicit_children
+                    .iter()
+                    .map(|(slot, id)| ((*slot).to_owned(), *id))
+                    .collect(),
+            ),
+            values: std::sync::Arc::new(
+                definition
+                    .witnesses()
+                    .iter()
+                    .zip(&witness_values)
+                    .map(|(witness, value)| (witness.name().to_owned(), value.clone()))
+                    .collect(),
+            ),
         };
         next.resources
             .record_instance_consumption(instance.identity, Some(consumption));

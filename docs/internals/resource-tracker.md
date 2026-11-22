@@ -409,14 +409,13 @@ point and write width are retained while the failing proof's session is active;
 formatting never reruns the check in a later arena or under a different bridging
 mode.
 
-The three model-field rows are pinned as refusals with their
-verified repairs beside them:
+Two model-field refusals have checked repairs:
 `mdtests/model_field_across_a_call_that_promises_nothing.md` /
-`model_field_kept_by_a_call.md`,
+`model_field_kept_by_a_call.md` and
 `model_field_across_a_loop_without_an_invariant.md` /
-`c_reads_through_a_resource_with_fields_across_a_loop.md`,
-and `fold_field_names_a_consumed_model.md` /
-`fold_field_names_the_entry_model.md`.
+`c_reads_through_a_resource_with_fields_across_a_loop.md`.
+`fold_field_names_the_opened_model.md` reads the field from the captured
+model of an instance the proof unfolded.
 
 The two cases that can print both ranges offer two clauses, because two say the
 same thing: a stated `separate(..)`, and — since a contract's transferred and

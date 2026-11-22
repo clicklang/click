@@ -1,10 +1,10 @@
-# A current child-field path requires its parent to be held
+# A child-field path reads through an open parent
 
-`pair(p).first.v` selects the hidden field in the exact parent instance.
-The current path works while folded; `old(...)` retains its entry value
-after unfolding. Naming the field does not unfold its child.
+`pair(p).first.v` reads the hidden field while the parent is folded.
+After opening the parent, that path reads the same child as its explicit
+alias `c`.
 
-```c filename=nested_resource_field_requires_a_current_parent.c
+```c filename=nested_resource_field_reads_through_an_open_parent.c
 struct cell { int32 value; };
 struct pair { struct cell* a; int32 n; };
 
@@ -32,7 +32,7 @@ resource pair(p: struct pair*) {
     fact first.v >= 0;
 }
 
-verifying "nested_resource_field_requires_a_current_parent.c";
+verifying "nested_resource_field_reads_through_an_open_parent.c";
 
 int32 get(struct pair* p) {
     owns pair(p);
@@ -55,5 +55,5 @@ int32 twice(struct pair* p) {
 ```
 
 ```expect
-fail: reads a field of `pair(p)`, which is not held here
+pass
 ```

@@ -276,9 +276,7 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
-        ) if a.program_type() == b.program_type() => {
-            ConditionTerm::logical_pointer_equal(a.clone(), b.clone())
-        }
+        ) => ConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(b)),

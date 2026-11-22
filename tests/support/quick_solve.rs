@@ -1,10 +1,11 @@
 use click::instrumentation;
+use click::surface::{ClickError, ClickErrorKind};
 
 const QUICK_SOLVE_WORK_LIMIT: usize = 50_000;
 
 pub fn check_quick_solve(
     samples: &[instrumentation::TacticWorkSample],
-    result: &Result<(), (String, String)>,
+    result: &Result<(), ClickError>,
 ) -> Result<(), String> {
     let work_limit = std::env::var_os("CLICK_DISABLE_TACTIC_BUDGETS")
         .is_none()
@@ -14,14 +15,15 @@ pub fn check_quick_solve(
 
 pub fn check_quick_solve_with_limit(
     samples: &[instrumentation::TacticWorkSample],
-    result: &Result<(), (String, String)>,
+    result: &Result<(), ClickError>,
     work_limit: Option<usize>,
 ) -> Result<(), String> {
-    if let Err((_, report)) = result
-        && report.starts_with("limit error:")
+    if let Err(error) = result
+        && (error.verification_stopped() || error.kind() == ClickErrorKind::Internal)
     {
         return Err(format!(
-            "Quick Solve Test hit a verification limit: {report}"
+            "Quick Solve Test did not finish: {}",
+            error.report()
         ));
     }
     // Program closing profiles its generated termination proof as a solve

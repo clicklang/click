@@ -1666,10 +1666,23 @@ stays within its own range:
 | Range | Producer |
 | --- | --- |
 | `1_000_000 .. 2_000_000` | the execution's fresh-identity counter |
-| `2_000_000 .. 4_000_000` | the surface's quantifier variables while a body is lowered, before it is closed; lowering refuses at the ceiling |
-| `4_000_000 .. 4_000_000_000`, stepping by `65_536` | the surface's algebraic binders; lowering refuses at the ceiling |
 | `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
+
+Producers moved off these ranges mint their variables with
+`Variable::produced(Producer::…, n)`, numbering from zero by their own rule:
+termination-check parameters and `let` witnesses, pure-theorem pointer
+arguments, resource `match` Integer binders, and Surface algebraic binders
+(`Producer::AlgebraicBinder`, numbered by binder index, which is also how a
+proof `match`'s constructor-field witnesses raise back to Surface;
+`Variable::algebraic_binder_index` reads it back), and the variables Surface
+lowering binds for quantifiers, folds and `match` arms while it lowers a body,
+one producer per lowering context (`ProofQuantifier`, `FunctionQuantifier`,
+`RequirementQuantifier`, `ResourceQuantifier`). A lowering numbers above the
+highest variable of its own producer that a captured value names; variables
+of other producers cannot collide and are ignored. A produced variable equals no
+variable of another producer or origin, whatever its number, so these need no
+range or ceiling. The remaining ranges move the same way.
 
 An execution allocates in its range (`KERNEL_VARIABLE_BASE` up to
 `KERNEL_VARIABLE_CEILING`) from its budget's counter and must not hand out a

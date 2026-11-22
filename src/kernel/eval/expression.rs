@@ -1850,9 +1850,9 @@ fn evaluate_bool_value_paths(
 }
 
 /// A Rust operator on 8- or 16-bit values (`IntegerCastMode::NarrowArithmetic`):
-/// the operands are evaluated as written, in order, and the value is the
-/// operator's native node at `target_type`. An operand of another type is a
-/// type mismatch, never a silent promotion.
+/// Evaluate operands in order. Most operators build a native node at
+/// `target_type`. Signed division and remainder check the narrow domain
+/// and retain the promoted result's conversion.
 fn evaluate_narrow_arithmetic_paths(
     state: &ExecutionState,
     expression: &ProgramExpression,
@@ -1875,6 +1875,8 @@ fn evaluate_narrow_arithmetic_paths(
         ProgramExpression::BitwiseOr(left, right) => (Op::BitwiseOr, left, right),
         ProgramExpression::BitwiseXor(left, right) => (Op::BitwiseXor, left, right),
         ProgramExpression::ShiftLeft(left, right) => (Op::ShiftLeft, left, right),
+        ProgramExpression::Divide(left, right) => (Op::Divide, left, right),
+        ProgramExpression::Remainder(left, right) => (Op::Remainder, left, right),
         ProgramExpression::BitwiseNot(operand) => {
             return Ok(
                 evaluate_program_expression_paths(state, operand, assumptions, budget)?
@@ -1906,6 +1908,20 @@ fn evaluate_narrow_arithmetic_paths(
         assumptions,
         budget,
         |left, right, facts, obligations| {
+            if matches!(op, Op::Divide | Op::Remainder)
+                && let Some(format @ (MachineIntegerType::Int8 | MachineIntegerType::Int16)) =
+                    format
+            {
+                return super::operators::apply_rust_narrow_signed_division(
+                    format,
+                    op,
+                    left,
+                    right,
+                    facts,
+                    obligations,
+                    assumptions,
+                );
+            }
             vec![ExpressionPath {
                 outcome: outcome(format.and_then(|format| {
                     super::operators::native_narrow_binary(format, op, &left, &right)

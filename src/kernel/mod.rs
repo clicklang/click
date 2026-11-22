@@ -183,6 +183,8 @@ pub(crate) use eval::load_term_access_width;
 #[cfg(test)]
 pub(crate) use eval::load_variable_for_cell_with_origin;
 pub(crate) use eval::load_variable_for_term;
+#[cfg(test)]
+pub(crate) use eval::mixed_read_names;
 pub(crate) use eval::offsets_have_same_canonical_form;
 pub(crate) use eval::pointer_read_over_immediate_store;
 pub(crate) use eval::proposition_mentions_load_variable;

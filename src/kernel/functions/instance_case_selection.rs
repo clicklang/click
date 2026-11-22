@@ -267,6 +267,7 @@ pub(super) fn checked_returned_instance_body_facts(
         let projection = ResourceFieldProjection {
             identity: instance.identity().into(),
             children: Vec::new(),
+            field_name: None,
             field_index: matched.field_index,
             at_entry: false,
         };
@@ -330,6 +331,7 @@ pub(super) fn selected_resource_instance_case_facts(
             let projection = ResourceFieldProjection {
                 identity: instance.identity.into(),
                 children: Vec::new(),
+                field_name: None,
                 field_index: matched.field_index,
                 at_entry: false,
             };

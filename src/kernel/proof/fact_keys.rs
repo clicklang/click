@@ -116,7 +116,6 @@ pub(crate) fn clear_state_operand_keys() {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct MemoryErasedPointerKey {
-    program_type: ProgramType,
     address: MemoryErasedAddressKey,
     provenance: MemoryErasedAddressKey,
     bounds_owner: Option<MemoryErasedAddressKey>,
@@ -140,7 +139,6 @@ impl MemoryErasedPointerKey {
 
 fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
     MemoryErasedPointerKey {
-        program_type: pointer.program_type(),
         address: memory_erased_address_key(pointer.address()),
         provenance: memory_erased_address_key(pointer.provenance()),
         bounds_owner: if pointer.bounds_are_known() {
@@ -927,7 +925,6 @@ enum AlphaProgramValueKey {
     Parameter(Box<AlphaAlgebraicKey>),
     Scalar(ProgramType, AlphaMachineKey),
     Pointer {
-        program_type: ProgramType,
         pointer: AlphaAddressKey,
         provenance: AlphaAddressKey,
         bounds_known: bool,
@@ -2320,7 +2317,6 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
             >(term, bindings, next_binder)?))
         }
         ProgramValue::Pointer(pointer) => AlphaProgramValueKey::Pointer {
-            program_type: pointer.program_type(),
             pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
                 pointer.address(),
                 bindings,

@@ -154,6 +154,13 @@ impl ContractExecutionOwner {
         Ok(())
     }
 
+    pub(in crate::kernel) fn retain_applied_tactics<'a>(
+        &mut self,
+        tactics: impl Iterator<Item = &'a String>,
+    ) {
+        self.execution.applied_tactics.extend(tactics.cloned());
+    }
+
     pub(in crate::kernel) fn bind_root(mut self, root: Option<&WholeContractRoot>) -> Self {
         self.root = root.cloned();
         self

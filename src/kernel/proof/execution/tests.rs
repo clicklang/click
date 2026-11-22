@@ -248,7 +248,7 @@ fn constructor_partition_fixture_with_type(
         "entry",
         vec![],
         ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(4_000_000)),
+            MachineTerm::Variable(algebraic_binder(0)),
         ))),
     );
     let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
@@ -271,8 +271,7 @@ fn constructor_partition_checks_complete_coverage_and_exact_scopes() {
                 &crate::kernel::ExecutionEnvironment::new(),
                 &[],
                 None,
-                4_000_000,
-                65_536,
+                0,
             )
             .unwrap();
         assert_eq!(fields.len(), width);
@@ -316,8 +315,7 @@ fn constructor_partition_checks_complete_coverage_and_exact_scopes() {
                 &crate::kernel::ExecutionEnvironment::new(),
                 &[],
                 None,
-                4_000_000,
-                65_536,
+                0,
             )
             .expect("a frontier that has moved still issues its partition");
         let moved_facts = root.with_fact(moved.case_fact(0).unwrap().clone());
@@ -340,8 +338,7 @@ fn constructor_partition_exclusion_requires_its_exact_contradiction() {
             &crate::kernel::ExecutionEnvironment::new(),
             &[],
             None,
-            4_000_000,
-            65_536,
+            0,
         )
         .unwrap();
     let live = partition.case_fact(0).unwrap().clone();
@@ -384,10 +381,20 @@ fn constructor_partition_exclusion_requires_its_exact_contradiction() {
     ));
 }
 
+fn algebraic_binder(index: u64) -> Variable {
+    Variable::produced(crate::kernel::Producer::AlgebraicBinder, index)
+}
+
+fn binder_index(variable: &Variable) -> u64 {
+    variable
+        .algebraic_binder_index()
+        .expect("a case witness is an algebraic binder")
+}
+
 #[test]
 fn constructor_partition_witnesses_avoid_source_facts_and_previous_matches() {
     let (core, value) = constructor_partition_fixture(2);
-    let occupied = Variable(4_065_536);
+    let occupied = algebraic_binder(1);
     let root = PureFactStore::from_ordered(&[Proposition::Equal(
         crate::kernel::Term::ProgramValue(
             ProgramValue::Int32(MachineTerm::Variable(occupied)).into(),
@@ -396,31 +403,33 @@ fn constructor_partition_witnesses_avoid_source_facts_and_previous_matches() {
     )]);
     let env = crate::kernel::ExecutionEnvironment::new();
     let (partition, fields, next) = core
-        .algebraic_case_partition(&root, &value, &env, &[], None, 4_000_000, 65_536)
+        .algebraic_case_partition(&root, &value, &env, &[], None, 0)
         .unwrap();
-    assert!(fields.iter().flatten().all(|(var, _)| var.0 > occupied.0));
+    assert!(fields.iter().flatten().all(|(var, _)| *var != occupied));
     let facts = root.with_fact(partition.case_fact(0).unwrap().clone());
     let (_, later, _) = core
-        .algebraic_case_partition(&facts, &value, &env, &[], None, next, 65_536)
+        .algebraic_case_partition(&facts, &value, &env, &[], None, next)
         .unwrap();
-    assert!(later.iter().flatten().all(|(var, _)| var.0 >= next));
     assert!(
-        core.algebraic_case_partition(&root, &value, &env, &[], None, u64::MAX, 1)
-            .is_none()
+        later
+            .iter()
+            .flatten()
+            .all(|(var, _)| binder_index(var) >= next)
     );
     assert!(
-        core.algebraic_case_partition(&root, &value, &env, &[], None, 0, 0)
+        core.algebraic_case_partition(&root, &value, &env, &[], None, u64::MAX)
             .is_none()
     );
 }
 
 /// A frontier that is not a function entry reserves the region's own entry
-/// state and everything the kernel has issued since, so a witness can
-/// neither name a value the region started with nor one issued inside it.
+/// state, so a witness cannot name a value the region started with. Witnesses
+/// are algebraic binders, which no execution issues, so how many identities
+/// the execution has issued since does not constrain them.
 #[test]
 fn constructor_partition_witnesses_avoid_the_region_state_and_issued_variables() {
     let (_, value) = constructor_partition_fixture(2);
-    let occupied = Variable(4_000_000);
+    let occupied = algebraic_binder(0);
     let state = ExecutionState::new().with_local(
         "cursor",
         ProgramValue::Int32(MachineTerm::Variable(occupied)),
@@ -429,33 +438,24 @@ fn constructor_partition_witnesses_avoid_the_region_state_and_issued_variables()
     let root = PureFactStore::default();
     let env = crate::kernel::ExecutionEnvironment::new();
     let (_, fields, _) = core
-        .algebraic_case_partition(&root, &value, &env, &[], None, 4_000_000, 65_536)
+        .algebraic_case_partition(&root, &value, &env, &[], None, 0)
         .expect("a loop-body frontier issues its partition");
     assert!(fields.iter().flatten().all(|(var, _)| *var != occupied));
 
-    // `next_kernel_variable` is execution-relative, so an execution that
-    // has issued 200_000 identities occupies
-    // `1_000_000 .. 1_200_000` and a probe starting inside that range
-    // must walk out of it. The field used to be set here as if it were an
-    // absolute id, which is how the comparison against it stayed vacuous:
-    // the partition's own candidates start at 4_000_000, above every
-    // identity an execution can issue.
     let mut issued = core.clone();
     issued
         .advance_kernel_variable_mark(200_000)
         .expect("the counter moves forward");
     assert_eq!(issued.issued_kernel_variable_bound(), 1_200_000);
     let (_, fields, _) = issued
-        .algebraic_case_partition(&root, &value, &env, &[], None, 1_000_000, 65_536)
-        .expect("a partition skips the issued range");
-    assert!(fields.iter().flatten().all(|(var, _)| var.0 >= 1_200_000));
-    // The same probe at the range the surface actually uses is unaffected:
-    // 4_000_000 is above `KERNEL_VARIABLE_CEILING`, so range separation
-    // already covers it and the first candidate is taken.
-    let (_, fields, _) = issued
-        .algebraic_case_partition(&root, &value, &env, &[], None, 4_065_536, 65_536)
-        .expect("a partition above the execution range is unconstrained by it");
-    assert!(fields.iter().flatten().any(|(var, _)| var.0 == 4_065_536));
+        .algebraic_case_partition(&root, &value, &env, &[], None, 1)
+        .expect("issued identities do not constrain algebraic binders");
+    assert!(
+        fields
+            .iter()
+            .flatten()
+            .any(|(var, _)| *var == algebraic_binder(1))
+    );
 }
 
 /// The counter is the kernel's: it moves forward through
@@ -488,7 +488,7 @@ fn an_execution_counter_cannot_be_rewound() {
 fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_terms() {
     use crate::kernel::{AlgebraicTermNode, ExecutionEnvironment, PureFunctionArgument};
     let (core, mut value) = constructor_partition_fixture(2);
-    value.node = AlgebraicTermNode::Variable(Variable(4_065_536));
+    value.node = AlgebraicTermNode::Variable(algebraic_binder(1));
     let function = program_function(
         ProgramType::Int32,
         "opaque_environment",
@@ -509,11 +509,15 @@ fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_term
             &environment,
             &[],
             None,
-            4_000_000,
-            65_536,
+            0,
         )
         .unwrap();
-    assert!(fields.iter().flatten().all(|(var, _)| var.0 > 4_065_536));
+    assert!(
+        fields
+            .iter()
+            .flatten()
+            .all(|(var, _)| binder_index(var) > 1)
+    );
 }
 
 #[test]
@@ -531,10 +535,10 @@ fn constructor_partition_freshness_is_indexed_and_output_linear() {
         let environment = crate::kernel::ExecutionEnvironment::new();
         let builds = MATCH_SCOPE_INDEX_BUILDS.with(std::cell::Cell::get);
         let probes = MATCH_FRESHNESS_PROBES.with(std::cell::Cell::get);
-        let mut next = 4_000_000;
+        let mut next = 0;
         for _ in 0..size {
             let (partition, fields, successor) = core
-                .algebraic_case_partition(&facts, &value, &environment, &[], None, next, 65_536)
+                .algebraic_case_partition(&facts, &value, &environment, &[], None, next)
                 .unwrap();
             assert_eq!(fields.iter().map(Vec::len).sum::<usize>(), 2);
             facts = facts.with_fact(partition.case_fact(0).unwrap().clone());
@@ -1338,7 +1342,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
             .after_state
             .resources()
             .instance_consumption(instance.identity()),
-        Some(crate::kernel::primitives::InstanceConsumption::Unfold)
+        Some(crate::kernel::primitives::InstanceConsumption::Opened { .. })
     ));
     let observation = constructed.return_observation.clone().unwrap();
     assert_eq!(observation.after, produced.state);

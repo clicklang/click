@@ -1200,13 +1200,20 @@ fn single_cell_explicit_fold_rejects_missing_wrong_and_duplicate_ownership() {
         "let c = fold(cell(p), { value: 0 });",
         "let c = fold(cell(p), { value: value }); let c = fold(cell(p), { value: value });",
         "let c = fold(cell(p), { value: value }); let other = fold(cell(p), { value: value });",
-        "let c = fold(cell(p), { value: value }); unfold(c);",
     ] {
         assert!(
             verify_c_sources(&source.replace("FOLD", fold), &sources).is_err(),
             "accepted {fold}"
         );
     }
+    // Opening the constructed instance preserves its captured field, and the
+    // contract closer can refold it from the still-held cells.
+    let opened = source.replace(
+        "FOLD",
+        "let c = fold(cell(p), { value: value }); unfold(c);",
+    );
+    verify_c_sources(&opened, &sources).unwrap();
+
     let no_ownership = source
         .replace("consumes p[0..1];", "")
         .replace("step_until(function.exit);", "")

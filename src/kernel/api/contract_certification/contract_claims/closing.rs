@@ -221,8 +221,7 @@ pub(crate) enum ContractClosingRefusal {
     Internal(String),
     Incomplete(String),
     InvalidContract(String),
-    Limit(String),
-    Execution(String),
+    UndefinedBehavior(crate::kernel::UndefinedBehavior),
     Claim(FunctionContractClaimKey),
     Runtime(RuntimeError),
     Write(Address),
@@ -243,7 +242,7 @@ impl ContractClosingRefusal {
             | LoopUnrolls
             | KernelVariables { .. }
             | MatchBinderVariables { .. } => {
-                Self::Limit(format!("checking the contract return stopped at {stop}"))
+                Self::Internal(format!("checking the contract return stopped at {stop}"))
             }
             ExecutionIdentityBesideLiveState => Self::Internal(stop.describe()),
             _ => Self::Incomplete(format!("could not check the contract return: {stop}")),
@@ -609,7 +608,7 @@ impl ContractExitObligations {
         let mut pending = vec![(0, Vec::new())];
         while let Some((start, mut case)) = pending.pop() {
             if crate::kernel::assumptions::reasoning_interrupted() {
-                return Err(ContractClosingRefusal::Limit(
+                return Err(ContractClosingRefusal::Internal(
                     "checking conditional resources was interrupted".into(),
                 ));
             }
@@ -691,10 +690,7 @@ impl ContractExitObligations {
                     .into_closing_refusal());
                 }
                 FunctionOutcome::UndefinedBehavior(error) => {
-                    return Err(ContractClosingRefusal::Execution(format!(
-                        "undefined behavior: {}",
-                        error.description()
-                    )));
+                    return Err(ContractClosingRefusal::UndefinedBehavior(error.clone()));
                 }
                 _ => {}
             }

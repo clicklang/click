@@ -1286,8 +1286,24 @@ fn resolve(
     let mut value = value.clone();
     put_back(&mut value, &inner);
     visiting.remove(name);
+    let temporary_type = types.get(&name.to_string()).copied();
+    // A reborrow of an unchanged record reference carries the same object
+    // through the call. The original parameter can name that reference.
+    if let E::Borrow { place, value_type } = &value
+        && let E::Deref {
+            reference,
+            value_type: record @ Type::Record { .. },
+        } = place.as_ref()
+        && matches!(value_type, Type::Reference { pointee, .. } if pointee.as_ref() == record)
+        && let E::Local { name: source } = reference.as_ref()
+        && temporary_type == Some(value_type)
+        && types.get(source).copied() == Some(value_type)
+        && unchanged.contains(source)
+    {
+        value = reference.as_ref().clone();
+    }
     let unchanging = match &value {
-        E::Borrow { place, value_type } => match types.get(&name.to_string()) {
+        E::Borrow { place, value_type } => match temporary_type {
             Some(super::super::schema::Type::Reference { .. }) => place_root(place).is_some(),
             // A shared slice borrow of a shared slice local: its pointer
             // and length never change while the borrow lives.
@@ -1309,7 +1325,7 @@ fn resolve(
             mutable: false,
         } => {
             matches!(
-                types.get(&name.to_string()),
+                temporary_type,
                 Some(
                     super::super::schema::Type::ByteSlice { mutable: false }
                         | super::super::schema::Type::ScalarSlice { mutable: false, .. }
@@ -2987,6 +3003,7 @@ pub(super) fn call_steps(
 ) {
     let mut reads = BTreeMap::<String, (usize, usize)>::new();
     let mut named = BTreeSet::<String>::new();
+    let mut pointer_destinations = BTreeSet::new();
     let mut assigned = BTreeMap::<String, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
     for (index, block) in blocks.iter().enumerate() {
@@ -3007,7 +3024,8 @@ pub(super) fn call_steps(
         }
         if let Some(destination) = call_destination(&block.terminator) {
             *assigned.entry(destination.clone()).or_default() += 1;
-            // Pointer calls still require their destination during lowering.
+            // Preserve destinations of unread pointer calls, including a
+            // slot also written by a direct call on another path.
             if matches!(
                 block.terminator,
                 T::Call {
@@ -3015,7 +3033,7 @@ pub(super) fn call_steps(
                     ..
                 }
             ) {
-                named.insert(destination.clone());
+                pointer_destinations.insert(destination.clone());
             }
         }
         for target in successors(&block.terminator) {
@@ -3062,18 +3080,24 @@ pub(super) fn call_steps(
             function,
             destination: Some(destination),
             target,
-            through_pointer: false,
+            through_pointer,
             result: None,
             ..
         } = &blocks[index].terminator
         else {
             continue;
         };
-        let (function, destination, target) = (function.clone(), destination.clone(), *target);
+        let (function, destination, target, through_pointer) = (
+            function.clone(),
+            destination.clone(),
+            *target,
+            *through_pointer,
+        );
         // A result its successor tests for a variant, then reads once in the
         // arm that variant takes, as a `for` loop's `match` on `next()` does:
         // the test keeps the result and the payload read ends it.
-        if temporaries.contains(&destination)
+        if !through_pointer
+            && temporaries.contains(&destination)
             && assigned.get(&destination) == Some(&1)
             && mentions.get(&destination) == Some(&2)
             && target != index
@@ -3124,6 +3148,7 @@ pub(super) fn call_steps(
         // Alternative calls can write the same unused result slot. With no
         // other write or use, each call can discard its result independently.
         if ty.is_scalar()
+            && !pointer_destinations.contains(&destination)
             && !reads.contains_key(&destination)
             && !mentions.contains_key(&destination)
         {
@@ -3141,6 +3166,7 @@ pub(super) fn call_steps(
         };
         let boxed = matches!(ty, Type::Box { .. });
         if !(ty.is_scalar() || matches!(ty, Type::Enum { .. }) || boxed)
+            || (through_pointer && (!ty.is_scalar() || reader != target))
             || target == index
             || predecessors.get(target) != Some(&1)
         {
@@ -4245,42 +4271,45 @@ mod tests {
     fn a_call_result_read_once_in_its_successor_is_a_call_step() {
         // `t1 = f(a) -> bb1; bb1: x = t1 + 1` reads the call's result as a
         // step, and `t1` is gone.
-        let mut locals = ["a", "x", "t1"].map(place).to_vec();
-        let mut blocks = vec![
-            MirBlock {
-                terminator_site: None,
-                statements: Vec::new(),
-                terminator: T::Call {
-                    function: "f".into(),
-                    arguments: vec![local("a")],
-                    owned_arguments: Vec::new(),
-                    destination: Some("t1".into()),
-                    target: 1,
-                    through_pointer: false,
-                    result: None,
+        for through_pointer in [false, true] {
+            let mut locals = ["a", "x", "t1"].map(place).to_vec();
+            let mut blocks = vec![
+                MirBlock {
+                    terminator_site: None,
+                    statements: Vec::new(),
+                    terminator: T::Call {
+                        function: "f".into(),
+                        arguments: vec![local("a")],
+                        owned_arguments: Vec::new(),
+                        destination: Some("t1".into()),
+                        target: 1,
+                        through_pointer,
+                        result: None,
+                    },
                 },
-            },
-            MirBlock {
-                terminator_site: None,
-                statements: vec![assign("x", binary("add", local("t1"), local("a")))],
-                terminator: T::Return,
-            },
-        ];
-        let temporaries = BTreeSet::from(["t1".to_string()]);
-        super::call_steps(&mut locals, &mut blocks, &temporaries);
-        assert!(locals.iter().all(|local| local.name != "t1"));
-        assert!(matches!(
-            blocks[0].terminator,
-            T::Call {
-                result: Some(0),
-                ..
-            }
-        ));
-        assert!(matches!(
-            blocks[1].statements.as_slice(),
-            [S::Assign { value: E::Binary { left, .. }, .. }]
-                if matches!(left.as_ref(), E::CallResult { call: 0, function, .. } if function == "f")
-        ));
+                MirBlock {
+                    terminator_site: None,
+                    statements: vec![assign("x", binary("add", local("t1"), local("a")))],
+                    terminator: T::Return,
+                },
+            ];
+            let temporaries = BTreeSet::from(["t1".to_string()]);
+            super::call_steps(&mut locals, &mut blocks, &temporaries);
+            assert!(locals.iter().all(|local| local.name != "t1"));
+            assert!(matches!(
+                blocks[0].terminator,
+                T::Call {
+                    result: Some(0),
+                    through_pointer: retained_kind,
+                    ..
+                } if retained_kind == through_pointer
+            ));
+            assert!(matches!(
+                blocks[1].statements.as_slice(),
+                [S::Assign { value: E::Binary { left, .. }, .. }]
+                    if matches!(left.as_ref(), E::CallResult { call: 0, function, .. } if function == "f")
+            ));
+        }
     }
 
     #[test]
@@ -5009,6 +5038,68 @@ mod tests {
             &blocks[1].statements[0],
             S::Assign { value: E::Local { name }, .. } if name == "p"
         ));
+    }
+
+    #[test]
+    fn a_record_reborrow_uses_only_an_unchanged_matching_parameter() {
+        let record = Type::Record {
+            name: "Slot".into(),
+        };
+        let reference = |mutable| Type::Reference {
+            mutable,
+            pointee: Box::new(record.clone()),
+        };
+        let parameters = BTreeMap::from([("slot".into(), reference(true))]);
+        for (mutable, rebind, folded) in [
+            (true, false, true),
+            (false, false, false),
+            (true, true, false),
+        ] {
+            let value_type = reference(mutable);
+            let reborrow = E::Borrow {
+                place: Box::new(E::Deref {
+                    reference: Box::new(local("slot")),
+                    value_type: record.clone(),
+                }),
+                value_type: value_type.clone(),
+            };
+            let call = |function: &str, target| T::Call {
+                function: function.into(),
+                arguments: vec![local("t1")],
+                owned_arguments: vec![],
+                destination: None,
+                target,
+                through_pointer: false,
+                result: None,
+            };
+            let mut locals = vec![Place {
+                value_type,
+                ..place("t1")
+            }];
+            let mut blocks = [
+                block(vec![assign("t1", reborrow)], call("f", 1)),
+                block(
+                    rebind
+                        .then(|| assign("slot", local("other")))
+                        .into_iter()
+                        .collect(),
+                    call("g", 2),
+                ),
+                block(vec![], T::Return),
+            ];
+            super::substitute_literals(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+                &parameters,
+            );
+            assert_eq!(locals.is_empty(), folded);
+            let expected = if folded { "slot" } else { "t1" };
+            for block in &blocks[..2] {
+                assert!(matches!(&block.terminator, T::Call { arguments, .. }
+                    if matches!(arguments.as_slice(), [E::Local { name }] if name == expected)));
+            }
+        }
     }
 
     #[test]

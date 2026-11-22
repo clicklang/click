@@ -520,8 +520,10 @@ a refusal there is not a bug.
 
 **Failure, checking, and tools:**
 
-A prerequisite the context cannot prove, or an unsupported transition, fails at
-that statement with that diagnostic. A refusal printed as `refused
+A direct safety refusal names the C operation, such as a read of an
+uninitialized local. A documented modeling limit reports `unsupported`.
+If Click generates a safety obligation but cannot prepare it for the
+implicit closer, it reports an internal error. A refusal printed as `refused
 by: the implicit closer that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with
@@ -1687,9 +1689,10 @@ operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
 builds a constructor directly from its bound fields or captured `Integer`
-variables. The payloads can be literal `int32` values or `Integer` literals
-and variables. The check compares each result field with the corresponding
-written payload or captured variable.
+variables. The check can follow nested matches on written constructors, keeping
+each selected arm's bindings in scope. The payloads can be machine-integer
+or `Integer` literals and variables. Machine fields retain their exact width
+and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
@@ -3021,10 +3024,8 @@ before its declaration. Use `apply(ih(m))` at the top level and inside nested
 
 An unsupported parameter type, changed goal, repeated induction, or unproved
 signed nonnegative domain fails with a message naming the case. `induct` in
-a C function proof is refused with the generic "no checked proof driver accepts this proof
-script's shape". Click opens the
-induction rule; expansion is unchanged, and profiling charges the structural
-setup.
+a C execution proof reports a `tactic error`. Click opens the induction
+rule during checking and profiling charges the structural setup.
 
 **Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
 [`an_induction_hypothesis_applies_inside_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_a_have.md),
@@ -3284,6 +3285,9 @@ path out, including a function return. For an ordinary named instance,
 `with(c) { ... }` selects the same instance as `unfold(c)`. The scope must
 restore its original identity and field values. If the proof already restored
 that exact instance with `fold(c)`, the scope closes without another fold.
+For a named parent, `with(r)` exposes its children under paths such as
+`r.child`. The closing fold takes those same children back. Nested `with`
+blocks can use a child path directly.
 
 Use a family call for unnamed resources, including population members and
 viewed resources. Opening and restoring a population member preserves its
@@ -3725,6 +3729,13 @@ can mix these labels whether the resource is selected by name or by a family
 call. Witness bindings need a live execution frontier before function exit.
 See [`unfold_binds_witness_and_child.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_binds_witness_and_child.md).
 
+After `unfold(r)`, a child from slot `child` is held under `r.child`. An alias
+such as `let { child: c } = unfold(r)` names that same instance. Resource
+tactics on the path require the exposed child to be held. A model field or
+`where` witness of the open parent, such as `r.tag` or `r.base`, reads the
+value captured at the opening. A field read after refolding reads the new
+folded instance's field. See [the checked child path example](https://github.com/clicklang/click/blob/master/mdtests/exposed_child_paths.md).
+
 **Accepts** a declared resource with a body that the current state holds
 directly, owned or viewed, in a C function proof (at the execution frontier
 before exit, or at a function outcome after the C has returned) or in a `tactic`'s
@@ -3779,6 +3790,9 @@ consume the contained resource facts, and produce the named composite resource.
 Pure facts remain available. Refolding the same instance reuses its opening's
 `let ... where` witness values and checks their facts at the current state.
 This also applies to the closing fold of a `with` block.
+`fold(r)` supplies the exact children retained from `unfold(r)`. Each must
+be held in folded form when the parent is restored. To supply a replacement,
+use the explicit construction map and name the replacement in its slot.
 Folding a definition whose body views memory makes
 the head hold that borrow open until the head is unfolded or consumed. At a
 function outcome, `fold` also [creates an ordinary abstract
@@ -3973,8 +3987,8 @@ guards are false. Proofs should avoid relying on this behavior.
 **Form:** `name(args, { binder: instance })`
 
 **Specialized.** Write it to apply a `tactic` the project declares, such as a
-resource reshaping lemma. Apply the user-defined tactic `name` at the current
-execution frontier, before the function exits: bind each of its supplied
+resource reshaping lemma. Apply the user-defined tactic `name` at a running
+frontier or on a finished return outcome. Bind each of its supplied
 resource binders to an instance the proof holds and prove its `requires` at the
 call site. The application consumes its inputs, binds its outputs under the
 names of a `let { binder: name }` pattern, and adds its `ensures`.
@@ -3982,18 +3996,19 @@ names of a `let { binder: name }` pattern, and adds its `ensures`.
 No C runs and memory is unchanged, so every fact about a cell survives.
 
 Argument evaluation and instantiated contract requirements are ordinary proof
-obligations at the caller's frontier. Argument obligations come first. Use
+obligations at the selected state before the tactic changes its resources.
+Argument obligations come first. Use
 `by { ... }` for one obligation or `{ requires P by ...; }` to name obligations.
 Omitted proofs use implicit `solve()`, and expansion retains the proofs before
 the tactic's resource effects are applied.
 See [the checked call examples](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_requires_obligations.md).
 
-**Accepts**, at the execution frontier of a C function or `tactic` proof
-before exit, an application of a `tactic` declared earlier in the module (or
+**Accepts** an application of a `tactic` declared earlier in the module (or
 the tactic itself, for recursion), when:
 
-- There is one argument per parameter: any C-valued expression over the
-  frontier (`n + 1`, constants), and the literal `0` at a pointer parameter.
+- There is one argument per parameter. Use a C-valued expression over the
+  current state, including `result` at a return outcome, or the literal `0`
+  at a pointer parameter.
 - The map names every instance binder the tactic's `consumes`, `owns`, or
   `views` clauses declare, each mapped to an instance of the binder's
   resource that the proof holds. The map is left out only when the tactic
@@ -4012,18 +4027,17 @@ It consumes the mapped consumed instances, adds the produced ones under the
 
 - An instance an earlier step consumed, including an earlier application:
   it is gone; bind the instance that step produced.
-- Inside `have ... by { ... }`, or after the function exit: apply it at the
-  frontier before the `have` or before execution reaches the exit.
+- Inside `have ... by { ... }`: apply it in the surrounding function proof.
 
 **Failure, checking, and tools:**
 
 A missing requirement is refused by name, as are a map entry naming an unknown
-binder or an instance of the wrong resource, and an application after function
-exit. Click applies the tactic's certified contract once. Expansion retains
+binder, an instance of the wrong resource, or a thrown outcome. Click applies
+the tactic's certified contract once. Expansion retains
 the call and its obligation proofs, and profiling charges the checked
 application and its proof steps.
 
-**Checked examples:** [`user_tactic_reshapes_owned_resources.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_reshapes_owned_resources.md), [`user_tactic_application_owes_its_requirements.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_application_owes_its_requirements.md), [`user_tactic_binder_map_checks_the_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_binder_map_checks_the_resource.md), [`user_tactic_consumes_its_inputs.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_consumes_its_inputs.md), [`user_tactic_after_exit_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_after_exit_is_refused.md), [`user_tactic_accepts_null_pointer_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_accepts_null_pointer_arguments.md), [`user_tactic_recursion_converts_a_list.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_recursion_converts_a_list.md)
+**Checked examples:** [`user_tactic_reshapes_owned_resources.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_reshapes_owned_resources.md), [`user_tactic_application_owes_its_requirements.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_application_owes_its_requirements.md), [`user_tactic_binder_map_checks_the_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_binder_map_checks_the_resource.md), [`user_tactic_consumes_its_inputs.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_consumes_its_inputs.md), [`user_tactic_at_return.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_at_return.md), [`user_tactic_accepts_null_pointer_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_accepts_null_pointer_arguments.md), [`user_tactic_recursion_converts_a_list.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_recursion_converts_a_list.md)
 
 ### Observing resources
 
@@ -4081,8 +4095,8 @@ decided:
 Write `observe(c)` for a named folded instance you own. Its own fields supply the
 body arguments and its immediate memory permissions become read-only views
 supported by the instance. `observe(at(point, c))` selects the saved instance
-and requires it to still be held and folded. Use `unfold` to bind named children
-or prove facts that need their fields.
+and requires it to still be held and folded. Use `unfold` to expose named
+children, then `observe(r.child)` to observe an exposed child.
 
 **Outside it**, with what to write instead:
 

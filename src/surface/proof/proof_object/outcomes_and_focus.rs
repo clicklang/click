@@ -454,9 +454,10 @@ impl<'a> Proof<'a> {
         let label = context.claim_label;
         let index = goal.path_index;
         let refusal_kind = match &refusal {
-            Refusal::Runtime(error) => {
-                Some(crate::surface::diagnostics::runtime_refusal_kind(error))
-            }
+            Refusal::Runtime(error) => Some((
+                crate::surface::diagnostics::runtime_refusal_kind(error),
+                crate::surface::diagnostics::runtime_proof_refusal(error),
+            )),
             _ => None,
         };
 
@@ -516,19 +517,17 @@ impl<'a> Proof<'a> {
                     .step_error(format!("contract for `{label}`: {reason}"))
                     .with_proof_refusal(crate::surface::ProofRefusal::Contract);
             }
-            Refusal::Limit(reason) => {
+            Refusal::UndefinedBehavior(kind) => {
                 return self
                     .step_error(format!(
-                        "contract closing for `{label}` path {index}: {reason}"
+                        "contract closing for `{label}` path {index}: {}",
+                        describe_function_outcome(
+                            &FunctionOutcome::UndefinedBehavior(kind.clone()),
+                            binding
+                        )
                     ))
-                    .with_kind(crate::surface::ClickErrorKind::Limit);
-            }
-            Refusal::Execution(reason) => {
-                return self
-                    .step_error(format!(
-                        "contract closing for `{label}` path {index}: {reason}"
-                    ))
-                    .with_proof_refusal(crate::surface::ProofRefusal::Execution);
+                    .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Tactic);
             }
             Refusal::Runtime(error) => format!(
                 "`{label}` path {index}: C operation could not be verified: {}{}",
@@ -554,9 +553,7 @@ impl<'a> Proof<'a> {
         };
         let error = self.step_error(message);
         match refusal_kind {
-            Some(kind) => error
-                .with_kind(kind)
-                .with_proof_refusal(crate::surface::ProofRefusal::Execution),
+            Some((kind, refusal)) => error.with_kind(kind).with_proof_refusal(refusal),
             None => error.with_proof_refusal(crate::surface::ProofRefusal::Tactic),
         }
     }
@@ -591,7 +588,21 @@ impl<'a> Proof<'a> {
             .state
             .complete_function_outcome_in_execution(&owner.state, execution)
             .map_err(|reason| self.step_error(reason))?;
+        self.retain_outcome_tactic_dependencies(execution);
         Ok(owner.with_kernel_state(state))
+    }
+
+    fn retain_outcome_tactic_dependencies(
+        &self,
+        owner: &mut crate::kernel::ContractExecutionOwner,
+    ) {
+        if let (Some(Obligation::FunctionOutcome(outcome)), Some(execution)) =
+            (self.focused_obligation(), self.execution())
+        {
+            execution
+                .core
+                .retain_return_tactic_dependencies(outcome.path_index, owner);
+        }
     }
 
     pub(in crate::surface::proof) fn finish_contract_execution(
@@ -756,6 +767,7 @@ impl<'a> Proof<'a> {
                     let state = state
                         .refute_function_outcome_in_execution(&owner.state, &fact, execution_owner)
                         .map_err(|reason| self.step_error(reason))?;
+                    self.retain_outcome_tactic_dependencies(execution_owner);
                     *owner = owner.with_kernel_state(state);
                     return Ok(None);
                 }

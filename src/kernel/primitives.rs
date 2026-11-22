@@ -264,6 +264,39 @@ enum VariableOrigin {
     /// an arbitrary value. Numbered from the witnesses its proof state
     /// already reserves.
     Witness,
+    /// A variable a named producer mints, numbered by that producer.
+    Produced(Producer),
+}
+
+/// A producer of free variables that numbers its own variables. Two
+/// producers never share a variable, whatever their numbers, so a producer
+/// numbers from zero by whatever rule suits it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum Producer {
+    /// A parameter of the function whose recursive call a termination check
+    /// compares, by parameter index.
+    TerminationParameter,
+    /// A `let` witness of a structural measure's definition, by index.
+    TerminationWitness,
+    /// A pointer argument of a pure theorem, by parameter index.
+    PointerArgument,
+    /// An Integer binder of a resource `match` arm, numbered once for a
+    /// function's whole resource environment.
+    ResourceIntegerBinding,
+    /// A variable Surface lowering binds while it lowers a quantifier, fold
+    /// or `match` in a fixed-state proof proposition, numbered per lowering.
+    ProofQuantifier,
+    /// The same while lowering a function's annotations.
+    FunctionQuantifier,
+    /// The same while lowering a requirement or contract summary.
+    RequirementQuantifier,
+    /// The same while lowering a resource body, condition or fold-read
+    /// definition.
+    ResourceQuantifier,
+    /// A Surface algebraic binder, by its binder index: a written algebraic
+    /// quantifier or `let`, or a constructor field a proof `match` splits on.
+    /// The index is how the binder raises back to Surface.
+    AlgebraicBinder,
 }
 
 impl std::fmt::Debug for Variable {
@@ -280,6 +313,10 @@ impl std::fmt::Debug for Variable {
                 formatter.debug_tuple("MatchBinder").field(&self.0).finish()
             }
             VariableOrigin::Witness => formatter.debug_tuple("Witness").field(&self.0).finish(),
+            VariableOrigin::Produced(producer) => formatter
+                .debug_tuple(&format!("{producer:?}"))
+                .field(&self.0)
+                .finish(),
             VariableOrigin::SpecFoldBinder => formatter
                 .debug_tuple("SpecFoldBinder")
                 .field(&self.0)
@@ -348,6 +385,28 @@ impl Variable {
     /// Whether this is a specification fold's binder.
     pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
         self.origin == VariableOrigin::SpecFoldBinder
+    }
+
+    /// The `number`th variable `producer` minted.
+    pub(crate) const fn produced(producer: Producer, number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::Produced(producer),
+        }
+    }
+
+    /// The producer that minted this variable, if a named one did.
+    pub(crate) fn producer(&self) -> Option<Producer> {
+        match self.origin {
+            VariableOrigin::Produced(producer) => Some(producer),
+            _ => None,
+        }
+    }
+
+    /// The Surface binder index of an algebraic binder variable.
+    pub(crate) fn algebraic_binder_index(&self) -> Option<u64> {
+        (self.origin == VariableOrigin::Produced(Producer::AlgebraicBinder))
+            .then_some(self.number.0)
     }
 
     /// The `number`th universal-introduction or choice witness.
@@ -3055,8 +3114,8 @@ impl Pointer {
 }
 
 impl Pointer {
-    /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, and the subobject it
+    /// Everything that is the value's identity: the address, its provenance,
+    /// and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
     /// fresh scalar id, never a structural resource or ledger key.
     /// Two values at one address with different bounds are
@@ -3067,7 +3126,6 @@ impl Pointer {
     ) -> (
         &Address,
         &Address,
-        &ProgramType,
         bool,
         Option<&Address>,
         Option<&SubobjectBounds>,
@@ -3075,7 +3133,6 @@ impl Pointer {
         (
             &self.address,
             &self.provenance,
-            &self.program_type,
             self.bounds_are_known(),
             if self.bounds_are_known() {
                 None
@@ -4018,7 +4075,9 @@ pub enum IntegerCastMode {
     /// target's type as written, and its value is that operator's native
     /// node at the target's format, `(a op b) mod 2^N`, with no promotion
     /// and no conversion. Only the Rust front end writes it; Rust's
-    /// overflow panics are separate checked assertions.
+    /// overflow panics for these operators are separate checked assertions.
+    /// Signed narrow `/ %` retain the promoted operation's converted term
+    /// and emit their own narrow overflow prerequisite.
     NarrowArithmetic,
     /// The conversion lowering inserts from a pure function's body to its
     /// declared result type: C's conversion, as `CConversion`, at whose
@@ -4702,10 +4761,17 @@ pub enum SpecAlgebraicExpressionNode {
 pub struct ResourceFieldProjection {
     pub identity: InstanceRef,
     pub children: Vec<String>,
+    /// Written member for a path whose final schema can differ from the
+    /// parent's retained record. A witness uses its name, with no field index.
+    pub field_name: Option<String>,
     pub field_index: usize,
     /// Select the explicit entry state supplied to spec evaluation. There is
     /// no fallback to the current state when that state is unavailable.
     pub at_entry: bool,
+}
+
+impl ResourceFieldProjection {
+    pub(crate) const WITNESS: usize = usize::MAX;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8480,6 +8546,10 @@ pub struct ResourceBodyFactSource {
     pub bindings: Vec<(String, ProgramValue)>,
 }
 
+/// The most earlier conjuncts a conjunction's right side may be read under
+/// while it owes evaluation domains: [`ExecutionLimit::GuardedConjunctionTooLong`].
+pub const GUARDED_CONJUNCTION_LIMIT: usize = 64;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ExecutionLimit {
     Deadline,
@@ -8501,6 +8571,11 @@ pub enum ExecutionLimit {
     BoolArithmetic,
     /// A conditional with an `int32` arm and a `Bool` arm.
     MixedBoolArms,
+    /// A conjunction whose right side owes evaluation domains read under
+    /// more than [`GUARDED_CONJUNCTION_LIMIT`] earlier conjuncts. Each such
+    /// domain carries its whole guard, so a longer chain is refused rather
+    /// than lowered slowly.
+    GuardedConjunctionTooLong,
     /// The execution's fresh-identity counter reached the first identity a
     /// producer outside the execution reserves by a constant base. Every
     /// kernel allocation counts up from one base, and the ranges above it
@@ -8583,6 +8658,9 @@ impl ExecutionLimit {
             Self::BoolOrdered => "an order on `Bool`".to_string(),
             Self::BoolArithmetic => "arithmetic on a `Bool`".to_string(),
             Self::MixedBoolArms => "a conditional with an integer and a `Bool` arm".to_string(),
+            Self::GuardedConjunctionTooLong => format!(
+                "a conjunction guarding evaluation domains by more than {GUARDED_CONJUNCTION_LIMIT} conjuncts"
+            ),
             Self::KernelVariables { ceiling } => {
                 format!("the execution's fresh-identity range, which ends below {ceiling}")
             }
@@ -11862,10 +11940,10 @@ pub(super) struct ResourceContextStorage {
 
 #[derive(Clone)]
 pub(crate) enum InstanceConsumption {
-    Unfold,
-    UnfoldWithWitnesses {
+    Opened {
         instance: std::sync::Arc<ResourceInstance>,
-        values: std::sync::Arc<[ProgramValue]>,
+        children: std::sync::Arc<std::collections::BTreeMap<String, InstanceId>>,
+        values: std::sync::Arc<std::collections::BTreeMap<String, ProgramValue>>,
     },
     FoldChild {
         parent: InstanceId,
@@ -12590,7 +12668,8 @@ impl InstanceId {
     /// ([`ExecutionBudget::allocate_instance_identity`]) rather than a
     /// binder the surface named.
     pub fn created_by_execution(self) -> bool {
-        self.0.0 >= ExecutionBudget::KERNEL_VARIABLE_BASE
+        (ExecutionBudget::KERNEL_VARIABLE_BASE..ExecutionBudget::KERNEL_VARIABLE_CEILING)
+            .contains(&self.0.0)
     }
 }
 

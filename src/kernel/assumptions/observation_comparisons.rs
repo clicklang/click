@@ -1046,10 +1046,13 @@ mod resource_relation_tests {
                     different_provenance,
                     separate
                 )));
-                let different_pointer = Pointer::new(address.clone(), ProgramType::Int8Pointer);
-                assert!(!facts.proves_exact(&relation(
+                // A pointer's type belongs to the term, not the value: a
+                // differently typed view of the same pointer names the same
+                // read.
+                let retyped = pointer.clone().with_type(ProgramType::Int8Pointer);
+                assert!(facts.proves_exact(&relation(
                     MachineTerm::Variable(name),
-                    different_pointer,
+                    retyped,
                     separate
                 )));
             }

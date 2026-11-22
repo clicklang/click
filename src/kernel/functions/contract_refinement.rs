@@ -4,7 +4,7 @@ use super::*;
 
 #[derive(Debug)]
 pub(crate) enum ContractRefinementPreparationError {
-    Unsupported(&'static str),
+    Unsupported(String),
     Incompatible(&'static str),
     Evaluation {
         clause: &'static str,
@@ -340,34 +340,33 @@ pub(super) fn exact_resource_interfaces_match(
     Ok(true)
 }
 
-pub(super) fn context_contains_only_refinable_resources(resources: &ResourceContext) -> bool {
-    resources.facts().iter().all(|resource| {
-        matches!(
-            resource,
-            ResourceFact::Own(Resource::Memory(_) | Resource::Instance(_), quantity)
-                if quantity.as_const() == Some(1)
-        ) || matches!(
-            resource,
-            ResourceFact::Own(Resource::Composite { .. } | Resource::Token { .. }, _)
-        ) || matches!(
-            resource,
-            ResourceFact::View(
+fn resource_fact_supports_framed_refinement(resource: &ResourceFact) -> bool {
+    matches!(
+        resource,
+        ResourceFact::Own(Resource::Memory(_) | Resource::Instance(_), quantity)
+            if quantity.as_const() == Some(1)
+    ) || matches!(
+        resource,
+        ResourceFact::Own(Resource::Composite { .. } | Resource::Token { .. }, _)
+            | ResourceFact::View(
                 Resource::Memory(_) | Resource::Composite { .. } | Resource::Token { .. }
             )
-        )
-    })
+    )
 }
 
-pub(super) fn resource_spec_supports_framed_refinement(resource: &ResourceSpec) -> bool {
+fn unsupported_framing_family(resource: &ResourceSpec) -> Option<ResourceFamily> {
     if resource.is_instance() {
-        return resource
-            .instance_resource_spec()
-            .is_some_and(|inner| resource_spec_supports_framed_refinement(&inner));
+        return match resource.instance_resource_spec() {
+            Some(inner) => unsupported_framing_family(&inner),
+            None => Some(ResourceFamily::Instance),
+        };
     }
-    matches!(
-        resource.family(),
+    let family = resource.family();
+    (!matches!(
+        family,
         ResourceFamily::Memory | ResourceFamily::Composite | ResourceFamily::Token
-    )
+    ))
+    .then_some(family)
 }
 
 /// Checks that the named requirements can supply the concrete requirements,
@@ -389,17 +388,18 @@ fn framed_resource_transition_refines(
     budget: &mut ExecutionBudget,
 ) -> Result<(), ContractRefinementPreparationError> {
     use ContractRefinementPreparationError::{Incompatible, Unsupported};
-    if !contract
+    if let Some(family) = contract
         .resource_requires()
         .iter()
         .chain(contract.resource_ensures())
         .chain(function.resource_requires())
         .chain(function.resource_ensures())
-        .all(resource_spec_supports_framed_refinement)
+        .find_map(unsupported_framing_family)
     {
-        return Err(Unsupported(
-            "this refinement needs framing for a kind of resource Click cannot frame here",
-        ));
+        return Err(Unsupported(format!(
+            "Click cannot frame a resource of family `{}` in contract refinement",
+            family.describe()
+        )));
     }
     let evaluate = |state, specs, definitions, clause, budget: &mut ExecutionBudget| {
         evaluate_function_resource_context(state, specs, definitions, assumptions, budget)?
@@ -433,18 +433,33 @@ fn framed_resource_transition_refines(
         "the target contract's returned resources",
         budget,
     )?;
-    if [
+    if let Some(resource) = [
         &contract_requires,
         &function_requires,
         &function_ensures,
         &contract_ensures,
     ]
     .into_iter()
-    .any(|resources| !context_contains_only_refinable_resources(resources))
+    .flat_map(|resources| resources.facts())
+    .find(|resource| !resource_fact_supports_framed_refinement(resource))
     {
-        return Err(Unsupported(
-            "this refinement needs framing for a resource quantity or access mode Click cannot frame here",
-        ));
+        let detail = match resource {
+            ResourceFact::Own(Resource::Memory(_) | Resource::Instance(_), quantity) => {
+                let quantity = quantity.as_const().map_or_else(
+                    || "a symbolic quantity".to_owned(),
+                    |value| format!("quantity {value}"),
+                );
+                format!(
+                    "the framed resource `{}` must have unit ownership, but has {quantity}",
+                    resource.diagnostic_summary()
+                )
+            }
+            _ => format!(
+                "Click cannot frame `{}` in contract refinement",
+                resource.diagnostic_summary()
+            ),
+        };
+        return Err(Unsupported(detail));
     }
 
     let Some(frame) = contract_requires

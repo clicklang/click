@@ -194,8 +194,11 @@ returns expand and check again. Nesting the next case inside the continuing
 `else` arm is checked the same way, and the parser reads those `else` chains
 iteratively, but every return then adds a delimiter level, and source nesting
 is limited to 128. The driver still bounds active recursive regions at depth
-11; its diagnostic reports that recursion bound rather than counting every
-written `else` block.
+11 and reports `unsupported` when a proof exceeds it. A `have` can
+move proposition-only work out of an execution region. Removing the depth
+restriction requires checking nested execution regions with an explicit
+stack that retains each region's frontier and join, extending the iterative
+handling already used for sequential early returns.
 
 An execution proof may name the C body's own locals, not only the function's
 parameters. A local of struct-pointer type is a memory base there, so

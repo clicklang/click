@@ -1085,6 +1085,7 @@ fn model_argument_guard_query_does_not_materialize_stored_models() {
         node: SpecAlgebraicExpressionNode::ResourceField(ResourceFieldProjection {
             identity: InstanceId::from_variable(Variable(90_000)).into(),
             children: vec![],
+            field_name: None,
             field_index: 0,
             at_entry: false,
         }),

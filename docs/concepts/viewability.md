@@ -250,12 +250,15 @@ refused.
 Narrowing itself is one decision, not two. It is part of the same viewability
 rule set the verifier applies while lowering `p[hi - 1]` on its own, so a fact
 of this kind can be written down and proved as well as found — in a pure theorem
-as well as in a C proof. A C proof writes it the same way, over the range its
-contract stated:
+as well as in a C proof. When the C proof has already returned, it can
+preserve the original view across the return and cite explicit containment
+to narrow it.
 
 <!-- verified-example: mdtests/have_viewable_prefix_of_a_range_in_a_c_proof.md -->
 ```click
-have viewable(a[0..k]);
+have viewable(a[0..k]) by {
+    apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..k])));
+}
 ```
 
 That matters for induction over an array range, where

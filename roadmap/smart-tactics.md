@@ -97,6 +97,14 @@ calling site, resource and storage class; migrate the routes in order of
 that count. `known_legacy_fresh_reads_through_a_loaded_pointer_cost_the_same_at_every_position`
 is a step shape that still reaches it.
 
+A slice must move every producer of a read kind together: a cell named by a
+selected point in one place and by its memory in another has two terms no
+rule relates, so a fact stated with one does not prove a goal stated with
+the other. `crate::kernel::mixed_read_names::capture` reports each such cell
+the equality graph registers, with the line that built the memory-named read;
+the nightly `every_mdtest_reports_its_mixed_read_names` lists them over the
+mdtests by producer line. Run it before and after each slice.
+
 Named scalar observations and read congruence use indexed versions where the
 producer has a recorded typed write or one of the supported entry versions.
 Concrete resource cells and compact runs can retain their source point.

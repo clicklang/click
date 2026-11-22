@@ -1088,8 +1088,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 1,
                             ),
@@ -1138,8 +1139,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 1,
                             ),
@@ -1152,8 +1154,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 2,
                             ),
@@ -1166,8 +1169,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 2,
                             ),
@@ -1180,8 +1184,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 4,
                             ),
@@ -1196,8 +1201,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Address {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                            MachineTerm::Variable(Variable::produced(
+                                crate::kernel::Producer::PointerArgument,
+                                index as u64,
                             )),
                             1,
                         ),
@@ -1209,8 +1215,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 4,
                             ),
@@ -1223,8 +1230,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 8,
                             ),
@@ -1237,8 +1245,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 16,
                             ),
@@ -1251,8 +1260,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 8,
                             ),
@@ -1265,8 +1275,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 16,
                             ),
@@ -1279,8 +1290,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 4,
                             ),
@@ -1293,8 +1305,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 8,
                             ),
@@ -1312,8 +1325,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 i64::from(element_width),
                             ),
@@ -1342,8 +1356,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 i64::from(element_width),
                             ),
@@ -1359,8 +1374,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Address {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                            MachineTerm::Variable(Variable::produced(
+                                crate::kernel::Producer::PointerArgument,
+                                index as u64,
                             )),
                             8,
                         ),
@@ -1681,7 +1697,7 @@ fn refinement_preparation_error(
 
     match error {
         PreparationError::Unsupported(detail) => {
-            ClickError::new(detail).with_proof_refusal(ProofRefusal::UnsupportedProof)
+            ClickError::new(detail).with_kind(ClickErrorKind::Unsupported)
         }
         PreparationError::Incompatible(detail) => {
             ClickError::new(detail).with_proof_refusal(ProofRefusal::Contract)
@@ -1699,7 +1715,8 @@ fn refinement_preparation_error(
                 stop.describe()
             ));
             match stop {
-                ExecutionLimit::ExecutionIdentityBesideLiveState => {
+                ExecutionLimit::ExecutionIdentityBesideLiveState
+                | ExecutionLimit::QuantifierDoesNotClose => {
                     error.with_kind(ClickErrorKind::Internal)
                 }
                 ExecutionLimit::Deadline
@@ -1709,15 +1726,18 @@ fn refinement_preparation_error(
                 | ExecutionLimit::LoopUnrolls
                 | ExecutionLimit::KernelVariables { .. }
                 | ExecutionLimit::MatchBinderVariables { .. } => {
-                    error.with_kind(ClickErrorKind::Limit)
+                    error.with_kind(ClickErrorKind::Internal)
                 }
-                ExecutionLimit::UnsupportedPureFunctionResult(_)
+                ExecutionLimit::UnsupportedPureFunctionResult(ProgramType::Void)
                 | ExecutionLimit::BoolComparedWithInteger
                 | ExecutionLimit::BoolOrdered
                 | ExecutionLimit::BoolArithmetic
-                | ExecutionLimit::MixedBoolArms
-                | ExecutionLimit::QuantifierDoesNotClose => {
-                    error.with_proof_refusal(ProofRefusal::UnsupportedProof)
+                | ExecutionLimit::MixedBoolArms => error.with_kind(ClickErrorKind::Type),
+                ExecutionLimit::GuardedConjunctionTooLong => {
+                    error.with_kind(ClickErrorKind::Unsupported)
+                }
+                ExecutionLimit::UnsupportedPureFunctionResult(_) => {
+                    error.with_kind(ClickErrorKind::Internal)
                 }
                 ExecutionLimit::Paths
                 | ExecutionLimit::LoopIterationsUnbound
@@ -1978,8 +1998,12 @@ fn verify_contract_refinement_theorem(
     let summary = format!(
         "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
     );
-    let obligations = check_program_function_contract_refinement_obligations(&refinement)
-        .map_err(|error| refinement_preparation_error(error).with_context(&summary))?;
+    let obligations =
+        check_program_function_contract_refinement_obligations(&refinement).map_err(|error| {
+            refinement_preparation_error(error)
+                .at_declaration(theorem.name())
+                .with_context(&summary)
+        })?;
     let arguments = argument_values
         .iter()
         .cloned()
@@ -2069,12 +2093,9 @@ fn verify_contract_refinement_theorem(
         check_verification_deadline()?;
         let focused = unfinished.as_ref().unwrap_or(&root);
         let error = match declined {
-            Some(LinearScriptDecline::Shape) if proof_tactics.is_empty() => focused
+            Some(LinearScriptDecline::Shape) => focused
                 .step_error("the proof ended without proving the refinement obligations")
                 .with_proof_refusal(ProofRefusal::IncompleteProof),
-            Some(LinearScriptDecline::Shape) => focused
-                .step_error("the proof contains an unsupported operation or control-flow shape")
-                .with_proof_refusal(ProofRefusal::UnsupportedProof),
             Some(
                 LinearScriptDecline::Step(index) | LinearScriptDecline::UnsuccessfulSearch(index),
             ) => {

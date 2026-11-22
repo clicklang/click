@@ -119,8 +119,10 @@ refutes a requirement Click generated, check the rule that generated it.
 Use `obligation-bug` when the rule or semantics do not support the
 requirement. For `obligation-bug`, `inexpressible-fact`, and `tactic-bug`,
 keep a reduced reproduction.
-For `unclear-trace`, quote what you could not interpret. A diagnostic bug
-report requires evidence of a specific defect in the output. When Click
+Use `unclear-output` when the available diagnostics lack the detail needed
+to tell whether the proof author or Click maintainers should follow up.
+Quote the output and identify what you could not determine. A diagnostic
+bug report requires evidence of a specific defect in the output. When Click
 prints `internal error`, use `internal-error` and preserve the original
 diagnostic, command, version, and inputs.
 Tooling improvements in response require discussion and user approval before

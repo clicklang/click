@@ -12,6 +12,10 @@ freed cells for a larger run, without a claim loop or a free-run proof, and
 catches a call transition that
 cannot use the separation fact or mishandles the empty write.
 
+The proof shows that the indices differ before the second store. It uses
+that separation to preserve the first zero flag before returning either
+cell to the iterated clause.
+
 ```c filename=iterated_ownership_released_cells_feed_an_external_claim.c
 extern void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 end);
 
@@ -23,6 +27,7 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
 ```
 
 ```click
+import click::separation;
 resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     owns occupied[0..capacity];
     forall (k: int32) where 0 <= k and k < capacity {
@@ -77,9 +82,26 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
     unfold(region(data, a, a + 1));
     unfold(region(data, b, b + 1));
     step();
+    have occupied[b] == 0 by { known(); }
+    have to_integer(a + 1) == to_integer(a) + 1 by {
+        apply(click::integer::int32_add_to_integer(a, 1));
+    }
+    have a != b by {
+        solve() using { to_integer(a + 1) < to_integer(b); to_integer(a + 1) == to_integer(a) + 1; };
+    }
+    apply(separation::separate_elements(occupied, a, b));
     step();
-    have occupied[b] == 0;
-    have occupied[a] == 0;
+    have separate(statement(1).footprint, memory(occupied[b])) by {
+        normalize() using { separate(memory(occupied[a]), memory(occupied[b])); };
+    }
+    have occupied[b] == at(statement(1).entry, occupied[b]) by {
+        preserve(memory(occupied[b]), statement(1));
+    }
+    have occupied[b] == 0 by {
+        rewrite(occupied[b], at(statement(1).entry, occupied[b]));
+        known();
+    }
+    have occupied[a] == 0 by { known(); }
     fold(arena_window(data, occupied, capacity, a + 1, b)[b]);
     fold(arena_window(data, occupied, capacity, a + 1, b)[a]);
     let w = fold(arena_window(data, occupied, capacity, a, b + 1), { next: a });

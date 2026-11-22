@@ -896,65 +896,89 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     }
 }
 
-/// Check a selected constructor arm that forwards scalar payloads directly
-/// into its result, possibly alongside captured Integer variables. Compare
-/// the written fields without building a rewritten match.
+/// Follow selected constructor arms that forward scalar payloads into a
+/// constructor, possibly alongside captured Integer variables. Resolve each
+/// binding in its scrutinee's scope, then use the recorded values at the result.
 fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
-    let (
-        AlgebraicTermNode::Match { scrutinee, arms },
-        AlgebraicTermNode::Constructor {
-            variant: expected_variant,
-            fields: expected_fields,
-        },
-    ) = (&matched.node, &expected.node)
-    else {
-        return false;
-    };
-    let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
-        return false;
-    };
-    crate::instrumentation::record_deterministic_work(arms.len());
-    let Some(arm) = arms.iter().find(|arm| arm.variant == *variant) else {
-        return false;
-    };
     let AlgebraicTermNode::Constructor {
-        variant: result_variant,
-        fields: result_fields,
-    } = &arm.body.node
+        variant: expected_variant,
+        fields: expected_fields,
+    } = &expected.node
     else {
         return false;
     };
-    if arm.bindings.len() != fields.len()
-        || result_variant != expected_variant
-        || result_fields.len() != expected_fields.len()
-    {
+    if !matches!(matched.node, AlgebraicTermNode::Match { .. }) {
         return false;
     }
 
-    crate::instrumentation::record_deterministic_work(fields.len() + result_fields.len());
-    let mut payloads = std::collections::HashMap::with_capacity(fields.len());
-    for (binder, field) in arm.bindings.iter().zip(fields) {
-        let variable = match (binder, field) {
-            (
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))),
-                AlgebraicValue::Program(ProgramValue::Int32(int32_constant!(_))),
-            )
-            | (
-                AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-                AlgebraicValue::Integer(IntegerTerm::Constant(_) | IntegerTerm::Variable(_)),
-            ) => variable,
-            _ => return false,
+    let mut payloads = std::collections::HashMap::new();
+    let mut bindings = Vec::new();
+    let mut selected = matched;
+    while let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node {
+        let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
+            return false;
         };
-        if payloads.insert(*variable, field).is_some() {
+        crate::instrumentation::record_deterministic_work(arms.len() + fields.len());
+        let Some(arm) = arms.iter().find(|arm| arm.variant == *variant) else {
+            return false;
+        };
+        if arm.bindings.len() != fields.len() {
             return false;
         }
+        // The new bindings are in scope in the arm body, but not in its scrutinee.
+        for (binder, field) in arm.bindings.iter().zip(fields) {
+            let (variable, payload) = match (binder, field) {
+                (
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })),
+                ) if field.value_type() == AlgebraicValueType::Program(format.program_type()) => {
+                    (variable, field)
+                }
+                (
+                    AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
+                    AlgebraicValue::Integer(IntegerTerm::Constant(_)),
+                ) => (variable, field),
+                (
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(source))),
+                )
+                | (
+                    AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
+                    AlgebraicValue::Integer(IntegerTerm::Variable(source)),
+                ) => (variable, payloads.get(source).copied().unwrap_or(field)),
+                _ => return false,
+            };
+            let field_type = field.value_type();
+            if binder.value_type() != field_type || payload.value_type() != field_type {
+                return false;
+            }
+            bindings.push((*variable, payload));
+        }
+        for (variable, payload) in bindings.drain(..) {
+            if payloads.insert(variable, payload).is_some() {
+                return false;
+            }
+        }
+        selected = &arm.body;
     }
+
+    let AlgebraicTermNode::Constructor {
+        variant: result_variant,
+        fields: result_fields,
+    } = &selected.node
+    else {
+        return false;
+    };
+    if result_variant != expected_variant || result_fields.len() != expected_fields.len() {
+        return false;
+    }
+    crate::instrumentation::record_deterministic_work(result_fields.len());
     result_fields
         .iter()
         .zip(expected_fields)
         .all(|(field, expected)| {
             let (variable, captured) = match field {
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))) => {
+                AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))) => {
                     (variable, None)
                 }
                 AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => (variable, Some(field)),
@@ -965,8 +989,7 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
                 .copied()
                 .or(captured)
                 .is_some_and(|payload| {
-                    std::mem::discriminant(payload) == std::mem::discriminant(field)
-                        && payload == expected
+                    payload.value_type() == field.value_type() && payload == expected
                 })
         })
         && matched.is_well_formed()

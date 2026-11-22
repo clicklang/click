@@ -276,14 +276,13 @@ impl EqualityGraph {
                                 && let Some(ProgramValue::Pointer(right)) =
                                     term_source_1.program_value_native() =>
                             {
-                                left.program_type() == right.program_type()
-                                    && self.knows_condition(
-                                        &crate::kernel::ConditionTerm::PointerEqual(
-                                            Box::new(left.clone()),
-                                            Box::new(right.clone()),
-                                        ),
-                                        true,
-                                    )
+                                self.knows_condition(
+                                    &crate::kernel::ConditionTerm::PointerEqual(
+                                        Box::new(left.clone()),
+                                        Box::new(right.clone()),
+                                    ),
+                                    true,
+                                )
                             }
                             _ => left == right,
                         }

@@ -15,7 +15,6 @@ struct PointerData {
 struct PointerIdentity {
     address: AddressKey,
     provenance: AddressKey,
-    program_type: ProgramType,
     bounds_known: bool,
     bounds_owner: Option<AddressKey>,
     bounds: Option<(AddressKey, MachineTerm)>,
@@ -53,7 +52,6 @@ impl PointerStorageKey {
         Self::new(PointerIdentity {
             address: AddressKey::native(value.address()),
             provenance: AddressKey::native(value.provenance()),
-            program_type: value.program_type(),
             bounds_known: value.bounds_are_known(),
             bounds_owner: (!value.bounds_are_known())
                 .then(|| value.bounds_owner().map(AddressKey::native))
@@ -70,7 +68,6 @@ impl PointerStorageKey {
         Self::new(PointerIdentity {
             address: AddressKey::shared(&value.address),
             provenance: AddressKey::shared(&value.provenance),
-            program_type: value.program_type,
             bounds_known,
             bounds_owner: (!bounds_known)
                 .then(|| value.bounds_owner.as_ref().map(AddressKey::shared))

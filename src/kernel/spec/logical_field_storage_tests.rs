@@ -36,6 +36,7 @@ fn logical_resource_field_projections_keep_stored_roots_and_result_modes() {
     let projection = |field_index| ResourceFieldProjection {
         identity: identity.into(),
         children: vec![],
+        field_name: None,
         field_index,
         at_entry: false,
     };
