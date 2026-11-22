@@ -6509,11 +6509,12 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             {
                 return describe_program_expression(object);
             }
+            let explicit_local = indexed_local_address(base);
             let (base, index) = (
                 describe_program_expression(base),
                 describe_program_expression(index),
             );
-            describe_indexed_place(&base, &index)
+            describe_indexed_place(&base, &index, explicit_local)
         }
     }
 }
@@ -6863,11 +6864,17 @@ pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
         .filter(|name| !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_'))
 }
 
-fn describe_indexed_place(base: &str, index: &str) -> String {
-    // Rust's reference carrier uses the referent's name. For C, keep the
-    // explicit load: a scalar lvalue can lower through a different read
-    // path from an index into the same object's address.
-    if rust_spelling()
+fn indexed_local_address(base: &ProgramExpression) -> bool {
+    // An indexed read through a C local's address can lower differently
+    // from a read of the bare local. Keep the explicit place in source.
+    !rust_spelling()
+        && matches!(base, ProgramExpression::AddressOf(object)
+            if matches!(object.as_ref(), ProgramExpression::Variable(name)
+                if name.local_id().is_some_and(|local| !local.is_parameter())))
+}
+
+fn describe_indexed_place(base: &str, index: &str, explicit_local: bool) -> String {
+    if !explicit_local
         && index == "0"
         && let Some(object) = object_at_address(base)
     {
@@ -7785,8 +7792,10 @@ fn describe_contract_expression_grouping_casts(
             {
                 return describe_program_expression(object);
             }
+            let explicit_local = matches!(base.as_ref(), ContractExpression::ProgramExpression(base)
+                if indexed_local_address(base));
             let base = describe_contract_expression(base);
-            describe_indexed_place(&base, &index)
+            describe_indexed_place(&base, &index, explicit_local)
         }
         ContractExpression::ArrayIndex { base, indexes, .. } => format!(
             "{}{}",
