@@ -499,7 +499,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transpo
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure	try_solve_closure_strategies	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct	try_solve_closure_after_direct_with_surfaces	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces	try_solve_closure_after_direct_with_surfaces_and_function_unfold	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	available_surface_fact	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	available_surface_fact	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	check_typed_atomic_solve_candidate	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	extract_special_conjunct_premises	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	resolve_solve_premises	2
@@ -838,7 +838,7 @@ src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_intrinsic_sum_bound	t
 
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::try_interval_exclusion_using	driver	4
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_interval_exclusion_using	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	close_selected_signed_order	1
 src/surface/proof/smart_closures/signed_order.rs	mixed	::retain	driver	2
 src/surface/proof/smart_closures/signed_order.rs	search	ProofSearch::close_selected_signed_order	driver	1
