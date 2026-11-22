@@ -16,13 +16,10 @@ fn typed_let_program_value(
     }
 }
 
-// The lowerers share these two finite bands. Refusing at each ceiling keeps
-// quantifiers, algebraic binders and pointer identities structurally separate
-// even for unusually large source terms.
+// The lowerers share this finite band. Refusing at its ceiling keeps
+// quantifier variables structurally separate from other identities even for
+// unusually large source terms.
 const SURFACE_QUANTIFIER_VARIABLE_CEILING: u64 = 4_000_000;
-const ALGEBRAIC_VARIABLE_BASE: u64 = SURFACE_QUANTIFIER_VARIABLE_CEILING;
-const ALGEBRAIC_VARIABLE_CEILING: u64 = 4_000_000_000;
-const ALGEBRAIC_BINDER_STRIDE: u64 = 65_536;
 
 fn allocate_quantifier_variable(next: &mut u64) -> Result<Variable, String> {
     if *next >= SURFACE_QUANTIFIER_VARIABLE_CEILING {
@@ -37,12 +34,10 @@ pub(in crate::surface) fn algebraic_binder_variable(
     binder_index: usize,
 ) -> Result<Variable, String> {
     let index = u64::try_from(binder_index).map_err(|_| "too many algebraic binders")?;
-    let identity = index
-        .checked_mul(ALGEBRAIC_BINDER_STRIDE)
-        .and_then(|offset| ALGEBRAIC_VARIABLE_BASE.checked_add(offset))
-        .filter(|identity| *identity < ALGEBRAIC_VARIABLE_CEILING)
-        .ok_or("too many algebraic binders")?;
-    Ok(Variable(identity))
+    Ok(Variable::produced(
+        crate::kernel::Producer::AlgebraicBinder,
+        index,
+    ))
 }
 
 fn integer_comparison_operator(

@@ -327,10 +327,11 @@ fn surface_binder_streams_refuse_before_another_producers_range() {
     );
     assert!(allocate_quantifier_variable(&mut quantifier).is_err());
 
-    let last_algebraic_index = ((ALGEBRAIC_VARIABLE_CEILING - 1 - ALGEBRAIC_VARIABLE_BASE)
-        / ALGEBRAIC_BINDER_STRIDE) as usize;
-    assert!(algebraic_binder_variable(last_algebraic_index).is_ok());
-    assert!(algebraic_binder_variable(last_algebraic_index + 1).is_err());
+    // Algebraic binders have their own origin, so no index reaches another
+    // producer's identities.
+    let binder = algebraic_binder_variable(usize::MAX).unwrap();
+    assert_eq!(binder.algebraic_binder_index(), Some(usize::MAX as u64));
+    assert_ne!(binder, Variable(binder.0));
 }
 
 #[test]
