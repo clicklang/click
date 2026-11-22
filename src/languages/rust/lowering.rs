@@ -36,6 +36,7 @@ fn reference_view(
         target_type,
         integer_mode: IntegerCastMode::PointerCoercion,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile,
         pointee_constant,
         explicit_qualification: false,
@@ -950,8 +951,9 @@ fn lower_function(
         }
         if let Type::Record { name } = &p.value_type {
             // A generic function's instance takes the record as the
-            // generic function, whose MIR is checked, does.
-            if f.mir.is_none() && f.instance_of.is_none() {
+            // generic function, whose MIR is checked, does; a library
+            // function takes it as its contract says.
+            if f.mir.is_none() && f.instance_of.is_none() && f.core_method.is_none() {
                 return Err("owned record parameters require compiler MIR".into());
             }
             let layout = layouts.get(name).ok_or("missing parameter record layout")?;
@@ -1138,22 +1140,38 @@ fn lower_function(
                 .iter()
                 .enumerate()
                 .filter_map(|(ordinal, local)| {
-                    let spelling = mir.spellings.get(&local.name)?;
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some((
-                        local.name.clone(),
-                        BindingName::from(LocalBindingId::new(
-                            owner.clone(),
-                            false,
-                            ordinal,
-                            Some(spelling.clone()),
-                        )),
-                    ))
+                    let id = if let Some(&ordinal) = mir.compound_literals.get(&local.name) {
+                        let id = LocalBindingId::compound_literal(owner.clone(), ordinal);
+                        match &local.value_type {
+                            Type::Array { element, length } => {
+                                let length = u32::try_from(*length).ok()?;
+                                let array_type = match element.as_ref() {
+                                    Type::I32 => ProgramType::Int32Array(length),
+                                    Type::U8 => ProgramType::UInt8Array(length),
+                                    Type::U32 => ProgramType::UInt32Array(length),
+                                    _ => return None,
+                                };
+                                id.initialize_program_type(array_type);
+                                id.initialize_array_shape(&[length]);
+                            }
+                            Type::Record { name } => id.initialize_struct_name(name),
+                            _ => return None,
+                        }
+                        id
+                    } else if let Some(&ordinal) = mir.borrowed_scalars.get(&local.name) {
+                        LocalBindingId::temporary(owner.clone(), ordinal)
+                    } else {
+                        let spelling = mir.spellings.get(&local.name)?;
+                        let ordinal = u32::try_from(ordinal).ok()?;
+                        LocalBindingId::new(owner.clone(), false, ordinal, Some(spelling.clone()))
+                    };
+                    Some((local.name.clone(), BindingName::from(id)))
                 })
         })
         .collect();
     let mut cx = Context {
         bindings,
+        scalar_operands: BTreeMap::new(),
         declaration_sites: Vec::new(),
         shared_array_iterators: BTreeMap::new(),
         ranges: BTreeMap::new(),
@@ -1216,7 +1234,7 @@ fn lower_function(
             mir.locals
                 .iter()
                 .filter_map(|local| match &local.value_type {
-                    Type::Record { name } => Some((local.name.clone().into(), name.clone())),
+                    Type::Record { name } => Some((cx.binding(&local.name), name.clone())),
                     _ => None,
                 })
                 .collect()
@@ -1247,6 +1265,8 @@ struct Context<'a> {
     /// The binding of each local whose source name is bound more than
     /// once, by its MIR key; every other local is bound by its name.
     bindings: BTreeMap<String, BindingName>,
+    /// Expression values retained until their last read.
+    scalar_operands: BTreeMap<String, (u32, crate::languages::rust::borrow_frontiers::MirPoint)>,
     /// Where each of those is declared: its binding and source statement
     /// (`Function::sites`), so `statement(i).local(word)` names it.
     declaration_sites: Vec<(BindingName, u32)>,
@@ -2741,6 +2761,14 @@ impl Context<'_> {
             } => {
                 let value = self.expr(value)?;
                 integer_from(value, source_type, value_type)
+            }
+            E::Local { name } if self.scalar_operands.contains_key(name) => {
+                let (step, last_use) = self.scalar_operands[name];
+                Ok(ProgramExpression::StepResult {
+                    step,
+                    origin: crate::kernel::StepOrigin::Value("Rust operand"),
+                    ends: self.mir_point == Some(last_use),
+                })
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
                 let value_type = self.memory_values[name];

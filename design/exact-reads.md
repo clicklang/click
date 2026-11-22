@@ -26,7 +26,7 @@ off-version read: `p[i]` and `at(point, p[i])` both lower through the walk. So
 any fact that contains an off-version read either raises to text naming a
 different read (`differs`) or does not raise (`unraised`).
 
-The raise-lower audit (`scripts/raise-lower.sh`) measures this for pointer and
+The raise-lower audit (`scripts/audit.sh raise-lower`) measures this for pointer and
 address facts that have a state to raise at. On master `74990f08` (before
 #3270):
 
@@ -174,7 +174,7 @@ the audit have none:
 ## Steps
 
 Each step is one PR, measured with the raise-lower audit and
-`scripts/fact-stability.sh`.
+`scripts/audit.sh fact-stability`.
 
 1. **The Surface form.** Parse, validate and lower `exact(place)`, and print it.
    Add mdtests:

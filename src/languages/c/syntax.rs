@@ -2656,6 +2656,8 @@ pub enum CStatement {
         /// give it: a member store names its struct, and an `int *` store
         /// is told from a struct pointer's.
         lvalue_class: Option<crate::kernel::effective_type::CAccessClass>,
+        /// Whether the stored lvalue is volatile, by its type (C11 6.7.3p7).
+        volatile: bool,
         pointee_constant: bool,
         /// Where the source statement was written; see [`CSite`].
         site: CSite,
@@ -2784,6 +2786,7 @@ fn widened_stride(index: CExpression, width: u32) -> CExpression {
             expression: Box::new(index),
             interface_type: InterfaceType::Int64(LongRank::Long),
             struct_name: None,
+            struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -2792,12 +2795,14 @@ fn widened_stride(index: CExpression, width: u32) -> CExpression {
     )
 }
 
-/// A loaded type with the access class its kernel type cannot give
-/// (`design/effective-types.md`).
+/// The lvalue type an access needs beyond its kernel type: the access class
+/// that type cannot give (`design/effective-types.md`), and whether the
+/// lvalue is volatile (C11 6.7.3p7).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CClassedType {
     pub interface_type: InterfaceType,
-    pub class: crate::kernel::effective_type::CAccessClass,
+    pub class: Option<crate::kernel::effective_type::CAccessClass>,
+    pub volatile: bool,
 }
 
 /// The function pointer a call goes through, and its signature.
@@ -2928,6 +2933,9 @@ pub enum CExpression {
         /// The struct tag of a pointer cast target, so field access through
         /// the cast result resolves the same layout as a declared pointer.
         struct_name: Option<String>,
+        /// `sizeof` that struct, for C11 6.7.2.1p15: a pointer to its
+        /// initial member, converted, points to the struct.
+        struct_size: Option<u32>,
         /// Volatility of the pointer-valued cell reached by this pointer.
         /// This is the qualifier in `T * volatile *`, not volatility of the
         /// storage designated by `T *`.
@@ -4343,6 +4351,7 @@ impl CStatement {
                 value,
                 value_type,
                 lvalue_class,
+                volatile,
                 pointee_constant,
                 ..
             } => match value_type {
@@ -4352,7 +4361,7 @@ impl CStatement {
                     value_type.to_kernel_type(),
                     lvalue_class.clone().or_else(|| value_type.access_class()),
                     *pointee_constant,
-                    false,
+                    *volatile,
                 ),
                 None => crate::kernel::program_store(
                     pointer.to_kernel_expression(),
@@ -4527,6 +4536,7 @@ impl CExpression {
                 expression,
                 interface_type,
                 struct_name,
+                struct_size,
                 pointee_volatile,
                 pointee_constant,
                 explicit_qualification,
@@ -4536,13 +4546,20 @@ impl CExpression {
                 } else {
                     crate::kernel::program_expression::cast_with_pointee_qualifiers_and_struct
                 };
-                let lowered = cast(
+                let mut lowered = cast(
                     expression.lower_expression(),
                     interface_type.to_kernel_type(),
                     *pointee_volatile,
                     *pointee_constant,
                     struct_name.clone(),
                 );
+                if let crate::kernel::ProgramExpression::Cast {
+                    pointee_struct_size,
+                    ..
+                } = &mut lowered
+                {
+                    *pointee_struct_size = *struct_size;
+                }
                 // A C cast converts modulo 2^N wherever it is written,
                 // in C source or in a specification.
                 crate::kernel::program_expression::c_source_integer_conversion(lowered)
@@ -4692,7 +4709,8 @@ impl CExpression {
                 crate::kernel::program_expression::classed_load(
                     pointer.lower_expression(),
                     loaded_type.interface_type.to_kernel_type(),
-                    Some(loaded_type.class.clone()),
+                    loaded_type.class.clone(),
+                    loaded_type.volatile,
                 )
             }
             Self::SequentialRead {
@@ -4757,7 +4775,8 @@ impl CExpression {
                         index.lower_expression(),
                     ),
                     element_type.interface_type.to_kernel_type(),
-                    Some(element_type.class.clone()),
+                    element_type.class.clone(),
+                    element_type.volatile,
                 )
             }
             Self::CheckedArrayIndex { index, .. } => index.lower_expression(),
@@ -7115,6 +7134,7 @@ fn is_builtin_type_start(name: &str) -> bool {
             | "long"
             | "size_t"
             | "ssize_t"
+            | "ptrdiff_t"
             | "int8_t"
             | "int16_t"
             | "int64_t"
@@ -7451,6 +7471,11 @@ struct Parser {
     variable_function_pointers: BTreeMap<BindingName, CallbackInterface>,
     variable_constants: BTreeSet<BindingName>,
     variable_pointee_constants: BTreeSet<BindingName>,
+    /// Variables declared as pointers to volatile storage. An access through
+    /// one is volatile by its lvalue's type (C11 6.7.3p7).
+    variable_pointee_volatiles: BTreeSet<BindingName>,
+    /// Variables whose own object is volatile.
+    variable_object_volatiles: BTreeSet<BindingName>,
     /// Automatic objects with a volatile object or pointee type.
     volatile_locals: BTreeSet<BindingName>,
     unions: DeclarationMap<CUnionLayout>,
@@ -7584,6 +7609,8 @@ struct VariableMetadata {
     function_pointer: Option<CallbackInterface>,
     constant: bool,
     pointee_constant: bool,
+    pointee_volatile: bool,
+    object_volatile: bool,
     incomplete_array: bool,
 }
 
@@ -7762,6 +7789,37 @@ pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> 
         .then_some("library/c/string.interface.click")
 }
 
+/// The `extern` contract a C library declaration of `header` brings, read
+/// with the sidecar as a C++ library interface is: `fprintf`, declared as the
+/// projected `<stdio.h>` does, `int fprintf(FILE *stream, const char *format,
+/// ...)`, has the contract of `library/c/fprintf.interface.click`.
+pub(crate) fn library_interface_contract(header: &CFunctionHeader) -> Option<&'static str> {
+    let is_format = |format: &ImportedParameter| {
+        matches!(format.interface_type, InterfaceType::CharPointer(_)) && format.pointee_constant
+    };
+    match (header.source_name.as_str(), header.parameters.as_slice()) {
+        ("fprintf", [file, format])
+            if !header.internal_linkage
+                && header.variadic
+                && header.return_type == InterfaceType::Int32
+                && header.name == header.source_name
+                && file.interface_type == InterfaceType::Int32Pointer
+                && file.struct_name() == Some(STDIO_FILE_TAG)
+                && !file.pointee_constant
+                && is_format(format) =>
+        {
+            Some(include_str!("../../../library/c/fprintf.interface.click"))
+        }
+        _ => None,
+    }
+}
+
+/// Whether `name` is a C library function whose contract
+/// [`library_interface_contract`] supplies.
+pub(crate) fn is_library_interface_function(name: &str) -> bool {
+    name == "fprintf"
+}
+
 /// Which standard stream writer this declaration denotes, if any.
 fn stream_output_prototype(
     header: &CFunctionHeader,
@@ -7777,16 +7835,10 @@ fn stream_output_prototype(
     let is_format = |format: &ImportedParameter| {
         matches!(format.interface_type, InterfaceType::CharPointer(_)) && format.pointee_constant
     };
+    // `fprintf` is an ordinary variadic call to its `library/c/stdio.click`
+    // contract.
     match (header.source_name.as_str(), header.parameters.as_slice()) {
         ("printf", [format]) if is_format(format) => Some(FormattedOutput::Printf),
-        ("fprintf", [file, format])
-            if file.interface_type == InterfaceType::Int32Pointer
-                && file.struct_name() == Some(STDIO_FILE_TAG)
-                && !file.pointee_constant
-                && is_format(format) =>
-        {
-            Some(FormattedOutput::Fprintf)
-        }
         _ => None,
     }
 }
@@ -8116,6 +8168,8 @@ impl Parser {
             variable_function_pointers: BTreeMap::new(),
             variable_constants: BTreeSet::new(),
             variable_pointee_constants: BTreeSet::new(),
+            variable_pointee_volatiles: BTreeSet::new(),
+            variable_object_volatiles: BTreeSet::new(),
             volatile_locals: BTreeSet::new(),
             unions: DeclarationMap::new(),
             scopes: Vec::new(),
@@ -8222,6 +8276,8 @@ impl Parser {
             self.variable_function_pointers.remove(&binding.kernel_name);
             self.variable_constants.remove(&binding.kernel_name);
             self.variable_pointee_constants.remove(&binding.kernel_name);
+            self.variable_pointee_volatiles.remove(&binding.kernel_name);
+            self.variable_object_volatiles.remove(&binding.kernel_name);
             self.volatile_locals.remove(&binding.kernel_name);
             self.incomplete_array_names.remove(&binding.kernel_name);
             if let Some(metadata) = binding.shadowed {
@@ -8245,6 +8301,12 @@ impl Parser {
                 }
                 if metadata.pointee_constant {
                     self.variable_pointee_constants.insert(name.clone());
+                }
+                if metadata.pointee_volatile {
+                    self.variable_pointee_volatiles.insert(name.clone());
+                }
+                if metadata.object_volatile {
+                    self.variable_object_volatiles.insert(name.clone());
                 }
                 if metadata.incomplete_array {
                     self.incomplete_array_names.insert(name);
@@ -8431,6 +8493,84 @@ impl Parser {
 
     fn variable_pointee_is_constant(&self, name: &BindingName) -> bool {
         self.variable_pointee_constants.contains(name)
+    }
+
+    fn named_global(&self, name: &BindingName) -> Option<&CGlobal> {
+        name.named()
+            .and_then(|source| self.globals.get(source))
+            .or_else(|| {
+                self.globals
+                    .values()
+                    .find(|global| name == global.kernel_name())
+            })
+    }
+
+    fn named_static_local(&self, name: &BindingName) -> Option<&CStaticLocal> {
+        self.static_locals.get(name).or_else(|| {
+            self.static_locals
+                .values()
+                .find(|static_local| name == static_local.kernel_name())
+        })
+    }
+
+    /// Whether `name` is declared as a pointer to volatile storage.
+    fn variable_pointee_is_volatile(&self, name: &BindingName) -> bool {
+        self.variable_pointee_volatiles.contains(name)
+            || self
+                .named_global(name)
+                .is_some_and(CGlobal::pointee_is_volatile)
+            || self
+                .named_static_local(name)
+                .is_some_and(CStaticLocal::pointee_is_volatile)
+    }
+
+    /// Whether `name`'s own object is volatile.
+    fn variable_object_is_volatile(&self, name: &BindingName) -> bool {
+        self.variable_object_volatiles.contains(name)
+            || self.named_global(name).is_some_and(CGlobal::is_volatile)
+            || self
+                .named_static_local(name)
+                .is_some_and(CStaticLocal::is_volatile)
+    }
+
+    /// Whether the lvalue `expression` designates volatile storage, so an
+    /// access to it is volatile (C11 6.7.3p7).
+    fn expression_is_volatile_lvalue(&self, expression: &CExpression) -> bool {
+        match expression {
+            CExpression::Variable(name) => self.variable_object_is_volatile(name),
+            CExpression::Load(pointer, _) | CExpression::Index(pointer, _, _) => {
+                self.expression_pointee_is_volatile(pointer)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether the pointer `expression` points to volatile storage, by its
+    /// static type. This mirrors [`Self::expression_pointee_is_constant`].
+    fn expression_pointee_is_volatile(&self, expression: &CExpression) -> bool {
+        match expression {
+            CExpression::Variable(name) => self.variable_pointee_is_volatile(name),
+            CExpression::AddressOf(target) => self.expression_is_volatile_lvalue(target),
+            CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::Subobject { pointer, .. }
+            | CExpression::Subtract(pointer, _) => self.expression_pointee_is_volatile(pointer),
+            CExpression::Add(left, right) => {
+                self.expression_pointee_is_volatile(left)
+                    || self.expression_pointee_is_volatile(right)
+            }
+            CExpression::Cast {
+                pointee_volatile, ..
+            } => *pointee_volatile,
+            CExpression::Ternary {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.expression_pointee_is_volatile(then_branch)
+                    || self.expression_pointee_is_volatile(else_branch)
+            }
+            _ => false,
+        }
     }
 
     fn expression_is_constant_lvalue(&self, expression: &CExpression) -> bool {
@@ -9016,6 +9156,8 @@ impl Parser {
                 function_pointer: self.variable_function_pointers.remove(&kernel_name),
                 constant: self.variable_constants.remove(&kernel_name),
                 pointee_constant: self.variable_pointee_constants.remove(&kernel_name),
+                pointee_volatile: self.variable_pointee_volatiles.remove(&kernel_name),
+                object_volatile: self.variable_object_volatiles.remove(&kernel_name),
                 incomplete_array: self.incomplete_array_names.remove(&kernel_name),
             });
         match self.scopes.last_mut() {
@@ -10441,6 +10583,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile {
+                self.variable_object_volatiles.insert(kernel_name.clone());
+            }
             if object_volatile || pointee_volatile {
                 self.volatile_locals.insert(kernel_name.clone());
             }
@@ -10458,6 +10603,9 @@ impl Parser {
             }
             if pointee_constant {
                 self.variable_pointee_constants.insert(kernel_name.clone());
+            }
+            if pointee_volatile {
+                self.variable_pointee_volatiles.insert(kernel_name.clone());
             }
             let struct_name = parsed_type.struct_name;
             if struct_name.is_some() {
@@ -11302,7 +11450,7 @@ impl Parser {
                 "uint8" | "uint8_t" => InterfaceType::UInt8,
                 "uint16" | "uint16_t" => InterfaceType::UInt16,
                 "uint32" | "uint32_t" => InterfaceType::UInt32,
-                "int64" | "ssize_t" => InterfaceType::Int64(LongRank::Long),
+                "int64" | "ssize_t" | "ptrdiff_t" => InterfaceType::Int64(LongRank::Long),
                 "uint64" | "size_t" => InterfaceType::UInt64(LongRank::Long),
                 "int64_t" => InterfaceType::Int64(self.int64_t_rank),
                 "uint64_t" => InterfaceType::UInt64(self.int64_t_rank),
@@ -12058,6 +12206,7 @@ impl Parser {
                 expression: Box::new(expression),
                 interface_type: InterfaceType::Int32,
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -12813,6 +12962,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile {
+                self.variable_object_volatiles.insert(name.clone());
+            }
             if object_volatile || pointee_volatile {
                 self.volatile_locals.insert(name.clone());
             }
@@ -12823,6 +12975,9 @@ impl Parser {
             }
             if pointee_constant {
                 self.variable_pointee_constants.insert(name.clone());
+            }
+            if pointee_volatile {
+                self.variable_pointee_volatiles.insert(name.clone());
             }
             if let Some(shape) = array_shape.clone() {
                 self.variable_array_shapes.insert(name.clone(), shape);
@@ -13339,6 +13494,9 @@ impl Parser {
                 if parsed_type.pointee_constant {
                     self.variable_pointee_constants.insert(kernel_name.clone());
                 }
+                if parsed_type.pointee_is_volatile() {
+                    self.variable_pointee_volatiles.insert(kernel_name.clone());
+                }
                 let initializer = if self.peek() == Some(&Token::Equal) {
                     self.position += 1;
                     let initializer = self.parse_expression()?;
@@ -13570,6 +13728,7 @@ impl Parser {
                     },
                     value_type: Some(element_type),
                     lvalue_class: None,
+                    volatile: false,
                     pointee_constant: field.pointee_constant,
                     site: CSite::NONE,
                 });
@@ -13625,6 +13784,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile {
+                self.variable_object_volatiles.insert(name.clone());
+            }
             if object_volatile || pointee_volatile {
                 self.volatile_locals.insert(name.clone());
             }
@@ -13635,6 +13797,9 @@ impl Parser {
             }
             if pointee_constant {
                 self.variable_pointee_constants.insert(name.clone());
+            }
+            if pointee_volatile {
+                self.variable_pointee_volatiles.insert(name.clone());
             }
             if self.peek() != Some(&Token::Equal) {
                 return Err(self.error_here("for-loop declarations require an initializer"));
@@ -13975,7 +14140,8 @@ impl Parser {
                         pointer: *pointer,
                         value,
                         value_type: loaded_type.as_ref().map(|loaded| loaded.interface_type),
-                        lvalue_class: loaded_type.map(|loaded| loaded.class),
+                        volatile: loaded_type.as_ref().is_some_and(|loaded| loaded.volatile),
+                        lvalue_class: loaded_type.and_then(|loaded| loaded.class),
                         pointee_constant: false,
                         site: CSite::NONE,
                     })
@@ -14019,6 +14185,7 @@ impl Parser {
                         value,
                         value_type: Some(field_type),
                         lvalue_class: access_class,
+                        volatile: false,
                         pointee_constant,
                         site: CSite::NONE,
                     })
@@ -14036,7 +14203,8 @@ impl Parser {
                     pointer: CExpression::Add(base, index),
                     value,
                     value_type: element_type.as_ref().map(|element| element.interface_type),
-                    lvalue_class: element_type.map(|element| element.class),
+                    volatile: element_type.as_ref().is_some_and(|element| element.volatile),
+                    lvalue_class: element_type.and_then(|element| element.class),
                     pointee_constant: false,
                     site: CSite::NONE,
                 }),
@@ -15160,6 +15328,7 @@ impl Parser {
                 expression: Box::new(expression),
                 interface_type,
                 struct_name: Some(struct_name.clone()),
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: self.variable_pointee_is_constant(target),
                 explicit_qualification: false,
@@ -15635,6 +15804,7 @@ impl Parser {
                 value,
                 value_type,
                 lvalue_class,
+                volatile,
                 pointee_constant,
                 site,
             } => {
@@ -15646,6 +15816,7 @@ impl Parser {
                         value,
                         value_type,
                         lvalue_class,
+                        volatile,
                         pointee_constant,
                         site,
                     },
@@ -15995,6 +16166,7 @@ impl Parser {
                 )))),
                 interface_type: InterfaceType::UInt8Pointer,
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -16433,6 +16605,7 @@ impl Parser {
                 expression,
                 interface_type,
                 struct_name,
+                struct_size,
                 pointee_volatile,
                 pointee_constant,
                 explicit_qualification,
@@ -16444,6 +16617,7 @@ impl Parser {
                         expression: Box::new(expression),
                         interface_type,
                         struct_name,
+                        struct_size,
                         pointee_volatile,
                         pointee_constant,
                         explicit_qualification,
@@ -16588,6 +16762,7 @@ impl Parser {
                                 expression: Box::new(CExpression::Variable(name)),
                                 interface_type: decay_to_pointer(interface_type),
                                 struct_name: None,
+                                struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,
@@ -16665,6 +16840,7 @@ impl Parser {
                     CExpression::Cast {
                         expression: Box::new(address),
                         interface_type: InterfaceType::Int32Pointer,
+                        struct_size: None,
                         struct_name: Some(struct_name),
                         pointee_volatile: false,
                         pointee_constant: false,
@@ -17143,6 +17319,7 @@ impl Parser {
             expression: Box::new(expression),
             interface_type: common_type,
             struct_name: None,
+            struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -17189,6 +17366,7 @@ impl Parser {
             expression: Box::new(std::mem::replace(expression, CExpression::Void)),
             interface_type: InterfaceType::UInt8Pointer,
             struct_name: None,
+            struct_size: None,
             pointee_volatile: false,
             pointee_constant: parameter.pointee_is_constant(),
             explicit_qualification: false,
@@ -17309,6 +17487,7 @@ impl Parser {
                     expression: Box::new(argument),
                     interface_type: promoted,
                     struct_name: None,
+                    struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -17444,22 +17623,10 @@ impl Parser {
         &mut self,
         function: super::formatted_output::FormattedOutput,
     ) -> Result<Vec<CExpression>, CSyntaxError> {
-        use super::formatted_output::{self, FormattedOutput};
+        use super::formatted_output;
         let source_name = function.source_name();
         self.expect(Token::LParen)?;
-        let file = if matches!(function, FormattedOutput::Fprintf) {
-            let mut file = self.parse_expression_allow_direct_aggregate()?;
-            self.validate_struct_pointer_assignment(
-                Some(&STDIO_FILE_TAG.to_string()),
-                Some(InterfaceType::Int32Pointer),
-                &mut file,
-            )?;
-            self.reject_discarded_const_pointer(InterfaceType::Int32Pointer, false, &mut file)?;
-            self.expect(Token::Comma)?;
-            file
-        } else {
-            CExpression::Variable(BindingName::from(HOSTED_STDOUT_BINDING))
-        };
+        let file = { CExpression::Variable(BindingName::from(HOSTED_STDOUT_BINDING)) };
         let format = self.parse_output_format(source_name)?;
         formatted_output::stream_output_bytes(function, &format).map_err(|reason| {
             self.error_at_previous(format!("`{source_name}` format: {reason}"))
@@ -17592,6 +17759,7 @@ impl Parser {
                                     expression: Box::new(expression),
                                     interface_type: InterfaceType::Int32,
                                     struct_name: None,
+                                    struct_size: None,
                                     pointee_volatile: false,
                                     pointee_constant: false,
                                     explicit_qualification: false,
@@ -17995,6 +18163,7 @@ impl Parser {
             expression: Box::new(pointer),
             interface_type: InterfaceType::UInt8Pointer,
             struct_name: None,
+            struct_size: None,
             pointee_volatile: false,
             pointee_constant,
             explicit_qualification: false,
@@ -18005,6 +18174,7 @@ impl Parser {
             CExpression::Cast {
                 expression: Box::new(expression),
                 interface_type,
+                struct_size: None,
                 struct_name: Some(struct_name),
                 pointee_volatile: false,
                 pointee_constant,
@@ -18168,14 +18338,30 @@ impl Parser {
             &cast_position,
         )?;
         convert_integer_constant(interface_type, &mut expression);
+        // A cast to the operand's own struct type is not a conversion.
+        let struct_size = (self.struct_pointer_name(&expression) != struct_name)
+            .then(|| self.struct_pointer_target_size(interface_type, struct_name.as_deref()))
+            .flatten();
         Ok(CExpression::Cast {
             expression: Box::new(expression),
             interface_type,
             struct_name,
+            struct_size,
             pointee_volatile: volatile_pointer_object_cast,
             pointee_constant: parsed_type.pointee_constant,
             explicit_qualification: interface_type.is_pointer(),
         })
+    }
+
+    /// `sizeof` the struct a one-level `struct T *` cast target points to.
+    fn struct_pointer_target_size(
+        &self,
+        interface_type: InterfaceType,
+        struct_name: Option<&str>,
+    ) -> Option<u32> {
+        (interface_type == InterfaceType::Int32Pointer)
+            .then(|| self.structs.get(struct_name?).map(RecordLayout::size_bytes))
+            .flatten()
     }
 
     fn parse_unary(&mut self) -> Result<CExpression, CSyntaxError> {
@@ -18910,6 +19096,7 @@ impl Parser {
                                 expression: Box::new(expression),
                                 interface_type: InterfaceType::UInt8Pointer,
                                 struct_name: None,
+                                struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,
@@ -19579,6 +19766,7 @@ impl Parser {
                 expression: Box::new(value),
                 interface_type,
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant,
                 explicit_qualification: false,
@@ -19610,6 +19798,7 @@ impl Parser {
                 expression: Box::new(value),
                 interface_type: decay_to_pointer(expected),
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant,
                 explicit_qualification: false,
@@ -19879,17 +20068,25 @@ impl Parser {
     /// `int *` that `pointer` is known not to hold as a struct pointer.
     fn classed_pointee_type(&self, pointer: &CExpression) -> Option<CClassedType> {
         let pointee = self.source_expression_type(pointer)?.pointee_type()?;
-        let class = pointee.access_class().or_else(|| {
-            self.points_to_no_struct(pointer)
-                .then(|| int_pointer_class(pointee))
-                .flatten()
-        })?;
-        (crate::kernel::effective_type::CAccessClass::of_kernel_type(pointee.to_kernel_type())
-            .as_ref()
-            != Some(&class))
-        .then_some(CClassedType {
+        let class = pointee
+            .access_class()
+            .or_else(|| {
+                self.points_to_no_struct(pointer)
+                    .then(|| int_pointer_class(pointee))
+                    .flatten()
+            })
+            .filter(|class| {
+                crate::kernel::effective_type::CAccessClass::of_kernel_type(
+                    pointee.to_kernel_type(),
+                )
+                .as_ref()
+                    != Some(class)
+            });
+        let volatile = self.expression_pointee_is_volatile(pointer);
+        (class.is_some() || volatile).then_some(CClassedType {
             interface_type: pointee,
             class,
+            volatile,
         })
     }
 

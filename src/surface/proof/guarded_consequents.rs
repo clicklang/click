@@ -10,7 +10,7 @@
 //! `solve` (the bounded overflow-interval reasoning decides it from the
 //! operands' bounds), applies the implication, and continues the closure.
 //! Expansion therefore renders the discharge as `have defined(..) by { .. }`
-//! followed by `apply(fact) using { .. }`. An implication under an ordinary condition is
+//! followed by `apply(fact)`. An implication under an ordinary condition is
 //! not selected here: its antecedent is never proved by a nested search. The
 //! direct logical closure applies one only when its antecedent is already
 //! exactly available (`try_discharged_consequent_closure`).

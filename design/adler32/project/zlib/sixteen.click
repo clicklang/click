@@ -534,5 +534,5 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  step_until(assignment(adler, 39).entry);
  apply(zlib_reduced_result(old(buf), 16, adler, sum2));
  have to_integer(16) == to_integer(16u64) by normalize();
- apply(adler_spec_checksum_bridge(old(buf), 16, 16u64, 1, 0)) using { to_integer(16) == to_integer(16u64); };
+ apply(adler_spec_checksum_bridge(old(buf), 16, 16u64, 1, 0));
 }

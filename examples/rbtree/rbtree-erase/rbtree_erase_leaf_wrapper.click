@@ -272,7 +272,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
         have whole.model == plug(old(up.model), RbTree::Empty) by {
             rewrite(whole.model, plug(at(balanced, deficit.model), at(balanced, hole.model)));
             rewrite(at(balanced, hole.model), RbTree::Empty);
-            rewrite(at(balanced, deficit.model), old(up.model)); normalize();
+            rewrite(at(balanced, deficit.model), old(up.model)); known();
         }
         have is_rb_root(whole.model) == 1;
         have rb_tree_parent_consistent(whole.model) == 1;

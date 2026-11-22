@@ -33,7 +33,7 @@ void follow(struct node* p, int32 more) {
         initialize by solve();
         maintain by {
             let { word: saved_word } = unfold(held);
-            have p->parent_word == address(p) by { known(); }
+            have p->parent_word == address(p) by { rewrite(p, old(p)); known(); }
             step(); step();
             let held = fold(self_link(old(p)), { word: saved_word });
         }

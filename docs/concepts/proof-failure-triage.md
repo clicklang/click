@@ -1,18 +1,19 @@
 # Triaging proof failures
 
-Click's terminal report labels a failure as a syntax error, type error, proof
-error, or internal error. A proof error means a checked proof operation could
-not establish its goal. It does not assert that the C program is wrong. When a
-simple tactic was being checked, the report names that tactic. The report
-prints the proposition that was not proved as `goal:`, whether it is a claim's
-remaining goal or a requirement of a C statement, which is a goal at that
-statement's pre-state. The goal and recent premises provide bounded context,
-not an exhaustive list of everything derivable from the proof state. Repair a
-proof error by the [proof repair procedure](tracing.md).
+Start with the [CLI outcome](../reference/cli/verify.md#output-and-exit-behavior).
+For a `tactic error`, check the invocation against its documentation. For an
+`unsuccessful search`, identify the goal and supply the intermediate facts
+or arguments that the search did not find. For an `incomplete proof`,
+establish the reported requirement before the proof closes. For a returned
+resource, check what the contract promises and what the return path holds. For a `contract error`, check
+whether the clause satisfies the documented rule under its requirements.
+Correct an invalid clause or report `contract-bug` with evidence that the
+original clause satisfies the rule. For a contract-entry, execution,
+or termination refusal, inspect the specific reported check.
 
-These labels describe what the CLI observed. The rest of this guide diagnoses
-why a proof error happened. A rejected proof may need an available explicit
-step, expose a missing capability, or reveal a bug in a documented rule.
+Use the [proof repair procedure](tracing.md) when the diagnostic gives a
+goal. A statement requirement is a goal at the statement’s pre-state.
+The recent premises in the ordinary report are a bounded sample.
 
 Parsing errors in the embedded Click library name the module file, such as
 `library/c/string.interface.click`, and the line within that file. An enclosing module-checking context names the
@@ -110,11 +111,18 @@ that failed, write the argument for it as a chain of `have` goals, and refine
 the first link that does not close by identifying its primitive rule and
 writing that rule's premises. Each
 attempt must change that chain; a new written form, position, or tactic for the
-same link is not progress. The procedure ends at one of seven named outcomes.
+same link is not progress. The procedure ends at a named outcome.
 `missing-rule` identifies a justified inference with no supported primitive
 for design discussion; it is not inferred merely from a failed search.
-The three bug outcomes (`inexpressible-fact`, `failing-tactic`,
-and `unclear-trace`) leave a reduced reproduction.
+Use `false-claim` when a counterexample refutes the original claim. If it
+refutes a requirement Click generated, check the rule that generated it.
+Use `obligation-bug` when the rule or semantics do not support the
+requirement. For `obligation-bug`, `inexpressible-fact`, and `tactic-bug`,
+keep a reduced reproduction.
+For `unclear-trace`, quote what you could not interpret. A diagnostic bug
+report requires evidence of a specific defect in the output. When Click
+prints `internal error`, use `internal-error` and preserve the original
+diagnostic, command, version, and inputs.
 Tooling improvements in response require discussion and user approval before
 implementation, including new diagnostic content, trace presentation, or a
 proof workflow. Reproduced bugs in existing behavior may be fixed

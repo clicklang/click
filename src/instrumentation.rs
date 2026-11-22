@@ -557,6 +557,20 @@ fn charge_run_work(units: usize) -> bool {
 
 thread_local! {
     static UNCHARGED_WORK: Cell<bool> = const { Cell::new(false) };
+    static CERTIFICATE_PRESENTATION_WORK: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Choosing the spelling of an already checked step spends whole-run work
+/// without drawing from the tactic's allowance for finding and checking it.
+pub(crate) fn with_certificate_presentation_work<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CERTIFICATE_PRESENTATION_WORK.with(|flag| flag.set(self.0));
+        }
+    }
+    let _restore = Restore(CERTIFICATE_PRESENTATION_WORK.with(|flag| flag.replace(true)));
+    operation()
 }
 
 /// Runs `operation` charging none of the deterministic work it records:
@@ -575,9 +589,8 @@ pub(crate) fn without_charging<R>(operation: impl FnOnce() -> R) -> R {
 
 /// Records `units` of deterministic verifier work.
 ///
-/// This is the one accounting path: every unit charges each enclosing
-/// [`measure_deterministic_work`] counter and the innermost active tactic's
-/// work budget, whether it arrives here or through a cooperative checkpoint
+/// This is the common accounting path for deterministic work, whether it
+/// arrives here or through a cooperative checkpoint
 /// ([`deadline_exceeded`], [`deadline_exceeded_with_work`]). Recording does
 /// not interrupt the caller: an exhausted budget becomes a pending limit
 /// that the next checkpoint reports, and the verifier checks for one after
@@ -642,22 +655,116 @@ pub(crate) fn separation_candidate_cross_checks_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("CLICK_DEBUG_CHECK_SEPARATION_CANDIDATES").is_some())
 }
 
-/// The file `CLICK_FACT_STABILITY` names, which the kernel's fact-stability
-/// check (`kernel::fact_stability`) appends to. The variable is read here,
-/// outside the kernel; the check is uncharged and never decides.
-pub(crate) fn fact_stability_sink() -> Option<&'static std::sync::Mutex<std::fs::File>> {
-    static SINK: std::sync::OnceLock<Option<std::sync::Mutex<std::fs::File>>> =
-        std::sync::OnceLock::new();
-    SINK.get_or_init(|| {
-        let path = std::env::var_os("CLICK_FACT_STABILITY")?;
+/// The records file of one lowering audit (`click audit fact-stability`,
+/// `click audit raise-lower`). It starts as the file its environment
+/// variable names, and `click audit` points it at a file, or at none, for
+/// each audit it runs in turn. The audits are uncharged and never decide.
+pub(crate) struct AuditRecords {
+    variable: &'static str,
+    file: std::sync::OnceLock<std::sync::Mutex<Option<std::fs::File>>>,
+    on: std::sync::atomic::AtomicBool,
+    checked: std::sync::atomic::AtomicUsize,
+}
+
+impl AuditRecords {
+    const fn new(variable: &'static str) -> Self {
+        Self {
+            variable,
+            file: std::sync::OnceLock::new(),
+            on: std::sync::atomic::AtomicBool::new(false),
+            checked: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    fn open(path: &std::path::Path) -> std::io::Result<std::fs::File> {
         std::fs::File::options()
             .create(true)
             .append(true)
             .open(path)
-            .ok()
-            .map(std::sync::Mutex::new)
-    })
-    .as_ref()
+    }
+
+    fn slot(&self) -> &std::sync::Mutex<Option<std::fs::File>> {
+        self.file.get_or_init(|| {
+            let file = std::env::var_os(self.variable)
+                .and_then(|path| Self::open(std::path::Path::new(&path)).ok());
+            self.on
+                .store(file.is_some(), std::sync::atomic::Ordering::Relaxed);
+            std::sync::Mutex::new(file)
+        })
+    }
+
+    /// Whether this audit is recording.
+    pub(crate) fn enabled(&self) -> bool {
+        self.slot();
+        self.on.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Appends one record.
+    pub(crate) fn write(&self, line: &str) {
+        use std::io::Write as _;
+        if let Ok(mut file) = self.slot().lock()
+            && let Some(file) = file.as_mut()
+        {
+            let _ = file.write_all(line.as_bytes());
+        }
+    }
+
+    /// Counts one fact, lowering or step the audit checked, recorded or not.
+    pub(crate) fn count_checked(&self) {
+        self.checked
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn redirect(&self, path: Option<&std::path::Path>) -> std::io::Result<()> {
+        let file = path.map(Self::open).transpose()?;
+        let mut slot = self
+            .slot()
+            .lock()
+            .map_err(|_| std::io::Error::other("audit records lock poisoned"))?;
+        self.on
+            .store(file.is_some(), std::sync::atomic::Ordering::Relaxed);
+        self.checked.store(0, std::sync::atomic::Ordering::Relaxed);
+        *slot = file;
+        Ok(())
+    }
+}
+
+/// The fact-stability audit's records: `CLICK_FACT_STABILITY`, which the
+/// kernel's fact-stability check (`kernel::fact_stability`) appends to. The
+/// variable is read here, outside the kernel.
+pub(crate) static FACT_STABILITY_RECORDS: AuditRecords = AuditRecords::new("CLICK_FACT_STABILITY");
+
+/// The raise-lower audit's records: `CLICK_RAISE_LOWER`.
+pub(crate) static RAISE_LOWER_RECORDS: AuditRecords = AuditRecords::new("CLICK_RAISE_LOWER");
+
+/// A lowering audit `click audit` can run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LoweringAudit {
+    FactStability,
+    RaiseLower,
+}
+
+impl LoweringAudit {
+    fn records(self) -> &'static AuditRecords {
+        match self {
+            LoweringAudit::FactStability => &FACT_STABILITY_RECORDS,
+            LoweringAudit::RaiseLower => &RAISE_LOWER_RECORDS,
+        }
+    }
+
+    /// Records this audit to `path` from now on, or stops recording it, and
+    /// restarts its count of checked items.
+    pub fn record_to(self, path: Option<&std::path::Path>) -> std::io::Result<()> {
+        self.records().redirect(path)
+    }
+
+    /// How many lowerings (fact stability) or facts and goals (raise-lower)
+    /// the audit checked since it was last pointed at a file.
+    pub fn checked(self) -> usize {
+        self.records()
+            .checked
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 /// The file `CLICK_FORMAT_AUDIT` names, which the kernel's signedness audit
@@ -864,9 +971,9 @@ fn charge_checking_work(units: usize) -> bool {
     false
 }
 
-/// Charges `units` to every scaling counter, to the innermost active
-/// tactic's budget, and to every whole-run budget. Returns `false` when a
-/// budget is exhausted.
+/// Charges `units` to every scaling counter and whole-run budget. The
+/// innermost active tactic also pays for work within its allowance.
+/// Returns `false` when a budget is exhausted.
 fn charge_deterministic_work(units: usize) -> bool {
     spend_decision_fuel(units);
     WORK_COUNTERS.with(|counters| {
@@ -875,7 +982,12 @@ fn charge_deterministic_work(units: usize) -> bool {
         }
     });
     let checking = charge_checking_work(units);
-    let tactic = charge_tactic_work(units);
+    let tactic_units = if CERTIFICATE_PRESENTATION_WORK.with(Cell::get) {
+        0
+    } else {
+        units
+    };
+    let tactic = charge_tactic_work(tactic_units);
     let run = charge_run_work(units);
     checking && tactic && run
 }
@@ -1884,6 +1996,27 @@ mod tests {
             })
         });
         assert_eq!(work, 51);
+    }
+
+    #[test]
+    fn certificate_presentation_spends_run_work_outside_the_tactic_allowance() {
+        let limits = TacticWorkLimits {
+            smart: 2,
+            ..TacticWorkLimits::default()
+        };
+        with_tactic_work_limits(limits, || {
+            with_run_work_limit(100, || {
+                let tactic = tactic("smart", 0);
+                emit(VerificationEvent::TacticStarted(tactic.clone()));
+                with_certificate_presentation_work(|| {
+                    assert!(!deadline_exceeded_with_work(50));
+                });
+                assert_eq!(run_work_used(), Some(50));
+                assert!(!deadline_exceeded_with_work(2));
+                assert!(deadline_exceeded_with_work(1));
+                emit(VerificationEvent::TacticFailed(tactic));
+            });
+        });
     }
 
     #[test]

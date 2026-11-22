@@ -39,12 +39,12 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
     step();
     have index != len by { solve() using { index < len; }; }
     have separate(memory(data[index]), memory(data[len])) by {
-        apply(click::separation::separate_elements(data, index, len)) using { index != len; };
+        apply(click::separation::separate_elements(data, index, len));
     }
     have separate(statement(1).footprint, memory(data[len])) by {
-        normalize() using { separate(memory(data[index]), memory(data[len])); };
+        solve() using { separate(memory(data[index]), memory(data[len])); };
     }
-    have separate(statement(0).footprint, memory(data[len])) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(data[len])) by { solve() using {}; }
     have at(statement(0).exit, data[len]) == at(statement(0).entry, data[len]) by {
         preserve(memory(data[len]), statement(0));
     }

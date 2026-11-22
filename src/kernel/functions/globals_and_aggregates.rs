@@ -817,7 +817,7 @@ pub(super) fn aggregate_argument_read_refusal(
         if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
             source.address(),
             source,
-            layout.size_bytes(),
+            layout.size().extent(),
             &ExecutionFacts::new(),
             &[],
             assumptions,
@@ -1320,13 +1320,22 @@ pub(super) fn copy_aggregate_fields_from(
                                 )
                             })
                     }
-                    ProgramType::Parameter(_) => {
-                        crate::kernel::eval::symbolic_load_value_unrecorded(
-                            &memory,
-                            &source_field,
-                            element_type,
-                        )
-                    }
+                    ProgramType::Parameter(parameter) => captured_point()
+                        .and_then(|point| point.ordinary_typed_version(&source_field, element_type))
+                        .map(|version| {
+                            crate::kernel::AlgebraicTermNode::parameter_load_at(
+                                version,
+                                source_field.clone(),
+                                parameter,
+                            )
+                        })
+                        .or_else(|| {
+                            crate::kernel::eval::symbolic_load_value_unrecorded(
+                                &memory,
+                                &source_field,
+                                element_type,
+                            )
+                        }),
                     _ => None,
                 }
             })();

@@ -37,7 +37,7 @@ void copy_u(uint8* dst, const uint8* src) {
             apply(separation::separate_elements(dst, 4u64, k));
         }
         have separate(statement(1).footprint, memory(dst[k])) by {
-            normalize() using { separate(memory(dst[4u64]), memory(dst[k])); };
+            solve() using { separate(memory(dst[4u64]), memory(dst[k])); };
         }
         have dst[k] == at(copied, dst[k]) by {
             preserve(memory(dst[k]), statement(1));
@@ -47,21 +47,17 @@ void copy_u(uint8* dst, const uint8* src) {
         })), k);
         have separate(memory(dst[0..4]), memory(src[k])) by { known(); }
         have contains(memory(dst[0..4]), statement(0).footprint) by { known(); }
-        apply(separation::contains_refl(memory(src[k]))) using {};
+        apply(separation::contains_refl(memory(src[k])));
         apply(separation::separate_restrict(
             memory(dst[0..4]), memory(src[k]),
             statement(0).footprint, memory(src[k])
-        )) using {
-            separate(memory(dst[0..4]), memory(src[k]));
-            contains(memory(dst[0..4]), statement(0).footprint);
-            contains(memory(src[k]), memory(src[k]));
-        };
+        ));
         have at(copied, src[k]) == old(src[k]) by {
             preserve(memory(src[k]), statement(0));
         }
         have separate(memory(dst[4u64]), memory(src[k])) by { known(); }
         have separate(statement(1).footprint, memory(src[k])) by {
-            normalize() using { separate(memory(dst[4u64]), memory(src[k])); };
+            solve() using { separate(memory(dst[4u64]), memory(src[k])); };
         }
         have src[k] == at(copied, src[k]) by {
             preserve(memory(src[k]), statement(1));
@@ -89,7 +85,7 @@ void copy_u_smart(uint8* dst, const uint8* src) {
             apply(separation::separate_elements(dst, 4u64, k));
         }
         have separate(statement(1).footprint, memory(dst[k])) by {
-            normalize() using { separate(memory(dst[4u64]), memory(dst[k])); };
+            solve() using { separate(memory(dst[4u64]), memory(dst[k])); };
         }
         have dst[k] == at(copied, dst[k]) by {
             preserve(memory(dst[k]), statement(1));
@@ -99,21 +95,17 @@ void copy_u_smart(uint8* dst, const uint8* src) {
         })), k);
         have separate(memory(dst[0..4]), memory(src[k])) by { known(); }
         have contains(memory(dst[0..4]), statement(0).footprint) by { known(); }
-        apply(separation::contains_refl(memory(src[k]))) using {};
+        apply(separation::contains_refl(memory(src[k])));
         apply(separation::separate_restrict(
             memory(dst[0..4]), memory(src[k]),
             statement(0).footprint, memory(src[k])
-        )) using {
-            separate(memory(dst[0..4]), memory(src[k]));
-            contains(memory(dst[0..4]), statement(0).footprint);
-            contains(memory(src[k]), memory(src[k]));
-        };
+        ));
         have at(copied, src[k]) == old(src[k]) by {
             preserve(memory(src[k]), statement(0));
         }
         have separate(memory(dst[4u64]), memory(src[k])) by { known(); }
         have separate(statement(1).footprint, memory(src[k])) by {
-            normalize() using { separate(memory(dst[4u64]), memory(src[k])); };
+            solve() using { separate(memory(dst[4u64]), memory(src[k])); };
         }
         have src[k] == at(copied, src[k]) by {
             preserve(memory(src[k]), statement(1));

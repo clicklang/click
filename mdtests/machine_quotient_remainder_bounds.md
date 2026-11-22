@@ -16,10 +16,10 @@ theorem signed_bounds(n: int32, d: int32) {
 theorem unsigned_bounds(n: uint32, d: uint32) {
     requires 0 <= n as int32;
     requires 0 < d as int32;
-    ensures 0 <= (n / d) as int32 by { normalize() using { 0 <= n as int32; 0 < d as int32; }; }
-    ensures ((n / d) as int32) <= n as int32 by { normalize() using { 0 <= n as int32; 0 < d as int32; }; }
-    ensures 0 <= (n % d) as int32 by { normalize() using { 0 <= n as int32; 0 < d as int32; }; }
-    ensures ((n % d) as int32) <= n as int32 by { normalize() using { 0 <= n as int32; 0 < d as int32; }; }
+    ensures 0 <= (n / d) as int32 by { solve() using { 0 <= n as int32; 0 < d as int32; }; }
+    ensures ((n / d) as int32) <= n as int32 by { solve() using { 0 <= n as int32; 0 < d as int32; }; }
+    ensures 0 <= (n % d) as int32 by { solve() using { 0 <= n as int32; 0 < d as int32; }; }
+    ensures ((n % d) as int32) <= n as int32 by { solve() using { 0 <= n as int32; 0 < d as int32; }; }
 }
 ```
 

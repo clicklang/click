@@ -245,7 +245,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
                     proof: Box::new(ProofCertificate::from_steps(steps)?),
-                    deferred_tail: false,
+                    deferred_tail: None,
                 }),
             ),
             ..closed
@@ -297,6 +297,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     pub(in crate::surface::proof) fn try_execute_to_exit(
         &self,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit tail");
         let driver_proof = self.proof;
         let Some((body, added_facts)) =
             crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(
@@ -615,6 +616,25 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         next.body = body;
         Ok(Some(next))
     }
+
+    pub(in crate::surface::proof) fn try_indexed_separation_restriction(
+        &self,
+        goal: &ClickProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_resource_separation_restriction_closure(
+                &self.proof.body,
+                goal,
+                &[],
+                true,
+            )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
 }
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
@@ -645,12 +665,16 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         &self,
         tactics: &[ProofTactic],
         sites: &[ProofStepSite],
+        implicit_tail: bool,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let driver_proof = self.proof;
-        let Some(body) = driver_proof
-            .body
-            .driver()
-            .try_addressed_linear_script(tactics, sites, &mut None, None)?
+        let Some(body) = driver_proof.body.driver().try_addressed_linear_script(
+            tactics,
+            sites,
+            &mut None,
+            None,
+            implicit_tail,
+        )?
         else {
             return Ok(None);
         };
@@ -664,12 +688,18 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         tactics: &[ProofTactic],
         declined: &mut Option<crate::surface::proof::smart_closures::LinearScriptDecline>,
         unfinished: &mut Option<Proof<'a>>,
+        implicit_tail: bool,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let driver_proof = self.proof;
         let Some(body) = driver_proof
             .body
             .driver()
-            .try_authoritative_linear_script_reporting(tactics, declined, Some(unfinished))?
+            .try_authoritative_linear_script_reporting(
+                tactics,
+                declined,
+                Some(unfinished),
+                implicit_tail,
+            )?
         else {
             return Ok(None);
         };

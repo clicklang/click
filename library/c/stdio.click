@@ -985,10 +985,7 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= stdio::decimal_digit(v, k) by {
         if k < stdio::decimal_length(v) {
             apply(stdio::decimal_digit_power_nonzero(v, k));
-            apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k)) using {
-                stdio::decimal_length(v) == stdio::decimal_length(v);
-                k < stdio::decimal_length(v);
-            };
+            apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k));
             rewrite(stdio::decimal_digit(v, k), (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8);
             solve();
         } else {
@@ -1010,6 +1007,72 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
         } else {
             apply(stdio::decimal_digit_lower_bound(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))));
             solve() using { not (to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v))); 48u8 <= stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))); };
+        }
+    }
+}
+
+// Formatted output from a format of ordinary characters and `%%`, the
+// formats Click models for `fprintf`: the characters it writes from
+// `remaining` bytes of `s` at `k`, each `%%` writing one `%`.
+function format_output(s: uint8[], k: uint64, remaining: int32) -> List<uint8>
+    decreases remaining
+{
+    if remaining <= 0 {
+        List<uint8>::Nil
+    } else {
+        if s[k] == 37u8 {
+            if remaining >= 2 {
+                List<uint8>::Cons(37u8, stdio::format_output(s, k + 2u64, remaining - 2))
+            } else {
+                List<uint8>::Nil
+            }
+        } else {
+            List<uint8>::Cons(s[k], stdio::format_output(s, k + 1u64, remaining - 1))
+        }
+    }
+}
+
+// `count` plus the number of characters `format_output` writes. The count
+// is carried along, so each step adds one to a known value: evaluating it
+// over a format needs no bound on the rest of the format.
+function format_length(s: uint8[], k: uint64, remaining: int32, count: int32) -> int32
+    decreases remaining
+{
+    if remaining <= 0 {
+        count
+    } else {
+        if s[k] == 37u8 {
+            if remaining >= 2 {
+                stdio::format_length(s, k + 2u64, remaining - 2, count + 1)
+            } else {
+                count
+            }
+        } else {
+            stdio::format_length(s, k + 1u64, remaining - 1, count + 1)
+        }
+    }
+}
+
+// Whether `remaining` bytes of `s` at `k` are ordinary characters and `%%`
+// only, so a formatted-output call converts no argument.
+function literal_format(s: uint8[], k: uint64, remaining: int32) -> Bool
+    decreases remaining
+{
+    if remaining <= 0 {
+        true
+    } else {
+        if s[k] == 37u8 {
+            if remaining >= 2 {
+                if s[k + 1u64] == 37u8 {
+                    stdio::literal_format(s, k + 2u64, remaining - 2)
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            stdio::literal_format(s, k + 1u64, remaining - 1)
         }
     }
 }

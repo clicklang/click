@@ -34,17 +34,15 @@ void caller(int32 *v, int32 i, int32 n) {
     ensures zeros(v, 0, i) == old(zeros(v, 0, i));
 } by {
     mark entry;
-    have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by normalize();
+    have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by known();
     have i <= n by { solve() using { i < n; }; }
-    have 0 <= 0 by { normalize(); }
+    have 0 <= 0 by { known(); }
     have viewable(v[0..n]) by { observe(v[0..n]); known(); }
     have contains(memory(v[0..n]), memory(v[0..i])) by {
-        apply(click::separation::contains_subrange(v, 0, n, 0, i)) using { 0 <= 0; 0 <= i; i <= n; };
+        apply(click::separation::contains_subrange(v, 0, n, 0, i));
     }
     have viewable(v[0..i]) by {
-        apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i]))) using {
-            viewable(v[0..n]); contains(memory(v[0..n]), memory(v[0..i]));
-        };
+        apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i])));
     }
     have 0 <= to_integer(n - i) by { solve(); }
     have to_integer(n - i) <= 1073741823 by { solve(); }
@@ -53,45 +51,31 @@ void caller(int32 *v, int32 i, int32 n) {
         have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
             intro(); intro();
             have separate(memory(v[0..i]), memory(v[i..n])) by {
-                apply(click::separation::separate_adjacent_ranges(v, 0, i, n)) using { 0 <= i; i <= n; };
+                apply(click::separation::separate_adjacent_ranges(v, 0, i, n));
             }
             have separate(memory(v[i..n]), memory(v[0..i])) by {
-                apply(click::separation::separate_symm(memory(v[0..i]), memory(v[i..n]))) using {
-                    separate(memory(v[0..i]), memory(v[i..n]));
-                };
+                apply(click::separation::separate_symm(memory(v[0..i]), memory(v[i..n])));
             }
             have contains(memory(v[0..i]), memory(v[k])) by {
-                apply(click::separation::contains_element(v, 0, i, k)) using { 0 <= k; k < i; };
+                apply(click::separation::contains_element(v, 0, i, k));
             }
             have contains(memory(v[i..n]), memory(v[i..n])) by {
                 apply(click::separation::contains_refl(memory(v[i..n])));
             }
             have separate(memory(v[i..n]), memory(v[k])) by {
-                apply(click::separation::separate_restrict(memory(v[i..n]), memory(v[0..i]), memory(v[i..n]), memory(v[k]))) using {
-                    separate(memory(v[i..n]), memory(v[0..i]));
-                    contains(memory(v[i..n]), memory(v[i..n]));
-                    contains(memory(v[0..i]), memory(v[k]));
-                };
+                apply(click::separation::separate_restrict(memory(v[i..n]), memory(v[0..i]), memory(v[i..n]), memory(v[k])));
             }
             have contains(memory(v[k]), memory(v[k])) by {
                 apply(click::separation::contains_refl(memory(v[k])));
             }
             have separate(statement(0).footprint, memory(v[k])) by {
-                apply(click::separation::separate_restrict(memory(v[i..n]), memory(v[k]), statement(0).footprint, memory(v[k]))) using {
-                    separate(memory(v[i..n]), memory(v[k]));
-                    contains(memory(v[i..n]), statement(0).footprint);
-                    contains(memory(v[k]), memory(v[k]));
-                };
+                apply(click::separation::separate_restrict(memory(v[i..n]), memory(v[k]), statement(0).footprint, memory(v[k])));
             }
             preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..i]) by { observe(v[0..i]); known(); }
         have i <= 1073741823 by { solve(); }
-        apply(same_zeros(v, at(entry, v), 0, i, i)) using {
-            0 <= 0; 0 <= i; i <= i;
-            viewable(v[0..i]); at(entry, viewable(v[0..i]));
-            forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) };
-        };
+        apply(same_zeros(v, at(entry, v), 0, i, i));
         known();
     }
 }

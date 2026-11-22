@@ -2355,7 +2355,7 @@ fn post_execution_frame_using_relowers_a_preceding_have_fact() {
             } by {
                 step_until(function.exit);
                 have data[0] == 0 by {
-                    normalize();
+                    known();
                 }
                 solve();
             }

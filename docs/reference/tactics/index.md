@@ -8,7 +8,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   the rest are the implicit closer that ends every proof, including each loop
   `maintain` script at its back edge, and finishes a `step()` or `fold`, and
   the elided forms whose search fills one argument a simple form writes:
-  `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
+  `apply(fact)`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
   refuses the removed forms `auto()`, `arithmetic()`,
   `execute()` and `execute_until` and names each replacement.
@@ -28,7 +28,7 @@ is **outside it**, with what to write instead. A simple tactic that refuses a
 case its Accepts list covers is a Click bug; one that refuses a case outside
 the list is working as documented. Behavior a section describes as beyond the
 list is not guaranteed. [Tracing](../../concepts/tracing.md) uses this
-distinction for its `failing-tactic` outcome.
+distinction for its `tactic-bug` outcome.
 
 ## Core tactics
 
@@ -93,7 +93,7 @@ when the default misses or when a proof must not search.
   arm or iteration proves; a proof `if` before the C splits the paths that
   return differently, each arm stepping to exit.
 - **Closing a proposition: `solve`, `known`, `normalize`,
-  `apply(fact) using {...}`.** Letting the script end,
+  `apply(fact)`.** Letting the script end,
   so that the
   implicit closer closes the goal, is the default, and `solve()` closes the
   first open goal where a script continues after it. Write
@@ -642,16 +642,15 @@ and the other tactics that change the path's facts or resources act on the path
 and leave the goal list alone; the implicit closer at the end of the script
 closes the goals still open.
 
-Some tactics leave a claim on its own proof, which later closers continue
-instead of the claim. `choose`, `witness`, `let` and `intro` open the proof of
-the first open proposition claim, and `rewrite` rewrites each open claim on
-its own proof. Before a tactic continues such a proof, the proof takes up the
-path's current state and resources, so a later `fold` or the contract's
-resource transition reaches it. A `have` written after `intro` extends that
-proof. A closer that does not apply to a proof that `intro` opened is read
-against the goal list instead. A closer that does not apply to a proof only
-`choose`, `witness` or `let` opened is an error, since closing the claim
-another way would drop the witness.
+Goal refinements (`witness`, `intro` and `rewrite`) work on
+the same first open claim. It must be a proposition, and the tactic applies to
+its current goal. Close an earlier resource claim with `known()` to reach the
+next claim. When a tactic leaves a claim on its own proof, later tactics
+continue that proof using the path's current state and resources, so a later
+`fold` or the contract's resource transition reaches it. A `have` written after
+`intro` extends that proof. If a closer cannot handle the goal introduced by
+`intro`, it can still close the original claim directly. A closer in a proof
+opened only by `witness` must close the goal with the chosen witness.
 
 A written closer that closes no goal it acts on is refused, `solve` and
 `solve() using` included; only the implicit closer at the end of the script
@@ -1100,7 +1099,7 @@ See [`have_disjunction_projection.md`](https://github.com/clicklang/click/blob/m
 and [`loop_exit_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_exit_disjunction_projection.md).
 
 A simple tactic that adds a fact (`instantiate(...)`,
-`apply ... using`, `transport ... using`, and `obtain`) also closes a
+`apply`, `transport ... using`, and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
 `known`, `solve`, or `normalize` follows it. An added order fact closes
 the goal under either form of the same claim: `0 <= e` closes the goal
@@ -1129,15 +1128,12 @@ step is still checked.
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
-| `apply(fact)` | smart | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
-| `apply(fact) using { P; ... }` | simple | Expansion output | Apply an implication using written evidence. | [Reference](#fact-application) |
-| `apply(theorem(args))` | smart | Core | Apply a theorem, looking up its premises. | [Reference](#theorem-application) |
-| `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
+| `apply(fact)` | simple | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
+| `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
 | `let ih = induct(value)` | simple | Core | Introduce scalar or structural induction. | [Reference](#proposition-reasoning) |
-| `apply(ih(m))` | smart | Core | Apply an induction hypothesis, looking up its premises. | [Reference](#induction-hypothesis-application) |
-| `apply(ih(m)) using { P; ... }` | simple | Expansion output | Apply an induction hypothesis using written premises. | [Reference](#induction-hypotheses-with-selected-premises) |
+| `apply(ih(m))` | simple | Core | Apply an induction hypothesis, looking up its premises. | [Reference](#induction-hypothesis-application) |
 | `have P by { ... }` | control | Core | Prove and retain a named or unnamed fact. | [Reference](#intermediate-facts) |
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
@@ -1207,10 +1203,9 @@ See [`theorem_argument_arm_binding.md`](https://github.com/clicklang/click/blob/
 [`theorem_argument_arm_binding_algebraic.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_arm_binding_algebraic.md),
 and [`theorem_argument_null_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_null_constant.md).
 
-Bare `apply(ih(m))` is smart because it plans proofs of the fixed application
-obligations. Its expansion ends in the deterministic simple
-`apply(ih(m)) using { ... }` operation, which checks exactly the listed
-nonnegative, strict-decrease, and substituted-requirement facts.
+`apply(ih(m))` checks the nonnegativity, strict decrease, and substituted
+requirements for its argument. State missing premises with `have`.
+Expansion preserves the application.
 
 `enumerate` is how an explicit proof closes a finite case analysis over a
 constant-bounded universal, such as a `sorted(p, 3)` postcondition: the
@@ -1379,7 +1374,7 @@ A goal that is one conjunct of an implication's consequent, `c == 2` from
 antecedent is an exact available fact: unit propagation publishes the whole
 conclusion, and expansion can close the selected conjunct with `known()`.
 When the guard needs proving first, expansion may retain an explicit
-`apply(fact) using { ... }`
+`apply(fact)`
 ([`solve_closes_a_conjunct_of_a_discharged_consequent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_a_conjunct_of_a_discharged_consequent.md)).
 
 A comparison held only under a definedness guard (`defined(e) implies a == b`,
@@ -1399,16 +1394,25 @@ A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
 definition exposes while their arguments select one arm, rewriting an argument
 by a constructor equation (a supplied premise or a connected fact such as
-`u == Tree::Node(..)`) when that exposes one. A recursion over an integer
-measure is evaluated the same way when its arguments are constants: the
-unfolded `if` arm that a constant guard such as `2 <= 0` selects is searched
-for the next call. It takes eight checked steps, plus as many as the largest
-constant argument of a call it unfolds, at most 1024 in all; each step lowers
-the whole goal again, so a long evaluation can exhaust the tactic budget
-first (about 25 calls), where a bottom-up proof, one `have` per call by
-`unfold` and `solve()`, stays linear
+`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+
+A recursive call whose arguments are constants, such as
+`output_from(lit, 0u64, 13)` that a postcondition names, is evaluated one
+level at a time instead. Each level is the arm of the definition that its
+constant `if` guards select, with the next call's constant arguments
+evaluated; a guard may compare a string literal's byte at a constant index,
+which is a constant since the literal is read-only. `solve` proves one
+`have` for the call's value, and inside it one `have` per level, `call ==
+arm`, by `unfold` and `known()` (or `solve()` for a `Bool` level). Only the
+value joins the proof, so the work grows linearly with the depth, at most
+1024 levels. A call a fact names inside `at(point, ...)`, as a postcondition
+names it at the call's entry, is evaluated at that point, with
+`unfold(at(point, call))`. Expansion writes the `have`s
 (`mdtests/a_recursive_byte_function_evaluates_automatically.md`,
-`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
+`mdtests/a_long_recursion_over_constants_is_evaluated_one_level_at_a_time.md`).
+A bottom-up proof, one `have` per call by `unfold` and `solve()`, states the
+same levels by hand
+(`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
 An argument nothing fixes stays folded
 ([`solve_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_evaluates_a_recursive_function_over_known_constructors.md),
 [`solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
@@ -1460,7 +1464,7 @@ refuted arms closing by `contradiction`
 A goal that an available implication (or chain) concludes whose antecedents are
 exactly available, such as a call guarantee `r == 0 implies X` inside the branch
 where `r == 0`, is closed by selecting the implication and expanding to
-`apply(fact) using { ... }`, with the goal's `at(...)` points as written.
+`apply(fact)`, with the goal's `at(...)` points as written.
 
 A guarded universal goal `forall k { G implies A }` closes from an available
 `forall k { G implies A and B }` with the same binder and guards, selected by one
@@ -1514,8 +1518,8 @@ Available verified theorems are reasoning rules, not extra hypotheses. If the
 existing strategies miss, restricted solve searches for one theorem application
 whose conclusion structurally matches the goal. Every value argument must be
 determined by that conclusion; generic type arguments are inferred by ordinary
-application checking. The instantiated requirements and argument guards must
-be supplied by the listed facts under the existing `apply ... using` rules.
+application checking. The solver checks the instantiated requirements and argument guards against
+the listed facts before choosing the application.
 An unconditional theorem can therefore close `solve() using {}`.
 
 Conclusion matching treats reversed `==` and `!=` operands and mirrored
@@ -1553,8 +1557,9 @@ predicate calls, definedness, and proposition expressions, including ordinary
 arithmetic and function-call operands. It does not invent arguments absent
 from the conclusion, match modulo arbitrary equality, or chain applications.
 Discovery uses an index of conclusion shapes and function/predicate symbols,
-runs under the normal solve work budget, and expands to explicit
-`apply(theorem(args)) using { ... }`. Direct existing proofs remain preferred.
+runs under the normal solve work budget, and expands to
+`apply(theorem(args))` when its obligations can be checked from the facts in
+scope. Expansion retains separate proofs for open obligations.
 
 <!-- verified-example: mdtests/solve_using_discovers_one_theorem.md -->
 ```click
@@ -1593,10 +1598,10 @@ described below.
 goal that is already available or true by direct computation, without search,
 typically after a `rewrite`. It closes the goal or refuses; it adds no fact.
 
-Smart closure prefers `known()` for computational leaves, including residuals
-after a rewrite or unfold and leaves inside logical proofs. Expansion retains
-`normalize()` only where its broader rules are still needed; it does not
-replace an explicitly written `normalize()` with another tactic.
+Smart closure uses `known()` for computational leaves, including residuals
+after a rewrite or unfold and leaves inside logical proofs. Proof strategies
+can still use `normalize()` where its broader rules are needed. Expansion also
+preserves explicitly written `normalize()` steps.
 
 **Accepts** a goal that is available, where an atomic proposition is
 available when one of these holds:
@@ -1703,7 +1708,8 @@ evidence that excludes the signed minimum divided by `-1` when the signs
 alone leave that pair possible.
 A full-width unsigned index agrees with its signed low word when both use
 the same base and stride and the full-width index is at most `INT32_MAX`.
-`known()` checks this bound on the full-width index itself.
+`known()` checks this bound on the full-width index itself. See
+[`uint64_int32_owned_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_owned_index_alias.md) for a store through the full-width index and a read through the signed index.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
@@ -1726,6 +1732,11 @@ constructor rewrite.
 
 A conjunction goal closes when every conjunct does, and a disjunction goal
 when one disjunct does, using available facts or these computations recursively.
+An implication goal `A implies B`, alone or as a conjunct, closes when `B` is
+an available fact, with one lookup of `B` and no introduction
+(`mdtests/known_closes_an_implication_whose_consequent_is_known.md`). This
+closes a guarded requirement such as the domain owed by the right side of
+`and` once that domain is known.
 A negated conjunction closes when direct computation refutes one conjunct.
 A negated disjunction closes when it refutes every disjunct. For example,
 different literal elements can prove finite-sequence disequality or
@@ -1736,7 +1747,7 @@ already held as a fact retains its existing exact-lookup behavior.
 **Outside it**, with what to write instead:
 
 - A consequent of an available implication: `have Q;` or apply the implication
-  with `apply(fact) using { ... }`.
+  with `apply(fact)`.
 - A reordered disjunction fact (`y > 0 or x < y` from `x < y or y > 0`):
   `have y > 0 or x < y;`, which expands to `cases`, then `known()`.
 - A weaker or derived bound, such as `x <= y` from `x < y`: `solve()
@@ -1853,7 +1864,7 @@ upper bound with slack `c - 1`, and the corresponding signed slack bounds.
 The divisor and shift count retain the native operation's type and domain.
 No operand history or ambient facts are read.
 
-**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_compares_machine_sums_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_machine_sums_at_every_width.md), [`normalize_compares_integer_sums_exactly.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_integer_sums_exactly.md), [`normalize_scales_integer_coefficients.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_scales_integer_coefficients.md), [`normalize_does_not_scale_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_scale_terms.md)
+**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md)
 
 ### Normalization with selected premises
 
@@ -1868,6 +1879,11 @@ graph, then applies `normalize()`'s check (see
 For a signed `int32` order goal, the cited comparisons can form a chain in
 list order from the goal's lower endpoint to its upper endpoint. A strict
 goal needs at least one strict link. Replay checks the listed links directly.
+
+A true `float` or `double` comparison against a literal can cite one stronger
+bound on the same operand. The cited bound must have the same direction and
+width. Equal endpoints require a strict premise for a strict goal. A negated
+comparison can hold for NaN and cannot supply an ordered bound.
 
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
@@ -1896,7 +1912,7 @@ operand. Restricted `solve() using` must select that fact. For example,
 `isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`.
 
 For supported native unsigned address words, `solve` emits ordinary `have`
-goals, `apply(click::integer::...) using`, rewrites, and `known()`: alignment
+goals, `apply(click::integer::...)`, rewrites, and `known()`: alignment
 weakening, scalar element offsets, low-tag projections and high-mask recovery
 name their local laws and retain the unsigned width explicitly. Remaining
 legacy forms still use the compatibility normalization path.
@@ -1950,8 +1966,7 @@ cited premise is accepted:
   elements: `(bytes + prefix) + 3 == bytes + total` from
   `to_integer(total) == to_integer(prefix) + 3`. A native sum
   (`total == prefix + suffix`) does not, because it may wrap
-  ([`normalize_using_adds_element_indices_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_element_indices_by_a_cited_integer_sum.md),
-  [`normalize_using_adds_a_constant_element_offset_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_a_constant_element_offset_by_a_cited_integer_sum.md),
+  ([`element_offsets_from_exact_index_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/element_offsets_from_exact_index_sum.md),
   [`normalize_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_wrapping_index_sum_for_an_address.md)).
 - For a top-level read equality of any width, a pointer read equality, or a
   pointer-offset equality, the cited conditions can justify the read's
@@ -2015,7 +2030,7 @@ Expansion retains the normalization step and cited evidence; checking
 reconstructs the graph from the surrounding checked proof context. Work
 follows the selected expression and premises.
 
-**Checked examples:** [`normalize_using.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using.md), [`normalize_using_graph_conditions.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_graph_conditions.md), [`normalize_using_rejects_ambient.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_rejects_ambient.md), [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_owned_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_owned_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
+**Checked examples:** [`normalize_using.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using.md), [`normalize_using_graph_conditions.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_graph_conditions.md), [`normalize_using_rejects_ambient.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_rejects_ambient.md), [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
 
 ### Arithmetic search
 
@@ -2141,7 +2156,7 @@ once both Integer bounds of its exact value are facts, which together are its
 definedness fact, so `known()` states it; a premise over a signed sum is
 carried only once that sum is defined.
 
-Expansion writes those steps as ordinary `have`, `apply(...) using`, and
+Expansion writes those steps as ordinary `have`, `apply(...)`, and
 normalization steps with explicit premises.
 
 A disequality goal `a != b` (or `not (a == b)`) over machine or `Integer`
@@ -2175,7 +2190,7 @@ base, `&q[j] != &q[0]`, whose indices have one width and format (`int32`, or
 `have j != 0` (written from the index words, as the store search writes its
 fact: `((m - 1) as int32) != 0`, `j != 0u64`), proves it by `solve`, and
 closes the goal with
-`apply(click::separation::distinct_elements(q, j, 0)) using { j != 0; }`.
+`apply(click::separation::distinct_elements(q, j, 0))`.
 Expansion writes that `have` and the `apply`. Where the indices may be equal
 the nested `solve` misses and the goal's ordinary refusal stands
 ([`solve_proves_element_addresses_distinct_from_their_indices.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_from_their_indices.md),
@@ -2223,10 +2238,14 @@ not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
 
 For a `viewable(range)` goal, `preserve` accepts a complete footprint from a
-single declaration of fresh local storage without an initializer. Prove
-separation from that footprint and supply the exact entry viewability fact
-for the selected range. The conclusion is a pure live-storage fact for the
-same range at the exit, including for symbolic `uint64` byte ranges.
+fresh uninitialized local declaration, an assignment whose effects touch
+only automatic storage, or a return with only automatic-storage effects,
+including scope cleanup. The latter footprints require unchanged heap
+retirement information. Prove separation from the footprint and supply the
+exact entry viewability fact. The conclusion is a live-storage fact for the
+same range at the exit, including for symbolic `uint64` byte ranges. At the
+published outcome a return can also include one recorded retirement of a
+provably distinct automatic object after the statement's exit snapshot.
 
 For equality goals, use an ordinary `have` to establish the equality, then
 `rewrite` and `known` to carry a proposition across the change. The tactic remains
@@ -2329,7 +2348,7 @@ Arithmetic automation expands to ordinary proofs. Arithmetic operations correspo
 | Round an Integer upper bound | `integer::round_down_le(value, bound, divisor, remainder)` |
 
 Integer composition plans expand their premise, addition, scaling, and
-equality-direction nodes into ordinary `have`, `apply(...) using`, `rewrite`,
+equality-direction nodes into ordinary `have`, `apply(...)`, `rewrite`,
 and `known()` steps. Each intermediate fact is established once and later
 nodes reuse it. Context-free identities relate the plan's flat affine forms
 to the written operands. Expansion uses checked `normalize()` when the
@@ -2464,12 +2483,9 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
   stored tagged word to `1` lets `normalize()` close its cleared pointer's
   equality to null
   ([`a_rewritten_tagged_null_pointer_normalizes.md`](https://github.com/clicklang/click/blob/master/mdtests/a_rewritten_tagged_null_pointer_normalizes.md)).
-- When exact substitution misses an atomic native equality goal, its two
-  operands may match `L` through checked corresponding read leaves, for both
-  32-bit and 64-bit reads inside matching arithmetic operators. Alias and
-  version-point evidence comes from the shared read-equality checker; incompatible
-  read kinds, changed cells, and differing operators do not match. This
-  comparison visits only `L` and the two goal operands.
+- When the equality's left side contains a read, the occurrence in the
+  goal must read the same version. If two versions are known to agree,
+  state that equality first and use it to rewrite the occurrence.
 
 **Outside it**, with what to write instead:
 
@@ -2742,30 +2758,27 @@ of unrelated facts.
 
 ### Fact application
 
-**Forms:** `apply(fact)`; `apply(fact) using { P; ... }`
+**Form:** `apply(fact)`
 
 Apply an available implication, written in full or cited by a `have` fact
 name. For `A implies B implies C`, the result is `C` after proving `A` and
 `B`. The source must already be available; application does not unfold it or
 search for an implication with that conclusion.
 
-The bare form proves each antecedent in an ordinary `have` scope with the
-implicit solver. Expansion retains those proofs and writes
-`apply(fact) using { A; B; }`, which checks without search. Every listed
-premise must be available, and the antecedents must follow from the listed
-premises by `known()`'s rules. Ambient facts do not fill missing evidence.
+Established antecedents discharge directly. The implicit solver handles open
+antecedents in ordinary `have` scopes. Expansion retains those proofs before
+the bare application, which replays using the established facts.
 Conjunctions and quantified conclusions are retained whole. Later written
 steps see the established conclusion, as after theorem application.
 
 <!-- verified-example: mdtests/apply_implication_fact.md -->
 ```click
 have h: x > 0 implies y > 0 by known();
-apply(h) using { x > 0; };
+apply(h);
 ```
 
-A source that is unavailable or is not an implication fails. A missing
-antecedent in the bare form names the unproved proposition; an explicit list
-with unavailable or insufficient evidence fails without invoking search.
+An unavailable source, a source of the wrong shape, or an unproved antecedent
+causes application to fail.
 Named fact scope and program-point selectors retain their ordinary meaning.
 Theorem calls keep their existing `apply(theorem(args))` spelling.
 
@@ -2775,83 +2788,27 @@ Theorem calls keep their existing `apply(theorem(args))` spelling.
 
 **Form:** `apply(theorem(args))`
 
-**Core.** Apply a verified global theorem. In a pure theorem proof, its
-written `requires` clauses are instantiated as obligations; the proof driver
-runs ordinary implicit `solve()` on each one and retains the proofs. You can
-also establish the premises first with `have P by { ... }`.
-
-Execution and fixed-state applications still select available premises. Native,
-model, and Integer argument evaluation can require explicit domain evidence;
-this premise-obligation slice does not replace that evidence-selection route.
-Special built-in range-fold and population-count applications retain their
-existing rules.
+**Core.** Apply a verified global theorem at the written arguments. Click
+generates obligations from the instantiated theorem requirements and argument
+evaluation, in pure proofs, at the execution frontier, and on returned
+outcomes. Available facts and direct checking close these obligations,
+including evaluation conditions that are already established in scope.
+Ordinary implicit `solve()` proves any remaining obligations. You can
+establish a missing fact first with `have P by { ... }`.
 
 **Failure, checking, and tools:**
 
-An unknown theorem, type mismatch, or unproved premise fails without changing
-resources. Pure premise failures name the obligation. Expansion retains ordinary
-`have` proofs followed by `apply(...) using { ... }`; the explicit `using` form
-continues to require the listed facts and performs no implicit premise solving.
+An unknown theorem, type mismatch, or unproved obligation fails without
+changing resources. A missing obligation names the proposition to prove.
+Expansion retains any needed `have` proofs and writes the bare
+`apply(theorem(args))`. Replay checks generated obligations using ordinary
+availability and evaluation rules.
 
 **Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`pure_apply_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_apply_obligations.md), [`apply_cites_a_premise_stated_first.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_cites_a_premise_stated_first.md)
 
-### Theorem application with selected premises
-
-**Form:** `apply(theorem(args)) using { P; ... }`
-
-**Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which selects its premises; list them only to pin the proof down.
-Apply a verified global theorem using exactly the listed premises and add its
-guarantees.
-
-**Accepts** an application of a known theorem to arguments of its parameter
-types, when:
-
-- Each listed `P` is an available fact, as written, in an equivalent operand
-  form (`y > x` for `x < y`, `0 == f(x)` for `f(x) == 0`), or as a
-  conjunct of a held conjunction.
-- Each `requires` of the theorem, with the arguments substituted
-  simultaneously, either evaluates to true or matches a listed premise: as
-  written, as a conjunct of a listed conjunction (such as the no-overflow
-  conjunct of a `defined(x + y)` fact), in the other orientation of an
-  equality (`have a == b` discharges `b == a`), or as the mirrored order
-  claim in any order family (`c >= b` for `b <= c`). Listing more premises
-  than the theorem needs is allowed.
-- Mathematical `Integer` arguments may use explicit machine observations such
-  as `to_integer(a)`; fixed-state capture checks arithmetic evaluation guards
-  and preserves `old`/`at` selectors. Heap observations follow logical
-  specification read semantics and grant no access authority.
-- Guarantees: every `ensures` of the theorem at the arguments is added. When
-  one of them is the current goal, the goal closes unless other written steps
-  follow, as for any tactic that adds a fact.
-
-**Outside it**, with what to write instead:
-
-- A requirement that only follows from listed premises, such as `x < y` from
-  `x < z` and `z <= y`, or from `x == z` and `z < y`: prove it first with
-  `have` and list it.
-- An omitted requirement: list it, or use bare `apply`, which selects or
-  proves it.
-
-Bare `apply` also selects known evaluation guards for expressions nested inside
-model arguments, such as `defined(x - 1)` for `Count::At(x - 1)`. These are
-selected argument conditions, not additional theorem requirements; removing
-their evidence from an expanded `using` list can make the application fail.
-
-**Failure, checking, and tools:**
-
-An unavailable listed premise fails with "`apply using` requires an
-unavailable exact premise"; an unmet requirement fails naming it and its
-instantiation ("requirement 1 `a < b` with a = x, b = y instantiates to
-x < y"); an unknown theorem or wrong argument count fails naming it. Click
-checks the exact application with no search; expansion is unchanged, and
-profiling charges its explicit input and guarantees.
-
-**Checked examples:** [`produced_population_count_in_ensured_predicate.md`](https://github.com/clicklang/click/blob/master/mdtests/produced_population_count_in_ensured_predicate.md), [`apply_keeps_sibling_conclusions_when_one_is_the_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_keeps_sibling_conclusions_when_one_is_the_goal.md), [`apply_does_not_supply_a_conclusion_its_theorem_lacks.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_does_not_supply_a_conclusion_its_theorem_lacks.md), [`apply_using_accepts_a_constant_true_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_using_accepts_a_constant_true_premise.md), [`theorem_apply_requires_exact_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_apply_requires_exact_fact.md)
-
 ### Unfolding pure functions
 
-**Form:** `unfold(function(args))`
+**Form:** `unfold(function(args))`, or `unfold(at(point, function(args)))`
 
 **Core.** Expose one defining equation for the exact pure-function call at the
 current proof state and refresh the current goal through that one layer.
@@ -2883,6 +2840,12 @@ names are in scope, and:
   equation just added. After that only `known`, `solve`, or `normalize`
   may follow.
 - At a C execution frontier, adds the equation and leaves the frontier.
+- With `at(point, ...)`, adds `at(point, function(args)) == at(point, body)`:
+  the defining equation with the arguments' array contents read at `point`,
+  and rewrites occurrences of `at(point, function(args))`
+  (`mdtests/unfold_at_a_point_opens_a_pure_function_there.md`). `solve`
+  evaluates a call that a fact names at a point, such as a postcondition at
+  the call's entry, with this form.
 - For an `Integer` range-fold body, a decided empty range exposes its initial
   value; a decided nonempty range exposes its append-last-cell equation over
   the same function at the predecessor endpoint. The whole-call and predecessor
@@ -3029,8 +2992,8 @@ only), `m < n`, and every theorem requirement at `m`, together with the span
 halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
 Earlier helper proofs may precede `induct`; the hypothesis is unavailable
-before its declaration. The script then uses `ih` through `apply(ih(m))` or
-`apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `all`,
+before its declaration. Use `apply(ih(m))` at the top level and inside nested
+`if`, `all`,
 `cases`, `have`, and `match` blocks.
 
 **Outside it**, with what to write instead:
@@ -3105,73 +3068,23 @@ the arm certificates.
 
 **Form:** `apply(ih(m))`
 
-**Core.** Select the available facts `m < n` and the theorem requirements at
-`m`, and `0 <= m` for a signed measure, then instantiate the local induction
-hypothesis. None is proved: state a missing one first with `have`. Under a
-structural `induct` the obligations are instead the theorem's requirements at
-the written parameter list, and the descent is the inducted argument naming a
-field of the current arm.
+**Core.** Instantiate the local induction hypothesis when its premises are
+available. For a scalar measure, those premises are `m < n`, `0 <= m` for a
+signed measure, and the theorem's requirements at `m`. Other parameters stay
+fixed. For structural induction, the inducted argument must be a recursive
+field of the current arm, and the requirements are checked at the full
+written parameter list.
 
-**Failure, checking, and tools:**
+A premise may be stated in an equivalent order form such as `n > m` for
+`m < n`. Range requirements also owe their span halves. A previously stated
+range supplies those halves where they are available. Use `have` to establish
+missing premises.
 
-A bounded selection miss, nondecreasing argument, or violated requirement
-fails. A premise that is not an available fact is a search miss: the refusal
-says so and names the `have` that states the premise. Click checks the
-selected operations; expansion adds a `using` block.
+The application adds the instantiated theorem conclusion and closes the
+focused goal if the conclusion proves it. Expansion keeps the application
+unchanged. A missing premise is named in the refusal.
 
-**Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
-
-### Induction hypotheses with selected premises
-
-**Form:** `apply(ih(m)) using { P; ... }`
-
-**Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which selects the decrease and requirements. Instantiate the local induction
-hypothesis from exactly the listed strict-decrease and substituted-requirement
-obligations, including nonnegativity for a signed measure.
-
-**Accepts**, after scalar `let ih = induct(n)`, one argument `m` of the measure's
-type (any expression, such as `n - 1` or `n - 1u64`), when:
-
-- Every listed `P` is an available fact, read as `using` lists read premises:
-  exactly, under another form of the same order claim (`0 <= m` for
-  `m >= 0`, `n > m` for `m < n`), or true without facts. Listing a range a
-  clause stated also cites its two span halves where they are available.
-  Extra or repeated premises are allowed.
-- Every guard of the hypothesis at `m`, split into its `and` conjuncts, is
-  true by context-free evaluation or is one listed premise under one of those
-  forms. The guards are `m >= 0` (signed only), `m < n`, each requirement
-  at `m`, and the span halves of every range a requirement names at `m`.
-
-It adds the theorem's goal at `m` as a fact and closes the current goal when
-that fact is the goal. Nothing else in context is read.
-
-**Outside it**, with what to write instead:
-
-- A guard that is not listed, including one held as a fact: add it to the list;
-  prove it first with `have` when it is not yet a fact.
-- A listed conjunction `A and B` that is not itself a fact: list `A` and `B`
-  separately.
-- More than one argument: measure induction takes the measure alone and holds
-  the other parameters fixed.
-- An argument of another type than the measure, such as `1u64` for an `int32`
-  `n`: convert it.
-
-A guard may also close by the kernel's order reasoning over several listed
-premises, so `n - 1 < n` and `n <= 100` together discharge `n - 1 <= 100`.
-That is not a documented guarantee; list the instantiated guard itself.
-
-**Failure, checking, and tools:**
-
-A missing guard prints it at `m` (``instantiated premise `n - 1 >= 0` does not
-follow from the listed evidence``); an unavailable listed premise prints that
-premise with the theorem's parameter names (``induction premise is not exactly
-available: n - 2 < n``). Click performs one local instantiation with no premise
-search; expansion is unchanged.
-
-**Checked examples:** [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md),
-[`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md),
-and [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
+**Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md), [`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md), [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
 
 ### Intermediate facts
 
@@ -3439,7 +3352,9 @@ and profiling charges one instantiation per value.
 The right side states the exact available proposition, up to its bound names.
 The left side names the outputs in quantifier order. Their types come from
 the existential. Each output and the instantiated body are available in
-subsequent tactics in the same proof block.
+subsequent tactics in the same proof block. After function exit, `obtain` can
+open an available fact while a resource claim is still focused. Its bindings
+remain in scope for later claims in the block.
 
 - The existential may be a requirement, a `have` conclusion, or a leaf
   conjunct of an available fact. It must be available before the tactic runs.
@@ -3492,11 +3407,11 @@ Use `solve() using { L <= x; x <= U; M <= y; y <= N; }` to prove
 an exact bound on the mathematical product `x * y`. Each interval endpoint
 and the result bound must be constant, with ordered interval endpoints.
 Expansion writes four numerical corner checks with `known()`, followed by
-`apply(integer::product_lower_bound(...)) using { ... }` or
-`apply(integer::product_upper_bound(...)) using { ... }`. The library proofs
+`apply(integer::product_lower_bound(...))` or
+`apply(integer::product_upper_bound(...))`. The library proofs
 split on signs and apply multiplication order and transitivity explicitly;
-their dependencies contain no `normalize()`. No ambient fact is selected
-when replaying these applications. The same proof construction supplies
+their dependencies contain no `normalize()`. The theorem applications
+reuse the established corner bounds. The same proof construction supplies
 product bounds from machine operands' stated type ranges.
 
 The authored `normalize() using` compatibility form still checks this rule.
@@ -3577,7 +3492,7 @@ pure theorem too, where the listed premises are all there is to read.
   premises: exactly, under another form of the same order claim, or true
   without facts. A quantified premise may name its own binder: a call's
   postcondition held under the binder its lowering chose is cited by a written
-  form with another, as in `apply using`. Listing a stated range also cites
+  form with another. Listing a stated range also cites
   its two span halves.
 - The source `P` is a listed premise, follows from the listed premises by the
   kernel's atomic derivation (`old(p[0]) <= 7` from `old(p[0]) == 7`), or is
@@ -3593,7 +3508,7 @@ It adds `Q` as a fact and closes the goal when `Q` is the goal.
 
 For current-point `viewable(A)` to `viewable(B)` with explicitly cited
 `contains(A, B)`, expansion retains ordinary
-`apply(separation::viewable_restrict(A, B)) using { ... }` steps. When both
+`apply(separation::viewable_restrict(A, B))` steps. When both
 are memory ranges with the same written base and int32 endpoints, citing
 `lo <= inner_lo`, `inner_lo <= inner_hi`, and `inner_hi <= hi` instead
 produces an explicit `have contains(...)` using `separation::contains_subrange` first.
@@ -4103,7 +4018,7 @@ unchanged, and profiling charges one application.
 
 ### Observing resources
 
-**Form:** `observe(resource)`, `observe(p[lo..hi])`, or `observe(at(point, p)[lo..hi])`
+**Form:** `observe(resource)`. A memory operand can be a range or a resource descriptor.
 
 For an explicitly selected memory range, `observe(p[lo..hi])` adds
 `viewable(p[lo..hi])` at the current program state. The exact range must be
@@ -4123,6 +4038,9 @@ evaluated in the surrounding state. `observe(at(point, p)[lo..hi])` establishes
 current `viewable(memory(at(point, p)[lo..hi]))`. `observe(old(p)[lo..hi])` uses
 the entry pointer. Both use the same exact permission lookup as a current range;
 they do not search intervening writes or change the selected resource.
+To take both the pointer and the bounds from one point, write
+`observe(at(point, memory(p[lo..hi])))`. This selects the descriptor at
+`point` and checks its permission in the current state.
 See [`observe_saved_pointer_memory_range.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_range.md)
 and its [missing-permission refusal](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_requires_ownership.md).
 
@@ -4150,6 +4068,12 @@ decided:
   and a viewed child resource, which a further `observe` reads one layer
   down.
 - The resource stays held and folded; repeating `observe` is harmless.
+
+Write `observe(c)` for a named folded instance you own. Its own fields supply the
+body arguments and its immediate memory permissions become read-only views
+supported by the instance. `observe(at(point, c))` selects the saved instance
+and requires it to still be held and folded. Use `unfold` to bind named children
+or prove facts that need their fields.
 
 **Outside it**, with what to write instead:
 

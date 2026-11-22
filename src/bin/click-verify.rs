@@ -26,10 +26,11 @@ use click::surface::source_display_name;
 #[cfg(test)]
 use click::surface::verify_c_sources;
 use click::surface::{
-    ClickError, ClickErrorKind, ClickProject, ProofSourceIndex, VerifiedProgramTheorem,
-    accepted_proof_trace, c_incremental_selection, project_selected_proof_names, project_summary,
-    selected_c_target, verify_c_project, verify_project_at, verify_project_functions,
-    verify_project_theorem, verify_project_with_summary, verifying_source_paths, with_proof_trace,
+    ClickError, ClickErrorKind, ClickProject, ProofRefusal, ProofSourceIndex,
+    VerifiedProgramTheorem, accepted_proof_trace, c_incremental_selection,
+    project_selected_proof_names, project_summary, selected_c_target, verify_c_project,
+    verify_project_at, verify_project_functions, verify_project_theorem,
+    verify_project_with_summary, verifying_source_paths, with_proof_trace,
 };
 
 const USAGE: &str = "\
@@ -68,7 +69,7 @@ it covers, and shows checked fact and resource changes on the path to
 the failing tactic, or an accepted path when the proof succeeds. `--trace-to`
 selects a written tactic by source line (and column when the line has several
 tactics) within the selected proof.
-Ordinary proof errors suggest this command with the failing proof filled in.
+A verification refusal suggests this command when Click can locate the failing proof.
 
 `--allow-sorry` enables the dev-only `sorry` proof hole: a proof unit whose
 body is exactly `sorry();` is admitted without checking. This is purely a
@@ -561,7 +562,9 @@ fn verify_changed_sidecar(
             selected.clone(),
         )
     }
-    .map_err(|error| proof_error_report(&error, sidecar, false, &project, &inputs, 0, None))?;
+    .map_err(|error| {
+        verification_error_report(&error, sidecar, false, &project, &inputs, 0, None)
+    })?;
     print_assumptions(&summary.assumptions, &verified_theorems);
     if full_rebuild
         && project.modules().len() == 1
@@ -667,7 +670,7 @@ fn shell_word(value: &str) -> String {
     }
 }
 
-fn proof_error_report(
+fn verification_error_report(
     error: &ClickError,
     sidecar: &Path,
     show_trace: bool,
@@ -678,9 +681,14 @@ fn proof_error_report(
 ) -> String {
     let (mut report, mut context) = error.concise_report_parts();
     let source_locations = ProofSourceLocations::new(project, inputs);
-    let failure_position = error
-        .proof_source_site()
-        .and_then(|(claim, path)| source_locations.position(claim, path));
+    let implicit_tactic_error = error.implicit_tactic_step().is_some();
+    let failure_position = if implicit_tactic_error {
+        None
+    } else {
+        error
+            .proof_source_site()
+            .and_then(|(claim, path)| source_locations.position(claim, path))
+    };
     let written_tactic = project
         .entry_source()
         .zip(failure_position.as_ref())
@@ -748,12 +756,10 @@ fn proof_error_report(
             context.push(excerpt);
         }
     }
-    if error.kind() == ClickErrorKind::Proof {
-        let ended_open = report.contains("goal still open") || report.contains("unclosed goal:");
+    if error.kind() == ClickErrorKind::Proof && !implicit_tactic_error {
         context.extend(refusal_class_lines(
-            &context,
             written_tactic.as_deref(),
-            ended_open,
+            error.proof_refusal(),
         ));
     }
     if !context.is_empty() {
@@ -850,32 +856,23 @@ fn proof_error_report(
 
 /// What refused a proof step, by class, and the `click docs` entry that
 /// documents it. A C statement's open requirement is proved by the implicit
-/// implicit `solve` when no smart tactic reached the statement, so its refusal is a
+/// `solve` when no smart tactic reached the statement, so its refusal is a
 /// smart miss even under a written `step()`. A smart form that elides an
 /// argument, such as `apply(t(x))`, refuses by a search miss: the fix is to
-/// write the argument. A proof that ran out of steps with its goal open was
-/// refused by nothing: its last tactic succeeded.
-fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bool) -> Vec<String> {
-    if ended_open {
+/// write the argument. An incomplete proof reports the open requirement so
+/// the proof author can finish the script.
+fn refusal_class_lines(written: Option<&str>, refusal: Option<ProofRefusal>) -> Vec<String> {
+    if refusal == Some(ProofRefusal::IncompleteProof) {
         return vec![
-            "refused by: nothing (the proof ended with this goal open; add the steps that prove it)"
-                .to_owned(),
+            "help: establish the reported requirement before the proof closes".to_owned(),
             "see: click docs tracing".to_owned(),
         ];
     }
     let written_text = written;
     let written = written.and_then(click::docs::written_tactic_class);
-    if context
-        .iter()
-        .any(|line| line.starts_with("help: to prove the goal explicitly"))
-        && !written
-            .as_ref()
-            .is_some_and(|(_, class)| *class == click::docs::TacticClass::Smart)
-    {
+    if refusal == Some(ProofRefusal::ImplicitStatementSearch) {
         let smart = click::docs::TacticClass::Smart;
         return vec![
-            "proof search miss: the implicit closer did not prove the statement requirement"
-                .to_owned(),
             format!(
                 "refused by: the implicit closer that proves this statement's requirements ({}: {})",
                 smart.label(),
@@ -887,24 +884,23 @@ fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bo
     let Some((name, class)) = written else {
         return Vec::new();
     };
-    let mut lines = Vec::new();
-    if written_text.is_some_and(click::docs::written_tactic_elides_argument) {
-        lines.push(format!(
-            "proof search miss: `{name}` did not find its elided argument"
-        ));
-        lines.push(format!(
-            "refused by: `{name}` ({}: {})",
-            class.label(),
-            click::docs::SEARCH_MISS_MEANING
-        ));
-    } else if class != click::docs::TacticClass::Control {
-        if class == click::docs::TacticClass::Simple {
-            lines.push(format!("tactic failure: `{name}` refused the checked step"));
+    use click::docs::TacticClass::{Simple, Smart};
+    let meaning = match (refusal, class) {
+        (Some(ProofRefusal::UnsuccessfulSearch), _)
+            if written_text.is_some_and(click::docs::written_tactic_elides_argument) =>
+        {
+            Some(click::docs::SEARCH_MISS_MEANING)
         }
+        (Some(ProofRefusal::Tactic), Simple) | (Some(ProofRefusal::UnsuccessfulSearch), Smart) => {
+            Some(class.refusal_meaning())
+        }
+        _ => None,
+    };
+    let mut lines = Vec::new();
+    if let Some(meaning) = meaning {
         lines.push(format!(
-            "refused by: `{name}` ({}: {})",
-            class.label(),
-            class.refusal_meaning()
+            "refused by: `{name}` ({}: {meaning})",
+            class.label()
         ));
     }
     lines.push(format!("see: click docs {name}"));
@@ -1565,7 +1561,7 @@ fn verify_file_within_limits(
             }
         };
         let report = |error: ClickError| {
-            proof_error_report(
+            verification_error_report(
                 &error,
                 click_path,
                 trace_proof.is_some(),
@@ -1737,7 +1733,7 @@ fn verify_location_within_limits(
     let verified = {
         let result = verify_project_at(&project, &inputs.program_inputs(), line, column);
         result.map_err(|error| {
-            proof_error_report(
+            verification_error_report(
                 &error,
                 click_path,
                 false,
@@ -1845,7 +1841,7 @@ mod tests {
         let (_root, path) = temporary_project("ordinary-byte-limit", "void f() {}", &source);
         let report = entry_with([path.display().to_string()]).expect_err("false theorem");
         assert!(report.len() <= click::surface::DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
-        assert!(report.starts_with("proof error:"));
+        assert!(report.starts_with("tactic error:"));
         assert!(report.contains("diagnostic truncated"));
     }
 
@@ -1971,7 +1967,7 @@ mod tests {
             } by {
                 let { result: r } = step(child);
                 have r < 1 by {
-                    apply(negative(r)) using { 0 <= r; }
+                    apply(negative(r));
                 }
                 step();
                 solve();
@@ -2452,7 +2448,7 @@ int32 read_first(int32 m) {
                 ["scan".to_owned()],
             )
             .expect_err("both preservation arms remain unfinished");
-            proof_error_report(
+            verification_error_report(
                 &error,
                 &fixture,
                 true,

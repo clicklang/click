@@ -34,9 +34,9 @@ int16 read_int16(int16 value) {
     mark written;
     step();
     have *p == value by solve();
-    have separate(memory(*q), memory(*p)) by normalize();
+    have separate(memory(*q), memory(*p)) by known();
     have separate(statement(5).footprint, memory(*p)) by {
-        normalize() using { separate(memory(*q), memory(*p)); };
+        solve() using { separate(memory(*q), memory(*p)); };
     }
     have *p == at(written, *p) by {
         preserve(memory(*p), statement(5));
@@ -52,9 +52,9 @@ uint16 read_uint16(uint16 value) {
     mark written;
     step();
     have *p == value by solve();
-    have separate(memory(*q), memory(*p)) by normalize();
+    have separate(memory(*q), memory(*p)) by known();
     have separate(statement(5).footprint, memory(*p)) by {
-        normalize() using { separate(memory(*q), memory(*p)); };
+        solve() using { separate(memory(*q), memory(*p)); };
     }
     have *p == at(written, *p) by {
         preserve(memory(*p), statement(5));

@@ -55,11 +55,11 @@ int32 store_next(int32* a, int32 i) {
     have defined(i + 1);
     have ((i + 1) as int32) != i;
     have separate(memory(a[i + 1]), memory(a[i])) by {
-        apply(separation::separate_elements(a, i + 1, i)) using { defined(i + 1); ((i + 1) as int32) != i; };
+        apply(separation::separate_elements(a, i + 1, i));
     }
     step();
     have separate(statement(2).footprint, memory(a[i])) by {
-        normalize() using { separate(memory(a[i + 1]), memory(a[i])); };
+        solve() using { separate(memory(a[i + 1]), memory(a[i])); };
     }
     have a[i] == at(statement(2).entry, a[i]) by {
         preserve(memory(a[i]), statement(2));
@@ -81,11 +81,11 @@ int32 store_next_in_anchored_range(int32* a, int32 i) {
     have defined(i + 1);
     have ((i + 1) as int32) != i;
     have separate(memory(a[i + 1]), memory(a[i])) by {
-        apply(separation::separate_elements(a, i + 1, i)) using { defined(i + 1); ((i + 1) as int32) != i; };
+        apply(separation::separate_elements(a, i + 1, i));
     }
     step();
     have separate(statement(2).footprint, memory(a[i])) by {
-        normalize() using { separate(memory(a[i + 1]), memory(a[i])); };
+        solve() using { separate(memory(a[i + 1]), memory(a[i])); };
     }
     have a[i] == at(statement(2).entry, a[i]) by {
         preserve(memory(a[i]), statement(2));

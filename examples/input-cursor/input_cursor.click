@@ -122,34 +122,22 @@ int32 input_cursor_clone(
     have contains(memory(*target), memory(target->pos)) by { normalize(); }
     have separate(memory(target->pos), memory(source->data)) by {
         apply(separation::separate_restrict(memory(*target), memory(*source),
-            memory(target->pos), memory(source->data))) using {
-            separate(memory(*target), memory(*source));
-            contains(memory(*target), memory(target->pos));
-            contains(memory(*source), memory(source->data));
-        };
+            memory(target->pos), memory(source->data)));
     }
     have contains(memory(*target), memory(target->len)) by { normalize(); }
     have separate(memory(target->len), memory(source->data)) by {
         apply(separation::separate_restrict(memory(*target), memory(*source),
-            memory(target->len), memory(source->data))) using {
-            separate(memory(*target), memory(*source));
-            contains(memory(*target), memory(target->len));
-            contains(memory(*source), memory(source->data));
-        };
+            memory(target->len), memory(source->data)));
     }
     have contains(memory(*target), memory(target->data)) by { normalize(); }
     have separate(memory(target->data), memory(source->data)) by {
         apply(separation::separate_restrict(memory(*target), memory(*source),
-            memory(target->data), memory(source->data))) using {
-            separate(memory(*target), memory(*source));
-            contains(memory(*target), memory(target->data));
-            contains(memory(*source), memory(source->data));
-        };
+            memory(target->data), memory(source->data)));
     }
     mark before_copy;
     step();
     have separate(statement(0).footprint, memory(source->data)) by {
-        normalize() using { separate(memory(target->pos), memory(source->data)); };
+        solve() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         preserve(memory(source->data), statement(0));
@@ -157,7 +145,7 @@ int32 input_cursor_clone(
     mark after_pos;
     step();
     have separate(statement(1).footprint, memory(source->data)) by {
-        normalize() using { separate(memory(target->len), memory(source->data)); };
+        solve() using { separate(memory(target->len), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         have source->data == at(after_pos, source->data) by {
@@ -169,7 +157,7 @@ int32 input_cursor_clone(
     mark after_len;
     step();
     have separate(statement(2).footprint, memory(source->data)) by {
-        normalize() using { separate(memory(target->data), memory(source->data)); };
+        solve() using { separate(memory(target->data), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         have source->data == at(after_len, source->data) by {
@@ -274,10 +262,7 @@ int32 input_cursor_shared_pipeline(
             right->data == data;
         };
     }
-    apply(int32_equality_transitive(right_value, right->data[right->pos], data[0])) using {
-        right_value == right->data[right->pos];
-        right->data[right->pos] == data[0];
-    };
+    apply(int32_equality_transitive(right_value, right->data[right->pos], data[0]));
     step();
     solve();
 }

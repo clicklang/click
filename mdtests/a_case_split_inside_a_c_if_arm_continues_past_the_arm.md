@@ -47,31 +47,31 @@ int32 read_back(int32 u, int32 c) {
     ensures result == 0 or result == 3 or result == 7;
 } by {
     step(); step(); step(); step();
-    have loc[0] == 3 by { normalize(); }
+    have loc[0] == 3 by { known(); }
     mark before_store;
     step();
-    have loc[u] == 7 by { normalize(); }
+    have loc[u] == 7 by { known(); }
     have loc[0] == 3 or loc[0] == 7 by {
         if u == 0 {
             have loc[0] == 7 by { normalize() using { loc[u] == 7; u == 0; }; }
             known();
         } else {
             have separate(memory(loc[u]), memory(loc[0])) by {
-                apply(separation::separate_elements(loc, u, 0)) using { u != 0; };
+                apply(separation::separate_elements(loc, u, 0));
             }
             have separate(statement(4).footprint, memory(loc[0])) by {
-                normalize() using { separate(memory(loc[u]), memory(loc[0])); };
+                solve() using { separate(memory(loc[u]), memory(loc[0])); };
             }
             have loc[0] == at(before_store, loc[0]) by {
                 preserve(memory(loc[0]), statement(4));
             }
-            have loc[0] == 3 by { normalize() using { loc[0] == at(before_store, loc[0]); at(before_store, loc[0]) == 3; }; }
+            have loc[0] == 3 by { rewrite(loc[0], at(before_store, loc[0])); known(); }
             known();
         }
     }
     mark stored;
     step();
-    have loc[0] == at(stored, loc[0]) by { normalize(); }
+    have loc[0] == at(stored, loc[0]) by { known(); }
     have loc[0] == 3 or loc[0] == 7 by { solve(); }
 }
 

@@ -12,13 +12,13 @@ verifying "elements.c";
 theorem words(p: int64*, i: uint64, j: uint64) {
     requires i != j;
     ensures separate(memory(p[i]), memory(p[j])) by {
-        apply(separation::separate_elements(p, i, j)) using { i != j; };
+        apply(separation::separate_elements(p, i, j));
     }
 }
 theorem pointers(p: int32**, i: uint64, j: uint64) {
     requires i != j;
     ensures separate(memory(p[i]), memory(p[j])) by {
-        apply(separation::separate_elements(p, i, j)) using { i != j; };
+        apply(separation::separate_elements(p, i, j));
     }
 }
 void inspect(struct item* p, uint64 i, uint64 j) {
@@ -26,10 +26,10 @@ void inspect(struct item* p, uint64 i, uint64 j) {
     ensures true;
 } by {
     have separate(memory(p[i]), memory(p[j])) by {
-        apply(separation::separate_elements(p, i, j)) using { i != j; };
+        apply(separation::separate_elements(p, i, j));
     }
     step_until(function.exit);
-    normalize();
+    solve();
     known(); known(); known();
 }
 ```

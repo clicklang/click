@@ -724,7 +724,8 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
         set_function_result(&mut state, &function, result.clone());
         let memory =
             end_function_body_automatic_lifetimes(&state, &function, &caller, Some(&result))
-                .expect("callee retirement");
+                .expect("callee retirement")
+                .memory;
         assert!(!memory.has_block(&source.base));
         assert!(memory.has_block(&pointer(&result).base));
         assert!(memory.has_block(&backing.base));
@@ -1683,8 +1684,9 @@ fn aggregate_return_storage_is_distinct_from_a_same_frame_source_named_return() 
         );
     }
     set_function_result(&mut state, &function, second.clone());
-    let after =
-        end_function_body_automatic_lifetimes(&state, &function, &caller, Some(&second)).unwrap();
+    let after = end_function_body_automatic_lifetimes(&state, &function, &caller, Some(&second))
+        .unwrap()
+        .memory;
     assert!(!after.has_block(&source.base));
     assert!(after.has_block(&pointer(&second).base));
     assert_eq!(after.known_value(&pointer(&second)), Some(self_pointer));

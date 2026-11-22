@@ -54,7 +54,7 @@ void paint(struct node* p, int32 flag) {
                 unfold(c);
                 step();
                 let c = fold(painted(p), { color: Color::Black });
-                have true == true by normalize();
+                have true == true by solve();
                 have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             }

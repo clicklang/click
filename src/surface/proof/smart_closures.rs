@@ -399,6 +399,7 @@ fn int32_widening_spelling(
             target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1504,6 +1505,7 @@ fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression
             target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1521,6 +1523,7 @@ fn native_uint32_split_operand(operand: ContractExpression) -> ContractExpressio
             target_type: crate::kernel::ProgramType::UInt32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1685,6 +1688,8 @@ pub(in crate::surface::proof) enum LinearScriptDecline {
     Shape,
     /// The written tactic at this position declined.
     Step(usize),
+    /// The tactic ran a proof search that could not close the goal.
+    UnsuccessfulSearch(usize),
 }
 
 /// A branch continuation is checked in each selected arm. Borrow terminal
@@ -1707,12 +1712,6 @@ fn script_arm_with_continuation<'a>(
     } else {
         std::borrow::Cow::Owned(arm.iter().chain(continuation).cloned().collect())
     }
-}
-
-pub(super) fn with_implicit_closer(tactics: &[ProofTactic]) -> Vec<ProofTactic> {
-    let mut tactics = tactics.to_vec();
-    tactics.push(ProofTactic::ImplicitSolve);
-    tactics
 }
 
 impl<'a> Proof<'a> {
@@ -1903,6 +1902,7 @@ impl<'a> Proof<'a> {
                                 target_type: crate::kernel::ProgramType::Int32,
                                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                                 pointee_struct: None,
+                                pointee_struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,
@@ -1988,6 +1988,7 @@ impl<'a> Proof<'a> {
                     target_type: view.format.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -3193,10 +3194,12 @@ impl<'a> Proof<'a> {
         // spelling they wrote it with. The lowered rendering below would show
         // them a byte span over an internal pointer name instead.
         if let Some(reason) = self.unproved_loadable_range_goal_reason() {
-            return self.step_error(format!(
-                "`solve` failed for `{}`: {reason}",
-                self.claim_label()
-            ));
+            return self
+                .step_error(format!(
+                    "`solve` failed for `{}`: {reason}",
+                    self.claim_label()
+                ))
+                .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch);
         }
         // Name the goal as the user wrote it. Only a goal with no source
         // spelling falls back to the kind of check it makes, and that kind is
@@ -3236,8 +3239,9 @@ impl<'a> Proof<'a> {
             self.describe_goal_version_mismatch()
                 .or_else(|| self.describe_goal_decided_false())
                 .map(|mismatch| format!("\n  {mismatch}"))
-                .unwrap_or_else(|| "\n  proof search miss: no proof found for this goal".into()),
+                .unwrap_or_default(),
         ))
+        .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
     }
 
     /// A goal whose reads all resolved to values, and that is false with
@@ -3666,7 +3670,7 @@ const MAX_REFUTED_EQUALITY_PREMISES: usize = 4;
 const MAX_BOUND_VARIABLES: usize = 8;
 
 thread_local! {
-    static ACTIVE_SOLVE_FALLBACKS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static ACTIVE_SOLVE_FALLBACKS: std::cell::Cell<u16> = const { std::cell::Cell::new(0) };
 }
 
 #[derive(Clone, Copy)]
@@ -3678,6 +3682,7 @@ enum SolveFallback {
     MatchArithmetic = 32,
     RefutedEquality = 64,
     ElementAddress = 128,
+    GroundRecursion = 256,
 }
 
 /// A candidate can try the other fallback and descend through logical
@@ -3687,12 +3692,12 @@ struct SolveFallbackScope(SolveFallback);
 
 impl SolveFallbackScope {
     fn active(fallback: SolveFallback) -> bool {
-        ACTIVE_SOLVE_FALLBACKS.with(|active| active.get() & fallback as u8 != 0)
+        ACTIVE_SOLVE_FALLBACKS.with(|active| active.get() & fallback as u16 != 0)
     }
 
     fn enter(fallback: SolveFallback) -> Option<Self> {
         ACTIVE_SOLVE_FALLBACKS.with(|active| {
-            let bit = fallback as u8;
+            let bit = fallback as u16;
             if active.get() & bit != 0 {
                 return None;
             }
@@ -3704,17 +3709,15 @@ impl SolveFallbackScope {
 
 impl Drop for SolveFallbackScope {
     fn drop(&mut self) {
-        ACTIVE_SOLVE_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u8)));
+        ACTIVE_SOLVE_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u16)));
     }
 }
 
-/// The checked unfold and rewrite steps one constructor evaluation takes
-/// beyond those a constant measure adds.
+/// The checked unfold and rewrite steps one constructor evaluation takes.
 const CONSTRUCTOR_EVALUATION_FUEL: usize = 8;
 
-/// The most checked steps one constructor evaluation takes, however large
-/// the constant measures it unfolds.
-const MAX_CONSTRUCTOR_EVALUATION_FUEL: usize = 1024;
+/// The most levels one ground recursion evaluation takes.
+const MAX_GROUND_RECURSION_LEVELS: usize = 1024;
 
 /// The connected facts one constructor evaluation reads for constructor
 /// equations once it is stuck.
@@ -3813,9 +3816,19 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
 }
 
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
-    let mut steps = vec![ProofStep::Known, ProofStep::Normalize];
-    // Without a proposition goal every candidate is refused alike; keep the
-    // complete list so the recorded refusals are unchanged.
+    let mut steps = vec![ProofStep::Known];
+    // These goals still rely on checked constructor reduction or byte-span
+    // containment. Keep their existing certificate until each has a closer.
+    if matches!(
+        goal,
+        Some(
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+                | Proposition::ResourceContains { .. }
+        )
+    ) {
+        steps.push(ProofStep::Normalize);
+    }
+    // Without a proposition goal, keep both candidate refusals in the trace.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
         steps.push(ProofStep::Enumerate);
     }
@@ -4326,10 +4339,13 @@ struct SourceBackedCallSurface {
 /// Validate the carrier against the current concrete call before any source
 /// declaration is consulted.  The returned owned call is deliberately small:
 /// the statement splitter does not expose borrowed argument storage.
-/// The Surface form of a C call's argument: a program's constructor of a
+/// The Surface form of a call's argument: a program's constructor of a
 /// `spec enum`, such as the `List<VarArg>` a variadic call passes, is that
 /// constructor, each field the source argument it holds.
-fn source_call_argument_surface(argument: &ProgramExpression) -> ContractExpression {
+fn source_call_argument_surface(
+    argument: &ProgramExpression,
+    function: &crate::languages::interface::ImportedFunction,
+) -> ContractExpression {
     if let ProgramExpression::EnumConstruct {
         enum_type,
         variant,
@@ -4343,8 +4359,37 @@ fn source_call_argument_surface(argument: &ProgramExpression) -> ContractExpress
         return ContractExpression::AlgebraicConstructor {
             algebraic_type,
             variant: variant.clone(),
-            arguments: fields.iter().map(source_call_argument_surface).collect(),
+            arguments: fields
+                .iter()
+                .map(|field| source_call_argument_surface(field, function))
+                .collect(),
         };
+    }
+    // C++ passes a local record by reference using a scalar pointer cast of
+    // its storage address. Restore the declared record type so a field in the
+    // callee's requirement still names the same subobject after parsing.
+    if let ProgramExpression::Cast {
+        expression,
+        target_type: crate::kernel::ProgramType::Int32Pointer,
+        integer_mode: crate::kernel::IntegerCastMode::Standard,
+        pointee_struct: None,
+        pointee_struct_size: _,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
+    } = argument
+        && let ProgramExpression::Variable(binding) = expression.as_ref()
+        && let Some(record) = function.local_struct_values().get(binding)
+    {
+        return ContractExpression::ProgramExpression(
+            crate::kernel::program_expression::cast_with_pointee_qualifiers_and_struct(
+                super::surface_synthesis::source_c_argument(expression),
+                crate::kernel::ProgramType::Int32Pointer,
+                false,
+                false,
+                Some(record.clone()),
+            ),
+        );
     }
     ContractExpression::ProgramExpression(super::surface_synthesis::source_c_argument(argument))
 }
@@ -4596,7 +4641,9 @@ fn source_backed_call_requirement_surface(
                         *parameter_type,
                     ),
                     None => caller_embedded_record_argument(argument, context.parsed_function)
-                        .unwrap_or_else(|| source_call_argument_surface(argument)),
+                        .unwrap_or_else(|| {
+                            source_call_argument_surface(argument, context.parsed_function)
+                        }),
                 }
             };
             (parameter.clone(), argument)

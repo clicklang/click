@@ -87,15 +87,17 @@ fn ended_automatic_storage_retires_creation_evidence() {
                 .unwrap()
                 .created_here(&block)
         );
-        for memory in [
+        for AutomaticLifetimeEnd {
+            memory,
+            retired_local_blocks,
+        } in [
             end_inline_frame_automatic_lifetimes(&state).unwrap(),
             end_function_body_automatic_lifetimes(&state, &function, &SymbolicMemory::new(), None)
                 .unwrap(),
         ] {
-            let retired = retired_automatistorage_creation_blocks(&state, &memory);
-            assert_eq!(retired, vec![block.clone()]);
+            assert_eq!(retired_local_blocks, vec![block.clone()]);
             let mut after = state.clone().with_memory(memory);
-            for block in retired {
+            for block in retired_local_blocks {
                 after.retire_population_storage(&block).unwrap();
             }
             assert!(

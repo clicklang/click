@@ -347,7 +347,7 @@ step reads them from its context. One classification,
 `Proposition::is_kernel_authority`, decides membership; code must not
 special-case a composition or a `__click_` name elsewhere.
 
-`held`, `same_object`, and contract facts are not authority even though the
+`held`, `same_allocation`, and contract facts are not authority even though the
 kernel names them under `__click_`: `kernel::predicate_source_name` gives the
 Click name that lowers to each, and the printer, synthesis, and authority
 classification all read that one mapping.
@@ -370,18 +370,24 @@ than what the verifier enforces today, and an audit that measures the gap.
 
 | Rule | Target | Enforced today | Audit |
 | --- | --- | --- | --- |
-| Lowering undoes raising | `lower(raise(x)) == x` for every term a proof state holds, so a raised Surface form needs no checking | Required, but premise raising lowers each candidate again and drops a mismatch (`surface_lowers_to`, premise raising's `matches_kernel`) | `scripts/raise-lower.sh` |
-| Lowering is fact-stable | Lowering reads no facts: one text, state and set of resources lower to one term | Facts may refuse the term, discharge its obligations, add side facts, or select one of several paths; they may not change the term | `scripts/fact-stability.sh`, `differs` lines |
-| Definedness is an obligation | Lowering returns the term, its definedness obligations and its side facts; checking discharges the obligations | Ordinary arithmetic returns obligations beside the term, but lowering drops one the facts already prove, and some lowerings are refused instead of owing one | `scripts/fact-stability.sh`, `refused` and `paths:N` lines |
+| Lowering undoes raising | `lower(raise(x)) == x` for every term a proof state holds, so a raised Surface form needs no checking | Required, but premise raising lowers each candidate again and drops a mismatch (`surface_lowers_to`, premise raising's `matches_kernel`) | `scripts/audit.sh raise-lower` |
+| Lowering is fact-stable | Lowering reads no facts: one text, state and set of resources lower to one term | Facts may refuse the term, discharge its obligations, add side facts, or select one of several paths; they may not change the term | `scripts/audit.sh fact-stability`, `differs` lines |
+| Definedness is an obligation | Lowering returns the term, its definedness obligations and its side facts; checking discharges the obligations | Ordinary arithmetic returns obligations beside the term, but lowering drops one the facts already prove, and some lowerings are refused instead of owing one | `scripts/audit.sh fact-stability`, `refused` and `paths:N` lines |
 
-`scripts/fact-stability.sh` reports three kinds of fact-dependent lowering.
+`click audit fact-stability` and `click audit raise-lower`
+(`scripts/audit.sh fact-stability`, `scripts/audit.sh raise-lower`) run these
+two audits over the examples and mdtests an expansion audit walks, and each
+ends with one headline count of the items that fail
+([`click audit`](../reference/cli/audit.md)).
+
+The fact-stability audit reports three kinds of fact-dependent lowering.
 A `differs` line breaks the enforced rule. A `refused` line is a proposition
 that lowers with facts and not without them; a `paths:N` line is one the
 facts selected from `N` fact-free paths. Both are allowed today, and both
 are where the facts, not an obligation, decide definedness. The target
 form removes them.
 
-`scripts/raise-lower.sh` raises each fact a checked step adds, and the goal
+The raise-lower audit raises each fact a checked step adds, and the goal
 it leaves focused, as goal presentation does
 (`Proof::structural_proposition_candidate`: the step's fixed state, its
 entry state and the path's recorded points, so `at(point, ..)`, `old(..)`
@@ -421,11 +427,11 @@ records, of which 34,508 `same`, 932 `polarity`, 1,076 `differs`, 338
 `unlowered`, 1,650 `unraised` and 38,453 `no-state`. The two runs take about
 18 minutes together.
 
-The nightly workflow's `lowering` job runs both audits
-(`scripts/lowering-audits.sh`). A fact-stability `differs` or `paths:N` line
+The nightly workflow's `raise-lower-audit` and `fact-stability-audit` jobs
+run them (`scripts/check.sh --audit <audit>`). A fact-stability `differs` or `paths:N` line
 fails the nightly report, since it breaks the enforced rule. The round trip
 is tracked instead: the report lists each outcome's count beside the
-previous night's and flags a rise in any outcome but `same`
+previous night's and flags a rise in any count but `same` and `checked`
 ([Nightly report](testing.md#nightly-report)).
 
 ## Lowering is structural
@@ -510,6 +516,13 @@ path. Regressions: `mdtests/closed_machine_order_comparisons.md`,
 `surface::proof::surface_synthesis`. Literal arithmetic evaluation is
 unchanged, and the shared comparison constructors used by checking still
 fold.
+
+Direct logical comparisons also retain a closed `if` over simple
+`Integer` or algebraic arms. The arms can be literals or bound values, and
+algebraic arms can be constructors with simple fields. Checking reads the
+selected arm, and admission of a comparison makes the equivalent selected
+comparison available through the existing fact indexes. Partial and
+state-dependent operands use the existing evaluation paths.
 
 Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
 guards, or same-variable 32/64-bit comparison guards retain their `if` node and
@@ -683,8 +696,14 @@ supplies the individual disequalities.
 
 Arithmetic domains raise as ordinary comparisons and conjunctions, including
 the negation of a range conjunction on an overflowing execution branch.
-`defined(expression)` denotes the full evaluation domain, including operand
-domains. It does not stand for a single overflow component of division or shift.
+`defined(expression)` denotes its root operation's domain with its operands
+taken as values (`kernel::spec::operation_defined`): the same kernel
+conditions the whole expression's evaluation owes for that operation, so each
+per-operation domain raises as `defined(l op r)` and lowers back to itself.
+It does not stand for a single overflow component of division or shift. The
+kernel's own `SpecProposition::Defined`, which its producers state for a term
+they evaluate, is the whole evaluation domain: the conjunction of each
+operation's domain, each of which raises on its own.
 `mdtests/arithmetic_definedness_is_one_ordinary_domain.md` checks the ordinary
 bounds in both directions for signed 32/64-bit arithmetic.
 
@@ -700,8 +719,8 @@ each assumed interface proposition, again under the same policy with no
 facts (`kernel::fact_stability`). It records a `differs`, `refused` or
 `paths:N` line for every lowering whose fact-free result is not the same
 term ([the raise-lower principle](#the-raise-lower-principle)).
-`scripts/fact-stability.sh` runs the mdtest corpus under it, counts each
-kind, and groups the differences by where the two terms first diverge. It
+`click audit fact-stability` runs every example and mdtest under it and
+counts each kind; each record names its proof container. It
 does not observe C execution, which may depend on facts.
 Historical defects included comparisons folded using facts, pointer and aliased
 reads resolved through known values, comparison kinds chosen by origin,
@@ -807,16 +826,16 @@ placeholder, a skipped candidate, or a declining route to work around it.
 
 ## Measuring the gap
 
-`scripts/raise-lower-census.sh` runs the mdtest corpus with
-`CLICK_RAISE_LOWER_CENSUS` set (`src/surface/proof/raise_lower_census.rs`).
-Each checked step records, for every fact it adds and for the goal it leaves
-focused, whether raising produces a checked Surface form. The script
-prints the misses grouped by kind. It separates steps a person wrote from
+`click audit raise-lower` (`scripts/audit.sh raise-lower`) measures the
+canonical raiser over every example and mdtest; see above. Tests measure
+premise raising, the route `solve` takes, with the census
+(`src/surface/proof/raise_lower_census.rs`): under its `capture`, each
+checked step records, for every fact it adds and for the goal it leaves
+focused, whether raising produces a checked Surface form. It separates steps a person wrote from
 steps a smart tactic's search took: a search step needs a Surface form only when
 its search succeeds and is expanded, but a written step's facts and goal may
 be cited by the next written step. The census only observes; it does not
-change any proof. A unit test can record the same lines in memory with
-`raise_lower_census::capture` and assert that a step's facts are raised.
+change any proof, and outside a test's capture it is off.
 
 The census sorts a miss into one of three gaps, each with its own fix:
 

@@ -30,7 +30,7 @@ void mark(int32 *next, int32 *visited) {
         0 <= k and k < 2 implies 0 <= next[k]
     }) by { known(); }
     have contains(memory(visited[0..1]), memory(visited[0])) by {
-        apply(click::separation::contains_element(visited, 0, 1, 0)) using { 0 <= 0; 0 < 1; };
+        apply(click::separation::contains_element(visited, 0, 1, 0));
     }
     step();
     have forall (k: int32) {
@@ -38,17 +38,13 @@ void mark(int32 *next, int32 *visited) {
     } by {
         intro(); intro();
         have contains(memory(next[0..2]), memory(next[k])) by {
-            apply(click::separation::contains_element(next, 0, 2, k)) using { 0 <= k; k < 2; };
+            apply(click::separation::contains_element(next, 0, 2, k));
         }
         have separate(memory(visited[0]), memory(next[k])) by {
-            apply(click::separation::separate_restrict(memory(visited[0..1]), memory(next[0..2]), memory(visited[0]), memory(next[k]))) using {
-                separate(memory(visited[0..1]), memory(next[0..2]));
-                contains(memory(visited[0..1]), memory(visited[0]));
-                contains(memory(next[0..2]), memory(next[k]));
-            };
+            apply(click::separation::separate_restrict(memory(visited[0..1]), memory(next[0..2]), memory(visited[0]), memory(next[k])));
         }
         have separate(statement(0).footprint, memory(next[k])) by {
-            normalize() using { separate(memory(visited[0]), memory(next[k])); };
+            solve() using { separate(memory(visited[0]), memory(next[k])); };
         }
         preserve(memory(next[k]), statement(0));
     }

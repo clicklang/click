@@ -54,7 +54,8 @@ the indexed versions common to every checked exit.
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
 Signed and unsigned 128-bit reads retain their distinct load kinds.
 The same index serves ordinary Boolean and complete typed pointer reads of
-automatic objects. A Boolean read denotes the logical value of its cell.
+automatic objects. A Boolean read denotes the logical value of its cell. A symbolic Boolean
+read can use its certified observation point when there is no indexed write.
 An object-pointer read names its address, provenance and bounds owner by
 the same read, and the recorded store can supply its complete typed value.
 A function-pointer read has its declared callback signature and the store
@@ -84,10 +85,30 @@ For indexed parameter and heap addresses, byte displacements from one
 symbolic origin can be compared directly. A write with a different origin
 retires that storage bucket. Parameter bases share one bucket because
 different parameters can alias. A freshly allocated heap object has its
-own bucket. Unclassified writes retire all buckets. Logical reads and
-resource expressions can name a caller-supplied pointer cell at its verified
-function-entry point when the recorded effects preserve that cell. Its address,
-provenance, and bounds owner share that read identity.
+own bucket. Unclassified writes retire all buckets. Logical reads, resource
+expressions, and nonvolatile C loads can name a caller-supplied pointer cell
+at its verified function-entry point when the recorded effects preserve
+that cell. Its address, provenance, and bounds owner share that read identity.
+The same entry index names caller-supplied signed and unsigned 16-bit cells
+in logical reads, resource expressions, and nonvolatile C loads. An integer
+read through a pointer loaded at entry can use that entry version when the
+pointer's own read names that entry and the recorded effects leave caller
+storage unchanged.
+
+When a checked call initializes a whole integer local with an unknown value,
+Click and C name a matching typed read by the call's recorded output point.
+An effect that can write the local retires that version.
+
+An integer read of static storage uses the function-entry version when the
+whole-object index shows that the object is unchanged. This includes reads
+of array elements at symbolic indices. For fixed-offset reads, the index
+also retains the entry version across disjoint fixed-width writes and
+checked calls with concrete byte ranges in the same object. An effect with
+an unknown byte footprint invalidates that byte-level entry information
+for the affected object.
+An integer read of a static block with a scalar C access class uses the
+call's version when the whole block is the call's single checked write
+range.
 
 A declared little-endian `uint32` can be read as four complete indexed byte
 reads. Each byte uses its own version. Click spells it with the bitwise OR
@@ -153,12 +174,20 @@ subobject bounds, beside its numeric address. `address(p)` observes only that
 address. Whole local, store/reload and aggregate copies retain a representation;
 ordinary arithmetic, changes of integer format and partial overwrites discard
 it. A lossless cast back preserves the selected bounds, including when the
-target is `void*` or a character pointer. It does not apply the widening rule
-for a direct pointer-to-pointer byte/void cast. Casts between character-pointer
-types and compiler-inserted pointer conversions retain the existing view,
-including its bounds. An explicit conversion from a non-character pointer to
-a character pointer, or any explicit cast to `void*`, selects the enclosing
-object's view.
+target is `void*` or a character pointer. It does not apply the byte-view rule
+for a direct pointer-to-pointer conversion. Converting a pointer from a
+non-character type, including `void *`, to a character pointer, written or
+implicit, forms the byte view of its allocation (C11 6.3.2.3p7, at TS 6010's
+allocation granularity), so the result is not bounded by the member it was
+formed from. GNU C arithmetic on `void *` is character arithmetic and forms the
+same view; Linux's `container_of` steps back from a member that way. A
+pointer to a struct's initial member, converted to a pointer to the struct,
+points to the struct (C11 6.7.2.1p15): when the operand's bounds are a member
+starting at its address and narrower than the struct, the result's bounds are
+the struct's `sizeof` bytes there. Every other pointer conversion keeps the
+value and its bounds, including an opaque pointer's: conversions between
+character-pointer types, and conversions to `void *` or another object pointer
+type.
 
 C pointer comparisons state only integer address equality. Equal addresses do
 not make equal pointer values or transfer bounds: one object's one-past address

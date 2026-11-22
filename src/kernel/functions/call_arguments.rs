@@ -506,6 +506,22 @@ pub(super) fn symbolic_contract_result(
         )
         .with_pointer_pointee_constant(interface.return_pointee_is_constant());
     }
+    // A contract that `allocates(result, n)` returns a block the call
+    // creates, so the result takes a heap identity, which
+    // `AddressBase::proven_distinct` separates from every other block, as
+    // it does `malloc`'s. Identities come from the kernel's one variable
+    // allocator, so no other block has this one.
+    if interface.fresh_result_allocation() && interface.return_type().is_pointer() {
+        return ProgramValue::typed_pointer(
+            Address {
+                base: AddressBase::Heap(variable.0),
+                offset: AddressOffset::Constant(0),
+            },
+            interface.return_type(),
+        )
+        .with_pointer_pointee_constant(interface.return_pointee_is_constant())
+        .with_pointer_declared_object_class(interface.return_pointee_class());
+    }
     symbolic_call_result(interface.return_type(), variable)
         .complete_word(Address::symbolic(variable))
         .with_pointer_pointee_constant(interface.return_pointee_is_constant())

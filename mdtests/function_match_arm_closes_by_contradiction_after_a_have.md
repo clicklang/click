@@ -71,11 +71,11 @@ int32 peek(struct node* p) {
             }
             have is_present(Cell::Missing) != 0 by {
                 rewrite(is_present(Cell::Missing), 1);
-                normalize();
+                known();
             }
             have is_present(Cell::Missing) == 0 by {
                 unfold(is_present(Cell::Missing));
-                normalize();
+                known();
             }
             contradiction(is_present(Cell::Missing) == 0);
         },

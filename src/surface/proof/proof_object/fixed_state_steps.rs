@@ -63,6 +63,9 @@ fn outcome_case_region_in_scope<'a>(
     scope: Option<usize>,
 ) -> Option<usize> {
     for tactic in tactics.iter().rev() {
+        if tactic.reads_deferred_obtain {
+            continue;
+        }
         match &tactic.tactic {
             PostExecutionTactic::If {
                 condition,
@@ -70,6 +73,7 @@ fn outcome_case_region_in_scope<'a>(
                 execution_route,
                 then_tactics,
                 else_tactics,
+                ..
             } => {
                 let arms = [
                     outcome_case_region_in_scope(then_tactics, next, nodes, scope),
@@ -672,11 +676,41 @@ impl<'a> Proof<'a> {
         })
     }
 
+    pub(in crate::surface::proof) fn theorem_obligation_available(
+        &self,
+        requirement: &UnresolvedRequirement,
+    ) -> bool {
+        self.facts().pure_known_available(&requirement.proposition)
+            || matches!(
+                normalize_proposition(&requirement.proposition),
+                NormalizedProposition::True
+            )
+    }
+
+    /// A selected application's premises were checked separately. Check that
+    /// a bare replay can reconstruct the same conclusions from the ambient
+    /// fact index, including any obligations for evaluating the arguments.
+    pub(in crate::surface::proof) fn planned_theorem_replays_bare(
+        &self,
+        application: &TheoremApplication,
+        conclusions: &[Proposition],
+    ) -> bool {
+        crate::instrumentation::with_certificate_presentation_work(|| {
+            self.prepare_theorem_application(application)
+                .is_ok_and(|prepared| {
+                    prepared.conclusions == conclusions
+                        && prepared
+                            .obligations
+                            .iter()
+                            .all(|requirement| self.theorem_obligation_available(requirement))
+                })
+        })
+    }
+
     pub(in crate::surface::proof) fn finish_prepared_theorem_application(
         &self,
         prepared: PreparedTheoremApplication,
         application: &TheoremApplication,
-        premises: Vec<ClickProposition>,
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
         let _operation =
@@ -708,10 +742,7 @@ impl<'a> Proof<'a> {
             node: ProofNode::step_child(
                 &self.node,
                 self.focused_branch_id(),
-                Arc::new(ProofStep::ApplyTheoremUsing {
-                    application: application.clone(),
-                    premises,
-                }),
+                Arc::new(ProofStep::ApplyTheorem(application.clone())),
             ),
         })
     }
@@ -2722,6 +2753,7 @@ impl<'a> Proof<'a> {
                 )
             {
                 reason.push_str(&format!("\n  {mismatch}"));
+                reason.push_str("\n  To rewrite across read versions, first state their equality and cite it with `rewrite`.");
             }
             // The structured diagnostic renders the requested equality and
             // current goal together, with the same names and label map as
@@ -2733,42 +2765,48 @@ impl<'a> Proof<'a> {
             )
         })?;
         let induction = self.uses_structural_induction();
-        let surface_goal = self.surface_goal().and_then(|surface_goal| {
-            let checked_candidate = |candidate: ClickProposition| {
-                self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
-                    .ok()
-                    .filter(|lowered| {
-                        if induction {
-                            rewritten.try_present_induction_case_as(lowered)
-                        } else {
-                            rewritten.try_present_as(lowered)
-                        }
-                    })
-                    .map(|_| candidate)
+        let checked_candidate =
+            |rewritten: &mut crate::kernel::proof::equality_rewrite::CheckedEqualityRewrite,
+             candidate: ClickProposition| {
+                let lowered = self
+                    .lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
+                    .ok()?;
+                let accepted = if induction {
+                    rewritten.try_present_induction_case_as(&lowered)
+                } else {
+                    rewritten.try_present_as(&lowered)
+                };
+                accepted.then_some(candidate)
             };
-            let mut checked_candidate = checked_candidate;
-            rewrite_click_proposition_by_surface_equality(surface_goal, surface_equality)
-                .and_then(&mut checked_candidate)
-                .or_else(|| {
-                    crate::surface::lowering::rewrite_surface_equality_preserving_states(
-                        surface_goal,
-                        surface_equality,
-                    )
-                    .and_then(checked_candidate)
-                })
-        });
-        let surface_goal = surface_goal.or_else(|| {
-            if !induction {
-                return self.spelled_goal(rewritten.proposition());
-            }
-            let candidate = self.structural_proposition_candidate(rewritten.proposition())?;
-            let lowered = self
-                .lower_surface_proposition_direct(&candidate, "rewritten goal raising")
-                .ok()?;
-            rewritten
-                .try_present_induction_case_as(&lowered)
-                .then_some(candidate)
-        });
+        let surface_goal = self
+            .surface_goal()
+            .and_then(|surface_goal| {
+                rewrite_click_proposition_by_surface_equality(surface_goal, surface_equality)
+                    .and_then(|candidate| checked_candidate(&mut rewritten, candidate))
+                    .or_else(|| {
+                        crate::surface::lowering::rewrite_surface_equality_preserving_states(
+                            surface_goal,
+                            surface_equality,
+                        )
+                        .and_then(|candidate| checked_candidate(&mut rewritten, candidate))
+                    })
+            })
+            .or_else(|| {
+                // An explicit fact can already name the precise observation.
+                // Select one source by the whole result, without enumerating
+                // equivalent facts or trying alternate read identities.
+                let goal = rewritten.proposition();
+                let candidate = self
+                    .local_surface_facts()
+                    .recorded_surface(goal)
+                    .or_else(|| self.context_surface_propositions()?.recorded_surface(goal))?
+                    .clone();
+                checked_candidate(&mut rewritten, candidate)
+            })
+            .or_else(|| {
+                let candidate = self.structural_proposition_candidate(rewritten.proposition())?;
+                checked_candidate(&mut rewritten, candidate)
+            });
         let presentation = self.refinement_presentation(surface_goal, None);
         let (obligation, facts) =
             rewritten.into_obligation(presentation, self.refinement_outcome());
@@ -2782,6 +2820,16 @@ impl<'a> Proof<'a> {
             Vec::new(),
             Vec::new(),
         ))
+    }
+
+    pub(super) fn apply_fact_from_scope(
+        &self,
+        fact: &ClickProposition,
+    ) -> Result<KernelProofHandle, ClickError> {
+        let fact = self.lower_cited_surface_proposition(fact, "`apply` fact")?;
+        self.state
+            .apply_fact_from_scope(&fact)
+            .map_err(|message| self.step_error(message))
     }
 
     pub(super) fn apply_fact_using(
@@ -2954,6 +3002,16 @@ impl<'a> Proof<'a> {
         if let Some(value) = recorded_value {
             return Ok(value);
         }
+        self.decide_outcome_if_from_facts(condition)
+    }
+
+    /// A guard that refers to an outcome-local obtain must be lowered in
+    /// the current scope. An earlier decision with the same written names
+    /// may refer to different bindings.
+    pub(in crate::surface::proof) fn decide_outcome_if_from_facts(
+        &self,
+        condition: &ClickProposition,
+    ) -> Result<bool, ClickError> {
         let negative_surface = ClickProposition::Not(Box::new(condition.clone()));
         let positive =
             self.lower_surface_proposition(condition, "post-execution `if` condition")?;

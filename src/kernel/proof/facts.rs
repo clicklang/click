@@ -2,9 +2,7 @@
 
 mod presentation;
 use presentation::FactPresentation;
-mod rewritten_loads;
 mod selected_atoms;
-pub(in crate::kernel) use rewritten_loads::clear_rewritten_load_syntax_cache;
 pub(in crate::kernel) use selected_atoms::clear_selected_atom_cache;
 
 use super::fact_keys::{IntegerConditionAlphaKey, integer_condition_alpha_key};
@@ -283,436 +281,6 @@ pub(crate) struct PureFactStore {
     assumptions: PureFactContext,
     implicit_transport_assumptions: PureFactContext,
     by_predicate: PersistentMap<String, PersistentSequence<Arc<Proposition>>>,
-}
-
-impl PureFactStore {
-    /// Check only corresponding leaves of two presentations of one goal.
-    /// No ambient fact search or pairwise load census is performed.
-    pub(crate) fn with_checked_rewritten_loads(
-        &self,
-        original: &Proposition,
-        presented: &Proposition,
-    ) -> Option<Self> {
-        let capture = CheckedLoadEqualityCapture::start_with_call_events(
-            &super::CheckedCallEvents::default(),
-        );
-        let mut pending = vec![(original, presented)];
-        let mut equalities = Vec::new();
-        let mut bound_variables = BTreeSet::new();
-        while let Some((left, right)) = pending.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            match (left, right) {
-                (Proposition::And(a, b), Proposition::And(c, d))
-                | (Proposition::Or(a, b), Proposition::Or(c, d))
-                | (Proposition::Implies(a, b), Proposition::Implies(c, d)) => {
-                    pending.push((a, c));
-                    pending.push((b, d));
-                }
-                (Proposition::Not(a), Proposition::Not(b)) => pending.push((a, b)),
-                (
-                    Proposition::ForAll {
-                        var: a,
-                        sort: s,
-                        body: b,
-                        ..
-                    },
-                    Proposition::ForAll {
-                        var: c,
-                        sort: t,
-                        body: d,
-                        ..
-                    },
-                ) if a == c && s == t => {
-                    bound_variables.insert(*a);
-                    pending.push((b, d));
-                }
-                (Proposition::ConditionIs(a, p), Proposition::ConditionIs(b, q)) if p == q => {
-                    let mut retained_leaves = Vec::new();
-                    let pairs = match (a.native_compat(), b.native_compat()) {
-                        (
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::LessEqual,
-                                left: a,
-                                right: b,
-                            },
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::LessEqual,
-                                left: c,
-                                right: d,
-                            },
-                        )
-                        | (
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::LessThan,
-                                left: a,
-                                right: b,
-                            },
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::LessThan,
-                                left: c,
-                                right: d,
-                            },
-                        )
-                        | (
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                                relation: CompareRelation::Equal,
-                                left: a,
-                                right: b,
-                            },
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                                relation: CompareRelation::Equal,
-                                left: c,
-                                right: d,
-                            },
-                        )
-                        | (
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int64,
-                                relation: CompareRelation::Equal,
-                                left: a,
-                                right: b,
-                            },
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int64,
-                                relation: CompareRelation::Equal,
-                                left: c,
-                                right: d,
-                            },
-                        ) => vec![(a.as_ref(), c.as_ref()), (b.as_ref(), d.as_ref())],
-                        // A native 8- or 16-bit equality at one format.
-                        (
-                            ConditionTerm::Compare {
-                                format:
-                                    format @ (MachineIntegerType::Int8
-                                    | MachineIntegerType::UInt8
-                                    | MachineIntegerType::Int16
-                                    | MachineIntegerType::UInt16),
-                                relation: CompareRelation::Equal,
-                                left: a,
-                                right: b,
-                            },
-                            ConditionTerm::Compare {
-                                format: other,
-                                relation: CompareRelation::Equal,
-                                left: c,
-                                right: d,
-                            },
-                        ) if format == other => {
-                            vec![(a.as_ref(), c.as_ref()), (b.as_ref(), d.as_ref())]
-                        }
-                        (ConditionTerm::IntegerEqual(a, b), ConditionTerm::IntegerEqual(c, d))
-                        | (
-                            ConditionTerm::IntegerNotEqual(a, b),
-                            ConditionTerm::IntegerNotEqual(c, d),
-                        )
-                        | (
-                            ConditionTerm::IntegerLessThan(a, b),
-                            ConditionTerm::IntegerLessThan(c, d),
-                        )
-                        | (
-                            ConditionTerm::IntegerLessEqual(a, b),
-                            ConditionTerm::IntegerLessEqual(c, d),
-                        )
-                        | (
-                            ConditionTerm::IntegerGreaterThan(a, b),
-                            ConditionTerm::IntegerGreaterThan(c, d),
-                        )
-                        | (
-                            ConditionTerm::IntegerGreaterEqual(a, b),
-                            ConditionTerm::IntegerGreaterEqual(c, d),
-                        ) => {
-                            // Retain checked native load evidence when spelling
-                            // the same word observation at another state.
-                            // Its numeric format and all other Integer structure
-                            // remain exact; this is not arithmetic transport.
-                            let pairs = Vec::new();
-                            for (left, right) in [(a, c), (b, d)] {
-                                if left == right {
-                                    continue;
-                                }
-                                let (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) =
-                                    (left.as_ref(), right.as_ref())
-                                else {
-                                    return None;
-                                };
-                                if left.ty() != right.ty()
-                                    || !matches!(
-                                        left.ty(),
-                                        MachineIntegerType::Int32 | MachineIntegerType::UInt32
-                                    )
-                                {
-                                    return None;
-                                }
-                                {
-                                    let retain = |value: &SharedMachineIntegerTerm| {
-                                        KernelTerm::retained_machine_operand(
-                                            value.ty(),
-                                            value.operand_view(),
-                                        )
-                                    };
-                                    let (a, b) = (retain(left), retain(right));
-                                    let differences = rewritten_loads::differences(&a, &b)?;
-                                    if !bound_variables.is_empty()
-                                        && !differences.is_empty()
-                                        && [left.operand_view(), right.operand_view()]
-                                            .into_iter()
-                                            .any(|v| {
-                                                v.variable().is_none()
-                                                    && v.read().is_none()
-                                                    && !matches!(
-                                                        v.literal(),
-                                                        Some(bits32_constant!(_))
-                                                    )
-                                            })
-                                    {
-                                        return None;
-                                    }
-                                    for (_, (a, b)) in differences.iter() {
-                                        // A differing shared leaf must actually name a registered
-                                        // load before constructing any native evidence operand.
-                                        if ![a, b].into_iter().any(|term| {
-                                            let view = MachineOperandView::Shared(term);
-                                            view.read().is_some() || view.variable().is_some_and(|v| {
-                                                crate::kernel::registered_load_kind_for_variable(v).is_some()
-                                            })
-                                        }) {
-                                            return None;
-                                        }
-                                        match (
-                                            rewritten_loads::evidence_operand(a),
-                                            rewritten_loads::evidence_operand(b),
-                                        ) {
-                                            (Some(a), Some(b)) => retained_leaves.push((a, b)),
-                                            _ => {
-                                                equalities
-                                                    .push(self.checked_shared_read_equality(a, b)?);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            pairs
-                        }
-                        _ if a == b => continue,
-                        _ => return None,
-                    };
-                    let mut pairs = pairs;
-                    pairs.extend(retained_leaves.iter().map(|(a, b)| (a, b)));
-                    while let Some((a, b)) = pairs.pop() {
-                        crate::instrumentation::record_deterministic_work(1);
-                        // A load atom is independent of a surrounding binder.
-                        // Do not use ambient premises to identify a bound
-                        // value, or a load with an explicitly bound address.
-                        if !bound_variables.is_empty() && a == b {
-                            continue;
-                        }
-                        if !bound_variables.is_empty()
-                            && [a, b].iter().any(|term| match *term {
-                                MachineTerm::Variable(variable)
-                                    if !crate::kernel::is_load_variable(variable) =>
-                                {
-                                    bound_variables.contains(variable)
-                                }
-                                bits32_constant!(_) => false,
-                                read => {
-                                    !super::term_rewrite::TermRewrite::read_address_independent_of(
-                                        read,
-                                        &bound_variables,
-                                    )
-                                }
-                            })
-                        {
-                            return None;
-                        }
-                        // Walk matching arithmetic structure once. Do not
-                        // compare whole subtrees at every node: a long chain
-                        // with one changed leaf must remain linear.
-                        if let (Some((op, x, y)), Some((other, u, v))) =
-                            (a.as_binary(), b.as_binary())
-                        {
-                            if op != other {
-                                return None;
-                            }
-                            pairs.push((x, u));
-                            pairs.push((y, v));
-                            continue;
-                        }
-                        if let (Some((op, x)), Some((other, y))) = (a.as_unary(), b.as_unary()) {
-                            if op != other {
-                                return None;
-                            }
-                            pairs.push((x, y));
-                            continue;
-                        }
-                        if a == b {
-                            continue;
-                        }
-                        let kind = |term: &MachineTerm| match term {
-                            MachineTerm::MemoryLoad(_, _, kind) => Some(*kind),
-                            MachineTerm::Variable(variable) => {
-                                crate::kernel::registered_load_kind_for_variable(variable)
-                            }
-                            _ => None,
-                        };
-                        let (a_kind, b_kind) = (kind(a), kind(b));
-                        // This judgment transports native integer words.
-                        // A narrow equality must not authorize replacing a
-                        // wider or floating-point observation.
-                        let supported = |kind| {
-                            matches!(
-                                kind,
-                                LoadKind::Int8
-                                    | LoadKind::UInt8
-                                    | LoadKind::Int16
-                                    | LoadKind::UInt16
-                                    | LoadKind::Int32
-                                    | LoadKind::Bits64
-                            )
-                        };
-                        if [a_kind, b_kind]
-                            .into_iter()
-                            .flatten()
-                            .any(|kind| !supported(kind))
-                        {
-                            return None;
-                        }
-                        if a_kind.is_none() && b_kind.is_none()
-                            || matches!((a_kind, b_kind), (Some(a), Some(b)) if a != b)
-                        {
-                            return None;
-                        }
-                        let wide =
-                            a_kind == Some(LoadKind::Bits64) || b_kind == Some(LoadKind::Bits64);
-                        // A narrow read is a value of its own format, and is
-                        // equated at it.
-                        let narrow = match a_kind.or(b_kind) {
-                            Some(LoadKind::Int8) => Some(MachineIntegerType::Int8),
-                            Some(LoadKind::UInt8) => Some(MachineIntegerType::UInt8),
-                            Some(LoadKind::Int16) => Some(MachineIntegerType::Int16),
-                            Some(LoadKind::UInt16) => Some(MachineIntegerType::UInt16),
-                            _ => None,
-                        };
-                        let selected = Proposition::condition_is(
-                            if wide {
-                                ConditionTerm::Compare {
-                                    format: MachineIntegerType::Int64,
-                                    relation: CompareRelation::Equal,
-                                    left: Box::new(a.clone()),
-                                    right: Box::new(b.clone()),
-                                }
-                            } else if let Some(format) = narrow {
-                                ConditionTerm::Compare {
-                                    format,
-                                    relation: CompareRelation::Equal,
-                                    left: Box::new(a.clone()),
-                                    right: Box::new(b.clone()),
-                                }
-                            } else {
-                                ConditionTerm::equal(a.clone(), b.clone())
-                            },
-                            true,
-                        );
-                        let recorded_wide_read = || {
-                            let raw = |term: &MachineTerm| match term {
-                                MachineTerm::Variable(variable) => {
-                                    crate::kernel::registered_load_term_for_variable(variable)
-                                }
-                                MachineTerm::MemoryLoad(..) => Some(term.clone()),
-                                _ => None,
-                            };
-                            raw(a).zip(raw(b)).is_some_and(|(a, b)|
-                                crate::kernel::memory_history::checked_recorded_atomic_load_equality(
-                                    &a, &b, self.assumptions()))
-                        };
-                        if !self.pure_known_available(&selected)
-                            && !(wide && recorded_wide_read())
-                            && !self
-                                .with_selected_load_equality_bridge(&selected)
-                                .contains(&selected)
-                            && !checked_origin_load_equality(a, b, self.assumptions())
-                            && !checked_stored_origin_equality(a, b, self.assumptions())
-                        {
-                            return None;
-                        }
-                        equalities.push(selected);
-                    }
-                }
-                _ if left == right => (),
-                _ => return None,
-            }
-        }
-        let evidence = capture.finish();
-        let events = super::CheckedCallEvents::default();
-        if evidence
-            .iter()
-            .any(|e| !e.checks_with_call_events(self.assumptions(), &events))
-        {
-            return None;
-        }
-        let mut facts = self.clone();
-        for equality in equalities {
-            facts = facts.with_fact(equality);
-        }
-        // The operation has consumed the witnesses above. Successors retain
-        // the established equalities; execution certificates own their evidence.
-        Some(facts)
-    }
-    // Arithmetic remains shared until the authority check. Native evidence
-    // for a stored value comes from that selected store, never an export.
-    fn checked_shared_read_equality(&self, a: &KernelTerm, b: &KernelTerm) -> Option<Proposition> {
-        let (a, b) = (MachineOperandView::Shared(a), MachineOperandView::Shared(b));
-        let kind = |value: MachineOperandView<'_>| {
-            value.read().map(|(_, _, kind)| kind).or_else(|| {
-                value
-                    .variable()
-                    .and_then(crate::kernel::registered_load_kind_for_variable)
-            })
-        };
-        let (ak, bk) = (kind(a), kind(b));
-        let kind = ak.or(bk)?;
-        if matches!((ak, bk), (Some(a), Some(b)) if a != b) {
-            return None;
-        }
-        let format = match kind {
-            LoadKind::Int8 => MachineIntegerType::Int8,
-            LoadKind::UInt8 => MachineIntegerType::UInt8,
-            LoadKind::Int16 => MachineIntegerType::Int16,
-            LoadKind::UInt16 => MachineIntegerType::UInt16,
-            LoadKind::Int32 => MachineIntegerType::Int32,
-            LoadKind::Bits64 => MachineIntegerType::Int64,
-            _ => return None,
-        };
-        let selected = Proposition::condition_is(
-            crate::kernel::machine_integer::comparison::condition_for_operand_views(
-                format,
-                CompareRelation::Equal,
-                [a, b],
-            ),
-            true,
-        );
-        if self.pure_known_available(&selected)
-            || shared_premise_bridged_by_load_chain(
-                &selected,
-                &self.load_equalities_mentioning(&selected),
-                self.assumptions(),
-            )
-            || crate::kernel::memory_history::checked_stored_origin_operand_equality(
-                a,
-                b,
-                self.assumptions(),
-            )
-        {
-            Some(selected)
-        } else {
-            None
-        }
-    }
 }
 
 /// An introduction log for statement ancestry and explicit-delta queries.
@@ -1833,34 +1401,6 @@ impl PureFactStore {
         facts
     }
 
-    /// Materializes one selected equality across a checked chain of load
-    /// variables. This keeps the ordinary `Known` checker exact while
-    /// allowing a new fixed-state goal to consume equality transport explicitly
-    /// carried through the preceding statement. Selection follows only the
-    /// goal's indexed equality buckets; unrelated ambient equalities remain
-    /// implicit and are never visited.
-    pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
-        if self.pure_known_available(goal)
-            || !matches!(goal, Proposition::ConditionIs(condition, true)
-                if matches!(condition.native_compat(), ConditionTerm::Compare { format: MachineIntegerType::Int8 | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16 | MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. })
-                    || condition.native_compat().pointer_offset_sides().is_some())
-        {
-            return self.clone();
-        }
-        let candidates = self.load_equalities_mentioning(goal);
-        if !candidates.is_empty()
-            && premise_bridged_by_load_variable_chain_with_origins(
-                goal,
-                &candidates,
-                &self.assumptions,
-            )
-        {
-            self.with_fact(goal.clone())
-        } else {
-            self.clone()
-        }
-    }
-
     /// Publish the explicit entry resource input in the fact context retained
     /// by the body proof. This builds address indexes without changing facts
     /// or permissions, before any checked step can depend on that lineage.
@@ -2648,6 +2188,20 @@ impl PureFactStore {
             .collect()
     }
 
+    /// Read the same equality index under the active search budget, with a
+    /// bound on how many candidates the source-proof planner will spell.
+    pub(crate) fn load_equality_candidates_for_solve(
+        &self,
+        proposition: &Proposition,
+        limit: usize,
+        _permission: crate::kernel::search::SearchPermission,
+    ) -> Vec<Proposition> {
+        self.collect_indexed_load_equalities(proposition, Some(limit))
+            .into_iter()
+            .map(|fact| fact.as_ref().clone())
+            .collect()
+    }
+
     /// Definedness-guarded comparisons (`defined(e) implies a == b`) whose
     /// consequent shares an atomic operand with `proposition`, oldest first
     /// within each atom and deduplicated by identity. The lookup visits only
@@ -2680,6 +2234,14 @@ impl PureFactStore {
         &self,
         proposition: &Proposition,
     ) -> Vec<Arc<Proposition>> {
+        self.collect_indexed_load_equalities(proposition, None)
+    }
+
+    fn collect_indexed_load_equalities(
+        &self,
+        proposition: &Proposition,
+        search_limit: Option<usize>,
+    ) -> Vec<Arc<Proposition>> {
         let mut atoms = BTreeSet::new();
         collect_proposition_bitvector_atoms(proposition, &mut atoms);
         // One fact is filed under each of its operands' atoms; pointer
@@ -2710,6 +2272,12 @@ impl PureFactStore {
         for atom in exact_pointers.into_iter().chain(other_operands) {
             if let Some(bucket) = self.bitvector_equalities_by_atom.get(atom) {
                 for equality in bucket.iter() {
+                    if let Some(limit) = search_limit
+                        && (equalities.len() == limit
+                            || crate::instrumentation::deadline_exceeded_with_work(1))
+                    {
+                        return equalities;
+                    }
                     if seen.insert(Arc::as_ptr(equality) as usize) {
                         equalities.push(equality.clone());
                     }

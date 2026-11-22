@@ -99,15 +99,9 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
                 rewrite(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model), c.model);
                 known();
             }
-            apply(plug_parent_consistent_ctx(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), t.model, anchor)) using {
-                rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), t.model), anchor) == 1;
-            };
-            apply(ctx_consistent_left_focus(identity, grandparent, color, sibling_model, erase_context(up_model), t.model, anchor)) using {
-                ctx_consistent(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), t.model, anchor) == 1;
-            };
-            apply(erase_parent_consistent_parent_is(t.model, identity)) using {
-                rb_parent_consistent(t.model, identity) == 1;
-            };
+            apply(plug_parent_consistent_ctx(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), t.model, anchor));
+            apply(ctx_consistent_left_focus(identity, grandparent, color, sibling_model, erase_context(up_model), t.model, anchor));
+            apply(erase_parent_consistent_parent_is(t.model, identity));
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { model: RbTree::Node(identity, grandparent, color, old(t.model), sibling_model), left: t, right: s });
             apply(erase_spine_depth_is_nonnegative(up_model));
@@ -372,9 +366,9 @@ theorem erase_unlink_red_if_not_black(c: Color) {
     ensures c == Color::Red by {
         let ih = induct(c);
         match c {
-            Color::Red => { normalize(); }
+            Color::Red => { known(); }
             Color::Black => {
-                have Color::Black == Color::Black by normalize();
+                have Color::Black == Color::Black by known();
                 contradiction(Color::Black == Color::Black);
             }
         }
@@ -494,10 +488,10 @@ theorem erase_outcome_deep(node: struct rb_node*, parent: struct rb_node*, color
     mn: struct rb_node*, mp: struct rb_node*, mc: Color, ml: RbTree, mr: RbTree,
     rr: RbTree, up: Context) {
     ensures erase_outcome(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), up) == erase_deep_outcome(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), up, rb_minimum(RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr))) by {
-        unfold(erase_outcome(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), up)); normalize();
+        unfold(erase_outcome(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), up)); known();
     }
     ensures erase_splice(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr))) == erase_deep_splice(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), rb_minimum(RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr))) by {
-        unfold(erase_splice(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)))); normalize();
+        unfold(erase_splice(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)))); known();
     }
 }
 
@@ -742,11 +736,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             mark after_child_reparent;
                                                             have contains(memory(child->__rb_parent_color), region(38).footprint) by known();
                                                             apply(click::separation::contains_refl(memory(node->__rb_parent_color)));
-                                                            apply(click::separation::separate_restrict(memory(child->__rb_parent_color), memory(node->__rb_parent_color), region(38).footprint, memory(node->__rb_parent_color))) using {
-                                                                separate(memory(child->__rb_parent_color), memory(node->__rb_parent_color));
-                                                                contains(memory(child->__rb_parent_color), region(38).footprint);
-                                                                contains(memory(node->__rb_parent_color), memory(node->__rb_parent_color));
-                                                            }
+                                                            apply(click::separation::separate_restrict(memory(child->__rb_parent_color), memory(node->__rb_parent_color), region(38).footprint, memory(node->__rb_parent_color)));
                                                             have *((&node->__rb_parent_color) as (int32**)) == at(before_reparent, *((&node->__rb_parent_color) as (int32**))) by {
                                                                 preserve(memory(node->__rb_parent_color), region(38));
                                                             }
@@ -831,11 +821,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint) by known();
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_left)) by known();
                                                             apply(click::separation::contains_refl(memory(successor->rb_left)));
-                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left))) using {
-                                                                separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_left));
-                                                                contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint);
-                                                                contains(memory(successor->rb_left), memory(successor->rb_left));
-                                                            }
+                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left)));
                                                             have at(after_linking_left_child, successor->rb_left) == lid by known();
                                                             have at(before_left_reparent, successor->rb_left) == at(after_linking_left_child, successor->rb_left) by known();
                                                             have successor->rb_left == at(before_left_reparent, successor->rb_left) by {
@@ -904,11 +890,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have at(before_left_reparent, child->rb_right) == at(after_linking_left_child, child->rb_right) by known();
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->rb_right)) by known();
                                                             apply(click::separation::contains_refl(memory(child->rb_right)));
-                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->rb_right), region(43).footprint, memory(child->rb_right))) using {
-                                                                separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->rb_right));
-                                                                contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint);
-                                                                contains(memory(child->rb_right), memory(child->rb_right));
-                                                            }
+                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->rb_right), region(43).footprint, memory(child->rb_right)));
                                                             have at(after_left_reparent, child->rb_right) == at(before_left_reparent, child->rb_right) by {
                                                                 preserve(memory(child->rb_right), region(43));
                                                             }
@@ -964,11 +946,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have at(before_left_reparent, *((&child->__rb_parent_color) as (int32**))) == at(after_linking_left_child, *((&child->__rb_parent_color) as (int32**))) by known();
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->__rb_parent_color)) by known();
                                                             apply(click::separation::contains_refl(memory(child->__rb_parent_color)));
-                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->__rb_parent_color), region(43).footprint, memory(child->__rb_parent_color))) using {
-                                                                separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->__rb_parent_color));
-                                                                contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint);
-                                                                contains(memory(child->__rb_parent_color), memory(child->__rb_parent_color));
-                                                            }
+                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->__rb_parent_color), region(43).footprint, memory(child->__rb_parent_color)));
                                                             have *((&child->__rb_parent_color) as (int32**)) == at(before_left_reparent, *((&child->__rb_parent_color) as (int32**))) by {
                                                                 preserve(memory(child->__rb_parent_color), region(43));
                                                             }
@@ -1026,11 +1004,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have at(before_left_reparent, successor->rb_right) == at(after_linking_left_child, successor->rb_right) by known();
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_right)) by known();
                                                             apply(click::separation::contains_refl(memory(successor->rb_right)));
-                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_right), region(43).footprint, memory(successor->rb_right))) using {
-                                                                separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_right));
-                                                                contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint);
-                                                                contains(memory(successor->rb_right), memory(successor->rb_right));
-                                                            }
+                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_right), region(43).footprint, memory(successor->rb_right)));
                                                             have successor->rb_right == at(before_left_reparent, successor->rb_right) by {
                                                                 preserve(memory(successor->rb_right), region(43));
                                                             }
@@ -1616,11 +1590,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             mark after_child_reparent;
                                                             have contains(memory(child->__rb_parent_color), region(38).footprint) by known();
                                                             apply(click::separation::contains_refl(memory(node->__rb_parent_color)));
-                                                            apply(click::separation::separate_restrict(memory(child->__rb_parent_color), memory(node->__rb_parent_color), region(38).footprint, memory(node->__rb_parent_color))) using {
-                                                                separate(memory(child->__rb_parent_color), memory(node->__rb_parent_color));
-                                                                contains(memory(child->__rb_parent_color), region(38).footprint);
-                                                                contains(memory(node->__rb_parent_color), memory(node->__rb_parent_color));
-                                                            }
+                                                            apply(click::separation::separate_restrict(memory(child->__rb_parent_color), memory(node->__rb_parent_color), region(38).footprint, memory(node->__rb_parent_color)));
                                                             have *((&node->__rb_parent_color) as (int32**)) == at(before_reparent, *((&node->__rb_parent_color) as (int32**))) by {
                                                                 preserve(memory(node->__rb_parent_color), region(38));
                                                             }
@@ -1702,11 +1672,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint) by known();
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_left)) by known();
                                                             apply(click::separation::contains_refl(memory(successor->rb_left)));
-                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left))) using {
-                                                                separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_left));
-                                                                contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint);
-                                                                contains(memory(successor->rb_left), memory(successor->rb_left));
-                                                            }
+                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left)));
                                                             have at(after_linking_left_child, successor->rb_left) == lid by known();
                                                             have at(before_left_reparent, successor->rb_left) == at(after_linking_left_child, successor->rb_left) by known();
                                                             have successor->rb_left == at(before_left_reparent, successor->rb_left) by {
@@ -1776,11 +1742,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have at(before_left_reparent, child->rb_right) == at(after_linking_left_child, child->rb_right) by known();
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->rb_right)) by known();
                                                             apply(click::separation::contains_refl(memory(child->rb_right)));
-                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->rb_right), region(43).footprint, memory(child->rb_right))) using {
-                                                                separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->rb_right));
-                                                                contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint);
-                                                                contains(memory(child->rb_right), memory(child->rb_right));
-                                                            }
+                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->rb_right), region(43).footprint, memory(child->rb_right)));
                                                             have at(after_left_reparent, child->rb_right) == at(before_left_reparent, child->rb_right) by {
                                                                 preserve(memory(child->rb_right), region(43));
                                                             }
@@ -1836,11 +1798,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have at(before_left_reparent, *((&child->__rb_parent_color) as (int32**))) == at(after_linking_left_child, *((&child->__rb_parent_color) as (int32**))) by known();
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->__rb_parent_color)) by known();
                                                             apply(click::separation::contains_refl(memory(child->__rb_parent_color)));
-                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->__rb_parent_color), region(43).footprint, memory(child->__rb_parent_color))) using {
-                                                                separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->__rb_parent_color));
-                                                                contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint);
-                                                                contains(memory(child->__rb_parent_color), memory(child->__rb_parent_color));
-                                                            }
+                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(child->__rb_parent_color), region(43).footprint, memory(child->__rb_parent_color)));
                                                             have *((&child->__rb_parent_color) as (int32**)) == at(before_left_reparent, *((&child->__rb_parent_color) as (int32**))) by {
                                                                 preserve(memory(child->__rb_parent_color), region(43));
                                                             }
@@ -1898,11 +1856,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have at(before_left_reparent, successor->rb_right) == at(after_linking_left_child, successor->rb_right) by known();
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_right)) by known();
                                                             apply(click::separation::contains_refl(memory(successor->rb_right)));
-                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_right), region(43).footprint, memory(successor->rb_right))) using {
-                                                                separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_right));
-                                                                contains(at(before_left_reparent, memory(tmp->__rb_parent_color)), region(43).footprint);
-                                                                contains(memory(successor->rb_right), memory(successor->rb_right));
-                                                            }
+                                                            apply(click::separation::separate_restrict(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(successor->rb_right), region(43).footprint, memory(successor->rb_right)));
                                                             have successor->rb_right == at(before_left_reparent, successor->rb_right) by {
                                                                 preserve(memory(successor->rb_right), region(43));
                                                             }
@@ -2062,24 +2016,16 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have contains(memory(parent->rb_left), memory(((&parent->rb_left) as (uint8*))[0..8])) by {
                                                                 normalize();
                                                             }
-                                                            apply(separation::contains_refl(memory(*augment))) using {};
+                                                            apply(separation::contains_refl(memory(*augment)));
                                                             apply(separation::separate_restrict(memory(parent->rb_left), memory(*augment),
-                                                                memory(((&parent->rb_left) as (uint8*))[0..8]), memory(*augment))) using {
-                                                                separate(memory(parent->rb_left), memory(*augment));
-                                                                contains(memory(parent->rb_left), memory(((&parent->rb_left) as (uint8*))[0..8]));
-                                                                contains(memory(*augment), memory(*augment));
-                                                            };
+                                                                memory(((&parent->rb_left) as (uint8*))[0..8]), memory(*augment)));
                                                             let retained_detached = fold(erase_saved_left(parent), { child: child2 });
                                                             have separate(memory((node as (uint64*))[0..3]), memory(*augment)) by known();
                                                             have contains(memory((node as (uint64*))[0..3]), memory((node as (uint8*))[0..8])) by {
                                                                 normalize();
                                                             }
                                                             apply(separation::separate_restrict(memory((node as (uint64*))[0..3]), memory(*augment),
-                                                                memory((node as (uint8*))[0..8]), memory(*augment))) using {
-                                                                separate(memory((node as (uint64*))[0..3]), memory(*augment));
-                                                                contains(memory((node as (uint64*))[0..3]), memory((node as (uint8*))[0..8]));
-                                                                contains(memory(*augment), memory(*augment));
-                                                            };
+                                                                memory((node as (uint8*))[0..8]), memory(*augment)));
                                                             mark parent_link_changed;
                                                             // Join the replacement link and the successor fields needed
                                                             // by the shared descent-spine and outer-context rebuild.
@@ -2705,11 +2651,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 have separate(memory(child->__rb_parent_color), memory(*augment)) by known();
                                 apply(click::separation::contains_refl(memory(child->__rb_parent_color)));
                                 have contains(memory(*augment), memory(augment->propagate)) by { normalize() using { }; }
-                                apply(click::separation::separate_restrict(memory(child->__rb_parent_color), memory(*augment), memory(child->__rb_parent_color), memory(augment->propagate))) using {
-                                    separate(memory(child->__rb_parent_color), memory(*augment));
-                                    contains(memory(child->__rb_parent_color), memory(child->__rb_parent_color));
-                                    contains(memory(*augment), memory(augment->propagate));
-                                }
+                                apply(click::separation::separate_restrict(memory(child->__rb_parent_color), memory(*augment), memory(child->__rb_parent_color), memory(augment->propagate)));
                                 have separate(statement(4).statement(3).statement(0).footprint, memory(augment->propagate)) by {
                                     normalize() using { separate(memory(child->__rb_parent_color), memory(augment->propagate)); };
                                 }
@@ -3010,11 +2952,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have contains(memory(el_id->__rb_parent_color), region(43).footprint) by known();
                                                     have separate(memory(el_id->__rb_parent_color), memory(successor->rb_left)) by known();
                                                     apply(click::separation::contains_refl(memory(successor->rb_left)));
-                                                    apply(click::separation::separate_restrict(memory(el_id->__rb_parent_color), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left))) using {
-                                                        separate(memory(el_id->__rb_parent_color), memory(successor->rb_left));
-                                                        contains(memory(el_id->__rb_parent_color), region(43).footprint);
-                                                        contains(memory(successor->rb_left), memory(successor->rb_left));
-                                                    }
+                                                    apply(click::separation::separate_restrict(memory(el_id->__rb_parent_color), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left)));
                                                     have successor->rb_left == at(before_left_reparent, successor->rb_left) by {
                                                         preserve(memory(successor->rb_left), region(43));
                                                     }
@@ -3267,11 +3205,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have contains(memory(el_id->__rb_parent_color), region(43).footprint) by known();
                                                     have separate(memory(el_id->__rb_parent_color), memory(successor->rb_left)) by known();
                                                     apply(click::separation::contains_refl(memory(successor->rb_left)));
-                                                    apply(click::separation::separate_restrict(memory(el_id->__rb_parent_color), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left))) using {
-                                                        separate(memory(el_id->__rb_parent_color), memory(successor->rb_left));
-                                                        contains(memory(el_id->__rb_parent_color), region(43).footprint);
-                                                        contains(memory(successor->rb_left), memory(successor->rb_left));
-                                                    }
+                                                    apply(click::separation::separate_restrict(memory(el_id->__rb_parent_color), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left)));
                                                     have successor->rb_left == at(before_left_reparent, successor->rb_left) by {
                                                         preserve(memory(successor->rb_left), region(43));
                                                     }
@@ -3551,11 +3485,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have contains(memory(el_id->__rb_parent_color), region(43).footprint) by known();
                                             have separate(memory(el_id->__rb_parent_color), memory(successor->rb_left)) by known();
                                             apply(click::separation::contains_refl(memory(successor->rb_left)));
-                                            apply(click::separation::separate_restrict(memory(el_id->__rb_parent_color), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left))) using {
-                                                separate(memory(el_id->__rb_parent_color), memory(successor->rb_left));
-                                                contains(memory(el_id->__rb_parent_color), region(43).footprint);
-                                                contains(memory(successor->rb_left), memory(successor->rb_left));
-                                            }
+                                            apply(click::separation::separate_restrict(memory(el_id->__rb_parent_color), memory(successor->rb_left), region(43).footprint, memory(successor->rb_left)));
                                             have successor->rb_left == at(before_left_reparent, successor->rb_left) by {
                                                 preserve(memory(successor->rb_left), region(43));
                                             }

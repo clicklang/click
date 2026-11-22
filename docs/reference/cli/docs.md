@@ -37,7 +37,7 @@ closest names.
 
 ## Use in refusals
 
-A proof error from [`click verify`](verify.md) that Click can attribute to a
+A tactic refusal from [`click verify`](verify.md) that Click can attribute to a
 written tactic ends with what refused it and the entry that documents it:
 
 ```text
@@ -46,7 +46,7 @@ see: click docs normalize
 ```
 
 The class comes from the written tactic's form in the tactic table: written
-`apply(t(x))` is smart and `apply(t(x)) using { ... }` is simple. A C
+`apply(t(x))` is a simple named theorem application. A C
 statement's open requirement is proved by the written smart tactic that
 reached the statement, such as `step_until`, or else by the implicit closer of
 a written step. That closer is smart,
@@ -54,12 +54,11 @@ and its refusal points at `click docs tracing`. A control tactic such as `have` 
 entry, since its refusal comes from a tactic it contains.
 
 A smart form that elides an argument a simple form of the same tactic takes
-written, such as `apply(t(x))` beside `apply(t(x)) using { ... }`, or
-`transport(P, Q)` beside its `using` form, has a fourth meaning: a search fills
+written, such as `transport(P, Q)` beside its `using` form, has a fourth meaning: a search fills
 the argument, and a refusal is a search miss. Its line reads:
 
 ```text
-refused by: `apply` (smart: a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument)
+refused by: `transport` (smart: a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument)
 ```
 
 `click docs` prints the same meaning beside each such form, with the form

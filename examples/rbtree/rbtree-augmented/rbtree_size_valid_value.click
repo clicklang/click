@@ -26,12 +26,12 @@ theorem sized_valid_value_matches_size(tree: SizedTree) {
                 unfold(sized_value(SizedTree::Empty));
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(rb_subtree_size(RbTree::Empty));
-                normalize();
+                known();
             },
             SizedTree::Node(identity, parent, color, value, left, right) => {
                 apply(sized_valid_parts(identity, parent, color, value, left, right));
-                apply(ih(left)) using { sized_counts_valid(left) == 1; };
-                apply(ih(right)) using { sized_counts_valid(right) == 1; };
+                apply(ih(left));
+                apply(ih(right));
                 unfold(sized_value(SizedTree::Node(identity, parent, color, value, left, right)));
                 unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left, right)));
                 unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left), sized_shape(right))));

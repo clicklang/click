@@ -18,11 +18,11 @@ void keep(uint8* p) {
 } by {
     step();
     have separate(statement(0).footprint, m) by {
-        normalize() using { separate(memory(*p), m); };
+        solve() using { separate(memory(*p), m); };
     }
     step();
     have separate(statement(1).footprint, m) by {
-        normalize() using { separate(memory(*p), m); };
+        solve() using { separate(memory(*p), m); };
     }
     have at(statement(0).exit, m.value) == at(statement(0).entry, m.value) by {
         preserve(m, statement(0));

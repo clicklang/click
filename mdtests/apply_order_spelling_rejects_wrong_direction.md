@@ -7,13 +7,10 @@ theorem observed_bounds(x: uint32) {
 }
 
 theorem wrong(x: uint32) {
-    ensures 0 >= to_integer(x) by {
-        apply(observed_bounds(x));
-        known();
-    }
+    ensures 0 >= to_integer(x) by apply(observed_bounds(x));
 }
 ```
 
 ```expect
-fail: `known` requires
+fail: `solve` failed for `wrong.ensures_0`
 ```

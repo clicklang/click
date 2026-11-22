@@ -45,17 +45,13 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
     have e == s->p + i by { known(); }
     step();
     have separate(memory(*e), memory(s->p) * memory(s->e.v)) by { known(); }
-    apply(separation::contains_left(memory(s->p), memory(s->e.v))) using {};
-    apply(separation::contains_refl(memory(*e))) using {};
+    apply(separation::contains_left(memory(s->p), memory(s->e.v)));
+    apply(separation::contains_refl(memory(*e)));
     apply(separation::separate_restrict(
         memory(*e), memory(s->p) * memory(s->e.v), memory(*e), memory(s->p)
-    )) using {
-        separate(memory(*e), memory(s->p) * memory(s->e.v));
-        contains(memory(*e), memory(*e));
-        contains(memory(s->p) * memory(s->e.v), memory(s->p));
-    };
+    ));
     have separate(statement(1).footprint, memory(s->p)) by {
-        normalize() using { separate(memory(*e), memory(s->p)); };
+        known();
     }
     have s->p == at(statement(1).entry, s->p) by {
         preserve(memory(s->p), statement(1));
@@ -64,16 +60,12 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
         rewrite(s->p, at(statement(1).entry, s->p));
         known();
     }
-    apply(separation::contains_right(memory(s->p), memory(s->e.v))) using {};
+    apply(separation::contains_right(memory(s->p), memory(s->e.v)));
     apply(separation::separate_restrict(
         memory(*e), memory(s->p) * memory(s->e.v), memory(*e), memory(s->e.v)
-    )) using {
-        separate(memory(*e), memory(s->p) * memory(s->e.v));
-        contains(memory(*e), memory(*e));
-        contains(memory(s->p) * memory(s->e.v), memory(s->e.v));
-    };
+    ));
     have separate(statement(1).footprint, memory(s->e.v)) by {
-        normalize() using { separate(memory(*e), memory(s->e.v)); };
+        known();
     }
     have s->e.v == at(statement(1).entry, s->e.v) by {
         preserve(memory(s->e.v), statement(1));
@@ -84,14 +76,14 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
     }
     have forall (k: uint64) { k < s->e.v and k != i implies s->p[k] == old(s->p[k]) } by {
         intro(); intro();
-        apply(separation::separate_elements(s->p, i, k)) using { k != i; };
+        apply(separation::separate_elements(s->p, i, k));
         have separate(memory(*e), memory(at(statement(1).entry, s->p + k)[0])) by {
             rewrite(e, s->p + i);
             rewrite(at(statement(1).entry, s->p), s->p);
             known();
         }
         have separate(statement(1).footprint, memory(at(statement(1).entry, s->p + k)[0])) by {
-            normalize() using { separate(memory(*e), memory(at(statement(1).entry, s->p + k)[0])); };
+            known();
         }
         have (let saved: int32* = at(statement(1).entry, s->p + k); saved[0]) ==
             at(statement(1).entry, s->p[k]) by {

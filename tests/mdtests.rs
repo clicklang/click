@@ -42,6 +42,9 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    // 8.85s in the parallel gate. The kernel test a_store_inside_the_range_is_refused
+    // checks the overlapping store directly. Nightly also checks solve's refusal.
+    "fold_read_transport_rejects_a_store_inside_the_range.md",
     "c_function_type_typedef.md", // 0.86s focused: verify callback dispatch through an alias parameter and a field
     "pointer_offset_explicit_bridge.md", // 0.81s focused: explicit scalar-pointer law applications
     "nested_conditional_explicit_arm_equations.md", // 0.89s focused: arithmetic, observations and casts

@@ -10,6 +10,7 @@
 //! Each statement records the source range it covers, so a MIR statement is
 //! the innermost statement whose range holds where it starts.
 
+use std::collections::BTreeMap;
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
@@ -32,10 +33,15 @@ pub(crate) fn parse(source: &str) -> Option<syn::File> {
     syn::parse_file(source).ok()
 }
 
-/// The statements of the function in `file` whose item covers `at`, in
-/// preorder: a statement before the statements it contains. `None` when no
-/// function body covers `at`.
-pub(crate) fn function_statements(file: &syn::File, at: Position) -> Option<Vec<SourceStatement>> {
+#[derive(Default)]
+pub(crate) struct FunctionSource {
+    pub(crate) statements: Vec<SourceStatement>,
+    pub(crate) compound_literals: BTreeMap<(Position, Position), u32>,
+    pub(crate) borrows: BTreeMap<(Position, Position), u32>,
+}
+
+/// The written statements and compound literal occurrences of the function that covers `at`.
+pub(crate) fn function_source(file: &syn::File, at: Position) -> Option<FunctionSource> {
     let mut finder = BodyFinder { at, body: None };
     finder.visit_file(file);
     let body = finder.body??;
@@ -47,7 +53,58 @@ pub(crate) fn function_statements(file: &syn::File, at: Position) -> Option<Vec<
             &mut statements,
         );
     }
-    Some(statements)
+    let mut storage = StorageOccurrences::default();
+    storage.visit_block(body);
+    Some(FunctionSource {
+        statements,
+        compound_literals: storage.literals,
+        borrows: storage.borrows,
+    })
+}
+
+#[derive(Default)]
+struct StorageOccurrences {
+    literals: BTreeMap<(Position, Position), u32>,
+    borrows: BTreeMap<(Position, Position), u32>,
+}
+
+impl StorageOccurrences {
+    fn add(positions: &mut BTreeMap<(Position, Position), u32>, expression: &impl Spanned) {
+        let span = expression.span();
+        let start = span.start();
+        let end = span.end();
+        let ordinal = positions.len() as u32;
+        positions.insert(
+            ((start.line, start.column), (end.line, end.column)),
+            ordinal,
+        );
+    }
+}
+
+impl<'ast> Visit<'ast> for StorageOccurrences {
+    fn visit_expr_array(&mut self, expression: &'ast syn::ExprArray) {
+        Self::add(&mut self.literals, expression);
+        syn::visit::visit_expr_array(self, expression);
+    }
+
+    fn visit_expr_repeat(&mut self, expression: &'ast syn::ExprRepeat) {
+        Self::add(&mut self.literals, expression);
+        syn::visit::visit_expr_repeat(self, expression);
+    }
+
+    fn visit_expr_struct(&mut self, expression: &'ast syn::ExprStruct) {
+        Self::add(&mut self.literals, expression);
+        syn::visit::visit_expr_struct(self, expression);
+    }
+
+    fn visit_expr_reference(&mut self, expression: &'ast syn::ExprReference) {
+        Self::add(&mut self.borrows, expression);
+        syn::visit::visit_expr_reference(self, expression);
+    }
+
+    fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+
+    fn visit_item(&mut self, _: &'ast syn::Item) {}
 }
 
 /// The innermost statement of `statements` whose range holds `at`.
@@ -179,6 +236,10 @@ impl<'ast> Visit<'ast> for Children<'ast> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn function_statements(file: &syn::File, at: Position) -> Option<Vec<SourceStatement>> {
+        function_source(file, at).map(|source| source.statements)
+    }
 
     fn paths(source: &str, at: Position) -> Vec<Vec<u32>> {
         function_statements(&parse(source).unwrap(), at)

@@ -2791,6 +2791,16 @@ impl Printer<'_> {
                 {
                     return Some(atom(subslice));
                 }
+                // A struct's value, `*p` or a literal of its fields.
+                if value.algebraic_type.name == *variant
+                    && value.algebraic_type.arguments.is_empty()
+                    && let Some(spelled) = crate::surface::struct_values::spell(
+                        &value.algebraic_type.name,
+                        &spelled_fields,
+                    )
+                {
+                    return Some(atom(spelled));
+                }
                 let type_name = match value.algebraic_type.arguments.as_slice() {
                     [crate::kernel::AlgebraicValueType::Program(element)]
                         if value.algebraic_type.name == "Slice" =>
@@ -3502,13 +3512,13 @@ mod tests {
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &state);
         let fact = |name: String, arguments: Vec<Term>| Proposition::Predicate { name, arguments };
         let same = fact(
-            crate::kernel::SAME_OBJECT_PREDICATE_NAME.into(),
+            crate::kernel::SAME_ALLOCATION_PREDICATE_NAME.into(),
             vec![
                 Term::ProgramValue((cell("m")).into()),
                 Term::ProgramValue((cell("p")).into()),
             ],
         );
-        assert_eq!(source(&same, &mut labels), "same_object(m, p)");
+        assert_eq!(source(&same, &mut labels), "same_allocation(m, p)");
         let contract = fact(
             crate::kernel::FunctionContract::predicate_name_for("ordered"),
             vec![

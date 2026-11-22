@@ -87,7 +87,11 @@ and equality of widened byte views do not supply the original domain.
 
 Access matching checks the requested bytes or clause range against the cached
 selected domain and checks the supplier's object identity. A broader holding
-can supply those bytes, including when adjacent holdings were coalesced.
+can supply those bytes, including when adjacent holdings were coalesced. When
+the required pointer's domain is opaque and has no cached selection, coverage
+evidence for that domain that contains the requested bytes, or both clause
+endpoints, bounds the access instead; the holding must still have the same
+provenance and supply the bytes.
 Both clause endpoints are checked in their original 32-bit or native-width
 coordinates. The supplier must separately cover the access and provide the
 required permission, initialization, and liveness.
@@ -816,11 +820,10 @@ for doing so. Global load naming remains independent of contextual equality.
 
 Checked transport conclusions enter the ordinary int32 equality interface.
 For example, after a store to `p[k]`, explicit transport can use `i != k` to
-prove that `p[i]` equals its entry value. With `i == j`, normalization then
-combines this edge with current-state load congruence to prove the same for
-`p[j]`. The graph needs no frame search or state-merging operation.
-[The executable composition example](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_transported_int32_loads.md)
-keeps the transport and graph steps explicit. Regression tests remove either
+prove that `p[i]` equals its entry value. Rewriting the current index with
+`i == j` lets `known()` close the corresponding goal for `p[j]`.
+[The executable composition example](https://github.com/clicklang/click/blob/master/mdtests/transported_int32_load_congruence.md)
+shows the separation, transport, and rewrite steps. Regression tests remove either
 premise or the bridge, reject an overlapping store, recheck expansion, and
 verify that a context without the bridge lacks only its cross-state consequences.
 
@@ -1810,10 +1813,11 @@ operation can query the graph maintained from the certificate's allowed facts.
 Equality substitution has a kernel-owned checked rule in
 `proof/equality_rewrite.rs`. It admits the cited equality through the persistent
 exact premise index, computes the substitution, and returns a private checked
-result. That result constructs the proposition obligation; surface code supplies
-presentation data, not a replacement semantic goal. A different load form
-must pass the kernel's corresponding-leaf transport check first. The candidate
-helper used by smart planning has no proof authority.
+result. That result constructs the proposition obligation. A Surface
+spelling must lower to the checked result with the same read identities,
+subject to the kernel's exact observation and Integer normal forms. A detached
+scalar read can use the indexed store name for its exact snapshot, address,
+and type. The candidate helper used by smart planning has no proof authority.
 
 The outer quantifier walk refuses binder collisions with the bounded,
 carrier-aware variable collector, which treats states as opaque. Direct

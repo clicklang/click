@@ -23,5 +23,5 @@ void *bad_arithmetic(void *value) {
 ```
 
 ```expect
-fail: Click could not determine the pointee type for this operation
+fail: pointer operation has no known pointee type
 ```

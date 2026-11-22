@@ -23,37 +23,29 @@ void mark(uint64 *values, int32 *visited, int32 n, int32 cur, uint64 stamp) {
     mark before;
     have at(before, forall (k: int32) { 0 <= k and k < n implies values[k] == stamp }) by known();
     have contains(memory(visited[0..n]), memory(visited[cur])) by {
-        apply(click::separation::contains_element(visited, 0, n, cur)) using { 0 <= cur; cur < n; };
+        apply(click::separation::contains_element(visited, 0, n, cur));
     }
     have contains(memory(values[0..n]), memory(values[0..n])) by {
         apply(click::separation::contains_refl(memory(values[0..n])));
     }
     have separate(memory(visited[cur]), memory(values[0..n])) by {
-        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(values[0..n]), memory(visited[cur]), memory(values[0..n]))) using {
-            separate(memory(visited[0..n]), memory(values[0..n]));
-            contains(memory(visited[0..n]), memory(visited[cur]));
-            contains(memory(values[0..n]), memory(values[0..n]));
-        };
+        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(values[0..n]), memory(visited[cur]), memory(values[0..n])));
     }
     step();
     have forall (k: int32) { 0 <= k and k < n implies values[k] == stamp } by {
         intro();
         intro();
         have contains(memory(values[0..n]), memory(values[k])) by {
-            apply(click::separation::contains_element(values, 0, n, k)) using { 0 <= k; k < n; };
+            apply(click::separation::contains_element(values, 0, n, k));
         }
         have contains(memory(visited[cur]), memory(visited[cur])) by {
             apply(click::separation::contains_refl(memory(visited[cur])));
         }
         have separate(memory(visited[cur]), memory(values[k])) by {
-            apply(click::separation::separate_restrict(memory(visited[cur]), memory(values[0..n]), memory(visited[cur]), memory(values[k]))) using {
-                separate(memory(visited[cur]), memory(values[0..n]));
-                contains(memory(visited[cur]), memory(visited[cur]));
-                contains(memory(values[0..n]), memory(values[k]));
-            };
+            apply(click::separation::separate_restrict(memory(visited[cur]), memory(values[0..n]), memory(visited[cur]), memory(values[k])));
         }
         have separate(statement(0).footprint, memory(values[k])) by {
-            normalize() using { separate(memory(visited[cur]), memory(values[k])); };
+            solve() using { separate(memory(visited[cur]), memory(values[k])); };
         }
         have values[k] == at(before, values[k]) by {
             preserve(memory(values[k]), statement(0));

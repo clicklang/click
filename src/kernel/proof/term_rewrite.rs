@@ -2092,6 +2092,11 @@ impl<'a> TermRewrite<'a> {
         self.algebraic.is_some() || self.integer_exact.is_some() || self.integer_variables.is_some()
     }
 
+    fn preserves_closed_value_conditional(&self, guard: &ConditionTerm) -> bool {
+        self.integer_variables.is_some()
+            && crate::kernel::proof::fact_reasoning::literal_value_if_guard(guard).is_some()
+    }
+
     fn preserves_machine_conditional(&self, guard: &ConditionTerm) -> bool {
         self.integer_exact.is_some()
             || (self.integer_variables.is_some()
@@ -2117,25 +2122,6 @@ impl<'a> TermRewrite<'a> {
         rewrite.integer_exact = Some((from, to));
         rewrite.enforce_integer_work_limit = true;
         rewrite
-    }
-
-    /// A retained read is an atom under a binder only when its explicit
-    /// address does not mention that binder. SymbolicMemory states remain immutable.
-    pub(crate) fn read_address_independent_of(
-        term: &MachineTerm,
-        bound: &BTreeSet<Variable>,
-    ) -> bool {
-        let Some(MachineTerm::MemoryLoad(_, pointer, _)) =
-            crate::kernel::eval::viewed_as_memory_load(term)
-        else {
-            return false;
-        };
-        let mut carriers = CarrierVariables::for_rewrite(true);
-        collect_pointer_carriers(&pointer, &mut carriers);
-        !carriers.exhausted()
-            && carriers.program_values.is_disjoint(bound)
-            && carriers.integer.is_disjoint(bound)
-            && carriers.algebraic.is_disjoint(bound)
     }
 
     /// Simultaneous one-step read comparison. Only selected syntax is visited;
@@ -4035,8 +4021,10 @@ impl<'a> TermRewrite<'a> {
                 if let Some(conditions) = &mut self.collected_conditions {
                     conditions.push(condition.as_ref().clone());
                 }
+                let preserve = self.integer_exact.is_some()
+                    || self.preserves_closed_value_conditional(condition);
                 let condition = self.condition(condition);
-                let condition = if self.integer_exact.is_some() {
+                let condition = if preserve {
                     condition
                 } else {
                     folded_machine_condition(condition)
@@ -4044,9 +4032,7 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_algebraic(term);
                 }
-                if self.integer_exact.is_none()
-                    && let ConditionTerm::Constant(value) = condition
-                {
+                if !preserve && let ConditionTerm::Constant(value) = condition {
                     return self.algebraic(if value { then_term } else { else_term });
                 }
                 let then_term = self.algebraic(then_term);
@@ -4545,8 +4531,10 @@ impl<'a> TermRewrite<'a> {
                 if let Some(conditions) = &mut self.collected_conditions {
                     conditions.push(condition.as_ref().clone());
                 }
+                let keep_closed = self.preserves_closed_value_conditional(condition);
+                let preserve = self.integer_exact.is_some() || keep_closed;
                 let condition = self.condition(condition);
-                let condition = if self.integer_exact.is_some() {
+                let condition = if preserve {
                     condition
                 } else {
                     folded_machine_condition(condition)
@@ -4554,9 +4542,7 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_integer(shared.as_ref());
                 }
-                if self.integer_exact.is_none()
-                    && let ConditionTerm::Constant(value) = condition
-                {
+                if !preserve && let ConditionTerm::Constant(value) = condition {
                     let result = self.integer_shared(if value { then_term } else { else_term });
                     if self.checked_work_exhausted() {
                         return exhausted_integer(shared.as_ref());
@@ -4570,7 +4556,7 @@ impl<'a> TermRewrite<'a> {
                 // like dropping a rewritten `+ 0` above, it only deletes a
                 // node, and keeping it would leave `if c { y } else { y }`
                 // beside the `y` every producer builds.
-                if self.integer_exact.is_none() || then_term == else_term {
+                if !keep_closed && (!preserve || then_term == else_term) {
                     IntegerTerm::if_then_else(condition, then_term, else_term)
                 } else {
                     IntegerTerm::If {
@@ -6886,6 +6872,21 @@ impl<'a> TermRewrite<'a> {
                             *kind,
                         )
                     });
+                // Exact reads keep their written point. A pointer equality
+                // can also keep the point of an indexed store read.
+                // The store receipt applies only to the original address.
+                let indexed_store_read =
+                    self.pointer_exact.is_some() && memory.indexed_stored_value().is_some();
+                if (memory.is_exact_read() || indexed_store_read)
+                    && memory.has_certified_read_view()
+                {
+                    return crate::kernel::eval::scalar_read_for_exact_cell_at(
+                        &memory.clone().for_exact_read(),
+                        &rewritten,
+                        *kind,
+                        bytes,
+                    );
+                }
                 // A projection belongs to the selected address. Instantiating
                 // an index must select the new address from that projection's
                 // recorded source, as direct lowering does. This is one indexed
@@ -6909,7 +6910,7 @@ impl<'a> TermRewrite<'a> {
                 }
                 let memory = observation
                     .filter(|_| use_origin)
-                    .and_then(|read| read.origin)
+                    .and_then(|read| read.origin.map(|point| point.into_shared_memory()))
                     .unwrap_or_else(|| memory.shared_memory().clone());
                 if self.resolve_registered_loads
                     && let Some(value) = memory

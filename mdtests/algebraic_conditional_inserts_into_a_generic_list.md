@@ -6,8 +6,8 @@ contains the value and conses the value on otherwise. Its laws hold for every
 element type: afterwards the list contains the value, and when the value was
 absent its length is one more.
 
-A proof selects a branch by deciding the condition: `unfold` the function, then
-`normalize() using` the condition or its negation. A C contract may also state
+To select a branch, unfold the function and cite the condition or its
+negation. A C contract may also state
 an algebraic conditional.
 
 ```c filename=keep.c
@@ -27,7 +27,7 @@ theorem insert_absent<T>(xs: List<T>, x: T) {
     requires not list::contains(xs, x);
     ensures insert(xs, x) == List<T>::Cons(x, xs) by {
         unfold(insert(xs, x));
-        normalize() using { not list::contains(xs, x); };
+        solve() using { not list::contains(xs, x); };
     }
 }
 
@@ -39,11 +39,11 @@ theorem insert_contains<T>(xs: List<T>, x: T) {
         } else {
             have insert(xs, x) == List<T>::Cons(x, xs) by {
                 unfold(insert(xs, x));
-                normalize() using { not list::contains(xs, x); };
+                known();
             }
             rewrite(insert(xs, x), List<T>::Cons(x, xs));
             unfold(list::contains(List<T>::Cons(x, xs), x));
-            normalize();
+            known();
         }
     }
 }
@@ -53,11 +53,11 @@ theorem insert_absent_grows<T>(xs: List<T>, x: T) {
     ensures list::length(insert(xs, x)) == Nat::Succ(list::length(xs)) by {
         have insert(xs, x) == List<T>::Cons(x, xs) by {
             unfold(insert(xs, x));
-            normalize() using { not list::contains(xs, x); };
+            solve() using { not list::contains(xs, x); };
         }
         rewrite(insert(xs, x), List<T>::Cons(x, xs));
         unfold(list::length(List<T>::Cons(x, xs)));
-        normalize();
+        known();
     }
 }
 

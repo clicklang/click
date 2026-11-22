@@ -14,19 +14,15 @@ void write_cell(int *p, int *q) {
 } by {
     step();
     have contains(statement(0).footprint, statement(0).footprint) by {
-        normalize();
+        apply(click::separation::contains_refl(statement(0).footprint));
     }
-    have contains(memory(*q), memory(*q)) by { normalize(); }
+    have contains(memory(*q), memory(*q)) by { apply(click::separation::contains_refl(memory(*q))); }
     have separate(statement(0).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        solve() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(0).footprint, memory(*q)) by {
         apply(separation::separate_restrict(statement(0).footprint, memory(*q),
-            statement(0).footprint, memory(*q))) using {
-            separate(statement(0).footprint, memory(*q));
-            contains(statement(0).footprint, statement(0).footprint);
-            contains(memory(*q), memory(*q));
-        };
+            statement(0).footprint, memory(*q)));
     }
 }
 ```

@@ -182,7 +182,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
     have plug(c.model, t.model) == t.model by {
         rewrite(c.model, Context::Top);
         unfold(plug(Context::Top, t.model));
-        normalize();
+        known();
     }
     have t.model == plug(old(c.model), old(t.model)) by {
         rewrite(t.model, plug(c.model, t.model));

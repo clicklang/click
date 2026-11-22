@@ -24,7 +24,8 @@ void set(int32* a, int32 i, int32 j) {
     ensures a[j] == 5;
 } by {
     step_until(function.exit);
-    have a[i] == 5 by normalize();
+    have a[i] == 5 by solve();
+    known();
     rewrite(j, i);
 }
 ```

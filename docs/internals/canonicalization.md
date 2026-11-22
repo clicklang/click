@@ -162,9 +162,10 @@ preferred class member. Both are contextual indexes, not a replacement for
 canonical form.
 
 A theorem's written premise can carry more checked guards than its instantiated
-requirement. `defined(a + b + c)` includes both additions' overflow guards;
-`integer::int32_add_to_integer(a + b, c)` needs only the outer guard because its first
-argument is already a bound value. Smart `apply` retains the whole written
+requirement. `defined(a + b) and defined(a + b + c)` includes both additions'
+overflow guards; `integer::int32_add_to_integer(a + b, c)` needs only the outer
+guard, `defined(a + b + c)`, because its first argument is already a bound
+value. Smart `apply` retains the whole written
 premise and uses the explicit checker's shared listed-premise rule to select
 its checked conjunct. It does not demand identical proposition structure or
 import omitted evidence from ambient facts.

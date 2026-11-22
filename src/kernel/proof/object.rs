@@ -1129,6 +1129,17 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         {
             return Ok(self.closed_focused());
         }
+        // An implication whose consequent is an available fact holds
+        // whatever its antecedent: one lookup of the consequent, as a guarded
+        // requirement (`left implies requirement`) needs once its
+        // requirement is known.
+        let consequent_available = |side: &Proposition| {
+            matches!(side, Proposition::Implies(_, consequent)
+                if available(consequent) || facts.contains(consequent))
+        };
+        if consequent_available(proposition) {
+            return Ok(self.closed_focused());
+        }
         // A conjunction or disjunction that is not itself a fact still
         // follows from checked leaves: every conjunct, or one disjunct.
         // Each side uses indexed facts or goal-local computation, without
@@ -1139,6 +1150,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let side_available = |side: &Proposition| {
             compound_available.contains(&std::ptr::from_ref(side))
                 || available(side)
+                || consequent_available(side)
                 || facts.contains(side)
                 || super::fact_reasoning::order_claim_forms(side)
                     .iter()
@@ -1647,6 +1659,18 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         fact: &Proposition,
         premises: &[Proposition],
     ) -> Result<Self, &'static str> {
+        self.apply_implication(fact, Some(premises))
+    }
+
+    pub(crate) fn apply_fact_from_scope(&self, fact: &Proposition) -> Result<Self, &'static str> {
+        self.apply_implication(fact, None)
+    }
+
+    fn apply_implication(
+        &self,
+        fact: &Proposition,
+        premises: Option<&[Proposition]>,
+    ) -> Result<Self, &'static str> {
         let branch = self
             .state
             .open_branches
@@ -1660,22 +1684,24 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             return Err("`apply(fact)` source implication is not an available fact");
         }
         let mut selected = crate::kernel::PureFactContext::new();
-        for premise in premises {
+        for premise in premises.unwrap_or_default() {
             if !facts.listed_premise_available(premise, &[], true) {
-                return Err("`apply(fact) using` lists a premise that is not available");
+                return Err("selected implication evidence contains an unavailable premise");
             }
             selected = selected.assume_proposition(premise.clone());
         }
         let mut conclusion = fact;
         while let Proposition::Implies(antecedent, consequent) = conclusion {
             if first_unavailable_connective_side(antecedent, &|side| {
-                selected.contains_known(side) || super::fact_reasoning::computes_leaf(side)
+                (if premises.is_some() {
+                    selected.contains_known(side)
+                } else {
+                    facts.pure_known_available(side) || facts.assumptions().contains_known(side)
+                }) || super::fact_reasoning::computes_leaf(side)
             })
             .is_some()
             {
-                return Err(
-                    "`apply(fact) using` cannot prove an antecedent from the listed premises",
-                );
+                return Err("`apply(fact)` has an unproved antecedent");
             }
             conclusion = consequent;
         }

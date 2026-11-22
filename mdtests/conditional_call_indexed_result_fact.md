@@ -30,34 +30,26 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
     ensures result == result;
 } by {
     have contains(memory(visited[0..n]), memory(visited[cur])) by {
-        apply(click::separation::contains_element(visited, 0, n, cur)) using { 0 <= cur; cur < n; };
+        apply(click::separation::contains_element(visited, 0, n, cur));
     }
     have contains(memory(next[0..n]), memory(next[0..n])) by {
         apply(click::separation::contains_refl(memory(next[0..n])));
     }
     have separate(memory(visited[cur]), memory(next[0..n])) by {
-        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[0..n]))) using {
-            separate(memory(visited[0..n]), memory(next[0..n]));
-            contains(memory(visited[0..n]), memory(visited[cur]));
-            contains(memory(next[0..n]), memory(next[0..n]));
-        };
+        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[0..n])));
     }
     step();
     mark entry;
     have at(entry, next[cur]) == old(next[cur]) by {
         have contains(memory(next[0..n]), memory(next[cur])) by {
-            apply(click::separation::contains_element(next, 0, n, cur)) using { 0 <= cur; cur < n; };
+            apply(click::separation::contains_element(next, 0, n, cur));
         }
-        have contains(memory(visited[cur]), memory(visited[cur])) by { normalize(); }
+        have contains(memory(visited[cur]), memory(visited[cur])) by { apply(click::separation::contains_refl(memory(visited[cur]))); }
         have separate(memory(visited[cur]), memory(next[cur])) by {
-            apply(click::separation::separate_restrict(memory(visited[cur]), memory(next[0..n]), memory(visited[cur]), memory(next[cur]))) using {
-                separate(memory(visited[cur]), memory(next[0..n]));
-                contains(memory(visited[cur]), memory(visited[cur]));
-                contains(memory(next[0..n]), memory(next[cur]));
-            };
+            apply(click::separation::separate_restrict(memory(visited[cur]), memory(next[0..n]), memory(visited[cur]), memory(next[cur])));
         }
         have separate(statement(0).footprint, memory(next[cur])) by {
-            normalize() using { separate(memory(visited[cur]), memory(next[cur])); };
+            solve() using { separate(memory(visited[cur]), memory(next[cur])); };
         }
         preserve(memory(next[cur]), statement(0));
     }

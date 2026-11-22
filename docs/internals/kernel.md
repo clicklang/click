@@ -218,7 +218,7 @@ guard and remainder laws apply the division observation axioms and the
 truncating-division lemmas), and add no kernel operation. The prelude and the kernel ship in one executable, so
 ordinary verifications apply these declarations as dependencies without
 re-checking them; expanded user proofs use the ordinary simple
-`apply(...) using { ... }` tactic.
+`apply(...)` tactic.
 
 ### Execution and contract evidence
 
@@ -1299,8 +1299,8 @@ hexadecimal literals and unsupported suffixes remain rejected. The evaluator
 does not delegate symbolic semantics to host `f32` or `f64`; the operation term,
 integer-space evaluator, and certificate checker agree on the exact width,
 rounding, exceptional values, and conversion rules. Symbolic float-to-integer
-conversions retain finite and range obligations at function, assignment, and
-return boundaries.
+conversions retain the ordered bounds on the truncation range at function,
+assignment, and return boundaries. These comparisons exclude NaN and infinities.
 
 Named unions are represented on the C side as address-backed layouts. Every
 modeled member has offset zero, and a member read lowers to a kernel typed load
@@ -1448,6 +1448,18 @@ expression that reads it. To move, the temporary must:
 
 `x = a + b * c` is then one expression again.
 
+An unnamed scalar with one assignment and reads along a straight-line MIR
+fragment can also be an expression-step result. For example, the remainder
+in `bytes.split_at(bytes.len() - bytes.len() % 4)` is evaluated once and read
+by both the subtraction check and the subtraction itself. The lowering
+records the value at the assignment's existing source point and ends it
+on the last read. The result needs no local storage or proof name.
+
+When both arms of a Rust `if` publish a scalar operand for their shared
+continuation, each arm records the same step result. The written branch
+region owns the result. Both arm values keep their original evaluation
+points and checks.
+
 A value with a checked operator (`+ - * / % << >>`) or an indexed read
 (`a[i]`) moves only into a read whose lowering emits its panic or bounds
 check:
@@ -1467,15 +1479,24 @@ the step number in `result`, the read is `Expression::CallResult`, and the
 lowering emits `ProgramStatement::CallResult`. A proof names its result
 `call(f, j).result`, among the function's calls.
 
+A two-arm enum match that tests a call result and reads its payload once
+uses that same result for the test and the payload. The proof can split
+on the written call's `.result`.
+
+When the last argument of a call is a by-value copy of a record,
+`temporaries::bind_copied_call_arguments` can give the call the original
+place directly. The callee's parameter copies the value, and the caller
+has no additional named object for the argument.
+
 MIR builds a `for` loop's range in a temporary and moves it, often twice,
 into the loop's own iterator. `temporaries::collapse_iterator_moves` builds
 the range in the loop's iterator directly, so its state is the proof's
 `iter.start` and `iter.end` everywhere Click prints it. A crate struct moves
 the same way: `for k in Countdown { n }` builds the struct in `iter`. A
-struct built only to be boxed, `Box::new(Cell { value: x })`, is built in its
-allocation (`temporaries::box_initializers`: `MirTerminator::BoxNew` writes
-its `fields`), and an array built only as a struct's field, `[v; 4]`, is
-that field's value (`substitute_pure_values`). The blocks the
+struct built to be boxed, `Box::new(Cell { value: x })`, is built in a local
+and moved into the box by the library's `Box::new` contract, and an array
+built only as a struct's field, `[v; 4]`, is that field's value
+(`substitute_pure_values`). The blocks the
 iterator protocol splits from a `next` call come from the `for` statement,
 so their regions are named inside it.
 
@@ -1538,24 +1559,19 @@ borrow of a reference or slice parameter does not change it.
 from its storage markers and its writes of pure values, and a `()` temporary
 that is only a call's destination, which the call never writes.
 
-These still stay a temporary:
-
-- a call's result read more than once, so a slice, chunk or `enumerate`
-  loop's `next` result is one and a proof sees it;
-- a borrow, unless its one read in its block takes it whole: a call
-  argument (`t = &mut x; f(t)` is `f(&mut x)`, whose borrow lasts the call), a
-  local's whole value (`let r = &mut x`), or a reborrow (`&mut *t` is the
-  borrow). A borrow of a place rooted at a local moves past statements that
-  do not name that local;
-- a slice;
-- a local that roots a place (`&t`, `t.f`, `t[i]`);
-- an enum `match` scrutinee, whose proof split names a local.
-
-This temporary is a defect to remove, not a design to extend. A proof should
-never see `__rust_mir_<N>` or any other name a front end or compiler invented. Do not add a temporary, a name check, or a special case
-that depends on one; where existing code needs one, remove it by moving toward
-the model: a call is a node of the expression that holds it, its result is
-named by its site, and no compiler temporary becomes a program variable.
+The importer can use numbered keys to connect MIR producers and readers.
+Those keys belong to frontend bookkeeping. Surface terms, including terms
+raised from proof facts, use source names, source expressions, or selectors
+rooted in the source program. An unnamed local that survives normalization must
+lower through a supported representation, such as a scalar operand result,
+iterator state, or typed storage for a written literal or borrow. If lowering
+would declare a program variable using the raw MIR key, it reports an
+unsupported Rust construct at the local's source location. The check uses the
+importer's unnamed-local metadata, so source identifiers remain valid
+regardless of spelling. The compatibility list in
+`src/languages/rust/lowering/unnamed_storage_exceptions.tsv` identifies existing
+slots by source, function, line, column, and MIR key.
+Each row can go when that slot has supported lowering.
 
 ### Paths and outcomes
 

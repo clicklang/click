@@ -41,13 +41,10 @@ int32 read_first(int32 m) {
         have defined(m - 1) by solve();
         have ((m - 1) as int32) != 0 by solve();
         have separate(memory(q[m - 1]), memory(q[0])) by {
-            apply(separation::separate_elements(q, m - 1, 0)) using {
-                defined(m - 1);
-                ((m - 1) as int32) != 0;
-            };
+            apply(separation::separate_elements(q, m - 1, 0));
         }
         have separate(statement(3).footprint, memory(q[0])) by {
-            normalize() using { separate(memory(q[m - 1]), memory(q[0])); };
+            solve() using { separate(memory(q[m - 1]), memory(q[0])); };
         }
         have q[0] == at(before_store, q[0]) by {
             preserve(memory(q[0]), statement(3));

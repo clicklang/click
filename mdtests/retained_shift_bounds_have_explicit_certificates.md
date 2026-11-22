@@ -37,7 +37,7 @@ theorem negated_nonzero_shift(v: uint64) {
     requires not ((v >> 32) != 0u64);
     ensures v < 4294967296u64 by {
         have (v >> 32) == 0u64 by {
-            normalize() using { not ((v >> 32) != 0u64); };
+            solve() using { not ((v >> 32) != 0u64); };
         }
         have to_integer(v) <= 4294967296 * to_integer(v >> 32) + 4294967295 by {
             solve() using { };

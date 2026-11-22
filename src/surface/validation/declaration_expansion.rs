@@ -52,11 +52,7 @@ struct DeclaredResourceScope {
     character_parameters: std::cell::RefCell<BTreeSet<String>>,
     /// Fills in the type arguments of constructors that leave them out.
     constructors: ConstructorTypes,
-    /// These declarations impose no premises. Index once for the file; their
-    /// applications with value arguments need no premise search.
-    premise_free_theorems: BTreeSet<String>,
-    /// Local induction bindings shadow global theorem signatures and their
-    /// premise-free optimization from the declaration through this block.
+    /// Local induction bindings shadow global theorem signatures in this block.
     local_hypotheses: std::cell::RefCell<PersistentBinderMap<()>>,
 }
 
@@ -1070,18 +1066,7 @@ fn expand_declared_resource_clauses_with_rules(
             file.theorem_definitions(),
         )
     };
-    let premise_free_theorems = if family_rules {
-        file_library(&file)?.theorem_definitions()
-    } else {
-        &[]
-    }
-    .iter()
-    .chain(file.theorem_definitions())
-    .filter(|theorem| theorem.requires().is_empty())
-    .map(|theorem| theorem.name().to_string())
-    .collect();
     let resource_definitions = DeclaredResourceScope {
-        premise_free_theorems,
         local_hypotheses: Default::default(),
         family_rules,
         definitions: resource_definitions,
@@ -1625,7 +1610,6 @@ fn expand_declared_resource_tactic(
         tactic @ (ProofTactic::ApplyTheorem(_)
         | ProofTactic::Witness(_)
         | ProofTactic::ApplyInduction { .. }
-        | ProofTactic::ApplyInductionUsing { .. }
         | ProofTactic::ApplyTheoremUsing { .. }
         | ProofTactic::UnfoldFunction(_)
         | ProofTactic::Instantiate { .. }) => {
@@ -1646,7 +1630,7 @@ fn expand_declared_resource_tactic(
         tactic @ (ProofTactic::UnfoldResource(_)
         | ProofTactic::UnfoldWitnesses { .. }
         | ProofTactic::ObserveResource(_)
-        | ProofTactic::ObserveSavedMemory { .. }
+        | ProofTactic::ObserveSubject(_)
         | ProofTactic::FoldResource(_)
         | ProofTactic::Iterated(_)) => {
             expand_declared_resource_tactic_with_resources(tactic, resource_definitions)
@@ -1833,26 +1817,6 @@ fn expand_declared_resource_tactic_with_plain_scripts(
     Ok(expanded.pop().expect("a plain script expansion has a root"))
 }
 
-/// A value argument introduces no argument-definedness search. Computed
-/// arguments still use the smart application even when the theorem itself
-/// declares no requirements (for example `to_integer(x + 1)`).
-fn theorem_argument_is_value(argument: &ContractExpression) -> bool {
-    match argument {
-        ContractExpression::IntegerLiteral(_)
-        | ContractExpression::Binding(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::ProgramExpression(
-            ProgramExpression::Value(_) | ProgramExpression::Variable(_),
-        ) => true,
-        ContractExpression::AlgebraicConstructor { arguments, .. }
-        | ContractExpression::SequenceLiteral(arguments) => {
-            arguments.iter().all(theorem_argument_is_value)
-        }
-        _ => false,
-    }
-}
-
 #[inline(never)]
 fn expand_declared_resource_tactic_with_expressions(
     tactic: ProofTactic,
@@ -1876,19 +1840,7 @@ fn expand_declared_resource_tactic_with_expressions(
                     &mut application.arguments,
                 );
             }
-            if !local_hypothesis
-                && resource_definitions
-                    .premise_free_theorems
-                    .contains(&application.name)
-                && application.arguments.iter().all(theorem_argument_is_value)
-            {
-                Ok(ProofTactic::ApplyTheoremUsing {
-                    application,
-                    premises: Vec::new(),
-                })
-            } else {
-                Ok(ProofTactic::ApplyTheorem(application))
-            }
+            Ok(ProofTactic::ApplyTheorem(application))
         }
         ProofTactic::Witness(witness) => {
             Ok(ProofTactic::Witness(witness.try_map_values(|value| {
@@ -1903,21 +1855,6 @@ fn expand_declared_resource_tactic_with_expressions(
             arguments: arguments
                 .into_iter()
                 .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
-                .collect::<Result<_, _>>()?,
-        }),
-        ProofTactic::ApplyInductionUsing {
-            hypothesis,
-            arguments,
-            premises,
-        } => Ok(ProofTactic::ApplyInductionUsing {
-            hypothesis,
-            arguments: arguments
-                .into_iter()
-                .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
-                .collect::<Result<_, _>>()?,
-            premises: premises
-                .into_iter()
-                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
                 .collect::<Result<_, _>>()?,
         }),
         ProofTactic::ApplyTheoremUsing {
@@ -2091,7 +2028,9 @@ fn expand_declared_resource_tactic_with_resources(
         ProofTactic::Iterated(IteratedTactic::Fold(target)) => Ok(ProofTactic::Iterated(
             IteratedTactic::Fold(expand_target(target)?),
         )),
-        tactic @ ProofTactic::ObserveSavedMemory { .. } => Ok(tactic),
+        ProofTactic::ObserveSubject(resource) => Ok(ProofTactic::ObserveSubject(
+            expand_declared_resource_subject(resource, resource_definitions)?,
+        )),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
 }

@@ -20,7 +20,7 @@ int32 read_packed(unsigned long* slot, struct node* p) {
     mark before;
     step();
     have separate(statement(0).region(0).footprint, memory(*slot)) by {
-        normalize() using {};
+        solve() using {};
     }
     have *(slot as (int32 **)) == at(before, *(slot as (int32 **))) by {
         preserve(memory(*slot), statement(0).region(0));

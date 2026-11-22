@@ -70,7 +70,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
             | ProofTactic::ObserveResource(_)
             | ProofTactic::ApplyFact(_)
             | ProofTactic::ApplyFactUsing { .. }
-            | ProofTactic::ObserveSavedMemory { .. }
+            | ProofTactic::ObserveSubject(_)
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
             | ProofTactic::UserTactic(_)
@@ -148,10 +148,15 @@ fn defer_post_execution_case_split<'a>(
     expansion_capture: Option<&mut ExpansionCapture>,
 ) -> Driven<Proof<'a>> {
     let mut proof = proof;
-    let Some(then_tactics) = deferred_post_execution_region(then_branch) else {
+    let obtains = &proof
+        .execution()
+        .expect("the case is deferred on a terminal frontier")
+        .presentation
+        .deferred_obtain_names;
+    let Some(then_tactics) = deferred_region_with_obtains(then_branch, obtains) else {
         return decline();
     };
-    let Some(else_tactics) = deferred_post_execution_region(else_branch) else {
+    let Some(else_tactics) = deferred_region_with_obtains(else_branch, obtains) else {
         return decline();
     };
     let nested = then_tactics
@@ -169,20 +174,24 @@ fn defer_post_execution_case_split<'a>(
             &then_tactics,
             &else_tactics,
         );
+    let tactic = PostExecutionTactic::If {
+        condition: condition.clone(),
+        disjunction,
+        execution_route: None,
+        then_tactics,
+        else_tactics,
+    };
     let deferred = DeferredPostExecutionTactic {
         lexical_bindings: None,
+        reads_deferred_obtain: tactic.reads_deferred_obtain(obtains),
         tactic_index: index,
         source_index,
-        tactic: PostExecutionTactic::If {
-            condition: condition.clone(),
-            disjunction,
-            execution_route: None,
-            then_tactics,
-            else_tactics,
-        },
+        tactic,
     };
-    if nested
-        || !explicit_cursor && !proof.post_execution_if_is_path_decided(condition, disjunction)?
+    if !deferred.reads_deferred_obtain
+        && (nested
+            || !explicit_cursor
+                && !proof.post_execution_if_is_path_decided(condition, disjunction)?)
     {
         // The case is open on some outcome path: fork those paths, one per
         // arm.
@@ -229,7 +238,13 @@ fn defer_post_execution_match<'a>(
     continuation: &InternalProofNode,
     expansion_capture: Option<&mut ExpansionCapture>,
 ) -> Driven<Proof<'a>> {
-    let Some(deferred) = deferred_post_execution_match(index, source_index, proof_match, arms)
+    let obtains = &proof
+        .execution()
+        .expect("the match is deferred on a terminal frontier")
+        .presentation
+        .deferred_obtain_names;
+    let Some(deferred) =
+        deferred_post_execution_match(index, source_index, proof_match, arms, obtains)
     else {
         return decline();
     };
@@ -929,13 +944,19 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
     }
 }
 
+fn deferred_post_execution_region(node: &InternalProofNode) -> Option<DeferredArm> {
+    deferred_region_with_obtains(node, &PersistentBinderMap::default())
+}
+
 /// Converts a supported post-execution syntax region into cursor metadata.
 /// This performs no proof transition and stores no semantic state; each leaf
 /// operation is checked later against the focused outcome `Proof`. A region's
 /// sequential nodes are walked in a loop; only written nesting recurses.
-fn deferred_post_execution_region(
+fn deferred_region_with_obtains(
     node: &InternalProofNode,
-) -> Option<super::super::execution_state::DeferredArm> {
+    obtains: &PersistentBinderMap<()>,
+) -> Option<DeferredArm> {
+    let mut obtains = obtains.clone();
     let mut deferred = Vec::new();
     let mut node = node;
     loop {
@@ -946,12 +967,19 @@ fn deferred_post_execution_region(
                 continuation,
             } => {
                 for indexed in tactics {
+                    let tactic = flat_post_execution_tactic(&indexed.tactic)?;
                     deferred.push(DeferredPostExecutionTactic {
                         lexical_bindings: None,
+                        reads_deferred_obtain: tactic.reads_deferred_obtain(&obtains),
                         tactic_index: indexed.index,
                         source_index: indexed.source_index,
-                        tactic: flat_post_execution_tactic(&indexed.tactic)?,
+                        tactic,
                     });
+                    if let ProofTactic::LetSatisfy(binding) = &indexed.tactic {
+                        for (name, _) in &binding.bindings {
+                            obtains.insert(name.clone(), ());
+                        }
+                    }
                 }
                 continuation
             }
@@ -964,17 +992,19 @@ fn deferred_post_execution_region(
                 continuation,
                 ..
             } => {
+                let tactic = PostExecutionTactic::If {
+                    condition: condition.clone(),
+                    disjunction: false,
+                    execution_route: None,
+                    then_tactics: deferred_region_with_obtains(then_branch, &obtains)?,
+                    else_tactics: deferred_region_with_obtains(else_branch, &obtains)?,
+                };
                 deferred.push(DeferredPostExecutionTactic {
                     lexical_bindings: None,
+                    reads_deferred_obtain: tactic.reads_deferred_obtain(&obtains),
                     tactic_index: *index,
                     source_index: *source_index,
-                    tactic: PostExecutionTactic::If {
-                        condition: condition.clone(),
-                        disjunction: false,
-                        execution_route: None,
-                        then_tactics: deferred_post_execution_region(then_branch)?,
-                        else_tactics: deferred_post_execution_region(else_branch)?,
-                    },
+                    tactic,
                 });
                 continuation
             }
@@ -988,12 +1018,13 @@ fn deferred_post_execution_region(
             } => {
                 deferred.push(DeferredPostExecutionTactic {
                     lexical_bindings: None,
+                    reads_deferred_obtain: false,
                     tactic_index: *index,
                     source_index: *source_index,
                     tactic: PostExecutionTactic::CallOutcomes {
                         payload_bindings: payload_bindings.clone(),
-                        returned_tactics: deferred_post_execution_region(returned_branch)?,
-                        threw_tactics: deferred_post_execution_region(threw_branch)?,
+                        returned_tactics: deferred_region_with_obtains(returned_branch, &obtains)?,
+                        threw_tactics: deferred_region_with_obtains(threw_branch, &obtains)?,
                     },
                 });
                 continuation
@@ -1008,14 +1039,15 @@ fn deferred_post_execution_region(
             } => {
                 deferred.push(DeferredPostExecutionTactic {
                     lexical_bindings: None,
+                    reads_deferred_obtain: false,
                     tactic_index: *index,
                     source_index: *source_index,
                     tactic: PostExecutionTactic::If {
                         condition: disjunction.clone(),
                         disjunction: true,
                         execution_route: None,
-                        then_tactics: deferred_post_execution_region(then_branch)?,
-                        else_tactics: deferred_post_execution_region(else_branch)?,
+                        then_tactics: deferred_region_with_obtains(then_branch, &obtains)?,
+                        else_tactics: deferred_region_with_obtains(else_branch, &obtains)?,
                     },
                 });
                 continuation
@@ -1032,6 +1064,7 @@ fn deferred_post_execution_region(
                     *source_index,
                     proof_match,
                     arms,
+                    &obtains,
                 )?);
                 continuation
             }
@@ -1049,6 +1082,7 @@ fn deferred_post_execution_match(
     source_index: usize,
     proof_match: &Arc<ProofMatch>,
     arms: &[InternalProofNode],
+    obtains: &PersistentBinderMap<()>,
 ) -> Option<DeferredPostExecutionTactic> {
     if proof_match.ensuring.is_some()
         || proof_match
@@ -1060,13 +1094,14 @@ fn deferred_post_execution_match(
     }
     Some(DeferredPostExecutionTactic {
         lexical_bindings: None,
+        reads_deferred_obtain: false,
         tactic_index,
         source_index,
         tactic: PostExecutionTactic::Match {
             source: Arc::clone(proof_match),
             arms: arms
                 .iter()
-                .map(deferred_post_execution_region)
+                .map(|arm| deferred_region_with_obtains(arm, obtains))
                 .collect::<Option<_>>()?,
         },
     })
@@ -1144,7 +1179,7 @@ fn apply_frontier_source_tactic<'a>(
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
         proof
             .driver()
-            .apply_close_invariants_body(&[ProofTactic::Solve], None)?
+            .apply_close_invariants_body(&[ProofTactic::Solve], None, true)?
     } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
         proof
             .driver()
@@ -1161,7 +1196,9 @@ fn apply_frontier_source_tactic<'a>(
     {
         apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
     } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
-        proof.driver().apply_close_invariants_body(body, None)?
+        proof
+            .driver()
+            .apply_close_invariants_body(body, None, true)?
     } else if let ProofTactic::Choose(choice) = &indexed.tactic {
         proof
             .driver()
@@ -2318,11 +2355,14 @@ pub(in crate::surface::proof) fn source_have_error(
             // Keep the checked predecessor's diagnostic context, just as
             // the other source-have failures do. Search candidates are not
             // the environment in which this written goal failed.
-            return proof.attach_step_diagnostic(ClickError::new(format!(
-                "`{}` tactic {index}: `solve` could not prove `{}`",
-                proof.claim_label(),
-                crate::surface::diagnostics::describe_click_proposition(&have.proposition)
-            )));
+            return proof.attach_step_diagnostic(
+                ClickError::new(format!(
+                    "`{}` tactic {index}: `solve` could not prove `{}`",
+                    proof.claim_label(),
+                    crate::surface::diagnostics::describe_click_proposition(&have.proposition)
+                ))
+                .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch),
+            );
         }
     }
     if let Some(error) = cause {
@@ -2369,8 +2409,12 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
     have: &ProofHave,
     failed_check: &mut Option<ClickError>,
 ) -> Result<Option<ProofScope<'a>>, ClickError> {
+    use crate::surface::proof::smart_closures::LinearScriptDecline;
     let body = nested.body().clone();
     let source_proof = have.checking_proof();
+    let _origin = source_proof
+        .uses_implicit_tail()
+        .then(|| crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve"));
     let (selected, checks) = crate::surface::proof_diagnostics::capture_check_observations(
         || -> Result<_, ClickError> {
             Ok(match source_proof.as_ref() {
@@ -2381,22 +2425,21 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                     (nested).driver().try_solve_closure()?
                 }
                 SourceProof::Script(body) => {
-                    // Check the written steps before trying the closer. A step
-                    // that declines still reports its own failure.
-                    let tactics = crate::surface::proof::smart_closures::with_implicit_closer(body);
+                    // A refused written step is final. The tail runs only
+                    // after the written body has reached an open goal.
                     let mut declined = None;
                     let mut unfinished = None;
                     let selected = nested.driver().try_authoritative_linear_script_reporting(
-                        &tactics,
+                        body,
                         &mut declined,
                         &mut unfinished,
+                        true,
                     )?;
                     if selected.is_none() {
                         let detail = match declined {
                             Some(
-                                crate::surface::proof::smart_closures::LinearScriptDecline::Step(
-                                    index,
-                                ),
+                                LinearScriptDecline::Step(index)
+                                | LinearScriptDecline::UnsuccessfulSearch(index),
                             ) => match body.get(index) {
                                 Some(tactic) => format!(
                                     "step {} of its body, `{}`, declined",
@@ -2405,9 +2448,9 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                                 ),
                                 None => format!("step {} of its body declined", index + 1),
                             },
-                            Some(
-                                crate::surface::proof::smart_closures::LinearScriptDecline::Shape,
-                            ) => "its body is not a shape the checked driver runs".to_string(),
+                            Some(LinearScriptDecline::Shape) => {
+                                "its body is not a shape the checked driver runs".to_string()
+                            }
                             None => "its body ran to the end with the goal still open".to_string(),
                         };
                         let goal = crate::surface::diagnostics::describe_click_proposition(
@@ -2419,7 +2462,14 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                         return Err(unfinished
                             .as_ref()
                             .unwrap_or(nested.body())
-                            .step_error(format!("`have {goal}` was not proved: {detail}")));
+                            .step_error(format!("`have {goal}` was not proved: {detail}"))
+                            .with_proof_refusal(match declined {
+                                None => crate::surface::ProofRefusal::IncompleteProof,
+                                Some(LinearScriptDecline::UnsuccessfulSearch(_)) => {
+                                    crate::surface::ProofRefusal::UnsuccessfulSearch
+                                }
+                                Some(_) => crate::surface::ProofRefusal::Tactic,
+                            }));
                     }
                     selected
                 }
@@ -2437,7 +2487,15 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
     let selected = selected.filter(ProofScope::is_complete);
     if selected.is_none() {
         check_verification_deadline()?;
-        *failed_check = Some(body.solve_failure().with_check_observations(checks));
+        *failed_check = Some(
+            match source_proof.as_ref() {
+                SourceProof::Script(_) => body
+                    .step_error("the nested proof ended with an unproved obligation")
+                    .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof),
+                _ => body.solve_failure(),
+            }
+            .with_check_observations(checks),
+        );
     }
     Ok(selected)
 }
@@ -3483,7 +3541,10 @@ fn advance_focused_execution_arm<'a>(
         }
         if !SourceContext::ExecutionFrontier.admits(&indexed.tactic) {
             if matches!(indexed.tactic, ProofTactic::Solve) {
-                return Err(proof.step_error(solve_before_exit_reason(&proof)));
+                return Err(proof
+                    .at_source_tactic(indexed.source_index)
+                    .step_error(solve_before_exit_reason(&proof))
+                    .with_failed_tactic(tactic_name(&indexed.tactic)));
             }
             return decline();
         }
@@ -4954,6 +5015,19 @@ fn advance_linear_open_scope<'a>(
                     scope.record_certification_failure_trace();
                 }
             })?;
+            continue;
+        }
+        if matches!(indexed.tactic, ProofTactic::StepProved { .. }) {
+            let body = scope.body().with_execution_tactic_index(indexed.index)?;
+            let stepped = driven!(apply_frontier_source_tactic(
+                body,
+                indexed,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                Some(scope.body().claim_label()),
+            ));
+            scope = scope.join_nested_result(stepped)?;
             continue;
         }
         if let ProofTactic::ApplyFact(fact) = &indexed.tactic {

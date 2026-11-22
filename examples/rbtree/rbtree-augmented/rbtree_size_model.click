@@ -134,14 +134,14 @@ tactic certify_size(p: struct rb_node*) {
             have sized_counts_valid(checked.model) == 1 by {
                 rewrite(checked.model, SizedTree::Empty);
                 unfold(sized_counts_valid(SizedTree::Empty));
-                normalize();
+                known();
             }
             have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                 rewrite(checked.model, SizedTree::Empty);
                 unfold(sized_value(SizedTree::Empty));
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(rb_subtree_size(RbTree::Empty));
-                normalize();
+                known();
             }
         },
         SizedTree::Node(identity, parent, color, value, left_model, right_model) => {
@@ -151,7 +151,7 @@ tactic certify_size(p: struct rb_node*) {
                 rewrite(old(tree.model), SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                 unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                normalize();
+                known();
             }
             have 0 <= rb_subtree_size(sized_shape(left.model)) by {
                 rewrite(left.model, left_model);
@@ -196,7 +196,7 @@ tactic certify_size(p: struct rb_node*) {
             have sized_counts_valid(checked.model) == 1 by {
                 rewrite(checked.model, SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
-                normalize() using {
+                solve() using {
                     to_integer(value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                     sized_counts_valid(left_model) == 1;
                     sized_counts_valid(right_model) == 1;
@@ -221,13 +221,13 @@ theorem sized_parent_is_shape(tree: SizedTree, parent: struct rb_node*) {
                 unfold(sized_parent_is(SizedTree::Empty, parent));
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(rb_parent_is(RbTree::Empty, parent));
-                normalize();
+                solve();
             },
             SizedTree::Node(identity, before, color, value, left, right) => {
                 unfold(sized_parent_is(SizedTree::Node(identity, before, color, value, left, right), parent));
                 unfold(sized_shape(SizedTree::Node(identity, before, color, value, left, right)));
                 unfold(rb_parent_is(RbTree::Node(identity, before, color, sized_shape(left), sized_shape(right)), parent));
-                normalize();
+                solve();
             },
         }
     }

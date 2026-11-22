@@ -739,12 +739,22 @@ scalar types, `echo.keep(x)` with `x: i32`, calls the instance
 declares and whose contract is the generic function's at those types: a
 clause that reads its abstract values only by `==` and `!=` means the same
 at every type. A type parameter is instantiated at `i32`, `u8`, `u16`,
-`u32`, `usize` or `bool`, or at an abstract type of the calling generic
-code: `read_twice<U: Copy>` calling `read(cell)` calls `read<U>`, whose
+`u32`, `usize` or `bool`, at a crate struct, or at an abstract type of the
+calling generic code. At a struct, `exchange<T: Copy>(left: &mut T, right:
+&mut T)` called with two `&mut generic_struct_values::Pair` is the instance
+`exchange<generic_struct_values::Pair>`, and its `ensures *left ==
+old(*right)` compares two struct values: every field of one equal to the
+same field of the other. A struct's value is all its fields: `*p`, and a
+by-value struct parameter or result compared whole, compare field by field,
+and a struct value is written `generic_struct_values::Pair { x: a, y: b }`.
+A derived `Clone` of a `Copy` struct, which a `Copy` bound reaches, is the
+copy Click already makes
+([`design/charon-trial/generic-struct-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-struct-values/values.click)).
+At an abstract type, `read_twice<U: Copy>` calling `read(cell)` calls `read<U>`, whose
 contract is `read`'s with `T` read as `U`, and a call at the callee's own
 parameter names calls the generic function itself. A reference to a value
-of `T`, `&T` or `&mut T`, points at one value of `T` in memory, a word as a
-generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
+of `T`, `&T` or `&mut T`, points at one value of `T` in memory, its
+`sizeof(T)` bytes, as a generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
 *value; ensures result == *value; }` reads it, and a caller at `u32` lends
 `&mut slots.a` as it lends any `&mut u32`
 ([`design/charon-trial/generic-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-refs/refs.click)).
@@ -754,8 +764,10 @@ its type parameters in memory. Each instance a type names is a record of its
 own, written with its arguments in the sidecar, `generic_structs::Cell<T>` in
 generic code and `generic_structs::Cell<i32>` in a caller. Rust fixes no
 layout for a generic struct and safe code reads none, so Click lays each
-instance out in declaration order: a scalar field at its size and alignment,
-a field of an abstract `T` at eight bytes. A generic function over the
+instance at scalar types out in declaration order, each field at its size
+and alignment; the instance at an abstract `T` has a symbolic layout, its
+fields at `offsetof` terms and a `T` field taking `sizeof(T)` bytes (below).
+A generic function over the
 struct, `fn read<T: Copy>(cell: &generic_structs::Cell<T>) -> T { views
 cell.value; ensures result == cell.value; }`, is verified once: a store of a
 `T` value into a field and a load from it are value moves, and two fields of
@@ -1289,9 +1301,19 @@ scope starts before its initializer. `f.statement(3).local(word)` names the
 `word` that statement declares, and `f.local(i)` names a declaration by its
 position among the function's locals; diagnostics write a repeated name in
 that canonical form, `"lib.rs"::f.local(5)`
-(`charon_repeated_source_names_are_distinct_declarations`). Other unnamed
-locals use collision-checked `__rust_mir_ID` identities from the locked
-artifact. These compiler identities can change when the artifact is refreshed.
+(`charon_repeated_source_names_are_distinct_declarations`). The importer
+can retain an unnamed operand as an expression value, including some
+arithmetic operands and enum call results. When the importer still lowers
+an unnamed MIR local as a binding, its compiler identity can change when
+the artifact is refreshed.
+
+A materialized array or struct literal, such as the array in `read(&[x, 7])`,
+can be named as `f.compound_literal(i)`. The index counts written array
+and struct literals in the function from zero, including repeat expressions
+such as `[x; 2]`. For example, read the array's first element as
+`f.compound_literal(0)[0]` or a struct's field as `f.compound_literal(0).value`.
+Use a program point where the object's storage is live. A recorded point can
+still name the object that was live there.
 
 Conditions currently support scalar comparisons, boolean combinations,
 negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a
@@ -1667,17 +1689,26 @@ cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 
 ## Boxes
 
-A `Box<R>` of a crate struct `R` with no drop glue is the address of an
-allocation it owns: `Box::new(r)` allocates `size_of::<R>()` bytes, moves the record local
-`r` into them, and gives the box their address; `Box::new(R { a, b })` writes
-the field values into the allocation, with no record local; `b.field` reads and writes
-through it; the box's drop frees the allocation. Allocation failure aborts the
-process, so the body continues only on success and the proof sees a non-null,
-owned allocation. The compiler places the drop; the free is the kernel's
-checked heap free, as for C `free`. The importer lowers `Box::new` and the
-drop itself, and each proof writes the box's ownership resource; both are
-[departures](../concepts/library-interfaces.md#where-the-implementation-departs-from-this)
-that `Box`'s library contracts and resource are to replace.
+A `Box<R>` of a crate struct `R` is the address of an allocation it owns:
+its contents, `*b`, are an `R`, and `b.field` reads and writes through it.
+`Box::new` and the box's drop are calls of the library's
+[`Box<T>` contracts](library/index.md#boxt), instantiated at `R`:
+`Box::new` states `allocates(result, sizeof(T)); produces *result;` and
+`ensures *result == x;`, and `Box::drop` consumes `allocation(b, sizeof(T))`
+and `uninitialized(*b)`.
+
+`Box::new(r)` moves the record `r` into a new allocation and returns its
+address; `Box::new(R { a, b })` builds the record in a local first.
+`allocates` makes the box a block no earlier pointer reaches, as `malloc`'s
+result is ([Fresh allocations](language/c.md#fresh-allocations)), so a
+field the proof knows keeps its value across the caller's later stores.
+Allocation failure aborts the process, so `Box::new` returns only a non-null
+box. The compiler places the drop: a box of a struct with drop glue calls the
+glue on the contents first, then `Box::drop`, which needs only the box's
+storage, initialized or not, and frees it. An `Option<Box<R>>` drops through
+`Box::drop` when it is `Some`. A struct with fields of an abstract type `T`
+has a symbolic layout, and `Box::new` and `Box::drop` are instantiated at it
+as at any struct.
 [`design/charon-trial/boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/boxes/boxed.rs)
 verifies
 
@@ -1772,7 +1803,9 @@ value, with its allocation and its struct: a sidecar writes the type as Rust
 does, `Box<boxed::Cell>` or `Option<Box<boxed::Cell>>`, and it is the
 struct's address. A function a box moves into owns it and frees it at its
 drop, so its contract consumes what the box owns; a function a box moves out
-of produces it, and states its alignment, which a caller passing it on needs.
+of produces it. A function that returns a box it made states `allocates`
+only when every box it returns is new; one that may return a box it was
+given states `produces allocation`.
 In the fixture, `make(x) -> Box<Cell>` states `produces allocation(result,
 sizeof(boxed::Cell)); produces *result; ensures aligned(result, 4); ensures
 result.value == x;`, `read(b: Box<Cell>) -> u32` consumes them, and

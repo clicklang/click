@@ -872,11 +872,16 @@ pub(super) fn c_layouts(
                 .values()
                 .filter_map(syntax::library_contract_module),
         );
-        for name in unit.function_declarations.keys() {
+        for (name, header) in &unit.function_declarations {
             if let Some(contract) =
                 crate::languages::c::formatted_output::contract_for_function(name)
             {
                 frontend_contracts.entry(name.clone()).or_insert(contract);
+            }
+            if let Some(contract) = syntax::library_interface_contract(header) {
+                frontend_contracts
+                    .entry(name.clone())
+                    .or_insert_with(|| contract.to_string());
             }
         }
         tables.register_file_static_bindings(&unit);
@@ -1023,6 +1028,7 @@ fn qualified_scalar_read(
             target_type: value_type,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: true,
             pointee_constant,
             explicit_qualification: false,

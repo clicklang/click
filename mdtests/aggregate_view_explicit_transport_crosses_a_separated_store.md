@@ -13,18 +13,14 @@ void write_first(struct Descriptor *owner) {
     requires separate(memory(owner->data[0..1]), memory(*owner));
     ensures owner->length == old(owner->length);
 } by {
-    have contains(memory(owner->data[0..1]), memory(owner->data[0..1])) by { normalize(); }
+    have contains(memory(owner->data[0..1]), memory(owner->data[0..1])) by { apply(click::separation::contains_refl(memory(owner->data[0..1]))); }
     have contains(memory(*owner), memory((&owner->length)[0..1])) by { normalize(); }
     have separate(memory(owner->data[0..1]), memory((&owner->length)[0..1])) by {
-        apply(click::separation::separate_restrict(memory(owner->data[0..1]), memory(*owner), memory(owner->data[0..1]), memory((&owner->length)[0..1]))) using {
-            separate(memory(owner->data[0..1]), memory(*owner));
-            contains(memory(owner->data[0..1]), memory(owner->data[0..1]));
-            contains(memory(*owner), memory((&owner->length)[0..1]));
-        };
+        apply(click::separation::separate_restrict(memory(owner->data[0..1]), memory(*owner), memory(owner->data[0..1]), memory((&owner->length)[0..1])));
     }
     step();
     have separate(statement(0).footprint, memory((&owner->length)[0..1])) by {
-        normalize() using { at(statement(0).entry, separate(memory(owner->data[0..1]), memory((&owner->length)[0..1]))); };
+        solve() using { at(statement(0).entry, separate(memory(owner->data[0..1]), memory((&owner->length)[0..1]))); };
     }
     have owner->length == old(owner->length) by {
         preserve(memory((&owner->length)[0..1]), statement(0));

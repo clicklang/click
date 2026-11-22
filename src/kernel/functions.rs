@@ -3584,38 +3584,57 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        // Each successfully lowered span bounds the bytes it can affect.
-        // For an undecided guard, the whole span is still a safe bound.
-        // An unnamed projection provides no span a caller can separate.
+        // An unnamed byte projection can still have a checked resource
+        // bound. Separate that bound from the entire retained borrow frame.
         let caller_borrows = caller_state.borrow_ledger();
-        if let Some(ledger) = caller_borrows.filter(|ledger| ledger.has_active_memory_borrows())
+        let first_write_ordinal = interface.contract_requires().len();
+        let mut write_requirements = if let Some(ledger) =
+            caller_borrows.filter(|ledger| ledger.has_active_memory_borrows())
             && transfer
                 .memory_effects
                 .iter()
                 .any(MemoryRange::is_unnamed_footprint)
         {
-            paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::UnboundedWriteWithLiveView {
-                    callee: name.to_owned(),
-                    effect_source: transfer.unbounded_write_source.take(),
-                    protected: ledger.single_protected_range().map(Box::new),
-                }),
-                facts,
-                obligations,
-            ));
-            continue;
-        }
-        let mut write_requirements = verified_call_borrow_requirements(
-            caller_borrows,
-            &transfer.memory_effects,
-            call_site,
-            interface.contract_requires().len(),
-            if suspended.is_some() {
-                CallBorrowEffect::WorkerWrite
-            } else {
-                CallBorrowEffect::CallWrite
-            },
-        );
+            let Some(requirement) = transfer
+                .resource_effect_bound
+                .as_ref()
+                .filter(|_| {
+                    suspended.is_none()
+                        && interface.aggregate_return_mode() != AggregateReturnMode::Construction
+                        && interface.construction_parameter().is_none()
+                })
+                .and_then(|bound| ledger.resource_access_requirement(bound))
+            else {
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::UnboundedWriteWithLiveView {
+                        callee: name.to_owned(),
+                        effect_source: transfer.unbounded_write_source.take(),
+                        protected: ledger.single_protected_range().map(Box::new),
+                    }),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            };
+            vec![call_borrow_requirement(
+                requirement,
+                &Arc::new(call_site()),
+                first_write_ordinal,
+                CallBorrowEffect::CallWrite,
+            )]
+        } else {
+            verified_call_borrow_requirements(
+                caller_borrows,
+                &transfer.memory_effects,
+                call_site,
+                first_write_ordinal,
+                if suspended.is_some() {
+                    CallBorrowEffect::WorkerWrite
+                } else {
+                    CallBorrowEffect::CallWrite
+                },
+            )
+        };
         // A checked mutex-use call may execute runtime lock/unlock operations.
         // Their representation writes are authorized by the selected use
         // transfer, not by the contract's ordinary mutable footprint. Keep
@@ -5434,6 +5453,19 @@ fn verified_call_borrow_requirements(
         return Vec::new();
     }
     let site = Arc::new(call_site());
+    requirements
+        .map(|(index, requirement)| {
+            call_borrow_requirement(requirement, &site, first_ordinal + index, effect)
+        })
+        .collect()
+}
+
+fn call_borrow_requirement(
+    requirement: Proposition,
+    site: &Arc<CallRequirementSite>,
+    ordinal: usize,
+    effect: CallBorrowEffect,
+) -> ProofObligation {
     let context = match effect {
         CallBorrowEffect::CallWrite => "verified call write separation",
         CallBorrowEffect::WorkerWrite => "suspended worker write separation",
@@ -5441,26 +5473,22 @@ fn verified_call_borrow_requirements(
         CallBorrowEffect::CallRetirement => "verified call allocation retirement separation",
         CallBorrowEffect::WorkerRetirement => "suspended worker allocation retirement separation",
     };
-    requirements
-        .map(|(index, requirement)| {
-            let obligation = ProofObligation::verification_condition(requirement);
-            let obligation = match effect {
-                CallBorrowEffect::CallWrite
-                | CallBorrowEffect::WorkerWrite
-                | CallBorrowEffect::MutexWrite => obligation.with_live_view_write(),
-                CallBorrowEffect::CallRetirement | CallBorrowEffect::WorkerRetirement => obligation,
-            };
-            obligation
-                .with_call_requirement_site(Arc::new(CallRequirementSource::new(
-                    site.clone(),
-                    first_ordinal + index,
-                    None,
-                    false,
-                    None,
-                )))
-                .with_context(context)
-        })
-        .collect()
+    let obligation = ProofObligation::verification_condition(requirement);
+    let obligation = match effect {
+        CallBorrowEffect::CallWrite
+        | CallBorrowEffect::WorkerWrite
+        | CallBorrowEffect::MutexWrite => obligation.with_live_view_write(),
+        CallBorrowEffect::CallRetirement | CallBorrowEffect::WorkerRetirement => obligation,
+    };
+    obligation
+        .with_call_requirement_site(Arc::new(CallRequirementSource::new(
+            site.clone(),
+            ordinal,
+            None,
+            false,
+            None,
+        )))
+        .with_context(context)
 }
 
 fn refresh_call_written_locals(
@@ -5743,9 +5771,7 @@ fn source_load_state_for_proposition(
                     crate::kernel::MachineOperandView::Legacy(term),
                 )
                 .expect("structural read observation");
-                let origin = read
-                    .origin
-                    .unwrap_or_else(|| read.point.into_shared_memory());
+                let origin = read.origin.unwrap_or(read.point);
                 let identity = MemoryStateIdentity::of(origin.memory());
                 if memory_identity.is_some_and(|known| known != identity) {
                     return Ok(None);
@@ -6339,6 +6365,7 @@ fn prepare_verified_function_call<'a>(
         Ok(state) => state,
         Err(
             RuntimeError::FunctionContract(message)
+            | RuntimeError::InvalidContractResource(message)
             | RuntimeError::UnsuppliedResourceValue(message),
         ) => {
             return Ok(Err(resource_call_failure(&message)));
@@ -9740,6 +9767,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
 }
 
 mod contract_refinement;
+pub(crate) use contract_refinement::ContractRefinementPreparationError;
 use contract_refinement::*;
 
 #[cfg(test)]
@@ -10479,8 +10507,10 @@ fn apply_verified_heap_allocation_delta(
                     RuntimeError::InvalidFree(InvalidFree::NonHeapPointer),
                 ))?;
         }
+        // The caller's retained frame was just checked separate from the
+        // allocation's whole extent, so the free keeps what it covers.
         memory = memory
-            .free_heap_block(&base, assumptions)
+            .free_heap_block_with_owned_frame(&base, assumptions, &preserved)
             .map_err(|error| {
                 VerifiedAllocationDeltaError::Runtime(RuntimeError::InvalidFree(error))
             })?;
@@ -11853,12 +11883,8 @@ pub(crate) fn guard_contract_refusal(
 }
 
 fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
-    ResourceFact::own_memory(MemoryRange::new_with_element_width(
-        slot,
-        MachineTerm::constant(0),
-        MachineTerm::constant(layout.size_bytes()),
-        1,
-    ))
+    // A symbolic struct's storage is its whole object, `sizeof(S)` bytes.
+    ResourceFact::own_memory(MemoryRange::object(slot, layout.size()))
 }
 
 fn with_private_aggregate_parameter_owners(
@@ -13334,11 +13360,10 @@ fn initialize_produced_memory(
                 }
             }
             None if opaque_output
-                && byte_span == ProgramType::Int32.byte_width()
                 && range.element_width() == byte_span
-                && ProgramPoint::supports_local_call_word(&start) =>
+                && ProgramPoint::supports_local_call_output(&start) =>
             {
-                memory = memory.with_initialized_call_word(&start);
+                memory = memory.with_initialized_call_output(&start, byte_span);
             }
             None => memory = memory.with_initialized_object(&start, byte_span),
         }
@@ -14456,6 +14481,16 @@ pub(super) fn prepare_function_contract_entry_state_with_values(
             function.name()
         ))));
     };
+    prepare_bound_contract_entry_state(caller_state, function, callee_state, assumptions, budget)
+}
+
+pub(super) fn prepare_bound_contract_entry_state(
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    callee_state: ExecutionState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<ExecutionState, RuntimeError>> {
     let transfer = match crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
@@ -15399,7 +15434,11 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         definition,
         definitions,
         assumptions,
-        unfold,
+        if unfold {
+            InstanceBodyOperation::Unfold
+        } else {
+            InstanceBodyOperation::Fold
+        },
         selected_children,
     )
     .map_err(|refusal| match refusal {
@@ -15422,15 +15461,42 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     })
 }
 
+enum InstanceBodyOperation {
+    Fold,
+    Unfold,
+    Observe,
+}
+
+/// Project the readable part of the checked body of one live instance.
+pub(in crate::kernel) fn observe_resource_instance(
+    state: &ExecutionState,
+    instance: &ResourceInstance,
+    definition: &CompositeResourceDefinition,
+    definitions: &[CompositeResourceDefinition],
+    assumptions: &PureFactContext,
+) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
+    rewrite_resource_instance_selecting_children_unspelled(
+        state,
+        instance,
+        definition,
+        definitions,
+        assumptions,
+        InstanceBodyOperation::Observe,
+        None,
+    )
+}
+
 fn rewrite_resource_instance_selecting_children_unspelled(
     state: &ExecutionState,
     instance: &ResourceInstance,
     definition: &CompositeResourceDefinition,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-    unfold: bool,
+    operation: InstanceBodyOperation,
     selected_children: Option<&[(String, InstanceId)]>,
 ) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
+    let unfold = !matches!(operation, InstanceBodyOperation::Fold);
+    let observe = matches!(operation, InstanceBodyOperation::Observe);
     if definition.name() != instance.name()
         || definition.instance_schema.as_ref() != Some(instance.schema())
         || definition.recursive
@@ -15575,7 +15641,9 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     // The selected arm's children, or the unmatched body's.
-    let body_children = if definition.matched.is_some() {
+    let body_children = if observe {
+        &[][..]
+    } else if definition.matched.is_some() {
         selected.map_or(&[][..], |arm| arm.children.as_slice())
     } else {
         check_unmatched_instance_children(instance, definition, definitions)?;
@@ -16039,7 +16107,30 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             )
             .map_err(|_| "child ownership is duplicated")?;
     }
-    if unfold {
+    if observe {
+        let (owner, _) = state
+            .resources()
+            .unique_owned_occurrence_for_fact(&folded)
+            .ok_or("instance observation requires its exact folded owner")?;
+        let views = body
+            .facts()
+            .iter()
+            .filter_map(|fact| fact.core_with_assumptions(assumptions))
+            .collect::<Vec<_>>();
+        let new_views = views
+            .iter()
+            .filter(|view| !state.resources().contains_exact_representation(view))
+            .cloned();
+        next.resources = next
+            .resources
+            .unchecked_with_supported_facts_from_occurrence_with_memory(
+                owner,
+                &folded,
+                new_views,
+                state.memory(),
+            );
+        body = ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(views);
+    } else if unfold {
         next.resources = next
             .resources
             .unfold_instance_body(instance, body.facts().iter().cloned(), assumptions)
@@ -16085,6 +16176,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     evaluation.resource_bindings = Some(std::sync::Arc::new(resource_bindings));
     let mut facts = body.observable_facts_assuming_valid(assumptions);
     facts.extend(opening_facts.iter().cloned());
+    let mut local_loadability = Vec::new();
     for fact in body.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(assumptions) {
             facts.push(coverage);
@@ -16093,7 +16185,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             continue;
         };
         facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
-        facts.push(range.loadable_fact(&state.memory));
+        if observe {
+            // The attached view supplies permission after the tactic. A
+            // state-bearing loadability fact is needed only for body checking.
+            local_loadability.push(range.loadable_fact(&state.memory));
+        } else {
+            facts.push(range.loadable_fact(&state.memory));
+        }
     }
     // What a fold consumes is what holding the folded instance lets C read.
     let folded_cells = if unfold {
@@ -16110,8 +16208,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads();
-    for fact in &facts {
-        body_assumptions = body_assumptions.assume_proposition(fact.clone());
+    for fact in facts.iter().cloned().chain(local_loadability) {
+        body_assumptions = body_assumptions.assume_proposition(fact);
     }
     let facts_to_rewrite = selected.map_or(&definition.facts, |arm| &arm.facts);
     let (body_clauses, retained_conditions) = if active {
@@ -16151,7 +16249,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             ));
         }
     }
-    if unfold {
+    if unfold && !observe {
         // The opened owner and the caller's borrow-bound views coexist in the
         // constructed successor. Retain that persistent composition so the
         // existing borrow-partition rule can relate them. The body's isolated
@@ -16183,6 +16281,15 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .filter(|fact| seen.insert(fact.clone()))
             .collect()
     };
+    if observe {
+        return Ok(ResourceInstanceRewriteResult {
+            body_active: active,
+            state: next,
+            semantic_facts,
+            body_clauses,
+            naming_facts: opening_facts,
+        });
+    }
     next.record_instance_population_exchange(state, instance, !unfold, assumptions)
         .map_err(ResourceRewriteRefusal::OwnedMessage)?;
     // Publish instance consumption records only after the complete rewrite is checked. It names
@@ -16421,7 +16528,7 @@ pub(super) fn expand_composite_resource_fact(
 pub(crate) fn checked_composite_projection_evidence(
     viewed: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
     // Projection checks the selected head alone. Checked construction attaches
@@ -16432,13 +16539,8 @@ pub(crate) fn checked_composite_projection_evidence(
         .ok()?;
     #[cfg(test)]
     head.observe_composite_context();
-    let (_, children, _) = expand_composite_resource_fact_with_children(
-        &head,
-        viewed,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    )?;
+    let (_, children, _) =
+        expand_composite_resource_fact_with_children(&head, viewed, definitions, at, assumptions)?;
     CompositeProjectionEvidence::from_checked_expansion(viewed.clone(), children)
 }
 
@@ -19296,7 +19398,6 @@ fn resource_clause_supply_with_fact(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> (ResourceContext, Vec<ResourceFact>) {
-    let memory = state.memory();
     let mut added = Vec::new();
     if !supply.facts().contains(&fact) {
         supply = supply.unchecked_with_fact(fact.clone());
@@ -19326,6 +19427,7 @@ fn resource_clause_supply_with_fact(
             added.push(view);
         }
     }
+    let at = state.program_point();
     let mut pending = VecDeque::from([fact]);
     let mut seen = BTreeSet::new();
     while let Some(composite) = pending.pop_front() {
@@ -19337,7 +19439,7 @@ fn resource_clause_supply_with_fact(
             &expansion_context,
             &composite,
             definitions,
-            &crate::kernel::ProgramPoint::of_memory(memory),
+            &at,
             assumptions,
         ) else {
             continue;
@@ -19413,6 +19515,9 @@ fn annotate_resource_clause_error(error: RuntimeError, note: String) -> RuntimeE
         RuntimeError::FunctionContract(message) => {
             RuntimeError::FunctionContract(format!("{message} ({note})"))
         }
+        RuntimeError::InvalidContractResource(message) => {
+            RuntimeError::InvalidContractResource(format!("{message} ({note})"))
+        }
         RuntimeError::UnsuppliedResourceValue(message) => {
             RuntimeError::UnsuppliedResourceValue(format!("{message} ({note})"))
         }
@@ -19461,7 +19566,7 @@ fn unevaluated_resource_value(
     message: String,
 ) -> RuntimeError {
     if refusal.is_undefined_behavior() {
-        RuntimeError::FunctionContract(message)
+        RuntimeError::InvalidContractResource(message)
     } else {
         RuntimeError::UnsuppliedResourceValue(message)
     }
@@ -20666,13 +20771,18 @@ fn evaluate_function_declared_resource_spec(
                 Err(error) => {
                     if let Some(mut diagnostic) = diagnostic {
                         if let (
-                            Some(spelling),
+                            Some((arguments, spelling)),
                             RuntimeError::ContractResourceDiagnostic { reason, .. },
                         ) = (
-                            source_arguments.and_then(|items| items.get(index)),
+                            source_arguments.and_then(|items| {
+                                items.get(index).map(|spelling| (items, spelling))
+                            }),
                             &mut diagnostic,
                         ) {
-                            *reason = format!("{reason}; expression `{spelling}`");
+                            *reason = format!(
+                                "{reason}; expression `{spelling}` in the clause for `{name}({})`",
+                                arguments.join(", ")
+                            );
                         }
                         return Ok(Err(diagnostic));
                     }
@@ -21091,29 +21201,10 @@ fn resource_fact_containing_allocation(
         })
 }
 
-/// Ends the automatic lifetimes the returning frame created.
-///
-/// A body executed at a call site declares its locals into the caller's own
-/// memory, and nothing else retires them: without this the callee's cells stay
-/// readable under the caller's next declaration of that name, and a pointer to
-/// one of the callee's locals stays dereferenceable after the frame is gone.
-///
-/// Only identities this frame minted are retired — the generational
-/// declarations and the frame-scoped parameter slots. A value-only parameter
-/// is deliberately excluded: its pseudo-slot uses a separate value-parameter
-/// namespace and owns no block.
-///
-/// Bounded by this frame's own bindings; it reads no caller state.
-fn retired_automatistorage_creation_blocks(
-    state: &ExecutionState,
-    after: &SymbolicMemory,
-) -> Vec<AddressBase> {
-    state
-        .locals
-        .slots()
-        .filter(|slot| state.memory.has_block(&slot.base) && !after.has_block(&slot.base))
-        .map(|slot| slot.base.clone())
-        .collect()
+struct AutomaticLifetimeEnd {
+    memory: SymbolicMemory,
+    /// Retired blocks with local bindings, for population and owner bookkeeping.
+    retired_local_blocks: Vec<AddressBase>,
 }
 
 type AutomaticLifetimeInput = (usize, usize, usize, usize, usize);
@@ -21174,11 +21265,11 @@ fn retire_automatic_lifetime_blocks(
 
 fn end_inline_frame_automatic_lifetimes(
     state: &ExecutionState,
-) -> Result<SymbolicMemory, RuntimeError> {
+) -> Result<AutomaticLifetimeEnd, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
-    for slot in state.locals.slots() {
+    for slot in state.locals.automatic_slots() {
         crate::instrumentation::record_deterministic_work(1);
         if !block_is_frame_scoped_automatic_object(&slot.base) {
             continue;
@@ -21207,7 +21298,10 @@ fn end_inline_frame_automatic_lifetimes(
         }
         blocks.push(slot.base.clone());
     }
-    Ok(retire_automatic_lifetime_blocks(memory, &blocks))
+    Ok(AutomaticLifetimeEnd {
+        memory: retire_automatic_lifetime_blocks(memory, &blocks),
+        retired_local_blocks: blocks,
+    })
 }
 
 /// A non-inline body's declared locals have ended before its postconditions
@@ -21220,15 +21314,14 @@ fn end_function_body_automatic_lifetimes(
     function: &ProgramFunction,
     caller: &SymbolicMemory,
     returned: Option<&ProgramValue>,
-) -> Result<SymbolicMemory, RuntimeError> {
+) -> Result<AutomaticLifetimeEnd, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
-    for slot in state.locals.slots() {
+    for slot in state.locals.automatic_slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if slot.base.is_local_block()
-            && !(function.return_aggregate_layout().is_some()
-                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
+        if !(function.return_aggregate_layout().is_some()
+            && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
             && (!caller.has_block(&slot.base) || state.locals.is_proof_input_slot(slot))
             && memory.has_block(&slot.base)
         {
@@ -21254,6 +21347,7 @@ fn end_function_body_automatic_lifetimes(
             blocks.push(slot.base.clone());
         }
     }
+    let named_blocks = blocks.len();
     for (_, pointer) in state.aggregate_step_objects.iter() {
         crate::instrumentation::record_deterministic_work(1);
         if !caller.has_block(&pointer.base)
@@ -21276,7 +21370,21 @@ fn end_function_body_automatic_lifetimes(
             blocks.push(pointer.base.clone());
         }
     }
-    Ok(retire_automatic_lifetime_blocks(memory, &blocks))
+    let memory = retire_automatic_lifetime_blocks(memory, &blocks);
+    // Aggregate step objects are normally anonymous. Only a block also named
+    // by a local binding participates in the caller's local bookkeeping.
+    if blocks.len() > named_blocks {
+        let temporaries = blocks.split_off(named_blocks);
+        blocks.extend(
+            temporaries
+                .into_iter()
+                .filter(|block| state.locals.has_slot_in_block(block)),
+        );
+    }
+    Ok(AutomaticLifetimeEnd {
+        memory,
+        retired_local_blocks: blocks,
+    })
 }
 
 /// Whether this block is an automatic object a call frame minted for itself,
@@ -21676,18 +21784,20 @@ fn function_outcome_from_body_with_resource_transfer(
     } else if function.return_type() != ProgramType::Void {
         set_function_result(&mut state, function, value.clone());
     }
-    let retired_memory = match end_function_body_automatic_lifetimes(
+    let AutomaticLifetimeEnd {
+        memory,
+        retired_local_blocks,
+    } = match end_function_body_automatic_lifetimes(
         &state,
         function,
         caller_state.memory(),
         value.native_payload(),
     ) {
-        Ok(memory) => memory,
+        Ok(retirement) => retirement,
         Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
     };
-    let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &retired_memory);
-    state.set_memory(retired_memory);
-    for block in retired_creation_blocks {
+    state.set_memory(memory);
+    for block in retired_local_blocks {
         if let Err(error) = state.retire_population_storage(&block) {
             return Ok((FunctionOutcome::RuntimeError(error), obligations, None));
         }
@@ -22670,7 +22780,7 @@ pub(super) fn function_outcome_from_body(
 
             let original_creation = caller_state.population_effects.creation.clone();
             let incoming_memory = caller_state.memory();
-            let retired_memory = if function.has_inline_body() {
+            let retirement = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
             } else {
                 end_function_body_automatic_lifetimes(
@@ -22680,11 +22790,13 @@ pub(super) fn function_outcome_from_body(
                     value.native_payload(),
                 )
             };
-            let memory = match retired_memory {
-                Ok(memory) => memory,
+            let AutomaticLifetimeEnd {
+                memory,
+                retired_local_blocks,
+            } = match retirement {
+                Ok(retirement) => retirement,
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
             };
-            let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &memory);
             let resources = return_resources
                 .cloned()
                 .unwrap_or_else(|| state.resources.clone());
@@ -22692,7 +22804,7 @@ pub(super) fn function_outcome_from_body(
                 .clone()
                 .with_memory_and_resources_continuing(&state, memory, resources);
             let retired_creation =
-                match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
+                match state.retired_population_creation_for_blocks(&retired_local_blocks) {
                     Ok(creation) => creation,
                     Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
                 };
@@ -22719,7 +22831,7 @@ pub(super) fn function_outcome_from_body(
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
-            for block in &retired_creation_blocks {
+            for block in &retired_local_blocks {
                 let Some(bytes) = state.memory.block_size(block).cloned() else {
                     continue;
                 };
@@ -22765,16 +22877,18 @@ pub(super) fn function_outcome_from_body(
             }
             let original_creation = caller_state.population_effects.creation.clone();
             let incoming_memory = caller_state.memory();
-            let retired_memory = if function.has_inline_body() {
+            let retirement = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
             } else {
                 end_function_body_automatic_lifetimes(&state, function, caller_state.memory(), None)
             };
-            let memory = match retired_memory {
-                Ok(memory) => memory,
+            let AutomaticLifetimeEnd {
+                memory,
+                retired_local_blocks,
+            } = match retirement {
+                Ok(retirement) => retirement,
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
             };
-            let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &memory);
             let resources = return_resources
                 .cloned()
                 .unwrap_or_else(|| state.resources.clone());
@@ -22782,7 +22896,7 @@ pub(super) fn function_outcome_from_body(
                 .clone()
                 .with_memory_and_resources_continuing(&state, memory, resources);
             let retired_creation =
-                match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
+                match state.retired_population_creation_for_blocks(&retired_local_blocks) {
                     Ok(creation) => creation,
                     Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
                 };
@@ -22800,7 +22914,7 @@ pub(super) fn function_outcome_from_body(
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
-            for block in &retired_creation_blocks {
+            for block in &retired_local_blocks {
                 let Some(bytes) = state.memory.block_size(block).cloned() else {
                     continue;
                 };

@@ -67,7 +67,7 @@ fn wide_resource_body_loadability_preserves_native_span() {
         &definition,
         &definitions,
         &facts,
-        true,
+        InstanceBodyOperation::Unfold,
         None,
     )
     .unwrap();

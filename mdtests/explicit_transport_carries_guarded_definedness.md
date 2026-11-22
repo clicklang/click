@@ -25,7 +25,7 @@ void fill_t(uint8* dst) {
             apply(separation::separate_elements(dst, 4u64, k));
         }
         have separate(statement(1).footprint, memory(dst[k])) by {
-            normalize() using { separate(memory(dst[4u64]), memory(dst[k])); };
+            solve() using { separate(memory(dst[4u64]), memory(dst[k])); };
         }
         have at(statement(1).exit, dst[k]) == at(statement(1).entry, dst[k]) by {
             preserve(memory(dst[k]), statement(1));

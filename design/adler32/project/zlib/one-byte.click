@@ -55,8 +55,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   rewrite(to_integer(adler), 1 + to_integer(buf[0] as int32));
   known();
  }
- have to_integer(1) == to_integer(1u64) by normalize();
- apply(adler_spec_checksum_bridge(buf, 1, 1u64, 1, 0)) using { to_integer(1) == to_integer(1u64); };
+ have to_integer(1) == to_integer(1u64) by known();
+ apply(adler_spec_checksum_bridge(buf, 1, 1u64, 1, 0));
  have to_integer(adler | (sum2 << 16)) == adler_spec_checksum_u64(buf, 1u64, 1, 0) by {
   rewrite(adler_spec_checksum_u64(buf, 1u64, 1, 0), adler_spec_checksum(buf, 1, 1, 0));
   known();

@@ -25,21 +25,17 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
     ensures zeros(a, 0, n) == old(zeros(a, 0, n));
 } by {
     mark entry;
-    have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by normalize();
+    have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by known();
     have contains(memory(b[0..n]), memory(b[j])) by {
-        apply(click::separation::contains_element(b, 0, n, j)) using { 0 <= j; j < n; };
+        apply(click::separation::contains_element(b, 0, n, j));
     }
     have contains(memory(a[0..n]), memory(a[0..n])) by {
         apply(click::separation::contains_refl(memory(a[0..n])));
     }
     have separate(memory(b[j]), memory(a[0..n])) by {
-        apply(click::separation::separate_restrict(memory(b[0..n]), memory(a[0..n]), memory(b[j]), memory(a[0..n]))) using {
-            separate(memory(b[0..n]), memory(a[0..n]));
-            contains(memory(b[0..n]), memory(b[j]));
-            contains(memory(a[0..n]), memory(a[0..n]));
-        };
+        apply(click::separation::separate_restrict(memory(b[0..n]), memory(a[0..n]), memory(b[j]), memory(a[0..n])));
     }
-    have 0 <= 0 by { normalize(); }
+    have 0 <= 0 by { known(); }
     have 0 <= n by { solve(); }
     have viewable(a[0..n]) by { observe(a[0..n]); known(); }
     step();
@@ -47,29 +43,21 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
         have forall (k: int32) { 0 <= k and k < n implies a[k] == at(entry, a[k]) } by {
             intro(); intro();
             have contains(memory(a[0..n]), memory(a[k])) by {
-                apply(click::separation::contains_element(a, 0, n, k)) using { 0 <= k; k < n; };
+                apply(click::separation::contains_element(a, 0, n, k));
             }
             have contains(memory(b[j]), memory(b[j])) by {
                 apply(click::separation::contains_refl(memory(b[j])));
             }
             have separate(memory(b[j]), memory(a[k])) by {
-                apply(click::separation::separate_restrict(memory(b[j]), memory(a[0..n]), memory(b[j]), memory(a[k]))) using {
-                    separate(memory(b[j]), memory(a[0..n]));
-                    contains(memory(b[j]), memory(b[j]));
-                    contains(memory(a[0..n]), memory(a[k]));
-                };
+                apply(click::separation::separate_restrict(memory(b[j]), memory(a[0..n]), memory(b[j]), memory(a[k])));
             }
             have separate(statement(0).footprint, memory(a[k])) by {
-                normalize() using { separate(memory(b[j]), memory(a[k])); };
+                solve() using { separate(memory(b[j]), memory(a[k])); };
             }
             preserve(memory(a[k]), statement(0));
         }
         have viewable(a[0..n]) by { observe(a[0..n]); known(); }
-        apply(same_zeros(a, at(entry, a), 0, n, n)) using {
-            0 <= 0; 0 <= n; n <= n;
-            viewable(a[0..n]); at(entry, viewable(a[0..n]));
-            forall (k: int32) { 0 <= k and k < n implies a[k] == at(entry, a[k]) };
-        };
+        apply(same_zeros(a, at(entry, a), 0, n, n));
         known();
     }
 }

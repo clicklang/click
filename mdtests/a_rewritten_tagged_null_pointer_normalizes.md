@@ -15,7 +15,7 @@ void tag(struct node* n) {
     have n->word == 1 by { known(); }
     have (n->word & ~3) == 0 by {
         rewrite(n->word, 1);
-        normalize();
+        known();
     }
     step();
     solve();

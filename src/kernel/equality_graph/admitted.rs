@@ -16,6 +16,10 @@ pub(in crate::kernel) struct InputData {
     pub(in crate::kernel) provenance_graph:
         crate::kernel::pointer_provenance::ValueClasses<Address>,
     pub(in crate::kernel) bounds_graph: crate::kernel::pointer_provenance::ValueClasses<Address>,
+    /// The allocations (provenance roots) that a stated `same_allocation`
+    /// names. A pointer with one of these provenances is not null: null has
+    /// no provenance (`design/pointer-model.md`).
+    pub(in crate::kernel) nonnull_allocations: crate::persistent::PersistentSet<Address>,
     pub(in crate::kernel) pointer_value_classes:
         crate::kernel::pointer_provenance::ValueClasses<Pointer>,
     pub(in crate::kernel) pointer_equalities: crate::persistent::PersistentSet<(Pointer, Pointer)>,

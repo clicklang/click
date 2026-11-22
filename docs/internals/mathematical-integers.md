@@ -1006,12 +1006,10 @@ the state named by their source expression. Capturing the expression reads only
 its explicitly referenced bindings; it does not enumerate other locals or
 copy the proof history.
 
-Smart `apply` proposes source evidence for argument evaluation as well as the
-callee's declared requirements. It rechecks capture using only that proposed
-evidence before emitting a simple `apply ... using` proof step. Removing a
-required guard makes expansion/reverification fail. A guard without a supported
-Surface form produces a bounded search refusal; explicit `using` evidence
-can supply it. Capturing an observation supplies no native range or narrowing
+The application prepares obligations for argument evaluation and the callee's
+declared requirements. Expansion retains proofs of missing obligations in
+`have` steps before `apply(...)`. Removing a required guard makes cold replay
+fail. A missing guard can be supplied with an explicit `have`. Capturing an observation supplies no native range or narrowing
 identity automatically.
 
 <!-- verified-example: mdtests/integer_theorem_observed_arguments.md -->
@@ -1415,7 +1413,7 @@ presentation supplies no premise or memory authority.
 
 ## Machine observation expansion leaves
 
-Selected machine-to-Integer bridges expand to ordinary `have`, `apply ... using`,
+Selected machine-to-Integer bridges expand to ordinary `have`, `apply(...)`,
 `rewrite`, and `known()` steps. Type ranges, exact in-range operation/cast
 identities, literal shift bounds, nonnegative literal masks, and root
 conditional-arm equations do not need normalization leaves in their supported

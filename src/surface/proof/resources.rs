@@ -150,7 +150,6 @@ fn project_children_into_ledger(
     state: ExecutionState,
     binding: &crate::kernel::BorrowBinding,
     children: impl IntoIterator<Item = ResourceFact>,
-    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
     definitions: &[CompositeResourceDefinition],
     context_label: &str,
@@ -166,7 +165,7 @@ fn project_children_into_ledger(
     let evidence = crate::kernel::checked_composite_projection_evidence(
         &binding.viewed,
         definitions,
-        memory,
+        &state.program_point(),
         assumptions,
     )
     .ok_or_else(|| {
@@ -3897,7 +3896,6 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 )));
             }
         }
-        let projection_memory = state.memory().clone();
         let definitions = crate::surface::verification::composite_resource_definitions(
             resource_environment,
             spec_definitions,
@@ -3906,7 +3904,6 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             state,
             &binding,
             dependencies.iter().map(|(_, child)| child.viewed.clone()),
-            &projection_memory,
             available_pure_facts.assumptions(),
             &definitions,
             &format!("`{claim_label}` tactic {tactic_index}: `unfold`"),

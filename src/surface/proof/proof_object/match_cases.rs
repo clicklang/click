@@ -203,6 +203,49 @@ impl<'a> Proof<'a> {
         self.with_kernel_state(self.state.with_locals(locals))
     }
 
+    pub(in crate::surface::proof) fn surface_local_scope(
+        &self,
+    ) -> PersistentBinderMap<ContractExpression> {
+        self.state.locals().values.clone()
+    }
+
+    /// Apply only the changed source bindings to an outcome with checked
+    /// locals. Remove expired obtains from every typed binding map.
+    pub(in crate::surface::proof) fn update_deferred_outcome_locals(
+        &self,
+        previous: Option<&PersistentBinderMap<ContractExpression>>,
+        scope: Option<&PersistentBinderMap<ContractExpression>>,
+        obtained: &PersistentBinderMap<ContractExpression>,
+        expired: &[String],
+    ) -> Self {
+        let mut locals = self.state.locals().clone();
+        let mut values = locals.values.clone();
+        if let (Some(previous), Some(scope)) = (previous, scope) {
+            for (name, _, replacement) in previous.diff(scope) {
+                match replacement.or_else(|| obtained.get(name)) {
+                    Some(value) => values.insert(name.clone(), value.clone()),
+                    None => values.remove(name),
+                }
+            }
+        }
+        let source = scope.or(previous);
+        let mut integers = locals.integer_values.clone();
+        let mut algebraics = locals.algebraic_values.clone();
+        for name in expired {
+            if let Some(value) = source.and_then(|source| source.get(name)) {
+                values.insert(name.clone(), value.clone());
+            } else {
+                values.remove(name);
+            }
+            integers.remove(name);
+            algebraics.remove(name);
+        }
+        locals.set_values(values);
+        locals.set_integer_values(integers);
+        locals.set_algebraic_values(algebraics);
+        self.with_kernel_state(self.state.with_locals(locals))
+    }
+
     pub(in crate::surface::proof) fn scope_call_payload(
         &self,
         scope: Option<&PersistentBinderMap<ContractExpression>>,
@@ -809,6 +852,7 @@ impl<'a> Proof<'a> {
                         selector: SurfacePathSelector::Proposition(surface),
                         value: true,
                         tactic_offset,
+                        if_arm_end: None,
                     });
             }
             Ok::<_, ClickError>(())
@@ -1162,7 +1206,7 @@ impl<'a> Proof<'a> {
         &self,
         plan: &PureMatchPlan,
         index: usize,
-    ) -> Result<Self, ClickError> {
+    ) -> Result<(Self, Option<Proposition>), ClickError> {
         let mut proof = self
             .with_kernel_state(self.state.with_locals(plan.locals.clone()))
             .at_site(&plan.site);
@@ -1229,10 +1273,17 @@ impl<'a> Proof<'a> {
             locals.set_values(locals.values.with_inserted(name.clone(), expression));
             proof = proof.with_kernel_state(state.with_locals(locals));
         }
+        let mut arm_trace = None;
         let state = proof
             .state
-            .apply_intro(|_, introduction, _| {
+            .apply_intro(|_, introduction, introduced| {
                 assert!(matches!(introduction, PropositionIntroduction::Implication));
+                // Induction setup and goal refinement publish their own fact deltas.
+                // Save the equation from the introduction that actually added it.
+                arm_trace = proof.new_pure_match_trace(&plan.source).map(|trace| {
+                    let equation = introduced.expect("implication introduces its antecedent");
+                    (trace, equation.clone())
+                });
                 plan.presentation.clone()
             })
             .map_err(|_| {
@@ -1257,13 +1308,19 @@ impl<'a> Proof<'a> {
         );
         // Retain the constructor equation before running the arm, so even a
         // rejected first tactic has the checked case in its failure trace.
-        if let Some(mut trace) = entered.new_pure_match_trace(&plan.source) {
+        let constructor_equation = arm_trace.map(|(mut trace, equation)| {
             let marker = entered.checkpoint();
-            trace.arms[index] =
-                Some(entered.pure_match_arm_trace(&entered, &marker, &plan.source, index));
+            trace.arms[index] = Some(entered.pure_match_arm_trace(
+                &entered,
+                &marker,
+                &plan.source,
+                index,
+                &equation,
+            ));
             crate::surface::proof_trace::record_match(Arc::as_ptr(&entered.node) as usize, trace);
-        }
-        Ok(entered)
+            equation
+        });
+        Ok((entered, constructor_equation))
     }
 
     pub(in crate::surface::proof) fn leave_pure_match_case(
@@ -1340,6 +1397,7 @@ impl<'a> Proof<'a> {
         marker: &ProofCheckpoint<'a>,
         source: &ProofMatch,
         index: usize,
+        constructor_equation: &Proposition,
     ) -> crate::surface::proof_trace::TraceMatchArm {
         crate::surface::proof_trace::TraceMatchArm {
             names: Box::new(entered.diagnostic_state()),
@@ -1347,7 +1405,7 @@ impl<'a> Proof<'a> {
                 "{}::{}",
                 source.arms[index].type_name, source.arms[index].variant
             ),
-            fact: entered.checked_trace_fact(entered.state.added_facts()[0].clone()),
+            fact: entered.checked_trace_fact(constructor_equation.clone()),
             lineage: trace_arm_lineage(&self.node, &marker.node, self.focused_branch_id()),
             _retained: Box::new(self.node.clone()),
         }

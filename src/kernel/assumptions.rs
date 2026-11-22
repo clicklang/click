@@ -896,10 +896,7 @@ pub(in crate::kernel) fn load_state_and_pointer(
     // Checking follows the recorded observation, even when structural version
     // selection retained an earlier representative state in the term.
     Some((
-        (*read
-            .origin
-            .unwrap_or_else(|| read.point.into_shared_memory()))
-        .clone(),
+        read.origin.unwrap_or(read.point).memory().clone(),
         read.pointer,
         read.kind,
     ))
@@ -2869,7 +2866,7 @@ fn collect_memory_read_descriptor(
         .then(|| crate::kernel::eval::scalar_read_observation(operand).expect("selected read"));
     let memory = observation
         .as_ref()
-        .map(|read| read.origin.as_ref().unwrap_or(read.point.shared_memory()))
+        .map(|read| read.origin.as_ref().unwrap_or(&read.point).shared_memory())
         .unwrap_or(point.shared_memory());
     if MemoryStateIdentity::of(memory.memory()) == MemoryStateIdentity::of(current_memory) {
         // A point-named read can have a typed access width even when it did
@@ -4099,6 +4096,50 @@ impl PureFactContext {
             )
     }
 
+    /// `same_allocation(p, q)`: the two pointers were derived from one
+    /// allocation, so their provenances are one class, and neither is null.
+    fn adjust_same_allocation_fact(&mut self, proposition: &Proposition) {
+        let Some((left, right)) = same_allocation_pointers(proposition) else {
+            return;
+        };
+        self.equality_graph.admitted.provenance_graph.insert(
+            left.provenance(),
+            right.provenance(),
+            |a, _| a.clone(),
+        );
+        for pointer in [left, right] {
+            self.equality_graph.admitted.nonnull_allocations = self
+                .equality_graph
+                .admitted
+                .nonnull_allocations
+                .with_value(pointer.provenance().object_identity());
+        }
+    }
+
+    /// Whether a stated `same_allocation` names this allocation, so that a
+    /// pointer derived from it is not null. One indexed lookup.
+    pub(in crate::kernel) fn allocation_known_nonnull(&self, allocation: &Address) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.equality_graph
+            .admitted
+            .nonnull_allocations
+            .contains(&allocation.object_identity())
+    }
+
+    /// `same_allocation(p, q)` holds: both pointers are not null and their
+    /// provenances are one allocation.
+    pub(in crate::kernel) fn knows_same_allocation(&self, left: &Pointer, right: &Pointer) -> bool {
+        let nonnull = |pointer: &Pointer| {
+            self.allocation_known_nonnull(pointer.provenance())
+                || self.decide(&crate::kernel::eval::pointer_object_is_null_condition(
+                    pointer.address(),
+                )) == Some(false)
+        };
+        nonnull(left)
+            && nonnull(right)
+            && self.provenance_equal(left.provenance(), right.provenance())
+    }
+
     fn adjust_pointer_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
             Proposition::Equal(
@@ -4937,6 +4978,7 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_address_sources = Default::default();
         self.equality_graph.admitted.provenance_graph = Default::default();
         self.equality_graph.admitted.bounds_graph = Default::default();
+        self.equality_graph.admitted.nonnull_allocations = Default::default();
         self.equality_graph.admitted.pointer_value_classes = Default::default();
         self.equality_graph.admitted.pointer_equalities = Default::default();
         let conditions = self.condition_facts.clone();
@@ -5013,6 +5055,7 @@ impl PureFactContext {
             self.adjust_algebraic_graph_equality(proposition);
             self.adjust_pointer_class_fact(proposition);
             self.adjust_pointer_equality(proposition);
+            self.adjust_same_allocation_fact(proposition);
         }
     }
 
@@ -6818,6 +6861,7 @@ impl PureFactContext {
             self.adjust_algebraic_variable_constructor(proposition);
             self.adjust_algebraic_graph_equality(proposition);
             self.adjust_pointer_equality(proposition);
+            self.adjust_same_allocation_fact(proposition);
             self.adjust_algebraic_variable_variant_evidence(proposition);
             self.adjust_memory_loadable_fact(proposition);
             self.adjust_separation_block_fact(proposition);
@@ -6827,7 +6871,12 @@ impl PureFactContext {
             self.adjust_memory_effect_fact(proposition);
             self.adjust_pointer_class_fact(proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
+            let closed_if =
+                crate::kernel::proof::fact_reasoning::closed_algebraic_if_comparison(proposition);
             self.admit_shared_exact_propagation(shared);
+            if let Some(reading) = closed_if {
+                self.insert_proposition_fact(reading);
+            }
         }
     }
 
@@ -7476,6 +7525,8 @@ impl PureFactContext {
                 .are_algebraic_equal(a.native_compat(), b.native_compat()),
             Proposition::Predicate { .. } => {
                 self.equality_graph.knows_pointer_predicate(proposition)
+                    || same_allocation_pointers(proposition)
+                        .is_some_and(|(left, right)| self.knows_same_allocation(left, right))
             }
             condition_source_0 @ Proposition::ConditionIs(_, value)
                 if let Some((condition @ ConditionTerm::PointerEqual(..), _)) =
@@ -7666,7 +7717,12 @@ impl PureFactContext {
         } else {
             None
         };
+        let closed_if =
+            crate::kernel::proof::fact_reasoning::closed_integer_if_comparison(&condition);
         let mut next = self.assume_condition_once_shared(condition, value, source);
+        if let Some(reading) = closed_if {
+            next = next.assume_condition_once(reading, value);
+        }
         if let Some(reading) = match_order {
             next = next.assume_condition_once(reading, value);
         }
@@ -10439,6 +10495,19 @@ impl ProofObligation {
                 Proposition::And(left, right) => {
                     established(assumptions, left) && established(assumptions, right)
                 }
+                // A guarded requirement, owed only where its guard holds (the
+                // right side of `and`, `or` or `implies`), is established
+                // where the guard establishes it: check the requirement in
+                // the persistent extension that assumes the guard.
+                Proposition::Implies(guard, requirement) => established(
+                    &assumptions
+                        .clone()
+                        .assume_proposition(guard.as_ref().clone()),
+                    requirement,
+                ),
+                Proposition::Or(left, right) => {
+                    established(assumptions, left) || established(assumptions, right)
+                }
                 Proposition::ForAll { .. } | Proposition::Exists { .. } => false,
                 _ => assumptions.proves_atomic_without_search(goal),
             }
@@ -10820,13 +10889,15 @@ impl ExecutionPureFact {
 
     pub(super) fn certified_store(
         before: SymbolicMemory,
-        after: SymbolicMemory,
+        after: crate::kernel::ProgramPoint,
         pointer: Address,
         value: ProgramValue,
         authorized_range: Option<MemoryRange>,
     ) -> Self {
-        let value_equation = super::memory_history::store_value_equation(&after, &pointer, &value)
-            .map(std::sync::Arc::new);
+        let value_equation =
+            super::memory_history::store_value_equation_at(&after, &pointer, &value)
+                .map(std::sync::Arc::new);
+        let after = after.memory().clone();
         Self {
             proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
@@ -11029,7 +11100,10 @@ fn generated_load_binding_matches_proposition(
             };
             retained_state == &MemoryStateIdentity::of(memory.memory())
                 && address.as_ref() == pointer
-                && matches!(load, MachineTerm::MemoryLoad(_, _, expected) if *expected == kind)
+                && matches!(load, MachineTerm::MemoryLoad(expected_point, _, expected)
+                    if *expected == kind
+                        && ((expected_point.read_version_id().is_none() && memory.read_version_id().is_none())
+                            || expected_point == &memory))
         }
         _ => false,
     }
@@ -14534,4 +14608,30 @@ fn affine_bitvector_difference_atom_views(
     }
     let (atom, coefficient) = atoms.into_iter().next()?;
     (coefficient == 1).then(|| atom.operand_view().retain(MachineIntegerType::Int32))
+}
+
+/// The two pointers of a `same_allocation(p, q)` fact.
+pub(in crate::kernel) fn same_allocation_pointers(
+    proposition: &Proposition,
+) -> Option<(&Pointer, &Pointer)> {
+    let Proposition::Predicate { name, arguments } = proposition else {
+        return None;
+    };
+    if name != crate::kernel::SAME_ALLOCATION_PREDICATE_NAME {
+        return None;
+    }
+    let [_, left, right] = arguments.as_slice() else {
+        return None;
+    };
+    let (Some(ProgramValue::Pointer(left)), Some(ProgramValue::Pointer(right))) =
+        (left.program_value_native(), right.program_value_native())
+    else {
+        return None;
+    };
+    Some((left, right))
+}
+
+#[cfg(test)]
+mod same_allocation_scaling_tests {
+    include!("../scaling_tests/kernel/assumptions/same_allocation_tests.rs");
 }

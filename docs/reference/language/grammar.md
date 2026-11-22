@@ -61,10 +61,9 @@ refused. These are literal forms, not general bit-cast functions.
 
 Both default Click and Rust sidecars accept radix prefixes and underscore
 separators inside these forms. This does not enable Rust integer syntax
-elsewhere in default Click. Exact source printing uses hexadecimal bits;
-for binary32 it preserves the existing internal carrier distinction by using
-an unsuffixed literal for the signed carrier and `u32` for the unsigned one.
-Both forms denote the same IEEE bits.
+elsewhere in default Click. A matching suffix and an unsuffixed input
+produce the same float literal. Exact source printing uses hexadecimal bits
+with an unsuffixed literal for binary32 and a `u64` suffix for binary64.
 
 Unary `-x` on a float flips its sign bit, including signed zero and NaN
 payloads. It uses the same negation as C float expressions; integer unary
@@ -74,8 +73,8 @@ minus retains its existing arithmetic and definedness conditions
 <!-- verified-example: mdtests/float_bit_literals_preserve_ieee_values.md -->
 ```click
 theorem float_bits() {
-    ensures iszero(float32_from_bits(0x80000000u32)) by { normalize(); }
-    ensures isnan(float64_from_bits(0x7ff8000000000123u64)) by { normalize(); }
+    ensures iszero(float32_from_bits(0x80000000u32)) by { known(); }
+    ensures isnan(float64_from_bits(0x7ff8000000000123u64)) by { known(); }
 }
 ```
 
@@ -138,7 +137,7 @@ documentation inventory keep the following accepted words synchronized.
 | `all`, `any`, `fold` | Range proposition and expression methods. |
 | `prop` | Proposition value: `prop { P }`. |
 | `defined` | The definedness [special form](index.md#special-forms), a proposition. |
-| `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
+| `viewable`, `same_allocation`, `separate`, `aligned`, `little_endian` | Readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
 | `old`, `at` | Point-selecting [special forms](index.md#special-forms): `old(e)` reads at the function's entry, `at(point, e)` at a named point. |
 | `program` | Program-binding qualifier: `program::name` names a program binding where a Click name has the same name. |
 | `exact` | Point-selecting [special form](index.md#special-forms): `exact(place)` reads `place` named by the state in scope itself, with no version walk ([`exact(...)`](index.md#exact)). |
@@ -319,8 +318,9 @@ A destination cast cannot manufacture original-class evidence. C access
 typing retains its existing declaration metadata separately. Memory access
 still requires the relevant resource permissions.
 
-A model field or pure-helper parameter declared `void*` accepts an object
-pointer through implicit coercion: its carrier changes to `void*`, preserving
+A model field, pure-helper parameter, or specification expression binding
+such as `(let pointer: void* = p; pointer)` accepts an object pointer through
+implicit coercion. Its carrier changes to `void*`, preserving
 its provenance, bounds, qualifiers, and object-type evidence. Opaque helper
 calls and unfolded bodies use this same argument conversion. Function pointers
 are excluded. An authored `p as (void *)` remains an explicit cast and selects the
@@ -477,7 +477,7 @@ function singleton(x: int32) -> List<int32> {
 theorem append_nothing(xs: List<int32>) {
     ensures list::append(List::Nil, xs) == xs by {
         unfold(list::append(List::Nil, xs));
-        normalize();
+        known();
     }
 }
 ```

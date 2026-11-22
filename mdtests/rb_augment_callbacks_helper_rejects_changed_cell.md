@@ -37,6 +37,8 @@ void erase_changed(struct node *node, struct node *parent,
 ```
 
 ```click
+import click::separation;
+
 verifying "rb_augment_callbacks_rejects_changed_cell.c";
 
 contract void Propagate(struct node* node, struct node* stop) {
@@ -85,7 +87,23 @@ void erase_changed(struct node* node, struct node* parent,
     owns parent->right;
 } by {
     with(callback_suite(augment)) {
+        apply(separation::contains_refl(memory(*augment)));
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 0, 2));
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 2, 4));
+        apply(separation::contains_subrange(augment as (int32*), 0, 6, 4, 6));
+        apply(separation::contains_subrange(parent as (int32*), 0, 4, 0, 2));
+        have separate(memory(parent->left), memory(*augment)) by {
+            apply(separation::separate_restrict(memory(*parent), memory(*augment), memory(parent->left), memory(*augment)));
+        }
+        mark before_propagate;
         step();
+        have contains(memory(parent->left), statement(0).footprint) by { known(); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(0).footprint, memory(augment->propagate)));
+        have augment->propagate == at(before_propagate, augment->propagate) by { preserve(memory(augment->propagate), statement(0)); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(0).footprint, memory(augment->copy)));
+        have augment->copy == at(before_propagate, augment->copy) by { preserve(memory(augment->copy), statement(0)); }
+        apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(0).footprint, memory(augment->rotate)));
+        have augment->rotate == at(before_propagate, augment->rotate) by { preserve(memory(augment->rotate), statement(0)); }
     }
     step();
     step();

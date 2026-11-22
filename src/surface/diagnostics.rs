@@ -42,7 +42,6 @@ fn describe_live_view_write_context(obligation: &ProofObligation) -> Option<Stri
     })
 }
 use crate::kernel::ExecutionFactSource;
-use crate::kernel::SharedMemory;
 use crate::kernel::resource_tracker;
 use crate::kernel::{
     ComparisonOperator as KernelComparisonOperator, FloatCondition, UpdateOperator,
@@ -744,11 +743,19 @@ pub(in crate::surface) fn value_naming_tables(
     let mut parameters = Vec::with_capacity(values.len());
     let mut arguments = Vec::with_capacity(values.len());
     for (name, value) in values {
-        parameters.push(crate::languages::interface::ImportedParameter::new(
+        let parameter = crate::languages::interface::ImportedParameter::new(
             crate::surface::generics::interface_type_from_program_type(value.program_type()),
             name.clone(),
             None,
-        ));
+        );
+        // A struct-pointer local spells its pointee's fields: `job->begin`.
+        let parameter = match object_fields::ambient_local_struct_pointee(name) {
+            Some((struct_name, layout)) if parameter.interface_type().is_pointer() => {
+                parameter.with_pointee_struct_layout(struct_name, layout)
+            }
+            _ => parameter,
+        };
+        parameters.push(parameter);
         arguments.push(ProgramExpression::Value(value.numeric_value().clone()));
     }
     (parameters, arguments)
@@ -1466,12 +1473,40 @@ pub(super) fn local_naming_tables(
     Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,
 ) {
-    value_naming_tables(
-        &local_naming_entries(state)
-            .into_iter()
-            .map(|(spelling, (_, value))| (spelling, value))
+    local_naming_tables_with_declarations(state, &[])
+}
+
+/// [`local_naming_tables`], naming each local that one of `declarations`
+/// declares by that declaration: a struct-pointer parameter keeps its
+/// pointee layout, so its fields still spell as `p->f`. Declarations match
+/// by binding, never by printed name, and the value still comes from
+/// `state`, so a reassigned parameter names what it holds here.
+pub(super) fn local_naming_tables_with_declarations(
+    state: &ExecutionState,
+    declarations: &[crate::languages::interface::ImportedParameter],
+) -> (
+    Vec<crate::languages::interface::ImportedParameter>,
+    Vec<ProgramExpression>,
+) {
+    let entries = local_naming_entries(state);
+    let (mut parameters, arguments) = value_naming_tables(
+        &entries
+            .iter()
+            .map(|(spelling, (_, value))| (spelling.clone(), value.clone()))
             .collect(),
-    )
+    );
+    if !declarations.is_empty() {
+        let declared = declarations
+            .iter()
+            .map(|declaration| (declaration.binding_name(), declaration))
+            .collect::<BTreeMap<_, _>>();
+        for (parameter, (_, (binding, _))) in parameters.iter_mut().zip(&entries) {
+            if let Some(declaration) = declared.get(binding) {
+                *parameter = (*declaration).clone();
+            }
+        }
+    }
+    (parameters, arguments)
 }
 
 /// The result of step `step`, as the statements as written name it: a call
@@ -1806,8 +1841,10 @@ pub(super) fn describe_runtime_error(
         }
         crate::kernel::RuntimeError::PointerConversion(message)
         | crate::kernel::RuntimeError::EnumVariant(message) => message.clone(),
-        crate::kernel::RuntimeError::IndeterminatePointeeType
-        | crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets
+        crate::kernel::RuntimeError::IndeterminatePointeeType => {
+            "pointer operation has no known pointee type".to_string()
+        }
+        crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets
         | crate::kernel::RuntimeError::UnsupportedPointerComparisonOffsets
         | crate::kernel::RuntimeError::UnsupportedFunctionPointerOffset => error.kernel_summary(),
         crate::kernel::RuntimeError::WrongArity { expected, actual } => {
@@ -1965,9 +2002,11 @@ pub(super) fn describe_runtime_error(
             format!("call to `{callee}` has no checked byte bound for {effect} while {view} is live")
         }
         crate::kernel::RuntimeError::FunctionContract(message)
+        | crate::kernel::RuntimeError::InvalidContractResource(message)
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
             format!("function contract could not be applied: {message}")
         }
+        crate::kernel::RuntimeError::ContractEntryInvariant(message) => message.clone(),
         crate::kernel::RuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
             describe_pointer(mutex, parameter_binding)
@@ -2015,6 +2054,11 @@ pub(super) fn describe_runtime_error(
             "overlapping owned memory resource facts `owns {}` and `owns {}`",
             describe_memory_range(left, parameter_binding),
             describe_memory_range(right, parameter_binding)
+        ),
+        crate::kernel::RuntimeError::OverlappingContractInputView { owned, viewed } => format!(
+            "the contract's `views` clause overlaps its own `owns` clause: `{}` overlaps `{}`",
+            render_resource_fact_diagnostic(viewed, parameter_binding),
+            render_resource_fact_diagnostic(owned, parameter_binding),
         ),
         crate::kernel::RuntimeError::ProducedCompositeOverlapsHeldResource {
             produced,
@@ -3365,8 +3409,8 @@ pub(in crate::surface) fn describe_load_kind_mismatch(
     parameter_binding: ParameterBinding<'_>,
     assumptions: Option<&crate::kernel::PureFactContext>,
 ) -> Option<String> {
-    let (_, left_load) = unresolved_load(left)?;
-    let (_, right_load) = unresolved_load(right)?;
+    let left_load = unresolved_load(left)?.pointer;
+    let right_load = unresolved_load(right)?.pointer;
     let left_kind = unresolved_load_kind(left)?;
     let right_kind = unresolved_load_kind(right)?;
     let same_address = left_load == right_load
@@ -3473,7 +3517,7 @@ fn widened_word(term: &MachineTerm) -> &MachineTerm {
     }
 }
 
-pub(super) fn unresolved_load(value: &ProgramValue) -> Option<(SharedMemory, Address)> {
+fn unresolved_load(value: &ProgramValue) -> Option<crate::kernel::ScalarReadObservation> {
     let term = match value.numeric_value() {
         // A signed byte read is the conversion of the byte's unsigned read,
         // so it reads that read's address.
@@ -3488,14 +3532,9 @@ pub(super) fn unresolved_load(value: &ProgramValue) -> Option<(SharedMemory, Add
         | ProgramValue::UInt64(term) => term,
         _ => return None,
     };
-    let read = crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
-        widened_word(term),
-    ))?;
-    Some((
-        read.origin
-            .unwrap_or_else(|| read.point.into_shared_memory()),
-        read.pointer,
-    ))
+    crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(widened_word(
+        term,
+    )))
 }
 
 /// The model field a comparison side stands for, if that side is exactly one
@@ -3550,15 +3589,17 @@ pub(super) fn describe_unseparated_write(
     value: &ProgramValue,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    let (memory, load) = unresolved_load(value)?;
+    let read = unresolved_load(value)?;
+    let origin = read.origin.as_ref().unwrap_or(&read.point);
     let explanation = resource_tracker::explain_last_same(
         resource_tracker::TrackedResource::Cell {
-            pointer: &load,
+            pointer: &read.pointer,
             bytes: crate::kernel::AccessExtent::from(crate::kernel::load_access_width_or_widest(
-                &memory, &load,
+                origin.shared_memory(),
+                &read.pointer,
             )),
         },
-        &resource_tracker::ProgramPoint::at(&memory),
+        origin,
     );
     describe_resource_version_mismatch(
         &explanation,
@@ -3781,13 +3822,29 @@ pub(super) fn describe_read_address_mismatch(
     right: &ProgramValue,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    let (left_memory, left_load) = unresolved_load(left)?;
-    let (right_memory, right_load) = unresolved_load(right)?;
-    if left_load == right_load || left_memory.read_identity() != right_memory.read_identity() {
+    let left = unresolved_load(left)?;
+    let right = unresolved_load(right)?;
+    let same_version =
+        if left.point.read_version_id().is_some() && right.point.read_version_id().is_some() {
+            left.point == right.point
+        } else {
+            left.origin
+                .as_ref()
+                .unwrap_or(&left.point)
+                .shared_memory()
+                .read_identity()
+                == right
+                    .origin
+                    .as_ref()
+                    .unwrap_or(&right.point)
+                    .shared_memory()
+                    .read_identity()
+        };
+    if left.pointer == right.pointer || !same_version {
         return None;
     }
-    let left = describe_source_cell(&left_load, parameter_binding)?;
-    let right = describe_source_cell(&right_load, parameter_binding)?;
+    let left = describe_source_cell(&left.pointer, parameter_binding)?;
+    let right = describe_source_cell(&right.pointer, parameter_binding)?;
     Some(format!(
         "`{}` and `{}` read the same recorded memory using different address expressions. \
          Establish the index/address relation or the equality of those values.",
@@ -3805,24 +3862,26 @@ pub(super) fn describe_two_sided_version_mismatch(
     right_point: &str,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    let (left_memory, left_load) = unresolved_load(left)?;
-    let (right_memory, right_load) = unresolved_load(right)?;
-    if left_load != right_load {
+    let left_read = unresolved_load(left)?;
+    let right_read = unresolved_load(right)?;
+    if left_read.pointer != right_read.pointer {
         return None;
     }
     if let Some(mismatch) = describe_load_kind_mismatch(left, right, parameter_binding, None) {
         return Some(mismatch);
     }
+    let left_origin = left_read.origin.as_ref().unwrap_or(&left_read.point);
+    let right_origin = right_read.origin.as_ref().unwrap_or(&right_read.point);
     let explanation = resource_tracker::explain(
         resource_tracker::TrackedResource::Cell {
-            pointer: &left_load,
+            pointer: &left_read.pointer,
             bytes: crate::kernel::AccessExtent::from(crate::kernel::load_access_width_or_widest(
-                &left_memory,
-                &left_load,
+                left_origin.shared_memory(),
+                &left_read.pointer,
             )),
         },
-        &resource_tracker::ProgramPoint::at(&left_memory),
-        &resource_tracker::ProgramPoint::at(&right_memory),
+        left_origin,
+        right_origin,
     );
     // Both labels name real program points, so the sentence is written
     // against the earlier of the two: that is the one the value may have
@@ -4085,10 +4144,12 @@ fn describe_model_field_version_stop(
                 ),
                 // The entry model is the old version, never the replacement,
                 // so it is not a cause; `replacing_change` skips it.
-                Some(crate::kernel::model_fields::ModelMint::ContractEntry) | None => format!(
-                    "the two states store different models for `{owner}`, and no step here says \
+                Some(crate::kernel::model_fields::ModelMint::ContractEntry { .. }) | None => {
+                    format!(
+                        "the two states store different models for `{owner}`, and no step here says \
                      which replaced which. State {promise} wherever the model is replaced."
-                ),
+                    )
+                }
             };
             format!("`{field}` may have changed since {since}: {cause}")
         }
@@ -5749,13 +5810,9 @@ pub(in crate::surface) fn exact_float_literal_spelling(value: &ProgramValue) -> 
     use crate::kernel::MachineIntegerType;
     match value {
         ProgramValue::Float32(MachineTerm::Constant {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             bits,
         }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x})")),
-        ProgramValue::Float32(MachineTerm::Constant {
-            format: MachineIntegerType::UInt32,
-            bits,
-        }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x}u32)")),
         ProgramValue::Float64(MachineTerm::Constant {
             format: MachineIntegerType::UInt64,
             bits,
@@ -6073,6 +6130,22 @@ pub(in crate::surface) fn describe_callback_source(expression: &syntax::CExpress
 
 thread_local! {
     static REFERENCE_RESULT_SOURCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static NULL_LITERAL_SOURCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A generated proof cannot rely on a C declaration for `NULL`.
+pub(super) struct NullLiteralSourceScope(bool);
+
+impl NullLiteralSourceScope {
+    pub(super) fn enter() -> Self {
+        Self(NULL_LITERAL_SOURCE.with(|slot| slot.replace(true)))
+    }
+}
+
+impl Drop for NullLiteralSourceScope {
+    fn drop(&mut self) {
+        NULL_LITERAL_SOURCE.with(|slot| slot.set(self.0));
+    }
 }
 
 /// Kernel reference results carry addresses. Function-directed proof printing
@@ -6231,6 +6304,18 @@ pub(in crate::surface) fn typed_load_type_argument(
 pub(super) fn describe_program_expression(expression: &ProgramExpression) -> String {
     match expression {
         ProgramExpression::StringLiteral(identity) => identity.to_string(),
+        ProgramExpression::Value(ProgramValue::Pointer(pointer))
+            if pointer.is_null()
+                && !matches!(pointer.program_type(), ProgramType::FunctionPointer(_))
+                && NULL_LITERAL_SOURCE.with(std::cell::Cell::get) =>
+        {
+            let target = qualified_native_pointer_spelling(
+                crate::kernel::program_type_spelling(pointer.program_type()),
+                pointer.pointee_constant(),
+                pointer.pointee_volatile(),
+            );
+            format!("({})", click_cast("0u64", &target))
+        }
         ProgramExpression::Value(value) => {
             describe_program_value(value, ParameterBinding::default())
         }
@@ -6481,11 +6566,12 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             {
                 return describe_program_expression(object);
             }
+            let explicit_local = indexed_local_address(base);
             let (base, index) = (
                 describe_program_expression(base),
                 describe_program_expression(index),
             );
-            describe_indexed_place(&base, &index)
+            describe_indexed_place(&base, &index, explicit_local)
         }
     }
 }
@@ -6535,8 +6621,27 @@ pub(in crate::surface) fn diagnostic_load_place(
     is_place_spelling(&place).then_some(place)
 }
 
+pub(super) fn describe_contract_entry_resource_error(
+    error: &crate::kernel::RuntimeError,
+    parameter_binding: ParameterBinding<'_>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+) -> String {
+    let mut message = describe_runtime_error(error, parameter_binding);
+    if let Some(range) = error.missing_contract_read()
+        && range.constant_start() == Some(0)
+        && range.constant_end() == Some(1)
+        && let Some(place) =
+            describe_struct_field_load(range.base(), parameter_binding, Some(struct_layouts))
+    {
+        message.push_str(&format!(
+            "\n  cannot read `{place}` at entry. If the caller should supply read access, add `views {place};` to the contract"
+        ));
+    }
+    message
+}
+
 fn describe_load_at(pointer: &Address, parameter_binding: ParameterBinding<'_>) -> String {
-    if let Some(field) = describe_struct_field_load(pointer, parameter_binding) {
+    if let Some(field) = describe_struct_field_load(pointer, parameter_binding, None) {
         return field;
     }
     let address = describe_pointer(pointer, parameter_binding);
@@ -6598,6 +6703,7 @@ fn is_cell_spelling(text: &str) -> bool {
 fn describe_struct_field_load(
     pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
+    struct_layouts: Option<&BTreeMap<String, crate::languages::interface::RecordLayout>>,
 ) -> Option<String> {
     for (parameter, argument) in parameter_binding
         .parameters
@@ -6613,6 +6719,7 @@ fn describe_struct_field_load(
         let Some(layout) = parameter
             .pointee_struct_layout()
             .or_else(|| parameter.struct_layout())
+            .or_else(|| struct_layouts?.get(parameter.struct_name()?))
         else {
             continue;
         };
@@ -6807,19 +6914,25 @@ fn describe_loaded_pointer_range(
     ))
 }
 
-/// The object whose address `rendered` spells, when it is `&name`. Reading
-/// through that address is the object itself: `(&value)[0]` and `*&value`
-/// are `value`, and `(&c)->field` is `c.field`. A reference parameter's
-/// carrying pointer is named this way, so its referent prints as the bare
-/// name a sidecar writes.
+/// The object whose address `rendered` spells, when it is `&name`.
 pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
     rendered
         .strip_prefix('&')
         .filter(|name| !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_'))
 }
 
-fn describe_indexed_place(base: &str, index: &str) -> String {
-    if index == "0"
+fn indexed_local_address(base: &ProgramExpression) -> bool {
+    // An indexed read through a C local's address can lower differently
+    // from a read of the bare local. Keep the explicit place in source.
+    !rust_spelling()
+        && matches!(base, ProgramExpression::AddressOf(object)
+            if matches!(object.as_ref(), ProgramExpression::Variable(name)
+                if name.local_id().is_some_and(|local| !local.is_parameter())))
+}
+
+fn describe_indexed_place(base: &str, index: &str, explicit_local: bool) -> String {
+    if !explicit_local
+        && index == "0"
         && let Some(object) = object_at_address(base)
     {
         return object.to_string();
@@ -7262,6 +7375,7 @@ fn describe_untyped_array_field_read(
             target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: *volatile,
             pointee_constant: *pointee_constant,
             explicit_qualification: true,
@@ -7321,6 +7435,13 @@ fn describe_byte_list(mut expression: &ContractExpression) -> Option<String> {
 }
 
 pub(super) fn describe_contract_expression(expression: &ContractExpression) -> String {
+    describe_contract_expression_grouping_casts(expression, true)
+}
+
+fn describe_contract_expression_grouping_casts(
+    expression: &ContractExpression,
+    group_cast: bool,
+) -> String {
     if matches!(expression, ContractExpression::Add(_, _)) {
         return describe_add_contract_expression(expression);
     }
@@ -7394,6 +7515,19 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         } => {
             if let Some(literal) = describe_byte_list(expression) {
                 return literal;
+            }
+            // A struct's value, `*p` or a literal of its fields.
+            if algebraic_type.name() == variant
+                && algebraic_type.arguments().is_empty()
+                && let Some(spelled) = crate::surface::struct_values::spell(
+                    variant,
+                    &arguments
+                        .iter()
+                        .map(describe_contract_expression)
+                        .collect::<Vec<_>>(),
+                )
+            {
+                return spelled;
             }
             let type_arguments = if algebraic_type.arguments.is_empty() {
                 String::new()
@@ -7493,6 +7627,14 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             let operand = describe_contract_expression(operand);
             match lowered {
                 ProgramExpression::Cast {
+                    target_type: ProgramType::VoidPointer,
+                    integer_mode: crate::kernel::IntegerCastMode::PointerCoercion,
+                    ..
+                } => {
+                    // The name is only in scope in the body of the binding.
+                    format!("(let pointer: void* = {operand}; pointer)")
+                }
+                ProgramExpression::Cast {
                     target_type: ProgramType::UInt64,
                     integer_mode: crate::kernel::IntegerCastMode::Standard,
                     pointee_struct: None,
@@ -7505,23 +7647,29 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                     pointee_volatile,
                     ..
                 } => {
-                    if pointee_struct.is_none()
+                    let cast = if pointee_struct.is_none()
                         && rust_spelling()
                         && let Some(spelling) = rust_scalar_spelling(target_type)
                     {
-                        return format!("({operand} as {spelling})");
+                        format!("{operand} as {spelling}")
+                    } else {
+                        let spelling = pointee_struct
+                            .as_ref()
+                            .map(|name| format!("struct {name} *"))
+                            .unwrap_or_else(|| {
+                                qualified_native_pointer_spelling(
+                                    crate::kernel::program_type_spelling(*target_type),
+                                    *pointee_constant,
+                                    *pointee_volatile,
+                                )
+                            });
+                        click_cast(&operand, &spelling)
+                    };
+                    if group_cast {
+                        format!("({cast})")
+                    } else {
+                        cast
                     }
-                    let spelling = pointee_struct
-                        .as_ref()
-                        .map(|name| format!("struct {name} *"))
-                        .unwrap_or_else(|| {
-                            qualified_native_pointer_spelling(
-                                crate::kernel::program_type_spelling(*target_type),
-                                *pointee_constant,
-                                *pointee_volatile,
-                            )
-                        });
-                    format!("({})", click_cast(&operand, &spelling))
                 }
                 ProgramExpression::PointerOffsetBytes { bytes, .. } => {
                     format!("byte_offset({operand}, {bytes})")
@@ -7638,9 +7786,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             format!("-{}", describe_contract_expression(expression))
         }
         ContractExpression::Add(_, _) => unreachable!("addition is rendered iteratively above"),
-        ContractExpression::Subtract(left, right) => {
-            describe_binary_contract_expression(left, "-", right)
-        }
+        ContractExpression::Subtract(left, right) => format!(
+            "({} - {})",
+            describe_additive_operand(left),
+            describe_additive_operand(right)
+        ),
         ContractExpression::Multiply(left, right) => {
             describe_binary_contract_expression(left, "*", right)
         }
@@ -7700,8 +7850,10 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             {
                 return describe_program_expression(object);
             }
+            let explicit_local = matches!(base.as_ref(), ContractExpression::ProgramExpression(base)
+                if indexed_local_address(base));
             let base = describe_contract_expression(base);
-            describe_indexed_place(&base, &index)
+            describe_indexed_place(&base, &index, explicit_local)
         }
         ContractExpression::ArrayIndex { base, indexes, .. } => format!(
             "{}{}",
@@ -7831,6 +7983,13 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
     }
 }
 
+/// A cast binds more tightly than addition and subtraction. Its own operand
+/// still needs grouping when it contains arithmetic, but grouping the cast
+/// itself adds another level at every step of an unfolded recurrence.
+fn describe_additive_operand(expression: &ContractExpression) -> String {
+    describe_contract_expression_grouping_casts(expression, false)
+}
+
 fn describe_add_contract_expression(expression: &ContractExpression) -> String {
     // The parser already associates a flat sum to the left. Walk only that
     // spine: reassociating the right operand could change C overflow or
@@ -7842,10 +8001,10 @@ fn describe_add_contract_expression(expression: &ContractExpression) -> String {
         rights.push(second.as_ref());
         left = first;
     }
-    let mut output = format!("({}", describe_contract_expression(left));
+    let mut output = format!("({}", describe_additive_operand(left));
     for right in rights.into_iter().rev() {
         output.push_str(" + ");
-        output.push_str(&describe_contract_expression(right));
+        output.push_str(&describe_additive_operand(right));
     }
     output.push(')');
     output

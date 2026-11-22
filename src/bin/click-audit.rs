@@ -51,9 +51,24 @@ const DEFAULT_PERFORMANCE_SLACK: usize = 10_000;
 const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
 const RUN_LIMIT_EXHAUSTED: &str = "whole-run time limit exhausted";
 const USAGE: &str = "\
-usage: click audit [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
+usage: click audit [expansion|raise-lower|fact-stability] [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
 
-The audit inventories smart tactics without executing proofs, then audits each
+Each audit checks a promise Click makes about every proof in the selected
+proof containers, and ends with one headline: how many of the items it
+checked fail.
+
+  expansion       every smart tactic expands to a simple proof that verifies
+  raise-lower     every fact and goal a proof step holds raises to Surface
+                  syntax that lowers back to the same term
+  fact-stability  lowering never depends on the facts available
+
+With no audit named, all three run on the same path and the run ends with
+their headlines. The lowering audits verify each container once with their
+records on, writing `raise-lower.tsv` and `fact-stability.tsv` under
+`--records DIR` (default `target/click-audit`). The options below are the
+expansion audit's.
+
+The expansion audit inventories smart tactics without executing proofs, then audits each
 selected site in source order: it expands the site, verifies the rewritten
 proof unit in the retained session, reverifies that proof unit through the
 normal direct targeted entry point, and checks the rewrite is an
@@ -508,13 +523,160 @@ fn verify_in_session(
     Ok(cost)
 }
 
+/// One of the audits `click audit` runs. Each checks a promise Click makes
+/// about every proof: smart tactics expand, facts and goals round-trip
+/// through Surface, and lowering does not depend on facts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AuditKind {
+    Expansion,
+    Lowering(click::instrumentation::LoweringAudit),
+}
+
+const ALL_AUDITS: [AuditKind; 3] = [
+    AuditKind::Expansion,
+    AuditKind::Lowering(click::instrumentation::LoweringAudit::RaiseLower),
+    AuditKind::Lowering(click::instrumentation::LoweringAudit::FactStability),
+];
+
+impl AuditKind {
+    fn parse(name: &str) -> Option<Self> {
+        use click::instrumentation::LoweringAudit;
+        Some(match name {
+            "expansion" => AuditKind::Expansion,
+            "raise-lower" => AuditKind::Lowering(LoweringAudit::RaiseLower),
+            "fact-stability" => AuditKind::Lowering(LoweringAudit::FactStability),
+            _ => return None,
+        })
+    }
+}
+
+/// `expansion.failures.tsv` under `records`: each failing site or container
+/// this run, with the command that reproduces it, in the columns the
+/// lowering audits' failures files use.
+fn write_expansion_failures(records: &Path) -> Result<(), String> {
+    let lines = EXPANSION_FAILURES
+        .lock()
+        .map(|failures| failures.concat())
+        .unwrap_or_default();
+    fs::create_dir_all(records)
+        .map_err(|error| format!("failed to create `{}`: {error}", records.display()))?;
+    let path = records.join("expansion.failures.tsv");
+    fs::write(&path, &lines)
+        .map_err(|error| format!("failed to write `{}`: {error}", path.display()))?;
+    if !lines.is_empty() {
+        println!(
+            "expansion audit: every failure, with its reproduce command, is in {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// A lowering audit's own arguments: the path and any `--claim`s.
+fn lowering_arguments(raw: &[String]) -> Result<(PathBuf, Vec<String>), String> {
+    let mut path = None;
+    let mut claims = Vec::new();
+    let mut arguments = raw.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--claim" {
+            claims.push(
+                arguments
+                    .next()
+                    .ok_or_else(|| format!("missing claim after `--claim`\n{USAGE}"))?
+                    .clone(),
+            );
+        } else if argument.starts_with('-') || path.replace(PathBuf::from(argument)).is_some() {
+            return Err(USAGE.to_string());
+        }
+    }
+    Ok((path.ok_or_else(|| USAGE.to_string())?, claims))
+}
+
+/// Where a lowering audit writes its records unless `--records` says.
+const DEFAULT_RECORDS_DIRECTORY: &str = "target/click-audit";
+
+/// The headline the last expansion audit printed, for the run's summary.
+static EXPANSION_HEADLINE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
-    let raw = arguments.into_iter().collect::<Vec<_>>();
+    let mut raw = arguments.into_iter().collect::<Vec<_>>();
     if matches!(raw.as_slice(), [argument] if argument == "--help" || argument == "-h") {
         println!("{USAGE}");
         return Ok(());
     }
-    run_audit(parse_arguments(raw)?)
+    let kinds = match raw.first().and_then(|name| AuditKind::parse(name)) {
+        Some(kind) => {
+            raw.remove(0);
+            vec![kind]
+        }
+        None => ALL_AUDITS.to_vec(),
+    };
+    // `--records DIR` belongs to the lowering audits; the rest are the
+    // expansion audit's options.
+    let mut records = PathBuf::from(DEFAULT_RECORDS_DIRECTORY);
+    if let Some(index) = raw.iter().position(|argument| argument == "--records") {
+        if index + 1 >= raw.len() {
+            return Err(format!("missing directory after `--records`\n{USAGE}"));
+        }
+        records = PathBuf::from(raw.remove(index + 1));
+        raw.remove(index);
+    }
+    if kinds == [AuditKind::Expansion] {
+        let result = run_audit(parse_arguments(raw)?);
+        write_expansion_failures(&records)?;
+        return result;
+    }
+    let expansion_arguments = if kinds.contains(&AuditKind::Expansion) {
+        Some(parse_arguments(raw.clone())?)
+    } else {
+        None
+    };
+    let (path, claims) = match &expansion_arguments {
+        Some(arguments) => (arguments.path.clone(), arguments.claims.clone()),
+        None => lowering_arguments(&raw)?,
+    };
+    let mut headlines = Vec::new();
+    let mut failures = Vec::new();
+    for kind in kinds {
+        match kind {
+            AuditKind::Expansion => {
+                let arguments = expansion_arguments.clone().expect("parsed above");
+                if let Err(error) = run_audit(arguments) {
+                    failures.push(error);
+                }
+                write_expansion_failures(&records)?;
+                if let Some(headline) = EXPANSION_HEADLINE.lock().ok().and_then(|slot| slot.clone())
+                {
+                    headlines.push(headline);
+                }
+            }
+            AuditKind::Lowering(audit) => {
+                let file = records.join(format!("{}.tsv", lowering::name(audit)));
+                let report = lowering::run(audit, &path, &file, &claims)?;
+                println!("{}", report.headline);
+                print!("{}", report.failures);
+                if !report.unexpected_outcomes.is_empty() {
+                    println!(
+                        "  {} proof containers did not verify as their expectation says; the gate and the nightly tests own those verdicts (listed in {})",
+                        report.unexpected_outcomes.len(),
+                        file.with_extension("unexpected.tsv").display()
+                    );
+                }
+                headlines.push(report.headline);
+            }
+        }
+    }
+    if headlines.len() > 1 {
+        println!("\nAUDITS:");
+        for headline in &headlines {
+            println!("  {headline}");
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("\n"))
+    }
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Arguments, String> {
@@ -1229,6 +1391,19 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
         }
     );
     let failures = site_failures + claim_failures + session_failures;
+    let headline = format!(
+        "expansion audit: {failures} failing of {} smart-tactic sites checked{}",
+        scoped_sites.len(),
+        if out_of_time {
+            " (stopped at the run bound)"
+        } else {
+            ""
+        }
+    );
+    println!("{headline}");
+    if let Ok(mut slot) = EXPANSION_HEADLINE.lock() {
+        *slot = Some(headline);
+    }
     if out_of_time {
         if cursor < selected.len() {
             println!();
@@ -1944,6 +2119,44 @@ fn format_location(location: &SourceLocation) -> String {
 /// `click audit --claim` selects (or the source path, for a failure before
 /// any claim ran). This binary's own tests audit fixtures that are meant to
 /// fail, under the nightly's report directory too, so they record nothing.
+/// One `expansion.failures.tsv` line: `failed`, `site` or `container`, the
+/// container, the site or container name, the message's first line, two
+/// empty columns, and the command that reproduces it.
+fn expansion_failure_line(name: &str, message: &str) -> String {
+    let site_path = name.rsplit_once(':').and_then(|(rest, column)| {
+        let (path, line) = rest.rsplit_once(':')?;
+        (column.parse::<usize>().is_ok() && line.parse::<usize>().is_ok()).then_some(path)
+    });
+    let (container, kind, reproduce) = match site_path {
+        Some(path) => (
+            path,
+            "site",
+            format!(
+                "click audit expansion --claim {} {}",
+                cli::shell_quote(name),
+                cli::shell_quote(path)
+            ),
+        ),
+        None => (
+            name,
+            "container",
+            format!("click audit expansion {}", cli::shell_quote(name)),
+        ),
+    };
+    let summary = message
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("");
+    format!(
+        "failed\t{kind}\t{container}\t{name}\t{}\t\t\t{reproduce}\n",
+        summary.replace('\t', " ")
+    )
+}
+
+/// The expansion audit's failures this run, as `expansion.failures.tsv`
+/// lines, the format the lowering audits' failures files share.
+static EXPANSION_FAILURES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 fn record_audit_failure(name: &str, message: &str) {
     if cfg!(test) {
         return;
@@ -1954,6 +2167,10 @@ fn record_audit_failure(name: &str, message: &str) {
         name.strip_prefix(&format!("{}/", directory.display()))
             .map(str::to_string)
     });
+    let name_here = relative.as_deref().unwrap_or(name);
+    if let Ok(mut failures) = EXPANSION_FAILURES.lock() {
+        failures.push(expansion_failure_line(name_here, message));
+    }
     click::nightly_report::record(
         "audit",
         &click::nightly_report::NightlyResult {
@@ -2973,6 +3190,9 @@ fn rewritten_click_source(source: &AuditSource, rewritten: &str) -> Result<Strin
         Ok(rewritten.to_string())
     }
 }
+
+#[path = "click-audit/lowering.rs"]
+mod lowering;
 
 #[cfg(test)]
 #[path = "click-audit/tests.rs"]

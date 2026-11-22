@@ -150,7 +150,7 @@ impl LocalBindingId {
         Self::new_unnamed(owner, ordinal, LocalBindingKind::PreparedArgument)
     }
 
-    /// An unnamed C object identified by its written compound literal occurrence.
+    /// An unnamed object identified by its written compound literal occurrence.
     pub(crate) fn compound_literal(owner: LocalFunctionId, ordinal: u32) -> Self {
         Self::new_unnamed(owner, ordinal, LocalBindingKind::CompoundLiteral)
     }

@@ -18,7 +18,7 @@ verifying "allocation.c";
 int32 use_allocation() { ensures true; } by {
     step();
     step();
-    have statement(1).result == p by normalize();
+    have statement(1).result == p by known();
     branch { true => { step(); } false => {} }
     have statement(1).allocation == p;
     have statement(1).allocation != 0;

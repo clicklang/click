@@ -8,6 +8,12 @@ struct box { int* data; };
 struct byte_box { unsigned char* data; };
 void update(struct box* box) { int scratch; scratch = 1; }
 void update_byte(struct byte_box* box) { int scratch; scratch = 1; }
+int update_bounds(struct box* box, int n) {
+    int count;
+    count = n;
+    count = 1;
+    return count;
+}
 ```
 
 ```click
@@ -28,6 +34,20 @@ void update_byte(struct byte_box* box) {
 } by {
     step_until(function.exit);
     observe(old(box->data)[0..2]);
+    known();
+}
+int32 update_bounds(struct box* box, int32 n) {
+    requires 1 < n;
+    owns *box;
+    owns box->data[0..n];
+    ensures viewable(at(function.entry, memory(box->data[0..n])));
+} by {
+    step();
+    step();
+    mark saved;
+    step();
+    observe(at(saved, memory(box->data[0..count])));
+    step_until(function.exit);
     known();
 }
 ```

@@ -755,17 +755,15 @@ pub(super) fn certify_scalar_reference_end<'a>(
                 }
                 // A call whose inputs contain no selected alias cannot carry
                 // that alias into its result; earlier aggregate escapes were refused.
-                aliases.remove(destination.as_str());
+                if let Some(destination) = destination {
+                    aliases.remove(destination.as_str());
+                }
                 point = MirPoint {
                     block: *target,
                     statement: 0,
                 };
             }
-            T::If { .. }
-            | T::Switch { .. }
-            | T::Drop { .. }
-            | T::BoxNew { .. }
-            | T::BoxFree { .. } => {
+            T::If { .. } | T::Switch { .. } | T::Drop { .. } | T::BoxFree { .. } => {
                 return Err(FrontierRefusal::UnsupportedFlow);
             }
         }
@@ -835,6 +833,9 @@ mod tests {
             mir: Some(MirBody {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
+                unnamed_locals: Default::default(),
+                compound_literals: Default::default(),
+                borrowed_scalars: Default::default(),
                 locals: vec![
                     place("child", reference_type()),
                     place("alias", reference_type()),
@@ -979,7 +980,7 @@ mod tests {
             function: "observe_parent".into(),
             arguments: vec![local("parent")],
             owned_arguments: vec![],
-            destination: "x".into(),
+            destination: Some("x".into()),
             target: 1,
             through_pointer: false,
             result: None,

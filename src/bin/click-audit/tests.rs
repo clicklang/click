@@ -1958,7 +1958,7 @@ fn a_claims_rewrites_are_verified_in_one_run() {
     // Exercise loop, branch, and 64-bit-index claims without inventorying the
     // unrelated corpus. These are the same cases the corpus scan selected.
     let sources = [
-        "a_byte_field_of_a_struct_array_element_in_a_loop_is_bounded_by_its_index.md",
+        "statement_regions_reach_a_loop_body.md",
         "a_condition_reaching_one_value_along_two_paths_splits_into_them.md",
         "a_frame_holds_across_a_write_at_a_64_bit_index.md",
     ]
@@ -2589,4 +2589,21 @@ fn pthread_handle_copies_expand_and_cold_replay() {
     ])
     .unwrap();
     run_audit(arguments).unwrap();
+}
+
+/// A failing site's line names its container and reproduces the site; a
+/// failing container's line reproduces the container.
+#[test]
+fn an_expansion_failure_line_reproduces_its_site() {
+    assert_eq!(
+        expansion_failure_line(
+            "examples/arena/cells.click:12:5",
+            "\nexpansion failed\nmore"
+        ),
+        "failed\tsite\texamples/arena/cells.click\texamples/arena/cells.click:12:5\texpansion failed\t\t\tclick audit expansion --claim examples/arena/cells.click:12:5 examples/arena/cells.click\n"
+    );
+    assert!(
+        expansion_failure_line("mdtests/x.md", "session failed")
+            .ends_with("\tclick audit expansion mdtests/x.md\n")
+    );
 }

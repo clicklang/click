@@ -38,7 +38,7 @@ function adt_equal<T>(xs: List<T>, ys: List<T>) -> int32 {
 theorem symbolic_comparison(xs: List<int32>, ys: List<int32>) {
     ensures adt_equal(xs, ys) == if xs == ys { 1 } else { 0 } by {
         unfold(adt_equal(xs, ys));
-        normalize();
+        known();
     }
 }
 
@@ -46,11 +46,11 @@ theorem rewrite_inside_condition(xs: List<int32>, ys: List<int32>, zs: List<int3
     requires xs == ys;
     ensures (if xs == zs { 1 } else { 0 }) == (if ys == zs { 1 } else { 0 }) by {
         rewrite(xs, ys);
-        normalize();
+        known();
     }
     ensures adt_equal(list::append(xs, zs), zs) == adt_equal(list::append(ys, zs), zs) by {
         rewrite(xs, ys);
-        normalize();
+        known();
     }
 }
 

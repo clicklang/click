@@ -22,8 +22,8 @@ int32 probe(struct Pair* left, struct Pair* right, int32 choose) {
   fact selected == left or selected == right;
   views selected->second;
  } {
-     true => { step(); have selected == left or selected == right by { have selected == left by normalize(); known(); } }
-     false => { step(); have selected == left or selected == right by { have selected == right by normalize(); known(); } }
+     true => { step(); have selected == left or selected == right by { have selected == left by known(); known(); } }
+     false => { step(); have selected == left or selected == right by { have selected == right by known(); known(); } }
  }
  step(); solve();
  }

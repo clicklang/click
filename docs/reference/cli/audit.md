@@ -1,14 +1,75 @@
 # `click audit` command
 
-`click audit` inventories source-addressable smart tactics, expands selected
-sites, verifies each rewritten proof unit, and checks that expansion reaches a
-fixed point without introducing a new smart tactic.
+`click audit` checks three promises Click makes about every proof in the
+selected proof containers. Each audit ends with one headline: how many of the
+items it checked fail.
+
+| Audit | Checks | Items |
+|---|---|---|
+| `expansion` | every smart tactic expands to a simple proof that verifies | smart-tactic sites |
+| `raise-lower` | every fact and goal a step holds raises to Surface syntax that lowers back to the same term ([raise-lower principle](../../internals/raise-lower-principle.md)) | distinct facts and goals |
+| `fact-stability` | lowering never depends on the facts available ([fact-stable lowering](../../internals/raise-lower-principle.md#lowering-is-fact-stable)) | lowerings |
+
+With no audit named, all three run on the same target and the run ends with
+an `AUDITS:` block of their headlines. Only the expansion audit's failures
+fail the command; the lowering audits are tracked.
 
 ## Synopsis
 
 ```text
-usage: click audit [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
+usage: click audit [expansion|raise-lower|fact-stability] [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
 ```
+
+## Lowering audits
+
+`raise-lower` and `fact-stability` verify each selected proof container once,
+on its own verifier thread, with their records on. They write
+`raise-lower.tsv` and `fact-stability.tsv` under `--records DIR` (default
+`target/click-audit`); each record's last field names its container.
+
+The raise-lower headline counts a fact once per container, claim and
+rendering, however many steps restate it. A fact fails when it has no raised
+form (`unraised`), its raised form does not lower (`unlowered`), or it lowers
+to another term (`differs`) or the other polarity of the same comparison
+(`polarity`). A pure proof (a theorem, a lemma, a termination check) raises
+and lowers in its own context; a program proof's fact at no fixed program
+state cannot be raised there and is reported as not checkable. The fact-stability headline counts lowerings
+whose term facts changed (`differs`) or among whose paths facts chose
+(`paths`); `refused` lowerings are tracked.
+
+### Reading and reproducing failures
+
+After its headline, a lowering audit prints its first ten failures in full:
+the outcome, the claim (raise-lower) or lowering site (fact stability), the
+container, the fact as rendered, its raised form or fact-free lowering, what
+that lowered to for `differs`, and a command that reproduces just that
+failure:
+
+```text
+raise-lower audit: 4 failing of 22 facts checked (18.2%); 6 not checkable (no fixed state); ...
+  4. unraised in `arena_release.contract` (mdtests/arena_prefix_free_reads_region_arena.md)
+       fact: viewable((byte_offset(old(region->arena), s * 4) as (uint8 *))[0..(e - s) * 4])
+       reproduce: click audit raise-lower --claim arena_release.contract mdtests/arena_prefix_free_reads_region_arena.md
+```
+
+Every failure, with its reproduce command, is in `raise-lower.failures.tsv` or
+`fact-stability.failures.tsv` beside the records: outcome, container, claim or
+site, fact, raised form or fact-free lowering, lowered form, command. A
+reproduce command audits only that container, and `--claim CLAIM` (repeatable)
+counts and lists only that claim's raise-lower facts. The expansion audit
+prints a reproduce command for each failing site, and writes every failing
+site or container to `expansion.failures.tsv` in the same columns.
+
+A container that does not verify as its expectation says is counted after
+the headline and listed in `raise-lower.unexpected.tsv` or
+`fact-stability.unexpected.tsv`. The audit does not judge it: the gate and the
+nightly tests own verification verdicts.
+
+## Expansion audit
+
+The expansion audit inventories source-addressable smart tactics, expands
+selected sites, verifies each rewritten proof unit, and checks that expansion
+reaches a fixed point without introducing a new smart tactic.
 
 ## Target selection
 

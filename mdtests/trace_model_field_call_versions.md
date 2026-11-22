@@ -31,7 +31,7 @@ void twice(struct cell* p) {
 } by {
     step(increment, { c: c });
     have c.value == 1 by { solve(); }
-    have c.value <= 2147483646 by { rewrite(c.value, 1); normalize(); }
+    have c.value <= 2147483646 by { rewrite(c.value, 1); known(); }
     step(increment, { c: c });
     step();
     solve();

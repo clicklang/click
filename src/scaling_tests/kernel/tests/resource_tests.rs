@@ -5039,3 +5039,67 @@ fn raw_ownership_admission_must_not_search_ambient_pointer_aliases() {
         );
     }
 }
+
+/// A whole object of a symbolic layout is reserved from the object held with
+/// holes and one whole field per hole, found by the field's index key: the
+/// work grows with the layout's fields, not with unrelated owners.
+#[test]
+fn symbolic_object_from_its_pieces_costs_its_fields_not_the_context() {
+    let mut samples = Vec::new();
+    for (fields, unrelated) in [(2u32, 8u32), (4, 8), (8, 8), (2, 64), (2, 256)] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let layout = crate::kernel::SymbolicLayoutName::intern(
+            &format!("scaling_pieces_{fields}"),
+            (0..fields)
+                .map(|field| (format!("f{field}"), ProgramType::Int32))
+                .collect(),
+        );
+        let base = Address::symbolic(Variable(989_501));
+        let field_range = |field: u32| {
+            MemoryRange::access(
+                base.offset_by_layout(layout.field_offset(field)),
+                ProgramType::Int32,
+            )
+        };
+        let whole = MemoryRange::object(base.clone(), crate::kernel::LayoutSize::Of(layout));
+        let facts = PureFactContext::new();
+        let mut context = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
+            ResourceFact::own_memory(whole.clone().with_holes((0..fields).collect())),
+        );
+        for field in 0..fields {
+            context = context.unchecked_with_fact(ResourceFact::own_memory(field_range(field)));
+        }
+        for other in 0..unrelated {
+            context = context.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
+                    Address::symbolic(Variable(989_600 + u64::from(other))),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
+                    4,
+                ),
+            ));
+        }
+        let required = ResourceFact::own_memory(whole);
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context
+                .clone()
+                .reserve_owned_memory_fragments(&required, &facts)
+        });
+        let (remaining, supports) = answer.expect("the pieces make the object");
+        assert_eq!(supports.len(), fields as usize + 1, "fields={fields}");
+        assert_eq!(remaining.facts().len(), unrelated as usize);
+        samples.push((fields, unrelated, work));
+    }
+    eprintln!("symbolic object pieces, fields/unrelated/work: {samples:?}");
+    let work = |fields: u32, unrelated: u32| {
+        samples
+            .iter()
+            .find(|sample| sample.0 == fields && sample.1 == unrelated)
+            .expect("sampled")
+            .2
+    };
+    // Unrelated owners add only the index's logarithmic lookup cost; fields
+    // add a bounded amount each.
+    assert!(work(2, 256) <= work(2, 8) * 5 / 4 + 4, "{samples:?}");
+    assert!(work(8, 8) <= work(2, 8) * 8 + 64, "{samples:?}");
+}

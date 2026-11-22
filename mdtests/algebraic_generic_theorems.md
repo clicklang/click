@@ -38,7 +38,7 @@ theorem append_right_identity<T>(xs: TestList<T>) {
                 apply(ih(tail));
                 unfold(append(TestList<T>::Cons(head, tail), TestList<T>::Nil));
                 rewrite(append(tail, TestList<T>::Nil), tail);
-                normalize();
+                known();
             }
         }
     }
@@ -79,7 +79,7 @@ theorem pointer_instance(xs: TestList<int32*>) {
 theorem scalar_parameter_instance(value: int32) {
     requires value == value;
     ensures value == value by {
-        apply(retain(value, value)) using { value == value; };
+        apply(retain(value, value));
         apply(reflexive_via_generic(value));
         known();
     }

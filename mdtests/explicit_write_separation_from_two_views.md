@@ -19,15 +19,10 @@ void set(int32* p, int32* q, int32* r) {
     have separate(memory(*q), memory(*p)) by { known(); }
     have separate(memory(*r), memory(*p)) by { known(); }
     have separate(memory(*q) * memory(*r), memory(*p)) by {
-        apply(separation::separate_star(memory(*q), memory(*r), memory(*p))) using {
-            separate(memory(*q), memory(*p));
-            separate(memory(*r), memory(*p));
-        };
+        apply(separation::separate_star(memory(*q), memory(*r), memory(*p)));
     }
     have separate(memory(*p), memory(*q) * memory(*r)) by {
-        apply(separation::separate_symm(memory(*q) * memory(*r), memory(*p))) using {
-            separate(memory(*q) * memory(*r), memory(*p));
-        };
+        apply(separation::separate_symm(memory(*q) * memory(*r), memory(*p)));
     }
     step();
 }

@@ -31,12 +31,12 @@ int32 failed_allocation_preserves_existing_loads(int32 data[], int32 length) {
     step_until(statement(2).entry);
     have forall (k: int32) { 0 <= k and k < length implies data[k] == old(data[k]) } by {
         intro(); intro();
-        have separate(statement(1).footprint, memory(data[k])) by { normalize() using {}; }
+        have separate(statement(1).footprint, memory(data[k])) by { solve() using {}; }
         have data[k] == at(statement(1).entry, data[k]) by {
             preserve(memory(data[k]), statement(1));
         }
         rewrite(data[k], at(statement(1).entry, data[k]));
-        normalize();
+        known();
     }
     if fresh == 0 {
         step_until(function.exit);
@@ -48,7 +48,7 @@ int32 failed_allocation_preserves_existing_loads(int32 data[], int32 length) {
         have forall (k: int32) { 0 <= k and k < length implies data[k] == old(data[k]) } by {
             intro(); intro();
             have separate(statement(3).footprint, memory(data[k])) by {
-                normalize() using { separate(memory(fresh[0..length]), memory(data[0..length])); 0 <= k; k < length; };
+                solve() using { separate(memory(fresh[0..length]), memory(data[0..length])); 0 <= k; k < length; };
             }
             have data[k] == at(before_free, data[k]) by {
                 preserve(memory(data[k]), statement(3));

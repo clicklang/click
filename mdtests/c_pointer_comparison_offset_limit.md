@@ -20,5 +20,5 @@ int32 within_input(const uint8* p, uint64 offset, uint64 length) {
 ```
 
 ```expect
-fail: tactic failure: `step()` failed while executing C: Click does not yet support ordered pointer comparison with these offsets
+fail: Click does not yet support ordered pointer comparison with these offsets
 ```

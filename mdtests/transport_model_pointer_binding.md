@@ -41,11 +41,11 @@ int32 update(int32* p) {
                     have p[0] == 7 by { known(); }
                     have p == alias by { solve(); }
                     have separate(memory(p[1]), memory(p[0])) by {
-                        apply(click::separation::separate_elements(p, 1, 0)) using {};
+                        apply(click::separation::separate_elements(p, 1, 0));
                     }
                     step();
                     have separate(statement(0).statement(0).footprint, memory(p[0])) by {
-                        normalize() using { separate(memory(p[1]), memory(p[0])); };
+                        solve() using { separate(memory(p[1]), memory(p[0])); };
                     }
                     have p[0] == at(iteration, p[0]) by {
                         preserve(memory(p[0]), statement(0).statement(0));

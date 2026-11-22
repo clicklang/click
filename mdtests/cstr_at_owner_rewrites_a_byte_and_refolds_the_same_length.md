@@ -31,10 +31,10 @@ void poke(uint8* s, uint64 n) {
         } else {
             instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k);
             have separate(memory(s[k]), memory(s[0u64])) by {
-                apply(click::separation::separate_elements(s, k, 0u64)) using { k != 0u64; };
+                apply(click::separation::separate_elements(s, k, 0u64));
             }
             have separate(statement(0).footprint, memory(s[k])) by {
-                normalize() using { separate(memory(s[k]), memory(s[0u64])); };
+                solve() using { separate(memory(s[k]), memory(s[0u64])); };
             }
             have s[k] == old(s[k]) by {
                 preserve(memory(s[k]), statement(0));
@@ -45,10 +45,10 @@ void poke(uint8* s, uint64 n) {
     }
     have n != 0u64 by { solve() using { 0u64 < n; }; }
     have separate(memory(s[n]), memory(s[0u64])) by {
-        apply(click::separation::separate_elements(s, n, 0u64)) using { n != 0u64; };
+        apply(click::separation::separate_elements(s, n, 0u64));
     }
     have separate(statement(0).footprint, memory(s[n])) by {
-        normalize() using { separate(memory(s[n]), memory(s[0u64])); };
+        solve() using { separate(memory(s[n]), memory(s[0u64])); };
     }
     have s[n] == old(s[n]) by {
         preserve(memory(s[n]), statement(0));
@@ -63,10 +63,10 @@ void poke(uint8* s, uint64 n) {
         } else {
             instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k);
             have separate(memory(s[k]), memory(s[0u64])) by {
-                apply(click::separation::separate_elements(s, k, 0u64)) using { k != 0u64; };
+                apply(click::separation::separate_elements(s, k, 0u64));
             }
             have separate(statement(0).footprint, memory(s[k])) by {
-                normalize() using { separate(memory(s[k]), memory(s[0u64])); };
+                solve() using { separate(memory(s[k]), memory(s[0u64])); };
             }
             preserve(memory(s[k]), statement(0));
         }

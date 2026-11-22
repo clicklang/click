@@ -21,6 +21,7 @@ the same premise, including inside address casts and `at(...)` expressions.
 ```text
 usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]
        click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>
+       click expand --migrate-normalize [--claim <LABEL>] <sidecar.click|mdtest.md>
 ```
 
 Replace the following:
@@ -74,9 +75,8 @@ Expansion writes what a site's search found. A smart tactic (`solve`,
 is all of an omitted proof) is replaced by the simple steps it checked: for the
 tail, the steps, splits, and closers that run the remaining C and close each
 goal, and at a loop back edge one `have <member> by { ... }` per invariant
-bundle member not already available as a fact. A simple tactic written with
-an elided argument, such as `apply(t(x))` or a bare `transport(P, Q)`, keeps
-its place, and the argument is written into it: `apply(t(x)) using { P; Q; }`.
+bundle member not already available as a fact. Expansion keeps a named theorem application as `apply(t(x))` and retains
+proofs of its open requirements in `have` steps.
 The implicit closer that proves a `step()` or `fold` requirement is written
 into that step, as
 `step() by { ... }` or as its `requires` entries.
@@ -181,6 +181,7 @@ selected type instance; expansion preserves the generic declaration.
 | Option | Meaning |
 | --- | --- |
 | `--claim LABEL` | Expand all smart tactics in one named claim, including one loop phase, instead of selecting a tactic by location. `--claim PATH:LINE[:COLUMN]` names the innermost claim whose clause or proof covers that line of the target. |
+| `--migrate-normalize` | Try replacing written normalization in each indexed proof unit, or in the proof unit named by `--claim LABEL`. Emit the substitutions that verify and whose expansions replay without implicit solving or normalization. Skip expected-failure mdtests and report proof units that still need work. Use `scripts/migrate-normalize.py` to generate a patch for multiple files. |
 | `--work-limit UNITS` | Set the deterministic work budget of the whole command, generating the expansion and checking it. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound of the whole command. The default is `10m`. It stops a hung or CPU-starved run and is not a verdict about the proof; smart search inside the expansion is bounded by its deterministic smart work budget, not by a clock. |
 | `--output PATH` | Write the complete verified rewrite in the input's directory. |

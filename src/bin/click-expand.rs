@@ -1,3 +1,6 @@
+#[path = "click-expand/migrate_normalize.rs"]
+mod migrate_normalize;
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,7 +19,7 @@ use click::surface::{
     verify_project_at, verify_sources_at,
 };
 
-const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with the implicit closer off. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
+const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n       click expand --migrate-normalize [--claim <LABEL>] <sidecar.click|mdtest.md>\n\n--migrate-normalize proposes checked substitutions for written normalize calls. The expanded proof is used as validation and the output keeps the short substitutions.\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with the implicit closer off. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -36,6 +39,7 @@ enum Selection {
         column: Option<usize>,
     },
     Claim(String),
+    MigrateNormalize(Option<String>),
 }
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
@@ -69,6 +73,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut output = None;
     let mut in_place = false;
     let mut claim = None;
+    let mut migrate = false;
     let mut parse_options = true;
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
@@ -102,6 +107,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                 .next()
                 .ok_or_else(|| format!("missing unit count after `--work-limit`\n{USAGE}"))?;
             work_limit = Some(cli::parse_work_limit(&units)?);
+        } else if argument == "--migrate-normalize" {
+            migrate = true;
         } else if argument == "--claim" {
             if claim.is_some() {
                 return Err("`--claim` may only be supplied once".to_string());
@@ -117,9 +124,10 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             positional.push(argument);
         }
     }
-    let (click_path, selection) = match (claim, positional.as_slice()) {
-        (Some(claim), [path]) => (PathBuf::from(path), Selection::Claim(claim)),
-        (None, [location]) => {
+    let (click_path, selection) = match (migrate, claim, positional.as_slice()) {
+        (true, claim, [path]) => (PathBuf::from(path), Selection::MigrateNormalize(claim)),
+        (false, Some(claim), [path]) => (PathBuf::from(path), Selection::Claim(claim)),
+        (false, None, [location]) => {
             let (path, line, column) = parse_source_line_location(location)?;
             (path, Selection::Tactic { line, column })
         }
@@ -161,6 +169,16 @@ fn run_bounded(arguments: &Arguments) -> Result<String, String> {
     let (project, inputs) = read_lone_sidecar_inputs(&arguments.click_path, &click_source)?;
     if let Some(output) = &arguments.output {
         check_sidecar_output(&arguments.click_path, output, &inputs)?;
+    }
+    if let Selection::MigrateNormalize(claim) = &arguments.selection {
+        return migrate_normalize::run(
+            Some(&project),
+            &click_source,
+            &inputs,
+            claim.as_deref(),
+            &arguments.click_path,
+            0,
+        );
     }
     let (claim, expanded) = generate_expansion(|| {
         expand_selection(
@@ -239,6 +257,15 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
         )
     })?;
     let mdtest = read_mdtest(&arguments.click_path)?;
+    if matches!(arguments.selection, Selection::MigrateNormalize(_))
+        && mdtest.expectation != Some(cli::MdTestExpectation::Pass)
+    {
+        eprintln!(
+            "{}: skipping mdtest without a passing expectation",
+            arguments.click_path.display()
+        );
+        return Ok(markdown);
+    }
     let click_source = mdtest.click_source.as_deref().ok_or_else(|| {
         format!(
             "mdtest `{}` has no ```click block",
@@ -247,6 +274,21 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
     })?;
     let inputs = prepare_mdtest_inputs(&mdtest)?;
     let project = read_mdtest_project_if_needed(&arguments.click_path, click_source, &inputs)?;
+    if let Selection::MigrateNormalize(claim) = &arguments.selection {
+        let migrated = migrate_normalize::run(
+            project.as_ref(),
+            click_source,
+            &inputs,
+            claim.as_deref(),
+            &arguments.click_path,
+            mdtest.click_start_line.saturating_sub(1),
+        )?;
+        return if migrated == click_source {
+            Ok(markdown)
+        } else {
+            mdtest.replace_click_source(&markdown, &migrated)
+        };
+    }
     let (claim, expanded) = generate_expansion(|| {
         let selection = match &arguments.selection {
             Selection::Tactic { line, column } => Selection::Tactic {
@@ -254,6 +296,7 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
                 column: *column,
             },
             Selection::Claim(claim) => Selection::Claim(claim.clone()),
+            Selection::MigrateNormalize(_) => unreachable!("migration handled above"),
         };
         let location = SelectionReport {
             path: &arguments.click_path,
@@ -354,6 +397,7 @@ fn expand_selection(
             })?;
             Ok((claim, expanded))
         }
+        Selection::MigrateNormalize(_) => unreachable!("migration handled before expansion"),
         Selection::Claim(requested) => {
             // `--claim FILE:LINE[:COLUMN]` names the claim covering that line.
             // Its position tells apart `loop` tactics proving one loop phase.
@@ -495,6 +539,7 @@ fn verified_expansion(
         |error| {
             let path = arguments.click_path.display();
             let selection = match &arguments.selection {
+                Selection::MigrateNormalize(_) => unreachable!("migration checks directly"),
                 Selection::Claim(label) => format!("`{label}` in `{path}`"),
                 Selection::Tactic { line, column } => match column {
                     Some(column) => format!("`{path}:{line}:{column}` in `{claim}`"),
@@ -544,30 +589,8 @@ fn verify_expansion_now(
     inputs: &VerificationInput,
     claim: &str,
 ) -> Result<(), String> {
-    let (result, events) = click::instrumentation::collect(|| {
-        let rewritten = project.map(|project| project.with_entry_source(expanded.to_string()));
-        let position = match (&rewritten, inputs) {
-            (Some(project), _) => {
-                project_tactic_source_position(project, &inputs.program_inputs(), claim, 0)
-            }
-            (None, inputs) => tactic_source_position(expanded, &inputs.program_inputs(), claim, 0),
-        }?;
-        let result = match (&rewritten, inputs) {
-            (Some(project), _) => verify_project_at(
-                project,
-                &inputs.program_inputs(),
-                position.line,
-                position.column,
-            ),
-            (None, inputs) => verify_sources_at(
-                expanded,
-                &inputs.program_inputs(),
-                position.line,
-                position.column,
-            ),
-        };
-        result.map(|_| ())
-    });
+    let (result, events) =
+        click::instrumentation::collect(|| verify_proof_unit(project, expanded, inputs, claim));
     if click::instrumentation::deadline_exceeded() {
         return Err(expansion_limit_error(
             "checking the generated certificate",
@@ -590,6 +613,36 @@ fn verify_expansion_now(
             error.report()
         )
     })
+}
+
+fn verify_proof_unit(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &VerificationInput,
+    claim: &str,
+) -> Result<(), click::surface::ClickError> {
+    let rewritten = project.map(|project| project.with_entry_source(source.to_string()));
+    let position = match (&rewritten, inputs) {
+        (Some(project), _) => {
+            project_tactic_source_position(project, &inputs.program_inputs(), claim, 0)
+        }
+        (None, inputs) => tactic_source_position(source, &inputs.program_inputs(), claim, 0),
+    }?;
+    let result = match (&rewritten, inputs) {
+        (Some(project), _) => verify_project_at(
+            project,
+            &inputs.program_inputs(),
+            position.line,
+            position.column,
+        ),
+        (None, inputs) => verify_sources_at(
+            source,
+            &inputs.program_inputs(),
+            position.line,
+            position.column,
+        ),
+    };
+    result.map(|_| ())
 }
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -987,7 +1040,7 @@ int32 bad(int32 x) {
         let markdown = fs::read_to_string(&path).unwrap();
         let have_line = markdown
             .lines()
-            .position(|line| line == "        have st.live == 1 by {")
+            .position(|line| line == "            have st.live == 1 by {")
             .expect("fixture should contain the nested smart have")
             + 1;
         let solve = markdown.lines().nth(have_line).unwrap();
@@ -1007,12 +1060,28 @@ int32 bad(int32 x) {
 
         let from_solve = run_at(have_line + 1, solve.find("solve").unwrap() + 1)
             .expect("the nested solve should select its smart have");
-        let from_have = run_at(have_line, 9).expect("the have keyword should select it");
+        let from_have = run_at(have_line, 13).expect("the have keyword should select it");
 
         assert_eq!(from_solve, from_have);
-        assert!(from_solve.contains("normalize() using {"), "{from_solve}");
+        // The selected have's `solve() using` becomes an explicit closer.
         assert!(
-            !from_solve.contains("solve() using {\n                    to_integer(st.live) == to_integer(at(m, st.live) + got)"),
+            from_solve
+                .lines()
+                .zip(from_solve.lines().skip(1))
+                .any(|(have, body)| have.trim() == "have st.live == 1 by {"
+                    && body.trim() == "known();"),
+            "{from_solve}"
+        );
+        // The written `solve() using` is replaced, at whatever indentation.
+        assert!(
+            !from_solve
+                .lines()
+                .zip(from_solve.lines().skip(1))
+                .any(|(solve, premise)| {
+                    solve.trim() == "solve() using {"
+                        && premise.trim()
+                            == "to_integer(st.live) == to_integer(at(m, st.live) + got);"
+                }),
             "{from_solve}"
         );
     }
@@ -1157,14 +1226,38 @@ int32 bad(int32 x) {
     #[ignore = "nightly: 1.1s in the parallel gate"]
     fn a_line_in_a_call_outcome_arm_selects_its_smart_tactic() {
         let path = mdtest_path("cpp_single_guard_throw_step.md");
-        assert_eq!(markdown_line(&path, 81).trim(), "solve();");
+        assert_eq!(
+            markdown_line(&path, 81).trim(),
+            "step_until(function.exit);"
+        );
         let expanded = run_location(&path, "81").unwrap();
         let tail = expanded
-            .split_once("        threw => {\n")
+            .split_once("        threw(error) => {\n")
             .expect("the threw arm is kept")
             .1;
+        // The arm keeps its written `have`, and the selected `step_until`
+        // becomes the explicit steps to the exit.
+        let arm = tail
+            .lines()
+            .map(str::trim)
+            .take_while(|line| !line.is_empty() && *line != "outcomes {")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arm[..6],
+            [
+                "have error == 7 by known();",
+                "step() by {",
+                "known();",
+                "}",
+                "step();",
+                "step();",
+            ],
+            "{expanded}"
+        );
         assert!(
-            tail.starts_with("            step();\n            step_until(function.exit);\n            solve();\n"),
+            !arm.iter()
+                .take(8)
+                .any(|line| line.starts_with("step_until(")),
             "{expanded}"
         );
     }

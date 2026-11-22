@@ -39,16 +39,16 @@ int32 f(int32 u, int32 w) {
     if buf == 0 {
     } else {
         step_until(statement(5).entry);
-        have buf[0] == 3 by normalize();
+        have buf[0] == 3 by known();
         mark before_store;
         step();
         if u == 0 {
             if w > 0 { step_until(function.exit); } else { step_until(function.exit); }
         } else {
             have 1 <= u by { solve() using { u != 0; 0 <= u; }; }
-            have separate(memory(buf[1]), memory(buf[0])) by { apply(separation::separate_elements(buf, 1 as uint64, 0 as uint64)) using {}; }
-            have separate(memory(buf[2]), memory(buf[0])) by { apply(separation::separate_elements(buf, 2 as uint64, 0 as uint64)) using {}; }
-            have separate(memory(buf[3]), memory(buf[0])) by { apply(separation::separate_elements(buf, 3 as uint64, 0 as uint64)) using {}; }
+            have separate(memory(buf[1]), memory(buf[0])) by { apply(separation::separate_elements(buf, 1 as uint64, 0 as uint64)); }
+            have separate(memory(buf[2]), memory(buf[0])) by { apply(separation::separate_elements(buf, 2 as uint64, 0 as uint64)); }
+            have separate(memory(buf[3]), memory(buf[0])) by { apply(separation::separate_elements(buf, 3 as uint64, 0 as uint64)); }
             have separate(memory(buf[u]), memory(buf[0])) by {
                 if u == 1 {
                     rewrite(u, 1); known();
@@ -62,14 +62,14 @@ int32 f(int32 u, int32 w) {
                 }
             }
             have separate(statement(5).footprint, memory(buf[0])) by {
-                normalize() using { separate(memory(buf[u]), memory(buf[0])); };
+                solve() using { separate(memory(buf[u]), memory(buf[0])); };
             }
             have buf[0] == at(before_store, buf[0]) by {
                 preserve(memory(buf[0]), statement(5));
             }
             have buf[0] == 3 by {
                 rewrite(buf[0], at(before_store, buf[0]));
-                normalize();
+                known();
             }
             if w > 0 { step_until(function.exit); } else { step_until(function.exit); }
         }

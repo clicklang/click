@@ -42,7 +42,7 @@ fn equality(a: E, b: E) -> ClickProposition {
     }
 }
 fn law(name: &str, arguments: Vec<E>, premises: Vec<ClickProposition>) -> ProofStep {
-    ProofStep::ApplyTheoremUsing {
+    ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: format!("click::integer::{name}"),
             arguments,

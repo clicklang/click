@@ -23,11 +23,7 @@ theorem a_cell_from_a_wrapped_views_hypothesis(v: int32[], n: int32) {
         have 0 <= 1073741824;
         have 1073741824 < n by { solve() using { 1073741825 <= n; }; }
         have viewable(v[0..1073741824]);
-        apply(ih(1073741824)) using {
-            0 <= 1073741824;
-            1073741824 < n;
-            viewable(v[0..1073741824]);
-        };
+        apply(ih(1073741824));
         known();
     }
 }

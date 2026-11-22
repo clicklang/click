@@ -42,17 +42,17 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             have i >= 0 and i <= 3 by {
                 all {
                     i >= 0 => {
-                        normalize();
+                        known();
                     }
                     i <= 3 => {
-                        normalize();
+                        known();
                     }
                 }
             }
             have forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) } by {
                 intro();
                 intro();
-                normalize();
+                known();
             }
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 enumerate();
@@ -61,37 +61,29 @@ int32 copy3(int32 dst[3], int32 src[3]) {
         maintain by {
             mark iteration;
             have contains(memory(dst[0..3]), memory(dst[i])) by {
-                apply(click::separation::contains_element(dst, 0, 3, i)) using { 0 <= i; i < 3; };
+                apply(click::separation::contains_element(dst, 0, 3, i));
             }
             have contains(memory(src[0..3]), memory(src[0..3])) by {
                 apply(click::separation::contains_refl(memory(src[0..3])));
             }
             have separate(memory(dst[i]), memory(src[0..3])) by {
-                apply(click::separation::separate_restrict(memory(dst[0..3]), memory(src[0..3]), memory(dst[i]), memory(src[0..3]))) using {
-                    separate(memory(dst[0..3]), memory(src[0..3]));
-                    contains(memory(dst[0..3]), memory(dst[i]));
-                    contains(memory(src[0..3]), memory(src[0..3]));
-                };
+                apply(click::separation::separate_restrict(memory(dst[0..3]), memory(src[0..3]), memory(dst[i]), memory(src[0..3])));
             }
             step();
             have forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) } by {
                 intro(); intro();
                 instantiate(at(iteration, forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) }), k);
                 have contains(memory(src[0..3]), memory(src[k])) by {
-                    apply(click::separation::contains_element(src, 0, 3, k)) using { 0 <= k; k < 3; };
+                    apply(click::separation::contains_element(src, 0, 3, k));
                 }
                 have contains(memory(dst[i]), memory(dst[i])) by {
                     apply(click::separation::contains_refl(memory(dst[i])));
                 }
                 have separate(memory(dst[i]), memory(src[k])) by {
-                    apply(click::separation::separate_restrict(memory(dst[i]), memory(src[0..3]), memory(dst[i]), memory(src[k]))) using {
-                        separate(memory(dst[i]), memory(src[0..3]));
-                        contains(memory(dst[i]), memory(dst[i]));
-                        contains(memory(src[0..3]), memory(src[k]));
-                    };
+                    apply(click::separation::separate_restrict(memory(dst[i]), memory(src[0..3]), memory(dst[i]), memory(src[k])));
                 }
                 have separate(statement(2).statement(0).footprint, memory(src[k])) by {
-                    normalize() using { separate(memory(dst[i]), memory(src[k])); };
+                    solve() using { separate(memory(dst[i]), memory(src[k])); };
                 }
                 have src[k] == at(iteration, src[k]) by {
                     preserve(memory(src[k]), statement(2).statement(0));
@@ -106,15 +98,15 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     instantiate(at(iteration, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
                     have k != at(iteration, i) by { solve() using { k < at(iteration, i); }; }
                     have at(iteration, separate(memory(dst[i]), memory(dst[k]))) by {
-                        apply(click::separation::separate_elements(dst, at(iteration, i), k)) using { k != at(iteration, i); };
+                        apply(click::separation::separate_elements(dst, at(iteration, i), k));
                     }
                     have separate(statement(2).statement(0).footprint, memory(dst[k])) by {
-                        normalize() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
+                        solve() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
                     }
                     have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(0));
                     }
-                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { normalize() using { }; }
+                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { solve() using { }; }
                     have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(1));
                     }

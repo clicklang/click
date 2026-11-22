@@ -1,6 +1,6 @@
 ---
 name: proof-repair
-description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a proof error, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
+description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` refuses a proof, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
 ---
 
 # Repairing a failed proof
@@ -29,31 +29,56 @@ it; shrink them if you can, but a report need not wait for that.
 
 - `syntax error` or `type error`: fix the reported source. This skill does not
   apply.
-- `internal error`: the outcome is `unclear-trace`.
-- `proof error`: follow the diagnostic below.
-
-| Diagnostic | What stopped | Next step |
-| --- | --- | --- |
-| `tactic failure` | A checked tactic refused its input or the C it was executing. | Check the tactic's **Accepts** list in `click docs NAME`, then check the program point, operands, and prerequisites. Fix an invalid tactic invocation or C behavior at its source. For a Click limitation on valid C, reduce the failing step and record `failing-tactic`. |
-| `proof search miss` | Search found no proof or could not fill an elided argument. | Record the goal and write the missing argument or intermediate facts. Continue with step 2. |
-
-A known Click limitation can stop a checked tactic before it creates a goal.
-Capture the tactic, the exact C expression or proof input, and the stated
-limitation. The absence of a `goal:` line in this case does not make the trace
-unclear.
+- `internal error`: stop at `internal-error`. Click has reported its own
+  failure. Capture the error, version, command, and inputs.
+- `limit error`: record the limit and where Click stopped. The run did not
+  finish checking the proof.
+- `tactic error`: read `click docs TACTIC` and check whether the tactic is valid
+  at the reported point. Correct an invalid invocation. If the invocation and
+  its premises satisfy the documented rule and Click still refuses, report
+  `tactic-bug`. If the tactic owes a goal, continue with that goal below.
+- `contract error`: identify the written clause and read the documented
+  contract rule that Click says it violates. Check the rule under the
+  contract's stated requirements. If the clause violates it, explain why to
+  the proof author and check the intended correction. If the original contract
+  satisfies the rule and Click still rejects it, stop at `contract-bug`.
+- `unsuccessful search`: explicit or implicit proof search ran and found no
+  proof. Record the goal. If it holds, write an explicit chain of smaller
+  links, or supply the missing argument or premises.
+- `incomplete proof`: the proof ended with a requirement still outstanding.
+  Record what the report says the proof must establish and the path where it
+  is required. Add the missing steps before the proof closes. For a return
+  resource, account for the units held on that path and what must go back to
+  the caller. Use each owned unit once. If the resource can be assembled from
+  parts already held, write the corresponding fold. If an allowed execution
+  cannot supply what the contract promises, follow the `false-claim` procedure.
+  If Click demands something the closing rule does not require, follow the
+  `obligation-bug` procedure.
+- `execution prerequisite unmet`: record the exact prerequisite at the
+  operation's pre-state and continue with that goal.
+- `contract entry refused`: inspect the named resource clauses and effects.
+  Continue with the reported obligation when the diagnostic gives one. For
+  an entry refusal, use `contract-bug` if you can show that the original
+  contract satisfies the documented rule Click applied.
+- `execution refused`, `termination not established`, `invalid divergence
+  declaration`, or `unsupported proof`: investigate the reported operation,
+  termination check, declaration, or proof shape.
+- `unclassified verification refusal`: investigate the stated cause. If
+  the trace leaves the refusal unclear, use `unclear-trace`.
 
 ## 2. Record the goal
 
 From the ordinary report, write down:
 
-- the goal `G`, from the `goal:` line;
+- the goal `G`, from the `goal:` line or the named requirement in an
+  `incomplete proof` report;
 - the program point where `G` is required (a C statement requirement is a goal
   at that statement's pre-state);
 - the premises available there.
 
 If the report does not explain the premises, rerun the command under
 `To get a trace:` (`click verify --trace-proof PROOF SIDECAR`, optionally with
-`--trace-to LINE`). Read its `failed check` section.
+`--trace-to LINE`). Read its `proof refusal` section.
 
 A goal about memory (any `transport`, frame, or `read<...>(state#N, ...)`
 goal) depends on its `state#N` and `value#N` labels: write down the legend
@@ -61,18 +86,27 @@ line that defines each label the goal uses. Two written forms of one C address
 (`p` and `g + 16 bytes`, or a read at entry and a read in the loop) are often
 the whole story. Otherwise ignore the legend.
 
-If the report should describe a goal but omits it or gives an unreadable
-one, the outcome is `unclear-trace`.
+If the report and trace leave the requirement or its program point unclear,
+use `unclear-trace`. A named resource and return path can identify the
+requirement directly.
 
 ## 3. Decide whether `G` is true
 
-Check `G` against the contract, the branch facts, and the C semantics. If some
-execution the contract admits makes it false, the outcome is `false-goal`.
+Check `G` against the contract, the branch facts, and the C semantics. On an
+execution that refutes `G`, also check the original claim and the rule that
+introduced `G`.
+
+- If the execution refutes the original claim, stop at `false-claim`.
+- If Click introduced `G` and the applicable semantics or documented rule
+  do not require it, stop at `obligation-bug`. Show what the rule requires
+  at this point and why the original claim can hold on this execution.
+- If the proof author chose a stronger intermediate goal than the argument
+  needs, revise that step and continue.
 
 ## 4. Write the argument as a chain
 
-Write why `G` follows from the premises as intermediate facts, each one a
-`have` at the program point:
+For a proposition, write why `G` follows from the premises as intermediate
+facts, each one a `have` at the program point:
 
 ```text
 have A by { ... }
@@ -80,8 +114,11 @@ have B by { ... }
 // G now follows from A and B
 ```
 
-If you cannot say why `G` holds, the outcome is `unclear-goal`. If you cannot
-write one of the intermediate facts in Click, it is `inexpressible-fact`.
+The original proof or overall argument may give a reason to expect success.
+Check that the local goal follows at this program point. If you cannot justify
+that step or give a counterexample, stop at `unclear-goal`. If you can justify
+it but cannot write a needed intermediate fact in Click, use
+`inexpressible-fact`.
 
 ## 5. Run, then refine the first failing link
 
@@ -104,9 +141,9 @@ the tactic reference supplies logical, execution, resource, and transport rules.
 Count logical rule applications, not tactic calls: a single tactic can hide a
 walk, while an explicit certificate can contain several primitive steps.
 
-A refusal ends with `refused by:` when Click can identify the tactic.
-`refused by: nothing` means the proof ended with the goal open. A failed
-`solve` does not tell you whether the argument is primitive. Split a link that
+A refusal lists `refused by:` when Click can identify the tactic.
+An `incomplete proof` names the requirement to establish before closing.
+A failed `solve` does not tell you whether the argument is primitive. Split a link that
 needs several rules into links justified by those rules. Stop when all the
 premises of a documented primitive are written. If a concrete, justified
 inference has expressible premises and conclusion but no supported primitive,
@@ -137,7 +174,7 @@ A refusal that says "this is a search miss" came from an elided form, such
 as `apply(t(x))` or a bare `transport(P, Q)`, whose search for an argument
 found nothing. Write the argument: state the missing fact with `have` first,
 or write the `using` form it names. Only the written form's refusal can be
-`failing-tactic`.
+`tactic-bug`.
 
 Before each run, state in one line which link is new and why it holds. A new
 tactic, written form, or position for the same link is not a new attempt. Never
@@ -173,27 +210,53 @@ Stop at exactly one outcome:
 
 - `success`: the proof verifies. Keep the explicit links the default
   automation needed.
-- `false-goal`: `G` does not hold on some execution the contract admits. Give
-  the counterexample.
-- `unclear-goal`: you cannot say why `G` holds. Give `G`, the premises, and
-  what you tried.
+- `false-claim`: an execution admitted by the contract violates the original
+  claim. Give the counterexample. The proof author follows up on the claim,
+  contract, or program.
+- `obligation-bug`: Click generated a requirement unsupported by the
+  applicable semantics or documented rule. Show the required goal, its
+  program point, and the obligation the rule actually calls for. Click
+  maintainers follow up on obligation generation.
+- `unclear-goal`: you can read `G` and its premises, but the investigation
+  produced neither a mathematical argument for `G` nor a counterexample.
+  Say why you expected the proof to work and identify the exact step where
+  that expectation lacks a justification.
 - `missing-rule`: the premises and conclusion are expressible and the
   inference is justified, but no supported primitive connects them. Preserve
   the rule schema, references checked, and reduced example for design
   discussion. A search miss alone does not establish this outcome.
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
   cannot write. Follow the user-facing reporting instructions below.
-- `failing-tactic`: a simple tactic refuses a link within its documented
-  **Accepts** list, or a checked execution tactic identifies a Click
-  limitation while executing valid C. Reduce the refusal to the smallest
-  form and report it below. A smart tactic such as `solve` that does not prove a
-  link is never `failing-tactic`: identify the primitive and write its premises. A search miss is
-  never `failing-tactic` either: write the argument and run again.
-- `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
-  refusal is not "`G` was not proved". Report a bug (below).
+- `contract-bug`: Click refuses a contract that satisfies the applicable
+  documented contract rule. Quote the exact clause and refusal, cite the rule,
+  and show how the written requirements and resources satisfy it. Click
+  maintainers follow up on contract checking.
+- `tactic-bug`: a bug in Click. The minimized link is one simple tactic,
+  its written premises justify the goal, and the tactic's documented
+  **Accepts** list in `click docs NAME` covers the link. Click still refuses
+  it. Report the exact refusal and the applicable documentation.
+- `unclear-trace`: you could not determine from the output what was refused,
+  such as the exact goal, its program point, or the facts the tactic used.
+  Quote the relevant output and say what you could not determine.
+- `internal-error`: Click itself reports `internal error`. Tell the user
+  immediately that Click detected a verifier failure. Use the original
+  diagnostic. A proof goal and a minimized tactic link are optional evidence.
 
-`false-goal` and `unclear-goal` usually mean the claim, the contract, or the
-argument needs another look, not that Click is wrong.
+The trace’s `proof refusal:` section shows where the CLI outcome arose.
+To report a `tactic-bug`, show why the inference holds and cite the documented
+behavior the refusal violates. A smart-tactic miss or a search for an omitted
+argument calls for an explicit proof link. While checking the rule or its
+premises, report that diagnosis is in progress. Use `unclear-goal` if you
+cannot justify the goal after investigation.
+
+In the outcome report, say explicitly what the result establishes about
+Click. `contract-bug`, `obligation-bug`, `tactic-bug`, `inexpressible-fact`,
+`internal-error`, `crash`, and `hang` identify Click defects. `unclear-trace`
+leaves the reason for the refusal undetermined. File a diagnostic bug only
+when you can demonstrate a specific defect in the output. `false-claim`
+gives a counterexample to the original claim.
+`unclear-goal` leaves the truth of the goal open. `missing-rule` identifies a
+gap in supported inference.
 
 ## Reporting an inexpressible fact to the user
 
@@ -212,21 +275,39 @@ failure to the user, before asking for approval to file a bug.
 
 ## Reporting a bug
 
-The three bug outcomes, a crash, and a hang are defects in Click. To report
-one:
+Report a Click defect as follows:
 
 1. Get the user's approval before reporting it.
 2. Open an issue at https://github.com/clicklang/click/issues.
 3. Give the report below, enough for someone else to reproduce it.
 4. Label the issue with its outcome: `tracing: inexpressible-fact`,
-   `tracing: failing-tactic`, `tracing: unclear-trace`, `crash`, or `hang`.
-   Start the title with it in brackets too (`[failing-tactic] ...`,
+   `tracing: contract-bug`, `tracing: obligation-bug`, `tracing: tactic-bug`,
+   `tracing: unclear-trace`, `tracing: internal-error`, `crash`, or `hang`.
+   Start the title with it in brackets too (`[tactic-bug] ...`,
    `[hang] ...`), so it shows even where you cannot set labels.
 
 ## What a bug report contains
 
-A crash or hang report contains what its section above lists. A report of
-one of the three outcomes contains:
+For `internal-error`, give the exact command, `click --version`, the complete
+error output, and the inputs needed to reproduce it. Quote the message that
+identifies the verifier failure. For crashes and hangs, follow the requirements
+above.
+
+For `contract-bug`, give a reduced contract and enough of the target program
+to reproduce the refusal, the exact command, `click --version`, and the
+complete output. Cite the documented contract rule and show how the
+original clause satisfies it under its stated requirements. An entry
+diagnostic may have no `goal:` line or written tactic. Report the exact
+clause and refusal in that case.
+
+For `obligation-bug`, give a reduced reproduction, the original claim, the
+generated goal at its program point, and the exact command and output.
+Cite the rule or semantics that governs the check. Show the discrepancy,
+including any execution that satisfies the original claim while refuting the
+generated goal.
+
+For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
+found during `unclear-trace` triage, give:
 
 - The smallest C and Click that still fail, with the original source pattern,
   and the exact command and its output, including the `goal:` line.
@@ -236,6 +317,6 @@ one of the three outcomes contains:
 - The nearest passing link and what differs from it.
 - Why the link holds, in one line of mathematics, and the step of that
   argument Click did not take.
-- For `failing-tactic`, the item of that tactic's **Accepts** list that
-  covers the link. For `unclear-trace`, what in the output is missing or
-  misleading.
+- For `tactic-bug`, the item of that tactic's **Accepts** list that
+  covers the link. For a diagnostic defect, the specific missing or
+  misleading output and the evidence of the defect.

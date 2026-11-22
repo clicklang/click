@@ -74,7 +74,7 @@ function plug(ctx: Context, sub: HeapTree) -> HeapTree
 theorem plug_top_frame(sub: HeapTree) {
     ensures plug(Context::Top, sub) == sub by {
         unfold(plug(Context::Top, sub));
-        normalize();
+        known();
     }
 }
 
@@ -83,7 +83,7 @@ theorem plug_left_frame(parent: struct tree_node*, value: int, sibling: HeapTree
     ensures plug(Context::Left(parent, value, sibling, up), sub)
         == plug(up, HeapTree::Node(parent, value, sub, sibling)) by {
         unfold(plug(Context::Left(parent, value, sibling, up), sub));
-        normalize();
+        known();
     }
 }
 
@@ -92,7 +92,7 @@ theorem plug_right_frame(parent: struct tree_node*, value: int, sibling: HeapTre
     ensures plug(Context::Right(parent, value, sibling, up), sub)
         == plug(up, HeapTree::Node(parent, value, sibling, sub)) by {
         unfold(plug(Context::Right(parent, value, sibling, up), sub));
-        normalize();
+        known();
     }
 }
 
@@ -189,6 +189,32 @@ function heap_member(tree: HeapTree, target: struct tree_node*) -> Bool
     }
 }
 
+theorem heap_member_check_order(node: uint64, target: uint64, left: Bool, right: Bool) {
+    let check_left: Bool = if left { true } else { right };
+    let check_node: Bool = if node == target { true } else { right };
+    let node_first: Bool = if node == target { true } else { check_left };
+    let left_first: Bool = if left { true } else { check_node };
+    ensures node_first == left_first by {
+        if node == target {
+            have node_first == true by known();
+            have check_node == true by known();
+            rewrite(node_first, true);
+            rewrite(check_node, true);
+            if left {
+                known();
+            } else {
+                known();
+            }
+        } else {
+            have node_first == check_left by known();
+            have check_node == right by known();
+            rewrite(node_first, check_left);
+            rewrite(check_node, right);
+            known();
+        }
+    }
+}
+
 theorem heap_member_is_address_membership(tree: HeapTree, target: struct tree_node*) {
     ensures heap_member(tree, target) == list::contains(heap_addresses(tree), address(target)) by {
         let ih = induct(tree);
@@ -197,7 +223,7 @@ theorem heap_member_is_address_membership(tree: HeapTree, target: struct tree_no
                 unfold(heap_member(HeapTree::Empty, target));
                 unfold(heap_addresses(HeapTree::Empty));
                 unfold(list::contains(List<uint64>::Nil, address(target)));
-                normalize();
+                known();
             }
             HeapTree::Node(node, value, left, right) => {
                 apply(ih(left));
@@ -220,11 +246,10 @@ theorem heap_member_is_address_membership(tree: HeapTree, target: struct tree_no
                     });
                 rewrite(heap_member(left, target), list::contains(heap_addresses(left), address(target)));
                 rewrite(heap_member(right, target), list::contains(heap_addresses(right), address(target)));
-                if address(node) == address(target) {
-                    normalize() using { address(node) == address(target); };
-                } else {
-                    normalize() using { not(address(node) == address(target)); };
-                }
+                apply(heap_member_check_order(address(node), address(target),
+                    list::contains(heap_addresses(left), address(target)),
+                    list::contains(heap_addresses(right), address(target))));
+                known();
             }
         }
     }
@@ -238,7 +263,7 @@ theorem heap_rotate_left_node_preserves_inorder(node: struct tree_node*, value: 
         match right {
             HeapTree::Empty => {
                 unfold(heap_rotate_left(HeapTree::Node(node, value, left, HeapTree::Empty)));
-                normalize();
+                known();
             }
             HeapTree::Node(pivot, pivot_value, middle, far_right) => {
                 unfold(heap_rotate_left(HeapTree::Node(node, value, left,
@@ -259,7 +284,7 @@ theorem heap_rotate_left_node_preserves_inorder(node: struct tree_node*, value: 
                             List::Cons(pivot, heap_inorder(far_right)))));
                 unfold(list::append(List::Cons(node, heap_inorder(middle)),
                     List::Cons(pivot, heap_inorder(far_right))));
-                normalize();
+                known();
             }
         }
     }
@@ -271,7 +296,7 @@ theorem heap_rotate_left_preserves_inorder(tree: HeapTree) {
         match tree {
             HeapTree::Empty => {
                 unfold(heap_rotate_left(HeapTree::Empty));
-                normalize();
+                known();
             }
             HeapTree::Node(node, value, left, right) => {
                 apply(heap_rotate_left_node_preserves_inorder(node, value, left, right));
@@ -289,7 +314,7 @@ theorem heap_rotate_right_node_preserves_inorder(node: struct tree_node*, value:
         match left {
             HeapTree::Empty => {
                 unfold(heap_rotate_right(HeapTree::Node(node, value, HeapTree::Empty, right)));
-                normalize();
+                known();
             }
             HeapTree::Node(pivot, pivot_value, far_left, middle) => {
                 unfold(heap_rotate_right(HeapTree::Node(node, value,
@@ -310,7 +335,7 @@ theorem heap_rotate_right_node_preserves_inorder(node: struct tree_node*, value:
                             List::Cons(node, heap_inorder(right)))));
                 unfold(list::append(List::Cons(pivot, heap_inorder(middle)),
                     List::Cons(node, heap_inorder(right))));
-                normalize();
+                known();
             }
         }
     }
@@ -322,7 +347,7 @@ theorem heap_rotate_right_preserves_inorder(tree: HeapTree) {
         match tree {
             HeapTree::Empty => {
                 unfold(heap_rotate_right(HeapTree::Empty));
-                normalize();
+                known();
             }
             HeapTree::Node(node, value, left, right) => {
                 apply(heap_rotate_right_node_preserves_inorder(node, value, left, right));
@@ -348,7 +373,7 @@ theorem plug_inorder_transport(ctx: Context, a: HeapTree, b: HeapTree) {
                     unfold(heap_inorder(HeapTree::Node(parent, value, a, sibling)));
                     unfold(heap_inorder(HeapTree::Node(parent, value, b, sibling)));
                     rewrite(heap_inorder(a), heap_inorder(b));
-                    normalize();
+                    known();
                 }
                 apply(ih(up, HeapTree::Node(parent, value, a, sibling),
                          HeapTree::Node(parent, value, b, sibling)));
@@ -362,7 +387,7 @@ theorem plug_inorder_transport(ctx: Context, a: HeapTree, b: HeapTree) {
                     unfold(heap_inorder(HeapTree::Node(parent, value, sibling, a)));
                     unfold(heap_inorder(HeapTree::Node(parent, value, sibling, b)));
                     rewrite(heap_inorder(a), heap_inorder(b));
-                    normalize();
+                    known();
                 }
                 apply(ih(up, HeapTree::Node(parent, value, sibling, a),
                          HeapTree::Node(parent, value, sibling, b)));
@@ -475,31 +500,46 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             }
             have not(address(node) == address(target)) by {
                 rewrite(node, root);
-                normalize() using { address(root) != address(target); };
+                known();
             }
             let { result: found_left } = step(tree_contains, { t: l });
             branch {
                 true => {
                     step();
-                    have heap_member(left_model, target) by {
-                        have left_model == l.model by {
-                            rewrite(l.model, left_model);
-                            normalize();
-                        }
-                        have heap_member(l.model, target) != false;
-                        rewrite(left_model, l.model);
+                    have (heap_member(left_model, target) as int32) != 0 by {
+                        rewrite(heap_member(left_model, target) as int32, found_left);
                         known();
+                    }
+                    have heap_member(left_model, target) by {
+                        if heap_member(left_model, target) {
+                            known();
+                        } else {
+                            have (heap_member(left_model, target) as int32) == 0 by {
+                                rewrite(heap_member(left_model, target), false);
+                                normalize();
+                            }
+                            contradiction((heap_member(left_model, target) as int32) == 0);
+                        }
                     }
                     let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model), left: l, right: r });
                     solve();
                 }
                 false => {}
             }
+            have (heap_member(left_model, target) as int32) == 0 by {
+                rewrite(heap_member(left_model, target) as int32, found_left);
+                known();
+            }
             have not heap_member(left_model, target) by {
-                solve() using {
-                    found_left == 0;
-                    found_left == heap_member(left_model, target) as int32;
-                };
+                if heap_member(left_model, target) {
+                    have (heap_member(left_model, target) as int32) != 0 by {
+                        rewrite(heap_member(left_model, target), true);
+                        normalize();
+                    }
+                    contradiction((heap_member(left_model, target) as int32) == 0);
+                } else {
+                    known();
+                }
             }
             let { result: found_right } = step(tree_contains, { t: r });
             step();
@@ -510,7 +550,11 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                     HeapTree::Node(node, value, left_model, right_model), target));
                 rewrite(heap_member(left_model, target), false);
                 rewrite(result, heap_member(right_model, target) as int32);
-                normalize() using { not(address(node) == address(target)); };
+                have (if address(node) == address(target) { true } else { (if false == true { true } else { heap_member(right_model, target) }) }) == (if false == true { true } else { heap_member(right_model, target) }) by {
+                    known();
+                }
+                rewrite((if address(node) == address(target) { true } else { (if false == true { true } else { heap_member(right_model, target) }) }), (if false == true { true } else { heap_member(right_model, target) }));
+                known();
             }
             solve();
         },
@@ -573,7 +617,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
             have heap_left(HeapTree::Node(identity, value, left_model, right_model))
                 == left_model by {
                 unfold(heap_left(HeapTree::Node(identity, value, left_model, right_model)));
-                normalize();
+                known();
             }
             let sub = fold(tree_at(root), {
                 model: HeapTree::Node(identity, value, left_model, right_model),
@@ -641,7 +685,7 @@ struct tree_node* tree_rightmost(struct tree_node* root) {
             have heap_right(HeapTree::Node(identity, value, left_model, right_model))
                 == right_model by {
                 unfold(heap_right(HeapTree::Node(identity, value, left_model, right_model)));
-                normalize();
+                known();
             }
             let sub = fold(tree_at(root), {
                 model: HeapTree::Node(identity, value, left_model, right_model),
@@ -693,7 +737,7 @@ theorem tree_mirror_twice<T>(tree: Tree<T>) {
                 unfold(tree_mirror(Tree::Node(tree_mirror(right), value, tree_mirror(left))));
                 rewrite(tree_mirror(tree_mirror(left)), left);
                 rewrite(tree_mirror(tree_mirror(right)), right);
-                normalize();
+                known();
             }
         }
     }
@@ -705,7 +749,7 @@ theorem tree_mirror_preserves_size<T>(tree: Tree<T>) {
         match tree {
             Tree::Empty => {
                 unfold(tree_mirror(Tree<T>::Empty));
-                normalize();
+                known();
             }
             Tree::Node(left, value, right) => {
                 apply(ih(left));
@@ -717,7 +761,7 @@ theorem tree_mirror_preserves_size<T>(tree: Tree<T>) {
                 rewrite(tree_size(tree_mirror(right)), tree_size(right));
                 apply(nat::add_commutative(tree_size(right), tree_size(left)));
                 rewrite(nat::add(tree_size(right), tree_size(left)), nat::add(tree_size(left), tree_size(right)));
-                normalize();
+                known();
             }
         }
     }

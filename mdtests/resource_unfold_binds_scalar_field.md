@@ -77,7 +77,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                     have i == p;
                     have p <= i by {
                         rewrite(i, p);
-                        normalize();
+                        known();
                     }
                     have i < capacity by {
                         rewrite(i, p);
@@ -91,7 +91,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                     }
                     have not (occupied[i] == 1) by {
                         rewrite(occupied[i], 0);
-                        normalize();
+                        known();
                     }
                     contradiction(occupied[i] == 1);
                 }
@@ -123,7 +123,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 instantiate(forall (k: int32) {
                     0 <= k and k < p implies occupied[k] == 1
                 }, i);
-                apply(0 <= i and i < p implies occupied[i] == 1) using { 0 <= i and i < p; };
+                apply(0 <= i and i < p implies occupied[i] == 1);
             }
             contradiction(occupied[i] == 1);
         } else {
@@ -158,10 +158,10 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 known();
             }
             have separate(memory(occupied[i]), memory(occupied[k])) by {
-                apply(click::separation::separate_elements(occupied, i, k)) using { k != i; };
+                apply(click::separation::separate_elements(occupied, i, k));
             }
             have separate(statement(3).footprint, memory(occupied[k])) by {
-                normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+                solve() using { separate(memory(occupied[i]), memory(occupied[k])); };
             }
             have occupied[k] == at(before_store, occupied[k]) by {
                 preserve(memory(occupied[k]), statement(3));
@@ -199,10 +199,10 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         }
         have i != k;
         have separate(memory(occupied[i]), memory(occupied[k])) by {
-            apply(click::separation::separate_elements(occupied, i, k)) using { i != k; };
+            apply(click::separation::separate_elements(occupied, i, k));
         }
         have separate(statement(3).footprint, memory(occupied[k])) by {
-            normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+            solve() using { separate(memory(occupied[i]), memory(occupied[k])); };
         }
         have occupied[k] == at(before_store, occupied[k]) by {
             preserve(memory(occupied[k]), statement(3));

@@ -722,12 +722,20 @@ impl<'a> ProofScope<'a> {
                 })?;
             let mut facts = body.facts().clone();
             if deferred {
+                // Terminal matches already route deferred operations to their
+                // lexical arms. Other scopes need their close to mark the end
+                // of any operations they added after execution.
+                let retain_deferred_body = self.root.branch_execution().is_some_and(|root| {
+                    execution.presentation.post_execution_tactics.len()
+                        > root.presentation.post_execution_tactics.len()
+                }) && !ends_in_terminal_match(body_certificate.steps());
                 execution.presentation.defer_post_execution(
                     context.tactic_index,
                     source_index,
                     PostExecutionTactic::CloseOpen {
                         resource: resource.clone(),
                         restoration: restoration.clone(),
+                        retain_deferred_body,
                     },
                     Some(body.state.locals().values.clone()),
                 );
@@ -818,7 +826,7 @@ impl<'a> ProofScope<'a> {
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
                     proof: Box::new(body_certificate),
-                    deferred_tail: false,
+                    deferred_tail: None,
                 }),
             ),
         })

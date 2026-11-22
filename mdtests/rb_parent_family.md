@@ -107,7 +107,7 @@ theorem equal_words_keep_mask(left: uint64, right: uint64, mask: uint64) {
     requires left == right;
     ensures (left & mask) == (right & mask) by {
         rewrite(left, right);
-        normalize();
+        known();
     }
 }
 
@@ -193,15 +193,9 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
     };
     have node->__rb_parent_color != address(node) by {
         if node->__rb_parent_color == address(node) {
-            apply(equal_words_keep_mask(node->__rb_parent_color, address(node), ~3u64)) using {
-                node->__rb_parent_color == address(node);
-            };
+            apply(equal_words_keep_mask(node->__rb_parent_color, address(node), ~3u64));
             have address(parent) == address(node) by {
-                normalize() using {
-                    address(parent) == (node->__rb_parent_color & ~3);
-                    (node->__rb_parent_color & ~3) == (address(node) & ~3);
-                    address(node) == (address(node) & ~3);
-                };
+                known();
             }
             contradiction(address(parent) == address(node));
         } else {

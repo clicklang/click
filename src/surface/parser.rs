@@ -15,6 +15,7 @@ mod rust_syntax;
 mod rust_trait_objects;
 mod spec_arithmetic;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
+pub(in crate::surface) use spec_arithmetic::has_arithmetic_spine;
 pub(in crate::surface) use spec_arithmetic::mixed_narrow_arithmetic_message;
 pub(super) use spec_arithmetic::written_integer_parameters;
 pub(super) mod tokenizer;
@@ -1145,6 +1146,10 @@ struct Parser {
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
     struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
+    /// The value type of each struct a contract reads as a value, `*p`: a
+    /// datatype of one constructor whose fields are the struct's
+    /// (`struct_value_type`).
+    struct_value_types: BTreeMap<String, AlgebraicTypeDefinition>,
     /// See [`ProgramLayouts::rust_enum_types`].
     rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     union_layouts: BTreeMap<String, syntax::CUnionLayout>,
@@ -1903,12 +1908,14 @@ impl Parser {
             )?;
             // A reference parameter's type grants the authority a safe
             // caller holds over its referent.
-            let (tokens, positions) = rust_reference_authority::derive_reference_authority(
-                tokens,
-                positions,
-                &parser.struct_layouts,
-                &parser.rust_enum_types,
-            )?;
+            let (tokens, positions, written) =
+                rust_reference_authority::derive_reference_authority(
+                    tokens,
+                    positions,
+                    written,
+                    &parser.struct_layouts,
+                    &parser.rust_enum_types,
+                )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
             parser.positions = positions;
@@ -2200,6 +2207,7 @@ impl Parser {
             algebraic_type_nesting: 0,
             position: 0,
             struct_layouts,
+            struct_value_types: BTreeMap::new(),
             rust_enum_types: BTreeMap::new(),
             union_layouts,
             loop_name_context: None,
@@ -2707,6 +2715,18 @@ impl Parser {
             }
         }
 
+        for (struct_name, definition) in std::mem::take(&mut self.struct_value_types) {
+            if algebraic_type_definitions
+                .iter()
+                .any(|declared: &AlgebraicTypeDefinition| declared.name == definition.name)
+            {
+                return Err(self.error(format!(
+                    "a specification datatype is named `{}`, the name of struct `{struct_name}`'s value",
+                    definition.name
+                )));
+            }
+            algebraic_type_definitions.push(definition);
+        }
         for definition in &algebraic_type_definitions {
             if self.source_aliases.contains_key(&definition.name) {
                 return Err(self.error(format!(
@@ -3666,6 +3686,7 @@ impl Parser {
                 target_type,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -5309,6 +5330,7 @@ impl Parser {
         let mut ensures = Vec::new();
         // The kind each written postcondition clause was written as, which
         // its claim label counts it among.
+        let mut allocates_result = false;
         let mut ensure_kinds = Vec::new();
         let mut clause_positions = Vec::new();
         let mut exceptional_ensures = Vec::new();
@@ -5738,6 +5760,54 @@ impl Parser {
                     requires.push(
                         apply_contract_lets_to_requirement(
                             Requirement::Resource(resource),
+                            &contract_lets,
+                        )
+                        .map_err(|message| self.error(message))?,
+                    );
+                }
+                // `allocates(result, n)` is `produces allocation(result, n)`
+                // of an allocation the call creates: no pointer that existed
+                // before the call reaches it, as none reaches `malloc`'s.
+                Some("allocates") if self.peek_next() == Some(&Token::LParen) => {
+                    let at = self.position;
+                    if !matches!(self.tokens.get(at + 2), Some(Token::Ident(word)) if word == "result")
+                        || self.tokens.get(at + 3) != Some(&Token::Comma)
+                    {
+                        return Err(self.error(
+                            "`allocates` names the allocation the function returns: `allocates(result, n)`",
+                        ));
+                    }
+                    if allocates_result {
+                        return Err(self.error("a function states `allocates` once"));
+                    }
+                    allocates_result = true;
+                    self.tokens[at] = Token::Ident("allocation".to_string());
+                    let resource = self.parse_function_contract_memory_binding();
+                    self.tokens[at] = Token::Ident("allocates".to_string());
+                    let resource = resource?;
+                    let proof = self.parse_proof_clause_or_default()?;
+                    let binder_resource =
+                        apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
+                            .map_err(|message| self.error(message))?;
+                    self.record_callee_resource_binder(
+                        signature.name(),
+                        &binder_resource,
+                        &parameter_names_in_order,
+                        CalleeResourceBinderKind::Produced,
+                    );
+                    ensure_kinds.push(ClaimClauseKind::Produces);
+                    clause_positions.push(clause_start.clone());
+                    ensures.push(
+                        apply_contract_lets_to_ensure_clause(
+                            EnsureClause {
+                                proof_bindings: Vec::new(),
+                                name: None,
+                                ensure: Ensure::Resource(resource),
+                                proof,
+                                borrowed: false,
+                                view_source: None,
+                                condition: None,
+                            },
                             &contract_lets,
                         )
                         .map_err(|message| self.error(message))?,
@@ -6191,6 +6261,7 @@ impl Parser {
             parameter_field_places,
             pointee_field_places,
             witness_count,
+            allocates_result,
         })
     }
 
@@ -7936,18 +8007,9 @@ impl Parser {
             if matches!(self.peek_ident(), Some("at" | "old"))
                 && self.peek_next() == Some(&Token::LParen)
             {
-                let base = self.parse_contract_primary()?;
-                self.expect(Token::LBracket)?;
-                let start = self.parse_contract_expression()?;
-                let end = if self.peek() == Some(&Token::DotDot) {
-                    self.position += 1;
-                    Some(self.parse_contract_expression()?)
-                } else {
-                    None
-                };
-                self.expect(Token::RBracket)?;
+                let subject = self.parse_saved_memory_subject()?;
                 self.expect(Token::RParen)?;
-                return Ok(ResourceSubject::SavedMemory { base, start, end });
+                return Ok(subject);
             }
             let segment = self.parse_current_contract_segment()?;
             self.expect(Token::RParen)?;
@@ -7970,6 +8032,20 @@ impl Parser {
             arguments,
             parameter_types: Vec::new(),
         })
+    }
+
+    fn parse_saved_memory_subject(&mut self) -> Result<ResourceSubject, ClickError> {
+        let base = self.parse_contract_primary()?;
+        self.expect(Token::LBracket)?;
+        let start = self.parse_contract_expression()?;
+        let end = if self.peek() == Some(&Token::DotDot) {
+            self.position += 1;
+            Some(self.parse_contract_expression()?)
+        } else {
+            None
+        };
+        self.expect(Token::RBracket)?;
+        Ok(ResourceSubject::SavedMemory { base, start, end })
     }
 
     fn parse_resource_target(
@@ -9364,6 +9440,16 @@ impl Parser {
             };
             self.expect(Token::Comma)?;
             let alignment = match self.next() {
+                // `alignof(type)`: the type's alignment, a number for every
+                // type a contract names but an abstract one.
+                Some(Token::Ident(word))
+                    if word == "alignof" && self.peek() == Some(&Token::LParen) =>
+                {
+                    self.position += 1;
+                    let alignment = self.parse_alignof_operand()?;
+                    self.expect(Token::RParen)?;
+                    alignment
+                }
                 Some(Token::Number(alignment)) if alignment.is_power_of_two() => alignment,
                 Some(token) => {
                     return Err(self.error(format!(
@@ -10145,6 +10231,7 @@ impl Parser {
     fn parse_comparison_operand(&mut self) -> Result<ContractExpression, ClickError> {
         let start = self.position;
         let operand = self.parse_contract_expression()?;
+        let operand = self.by_value_struct_value(operand)?;
         if self.verifies_rust() {
             return Ok(operand);
         }
@@ -11170,7 +11257,7 @@ impl Parser {
             return Ok(ProofTactic::Open(ProofOpen {
                 resource,
                 tactics,
-                deferred_tail: false,
+                deferred_tail: None,
             }));
         }
         if name == "cases" {
@@ -11705,39 +11792,55 @@ impl Parser {
                     let fact = self.parse_proposition()?;
                     self.expect(Token::RParen)?;
                     if self.peek_ident() == Some("using") {
-                        let premises = self.parse_exact_premises()?;
-                        self.skip_redundant_semicolon();
-                        return Ok(ProofTactic::ApplyFactUsing { fact, premises });
+                        return Err(self.error(
+                            "implication application takes no `using` list; write `apply(fact)`",
+                        ));
                     }
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ApplyFact(fact));
                 }
                 let application = application.unwrap();
                 self.expect(Token::RParen)?;
-                if self.peek_ident() != Some("using") {
-                    ProofTactic::ApplyTheorem(application)
-                } else {
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::ApplyTheoremUsing {
-                        application,
-                        premises,
-                    });
+                if self.peek_ident() == Some("using") {
+                    return Err(self.error(
+                        "application takes no `using` list; write `apply(name(args))`",
+                    ));
                 }
+                ProofTactic::ApplyTheorem(application)
             }
             "observe" => {
                 self.expect(Token::LParen)?;
+                let start = self.position;
                 if matches!(self.peek_ident(), Some("at" | "old"))
                     && self.peek_next() == Some(&Token::LParen)
+                    && let Ok(resource) = self.parse_saved_memory_subject()
                 {
-                    let base = self.parse_contract_primary()?;
-                    self.expect(Token::LBracket)?;
-                    let start = self.parse_contract_expression()?;
-                    self.expect(Token::DotDot)?;
-                    let end = self.parse_contract_expression()?;
-                    self.expect(Token::RBracket)?;
                     self.expect(Token::RParen)?;
-                    ProofTactic::ObserveSavedMemory { base, start, end }
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::ObserveSubject(resource));
+                }
+                self.position = start;
+                if matches!(self.peek_ident(), Some("at" | "memory"))
+                    && self.peek_next() == Some(&Token::LParen)
+                {
+                    let resource = self.parse_resource_subject()?;
+                    self.expect(Token::RParen)?;
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::ObserveSubject(resource));
+                }
+                if self.peek() == Some(&Token::LParen)
+                    && let Ok(resource) = self.parse_resource_subject()
+                    && self.peek() == Some(&Token::RParen)
+                {
+                    self.position += 1;
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::ObserveSubject(resource));
+                }
+                self.position = start;
+                if self.starts_named_resource_target() {
+                    let resource = self.parse_owned_resource_target()?;
+                    self.expect(Token::RParen)?;
+                    ProofTactic::ObserveResource(resource)
                 } else {
                     let start = self.position;
                     let resource = if let Ok(quantity) = self.parse_contract_expression()
@@ -14276,6 +14379,327 @@ impl Parser {
         }
     }
 
+    /// Whether `pointer` is a struct double pointer's slot, whose `*`
+    /// reads a pointer, not a struct.
+    fn contract_expression_designates_struct_pointer_slot(
+        &self,
+        pointer: &ContractExpression,
+    ) -> bool {
+        matches!(pointer, ContractExpression::Binding(name)
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) if self
+                .names
+                .struct_params
+                .contains_key(&struct_pointer_pointer_key(name)))
+    }
+
+    /// The name of the datatype whose one constructor is a value of struct
+    /// `struct_name`: its fields are the struct's, each the value its field
+    /// holds, an embedded struct's its own struct value. A struct with an
+    /// array, union or bit field has no value here.
+    fn struct_value_type(&mut self, struct_name: &str) -> Result<String, ClickError> {
+        if let Some(definition) = self.struct_value_types.get(struct_name) {
+            return Ok(definition.name.clone());
+        }
+        let Some(layout) = self.struct_layouts.get(struct_name).cloned() else {
+            return Err(self.error(format!("unknown struct declaration `{struct_name}`")));
+        };
+        let mut fields = Vec::new();
+        let mut field_names = Vec::new();
+        for (field_name, field) in layout.fields_in_order() {
+            field_names.push(field_name.to_string());
+            if field.array_element_width().is_some()
+                || field.union_name().is_some()
+                || field.is_long_double()
+            {
+                return Err(self.error(format!(
+                    "struct `{struct_name}` has no value in a contract: its field `{field_name}` is an array, a union or a `long double`"
+                )));
+            }
+            fields.push(match field.struct_name() {
+                Some(nested) if !field.interface_type().is_pointer() => {
+                    let nested = nested.to_string();
+                    AlgebraicFieldType::Algebraic {
+                        name: self.struct_value_type(&nested)?,
+                        arguments: Vec::new(),
+                    }
+                }
+                pointee => AlgebraicFieldType::C {
+                    interface_type: field.interface_type(),
+                    struct_name: pointee.map(str::to_string),
+                    object_class: None,
+                },
+            });
+        }
+        if layout.has_bit_fields() {
+            return Err(self.error(format!(
+                "struct `{struct_name}` has no value in a contract: it has bit fields"
+            )));
+        }
+        // A C struct's value type is named `struct tag`, which no Click
+        // datatype, C alias or field can spell; a Rust struct's is its
+        // importer name.
+        let name = if self.language == SourceLanguage::Rust {
+            struct_name.to_string()
+        } else {
+            format!("struct {struct_name}")
+        };
+        crate::surface::struct_values::register(
+            &name,
+            field_names,
+            self.language == SourceLanguage::Rust,
+        );
+        self.struct_value_types.insert(
+            struct_name.to_string(),
+            AlgebraicTypeDefinition {
+                name: name.clone(),
+                type_parameters: Vec::new(),
+                variants: vec![AlgebraicVariantDefinition {
+                    name: name.clone(),
+                    fields,
+                }],
+                primitive: false,
+            },
+        );
+        Ok(name)
+    }
+
+    /// The alignment of the type `alignof(...)` names, after its `(`: a
+    /// struct's layout alignment or a scalar's ABI alignment. An abstract
+    /// type's alignment is no number and is refused.
+    fn parse_alignof_operand(&mut self) -> Result<u32, ClickError> {
+        let struct_alignment = |parser: &Self, name: &str| {
+            parser
+                .struct_layouts
+                .get(name)
+                .map(crate::languages::interface::RecordLayout::alignment_bytes)
+                .ok_or_else(|| parser.error(format!("unknown struct declaration `{name}`")))
+        };
+        if self.peek_ident() == Some("struct") {
+            self.position += 1;
+            let name = self.expect_ident("struct name")?;
+            return struct_alignment(self, &name);
+        }
+        let parsed_type = if self.verifies_rust() {
+            self.parse_rust_type()?
+        } else {
+            self.parse_type()?
+        };
+        if let InterfaceType::Parameter(parameter) = parsed_type.interface_type
+            && parameter.has_abstract_size()
+        {
+            return Err(self.error(
+                "the alignment of an abstract type is not one number; name a concrete type",
+            ));
+        }
+        match &parsed_type.struct_name {
+            Some(name) if !parsed_type.struct_pointer => struct_alignment(self, name),
+            _ => Ok(parsed_type.interface_type.abi_alignment_bytes()),
+        }
+    }
+
+    /// A struct value written by its fields: `(struct pair){ .x = a, .y = b }`
+    /// in C and `crate_name::Pair { x: a, y: b }` in Rust. Every field is
+    /// named once; the value is the struct's constructor of them.
+    fn parse_struct_value_literal(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+        let start = self.position;
+        let (struct_name, rust) = if self.peek() == Some(&Token::LParen)
+            && matches!(self.tokens.get(start + 1), Some(Token::Ident(word)) if word == "struct")
+            && let Some(Token::Ident(name)) = self.tokens.get(start + 2)
+            && self.tokens.get(start + 3) == Some(&Token::RParen)
+            && self.tokens.get(start + 4) == Some(&Token::LBrace)
+        {
+            let name = name.clone();
+            self.position = start + 5;
+            (name, false)
+        } else if self.language == SourceLanguage::Rust {
+            let mut index = start;
+            let mut segments = Vec::new();
+            loop {
+                let Some(Token::Ident(segment)) = self.tokens.get(index) else {
+                    return Ok(None);
+                };
+                segments.push(segment.clone());
+                index += 1;
+                if self.tokens.get(index) == Some(&Token::ColonColon) {
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            if segments.len() < 2
+                || self.tokens.get(index) != Some(&Token::LBrace)
+                || !matches!(self.tokens.get(index + 1), Some(Token::Ident(_)))
+                || self.tokens.get(index + 2) != Some(&Token::Colon)
+            {
+                return Ok(None);
+            }
+            let name =
+                crate::languages::rust::names::qualified_name(segments.iter().map(String::as_str));
+            if !self.struct_layouts.contains_key(&name) {
+                return Ok(None);
+            }
+            self.position = index + 1;
+            (name, true)
+        } else {
+            return Ok(None);
+        };
+        if !self.struct_layouts.contains_key(&struct_name) {
+            return Err(self.error(format!("unknown struct declaration `{struct_name}`")));
+        }
+        let type_name = self.struct_value_type(&struct_name)?;
+        let mut values = BTreeMap::new();
+        while self.peek() != Some(&Token::RBrace) {
+            if !rust {
+                self.expect(Token::Dot)?;
+            }
+            let field = self.expect_field_name()?;
+            if rust {
+                self.expect(Token::Colon)?;
+            } else {
+                self.expect(Token::Equal)?;
+            }
+            let value = self.parse_contract_expression()?;
+            if values.insert(field.clone(), value).is_some() {
+                return Err(self.error(format!("field `{field}` is written twice")));
+            }
+            if self.peek() == Some(&Token::Comma) {
+                self.position += 1;
+            } else if self.peek() != Some(&Token::RBrace) {
+                return Err(self.error("expected `,` or `}` after a struct field"));
+            }
+        }
+        self.expect(Token::RBrace)?;
+        let layout = self
+            .struct_layouts
+            .get(&struct_name)
+            .cloned()
+            .expect("the struct's value type was formed from its layout");
+        let mut arguments = Vec::new();
+        for (field, _) in layout.fields_in_order() {
+            let Some(value) = values.remove(field) else {
+                return Err(self.error(format!("the struct value has no field `{field}`")));
+            };
+            arguments.push(value);
+        }
+        if let Some(field) = values.keys().next() {
+            return Err(self.error(format!("struct `{struct_name}` has no field `{field}`")));
+        }
+        Ok(Some(ContractExpression::AlgebraicConstructor {
+            algebraic_type: AlgebraicTypeApplication::concrete(type_name.clone()),
+            variant: type_name,
+            arguments,
+        }))
+    }
+
+    /// A by-value struct parameter compared whole, `value` or `old(value)`,
+    /// is its struct value: the constructor of `value.field` for each field.
+    /// Anything else is itself.
+    fn by_value_struct_value(
+        &mut self,
+        operand: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        let wrapped = |inner: ContractExpression, outer: &ContractExpression| match outer {
+            ContractExpression::Old(_) => ContractExpression::Old(Box::new(inner)),
+            ContractExpression::Exact(_) => ContractExpression::Exact(Box::new(inner)),
+            ContractExpression::At { selector, .. } => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(inner),
+            },
+            _ => inner,
+        };
+        let place = match &operand {
+            ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => inner.as_ref(),
+            other => other,
+        };
+        let (ContractExpression::Binding(name)
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))) = place
+        else {
+            return Ok(operand);
+        };
+        let Some(struct_name) = self.names.struct_params.get(name).cloned() else {
+            return Ok(operand);
+        };
+        let by_value = if name == "result" {
+            // The function's own result, a struct by value: never a local
+            // of that name, which is a struct pointer.
+            self.current_aggregate_result
+                || matches!(
+                    self.current_result_interface_type,
+                    Some(InterfaceType::UInt8Array(_) | InterfaceType::Parameter(_))
+                )
+        } else {
+            self.names
+                .program_parameter_types
+                .get(name)
+                .is_some_and(|ty| !ty.is_pointer())
+        };
+        if !by_value || !self.struct_layouts.contains_key(&struct_name) {
+            return Ok(operand);
+        }
+        let value = self.struct_value_expression(place.clone(), &struct_name)?;
+        Ok(wrapped(value, &operand))
+    }
+
+    /// The value of the struct `place` points at, `*place`: its type's
+    /// constructor applied to each field's value, read as `place->field`.
+    fn struct_value_expression(
+        &mut self,
+        place: ContractExpression,
+        struct_name: &str,
+    ) -> Result<ContractExpression, ClickError> {
+        let type_name = self.struct_value_type(struct_name)?;
+        let layout = self
+            .struct_layouts
+            .get(struct_name)
+            .cloned()
+            .expect("the struct's value type was formed from its layout");
+        let surface_base = place.clone();
+        let base = match &place {
+            ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => contract_expression_as_program_expression(inner),
+            _ => contract_expression_as_program_expression(&place),
+        }
+        .ok_or_else(|| self.error("a struct value requires a C pointer expression"))?;
+        let mut arguments = Vec::new();
+        for (field_name, _) in layout.fields_in_order() {
+            let field_name = field_name.to_string();
+            let field = self.resolve_struct_field_metadata(struct_name, &field_name)?;
+            let pointer = self.member_field_pointer(base.clone(), &field);
+            let access = ContractExpression::Field {
+                pointee_struct: field
+                    .struct_name
+                    .clone()
+                    .filter(|_| field.interface_type.is_pointer()),
+                base: Box::new(surface_base.clone()),
+                field: field_name,
+                lowered: lowered_field_expression(pointer, &field),
+                offset_bytes: field.offset,
+            };
+            arguments.push(match &field.struct_name {
+                Some(nested) if !field.interface_type.is_pointer() => {
+                    self.struct_value_expression(access, nested)?
+                }
+                _ => access,
+            });
+        }
+        Ok(ContractExpression::AlgebraicConstructor {
+            algebraic_type: AlgebraicTypeApplication::concrete(type_name.clone()),
+            variant: type_name,
+            arguments,
+        })
+    }
+
     fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
@@ -14365,13 +14789,21 @@ impl Parser {
         // struct's end), so ownership covers trailing alignment padding:
         // padding belongs to the object and no one else can own it.
         let slot_end_bytes = match field.offset().bytes() {
+            // A fixed-prefix field of a symbolic layout ends its slot at the
+            // next field at a number, else at its own bytes: the fields
+            // after it are at terms.
             Some(offset) => layout
                 .fields()
                 .values()
-                .map(crate::languages::interface::RecordField::offset_bytes)
+                .filter_map(|other| other.offset().bytes())
                 .filter(|other| *other > offset)
                 .min()
-                .unwrap_or_else(|| layout.size_bytes()),
+                .unwrap_or_else(|| {
+                    layout
+                        .size()
+                        .bytes()
+                        .unwrap_or_else(|| offset + field.extent().bytes().unwrap_or(0))
+                }),
             // A symbolic layout's field slot is exactly its extent.
             None => 0,
         };
@@ -14598,6 +15030,27 @@ impl Parser {
     /// A struct-pointer cast applies to one `void *` parameter of the block
     /// under contract, and a block casts a parameter to one struct only, so
     /// synthesized proof text reads the parameter with a single layout.
+    /// `sizeof` a struct-pointer cast's target when the cast converts from
+    /// `void *` or a byte pointer, so a pointer to the struct's initial member
+    /// points to the struct (C11 6.7.2.1p15). A cast from the struct's own
+    /// pointer type is a retype, not a conversion.
+    fn converted_struct_size(&self, operand: &ProgramExpression, struct_name: &str) -> Option<u32> {
+        let source = crate::surface::validation::infer_program_expression_type(
+            operand,
+            &self.names.program_parameter_types,
+        )?;
+        matches!(
+            source.to_kernel_type(),
+            ProgramType::VoidPointer | ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+        )
+        .then(|| {
+            self.struct_layouts
+                .get(struct_name)
+                .map(|layout| layout.size_bytes())
+        })
+        .flatten()
+    }
+
     fn record_parameter_struct_cast(
         &mut self,
         operand: &ProgramExpression,
@@ -14614,12 +15067,15 @@ impl Parser {
         ) {
             return Ok(());
         }
-        // An explicit conversion through void retains its target layout on
-        // the expression. It does not assign a layout to the source parameter.
+        // An explicit conversion through void or a character pointer retains
+        // its target layout on the expression. It does not assign a layout to
+        // the source parameter.
         if matches!(
             operand,
             ProgramExpression::Cast {
-                target_type: ProgramType::VoidPointer,
+                target_type: ProgramType::VoidPointer
+                    | ProgramType::UInt8Pointer
+                    | ProgramType::Int8Pointer,
                 ..
             }
         ) {
@@ -14788,12 +15244,14 @@ impl Parser {
         if !integer_source {
             self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
         }
+        let pointee_struct_size = self.converted_struct_size(&operand, &cast.struct_name);
         Ok(crate::surface::lowering::contract_c_unary(
             source_operand,
             ProgramExpression::Cast {
                 expression: Box::new(operand),
                 target_type: ProgramType::Int32Pointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
+                pointee_struct_size,
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
                 pointee_constant: cast.pointee_constant,
@@ -14850,11 +15308,6 @@ impl Parser {
                 "contract expression",
             )?;
         }
-        let recover_byte_view = target_type == ProgramType::UInt8Pointer
-            && crate::surface::validation::infer_program_expression_type(
-                &expression,
-                &self.names.program_parameter_types,
-            ) == Some(InterfaceType::VoidPointer);
         Ok(ContractExpression::CUnary {
             operand: Box::new(operand),
             lowered: ProgramExpression::Cast {
@@ -14862,16 +15315,16 @@ impl Parser {
                 target_type,
                 // This cast was written in the contract. Pointer targets
                 // use the specification cast rule, not the C conversion
-                // marker also used for inserted pointer coercions. A byte
-                // view recovered from void retains that pointer's bounds.
-                integer_mode: if recover_byte_view {
-                    crate::kernel::IntegerCastMode::PointerCoercion
-                } else if target_type.is_pointer() {
+                // marker also used for inserted pointer coercions, so a
+                // byte pointer cast from `void *` forms the byte view as
+                // the C conversion does (C11 6.3.2.3p7).
+                integer_mode: if target_type.is_pointer() {
                     crate::kernel::IntegerCastMode::Standard
                 } else {
                     crate::kernel::IntegerCastMode::CConversion
                 },
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile,
                 pointee_constant,
                 explicit_qualification: false,
@@ -14939,6 +15392,14 @@ impl Parser {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
             let pointer = self.parse_contract_unary_at_depth(depth + 1)?;
+            // A struct's value is its fields' values, never the word at
+            // its address.
+            if let Some(struct_name) = self.contract_expression_struct_name(&pointer)
+                && self.struct_layouts.contains_key(&struct_name)
+                && !self.contract_expression_designates_struct_pointer_slot(&pointer)
+            {
+                return self.struct_value_expression(pointer, &struct_name);
+            }
             let source_pointer = pointer.clone();
             let Some(pointer) = contract_expression_as_program_expression(&pointer) else {
                 return Err(
@@ -16183,6 +16644,9 @@ impl Parser {
     }
 
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        if let Some(literal) = self.parse_struct_value_literal()? {
+            return Ok(literal);
+        }
         if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
             return Ok(self.expect_surface_binder("binder reference")?.reference());
         }
@@ -16605,6 +17069,7 @@ impl Parser {
                 target_type: ProgramType::UInt64,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -17731,6 +18196,7 @@ impl Parser {
                         expression: Box::new(operand),
                         interface_type: InterfaceType::VoidPointer,
                         struct_name: None,
+                        struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,
@@ -17742,9 +18208,14 @@ impl Parser {
                     self.record_parameter_struct_cast(
                         &operand.to_kernel_expression(), &cast.struct_name,
                     )?;
+                    let struct_size = self.converted_struct_size(
+                        &operand.to_kernel_expression(),
+                        &cast.struct_name,
+                    );
                     return Ok(CExpression::Cast {
                         expression: Box::new(operand),
                         interface_type: InterfaceType::Int32Pointer,
+                        struct_size,
                         struct_name: Some(cast.struct_name),
                         pointee_volatile: false,
                         pointee_constant: cast.pointee_constant,
@@ -18572,6 +19043,7 @@ fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickPropo
                     target_type: ProgramType::UInt64,
                     integer_mode: crate::kernel::IntegerCastMode::Standard,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -18586,7 +19058,8 @@ fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickPropo
 
 /// The alignment fact a required complete-object clause carries: a live
 /// object of a struct type is placed at that type's alignment, so a
-/// required `*p` states `aligned(p, alignof(struct))`, which the
+/// required `*p` (but not `uninitialized(*p)`, which is storage and no live
+/// object) states `aligned(p, alignof(struct))`, which the
 /// caller proves and the function relies on. A produced object and a
 /// resource body state alignment explicitly (`ensures aligned(result, n)`,
 /// `fact aligned(p, n)`): a function may return an object it received
@@ -18599,6 +19072,11 @@ fn object_alignment_fact(
     let (ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment)) = clause else {
         return None;
     };
+    // `uninitialized(*p)` is the object's storage, not a live object of its
+    // type: freeing it, as `Box::drop` does, needs no alignment.
+    if segment.uninitialized {
+        return None;
+    }
     let alignment = match &segment.surface {
         ContractSegmentSurface::Object(struct_name) => {
             struct_layouts.get(struct_name)?.alignment_bytes()
@@ -18835,6 +19313,7 @@ fn struct_byte_stride(index: ProgramExpression, width: u32) -> ProgramExpression
             target_type: crate::kernel::ProgramType::Int64,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -18851,6 +19330,7 @@ fn struct_byte_base(base: ProgramExpression) -> ProgramExpression {
         target_type: crate::kernel::ProgramType::UInt8Pointer,
         integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
@@ -18985,17 +19465,8 @@ mod tactic_classification_tests {
             "match value { List::Nil => { normalize(); } }",
         ),
         ("apply-induction", "apply(ih(m));"),
-        ("apply-induction-using", "apply(ih(m)) using { m == 1; };"),
         ("apply-fact", "apply(x > 0 implies y > 0);"),
-        (
-            "apply-fact-using",
-            "apply(x > 0 implies y > 0) using { x > 0; };",
-        ),
         ("apply-theorem", "apply(theorem(x));"),
-        (
-            "apply-theorem-using",
-            "apply(theorem(x)) using { x == 1; };",
-        ),
         ("have", "have x == 1 by { normalize(); }"),
         ("with", "with(reference(p)) { normalize(); }"),
         ("if", "if x == 1 { normalize(); } else { normalize(); }"),
@@ -19081,6 +19552,17 @@ mod tactic_classification_tests {
         }
     }
 
+    #[test]
+    fn named_theorem_application_rejects_an_evidence_list() {
+        let mut parser = Parser::new("apply(lemma(x)) using { x == 1; };").unwrap();
+        let error = parser.parse_proof_tactic().unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("application takes no `using` list")
+        );
+    }
+
     /// Catches a tactic whose class is stored inconsistently: the registry
     /// (and through `tests/documentation.rs` the reference table), the parsed
     /// tactic's `class()`, and the class of the certificate step it prints as
@@ -19139,6 +19621,17 @@ mod tactic_classification_tests {
                     failures.push(format!("{}: `{written}` does not parse: {error}", form.id));
                     continue;
                 }
+            };
+            // An induction binding is resolved after parsing the enclosing
+            // proof, so standalone call syntax initially parses as a theorem.
+            let tactic = match (form.id, tactic) {
+                ("apply-induction", ProofTactic::ApplyTheorem(application)) => {
+                    ProofTactic::ApplyInduction {
+                        hypothesis: application.name,
+                        arguments: application.arguments,
+                    }
+                }
+                (_, tactic) => tactic,
             };
             let class = tactic.class();
             classes.insert(form.id, class);

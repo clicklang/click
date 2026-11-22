@@ -1,6 +1,6 @@
 //! Compiler-owned typed Rust source vocabulary. No printed compiler dumps.
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const SCHEMA: u32 = 8;
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
@@ -508,6 +508,15 @@ pub struct MirBody {
     /// `word` names the innermost live one, as in C.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub spellings: BTreeMap<String, String>,
+    /// Local keys for which the compiler supplied no source spelling.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub unnamed_locals: BTreeSet<String>,
+    /// Materialized aggregate literals, keyed by MIR local, with their source occurrence ordinal.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub compound_literals: BTreeMap<String, u32>,
+    /// Unnamed scalar storage associated with a written borrow occurrence.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub borrowed_scalars: BTreeMap<String, u32>,
 }
 
 /// The name of a function's return place.
@@ -692,13 +701,14 @@ pub enum MirTerminator {
         arguments: Vec<Expression>,
         #[serde(default)]
         owned_arguments: Vec<OwnedArgument>,
-        destination: String,
+        /// A local written by the call, absent for a discarded or retained result.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        destination: Option<String>,
         target: usize,
         /// A call through the function pointer the local `function` holds.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         through_pointer: bool,
-        /// The call step whose result its successor reads as
-        /// `Expression::CallResult`; `destination` then names no local.
+        /// The call step whose result an expression reads as `Expression::CallResult`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         result: Option<u32>,
     },
@@ -724,20 +734,6 @@ pub enum MirTerminator {
     Panic {
         message: String,
     },
-    /// `destination = Box::new(source)`: allocate the record on the heap,
-    /// move the record local `source` into it, and make `destination` its
-    /// address. A failed allocation aborts the process, so it never returns.
-    /// Without a `source`, `Box::new(R { a, b })` writes `fields`, the
-    /// record's field values in order, into the allocation itself.
-    BoxNew {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        source: Option<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        fields: Vec<Expression>,
-        record: String,
-        destination: String,
-        target: usize,
-    },
     /// The drop of the box `local`: run the record's drop `glue`, if it has
     /// one, on a non-null box, then free its allocation.
     BoxFree {
@@ -745,6 +741,9 @@ pub enum MirTerminator {
         record: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         glue: Option<String>,
+        /// Whether `local` is an `Option<Box<R>>`, null for `None`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        optional: bool,
         target: usize,
     },
 }

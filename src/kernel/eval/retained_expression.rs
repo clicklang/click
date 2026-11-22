@@ -694,6 +694,7 @@ mod tests {
             target_type,
             integer_mode: IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -893,6 +894,7 @@ mod tests {
                 target_type: ProgramType::UInt8Pointer,
                 integer_mode: IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification,
@@ -1005,6 +1007,7 @@ mod tests {
                 target_type: ProgramType::UInt8Pointer,
                 integer_mode: IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -1393,6 +1396,7 @@ mod tests {
             target_type,
             integer_mode: IntegerCastMode::NarrowArithmetic,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1923,7 +1927,7 @@ mod tests {
                 .with_block(address.base.clone(), 1)
                 .store_retained(address.clone(), value.clone());
             let loaded = super::super::memory_loads::evaluate_retained_memory_load_paths(
-                &memory,
+                &crate::kernel::ProgramPoint::of_memory(&memory),
                 address,
                 ProgramType::Bool,
                 ExecutionFacts::new(),
@@ -1933,7 +1937,7 @@ mod tests {
                 false,
                 None,
                 None,
-                None,
+                false,
             );
             let ExpressionOutcome::Value(loaded) = &loaded[0].outcome else {
                 panic!("memory receipt")
@@ -2070,7 +2074,7 @@ mod tests {
             .with_block(address.base.clone(), 8)
             .store_retained(address.clone(), value.clone());
         let loaded = super::super::memory_loads::evaluate_retained_memory_load_paths(
-            &stored,
+            &crate::kernel::ProgramPoint::of_memory(&stored),
             address,
             ProgramType::Int32Pointer,
             ExecutionFacts::new(),
@@ -2080,7 +2084,7 @@ mod tests {
             false,
             None,
             None,
-            None,
+            false,
         );
         let ExpressionOutcome::Value(loaded) = &loaded[0].outcome else {
             panic!("memory receipt")

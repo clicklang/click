@@ -1135,6 +1135,103 @@ pub struct SmartTacticSourceSite {
     pub position: SourcePosition,
 }
 
+/// A written legacy normalization tactic, addressed in the entry source.
+pub struct NormalizeSourceSite {
+    pub claim: String,
+    pub position: SourcePosition,
+    pub offset: usize,
+    pub using: bool,
+}
+
+pub fn normalize_source_sites(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &ProgramInputs<'_>,
+) -> Result<Vec<NormalizeSourceSite>, ClickError> {
+    let file = normalize_source_file(project, source, inputs)?;
+    let tokens = proof_source_tokens(source, &file.source_spans().implicit_proofs)?;
+    let entries = source_tactic_entries_with_tokens(&file, &ProofTokens::new(&file, &tokens))?;
+    // Use the flat written tactic index for identity. The token after the
+    // empty arguments distinguishes the premise-list form without rewriting it.
+    let mut sites = std::collections::BTreeMap::new();
+    for entry in entries
+        .into_iter()
+        .filter(|entry| entry.tactic_name == "normalize")
+    {
+        let index = tokens.partition_point(|token| token.span.start < entry.anchor);
+        let mut call = tokens[index..]
+            .iter()
+            .filter(|token| !token.span.is_empty());
+        let prefix = [call.next(), call.next(), call.next()];
+        if !prefix
+            .iter()
+            .zip(["normalize", "(", ")"])
+            .all(|(token, text)| token.is_some_and(|token| token.text == text))
+        {
+            return Err(ClickError::new(
+                "could not locate the written normalize tactic",
+            ));
+        }
+        let using = call.next().is_some_and(|token| token.text == "using");
+        sites
+            .entry(entry.anchor)
+            .or_insert_with(|| NormalizeSourceSite {
+                claim: entry.claim_label,
+                position: position_at_offset(source, entry.anchor),
+                offset: entry.anchor,
+                using,
+            });
+    }
+    Ok(sites.into_values().collect())
+}
+
+/// Find a legacy call anywhere in the proof unit's source, including
+/// generated proof bodies whose tactics are not individually indexed.
+pub fn first_normalize_in_claim(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &ProgramInputs<'_>,
+    claim: &str,
+) -> Result<Option<SourcePosition>, ClickError> {
+    if !source.contains("normalize") {
+        return Ok(None);
+    }
+    let file = normalize_source_file(project, source, inputs)?;
+    let mut regions = claim_source_regions(source, &file, ClaimLocationScope::ProofUnit)?;
+    regions.retain(|region| region.label == claim);
+    if regions.is_empty() {
+        return Err(ClickError::new(format!(
+            "could not locate proof unit `{claim}`"
+        )));
+    }
+    let site = plain_source_tokens(source)?
+        .windows(3)
+        .find(|tokens| {
+            tokens[0].text == "normalize"
+                && tokens[1].text == "("
+                && tokens[2].text == ")"
+                && regions
+                    .iter()
+                    .any(|region| region.span.contains(&tokens[0].span.start))
+        })
+        .map(|tokens| tokens[0].start.clone());
+    Ok(site)
+}
+
+fn normalize_source_file(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &ProgramInputs<'_>,
+) -> Result<ClickFile, ClickError> {
+    let sources = ProgramSourceContext::of(inputs)?;
+    match project {
+        Some(project) => {
+            resolve_click_project_context(project, &sources.with_click_project(project))
+        }
+        None => parse_source_with_program_layouts_context(source, &sources),
+    }
+}
+
 pub fn c_smart_tactic_source_sites(
     click_source: &str,
     c_sources: &[(&str, &str)],
@@ -3971,6 +4068,9 @@ struct SourceTacticEntry {
     claim_label: String,
     tactic_name: String,
     smart: bool,
+    /// A simple written operation whose implicit obligation proofs can be
+    /// extracted when a user explicitly selects its location.
+    has_implicit_obligations: bool,
     selection: EntrySelection,
 }
 
@@ -4025,13 +4125,11 @@ impl SmartTacticSelectionError {
     }
 }
 
-/// Resolves a source location to the one smart tactic it selects.
+/// Resolves a source location to one tactic with expandable proof work.
 ///
-/// With a column, the location selects the innermost smart tactic whose
-/// source span contains it, at any nesting depth. Without one, the line must
-/// start exactly one smart tactic. The result's position is the tactic's
-/// canonical start, which every location-taking expansion entry point
-/// accepts.
+/// With a column, the location selects the innermost eligible tactic whose
+/// source span contains it. Without one, the line must start exactly one
+/// eligible tactic. The result's position is the tactic's canonical start.
 pub fn c_select_smart_tactic(
     click_source: &str,
     c_sources: &[(&str, &str)],
@@ -4444,9 +4542,7 @@ fn smart_tactic_candidate(click_source: &str, entry: &SourceTacticEntry) -> Smar
     }
 }
 
-/// The one smart entry a location selects: with a column, the innermost
-/// smart span containing it; without one, the only smart tactic starting on
-/// the line.
+/// Select an expandable entry by its span or the start of its line.
 fn select_source_tactic_entry<'e>(
     click_source: &str,
     entries: &'e [SourceTacticEntry],
@@ -4456,10 +4552,11 @@ fn select_source_tactic_entry<'e>(
     // A smart tactic written inside a smart site that owns it (the `solve`
     // of a smart `have`) is an alias of that site; the line lists the site
     // once.
+    let selectable = |entry: &SourceTacticEntry| entry.smart || entry.has_implicit_obligations;
     let starting_on_line = || {
         let mut starting: Vec<&SourceTacticEntry> = Vec::new();
         for entry in entries.iter().filter(|entry| {
-            entry.smart && position_at_offset(click_source, entry.anchor).line == line
+            selectable(entry) && position_at_offset(click_source, entry.anchor).line == line
         }) {
             if !starting
                 .iter()
@@ -4475,7 +4572,9 @@ fn select_source_tactic_entry<'e>(
         // equal spans keep source order.
         entries
             .iter()
-            .filter(|entry| entry.smart && (entry.span.contains(&wanted) || entry.anchor == wanted))
+            .filter(|entry| {
+                selectable(entry) && (entry.span.contains(&wanted) || entry.anchor == wanted)
+            })
             .min_by_key(|entry| entry.span.end - entry.span.start)
     };
     let candidates = |entries: &[&SourceTacticEntry]| {
@@ -4753,6 +4852,7 @@ fn proof_tactic_entries(
         claim_label: claim_label.to_string(),
         tactic_name: name.to_string(),
         smart: true,
+        has_implicit_obligations: false,
         selection: EntrySelection::Located(LocatedSourceTactic {
             site: site.clone(),
             source_index: 0,
@@ -4812,6 +4912,10 @@ fn proof_tactic_entries(
                     claim_label: claim_label.to_string(),
                     tactic_name,
                     smart,
+                    has_implicit_obligations: matches!(
+                        item.tactic,
+                        FlatTactic::Written(ProofTactic::ApplyTheorem(_))
+                    ),
                     selection: EntrySelection::Located(LocatedSourceTactic {
                         site: site.clone(),
                         source_index,
@@ -4888,6 +4992,7 @@ fn proof_tactic_entries(
                     claim_label: claim_label.to_string(),
                     tactic_name: "implicit tail".to_string(),
                     smart: true,
+                    has_implicit_obligations: false,
                     selection: EntrySelection::Located(LocatedSourceTactic {
                         site: site.clone(),
                         source_index,
@@ -5007,6 +5112,7 @@ fn block_tactic_entries(
             claim_label: claim_label.to_string(),
             tactic_name: tactic_name(tactic).to_string(),
             smart,
+            has_implicit_obligations: matches!(tactic, ProofTactic::ApplyTheorem(_)),
             selection: EntrySelection::Located(LocatedSourceTactic {
                 site: site.clone(),
                 source_index,
@@ -5079,6 +5185,7 @@ fn block_tactic_entries(
                     claim_label: claim_label.to_string(),
                     tactic_name: tactic_name(tactic).to_string(),
                     smart: true,
+                    has_implicit_obligations: false,
                     selection: EntrySelection::Unaddressable(format!(
                         "the location is inside a proof `{}` written in a `have` body, which the `have` body checker does not run, so a smart tactic there has no checked occurrence of its own; expand the enclosing claim with `--claim {claim_label}`",
                         tactic_name(tactic)

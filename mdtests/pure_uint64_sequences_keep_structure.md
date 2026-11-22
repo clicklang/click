@@ -4,7 +4,7 @@
 theorem wide_sequence_equality(a: uint64, b: uint64) {
     ensures forall (unused: Integer) {
         [] ++ [a] ++ [b] == [a, b] ++ []
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem wide_literal_membership() {
@@ -26,11 +26,11 @@ theorem wide_rewritten_membership(a: uint64, b: uint64) {
 
 theorem wide_rewritten_equality(a: uint64, b: uint64) {
     requires a == b;
-    ensures [a] ++ [] == [b] by { rewrite(a, b); normalize(); }
+    ensures [a] ++ [] == [b] by { rewrite(a, b); known(); }
 }
 
 theorem wide_sequence_disequality(a: uint64) {
-    ensures [a] != [a, a] by { normalize(); }
+    ensures [a] != [a, a] by { known(); }
 }
 
 theorem wide_sequence_supplies_element_equalities(a: uint64, b: uint64, c: uint64, d: uint64) {

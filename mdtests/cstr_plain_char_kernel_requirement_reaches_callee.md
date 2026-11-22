@@ -38,7 +38,7 @@ int32 outer(const char* src) {
     let n = obtain(entry_string);
     have at(function.entry, viewable((src as (uint8 *))[0..n + 1u64])) by { known(); }
     have separate(region(0).footprint, memory((src as (uint8 *))[0..n + 1u64])) by {
-        normalize() using {};
+        solve() using {};
     }
     have viewable((src as (uint8 *))[0..n + 1u64]) by {
         preserve(memory((src as (uint8 *))[0..n + 1u64]), region(0));
@@ -49,8 +49,8 @@ int32 outer(const char* src) {
         instantiate(entry_defined, j);
         have at(region(0).entry, defined((src as (uint8 *))[j])) by { known(); }
         have separate(region(0).footprint, memory((src as (uint8 *))[j])) by {
-            have separate(memory(result), memory((src as (uint8 *))[j])) by { normalize(); }
-            normalize() using { separate(memory(result), memory((src as (uint8 *))[j])); };
+            have separate(memory(result), memory((src as (uint8 *))[j])) by { known(); }
+            solve() using { separate(memory(result), memory((src as (uint8 *))[j])); };
         }
         preserve(memory((src as (uint8 *))[j]), region(0));
     }

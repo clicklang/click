@@ -353,6 +353,13 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
             algebraic_terms_definitely_distinct(left.native_compat(), right.native_compat())
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => left != right,
+        // A null pointer has no provenance, so it shares no allocation.
+        Proposition::Predicate { .. }
+            if let Some((left, right)) =
+                crate::kernel::assumptions::same_allocation_pointers(proposition) =>
+        {
+            left.is_null() || right.is_null()
+        }
         Proposition::And(left, right) => {
             disprove_builtin_prop(left) || disprove_builtin_prop(right)
         }

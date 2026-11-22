@@ -2057,18 +2057,34 @@ the per-format contracts of [formatted output](#formatted-output).
 ## Formatted output
 
 On the hosted target, `printf("literal")` uses `stdout` and
-`fprintf(file, "literal")` uses its `FILE *` argument. Both use the projected
-`<stdio.h>` and require ownership of `stream(file)` for the target handle.
-The model supports literal output and `%%`, including concatenated C
-literals and truncation at the first NUL. It accepts up to 64 requested bytes
-per call. Each attempt adds the bytes and the return value to the front of
-`write_history`. The return is the byte count on success or negative on
-error. A failure can produce partial output, and success can leave data
+`fprintf(file, format, ...)` uses its `FILE *` argument. Both use the
+projected `<stdio.h>` and require ownership of `stream(file)` for the target
+handle. The model supports formats of ordinary characters and `%%`. Each
+attempt adds the requested characters and the return value to the front of
+`write_history`. The return is the character count on success or negative
+on error. A failure can produce partial output, and success can leave data
 buffered. The [stdio specification library](../library/index.md#clickcstdio)
 defines `write_requests` for projecting the history onto just the requests.
 
+`fprintf` has one Click contract, `library/c/fprintf.interface.click`, which
+the C front end's name table selects for the projected declaration. It reads
+the format as a C string the caller views: it requires
+`click::c::stdio::literal_format` of the format's `n` bytes, and states the
+characters written as `click::c::stdio::format_output` and their count as
+`click::c::stdio::format_length`. The format need not be a literal, and
+arguments it does not convert are ignored (C11 7.21.6.1p2). For a literal
+format, `solve` evaluates the three functions one level at a time, so a
+caller's proof states the output it expects with no written steps
+(`mdtests/printf_and_fprintf_share_the_streams_write_history.md`,
+`mdtests/fprintf_ignores_arguments_its_format_does_not_convert.md`). A
+format with a conversion is refused at the precondition
+(`mdtests/fprintf_refuses_a_format_that_converts.md`). `printf` still has a
+contract the front end writes for each literal format, with up to 64
+requested bytes, truncated at the first NUL; it moves to a Click contract
+once an `extern` contract can name `stdout`.
+
 `click verify` reports these imported assumptions as `printf: "<format>"`
-or `fprintf: "<format>"`. Hosted `main` may use the original K&R
+and, for `fprintf`, as a C library interface. Hosted `main` may use the original K&R
 `main() { ... }` spelling, and reaching the end of a hosted parameterless
 `int main` returns zero. The original example is in
 `examples/hello-world/`.
@@ -2185,6 +2201,12 @@ Use `step(Identity)` to select that contract. The C argument `x` comes from
 the C call, not from the proof application. The retired forms
 `contract Name(handle: R(...)) for T(...)`, `step(Name())`, and
 `step(Name(instance))` are refused with their replacements.
+
+An explicit refinement theorem checks the resource and write clauses before
+running the proof of the contracts' pure conditions. The target contract must
+supply the resources the source requires and cover the writes the source permits.
+The resources the source returns, together with any resources it leaves
+untouched, must supply the resources the target promises to return.
 
 A named contract can also take values that are fixed where it is attached to
 a function, declared in its body as `let name: type;`, with a scalar type and
@@ -2555,6 +2577,34 @@ A signed 64-bit (`long`) count is refused; it is stated through its
 `size_t` conversion
 (`mdtests/a_signed_64_bit_allocation_byte_count_is_refused.md`).
 
+### Fresh allocations
+
+`produces allocation(result, n)` hands the caller an allocation without
+saying where it came from: an arena's `take(p)` may return the pointer it was
+given. `allocates(result, n)` says the allocation is new, as `malloc`'s is.
+It is `produces allocation(result, n)` of a block the call creates, which no
+pointer that existed before the call reaches. Its bytes are whatever the
+contract's other clauses say; `allocates` says nothing about them. Its
+result is never null. A call's result then takes a heap identity distinct
+from every other block, so it differs from any pointer the caller held,
+owned or not, and no earlier store, local or parameter reaches it:
+
+<!-- verified-example: mdtests/an_allocates_result_is_no_pointer_the_caller_held.md -->
+```click
+extern int32* fresh_int() {
+    allocates(result, 4);
+    produces *result;
+    ensures result != 0;
+}
+```
+
+With `produces allocation` instead, the same caller's `p != held` is not
+proved (`mdtests/a_produced_allocation_may_be_a_pointer_the_caller_held.md`).
+`allocates` names `result` and appears at most once; an allocator that
+may fail returns its result through a branch and uses `produces allocation`.
+A contract that claims `allocates` for a pointer it may return twice is a
+false contract, as a false `ensures` is.
+
 ## Undefined behavior
 
 Signed overflow is C undefined behavior. Signed division and remainder also
@@ -2665,7 +2715,7 @@ declared return type
 The check applies to the C program's accesses only. A specification reads
 memory as a value, so a contract's reads, resource arguments included, are
 not checked: a contract may state a Linux augmented rbtree node's cached
-count as `(old as (void *) as (struct sized_node *))->size` for a `struct rb_node*`
+count as `(old as (uint8 *) as (struct sized_node *))->size` for a `struct rb_node*`
 parameter, while a C read of the same object through an unrelated struct is
 still refused
 (`mdtests/a_resource_argument_reads_the_containing_struct_as_a_value.md`,
@@ -2995,6 +3045,22 @@ values, and that private storage cannot be an input resource. For example,
 `consumes input.data[0..n]` can use the copied pointer value directly. Reading
 or writing its pointed-to elements still needs the corresponding resource;
 the copied value does not extend their lifetime.
+
+### Struct values in contracts
+
+In a contract a struct's value is all its fields. `*p` for a `struct pair *p`
+is the value `p` points at, and `*dst == *src` holds exactly when every field
+of one equals the same field of the other, so it is checked field by field.
+A by-value struct parameter or result compared whole, `value` or
+`old(value)`, is its value too. A struct value is written by its fields with a
+compound literal, `(struct pair){ .x = a, .y = b }`, each field named once;
+Click prints a value as `*p` when its fields are `p`'s own and as a literal
+otherwise. An embedded struct field's value is its own struct value. A struct
+with an array, union, bit field or `long double` field has no value in a
+contract yet, and `*p` of one is refused.
+
+<!-- verified-example: mdtests/a_struct_equality_compares_every_field.md -->
+<!-- verified-example: mdtests/a_struct_equality_is_not_its_first_field.md -->
 
 ## Heap allocation
 

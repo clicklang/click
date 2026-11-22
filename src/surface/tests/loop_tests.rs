@@ -68,8 +68,8 @@ fn scoped_loop_facts_hide_an_intermediate_model_on_a_single_exit() {
             verify_c_sources(&source, &[("program.c", c)])
                 .expect_err("the reachable break has no pending work")
                 .trace_context_report()
-                .expect("the failed check retains an exact premise list")
-                .split_once("available premises at the failed check")
+                .expect("the proof refusal retains an exact premise list")
+                .split_once("premises in scope")
                 .expect("the failure records the loop's exported premises")
                 .1
                 .split("checks observed")
@@ -501,7 +501,6 @@ fn promoted_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("a_uint8_loop_counter_ranks_as_a_promoted_int32");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "clear").unwrap();
-    assert!(expanded.contains("normalize"), "{expanded}");
     assert!(expanded.contains("(x as int32)"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
@@ -778,9 +777,7 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
                 have to_integer($index) != to_integer($index + 1) by {
                     normalize() using { j == 0; };
                 }
-                apply(separation::separate_elements(p, $index, $index + 1)) using {
-                    to_integer($index) != to_integer($index + 1);
-                };
+                apply(separation::separate_elements(p, $index, $index + 1));
                 have separate(statement(3).footprint, memory(p[$index])) by {
                     normalize() using { separate(memory(p[$index]), memory(p[$index + 1])); };
                 }
@@ -832,9 +829,9 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
         }
         have to_integer(j + 1) != 2 by { rewrite(to_integer(j + 1), 1); normalize(); }
         have to_integer(j + 1) != 0 by { rewrite(to_integer(j + 1), 1); normalize(); }
-        apply(click::separation::separate_elements(p, j, 2)) using { to_integer(j) != 2; };
-        apply(click::separation::separate_elements(p, j + 1, 2)) using { to_integer(j + 1) != 2; };
-        apply(click::separation::separate_elements(p, j + 1, 0)) using { to_integer(j + 1) != 0; };
+        apply(click::separation::separate_elements(p, j, 2));
+        apply(click::separation::separate_elements(p, j + 1, 2));
+        apply(click::separation::separate_elements(p, j + 1, 0));
         have separate(statement(3).statement(0).statement(1).footprint, memory(p[2])) by {
             normalize() using { separate(memory(p[j]), memory(p[2])); };
         }
@@ -1194,10 +1191,9 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
     )
     .expect("the retained initialization theorem step should expand");
     assert!(
-        expanded.contains("apply(nonnegative_is_acceptable(x)) using"),
+        expanded.contains("apply(nonnegative_is_acceptable(x));"),
         "{expanded}"
     );
-    assert!(expanded.contains("x >= 0;"), "{expanded}");
     verify_c_sources(&expanded, &[("initialize_with_theorem.c", c_source)])
         .expect("expanded initialization theorem application should independently verify");
 }
@@ -1824,11 +1820,7 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("not at(loop(0).exit, i) < at(loop(0).exit, n)"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("click::integer::int32_less_equal_and_not_less_than_implies_equal"),
+        expanded.contains("apply(click::integer::int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, n)));"),
         "{expanded}"
     );
     assert!(!expanded.contains("normalize()"), "{expanded}");
@@ -2308,7 +2300,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
         } by {
             have marker() != Marker::Inactive by {
                 unfold(marker());
-                normalize();
+                known();
             }
             match marker() {
                 Marker::Active => {
@@ -2321,7 +2313,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                         maintain by {
                             have marker() != Marker::Inactive by {
                                 unfold(marker());
-                                normalize();
+                                known();
                             }
                             match marker() {
                                 Marker::Active => {
@@ -2761,7 +2753,7 @@ fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("(p[0] as int32) == (old(p)[index] as int32);"),
+        expanded.contains("apply(same_byte(p[0], old(p)[index]));"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap();

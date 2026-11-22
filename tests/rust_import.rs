@@ -1527,7 +1527,7 @@ fn charon_slice_failure_has_a_focused_trace() {
     let output = p.cli(&["verify"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
-    assert!(error.contains("proof error:"), "{error}");
+    assert!(error.contains("unsuccessful search:"), "{error}");
     assert!(error.contains("--trace-proof length"), "{error}");
     let output = p.cli(&["verify", "--trace-proof", "length", "--trace-to", &trace_to]);
     assert!(!output.status.success());
@@ -1935,6 +1935,15 @@ fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
     let p = chunk_lane_project();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(CHUNK_LANE_PROOF, &prepared).unwrap();
+    let traced = p.cli(&["verify", "--trace-proof", "quad::load"]);
+    assert!(
+        traced.status.success(),
+        "{}",
+        String::from_utf8_lossy(&traced.stderr)
+    );
+    let trace = String::from_utf8_lossy(&traced.stdout);
+    assert!(trace.contains("1 selected proof verified"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
     for (before, after) in [
         (
             "have lanes.lanes[1] == chunk[1]",
@@ -2663,6 +2672,15 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "restore"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
     for wrong in [
         sidecar.replace("ensures *value == old(*value);", "ensures *value == 7;"),
         sidecar.replace(
@@ -2718,6 +2736,7 @@ fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
 fn rust_move_drop_cli_proofs_expand_and_reverify() {
     let (p, _) = moves_project(MOVE_SOURCE);
     p.refresh().unwrap();
+    assert_cli(&p, &["audit", "expansion", "--claim", "restore.contract"]);
     assert_cli(&p, &["expand", "--claim", "restore.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
@@ -2731,6 +2750,10 @@ fn rust_conditional_move_and_explicit_drop_verify() {
         MOVE_SOURCE.split("    let moved = guard;").next().unwrap()
     );
     let (p, sidecar) = moves_project(&source);
+    // This implementation has different cleanup points from the example.
+    let (contract, _) = sidecar.split_once("\n} by {\n").unwrap();
+    let sidecar = format!("{contract}\n}}\n");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -3137,16 +3160,17 @@ fn rust_enum_signed_match_arithmetic_verifies() {
 }
 
 #[test]
-fn rust_enum_signed_match_wrong_arm_is_an_unproved_goal() {
+fn rust_enum_signed_match_wrong_arm_reports_unsuccessful_search() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
     let invalid = SIGNED_MATCH_SIDECAR.replace("0i32 - x", "1i32 - x");
-    let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
+    let report = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
         .err()
         .expect("the wrong arm must fail")
-        .to_string();
-    assert!(!error.contains("could not lower"), "{error}");
-    assert!(error.contains("goal:"), "{error}");
+        .concise_report();
+    assert!(report.starts_with("unsuccessful search:"), "{report}");
+    assert!(!report.contains("could not lower"), "{report}");
+    assert!(report.contains("goal:"), "{report}");
 }
 
 #[test]
@@ -3639,6 +3663,45 @@ fn charon_a_nested_call_result_is_named_by_its_call() {
     assert!(rendered.contains("1 time(s)"), "{rendered}");
 }
 
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_match_can_split_a_call_result_without_a_local() {
+    let p = Project::new(
+        "pub enum Choice { Some(u32), None }
+         fn choose(x: u32) -> Choice {
+             if x == 0 { Choice::None } else { Choice::Some(x) }
+         }
+         pub fn unwrap_value(x: u32) -> u32 {
+             match choose(x) { Choice::Some(n) => n, Choice::None => 0 }
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn choose(x: u32) -> Choice {
+    ensures result == (if x == 0u32 { Choice::None } else { Choice::Some(x) });
+}
+fn unwrap_value(x: u32) -> u32 { ensures result == x; } by {
+    step_until(statement(0).call(choose, 0).entry);
+    step();
+    match statement(0).call(choose, 0).result {
+        Choice::Some(payload) => { step_until(function.exit); solve(); },
+        Choice::None => { step_until(function.exit); solve(); },
+    }
+}
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "unwrap_value"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+}
+
 // A Rust `Result<u32, u8>` is Click's `Result<u32, u8>` in a contract, as an
 // `Option` is: a function returning one, a `match` and an `if let` on one,
 // and a caller composing two through their contracts. `r?` returns `r`'s
@@ -4097,7 +4160,7 @@ fn charon_box_fields_take_and_assign_through_self() {
         (
             "            owns allocation(p, sizeof(box_fields::Cell));\n",
             "",
-            "cannot free a pointer that is not a live heap allocation",
+            "missing resource fact `owns allocation(old(self.slot), 4)`",
         ),
     ] {
         assert!(BOX_FIELD_SIDECAR.contains(before), "{before}");
@@ -4184,7 +4247,7 @@ fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
         &prepared,
         "            owns allocation(p, sizeof(recursive_drop::Node));\n",
         "",
-        "cannot free a pointer that is not a live heap allocation",
+        "missing resource fact `owns allocation(old(self.next), 16)`",
     );
     assert_recursive_drop_refused(
         &prepared,
@@ -4714,6 +4777,325 @@ fn rust_split_at_metadata_and_reads_verify() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_unnamed_scalar_storage_has_no_generated_name_in_proofs() {
+    let p = Project::new(
+        "pub fn front(bytes: &[u8]) -> usize {
+             let (front, tail) = bytes.split_at(bytes.len() - bytes.len() % 4);
+             let __rust_mir_17 = tail.len();
+             front.len() + __rust_mir_17
+         }",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let mir = prepared.export().functions[0].mir.as_ref().unwrap();
+    let unnamed_scalars: Vec<_> = mir
+        .locals
+        .iter()
+        .filter(|local| local.value_type.is_scalar() && mir.unnamed_locals.contains(&local.name))
+        .collect();
+    assert!(!unnamed_scalars.is_empty());
+    assert!(!mir.unnamed_locals.contains("__rust_mir_17"));
+    let sidecar = r#"verifying "borrow.rs";
+fn front(bytes: &[u8]) -> usize {
+    requires bytes.len() == 7u64;
+    ensures result == 7u64;
+} by {
+    step_until(function.exit);
+    solve();
+}
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "front"]);
+    let trace = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "{trace}");
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(trace.contains("__rust_mir_17 = tail.len()"), "{trace}");
+    for local in unnamed_scalars {
+        assert!(
+            !trace.lines().any(|line| line
+                .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+                .any(|word| word == local.name)),
+            "unnamed scalar {} leaked into the trace: {trace}",
+            local.name
+        );
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_refuses_unclassified_compiler_storage_and_accepts_written_names() {
+    let p = Project::new(
+        "fn read(word: &u32) -> u32 { *word }
+         pub fn named(x: u32) -> u32 {
+             let __rust_mir_4 = x % 4;
+             read(&__rust_mir_4)
+         }",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    ProgramVerificationSession::new_program_prepared(
+        r#"verifying "borrow.rs";
+fn read(word: &u32) -> u32 { views *word; ensures result == *word; }
+fn named(x: u32) -> u32 { ensures result == x % 4u32; }
+"#,
+        &prepared,
+    )
+    .unwrap();
+
+    let p = Project::new(
+        "macro_rules! borrowed { ($x:expr) => { &($x % 4) } }
+         fn read(word: &u32) -> u32 { *word }
+         pub fn unclassified(x: u32) -> u32 { read(borrowed!(x)) }",
+    );
+    let error = p.refresh().unwrap_err();
+    assert!(error.contains("unsupported Rust construct"), "{error}");
+    assert!(
+        error.contains("unnamed compiler local requires storage"),
+        "{error}"
+    );
+    assert!(!error.contains("__rust_mir_"), "{error}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_borrowed_scalar_expressions_use_written_storage_occurrences() {
+    let p = Project::new(
+        "fn read(word: &u32) -> u32 { *word }
+         pub fn borrowed_value(x: u32) -> u32 {
+             let first = read(&(x % 4));
+             let second = read(&(x / 4));
+             first * 10 + second
+         }",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let function = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|function| function.name == "borrowed_value")
+        .unwrap();
+    let mut ordinals: Vec<_> = function
+        .mir
+        .as_ref()
+        .unwrap()
+        .borrowed_scalars
+        .values()
+        .copied()
+        .collect();
+    ordinals.sort_unstable();
+    assert_eq!(ordinals, [0, 1]);
+
+    let sidecar = r#"verifying "borrow.rs";
+fn read(word: &u32) -> u32 { views *word; ensures result == *word; }
+fn borrowed_value(x: u32) -> u32 { requires x == 7u32; ensures result == 31u32; }
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "borrowed_value"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        trace
+            .matches("steps through: declare <temporary storage>")
+            .count(),
+        2,
+        "{trace}"
+    );
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+    assert!(
+        ProgramVerificationSession::new_program_prepared(
+            &sidecar.replace("31u32", "33u32"),
+            &prepared,
+        )
+        .is_err()
+    );
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "borrowed_value.ensures_0",
+            "--in-place",
+        ],
+    );
+    let expanded = fs::read_to_string(&file).unwrap();
+    assert!(
+        !expanded.contains("__rust_mir_") && !expanded.contains(".temporary("),
+        "{expanded}"
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_borrowed_array_literals_use_written_occurrences_and_lifetimes() {
+    let p = Project::new(
+        "fn read(words: &[u32; 2]) -> u32 { words[0] }
+         pub fn borrowed_array(x: u32) -> u32 {
+             let first = read(&[x, 7]);
+             read(&[first; 2])
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn read(words: &[u32; 2]) -> u32 {
+    views words[0..2];
+    ensures result == words[0];
+}
+fn borrowed_array(x: u32) -> u32 {
+    ensures result == x;
+} by {
+    step_until(statement(0).call(read, 0).entry);
+    have borrowed_array.compound_literal(0)[1] == 7u32 by solve();
+    step_until(statement(1).call(read, 0).entry);
+    have borrowed_array.compound_literal(1)[1] == x by solve();
+    have at(statement(0).call(read, 0).entry, borrowed_array.compound_literal(0)[1]) == 7u32 by solve();
+    step_until(function.exit);
+    solve();
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "borrowed_array"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("compound_literal(0)"), "{trace}");
+    assert!(trace.contains("compound_literal(1)"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+
+    let expired = sidecar.replace(
+        "at(statement(0).call(read, 0).entry, borrowed_array.compound_literal(0)[1])",
+        "borrowed_array.compound_literal(0)[1]",
+    );
+    fs::write(&file, expired).unwrap();
+    let output = p.cli(&["verify"]);
+    assert!(
+        !output.status.success(),
+        "an expired array literal must be unreadable"
+    );
+
+    fs::write(&file, sidecar).unwrap();
+    assert_cli(
+        &p,
+        &["expand", "--claim", "borrowed_array.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
+    let expanded = fs::read_to_string(file).unwrap();
+    assert!(!expanded.contains("__rust_mir_"), "{expanded}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_borrowed_struct_literal_fields_use_written_occurrences() {
+    let p = Project::new(
+        "pub struct Pair { pub value: u32, pub spare: u32 }
+         fn read(pair: &Pair) -> u32 { pair.value }
+         pub fn borrowed_record(x: u32) -> u32 {
+             let named = [x, 7u32];
+             read(&Pair { value: named[0], spare: 9 })
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn read(pair: &Pair) -> u32 {
+    views pair.value;
+    ensures result == pair.value;
+}
+fn borrowed_record(x: u32) -> u32 { ensures result == x; } by {
+    step_until(statement(1).call(read, 0).entry);
+    have borrowed_record.compound_literal(1).value == x by solve();
+    step_until(function.exit);
+    have at(statement(1).call(read, 0).entry, borrowed_record.compound_literal(1).spare) == 9u32 by solve();
+    solve();
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "borrowed_record"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        trace.contains("declare aggregate \"borrow.rs\"::borrowed_record.compound_literal(1)"),
+        "{trace}"
+    );
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "borrowed_record.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_if_expression_carries_its_scalar_value_without_a_local() {
+    let p = Project::new("pub fn joined_value(x: u32) -> u32 { (if x == 0 { 3 } else { x }) % 2 }");
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn joined_value(x: u32) -> u32 {
+    ensures result == (if x == 0u32 { 1u32 } else { x % 2u32 });
+} by {
+    if x == 0u32 {
+        step_until(function.exit);
+        have statement(0).result == 3u32 by solve();
+        solve();
+    } else {
+        step_until(function.exit);
+        have statement(0).result == x by solve();
+        solve();
+    }
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "joined_value"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+
+    assert_cli(
+        &p,
+        &["expand", "--claim", "joined_value.contract", "--in-place"],
+    );
+    let expanded = fs::read_to_string(file).unwrap();
+    assert!(!expanded.contains("__rust_mir_"), "{expanded}");
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_split_at_endpoints_and_full_width_lengths_verify() {
     let p = Project::new(
@@ -5091,6 +5473,18 @@ fn rust_fixed_array_references_indexing_and_reborrows_verify() {
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
 
+    for function in ["length", "empty"] {
+        let output = p.cli(&["verify", "--trace-proof", function]);
+        let trace = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(trace.contains("proof trace"), "{trace}");
+        assert!(!trace.contains("__rust_mir_"), "{trace}");
+    }
+
     assert!(
         ProgramVerificationSession::new_program_prepared(
             &sidecar.replace("ensures words[1] == 7u32", "ensures words[1] == 8u32"),
@@ -5225,6 +5619,22 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for function in [
+        "argument_order",
+        "assignment_order",
+        "zero_repeat_call",
+        "ordered_calls",
+    ] {
+        let output = p.cli(&["verify", "--trace-proof", function]);
+        let trace = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(trace.contains("proof trace"), "{trace}");
+        assert!(!trace.contains("__rust_mir_"), "{trace}");
+    }
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -5234,6 +5644,7 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
         "copy_into.contract",
         "repeat_call.contract",
         "zero_repeat_call.contract",
+        "ordered_calls.contract",
         "argument_order.contract",
         "assignment_order.contract",
     ] {
@@ -5246,6 +5657,25 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
             &prepared
         )
         .is_err()
+    );
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: live compiler extraction"]
+fn rust_array_initializer_keeps_the_first_call_result_across_the_second() {
+    assert_native_boundary_proof(
+        "fn next(value: &mut u32) -> u32 { let before = *value; *value = before + 1; before }
+        pub fn first(value: &mut u32) -> u32 { let words = [next(value), next(value)]; words[0] }",
+        "verifying \"borrow.rs\";
+        fn next(value: &mut u32) -> u32 {
+            requires *value < 255u32; owns value[0..1];
+            ensures result == old(*value); ensures *value == old(*value) + 1u32;
+        }
+        fn first(value: &mut u32) -> u32 {
+            requires *value == 4u32; owns value[0..1];
+            ensures result == 4u32; ensures *value == 6u32;
+        }",
     );
 }
 
@@ -5281,6 +5711,17 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for function in ["array_len", "mutate", "local", "borrow_shared"] {
+        let output = p.cli(&["verify", "--trace-proof", function]);
+        let trace = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(trace.contains("proof trace"), "{trace}");
+        assert!(!trace.contains("__rust_mir_"), "{trace}");
+    }
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -5295,14 +5736,15 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     for incorrect in [
         sidecar.replace("ensures result == 4u64;", "ensures result == 1u64;"),
         sidecar.replace(
-            "fn read(bytes: &[u8; 3]) -> u8 {\n    views bytes[0..1];",
-            "fn read(bytes: &[u8; 3]) -> u8 {",
+            "fn read(bytes: &[u8; 3]) -> u8 {\n    views bytes[0..1];\n    ensures result == bytes[0];",
+            "fn read(bytes: &[u8; 3]) -> u8 {\n    views bytes[0..1];\n    ensures result == 0;",
         ),
         sidecar.replace(
             "fn mutate(bytes: &mut [u8; 3]) -> u8 {\n    owns bytes[1..2];",
             "fn mutate(bytes: &mut [u8; 3]) -> u8 {\n    views bytes[1..2];",
         ),
     ] {
+        assert_ne!(incorrect, sidecar);
         assert!(ProgramVerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
     }
     let overflow = Project::new(
@@ -5420,13 +5862,8 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
     requires x <= 18446744073709551615u64 / y;
     ensures result == x * y;
 } by {
-    apply(usize::product_bound_from_division(x, y)) using {
-        y != 0u64;
-        x <= 18446744073709551615u64 / y;
-    };
-    apply(usize::multiply_to_integer(x, y)) using {
-        to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64);
-    };
+    apply(usize::product_bound_from_division(x, y));
+    apply(usize::multiply_to_integer(x, y));
     step_until(function.exit); solve();
 }"#,
     );
@@ -5867,10 +6304,24 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
         assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    assert_rust_loop_condition_has_no_generated_local(&p, "sum");
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
+}
+
+#[cfg(not(feature = "fast-gate"))]
+fn assert_rust_loop_condition_has_no_generated_local(p: &Project, function: &str) {
+    let output = p.cli(&["verify", "--trace-proof", function]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -6837,6 +7288,7 @@ fn loops_gate_fixture_tools_recheck_certificates() {
     );
     let proof = include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_rust_loop_condition_has_no_generated_local(&p, "walk");
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in ["count.contract", "accumulate.contract", "walk.contract"] {

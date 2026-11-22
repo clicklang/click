@@ -36,7 +36,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
     step();
     have exists (fuel: Nat) { fuel == Nat::Zero } by {
         witness(Nat::Zero);
-        normalize();
+        solve();
     }
     loop diverges {
         invariant 0 <= cur;
@@ -69,24 +69,16 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
             } by {
                 intro(); intro();
                 have contains(memory(visited[0..n]), memory(visited[cur])) by {
-                    apply(click::separation::contains_element(visited, 0, n, cur)) using {
-                        0 <= cur; cur < n;
-                    };
+                    apply(click::separation::contains_element(visited, 0, n, cur));
                 }
                 have contains(memory(next[0..n]), memory(next[k])) by {
-                    apply(click::separation::contains_element(next, 0, n, k)) using {
-                        0 <= k; k < n;
-                    };
+                    apply(click::separation::contains_element(next, 0, n, k));
                 }
                 have separate(memory(visited[cur]), memory(next[k])) by {
-                    apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k]))) using {
-                        separate(memory(visited[0..n]), memory(next[0..n]));
-                        contains(memory(visited[0..n]), memory(visited[cur]));
-                        contains(memory(next[0..n]), memory(next[k]));
-                    };
+                    apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k])));
                 }
                 have separate(loop(0).statement(1).footprint, memory(next[k])) by {
-                    normalize() using { separate(memory(visited[cur]), memory(next[k])); };
+                    solve() using { separate(memory(visited[cur]), memory(next[k])); };
                 }
                 have next[k] == at(iter, next[k]) by {
                     preserve(memory(next[k]), loop(0).statement(1));

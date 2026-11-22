@@ -11,8 +11,8 @@ theorem t(x: int32) {
     ensures forall (k: int32) { x == 5 } by {
         have five: x == 5;
         let five = intro();
-        have five == five by normalize();
-        normalize() using { x == 5; };
+        have five == five by known();
+        solve() using { x == 5; };
     }
 }
 ```

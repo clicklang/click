@@ -78,6 +78,8 @@ pub(in crate::kernel) use memory_loads::declare_load_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::duplicate_read_names;
 #[cfg(test)]
+pub(super) use memory_loads::evaluate_logical_memory_load_paths;
+#[cfg(test)]
 pub(super) use memory_loads::evaluate_memory_load_paths;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
@@ -119,6 +121,11 @@ pub(crate) use memory_loads::{
     restore_load_variable_registry,
 };
 pub(crate) use memory_loads::{
+    ScalarReadObservation, is_selected_scalar_read, latest_scalar_read_observation,
+    registered_scalar_read_term, scalar_read_for_exact_cell, scalar_read_for_exact_cell_at,
+    scalar_read_observation,
+};
+pub(crate) use memory_loads::{
     arithmetic_comparison_form, comparison_form, comparison_identity_of_exact_read,
     holds_by_read_over_write, read_over_write_value,
 };
@@ -130,15 +137,11 @@ pub(crate) use memory_loads::{
 };
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_read,
-    evaluate_logical_memory_load_paths, evaluate_logical_memory_load_paths_at,
-    evaluate_retained_memory_load_paths, evaluate_spec_memory_load_paths, symbolic_load_value,
+    evaluate_logical_memory_load_paths_at, evaluate_retained_memory_load_paths,
+    evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(in crate::kernel) use memory_loads::{
     expected_point_named_cell_read, observe_entry_integer_cell, point_named_cell_load,
-};
-pub(crate) use memory_loads::{
-    is_selected_scalar_read, latest_scalar_read_observation, registered_scalar_read_term,
-    scalar_read_for_exact_cell, scalar_read_for_exact_cell_at, scalar_read_observation,
 };
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 pub(crate) use memory_loads::{

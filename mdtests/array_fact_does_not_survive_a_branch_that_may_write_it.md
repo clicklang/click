@@ -34,7 +34,7 @@ void maybe_mark(int32 a[], int32 n, int32 flag) {
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
         unfold(icount(a, 0, 0));
-        normalize();
+        known();
     }
     have to_integer(a[0]) == 5 by { solve() using { a[0] == 5; }; }
     have icount(a, 0, 1) == 5 by {

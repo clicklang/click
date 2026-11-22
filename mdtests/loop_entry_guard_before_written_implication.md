@@ -36,17 +36,17 @@ int32 loop_entry_guard_before_written_implication(int32 p[3]) {
             have i >= 0 and i <= 3 by {
                 all {
                     i >= 0 => {
-                        normalize();
+                        known();
                     }
                     i <= 3 => {
-                        normalize();
+                        known();
                     }
                 }
             }
             have forall (k: int32) { 0 <= k and k < i implies p[k] == p[k] } by {
                 intro();
                 intro();
-                normalize();
+                known();
             }
         }
         maintain by solve();

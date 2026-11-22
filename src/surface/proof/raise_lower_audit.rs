@@ -7,7 +7,7 @@
 //! (`Proof::structural_proposition_candidate`: the step's fixed state, its
 //! entry state and the path's recorded points). It lowers
 //! that Surface form again in the same proof and appends one line saying how the
-//! round trip ended. `scripts/raise-lower.sh` runs the corpus under it.
+//! round trip ended. `scripts/audit.sh raise-lower` runs the corpus under it.
 //!
 //! This checks the canonical Surface form. The raise-lower census separately
 //! measures facts that cannot be raised; a mismatch here is a raised form
@@ -18,23 +18,6 @@
 
 #[cfg(test)]
 use crate::kernel::Proposition;
-use std::fs::File;
-use std::io::Write;
-use std::sync::{Mutex, OnceLock};
-
-fn sink() -> Option<&'static Mutex<File>> {
-    static SINK: OnceLock<Option<Mutex<File>>> = OnceLock::new();
-    SINK.get_or_init(|| {
-        let path = std::env::var_os("CLICK_RAISE_LOWER")?;
-        File::options()
-            .create(true)
-            .append(true)
-            .open(path)
-            .ok()
-            .map(Mutex::new)
-    })
-    .as_ref()
-}
 
 #[cfg(test)]
 thread_local! {
@@ -55,7 +38,7 @@ pub(super) fn enabled() -> bool {
     if CAPTURE.with(|lines| lines.borrow().is_some()) {
         return true;
     }
-    sink().is_some()
+    crate::instrumentation::RAISE_LOWER_RECORDS.enabled()
 }
 
 /// How one round trip ended.
@@ -122,6 +105,7 @@ pub(super) fn record(
     if !enabled() {
         return;
     }
+    crate::instrumentation::RAISE_LOWER_RECORDS.count_checked();
     let field = |text: &str| -> String {
         text.chars()
             .map(|c| if c == '\n' || c == '\t' { ' ' } else { c })
@@ -133,12 +117,15 @@ pub(super) fn record(
     } else {
         "written"
     };
+    // The last field is the verifier thread's name, which names the proof
+    // container under `click audit` and the mdtest harness.
     let line = format!(
-        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\n",
+        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\t{}\n",
         outcome.tag(),
         field(original),
         field(raised),
         field(lowered),
+        std::thread::current().name().unwrap_or(""),
     );
     #[cfg(test)]
     if CAPTURE.with(|lines| {
@@ -150,11 +137,7 @@ pub(super) fn record(
     }) {
         return;
     }
-    if let Some(sink) = sink()
-        && let Ok(mut file) = sink.lock()
-    {
-        let _ = file.write_all(line.as_bytes());
-    }
+    crate::instrumentation::RAISE_LOWER_RECORDS.write(&line);
 }
 
 #[cfg(test)]
@@ -174,6 +157,92 @@ mod tests {
             },
             value,
         )
+    }
+
+    #[test]
+    fn closed_integer_and_algebraic_conditionals_round_trip() {
+        let c = r#"int32 int_if(int32 x) { return x; }
+int32 alg_if(int32 x) { return x; }
+"#;
+        let source = r#"verifying "anchor.c";
+spec enum Choice { Left, Right }
+
+int32 int_if(int32 x) {
+    ensures forall (n: Integer) {
+        ((if 1 < 2 { n } else { 7 }) : Integer) <= n
+    };
+} by { step_until(function.exit); intro(); normalize(); }
+
+int32 alg_if(int32 x) {
+    ensures forall (n: Integer) {
+        (if 1 == 2 { Choice::Left } else { Choice::Right }) == Choice::Right
+    };
+} by { step_until(function.exit); intro(); normalize(); }
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[("anchor.c", c)]).unwrap();
+        });
+        for claim in ["int_if", "alg_if"] {
+            let marker = format!("\t{claim}.contract\tintro()\twritten\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with("same\tgoal\t")
+                    && line.contains(&marker)
+                    && line.contains("if ")),
+                "{lines:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn indexed_field_view_read_definedness_round_trips_at_entry() {
+        for index_type in ["int32", "uint64"] {
+            let c = format!(
+                r#"
+struct Input {{ const uint8 *data; }};
+struct Options {{ uint64 flags; }};
+int32 probe(const struct Input *src, {index_type} n, {index_type} k, struct Options options) {{
+    int32 result = n != 0;
+    return result;
+}}
+"#
+            );
+            let zero = if index_type == "uint64" { "0u64" } else { "0" };
+            let source = format!(
+                r#"
+verifying "indexed_view.c";
+int32 probe(const struct Input* src, {index_type} n, {index_type} k, struct Options options) {{
+    views src->data;
+    views src->data[0..n];
+    requires {zero} <= k;
+    requires k < n;
+    ensures result >= 0;
+}} by {{
+    step();
+    have at(function.entry, defined(load<uint8>(src->data + k))) by {{
+        instantiate(at(function.entry, forall (i: {index_type}) {{
+            {zero} <= i and i < n implies defined(load<uint8>(src->data + i))
+        }}), k);
+        known();
+    }}
+    step();
+}}
+"#
+            );
+            let lines = capture(|| {
+                crate::surface::verify_c_sources(&source, &[("indexed_view.c", &c)]).unwrap();
+            });
+            for kind in ["implies/MemoryReadDefined", "MemoryReadDefined"] {
+                let prefix = format!("same\tfact\t{kind}\tprobe.contract\tinstantiate\t");
+                assert!(
+                    lines.iter().any(|line| line.starts_with(&prefix)
+                        && line
+                            .split('\t')
+                            .nth(7)
+                            .is_some_and(|raised| raised.contains("at(function.entry,"))),
+                    "{index_type}: missing {kind} round trip in {lines:#?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -327,6 +396,58 @@ int32 short_sum(int32 seed) {
         .collect()
     }
 
+    #[test]
+    fn reads_at_symbolic_indices_through_a_call_result_round_trip() {
+        let c = r#"
+uint8* make(uint64 n);
+struct holder { uint8* p; };
+int32 f(struct holder* h, uint64 n, uint64 k) {
+    h->p = make(n);
+    free(h->p);
+    return 0;
+}
+"#;
+        let source = r#"
+extern uint8* make(uint64 n) {
+    produces allocation(result, n);
+    produces result[0..n];
+    ensures forall (i: uint64) { 0u64 <= i and i < n implies defined(load<uint8>(result + i)) };
+}
+verifying "indexed.c";
+int32 f(struct holder* h, uint64 n, uint64 k) {
+    owns h->p;
+    requires n <= 100u64;
+    requires k < n;
+    ensures result >= 0;
+} by {
+    step();
+    have defined(load<uint8>(statement(0).call(make, 0).result + k)) by {
+        instantiate(forall (i: uint64) { 0u64 <= i and i < n implies defined(load<uint8>(statement(0).call(make, 0).result + i)) }, k);
+        known();
+    }
+    step_until(function.exit);
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[("indexed.c", c)]).unwrap();
+        });
+        for kind in [
+            "forall/implies/MemoryReadDefined",
+            "implies/MemoryReadDefined",
+            "MemoryReadDefined",
+        ] {
+            let prefix = format!("same\tfact\t{kind}\tf.contract\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with(&prefix)
+                    && line
+                        .split('\t')
+                        .nth(7)
+                        .is_some_and(|raised| raised.contains(".result + "))),
+                "missing {kind} round trip in {lines:#?}"
+            );
+        }
+    }
+
     /// A pointer a call returned raises as that call's result, and a read
     /// at an earlier point as `at(point, ..)`: the audit raises with the
     /// path's recorded points, as goal presentation does.
@@ -337,8 +458,8 @@ int32 short_sum(int32 seed) {
             include_str!("../../../mdtests/a_call_result_is_spelled_by_its_call.md"),
         );
         for original in [
-            "statement(0).call(make, 0).result == h[0]",
-            "at(statement(0).exit, h[0]) == h[0]",
+            "statement(0).call(make, 0).result == h->p",
+            "at(statement(0).exit, h->p) == h->p",
         ] {
             assert!(
                 lines.contains(&("same".to_string(), original.to_string())),

@@ -15,7 +15,7 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                     SizedTree::Node(bi, bp, bc, bv, bl, br) => {
                         have sized_shape(SizedTree::Empty) != sized_shape(b) by {
                             rewrite(b, SizedTree::Node(bi, bp, bc, bv, bl, br));
-                            unfold(sized_shape(SizedTree::Empty)); unfold(sized_shape(SizedTree::Node(bi, bp, bc, bv, bl, br))); normalize();
+                            unfold(sized_shape(SizedTree::Empty)); unfold(sized_shape(SizedTree::Node(bi, bp, bc, bv, bl, br))); known();
                         }
                         contradiction(sized_shape(SizedTree::Empty) == sized_shape(b));
                     },
@@ -26,7 +26,7 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                     SizedTree::Empty => {
                         have sized_shape(SizedTree::Node(ai, ap, ac, av, al, ar)) != sized_shape(b) by {
                             rewrite(b, SizedTree::Empty);
-                            unfold(sized_shape(SizedTree::Node(ai, ap, ac, av, al, ar))); unfold(sized_shape(SizedTree::Empty)); normalize();
+                            unfold(sized_shape(SizedTree::Node(ai, ap, ac, av, al, ar))); unfold(sized_shape(SizedTree::Empty)); known();
                         }
                         contradiction(sized_shape(SizedTree::Node(ai, ap, ac, av, al, ar)) == sized_shape(b));
                     },
@@ -35,16 +35,16 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                         have RbTree::Node(ai, ap, ac, sized_shape(al), sized_shape(ar)) == RbTree::Node(bi, bp, bc, sized_shape(bl), sized_shape(br)) by { known(); }
                         have ai == bi; have ap == bp; have ac == bc;
                         have sized_shape(al) == sized_shape(bl); have sized_shape(ar) == sized_shape(br);
-                        apply(sized_valid_parts(ai, ap, ac, av, al, ar)); apply(sized_valid_parts(bi, bp, bc, bv, bl, br)) using { sized_counts_valid(SizedTree::Node(bi, bp, bc, bv, bl, br)) == 1; };
-                        have bl == sized_left(b) by { rewrite(b, SizedTree::Node(bi, bp, bc, bv, bl, br)); unfold(sized_left(SizedTree::Node(bi, bp, bc, bv, bl, br))); normalize(); }
-                        have br == sized_right(b) by { rewrite(b, SizedTree::Node(bi, bp, bc, bv, bl, br)); unfold(sized_right(SizedTree::Node(bi, bp, bc, bv, bl, br))); normalize(); }
+                        apply(sized_valid_parts(ai, ap, ac, av, al, ar)); apply(sized_valid_parts(bi, bp, bc, bv, bl, br));
+                        have bl == sized_left(b) by { rewrite(b, SizedTree::Node(bi, bp, bc, bv, bl, br)); unfold(sized_left(SizedTree::Node(bi, bp, bc, bv, bl, br))); known(); }
+                        have br == sized_right(b) by { rewrite(b, SizedTree::Node(bi, bp, bc, bv, bl, br)); unfold(sized_right(SizedTree::Node(bi, bp, bc, bv, bl, br))); known(); }
                         apply(ih(al, sized_left(b))); apply(ih(ar, sized_right(b)));
                         have al == bl by { known(); }
                         have ar == br by { known(); }
                         have sized_value(al) == sized_value(bl) by { known(); }
                         have sized_value(ar) == sized_value(br) by { known(); }
-                        have to_integer(sized_value(al)) == to_integer(sized_value(bl)) by { rewrite(al, bl); normalize(); }
-                        have to_integer(sized_value(ar)) == to_integer(sized_value(br)) by { rewrite(ar, br); normalize(); }
+                        have to_integer(sized_value(al)) == to_integer(sized_value(bl)) by { rewrite(al, bl); known(); }
+                        have to_integer(sized_value(ar)) == to_integer(sized_value(br)) by { rewrite(ar, br); known(); }
                         have to_integer(av) == to_integer(bv) by {
                             solve() using {
                                 to_integer(av) == 1 + to_integer(sized_value(al)) + to_integer(sized_value(ar));

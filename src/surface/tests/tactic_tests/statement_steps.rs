@@ -390,7 +390,7 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
         .expect_err("the caller establishes neither arm of the call requirement");
     let requirement = error
         .unresolved_requirement()
-        .expect("the refused call requirement should survive proof error wrapping");
+        .expect("the refused call requirement should survive verification-error wrapping");
     assert_eq!(
         requirement.context.as_deref(),
         Some("precondition clause 1 of `either_positive`")
@@ -444,7 +444,11 @@ fn ordinary_requirement_errors_have_no_call_site_metadata() {
         arguments: Vec::new(),
     });
     let error = ClickError::new("ordinary requirement").with_unresolved_requirement(&obligation);
-    assert!(error.report().contains("error kind: proof error"));
+    assert!(
+        error
+            .report()
+            .contains("error kind: unclassified verification refusal")
+    );
     assert!(
         error.report().contains("goal: ordinary_requirement()"),
         "{}",
@@ -539,7 +543,7 @@ fn no_premise_smart_step_searches_directly_on_proof() {
                 ensures result == 0;
             } by {
                 step();
-                normalize();
+                known();
             }
         "#;
 
@@ -555,7 +559,7 @@ fn no_premise_smart_step_searches_directly_on_proof() {
         .expanded_proof_tactics()
         .expect("the checked smart step should retain its expansion");
     assert_eq!(expanded[0], ProofTactic::Step);
-    assert_eq!(expanded[1], ProofTactic::Normalize);
+    assert_eq!(expanded[1], ProofTactic::Known);
 
     let expanded_source = expand_c_claim_source(
         click_source,
@@ -584,7 +588,7 @@ fn scalar_root_facts_do_not_force_smart_step_planning() {
                 ensures result == 0;
             } by {
                 step();
-                normalize();
+                known();
             }
         "#;
 
@@ -600,7 +604,7 @@ fn scalar_root_facts_do_not_force_smart_step_planning() {
         .expanded_proof_tactics()
         .expect("the checked smart step should retain its expansion");
     assert_eq!(expanded[0], ProofTactic::Step);
-    assert_eq!(expanded[1], ProofTactic::Normalize);
+    assert_eq!(expanded[1], ProofTactic::Known);
 
     let expanded_source = expand_c_claim_source(
         click_source,
@@ -630,7 +634,7 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
             } by {
                 step();
                 step();
-                normalize();
+                known();
             }
         "#;
 
@@ -650,7 +654,7 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
         [
             ProofTactic::Step,
             ProofTactic::Step,
-            ProofTactic::Normalize,
+            ProofTactic::Known,
             ProofTactic::Known,
             ProofTactic::Known,
             ProofTactic::Known
@@ -686,7 +690,7 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
             } by {
                 step();
                 step();
-                normalize();
+                known();
             }
         "#;
 
@@ -709,7 +713,7 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
             [
                 ProofTactic::Step,
                 ProofTactic::Step,
-                ProofTactic::Normalize,
+                ProofTactic::Known,
                 ProofTactic::Known,
                 ProofTactic::Known,
                 ProofTactic::Known
@@ -790,7 +794,7 @@ fn linear_execute_retains_its_checked_execution_proof() {
                 ensures result == 0;
             } by {
                 step_until(function.exit);
-                normalize();
+                known();
             }
         "#;
 
@@ -806,7 +810,7 @@ fn linear_execute_retains_its_checked_execution_proof() {
         .expanded_proof_tactics()
         .expect("linear execute should retain an expansion");
     assert_eq!(expanded[0], ProofTactic::Step);
-    assert_eq!(expanded[1], ProofTactic::Normalize);
+    assert_eq!(expanded[1], ProofTactic::Known);
 }
 
 #[test]
@@ -826,7 +830,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
             } by {
                 step_until(region(2).entry);
                 step_until(function.exit);
-                normalize();
+                known();
             }
         "#;
 
@@ -851,7 +855,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
             .iter()
             .all(|tactic| matches!(tactic, ProofTactic::Step))
     );
-    assert_eq!(expanded.last(), Some(&ProofTactic::Normalize));
+    assert_eq!(expanded.last(), Some(&ProofTactic::Known));
 }
 
 #[test]

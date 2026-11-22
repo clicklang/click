@@ -3,6 +3,19 @@ use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin, SpecInte
 use crate::kernel::{bits32_constant, constant_u32};
 use std::sync::Arc;
 
+fn typed_let_program_value(
+    value: SpecExpression,
+    click_type: Option<&ClickType>,
+) -> SpecExpression {
+    match click_type {
+        Some(ClickType::Program(InterfaceType::VoidPointer)) => {
+            SpecExpression::PointerCoercion(Box::new(value), ProgramType::VoidPointer)
+        }
+        Some(ClickType::Program(ty)) => value.at_machine_type(ty.to_kernel_type()),
+        _ => value,
+    }
+}
+
 // The lowerers share these two finite bands. Refusing at each ceiling keeps
 // quantifiers, algebraic binders, pointer identities, and spec fold binders
 // structurally separate even for unusually large source terms.
@@ -479,22 +492,6 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         let (Some(schema), Some(fields)) = (&binding.schema, &binding.fields) else {
             continue;
         };
-        for (field_index, ((field, _), value)) in
-            schema.fields().iter().zip(fields.iter()).enumerate()
-        {
-            let Some(variable) = crate::kernel::algebraic_value_variable(value) else {
-                continue;
-            };
-            crate::kernel::model_fields::register_model_field_variable(
-                variable,
-                crate::kernel::model_fields::ModelFieldOrigin {
-                    identity: instance,
-                    field: std::sync::Arc::from(field.as_str()),
-                    field_index,
-                    minted_by: crate::kernel::model_fields::ModelMint::ContractEntry,
-                },
-            );
-        }
         let spelling = if binding.name.starts_with('#') {
             let ResourceClause::Declared {
                 name, arguments, ..
@@ -509,6 +506,25 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         } else {
             binding.name.clone()
         };
+        let owner = std::sync::Arc::from(spelling.as_str());
+        for (field_index, ((field, _), value)) in
+            schema.fields().iter().zip(fields.iter()).enumerate()
+        {
+            let Some(variable) = crate::kernel::algebraic_value_variable(value) else {
+                continue;
+            };
+            crate::kernel::model_fields::register_model_field_variable(
+                variable,
+                crate::kernel::model_fields::ModelFieldOrigin {
+                    identity: instance,
+                    field: std::sync::Arc::from(field.as_str()),
+                    field_index,
+                    minted_by: crate::kernel::model_fields::ModelMint::ContractEntry {
+                        owner: std::sync::Arc::clone(&owner),
+                    },
+                },
+            );
+        }
         crate::kernel::model_fields::register_instance_spelling(instance, &spelling);
     }
 }
@@ -2093,6 +2109,7 @@ fn annotate_function(
                 .collect(),
         )
         .with_resource_summary(resource_requires, resource_ensures)
+        .with_fresh_result_allocation(function_block.allocates_result())
         .with_resource_constructors(resource_constructors)
         .with_composite_resource_definitions(composite_resource_definitions(
             resource_environment,
@@ -4853,10 +4870,10 @@ impl AnnotationLowerer<'_> {
                         .algebraic_values
                         .insert(name.clone(), value);
                 } else {
-                    let mut value = self.lower_contract_expression_to_spec(value, environment)?;
-                    if let Some(ClickType::Program(ty)) = click_type {
-                        value = value.at_machine_type(ty.to_kernel_type());
-                    }
+                    let value = typed_let_program_value(
+                        self.lower_contract_expression_to_spec(value, environment)?,
+                        click_type.as_ref(),
+                    );
                     body_environment.values.insert(name.clone(), value);
                 }
                 self.lower_proposition_value(body, &body_environment)
@@ -5370,16 +5387,16 @@ impl AnnotationLowerer<'_> {
                         arguments: vec![],
                     });
                 }
-                if name == "same_object" {
+                if name == "same_allocation" {
                     let [left, right] = arguments.as_slice() else {
                         return Err(format!(
-                            "same_object expects two pointer arguments, got {}",
+                            "same_allocation expects two pointer arguments, got {}",
                             arguments.len()
                         ));
                     };
                     return Ok(SpecProposition::Predicate {
                         resource_state_dependent: false,
-                        name: crate::kernel::SAME_OBJECT_PREDICATE_NAME.to_string(),
+                        name: crate::kernel::SAME_ALLOCATION_PREDICATE_NAME.to_string(),
                         arguments: vec![
                             SpecPredicateArgument::Value(
                                 self.lower_contract_expression_to_spec(left, environment)?,
@@ -5641,6 +5658,41 @@ impl AnnotationLowerer<'_> {
                         right: self.lower_contract_integer_to_spec(right, environment)?,
                     });
                 }
+                // Two values of one struct are equal when each field is: the
+                // constructor is injective, so the comparison is its fields'.
+                if matches!(
+                    operator,
+                    ComparisonOperator::Equal | ComparisonOperator::NotEqual
+                ) && let (Some((left_type, left_fields)), Some((right_type, right_fields))) = (
+                    struct_constructor_fields(left),
+                    struct_constructor_fields(right),
+                ) && left_type == right_type
+                    && left_fields.len() == right_fields.len()
+                    && !left_fields.is_empty()
+                    && crate::surface::struct_values::field_names(&left_type).is_some()
+                {
+                    let mut fields = None;
+                    for (left, right) in left_fields.into_iter().zip(right_fields) {
+                        let field = self.lower_atomic_proposition_to_spec(
+                            &ClickProposition::Comparison {
+                                left,
+                                operator: ComparisonOperator::Equal,
+                                right,
+                            },
+                            environment,
+                        )?;
+                        fields = Some(match fields {
+                            None => field,
+                            Some(before) => SpecProposition::And(Box::new(before), Box::new(field)),
+                        });
+                    }
+                    let equal = fields.expect("a struct value has a field");
+                    return Ok(if *operator == ComparisonOperator::Equal {
+                        equal
+                    } else {
+                        SpecProposition::Not(Box::new(equal))
+                    });
+                }
                 let has_algebraic = self.enum_program_value_type(left, environment).is_some()
                     || self.enum_program_value_type(right, environment).is_some()
                     || contract_expression_is_algebraic(
@@ -5741,7 +5793,7 @@ impl AnnotationLowerer<'_> {
             ClickProposition::Defined { expression } => {
                 let mut checked_environment = environment.clone();
                 checked_environment.checking_definedness = true;
-                Ok(SpecProposition::Defined(
+                Ok(SpecProposition::OperationDefined(
                     self.lower_contract_expression_to_spec(expression, &checked_environment)?,
                 ))
             }
@@ -6680,11 +6732,10 @@ impl AnnotationLowerer<'_> {
                 value,
                 body,
             } if !self.contract_expression_is_integer(value, environment) => {
-                let mut value = self.lower_contract_expression_to_spec(value, environment)?;
-                // A typed `let`'s value is at its declared type (G2).
-                if let Some(ClickType::Program(interface_type)) = click_type {
-                    value = value.at_machine_type(interface_type.to_kernel_type());
-                }
+                let value = typed_let_program_value(
+                    self.lower_contract_expression_to_spec(value, environment)?,
+                    click_type.as_ref(),
+                );
                 let mut body_environment = environment.clone();
                 body_environment.integer_values.remove(name);
                 body_environment.algebraic_values.remove(name);
@@ -6909,6 +6960,9 @@ impl AnnotationLowerer<'_> {
                                     InterfaceType::Int64(_) | InterfaceType::UInt64(_)
                                 ))
                             )
+                            // A `void *` operand converts to the byte view as
+                            // the C conversion does (C11 6.3.2.3p7).
+                            && !self.contract_operand_is_void_pointer(operand, environment)
                             && !self
                                 .contract_pointer_element_type(operand, environment)
                                 .is_some_and(|element| {
@@ -7652,11 +7706,10 @@ impl AnnotationLowerer<'_> {
                             .to_string(),
                     );
                 }
-                let mut value = self.lower_contract_expression_to_spec(value, environment)?;
-                // A typed `let`'s value is at its declared type (G2).
-                if let Some(ClickType::Program(interface_type)) = click_type {
-                    value = value.at_machine_type(interface_type.to_kernel_type());
-                }
+                let value = typed_let_program_value(
+                    self.lower_contract_expression_to_spec(value, environment)?,
+                    click_type.as_ref(),
+                );
                 if let (Some(ClickType::Program(interface_type)), SpecExpression::Value(fixed)) =
                     (click_type, &value)
                     && !program_value_matches_click_type(fixed, *interface_type)
@@ -8155,10 +8208,10 @@ impl AnnotationLowerer<'_> {
                         .algebraic_values
                         .insert(name.clone(), value);
                 } else {
-                    let mut value = self.lower_contract_expression_to_spec(value, environment)?;
-                    if let Some(ClickType::Program(ty)) = click_type {
-                        value = value.at_machine_type(ty.to_kernel_type());
-                    }
+                    let value = typed_let_program_value(
+                        self.lower_contract_expression_to_spec(value, environment)?,
+                        click_type.as_ref(),
+                    );
                     body_environment.values.insert(name.clone(), value);
                 }
                 self.lower_contract_algebraic_to_spec(body, &body_environment)
@@ -10510,6 +10563,37 @@ impl AnnotationLowerer<'_> {
     /// The element type a contract expression steps by when it is a pointer:
     /// an array reference or a pointer-valued binding in scope, a pointer
     /// fragment, or pointer arithmetic on one. `None` for a scalar.
+    /// Whether a contract cast's operand is a `void *`, by its Surface type or,
+    /// for a C name, by its declared type.
+    fn contract_operand_is_void_pointer(
+        &self,
+        operand: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        if matches!(
+            self.contract_expression_click_type(operand, environment),
+            Some(ClickType::Program(InterfaceType::VoidPointer))
+        ) {
+            return true;
+        }
+        match operand {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                self.c_variable_type(name.clone()) == Some(ProgramType::VoidPointer)
+            }
+            ContractExpression::ProgramBinding(name) => matches!(
+                environment.values.get(name),
+                Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))
+                    if pointer.program_type() == ProgramType::VoidPointer
+            ),
+            ContractExpression::Old(expression)
+            | ContractExpression::Exact(expression)
+            | ContractExpression::At { expression, .. } => {
+                self.contract_operand_is_void_pointer(expression, environment)
+            }
+            _ => false,
+        }
+    }
+
     fn contract_pointer_element_type(
         &self,
         expression: &ContractExpression,
@@ -11403,5 +11487,59 @@ fn layout_offset_elements(bytes: crate::kernel::LayoutOffset) -> SpecExpression 
         crate::kernel::LayoutOffset::Field(..) => {
             SpecExpression::Value(ProgramValue::UInt64(bytes.term()))
         }
+    }
+}
+
+/// A struct value's type and its fields' expressions, `pair::pair(a, b)` as
+/// `("pair", [a, b])`, seeing through `old`, `exact` and `at`, which read
+/// each field at their point.
+fn struct_constructor_fields(
+    expression: &ContractExpression,
+) -> Option<(String, Vec<ContractExpression>)> {
+    match expression {
+        ContractExpression::AlgebraicConstructor {
+            algebraic_type,
+            variant,
+            arguments,
+        } if algebraic_type.name() == variant && algebraic_type.arguments().is_empty() => {
+            Some((variant.clone(), arguments.clone()))
+        }
+        ContractExpression::Old(inner) => {
+            let (name, fields) = struct_constructor_fields(inner)?;
+            Some((
+                name,
+                fields
+                    .into_iter()
+                    .map(|field| ContractExpression::Old(Box::new(field)))
+                    .collect(),
+            ))
+        }
+        ContractExpression::Exact(inner) => {
+            let (name, fields) = struct_constructor_fields(inner)?;
+            Some((
+                name,
+                fields
+                    .into_iter()
+                    .map(|field| ContractExpression::Exact(Box::new(field)))
+                    .collect(),
+            ))
+        }
+        ContractExpression::At {
+            selector,
+            expression,
+        } => {
+            let (name, fields) = struct_constructor_fields(expression)?;
+            Some((
+                name,
+                fields
+                    .into_iter()
+                    .map(|field| ContractExpression::At {
+                        selector: selector.clone(),
+                        expression: Box::new(field),
+                    })
+                    .collect(),
+            ))
+        }
+        _ => None,
     }
 }

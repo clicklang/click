@@ -281,9 +281,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             });
         }
         if let ProofStep::CloseInvariantsBy(body) = &step {
-            return driver_proof
-                .driver()
-                .apply_close_invariants_body(&body.to_proof_tactics(), None);
+            return driver_proof.driver().apply_close_invariants_body(
+                &body.to_proof_tactics(),
+                None,
+                false,
+            );
         }
         if !super::execution_statements::implicit_solve_disabled()
             && matches!(
@@ -312,7 +314,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         if matches!(step, ProofStep::Both { .. } | ProofStep::All(_)) {
             return driver_proof
                 .driver()
-                .apply_all_source(&step.to_proof_tactic());
+                .apply_all_source(&step.to_proof_tactic(), false);
         }
         // A bare `fold` is checked as a bare step is: its fast path, then the
         // implicit `solve` for each body fact it leaves open.
@@ -346,7 +348,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 }
             };
         }
-        if let ProofStep::ApplyTheoremUsing { application, .. } = &step
+        if let ProofStep::ApplyTheorem(application) = &step {
+            return driver_proof
+                .driver()
+                .apply_prepared_theorem(application, false);
+        }
+        if let ProofStep::ApplyTheoremUsing { application, .. }
+        | ProofStep::ApplyPlannedTheorem { application, .. } = &step
             && matches!(
                 driver_proof.focused_obligation(),
                 Some(Obligation::FunctionOutcome(_))
@@ -451,6 +459,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::CheckTerminationCallbacks => Some(
                 driver_proof.apply_termination_check(crate::kernel::TerminationCheck::Callbacks),
             ),
+            ProofStep::ApplyFact(fact) => Some(driver_proof.apply_fact_from_scope(fact)),
             ProofStep::ApplyFactUsing { fact, premises } => {
                 Some(driver_proof.apply_fact_using(fact, premises))
             }
@@ -501,12 +510,15 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 parameter,
                 hypothesis,
             } => driver_proof.apply_induct(parameter, hypothesis),
-            ProofStep::ApplyInductionUsing {
+            ProofStep::ApplyInduction {
                 hypothesis,
                 arguments,
-                premises,
-            } => driver_proof.apply_induction(hypothesis, arguments, premises),
+            } => driver_proof.apply_induction(hypothesis, arguments),
             ProofStep::ApplyTheoremUsing {
+                application,
+                premises,
+            }
+            | ProofStep::ApplyPlannedTheorem {
                 application,
                 premises,
             } => driver_proof.apply_theorem_using(application, premises),
@@ -546,8 +558,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::ObserveResource(resource) => {
                 driver_proof.apply_execution_resource_observation(resource)
             }
-            ProofStep::ObserveSavedMemory { base, start, end } => {
-                driver_proof.apply_saved_memory_observation(base, start, end)
+            ProofStep::ObserveSubject(resource) => {
+                driver_proof.apply_resource_subject_observation(resource)
             }
             ProofStep::Iterated(tactic) => driver_proof.apply_execution_iterated_step(tactic),
             ProofStep::Choose(choice) => driver_proof.apply_fixed_state_choose(choice),
@@ -568,11 +580,29 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             transition.clear_existential_projection();
         }
 
+        let step = match step {
+            ProofStep::ApplyPlannedTheorem { application, .. }
+                if driver_proof
+                    .planned_theorem_replays_bare(&application, &transition.checked_facts) =>
+            {
+                ProofStep::ApplyTheorem(application)
+            }
+            ProofStep::ApplyTheoremUsing { application, .. }
+                if driver_proof.site().is_generated()
+                    && driver_proof
+                        .planned_theorem_replays_bare(&application, &transition.checked_facts) =>
+            {
+                ProofStep::ApplyTheorem(application)
+            }
+            step => step,
+        };
         let state = driver_proof.publish_checked_transition(transition)?;
         let state = if matches!(
             step,
             ProofStep::ApplyFactUsing { .. }
+                | ProofStep::ApplyTheorem(_)
                 | ProofStep::ApplyTheoremUsing { .. }
+                | ProofStep::ApplyPlannedTheorem { .. }
                 | ProofStep::TransportUsing { .. }
                 | ProofStep::LetSatisfy(_)
         ) {
@@ -581,7 +611,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             state
         };
         let application = match &step {
-            ProofStep::ApplyTheoremUsing { application, .. } => Some(application.clone()),
+            ProofStep::ApplyTheorem(application)
+            | ProofStep::ApplyTheoremUsing { application, .. }
+            | ProofStep::ApplyPlannedTheorem { application, .. } => Some(application.clone()),
             _ => None,
         };
         let applied = Proof {
@@ -664,7 +696,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             site: driver_proof.site.clone(),
             context: driver_proof.context.clone(),
             state: applied.state,
-            node: ProofNode::step_child(&driver_proof.node, branch, Arc::new(step)),
+            node: ProofNode::step_child(
+                &driver_proof.node,
+                branch,
+                applied.node.step.clone().unwrap_or_else(|| Arc::new(step)),
+            ),
         })
     }
 

@@ -1582,11 +1582,19 @@ impl PointerInRangeEvidence {
 /// edges alone and may serve the naming walk. The work is one unit per edge
 /// looked through, bounded by the retirements of one call.
 pub(in crate::kernel) fn retirement_inside_its_call_havoc(step: &MemoryDerivation) -> bool {
-    let MemoryDerivation::ContractAllocationRetired {
+    // A free a contract decides, `consumes allocation(p, n)` with nothing
+    // returned, is the same edge as an undecided retirement here: every byte
+    // it releases was the callee's, rewritten by the call's havoc.
+    let (MemoryDerivation::ContractAllocationRetired {
         base,
         allocation_base,
         bytes,
-    } = step
+    }
+    | MemoryDerivation::HeapFreed {
+        base,
+        allocation_base,
+        bytes,
+    }) = step
     else {
         return false;
     };
@@ -1633,7 +1641,11 @@ fn retired_allocation_inside_call_havoc(
             return false;
         };
         match derivation.as_ref() {
-            MemoryDerivation::ContractAllocationRetired { base, .. } => current = base.clone(),
+            // Retirements and claim records of the same call, which write
+            // no byte the havoc did not.
+            MemoryDerivation::ContractAllocationRetired { base, .. }
+            | MemoryDerivation::HeapFreed { base, .. }
+            | MemoryDerivation::ContractAllocationClaimsChanged { base } => current = base.clone(),
             MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
                 return mutable_ranges.iter().any(|range| {
                     range_structurally_covers_allocation(range, allocation_base, bytes)
@@ -1649,9 +1661,14 @@ fn range_structurally_covers_allocation(
     allocation_base: &Address,
     bytes: &MachineTerm,
 ) -> bool {
-    // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
-    if range.wide_bounds().is_some() {
-        return false;
+    // A wide byte range `[0, n)` covers an allocation of exactly `n` bytes,
+    // as an object of symbolic size is; other wide ranges are undecided by
+    // this rule, which uses signed 32-bit indices.
+    if let Some((start, end)) = range.wide_bounds() {
+        return range.base() == allocation_base
+            && range.element_width() == 1
+            && start.uint64_as_const() == Some(0)
+            && end == bytes;
     }
     if range.base() != allocation_base || range.start() != &MachineTerm::constant(0) {
         return false;

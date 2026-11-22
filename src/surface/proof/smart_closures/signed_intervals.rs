@@ -67,7 +67,7 @@ fn apply(
     arguments: Vec<ContractExpression>,
     premises: Vec<ClickProposition>,
 ) -> ProofStep {
-    ProofStep::ApplyTheoremUsing {
+    ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: format!("click::integer::{name}"),
             arguments,
@@ -1454,15 +1454,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         (base.clone(), old_remainder.clone(), math_old.clone()),
                         (sum.clone(), term.clone(), math_new.clone()),
                     ] {
+                        // `defined(dividend % d)` claims the remainder alone;
+                        // the dividend argument owes its own domain.
+                        let dividend_domain = ClickProposition::Defined {
+                            expression: dividend.clone(),
+                        };
                         let domain = ClickProposition::Defined {
                             expression: native.clone(),
                         };
-                        proof = proof
-                            .driver()
-                            .apply_step(super::super::wide_arithmetic::have(
-                                domain.clone(),
-                                vec![ProofStep::Known],
-                            ))?;
+                        for guard in [dividend_domain.clone(), domain.clone()] {
+                            proof =
+                                proof
+                                    .driver()
+                                    .apply_step(super::super::wide_arithmetic::have(
+                                        guard,
+                                        vec![ProofStep::Known],
+                                    ))?;
+                        }
                         let identity = eq(observed(&native), mathematical);
                         proof = proof
                             .driver()
@@ -1471,7 +1479,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 vec![apply(
                                     "int32_remainder_to_integer",
                                     vec![dividend, d.clone()],
-                                    vec![domain, nonzero.clone()],
+                                    vec![dividend_domain, domain, nonzero.clone()],
                                 )],
                             ))?;
                         observations.push(identity);

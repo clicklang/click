@@ -50,16 +50,10 @@ int32 f(struct cell* root) {
     have separate(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1])) by {
         apply(click::separation::separate_restrict(
             memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value),
-            memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1]))) using {
-            separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
-            contains(memory((root->base.left as (void *) as (struct cell *))->value), memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]));
-            contains(memory(root->value), memory((&root->value)[0..1]));
-        };
+            memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1])));
     }
     have separate(statement(2).footprint, memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1])) by {
-        normalize() using {
-            separate(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1]));
-        };
+        known();
     }
     have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
         preserve(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), statement(2));

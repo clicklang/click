@@ -1163,36 +1163,6 @@ impl<'a> Proof<'a> {
             } else {
                 held_facts
             };
-            // A `have` stated at an execution frontier may use the frontier's
-            // effect facts exactly as the shared mid-execution law offers them.
-            if at_frontier && let Some(execution) = self.execution() {
-                for fact in execution.core.effect_facts.iter() {
-                    if !body_facts.contains(fact.proposition()) {
-                        body_facts =
-                            body_facts.with_kernel_checked_fact(fact.proposition().clone());
-                    }
-                }
-            }
-            // Opening a written goal does not discover a historical fact that
-            // might prove it. The body supplies that proof through ordinary
-            // steps or an expandable solve; comparing older state-blind
-            // candidates here makes even explicit proofs walk call history.
-            // A pointer-valued field's load can be minted from a load-path pruned
-            // state, which records no DAG edge by design, so its renaming
-            // across a call is proved only by the explicit preservation equality a
-            // callee's postcondition states. The indexed load-variable chain is
-            // the checked bridge for that; integer goals keep the exact rule above.
-            // A same-block pointer equality is that offset equality under its
-            // complete addresses (`ConditionTerm::pointer_offset_sides`).
-            if at_frontier
-                && matches!(
-                    &body_kernel,
-                    Proposition::ConditionIs(condition, true)
-                        if condition.native_compat().pointer_offset_sides().is_some()
-                )
-            {
-                body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);
-            }
         }
         let body_execution = self.branch_execution().cloned();
         // Outcome certification must see the assumptions that preceded this

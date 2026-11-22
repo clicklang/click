@@ -20,8 +20,8 @@ theorem guarded_count(base: int32, n: int32) {
         let ih = induct(n);
         if n <= 0 {
             all {
-                guarded_countdown(n) == 0 => { unfold(guarded_countdown(n)); normalize() using { n <= 0; }; }
-                base + n == base + n => { normalize(); }
+                guarded_countdown(n) == 0 => { unfold(guarded_countdown(n)); solve() using { n <= 0; }; }
+                base + n == base + n => { known(); }
             }
         } else {
             have 0 < n;
@@ -38,9 +38,9 @@ theorem guarded_count(base: int32, n: int32) {
                 guarded_countdown(n) == 0 => {
                     unfold(guarded_countdown(n));
                     rewrite(guarded_countdown(n - 1), 0);
-                    normalize() using { not(n <= 0); };
+                    solve() using { not(n <= 0); };
                 }
-                base + n == base + n => { normalize(); }
+                base + n == base + n => { known(); }
             }
         }
     }

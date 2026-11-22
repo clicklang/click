@@ -498,7 +498,7 @@ fn render_diagnostic_labeled(
     // deliberately bounded and rendered only at this terminal boundary.
     let mut rendered = summary.unwrap_or_default().to_owned();
     if summary.is_none() {
-        rendered.push_str("failed check:\n  ");
+        rendered.push_str("proof refusal:\n  ");
         rendered.push_str(&diagnostic.reason);
         rendered.push_str("\n  stage: ");
         rendered.push_str(&diagnostic.origin.stage);
@@ -519,7 +519,7 @@ fn render_diagnostic_labeled(
     {
         let resources = state.resources();
         rendered.push_str(&format!(
-            "\n  resources at the failed check (showing {} of {}):",
+            "\n  resources in scope (showing {} of {}):",
             resources.len().min(12),
             resources.len()
         ));
@@ -590,7 +590,7 @@ fn render_diagnostic_labeled(
         let heading = if summary.is_some() {
             "recent premises"
         } else {
-            "available premises at the failed check"
+            "premises in scope"
         };
         rendered.push_str(&format!(
             "\n  {heading} (showing {} of {}):",
@@ -935,10 +935,7 @@ mod tests {
                 1,
                 "{report}"
             );
-            assert!(
-                report.contains("available premises at the failed check"),
-                "{report}"
-            );
+            assert!(report.contains("premises in scope"), "{report}");
             assert!(report.len() < 2048, "{report}");
         });
     }

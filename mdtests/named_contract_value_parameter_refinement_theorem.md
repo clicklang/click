@@ -2,7 +2,7 @@
 
 A refinement theorem may conclude a contract with value parameters, fixing
 them as an attachment does: `Adds(&add3, { amount: 3 })`. Its
-`unfold(Adds)` opens the obligation with `amount` bound to `3`.
+`unfold(Adds(&add3, { amount: 3 }))` opens the obligation with `amount` bound to `3`.
 
 ```c filename=adds.c
 int32 add3(int32 x) {

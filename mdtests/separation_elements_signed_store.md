@@ -13,12 +13,12 @@ void keep(uint8* bytes, int32 i, int32 k) {
 } by {
     have separate(memory(*(bytes + i)), memory(*(bytes + k))) by {
         have i != k by { solve() using { k < i; }; }
-        apply(separation::separate_elements(bytes, i, k)) using { i != k; };
+        apply(separation::separate_elements(bytes, i, k));
     }
     mark before;
     step();
     have separate(statement(0).footprint, memory(*(bytes + k))) by {
-        normalize() using { separate(memory(*(bytes + i)), memory(*(bytes + k))); };
+        solve() using { separate(memory(*(bytes + i)), memory(*(bytes + k))); };
     }
     have bytes[k] == at(before, bytes[k]) by {
         preserve(memory(*(bytes + k)), statement(0));

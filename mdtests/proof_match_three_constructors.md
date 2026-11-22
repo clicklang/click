@@ -47,7 +47,7 @@ int read(int* p) {
             have tri_code(old(c.model)) == 0 by {
                 rewrite(old(c.model), Tri::Zero);
                 unfold(tri_code(Tri::Zero));
-                normalize();
+                known();
             }
             solve();
         },
@@ -58,7 +58,7 @@ int read(int* p) {
             have tri_code(old(c.model)) == 1 by {
                 rewrite(old(c.model), Tri::One);
                 unfold(tri_code(Tri::One));
-                normalize();
+                known();
             }
             solve();
         },
@@ -69,7 +69,7 @@ int read(int* p) {
             have tri_code(old(c.model)) == value by {
                 rewrite(old(c.model), Tri::Other(value));
                 unfold(tri_code(Tri::Other(value)));
-                normalize();
+                known();
             }
             solve();
         },

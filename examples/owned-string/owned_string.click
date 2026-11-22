@@ -137,7 +137,7 @@ int32 owned_string_init(
     }
     fold(owned_string(owner));
     known();
-    normalize();
+    known();
     known();
 }
 
@@ -283,7 +283,7 @@ int32 owned_string_pop(struct owned_string* owner) {
     step();
     have terminated_at(owner->data, owner->len) by {
         unfold(terminated_at(owner->data, owner->len));
-        normalize();
+        known();
     }
     fold(owned_string(owner));
     have owner->data[owner->len] == 0;
@@ -377,11 +377,11 @@ int32 owned_string_pipeline(
     have owner->len == 1 by {
         rewrite(owner->len, at(statement(3).entry, owner->len + 1));
         rewrite(at(statement(3).entry, owner->len), at(statement(3).entry, 0));
-        normalize();
+        known();
     }
     have 0 < owner->len by {
         rewrite(owner->len, 1);
-        normalize();
+        known();
     }
     have owner->data[at(statement(3).entry, owner->len)] == first by {
         known();
@@ -389,13 +389,13 @@ int32 owned_string_pipeline(
     have owner->data[0] == first by {
         rewrite(first, owner->data[at(statement(3).entry, owner->len)]);
         rewrite(at(statement(3).entry, owner->len), at(statement(3).entry, 0));
-        normalize();
+        known();
     }
     step();
     step();
     have 1 <= owner->len by {
         rewrite(owner->len, 1);
-        normalize();
+        known();
     }
     have observed == first by {
         rewrite(first, owner->data[0]);
@@ -409,10 +409,7 @@ int32 owned_string_pipeline(
     have at(statement(5).entry, owner->len) == 1 by {
         known();
     }
-    apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len)) using {
-        at(statement(5).entry, owner->len) == 1;
-        owner->len == (at(statement(5).entry, owner->len) - 1);
-    };
+    apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len));
     have owner->len == 0 by {
         known();
     }
@@ -423,7 +420,7 @@ int32 owned_string_pipeline(
     }
     step();
     have result == at(statement(6).entry, observed) by {
-        normalize();
+        known();
     }
     have at(statement(6).entry, observed) == first by {
         known();

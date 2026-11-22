@@ -197,7 +197,7 @@ pub(super) fn format_forall_instantiation_error(
         // tell a reader which premise to supply, and a premise the hypothesis
         // owes is exactly what they have to write down.
         Error::MissingGuard(missing) => format!(
-            "instantiated premise `{}` does not follow from the listed evidence",
+            "instantiated premise `{}` is not established by the available facts",
             spell(&missing),
         ),
         Error::SubstitutionRefused(reason) => {
@@ -713,7 +713,7 @@ mod certificate_tests {
                 theorem applied(x: int32) {
                     requires x >= 0;
                     ensures x >= 0 by {
-                        apply(required(x)) using { x >= 0; }
+                        apply(required(x));
                     }
                 }
 
@@ -777,15 +777,14 @@ mod certificate_tests {
         );
         assert!(matches!(
             verified[2].proof_tactics().as_deref(),
-            Some([ProofTactic::ApplyTheoremUsing { .. }])
+            Some([ProofTactic::ApplyTheorem(_)])
         ));
         assert!(matches!(
             verified[3].proof_tactics().as_deref(),
             Some([
-                ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
-                ProofTactic::ApplyTheoremUsing { application, premises },
+                ProofTactic::ApplyTheorem(application),
                 ProofTactic::Known,
-            ]) if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "required" && premises.len() == 1
+            ]) if application.name == "required"
         ));
         assert_eq!(
             verified[4].proof_tactics().as_deref(),
@@ -1883,6 +1882,7 @@ pub(super) struct InitialClaimContext {
     pub(super) pure_facts: PureFactList,
     pub(super) entry_fact_origins: Vec<EntryFactOrigin>,
     pub(super) surface_propositions: SurfacePropositionMap,
+    pub(super) entry_separation_sources: Arc<EntrySeparationSources>,
 }
 
 #[cfg(test)]
@@ -1927,6 +1927,7 @@ fn bool_range_surface(name: &str) -> ClickProposition {
             target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1952,6 +1953,7 @@ fn bind_hosted_startup(
         ClickError::new(
             "program-entry main currently requires no parameters or preconditions; ownership comes from startup",
         )
+        .with_proof_refusal(ProofRefusal::Contract)
     };
     if !parsed.parameters().is_empty() {
         return Err(invalid());
@@ -1961,12 +1963,18 @@ fn bind_hosted_startup(
         [Requirement::Resource(requirement @ ResourceClause::Named { .. })] => requirement,
         _ => return Err(invalid()),
     };
+    let invalid_resource = || {
+        ClickError::new(
+            "program-entry main can name only the hosted stdout stream as an input resource",
+        )
+        .with_proof_refusal(ProofRefusal::Contract)
+    };
     let Some(ProgramValue::Pointer(stdout)) = parsed
         .globals()
         .get("stdout")
         .and_then(|global| global.hosted_stdout())
     else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     let atom = super::lowering::lower_resource_clause_at_state(
         requirement,
@@ -1974,25 +1982,26 @@ fn bind_hosted_startup(
         &state,
     )?;
     let Resource::Instance(instance) = atom.resource() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if instance.name() != "stream" || !instance.resource_arguments().is_empty() {
-        return Err(invalid());
+        return Err(invalid_resource());
     }
     let arguments = instance.arguments().native_values();
     let [AlgebraicValue::Program(ProgramValue::Pointer(file))] = arguments.as_ref() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if file.address() != stdout.address() {
         return Err(ClickError::new(
             "program-entry stream ownership requires the hosted stdout handle",
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Contract));
     }
     let [(field, ResourceFieldType::Algebraic(history))] = instance.schema().fields() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if field != "write_history" {
-        return Err(invalid());
+        return Err(invalid_resource());
     }
     let empty = AlgebraicValue::Algebraic(AlgebraicTerm {
         algebraic_type: history.clone(),
@@ -2470,9 +2479,9 @@ pub(super) fn initial_claim_context_with_caller_owner(
     // this is the authority for both direct and named contracts.  A surface
     // segment diagnostic is used only to enrich a kernel refusal, never to
     // authorize a clause independently.
-    let entry_partition_facts;
+    let mut entry_separation_sources = EntrySeparationSources::default();
     let entry_quantity_facts;
-    (state, entry_partition_facts, entry_quantity_facts) = evaluate_entry_resource_context(
+    (state, entry_quantity_facts) = evaluate_entry_resource_context(
         function_block,
         parsed_function,
         resource_environment,
@@ -2484,15 +2493,16 @@ pub(super) fn initial_claim_context_with_caller_owner(
         claim_label,
         &entry_authority_state.resources().clone(),
         &entry_authority_state,
+        &mut entry_separation_sources,
     )?;
     // The entry partition facts are entry assumptions of this contract, on the
     // same footing as the `viewable(..)` fact a clause yields: they are
     // derived from the written clause list. They are the proof side's
     // spelling of what the kernel's contract entry states; a proof keeps one
     // only when the entry states it (`contract_entry_view`).
-    for fact in entry_partition_facts {
-        if !requirement_pure_facts.contains(&fact) {
-            requirement_pure_facts.push(fact);
+    for fact in &entry_separation_sources.facts {
+        if !requirement_pure_facts.contains(fact) {
+            requirement_pure_facts.push(fact.clone());
             entry_fact_origins.push(EntryFactOrigin::Derived);
         }
     }
@@ -2576,6 +2586,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         pure_facts: requirement_pure_facts,
         entry_fact_origins,
         surface_propositions,
+        entry_separation_sources: Arc::new(entry_separation_sources),
     })
 }
 
@@ -2803,16 +2814,20 @@ fn evaluate_entry_resource_context(
     claim_label: &str,
     entry_resources: &ResourceContext,
     entry_memory_state: &ExecutionState,
-) -> Result<(ExecutionState, Vec<Proposition>, Vec<Proposition>), ClickError> {
+    separation_sources: &mut EntrySeparationSources,
+) -> Result<(ExecutionState, Vec<Proposition>), ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
-    let (resource_specs, _) = crate::surface::verification::function_resource_summary(
-        function_block,
-        parsed_function,
-        spec_definitions,
-        resource_environment,
-    )?;
+    let mut range_sources = BTreeMap::new();
+    let (resource_specs, _) =
+        crate::surface::verification::function_resource_summary_with_entry_ranges(
+            function_block,
+            parsed_function,
+            spec_definitions,
+            resource_environment,
+            Some(&mut range_sources),
+        )?;
     if resource_specs.is_empty() {
-        return Ok((state, Vec::new(), Vec::new()));
+        return Ok((state, Vec::new()));
     }
 
     // The kernel evaluator resolves source parameter names through its local
@@ -2922,8 +2937,13 @@ fn evaluate_entry_resource_context(
         Ok(Err(error)) => {
             return Err(ClickError::new(format!(
                 "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
-                crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-            )));
+                crate::surface::diagnostics::describe_contract_entry_resource_error(
+                    &error,
+                    parameter_binding,
+                    resource_environment.struct_layouts(),
+                )
+            ))
+            .with_proof_refusal(contract_entry_resource_refusal(&error)));
         }
         Err(limit) => {
             return Err(ClickError::new(format!(
@@ -2958,12 +2978,22 @@ fn evaluate_entry_resource_context(
                         &assumptions,
                     )
                 {
-                    return Err(surface_error.with_context(format!("`{claim_label}` setup failed")));
+                    let diagnostic =
+                        surface_error.with_context(format!("`{claim_label}` setup failed"));
+                    return Err(if error.missing_contract_read().is_some() {
+                        diagnostic.with_proof_refusal(ProofRefusal::Contract)
+                    } else {
+                        diagnostic
+                    });
                 }
                 return Err(ClickError::new(format!(
                     "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
-                    crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-                )));
+                    crate::surface::diagnostics::describe_contract_entry_resource_error(
+                        &error,
+                        parameter_binding,
+                        resource_environment.struct_layouts(),
+                    )
+                )).with_proof_refusal(contract_entry_resource_refusal(&error)));
             }
             Err(limit) => {
                 return Err(ClickError::new(format!(
@@ -2980,10 +3010,15 @@ fn evaluate_entry_resource_context(
         &assumptions,
     )
     .map_err(|error| {
-        ClickError::new(format!(
+        let diagnostic = ClickError::new(format!(
             "`{claim_label}` setup failed: {}",
             crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-        ))
+        ));
+        if error.is_contract_entry_resource_error() {
+            diagnostic.with_proof_refusal(ProofRefusal::Contract)
+        } else {
+            diagnostic
+        }
     })?;
     let state = state.with_resource_context(evaluated);
     // The entry partition (`kernel::contract_entry_partition_facts`): this
@@ -2993,7 +3028,18 @@ fn evaluate_entry_resource_context(
     // owner observation `views r` that `owns r` publishes, and that view is
     // not separate from its own owner. Contract certification derives the
     // same facts from the same clause list, so the two entry contexts agree.
-    let entry_partition_facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
+    separation_sources.facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
+    if !separation_sources.facts.is_empty() {
+        for clause in &entry_clauses {
+            if let Resource::Memory(range) = clause.fact.resource()
+                && let Some(source) = clause
+                    .section_index
+                    .and_then(|index| range_sources.remove(&index))
+            {
+                separation_sources.ranges.insert(range.clone(), source);
+            }
+        }
+    }
     // Quantity guards are implicit requirements, just as they are in the
     // kernel's certified entry. Retain them in the proof context as well;
     // otherwise the checked boundary loses the very premise used above to
@@ -3008,7 +3054,7 @@ fn evaluate_entry_resource_context(
         include_owned_composite_cores,
         spec_definitions,
     )?;
-    Ok((state, entry_partition_facts, entry_quantity_facts))
+    Ok((state, entry_quantity_facts))
 }
 
 fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
@@ -3091,14 +3137,39 @@ fn canonical_claim_caller_state(
     if !has_verified_loops {
         return Ok(state);
     }
-    let entry = program_function_contract_entry_state(
+    let entry = crate::kernel::program_function_contract_entry_state_with_refusal(
         &state,
         function,
         arguments,
         &assumptions_from_propositions(pure_facts),
     )
-    .map_err(|message| ClickError::new(format!("`{claim_label}` {message}")))?;
+    .map_err(|error| {
+        use crate::kernel::ContractEntryRefusal;
+
+        match error {
+            ContractEntryRefusal::InvalidResource(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_proof_refusal(ProofRefusal::Contract)
+            }
+            ContractEntryRefusal::Internal(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_kind(ClickErrorKind::Internal)
+            }
+            ContractEntryRefusal::Setup(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_proof_refusal(ProofRefusal::ContractEntry)
+            }
+        }
+    })?;
     Ok(state.with_resource_context(entry.resources().clone()))
+}
+
+fn contract_entry_resource_refusal(error: &crate::kernel::RuntimeError) -> ProofRefusal {
+    if error.is_contract_entry_resource_error() {
+        ProofRefusal::Contract
+    } else {
+        ProofRefusal::ContractEntry
+    }
 }
 
 fn install_borrowed_contract_inputs(
@@ -3109,7 +3180,8 @@ fn install_borrowed_contract_inputs(
     proof_label: &str,
 ) -> Result<ExecutionState, ClickError> {
     if let Some(message) = crate::kernel::guard_contract_refusal(function.contract_interface()) {
-        return Err(ClickError::new(format!("`{proof_label}` {message}")));
+        return Err(ClickError::new(format!("`{proof_label}` {message}"))
+            .with_proof_refusal(ProofRefusal::Contract));
     }
     crate::kernel::execution_state_with_borrowed_contract_inputs(
         state,
@@ -3118,10 +3190,20 @@ fn install_borrowed_contract_inputs(
         &assumptions_from_propositions(pure_facts),
     )
     .map_err(|diagnostic| {
+        let subject = diagnostic.subject();
+        let refusal = if diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
+            && subject.resource_fact().is_some()
+            && subject.conflicting_resource_fact().is_some()
+        {
+            ProofRefusal::Contract
+        } else {
+            ProofRefusal::ContractEntry
+        };
         ClickError::new(format!(
             "`{proof_label}` could not establish stable authority for a contract input view: {}",
             crate::surface::diagnostics::describe_borrow_refusal(&diagnostic, parameter_binding,)
         ))
+        .with_proof_refusal(refusal)
     })
 }
 

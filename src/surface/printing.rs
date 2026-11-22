@@ -1,5 +1,5 @@
 use super::diagnostics::{
-    aligned_sugar, describe_code_region_ref, describe_contract_expression,
+    NullLiteralSourceScope, aligned_sugar, describe_code_region_ref, describe_contract_expression,
     describe_contract_segment, describe_program_expression, describe_program_point_selector,
     describe_resource_subject, object_at_address, program_point_aligned_sugar,
 };
@@ -58,6 +58,7 @@ fn source_contract_application(name: &str, arguments: &[ContractExpression]) -> 
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
+    let _null_literals = NullLiteralSourceScope::enter();
     print_proposition(proposition, PropositionSpelling::Source)
 }
 
@@ -163,6 +164,17 @@ fn comparison_operand(
     other: &ContractExpression,
     mode: PropositionSpelling,
 ) -> String {
+    // A pointer comparison supplies the type of the null pointer constant.
+    // The diagnostic spelling `NULL` requires a C macro that Click source
+    // cannot assume.
+    if mode == PropositionSpelling::Source
+        && let ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::Pointer(pointer),
+        )) = expression
+        && pointer.is_null()
+    {
+        return "0".into();
+    }
     fn typed_count_reference(expression: &ContractExpression) -> Option<String> {
         match expression {
             ContractExpression::ResourceCount(_) => Some(format!(
@@ -644,6 +656,7 @@ pub fn format_proof_tactics(tactics: &[ProofTactic]) -> Result<String, Certifica
 }
 
 pub(super) fn format_partial_tactic_sequence(tactics: &[ProofTactic]) -> String {
+    let _null_literals = NullLiteralSourceScope::enter();
     let mut output = String::new();
     write_tactics(&mut output, tactics, 0);
     output.pop();
@@ -651,15 +664,13 @@ pub(super) fn format_partial_tactic_sequence(tactics: &[ProofTactic]) -> String 
 }
 
 pub fn format_proof_certificate(certificate: &ProofCertificate) -> String {
-    let mut output = String::from("by {\n");
-    write_tactics(&mut output, &certificate.to_proof_tactics(), 1);
-    output.push('}');
-    output
+    format_proof_block(&certificate.to_proof_tactics())
 }
 
 /// A whole proof block holding `tactics`, as [`format_proof_certificate`]
 /// writes a certificate's.
 pub(in crate::surface) fn format_proof_block(tactics: &[ProofTactic]) -> String {
+    let _null_literals = NullLiteralSourceScope::enter();
     let mut output = String::from("by {\n");
     write_tactics(&mut output, tactics, 1);
     output.push('}');
@@ -926,42 +937,12 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 describe_induction_arguments(arguments)
             ),
         ),
-        ProofTactic::ApplyInductionUsing {
-            hypothesis,
-            arguments,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "apply({hypothesis}({})) using {{",
-                    describe_induction_arguments(arguments)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
-        ProofTactic::ApplyTheorem(application) => line(
+        ProofTactic::ApplyTheorem(application)
+        | ProofTactic::ApplyTheoremUsing { application, .. } => line(
             output,
             &prefix,
             &format!("apply({});", format_theorem_application(application)),
         ),
-        ProofTactic::ApplyTheoremUsing {
-            application,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "apply({}) using {{",
-                    format_theorem_application(application)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
         ProofTactic::Have(have) => {
             output.push_str(&prefix);
             output.push_str("have ");
@@ -1133,20 +1114,22 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             }
             line(output, &prefix, "}");
         }
-        ProofTactic::ObserveSavedMemory { base, start, end } => line(
+        ProofTactic::ObserveSubject(resource) => line(
             output,
             &prefix,
-            &format!(
-                "observe({}[{}..{}]);",
-                describe_contract_expression(base),
-                describe_contract_expression(start),
-                describe_contract_expression(end)
-            ),
+            &format!("observe({});", describe_resource_subject(resource)),
         ),
         ProofTactic::ObserveResource(resource) => line(
             output,
             &prefix,
-            &format!("observe({});", format_resource_target(resource)),
+            &format!(
+                "observe({});",
+                if matches!(resource, ResourceClause::Named { .. }) {
+                    format_resource_call(resource)
+                } else {
+                    format_resource_target(resource)
+                }
+            ),
         ),
         ProofTactic::Iterated(tactic) => line(
             output,
@@ -1207,16 +1190,10 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CheckTerminationCallbacks => {
             line(output, &prefix, "check_termination_callbacks();")
         }
-        ProofTactic::ApplyFact(fact) => line(
+        ProofTactic::ApplyFact(fact) | ProofTactic::ApplyFactUsing { fact, .. } => line(
             output,
             &prefix,
             &format!("apply({});", source_click_proposition(fact)),
-        ),
-        ProofTactic::ApplyFactUsing { fact, premises } => write_using_premises(
-            output,
-            &format!("apply({})", source_click_proposition(fact)),
-            premises,
-            indent,
         ),
         ProofTactic::Known => line(output, &prefix, "known();"),
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
@@ -1691,6 +1668,51 @@ mod tests {
             PropositionSpelling::Refusal,
         ] {
             assert_eq!(print_proposition(&proposition, mode), "-9i64 <= 100i64");
+        }
+    }
+
+    #[test]
+    fn nested_null_pointer_constants_reparse_in_generated_propositions() {
+        let parsed = parser::parse(
+            "void f(int32* p) { requires aligned(p, 8); requires address(p) == 0u64; ensures true; }",
+        )
+        .unwrap();
+        let mut requirements = parsed.function_blocks()[0].requires().to_vec();
+        for (requirement, expected_source) in requirements.iter_mut().zip([
+            "aligned((0u64 as (int32 *)), 8)",
+            "address((0u64 as (int32 *))) == 0u64",
+        ]) {
+            let Requirement::Proposition(proposition) = requirement else {
+                panic!("expected a proposition");
+            };
+            let ClickProposition::Comparison { left, .. } = proposition else {
+                panic!("expected an address comparison");
+            };
+            let address = match left {
+                ContractExpression::BitwiseAnd(address, _) => address.as_mut(),
+                address => address,
+            };
+            let ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                expression, ..
+            }) = address
+            else {
+                panic!("expected a pointer-to-address cast");
+            };
+            **expression = ProgramExpression::Value(ProgramValue::typed_pointer(
+                Address::null(),
+                ProgramType::Int32Pointer,
+            ));
+
+            let source = source_click_proposition(proposition);
+            assert_eq!(source, expected_source);
+            assert!(authored_click_proposition(proposition).contains("NULL"));
+            let sidecar = format!(
+                r#"verifying "null.c"; void f() {{
+                    ensures {source};
+                }} by {{ step_until(function.exit); solve(); }}"#
+            );
+            verify_c_sources(&sidecar, &[("null.c", "void f(void) {}")])
+                .expect("the generated proposition should prove a fact about the null address");
         }
     }
 

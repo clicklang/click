@@ -813,15 +813,19 @@ fn reject_aggregate_parameter_storage_resource(
     Ok(())
 }
 
-// Use the original point only when its receipt covers external storage.
-// Detached and unsupported producers retain the existing naming view.
+// Use the original entry when it can name the typed read. Detached and
+// unsupported producers retain the existing naming view.
 fn entry_cell_source<'a>(
     entry: &'a crate::kernel::ProgramPoint,
     fallback: &'a crate::kernel::ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
 ) -> &'a crate::kernel::ProgramPoint {
-    if entry.entry_cell_version(pointer, ty).is_some() {
+    if entry.entry_cell_version(pointer, ty).is_some()
+        || ((ty == ProgramType::Bool
+            || crate::kernel::KernelFloatType::from_program_type(ty).is_some())
+            && entry.has_certified_read_view())
+    {
         entry
     } else {
         fallback
@@ -2269,11 +2273,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 state,
                 result,
             )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower declared resource quantity: {message}"
-                ))
-            })?;
+            .map_err(|error| error.with_context("could not lower declared resource quantity"))?;
             let ProgramValue::Int32(quantity) = quantity else {
                 return Err(ClickError::new(
                     "declared resource quantity must evaluate to int32",
@@ -2385,9 +2385,9 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     state,
                     result,
                 )
-                .map_err(|message| {
-                    ClickError::new(format!(
-                        "could not lower resource `{name}` argument {index}: {message}"
+                .map_err(|error| {
+                    error.with_context(format!(
+                        "could not lower resource `{name}` argument {index}"
                     ))
                 })?;
                 let matches_type = if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 0 {
@@ -2639,7 +2639,7 @@ fn evaluate_resource_argument_with_state(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
-) -> Result<ProgramValue, String> {
+) -> Result<ProgramValue, ClickError> {
     if retained_state == crate::kernel::ResourceStateSource::Entry {
         let direct = crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
             original,
@@ -2651,7 +2651,8 @@ fn evaluate_resource_argument_with_state(
                 &ClickFunctionEnvironment::new(&[]),
             ),
             &BTreeSet::new(),
-        )?;
+        )
+        .map_err(ClickError::new)?;
         return Ok(direct);
     }
     crate::surface::proof::evaluate_resource_argument_through_kernel(
@@ -2757,11 +2758,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
                 state,
                 result,
             )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower declared resource quantity: {message}"
-                ))
-            })?;
+            .map_err(|error| error.with_context("could not lower declared resource quantity"))?;
             let ProgramValue::Int32(quantity) = quantity else {
                 return Err(ClickError::new(
                     "declared resource quantity must evaluate to int32",
@@ -3061,9 +3058,10 @@ fn lower_resource_segment_with_values(
                 contract_environment,
                 state,
                 result,
-            ),
+            )
+            .map_err(ClickError::new),
         };
-    let base = evaluate(&segment.base, surface_base).map_err(|message| {
+    let base = evaluate(&segment.base, surface_base).map_err(|error| {
         // A parameter or local has no storage a contract can name.
         if let ProgramExpression::AddressOf(variable) = &segment.base
             && let ProgramExpression::Variable(name) = &**variable
@@ -3073,7 +3071,8 @@ fn lower_resource_segment_with_values(
             ));
         }
         ClickError::new(format!(
-            "could not lower `{resource_name}` resource: {message} (segment {})",
+            "could not lower `{resource_name}` resource: {} (segment {})",
+            error.raw_summary(),
             super::super::diagnostics::describe_contract_segment(segment)
         ))
     })?;
@@ -3125,15 +3124,11 @@ fn lower_resource_segment_with_values(
     // A bound keeps its own integer type in the contract: a range with a
     // 64-bit bound is wide, and one with two `int32` bounds is not
     // (`design/typed-indices.md`, stage 2).
-    let start_value = evaluate(&segment.start, surface_start).map_err(|message| {
-        ClickError::new(format!(
-            "could not lower `{resource_name}` resource: {message}"
-        ))
+    let start_value = evaluate(&segment.start, surface_start).map_err(|error| {
+        error.with_context(format!("could not lower `{resource_name}` resource"))
     })?;
-    let end_value = evaluate(&segment.end, surface_end).map_err(|message| {
-        ClickError::new(format!(
-            "could not lower `{resource_name}` resource: {message}"
-        ))
+    let end_value = evaluate(&segment.end, surface_end).map_err(|error| {
+        error.with_context(format!("could not lower `{resource_name}` resource"))
     })?;
     let bound = |value: ProgramValue, which: &str| match value {
         ProgramValue::Int32(term) => Ok(term),
@@ -4392,6 +4387,45 @@ mod input_identity_tests {
 #[cfg(test)]
 mod entry_cell_tests {
     use super::*;
+
+    #[test]
+    fn entry_seeded_float_cells_retain_their_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let source = entry.program_point();
+        let base = Address {
+            base: crate::kernel::AddressBase::ExternalArgument,
+            offset: crate::kernel::AddressOffset::Constant(0),
+        };
+        for ty in [ProgramType::Float32, ProgramType::Float64] {
+            let width = ty.byte_width();
+            let ranges = BTreeMap::from([(
+                "input".into(),
+                ConcreteMemoryRangeSeed {
+                    base: base.clone(),
+                    bytes: 8 * width,
+                    element_width: width,
+                    element_type: Some(ty),
+                    struct_layout: None,
+                },
+            )]);
+            let memory =
+                memory_with_symbolic_loadable_cells(entry.memory().clone(), &source, &ranges);
+            let cell = base.offset_by_bytes(4 * width);
+            let value = match memory.load(&cell) {
+                ExpressionOutcome::Value(
+                    ProgramValue::Float32(value) | ProgramValue::Float64(value),
+                ) => value,
+                other => panic!("expected a seeded {ty:?} cell, got {other:?}"),
+            };
+            let MachineTerm::MemoryLoad(point, address, kind) = value else {
+                panic!("expected a symbolic float read");
+            };
+            assert_eq!(point.read_version_id(), source.id());
+            assert_eq!(*address, cell);
+            assert_eq!(kind, crate::kernel::LoadKind::of_type(ty).unwrap());
+        }
+    }
 
     #[test]
     fn entry_seeded_compact_cells_retain_their_point_without_visiting_other_slots() {

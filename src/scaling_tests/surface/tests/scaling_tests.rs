@@ -148,11 +148,76 @@ int32 probe() {{
                 }
             }
             assert_eq!(completed, reads);
+            // A direct read after the array stores can use the recorded
+            // point's byte index without starting the legacy walk.
+            let limit = if local_store.is_none() && reads == 1 {
+                0
+            } else {
+                max_read_version_work * reads
+            };
             assert!(
-                (reads..=max_read_version_work * reads).contains(&version_work),
-                "local={local_store:?}, {stores} stores and {reads} reads used {version_work} version work"
+                version_work <= limit,
+                "local={local_store:?}, {stores} stores and {reads} reads used {version_work} version work, limit {limit}"
             );
         }
+    }
+}
+
+#[test]
+fn static_cell_read_steps_skip_same_array_call_history() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    for (calls, reads) in [(4, 1), (16, 1), (64, 1), (128, 1), (32, 32)] {
+        let mut c = "int32 g[256];\nvoid touch() { g[255] = 1; }\nint32 probe() {\n    int32 x;\n"
+            .to_string();
+        c.push_str(&"    touch();\n".repeat(calls));
+        for offset in 0..reads {
+            c.push_str(&format!("    x = g[{offset}];\n"));
+        }
+        c.push_str("    return 0;\n}\n");
+        let steps = "    step();\n".repeat(calls + reads + 2);
+        let source = format!(
+            r#"verifying "probe.c";
+void touch() {{ owns g[255..256]; }}
+int32 probe() {{ owns g[0..256]; ensures result == 0; }} by {{
+{steps}}}
+"#
+        );
+        let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
+        verified
+            .unwrap_or_else(|error| panic!("{calls} calls, {reads} reads: {}", error.message()));
+
+        let mut steps = 0;
+        let mut walk_work = 0;
+        let mut load_work = Vec::new();
+        for event in events {
+            match event {
+                VerificationEvent::TacticStarted(tactic)
+                    if tactic.claim == "probe.contract" && tactic.tactic_name == "step" =>
+                {
+                    steps = tactic.tactic_index;
+                }
+                VerificationEvent::TacticFinished { tactic, work, .. }
+                    if tactic.claim == "probe.contract"
+                        && tactic.tactic_name == "step"
+                        && (calls + 1..=calls + reads).contains(&steps) =>
+                {
+                    load_work.push(work);
+                }
+                VerificationEvent::OperationFinished { name, work, .. }
+                    if name == "cell version walk"
+                        && (calls + 1..=calls + reads).contains(&steps) =>
+                {
+                    walk_work += work;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(load_work.len(), reads);
+        assert!(
+            walk_work <= 40 * reads && load_work.iter().all(|&work| work <= 240),
+            "{calls} calls, {reads} reads: version work {walk_work}, step work {load_work:?}"
+        );
     }
 }
 
@@ -1101,7 +1166,7 @@ fn assert_near_linear_scaling_with_increment_bound(axis: &str, samples: &[Scalin
 fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
     let (replace_source, caller_source, base_click) =
         super::contract_tests::result_case_split_sources();
-    let insertion = "                open(allocated_cell(owner)) {\n                }\n";
+    let insertion = "                with(allocated_cell(owner)) {\n                }\n";
     let mut samples = Vec::new();
     let mut exclusion_work = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -9085,7 +9150,7 @@ resource callbacks0(cb: const struct callbacks*) {
         for layer in (1..=depth).rev() {
             source.push_str(&format!("unfold(node{layer}(p)); observe(callbacks{layer}(cb));\n"));
         }
-        source.push_str("unfold(node0(p)); open(callbacks0(cb)) { step_until(function.exit); } fold(node0(p));\n");
+        source.push_str("unfold(node0(p)); with(callbacks0(cb)) { step_until(function.exit); } fold(node0(p));\n");
         for layer in 1..=depth {
             source.push_str(&format!("fold(node{layer}(p));\n"));
         }
@@ -9678,9 +9743,7 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             .map(|k| {
                 format!(
                     "            have i >= 0 - {k} by {{\n\
-                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i))) using {{\n\
-                     \x20                   0 - {k} <= 0; 0 <= to_integer(i);\n\
-                     \x20               }};\n            }}\n"
+                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i)));\n            }}\n"
                 )
             })
             .collect::<String>();
@@ -11974,4 +12037,112 @@ fn recorded_call_snapshots_read_one_point_and_one_call() {
         );
         assert_eq!(work, 1, "{count} calls and snapshots");
     }
+}
+
+#[test]
+fn have_at_frontier_shares_the_context_across_call_history() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    let samples = [4, 16, 64, 128].map(|calls| {
+        let call_statements = "    touch();\n".repeat(calls);
+        let c = format!(
+            "int32 g[256];\nvoid touch() {{ g[255] = 1; }}\nint32 probe() {{\n    int32 x;\n{call_statements}    x = g[0];\n    return 0;\n}}"
+        );
+        let steps = "    step();\n".repeat(calls);
+        let source = format!(
+            r#"verifying "probe.c";
+void touch() {{ owns g[255..256]; }}
+int32 probe() {{
+    owns g[0..256];
+}} by {{
+{steps}    mark before;
+    step();
+    mark after;
+    have 0 != 255 by {{ known(); }}
+    have separate(memory(g[255]), memory(g[0])) by {{
+        apply(click::separation::separate_elements(g, 255, 0));
+    }}
+    have separate(statement({calls}).footprint, memory(g[0])) by {{
+        normalize() using {{ separate(memory(g[255]), memory(g[0])); }};
+    }}
+    have at(after, g[0]) == at(before, g[0]) by {{
+        preserve(memory(g[0]), statement({calls}));
+    }}
+    step();
+    step();
+}}
+"#
+        );
+        let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
+        verified.unwrap_or_else(|error| panic!("after {calls} calls: {}", error.message()));
+        let work = events
+            .into_iter()
+            .filter_map(|event| match event {
+                VerificationEvent::TacticFinished { tactic, work, .. }
+                    if tactic.tactic_name == "have" && tactic.claim == "probe.contract" =>
+                {
+                    Some(work)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let work: [usize; 4] = work.try_into().expect("four explicit have scopes");
+        work
+    });
+    eprintln!("frontier have work at 4, 16, 64, 128 calls: {samples:?}");
+    assert!(samples.iter().all(|work| work[0] == samples[0][0]));
+    assert!(
+        samples
+            .iter()
+            .all(|work| work[1].abs_diff(samples[0][1]) <= 1)
+    );
+    assert!(samples.iter().all(|work| work[2] == samples[0][2]));
+    // The last goal checks that an explicit preservation proof still works.
+    // Naming its two historical reads has a separate version-walk cost.
+}
+
+#[test]
+fn struct_value_equality_costs_what_its_field_equalities_cost() {
+    use crate::instrumentation::measure_deterministic_work;
+    // `*dst == *src` is its fields' equalities: forming the two values and
+    // comparing them is linear in the fields, as writing the comparisons
+    // out is.
+    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    let mut samples = Vec::new();
+    for fields in [2usize, 4, 6] {
+        let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
+        let declaration = names
+            .iter()
+            .map(|name| format!("int32 {name};"))
+            .collect::<String>();
+        let copies = names
+            .iter()
+            .map(|name| format!("dst->{name} = src->{name};"))
+            .collect::<String>();
+        let program = format!(
+            "struct wide {{ {declaration} }}; void copy(struct wide* dst, const struct wide* src) {{ {copies} }}"
+        );
+        let written = names
+            .iter()
+            .map(|name| format!("dst->{name} == src->{name}"))
+            .collect::<Vec<_>>()
+            .join(" and ");
+        let mut pair = Vec::new();
+        for claim in ["*dst == *src".to_string(), written] {
+            let source = format!(
+                "verifying \"probe.c\"; void copy(struct wide* dst, const struct wide* src) {{ owns *dst; views *src; requires separate(memory(*dst), memory(*src)); ensures {claim}; }}"
+            );
+            let (result, work) = measure_deterministic_work(|| {
+                verify_c_sources(&source, &[("probe.c", program.as_str())])
+            });
+            result.unwrap_or_else(|error| panic!("{fields} fields: {}", error.message()));
+            pair.push(work);
+        }
+        assert!(
+            pair[0] <= pair[1] * 2,
+            "struct value equality over {fields} fields: {pair:?}"
+        );
+        samples.push((fields, pair));
+    }
+    eprintln!("struct value equality work (fields, [value, written]): {samples:?}");
 }

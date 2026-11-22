@@ -56,125 +56,6 @@ fn rewritten_load_store_witness_binds_value_address_and_state() {
     assert!(!witness.checks_retargeted_for_test(value, overwritten_load, &assumptions, &events));
 }
 
-#[test]
-fn rewritten_integer_word_observations_retain_checked_store_evidence() {
-    use crate::kernel::proof::PureFactStore;
-    let pointer = arc_pointer(4);
-    crate::kernel::eval::declare_load_access_width(&pointer, 4);
-    let value = MachineTerm::Variable(Variable(989_001));
-    // The `int32` read of a cell returns the stored word, or σ of it when the
-    // cell stores a `uint32` value (R-mem through σ).
-    let signed_read = MachineTerm::sign_cast32(
-        MachineIntegerType::UInt32,
-        MachineIntegerType::Int32,
-        value.clone(),
-    );
-    for (stored, read) in [
-        (ProgramValue::Int32(value.clone()), value.clone()),
-        (ProgramValue::UInt32(value.clone()), signed_read),
-    ] {
-        let memory = SymbolicMemory::new()
-            .with_block("arg-memory", 16)
-            .store(pointer.clone(), stored);
-        let load = |memory: &SymbolicMemory, pointer: Address| {
-            MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
-                Box::new(pointer),
-                crate::kernel::LoadKind::Int32,
-            )
-        };
-        let goal = |ty, bits| {
-            Proposition::condition_is(
-                ConditionTerm::integer_equal(
-                    IntegerTerm::from_machine(ty, bits).unwrap(),
-                    IntegerTerm::constant_i64(17),
-                ),
-                true,
-            )
-        };
-        let facts = PureFactStore::default();
-        for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
-            let original = goal(ty, load(&memory, pointer.clone()));
-            let presented = goal(ty, read.clone());
-            assert!(
-                facts
-                    .with_checked_rewritten_loads(&original, &presented)
-                    .is_some(),
-                "the same stored word has the same observation in its fixed format"
-            );
-            let source = MachineTerm::Variable(Variable(989_003));
-            let cited =
-                Proposition::condition_is(ConditionTerm::equal(source.clone(), read.clone()), true);
-            let mut rewrite = facts
-                .clone()
-                .with_fact(cited.clone())
-                .check_equality_rewrite(&goal(ty, source), &cited)
-                .unwrap();
-            assert!(rewrite.try_present_as(&original));
-            // The rewrite states the observation comparison in its one form.
-            assert_eq!(
-                rewrite.proposition(),
-                &crate::kernel::assumptions::canonical_observation_form(&original)
-            );
-            let other = match ty {
-                MachineIntegerType::Int32 => MachineIntegerType::UInt32,
-                _ => MachineIntegerType::Int32,
-            };
-            assert!(
-                facts
-                    .with_checked_rewritten_loads(&original, &goal(other, read.clone()))
-                    .is_none(),
-                "equal bits do not equate signed and unsigned mathematical values"
-            );
-            assert!(
-                facts
-                    .with_checked_rewritten_loads(
-                        &goal(ty, load(&memory, arc_pointer(8))),
-                        &presented,
-                    )
-                    .is_none(),
-                "a different cell has no stored-value witness"
-            );
-            let overwritten = memory.clone().store(
-                pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(8)),
-            );
-            assert!(
-                facts
-                    .with_checked_rewritten_loads(
-                        &goal(ty, load(&overwritten, pointer.clone())),
-                        &presented,
-                    )
-                    .is_none(),
-                "a changed cell cannot use the old stored-value witness"
-            );
-        }
-    }
-}
-
-#[test]
-fn rewritten_goal_does_not_reuse_an_ambient_equality_for_a_bound_variable() {
-    let variable = Variable(981);
-    let term = MachineTerm::Variable(variable);
-    let one = MachineTerm::constant(1);
-    let premise = Proposition::condition_is(ConditionTerm::equal(term.clone(), one.clone()), true);
-    let facts = crate::kernel::proof::PureFactStore::from_ordered(&[premise]);
-    let goal = |value| Proposition::ForAll {
-        name: Default::default(),
-        var: variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::signed_less_equal(value, MachineTerm::constant(2)),
-            true,
-        )),
-    };
-    assert!(
-        facts
-            .with_checked_rewritten_loads(&goal(term), &goal(one))
-            .is_none()
-    );
-}
-
 fn retained_memory_dag_path(cell: &MemoryDagCell) -> &[MemoryDagHop] {
     match cell {
         MemoryDagCell::Stored { path, .. } | MemoryDagCell::Unwritten { path, .. } => path,
@@ -3756,7 +3637,10 @@ fn canonical_load_naming_retains_the_live_memory_origin() {
         crate::kernel::MachineOperandView::Legacy(&read),
     )
     .unwrap();
-    assert_eq!((observed.origin, observed.pointer), (Some(live), pointer));
+    assert_eq!(
+        (observed.origin, observed.pointer),
+        (Some(ProgramPoint::at(&live)), pointer)
+    );
     assert_eq!(crate::kernel::eval::load_variable_registry_len(), 0);
 }
 

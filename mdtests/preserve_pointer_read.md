@@ -21,25 +21,17 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     have contains(memory(*source), memory(source->data)) by { normalize(); }
     have separate(memory(target->pos), memory(source->data)) by {
         apply(separation::separate_restrict(memory(*target), memory(*source),
-            memory(target->pos), memory(source->data))) using {
-            separate(memory(*target), memory(*source));
-            contains(memory(*target), memory(target->pos));
-            contains(memory(*source), memory(source->data));
-        };
+            memory(target->pos), memory(source->data)));
     }
     have contains(memory(*source), memory(*source)) by { apply(separation::contains_refl(memory(*source))); }
     have separate(memory(target->pos), memory(*source)) by {
-        apply(separation::separate_restrict(memory(*target), memory(*source), memory(target->pos), memory(*source))) using {
-            separate(memory(*target), memory(*source));
-            contains(memory(*target), memory(target->pos));
-            contains(memory(*source), memory(*source));
-        };
+        apply(separation::separate_restrict(memory(*target), memory(*source), memory(target->pos), memory(*source)));
     }
     mark before;
     step() by { known(); }
     mark after;
     have separate(statement(0).footprint, memory(source->data)) by {
-        normalize() using { separate(memory(target->pos), memory(source->data)); };
+        solve() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before, source->data) by {
         preserve(memory(source->data), statement(0));
@@ -47,7 +39,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     step() by { known(); }
     mark final;
     have separate(statement(1).footprint, memory(source->data)) by {
-        normalize() using { separate(memory(target->pos), memory(source->data)); };
+        solve() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before, source->data) by {
         have source->data == at(after, source->data) by {

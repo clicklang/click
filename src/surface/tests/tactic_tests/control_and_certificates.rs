@@ -238,7 +238,10 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
             }
         }
     "#;
-    verify_c_sources(source, &[]).expect("nested exact conjunction proofs");
+    let verify_explicit = |source: &str| {
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(source, &[]))
+    };
+    verify_explicit(source).expect("nested exact conjunction proofs");
     for bad in [
         source.replacen("x == x => { normalize(); }", "x == x => { }", 1),
         source.replace("x >= x", "x > x"),
@@ -249,7 +252,7 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
             "all { normalize(); } and { normalize(); }",
         ),
     ] {
-        assert!(verify_c_sources(&bad, &[]).is_err());
+        assert!(verify_explicit(&bad).is_err(), "{bad}");
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {
@@ -685,24 +688,21 @@ fn parses_apply_theorem_proof_tactic() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_06")]
-fn parses_apply_theorem_with_explicit_premises() {
+fn rejects_apply_theorem_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
         "== 2;",
         "== 2 by {
             step_until(function.exit);
-            apply(nonnegative(result)) using {
-                result >= 0;
-            }
+            apply(nonnegative(result)) using { 0 <= result; };
             solve();
         }",
     );
-    let file = parse(&source).expect("explicit-premise theorem application should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert!(matches!(
-        &ensure.proof().tactics().expect("expected tactics")[1],
-        ProofTactic::ApplyTheoremUsing { premises, .. } if premises.len() == 1
-    ));
+    let error = parse(&source).expect_err("named theorem application uses the facts in scope");
+    assert!(
+        error
+            .message()
+            .contains("application takes no `using` list")
+    );
 }
 
 #[test]
@@ -775,7 +775,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     };
     assert!(matches!(
         ProofTactic::ApplyTheorem(application.clone()).class(),
-        TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
+        TacticClass::Simple(SimpleTactic::ApplyTheorem)
     ));
     assert!(matches!(
         ProofTactic::ApplyTheoremUsing {
@@ -1463,7 +1463,7 @@ test_batches! {
         parses_execute_until_proof_tactic,
         parses_unfold_proof_tactic,
         parses_apply_theorem_proof_tactic,
-        parses_apply_theorem_with_explicit_premises,
+        rejects_apply_theorem_with_explicit_premises,
     ],
     control_batch_07: [
         parses_transport_with_explicit_premises,

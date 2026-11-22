@@ -211,44 +211,44 @@ void arena_write(struct region* region, int32 index, int32 value) {
     }
     mark w;
     step();
-    have separate(statement(0).footprint, memory(region->arena)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena)) by { solve() using {}; }
     have region->arena == at(statement(0).entry, region->arena) by {
         preserve(memory(region->arena), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->data)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->data)) by { solve() using {}; }
     have region->arena->data == at(statement(0).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->occupied)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->occupied)) by { solve() using {}; }
     have region->arena->occupied == at(statement(0).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->capacity)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->capacity)) by { solve() using {}; }
     have region->arena->capacity == at(statement(0).entry, region->arena->capacity) by {
         preserve(memory(region->arena->capacity), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->live_regions)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->live_regions)) by { solve() using {}; }
     have region->arena->live_regions == at(statement(0).entry, region->arena->live_regions) by {
         preserve(memory(region->arena->live_regions), statement(0));
     }
     step();
-    have separate(statement(1).footprint, memory(region->arena)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena)) by { solve() using {}; }
     have region->arena == at(statement(1).entry, region->arena) by {
         preserve(memory(region->arena), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->data)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->data)) by { solve() using {}; }
     have region->arena->data == at(statement(1).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->occupied)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->occupied)) by { solve() using {}; }
     have region->arena->occupied == at(statement(1).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->capacity)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->capacity)) by { solve() using {}; }
     have region->arena->capacity == at(statement(1).entry, region->arena->capacity) by {
         preserve(memory(region->arena->capacity), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->live_regions)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->live_regions)) by { solve() using {}; }
     have region->arena->live_regions == at(statement(1).entry, region->arena->live_regions) by {
         preserve(memory(region->arena->live_regions), statement(1));
     }
@@ -259,26 +259,26 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity)));
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->live_regions)));
     step();
-    have separate(statement(2).footprint, memory(region->arena)) by { normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena))); }; }
+    have separate(statement(2).footprint, memory(region->arena)) by { solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena))); }; }
     have region->arena == at(before_access, region->arena) by {
         preserve(memory(region->arena), statement(2));
     }
-    have separate(statement(2).footprint, memory(region->arena->data)) by { normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data))); }; }
+    have separate(statement(2).footprint, memory(region->arena->data)) by { solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data))); }; }
     have region->arena->data == at(before_access, region->arena->data) by {
         preserve(memory(region->arena->data), statement(2));
     }
-    have separate(statement(2).footprint, memory(region->arena->occupied)) by { normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied))); }; }
+    have separate(statement(2).footprint, memory(region->arena->occupied)) by { solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied))); }; }
     have region->arena->occupied == at(before_access, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(2));
     }
     have separate(statement(2).footprint, memory(region->arena->capacity)) by {
-        normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity))); };
+        solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity))); };
     }
     have region->arena->capacity == at(before_access, region->arena->capacity) by {
         preserve(memory(region->arena->capacity), statement(2));
     }
     have separate(statement(2).footprint, memory(region->arena->live_regions)) by {
-        normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->live_regions))); };
+        solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->live_regions))); };
     }
     have region->arena->live_regions == at(before_access, region->arena->live_regions) by {
         preserve(memory(region->arena->live_regions), statement(2));
@@ -290,7 +290,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have region->arena->capacity == at(w, region->arena->capacity) by { known(); }
     have region->arena->live_regions == at(w, region->arena->live_regions) by { known(); }
     have region->arena->occupied == at(w, region->arena->occupied) by {
-        normalize() using {
+        solve() using {
             at(w, region->arena->occupied) == at(w, region->arena->occupied);
             0 <= at(w, (to_integer(region->start) + to_integer(index)));
             at(w, (to_integer(region->start) + to_integer(index))) < to_integer(at(w,
@@ -318,29 +318,20 @@ void arena_write(struct region* region, int32 index, int32 value) {
             known();
         }
         have contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k])) by {
-            apply(click::separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k)) using {
-                0 <= k; k < region->arena->capacity;
-            };
+            apply(click::separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k));
         }
         have contains(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->data[region->start + index])) by {
-            apply(click::separation::contains_element(region->arena->data, 0, region->arena->capacity, region->start + index)) using {
-                0 <= to_integer(region->start + index);
-                to_integer(region->start + index) < to_integer(region->arena->capacity);
-            };
+            apply(click::separation::contains_element(region->arena->data, 0, region->arena->capacity, region->start + index));
         }
         have separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])) by {
             apply(click::separation::separate_restrict(
                 memory(region->arena->occupied[0..region->arena->capacity]),
                 memory(region->arena->data[0..region->arena->capacity]),
                 memory(region->arena->occupied[k]),
-                memory(region->arena->data[region->start + index]))) using {
-                separate(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity]));
-                contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k]));
-                contains(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->data[region->start + index]));
-            };
+                memory(region->arena->data[region->start + index])));
         }
         have separate(statement(2).footprint, memory(region->arena->occupied[k])) by {
-            normalize() using { separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])); };
+            solve() using { separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])); };
         }
         have region->arena->occupied[k] == at(before_access, region->arena->occupied[k]) by {
             preserve(memory(region->arena->occupied[k]), statement(2));

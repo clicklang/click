@@ -114,7 +114,7 @@ fn assert_subobject_access_reports(c: &str, source: &str, ordinary_goal: &str, t
         let error = verify_c_sources(source, &[("access.c", c)]).unwrap_err();
         let report = error.trace_context_report().unwrap();
         assert!(!error.raw_summary().contains("resource facts:"), "{report}");
-        assert!(report.contains("resources at the failed check"), "{report}");
+        assert!(report.contains("resources in scope"), "{report}");
         assert!(report.contains("access outside the subobject"), "{report}");
         assert!(report.contains("goal:"), "{report}");
         assert!(report.contains(trace_goal), "{report}");
@@ -191,7 +191,7 @@ fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
         let error = verify_c_sources(source, &[("f.c", "int f(int x) { return x; }")]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("intro"), "{trace}");
-        let failed = trace.split("failed check:").nth(1).unwrap();
+        let failed = trace.split("proof refusal:").nth(1).unwrap();
         assert!(failed.contains("proposition proof"), "{trace}");
         assert!(failed.contains("goal: x == 43"), "{trace}");
         assert!(failed.contains("x == 42"), "{trace}");
@@ -213,7 +213,7 @@ fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
         let error = verify_c_sources(source, &[]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("intro"), "{trace}");
-        let failed = trace.split("failed check:").nth(1).unwrap();
+        let failed = trace.split("proof refusal:").nth(1).unwrap();
         assert!(failed.contains("goal: x == 43"), "{trace}");
         assert!(failed.contains("x == 42"), "{trace}");
         assert!(!failed.contains("goal: x == 42 implies"), "{trace}");
@@ -240,8 +240,8 @@ fn missing_write_permission_explains_the_available_view_and_failed_check() {
     with_proof_trace("write", || {
         let error = verify_c_sources(source, &[("write.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
-        assert!(trace.contains("failed check:"), "{trace}");
-        assert!(trace.contains("resources at the failed check"), "{trace}");
+        assert!(trace.contains("proof refusal:"), "{trace}");
+        assert!(trace.contains("resources in scope"), "{trace}");
         assert!(trace.contains("views"), "{trace}");
         assert!(trace.contains("permits reading only"), "{trace}");
         assert!(trace.contains("C operation:"), "{trace}");
@@ -256,14 +256,14 @@ fn first_operation_failure_retains_the_required_access_and_empty_resources() {
     with_proof_trace("read", || {
         let error = verify_c_sources(source, &[("read.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
-        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("proof refusal:"), "{trace}");
         assert!(trace.contains("missing resource fact `views"), "{trace}");
         assert!(
-            trace.contains("resources at the failed check (showing 0 of 0)"),
+            trace.contains("resources in scope (showing 0 of 0)"),
             "{trace}"
         );
         assert!(trace.contains("return *p"), "{trace}");
-        // The failed check is not presented as an accepted execution step.
+        // The proof refusal is not presented as an accepted execution step.
         assert!(!trace.contains("steps through:"), "{trace}");
     });
 }
@@ -287,7 +287,7 @@ fn execution_tactic_in_a_have_names_the_proposition_context() {
     with_proof_trace("f", || {
         let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
-        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("proof refusal:"), "{trace}");
         assert!(trace.contains("proof context:"), "{trace}");
         assert!(
             trace.contains("C execution cannot advance inside it"),
@@ -326,7 +326,7 @@ fn failed_solve_reports_actual_cell_queries_separately_from_history_explanations
             trace.contains("supplemental history explanation"),
             "{trace}"
         );
-        // A supplemental walk is never named as the failed check's own.
+        // A supplemental walk is never named as the proof refusal's own.
         assert!(!trace.contains("memory-history check stops at"), "{trace}");
     });
     let separated = source.replace("requires i < 2;", "requires i < 2; requires i == 1;");
@@ -343,10 +343,7 @@ fn failed_written_have_keeps_its_goal_and_actual_queries() {
     let ordinary = verify_c_sources(source, &[("f.c", c)])
         .unwrap_err()
         .concise_report();
-    assert!(
-        ordinary.contains("available premises at the failed check"),
-        "{ordinary}"
-    );
+    assert!(ordinary.contains("premises in scope"), "{ordinary}");
     with_proof_trace("f", || {
         let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
@@ -354,13 +351,10 @@ fn failed_written_have_keeps_its_goal_and_actual_queries() {
             trace.contains("checks observed during the failed attempt"),
             "{trace}"
         );
-        assert!(
-            trace.contains("available premises at the failed check"),
-            "{trace}"
-        );
+        assert!(trace.contains("premises in scope"), "{trace}");
         assert!(trace.contains("goal:"), "{trace}");
         assert!(trace.contains("cell walk:"), "{trace}");
-        assert!(trace.contains("failed check:"), "{trace}");
+        assert!(trace.contains("proof refusal:"), "{trace}");
     });
 }
 
@@ -376,10 +370,10 @@ fn failed_outcome_reports_post_call_resources_not_the_execution_entry() {
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("resource lost: owns"), "{trace}");
         assert!(
-            trace.contains("resources at the failed check (showing 0 of 0)"),
+            trace.contains("resources in scope (showing 0 of 0)"),
             "{trace}"
         );
-        let failed = trace.split("failed check:").nth(1).unwrap();
+        let failed = trace.split("proof refusal:").nth(1).unwrap();
         assert!(!failed.contains("owns memory(p["), "{trace}");
     });
 }
@@ -652,7 +646,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
     );
     assert_eq!(
         error.concise_report_parts().0,
-        "proof error in `use_mutex`:\n  could not prove that mutex `cell` was initialized on this path"
+        "execution refused in `use_mutex`:\n  could not prove that mutex `cell` was initialized on this path"
     );
     assert!(!error.message().contains("runtime error"), "{error:?}");
 }
@@ -2122,6 +2116,61 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
 }
 
 #[test]
+fn address_mismatch_diagnostic_compares_selected_read_points() {
+    use crate::kernel::{
+        Address, AddressBase, AddressOffset, MemoryRange, ProgramType, ResourceContext,
+        ResourceFact, SpecExpression, SpecPoint,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let first = ExecutionState::new()
+        .begin_function_entry_memory()
+        .with_local(
+            "data",
+            ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
+        )
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::new(
+                address.clone(),
+                MachineTerm::constant(0),
+                MachineTerm::constant(2),
+            )),
+        ));
+    let second = first.clone().begin_function_entry_memory();
+    assert_eq!(first.memory(), second.memory());
+    assert_ne!(first.observation_point_id(), second.observation_point_id());
+    let read = |state: &ExecutionState, bytes| {
+        let expression = SpecExpression::MemoryLoad {
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
+                address.offset_by_bytes(bytes),
+                ProgramType::Int32Pointer,
+            ))),
+            value_type: ProgramType::Int32,
+            exact: true,
+        };
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            state,
+            &expression,
+            Some(state),
+            &PureFactContext::new(),
+        )
+        .unwrap()
+        .0
+    };
+    let left = read(&first, 0);
+    let right = read(&first, 4);
+    let later = read(&second, 4);
+    let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&first, None);
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    assert!(super::diagnostics::describe_read_address_mismatch(&left, &right, binding).is_some());
+    assert!(super::diagnostics::describe_read_address_mismatch(&left, &later, binding).is_none());
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_13")]
 fn read_only_wide_index_diagnostic_requests_equality_without_inventing_a_store() {
     let source = "int32 last(int32* data, uint64 length) { return *(data + (length - 1ULL)); }";
@@ -2465,6 +2514,40 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
         VerificationEvent::TacticStarted(tactic) if tactic.claim == "induction_shape.ensures_0"
             && tactic.source_tactic_path.as_deref() == Some(&[1, 1, 0])
     )));
+}
+
+#[test]
+fn induction_failure_trace_retains_the_constructor_equation() {
+    let source = r#"
+        spec enum Chain { End, Next(Chain), }
+        function empty(xs: Chain) -> int32 {
+            match xs {
+                Chain::End => 1,
+                Chain::Next(tail) => 0,
+            }
+        }
+        theorem induction_trace(xs: Chain) {
+            ensures empty(xs) == 2 by {
+                let ih = induct(xs);
+                match xs {
+                    Chain::End => {
+                        unfold(empty(Chain::End));
+                        known();
+                    },
+                    Chain::Next(tail) => {
+                        unfold(empty(Chain::Next(tail)));
+                        known();
+                    },
+                }
+            }
+        }
+    "#;
+    with_proof_trace("induction_trace", || {
+        let error = verify_click_theorems(source).expect_err("the false claim must be refused");
+        assert!(error.message().contains("`known` requires"), "{error}");
+        let trace = error.trace_context_report().expect("failure trace");
+        assert!(trace.contains("adds: xs == Chain::End"), "{trace}");
+    });
 }
 
 #[test]
@@ -3188,7 +3271,7 @@ fn ordinary_concise_diagnostics_bound_late_requirement_context() {
     );
     let report = error.concise_report();
     assert!(report.len() <= DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
-    assert!(report.starts_with("proof error:"));
+    assert!(report.starts_with("unclassified verification refusal:"));
     assert!(report.contains("requirement"));
     assert!(report.contains("diagnostic truncated"));
 }
@@ -3801,13 +3884,11 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
     "#;
     with_proof_trace("use_it", || {
         verify_c_sources(source, &[("f.c", "void f(void) { return; }")])
-            .expect("the elided apply finds both premises");
+            .expect("the written application checks both premises");
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
             .expect("the apply retains its trace");
-        assert!(
-            trace.contains("chosen: apply(le_trans(x, y, z)) using { x <= y; y <= z; };"),
-            "{trace}"
-        );
+        assert!(trace.contains("tactic 0: apply\n"), "{trace}");
+        assert!(!trace.contains("chosen:"), "{trace}");
     });
 }
 
@@ -4160,7 +4241,7 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
             assert!(trace.contains("steps through: *q = "), "{trace}");
             if limit != 0 {
                 let failed = trace
-                    .split("failed check:")
+                    .split("proof refusal:")
                     .nth(1)
                     .expect("failure context");
                 // Exhaustion happens after the ordinary proof completed.

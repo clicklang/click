@@ -308,7 +308,7 @@ the resource's own clauses check when they are evaluated. A kernel token whose
 identity is itself bounds evidence keeps the complete comparison, so a member
 pointer does not claim its enclosing object's `allocation(p, n)`
 (`mdtests/a_member_pointer_does_not_claim_its_enclosing_allocation_bounds.md`). A caller holding `size_metadata(rb_old)`
-therefore supplies a callee's `size_metadata(node as (void *) as (struct rb_node *))`
+therefore supplies a callee's `size_metadata(node as (uint8 *) as (struct rb_node *))`
 for `node = container_of(rb_old, struct sized_node, rb)`
 (`mdtests/a_resource_argument_matches_across_a_cast_that_selects_another_view.md`),
 and an instance for another node still does not

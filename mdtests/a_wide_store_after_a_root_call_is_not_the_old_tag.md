@@ -80,9 +80,7 @@ void probe(struct node *p, struct root *root) {
   mark after_store;
   have nid->right == at(before_store, nid->right) by {
    have separate(statement(2).footprint, memory(nid->right)) by {
-       normalize() using {
-           at(before_store, separate(memory(p->right), memory(nid->right)));
-       };
+       known();
    }
    preserve(memory(nid->right), statement(2));
   }
@@ -92,12 +90,8 @@ void probe(struct node *p, struct root *root) {
   mark before_call;
   let { after: c } = step(helper, { before: c });
   have contains(at(before_call, c), statement(3).footprint) by { known(); }
-  apply(separation::contains_refl(memory(nid->right))) using {};
-  apply(separation::separate_restrict(at(before_call, c), memory(nid->right), statement(3).footprint, memory(nid->right))) using {
-   at(before_call, separate(c, memory(nid->right)));
-   contains(at(before_call, c), statement(3).footprint);
-   contains(memory(nid->right), memory(nid->right));
-  };
+  apply(separation::contains_refl(memory(nid->right)));
+  apply(separation::separate_restrict(at(before_call, c), memory(nid->right), statement(3).footprint, memory(nid->right)));
   have nid->right == at(before_call, nid->right) by {
    preserve(memory(nid->right), statement(3));
   }

@@ -32,8 +32,8 @@ int32 read_left(int32* p, int32* left, int32* right) {
     ensures result == 2;
     ensures root.model == old(root.model);
 } by {
-    have root_pointer(Tree::Leaf(left, 2)) == left by { unfold(root_pointer(Tree::Leaf(left, 2))); normalize(); }
-    have root_pointer(Tree::Leaf(right, 3)) == right by { unfold(root_pointer(Tree::Leaf(right, 3))); normalize(); }
+    have root_pointer(Tree::Leaf(left, 2)) == left by { unfold(root_pointer(Tree::Leaf(left, 2))); known(); }
+    have root_pointer(Tree::Leaf(right, 3)) == right by { unfold(root_pointer(Tree::Leaf(right, 3))); known(); }
     let { left: l, right: r } = unfold(root);
     unfold(l);
     step_until(function.exit);

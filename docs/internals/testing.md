@@ -120,7 +120,7 @@ cargo test --test mdtests
 
 Standalone `.click` files in `mdtests/` are independently verified entry modules,
 including helpers imported by other fixtures. The harness propagates both input
-summary errors and proof errors: a successful dependency summary alone does not
+summary failures and verification refusals: a successful dependency summary alone does not
 pass a fixture.
 
 Run the larger example-project verifier with:
@@ -364,16 +364,27 @@ run those tests or fixtures by name. Use `MDTEST_FILTER` or `CLICK_EXAMPLE`
 for corpus entries. For a nightly-only Rust unit test, run
 `cargo nextest run --lib --run-ignored only <name>` with the default feature
 selection. For a nightly-only integration test, use its standalone
-`--test <target>` in place of `--lib`. Say in the PR what was not run. The
-same workflow has a second job, `scripts/check.sh --audit`, which runs `click audit` over the
-whole repository on a release build: every smart tactic in the examples and
-mdtests must expand to a proof that verifies. It takes about twenty minutes.
-Every example's import lock and prepared artifacts are checked in, so the
-examples need no compiler or front end; only the C++ mdtests use the pinned
-exporter.
+`--test <target>` in place of `--lib`. Say in the PR what was not run.
+
+The nightly workflow runs four jobs in parallel:
+
+| Job | Command | Checks |
+|---|---|---|
+| `slow-tests` | `scripts/check.sh --nightly` | production builds, Clippy, CLI behavior and the tests above |
+| `expansion-audit` | `scripts/check.sh --audit expansion` | every smart tactic expands to a simple proof that verifies |
+| `raise-lower-audit` | `scripts/check.sh --audit raise-lower` | every fact and goal round-trips through Surface |
+| `fact-stability-audit` | `scripts/check.sh --audit fact-stability` | lowering never depends on facts |
+
+The three audits are `click audit <audit>` over the whole repository, the
+examples and the mdtests, on a release build (`scripts/audit.sh`,
+[`click audit`](../reference/cli/audit.md)). Each ends with one headline:
+how many of the items it checked fail. `scripts/check.sh --audit` alone runs
+all three. The expansion audit takes about twenty minutes. Every example's
+import lock and prepared artifacts are checked in, so the examples need no
+compiler or front end; only the C++ mdtests use the pinned exporter.
 A proof container with a known audit failure is left out with `--exclude` in
-that script, each beside the issue that tracks it; remove the exclusion with
-the issue.
+`scripts/check.sh`, each beside the issue that tracks it; remove the
+exclusion with the issue.
 When a new test would
 push the gate past ten minutes, put it in the nightly gate; do not raise the
 budget. Before 2026-10-06 the local gate had grown to 41 minutes and CI to 23
@@ -422,13 +433,19 @@ time and exit status. `scripts/nightly-report.py` renders them, and
 without recording a failing check, such as a build error or a timeout, is
 reported as that job's failure, with the run log as its reference.
 
-The `lowering` job (`scripts/check.sh --lowering`, which runs
-`scripts/lowering-audits.sh`) runs the mdtest corpus once under each
-lowering audit of [the raise-lower principle](raise-lower-principle.md#the-raise-lower-principle)
-and records each outcome's count. A fact-stability `differs` or `paths`
-line fails the night, as does an audit run whose corpus did not pass. The
-raise/lower round trip is not enforced: the report lists its counts beside
-the previous night's and flags a rise in any outcome but `same`.
+The `raise-lower-audit` and `fact-stability-audit` jobs record each lowering
+audit of [the raise-lower principle](raise-lower-principle.md#the-raise-lower-principle)
+as its headline numbers (`failing`, `checked`, `tracked`, `unexpected`) and
+outcome counts. A fact-stability `differs` or `paths` lowering fails the
+night, as does an audit run that does not complete. `unexpected` counts the
+proof containers that did not verify as their expectation says; the gate and
+the `slow-tests` job own those verdicts, and `<audit>.unexpected.tsv` lists
+them. For each lowering audit, the report lists up to 20 failures that are
+new since the previous night, each with the `click audit` command that
+reproduces it; the audit job's artifact holds `<audit>.failures.tsv`, every
+failure with its command. The raise/lower round trip is not enforced: the
+report lists its counts beside the previous night's and flags a rise in any
+count but `same` and `checked`.
 
 ## Gate timing baselines
 

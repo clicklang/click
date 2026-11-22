@@ -222,7 +222,6 @@ impl Flow {
                 T::Goto { target }
                 | T::Drop { target, .. }
                 | T::Call { target, .. }
-                | T::BoxNew { target, .. }
                 | T::BoxFree { target, .. } => *target < exit && exit_tails[*target],
                 _ => false,
             };
@@ -536,6 +535,9 @@ mod tests {
             mir: Some(MirBody {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
+                unnamed_locals: Default::default(),
+                compound_literals: Default::default(),
+                borrowed_scalars: Default::default(),
                 locals: vec![Place {
                     name: "marker".into(),
                     value_type: Type::I32,
@@ -568,7 +570,7 @@ mod tests {
                     function: "guard".into(),
                     arguments: vec![],
                     owned_arguments: vec![],
-                    destination: "marker".into(),
+                    destination: Some("marker".into()),
                     target: 1,
                     through_pointer: false,
                     result: None,
@@ -583,7 +585,7 @@ mod tests {
                     function: "guard".into(),
                     arguments: vec![],
                     owned_arguments: vec![],
-                    destination: "marker".into(),
+                    destination: Some("marker".into()),
                     target: 1,
                     through_pointer: false,
                     result: Some(0),
@@ -630,6 +632,9 @@ mod tests {
         let mut mir = MirBody {
             return_place: "__rust_mir_0".into(),
             spellings: Default::default(),
+            unnamed_locals: Default::default(),
+            compound_literals: Default::default(),
+            borrowed_scalars: Default::default(),
             locals: vec![],
             blocks: vec![
                 MirBlock {
@@ -898,6 +903,9 @@ mod tests {
         let mut mir = MirBody {
             return_place: "__rust_mir_0".into(),
             spellings: Default::default(),
+            unnamed_locals: Default::default(),
+            compound_literals: Default::default(),
+            borrowed_scalars: Default::default(),
             locals: vec![],
             blocks: vec![MirBlock {
                 terminator_site: None,

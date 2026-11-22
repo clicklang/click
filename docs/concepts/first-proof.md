@@ -66,13 +66,13 @@ Click refuses it:
 
 ```console
 $ click verify increment.click
-proof error:
+unsuccessful search:
   `increment.ensures_0` tactic 0
   `step()` requires proof excluding signed overflow
   C statement at increment.c:2:5
   `return x + 1;`
   unproved obligation
-  `(let integer_value: Integer = to_integer((x as int32)) + 1; integer_value) <= 2147483647 and (let integer_value: Integer = to_integer((x as int32)) + 1; integer_value) >= -2147483648`
+  `((to_integer((x as int32)) + 1) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 1) : Integer) >= -2147483648`
 
 tactic: step
   --> increment.click:4:5

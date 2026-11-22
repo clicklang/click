@@ -19,7 +19,7 @@ theorem bounded_pointer_association(base: const uint8*, index: int32) {
  requires index <= 22200;
  ensures (base + index) + 4 == base + (index + 4) by {
   have defined(index + 4) by { solve() using { 0 <= index; index <= 22200; }; }
-  normalize() using { defined(index + 4); };
+  solve() using { defined(index + 4); };
  }
 }
 void keep(const uint8* p, int32 i) {
@@ -31,11 +31,11 @@ void keep(const uint8* p, int32 i) {
   Link::Node(q) => {
    unfold(h);
    have defined(i + 4) by { solve() using { 0 <= i; i <= 22200; }; }
-   have (q + i) + 4 == q + (i + 4) by { apply(bounded_pointer_association(q, i)) using { 0 <= i; i <= 22200; }; }
-   have ((q + 1) + i) + 4 == (q + 1) + (i + 4) by { apply(bounded_pointer_association(q + 1, i)) using { 0 <= i; i <= 22200; }; }
-   have (old(q) + i) + 4 == old(q) + (i + 4) by { apply(bounded_pointer_association(old(q), i)) using { 0 <= i; i <= 22200; }; }
+   have (q + i) + 4 == q + (i + 4) by { apply(bounded_pointer_association(q, i)); }
+   have ((q + 1) + i) + 4 == (q + 1) + (i + 4) by { apply(bounded_pointer_association(q + 1, i)); }
+   have (old(q) + i) + 4 == old(q) + (i + 4) by { apply(bounded_pointer_association(old(q), i)); }
    mark model_ready;
-   have (at(model_ready, q) + i) + 4 == at(model_ready, q) + (i + 4) by { apply(bounded_pointer_association(at(model_ready, q), i)) using { 0 <= i; i <= 22200; }; }
+   have (at(model_ready, q) + i) + 4 == at(model_ready, q) + (i + 4) by { apply(bounded_pointer_association(at(model_ready, q), i)); }
    let h = fold(Cell(p, i), { model: Link::Node(q) });
    step_until(function.exit); solve();
   },

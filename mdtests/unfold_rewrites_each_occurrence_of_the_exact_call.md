@@ -30,14 +30,14 @@ theorem one_layer() {
     requires steps(1) == 0;
     ensures steps(2) == 0 by {
         unfold(steps(2));
-        normalize() using { steps(1) == 0; };
+        solve() using { steps(1) == 0; };
     }
 }
 
 theorem refreshed_to_true() {
     ensures f(3) == 3 by {
         unfold(f(3));
-        normalize();
+        known();
     }
 }
 ```

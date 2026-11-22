@@ -498,7 +498,7 @@ impl BodyAdapter<'_, '_> {
             function,
             arguments,
             owned_arguments: Vec::new(),
-            destination: self.local(dest)?,
+            destination: Some(self.local(dest)?),
             target: target.index(),
             through_pointer: false,
             result: None,

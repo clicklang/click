@@ -85,7 +85,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
     byte_order: Option<ByteOrder>,
 ) -> Vec<ExpressionPath> {
     evaluate_retained_memory_load_paths(
-        memory,
+        &ProgramPoint::of_memory(memory),
         pointer,
         value_type,
         facts,
@@ -95,7 +95,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
         volatile,
         source,
         byte_order,
-        None,
+        false,
     )
     .into_iter()
     .map(ExecutionValuePath::into_native)
@@ -104,7 +104,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
-    memory: &SymbolicMemory,
+    point: &ProgramPoint,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -114,8 +114,10 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
     volatile: bool,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
-    origin: Option<&ProgramPoint>,
+    uses_recorded_point: bool,
 ) -> Vec<ExecutionValuePath> {
+    let memory = point.memory();
+    let origin = uses_recorded_point.then_some(point);
     let _assumptions_id_scope = assumptions.enter_id_scope();
     if has_pending_reallocation_for_pointer(memory, &pointer) {
         return vec![ExpressionPath {
@@ -257,6 +259,7 @@ pub(in crate::kernel) fn evaluate_spec_memory_load_paths(
 
 /// Construct the value of a logical read using the shared typed load model.
 /// No C access occurs and no validity evidence is introduced.
+#[cfg(test)]
 pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     memory: &SymbolicMemory,
     pointer: Address,
@@ -265,7 +268,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
-    evaluate_logical_memory_load_paths_at(
+    evaluate_logical_memory_load_paths_in_view(
         memory,
         pointer,
         value_type,
@@ -276,14 +279,40 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     )
 }
 
+/// Read a cell from the view at the supplied program point.
 pub(in crate::kernel) fn evaluate_logical_memory_load_paths_at(
+    point: &ProgramPoint,
+    pointer: Address,
+    value_type: ProgramType,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<ExpressionPath> {
+    // Indexed ordinary versions are selected before this compatibility
+    // route. Symbolic Boolean and float reads can name the observation
+    // point directly. Other residual reads still use legacy selection.
+    let origin = (value_type == ProgramType::Bool
+        || KernelFloatType::from_program_type(value_type).is_some())
+    .then_some(point);
+    evaluate_logical_memory_load_paths_in_view(
+        point.memory(),
+        pointer,
+        value_type,
+        facts,
+        obligations,
+        assumptions,
+        origin,
+    )
+}
+
+fn evaluate_logical_memory_load_paths_in_view(
     memory: &SymbolicMemory,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    float_origin: Option<&ProgramPoint>,
+    origin: Option<&ProgramPoint>,
 ) -> Vec<ExpressionPath> {
     let mut paths = evaluate_logical_memory_load_paths_unbridged(
         memory,
@@ -292,7 +321,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths_at(
         facts,
         obligations,
         assumptions,
-        float_origin,
+        origin,
     );
     retain_indexed_scalar_cell_value(memory, &pointer, value_type, assumptions, &mut paths);
     #[cfg(test)]
@@ -382,15 +411,11 @@ pub(in crate::kernel) fn evaluate_indexed_read(
         };
     }
     let stored = version.indexed_integer_store_bits().cloned();
+    let entry_word =
+        stored.is_none() && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64);
     let kind = LoadKind::of_type(value_type).expect("indexed integer read");
     let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
-    read_observations::record_at(
-        &version,
-        &pointer,
-        kind,
-        origin.shared_memory(),
-        value_type.byte_width(),
-    );
+    read_observations::record_at(&version, &pointer, kind, origin, value_type.byte_width());
     let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind);
     let value = match value_type {
         ProgramType::Int8 => ProgramValue::Int8(read.clone()),
@@ -427,6 +452,13 @@ pub(in crate::kernel) fn evaluate_indexed_read(
             ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
         });
     }
+    // The selected entry supplies the numeric bits. A complete load still
+    // carries the pointer representation of the observed cell.
+    let value = if entry_word {
+        complete_loaded_word(value, origin.memory(), &pointer)
+    } else {
+        value
+    };
     ExpressionPath {
         outcome: ExpressionOutcome::Value(value),
         facts,
@@ -493,13 +525,7 @@ fn exact_logical_read_value(
         ))
     } else {
         let kind = LoadKind::of_type(value_type)?;
-        read_observations::record_at(
-            &point,
-            pointer,
-            kind,
-            point.shared_memory(),
-            value_type.byte_width(),
-        );
+        read_observations::record_at(&point, pointer, kind, &point, value_type.byte_width());
         let bits = MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), kind);
         ProgramValue::from_bitvector_term(value_type, bits)?
     };
@@ -538,6 +564,18 @@ fn point_named_symbolic_float_read(
     ProgramValue::from_bitvector_term(value_type, read)
 }
 
+fn point_named_symbolic_read(
+    origin: Option<&ProgramPoint>,
+    pointer: &Address,
+    value_type: ProgramType,
+) -> Option<ProgramValue> {
+    let point = origin?;
+    if value_type == ProgramType::Bool && point.has_certified_read_view() {
+        return exact_logical_read_value(point.clone(), pointer, value_type);
+    }
+    point_named_symbolic_float_read(Some(point), pointer, value_type)
+}
+
 fn evaluate_logical_memory_load_paths_unbridged(
     memory: &SymbolicMemory,
     pointer: Address,
@@ -545,10 +583,10 @@ fn evaluate_logical_memory_load_paths_unbridged(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    float_origin: Option<&ProgramPoint>,
+    origin: Option<&ProgramPoint>,
 ) -> Vec<ExpressionPath> {
     let symbolic_value = |facts: &mut ExecutionFacts| {
-        point_named_symbolic_float_read(float_origin, &pointer, value_type).or_else(|| {
+        point_named_symbolic_read(origin, &pointer, value_type).or_else(|| {
             canonicalized_symbolic_load_value_with_identity(
                 memory,
                 &pointer,
@@ -586,7 +624,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
             &mut MemoryLoadAliasCache::default(),
             None,
             None,
-            float_origin,
+            origin,
         );
         let mut paths: Vec<_> = paths
             .into_iter()
@@ -1001,7 +1039,7 @@ fn evaluate_retained_memory_load_case(
         splits && matches!(purpose, LoadPurpose::Program | LoadPurpose::VolatileProgram);
     let symbolic_value =
         |memory: &SymbolicMemory, facts: &mut ExecutionFacts, assumptions: &PureFactContext| {
-            point_named_symbolic_float_read(origin, &pointer, value_type)
+            point_named_symbolic_read(origin, &pointer, value_type)
                 .map(ExecutionValue::from)
                 .or_else(|| {
                     canonicalized_retained_symbolic_load_value_with_identity(
@@ -1772,6 +1810,7 @@ fn evaluate_retained_memory_load_case(
             assumptions,
             source,
             purpose,
+            origin,
         ) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(value),
@@ -1860,6 +1899,23 @@ fn evaluate_retained_memory_load_case(
         }];
     }
 
+    // Complete call outputs and untouched static words have indexed
+    // versions even when their values are unknown. Use the same read as Click.
+    if purpose == LoadPurpose::Program
+        && let Some(origin) = origin
+        && let Some(version) = origin
+            .unwritten_static_scalar_version(&pointer, value_type)
+            .or_else(|| {
+                MachineIntegerType::from_program_type(value_type)?;
+                origin.call_output_integer_version(&pointer, LoadKind::of_type(value_type)?)
+            })
+    {
+        return vec![
+            evaluate_indexed_read(version, origin, pointer, value_type, facts, obligations)
+                .map_value(Into::into),
+        ];
+    }
+
     // Query the actual program state. The reduced cache above is a
     // hypothetical view for this read, not another execution transition.
     if let Some(value) = cell_value_recorded_on_path(
@@ -1874,6 +1930,7 @@ fn evaluate_retained_memory_load_case(
         assumptions,
         source,
         purpose,
+        origin,
     ) {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::Value(value),
@@ -1949,6 +2006,7 @@ pub(in crate::kernel) fn abstract_value_source(
 /// path's value; nothing is named by it. Only a program read asks: a
 /// specification read denotes the named state's value, and a volatile one
 /// may observe a write no recorded step made.
+#[allow(clippy::too_many_arguments)]
 fn cell_value_recorded_on_path(
     memory: &SymbolicMemory,
     pointer: &Address,
@@ -1957,6 +2015,7 @@ fn cell_value_recorded_on_path(
     assumptions: &PureFactContext,
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
+    origin: Option<&ProgramPoint>,
 ) -> Option<ExecutionValue> {
     if purpose != LoadPurpose::Program {
         return None;
@@ -1970,12 +2029,35 @@ fn cell_value_recorded_on_path(
     ) else {
         // Static storage holds no entry placeholder: a cell the path's facts
         // carry unwritten back to function entry reads its entry load.
-        let entry = crate::kernel::resource_tracker::static_cell_unwritten_since_entry_on_path(
-            &at,
-            pointer,
-            value_type.byte_width(),
-            assumptions,
-        )?;
+        let (entry, root) =
+            crate::kernel::resource_tracker::static_cell_unwritten_since_entry_on_path(
+                &at,
+                pointer,
+                value_type.byte_width(),
+                assumptions,
+            )?;
+        if ProgramPoint::supports_static_entry_version(pointer, value_type)
+            && let Some(version) = origin.and_then(|point| {
+                point
+                    .static_entry_matching_resolved_read(pointer, value_type, &entry)
+                    .or_else(|| {
+                        point.static_entry_matching_resolved_read(pointer, value_type, &root)
+                    })
+            })
+        {
+            let path = evaluate_indexed_read(
+                version.clone(),
+                &version,
+                pointer.clone(),
+                value_type,
+                ExecutionFacts::new(),
+                Vec::new(),
+            );
+            if let ExpressionOutcome::Value(value) = path.outcome {
+                facts.extend_shared(&path.facts);
+                return Some(value.into());
+            }
+        }
         return canonicalized_retained_symbolic_load_value_with_identity(
             entry.memory(),
             pointer,
@@ -2746,8 +2828,8 @@ struct RegisteredLoad {
     /// keeps them with the entry they describe; origins and widths do not
     /// change the value. None records an unmigrated native address payload.
     terms: std::collections::HashMap<MachineIntegerType, Option<crate::kernel::KernelTerm>>,
-    /// The canonical state, address and kind: the load itself.
-    memory: SharedMemory,
+    /// The version point, address and kind: the load itself.
+    point: ProgramPoint,
     pointer: Address,
     kind: LoadKind,
     /// Observation ownership is independent of this compatibility name.
@@ -2762,7 +2844,7 @@ thread_local! {
         imbl::HashMap<(u64, Address), (SharedMemory, Address)>,
     > = std::cell::RefCell::new(imbl::HashMap::new());
     static WIDE_LOAD_OBSERVATIONS: std::cell::RefCell<
-        imbl::HashMap<(u64, Variable), (SharedMemory, Address)>,
+        imbl::HashMap<(u64, Variable), (ProgramPoint, Address)>,
     > = std::cell::RefCell::new(imbl::HashMap::new());
     /// Separate pointer-valued load names. The defining key is one canonical
     /// state and address at the fixed eight-byte pointer interpretation;
@@ -2842,7 +2924,7 @@ pub(crate) fn clear_load_canonicalization_caches() {
 #[derive(Clone)]
 pub(crate) struct LoadRegistryState {
     pointer_observations: imbl::HashMap<(u64, Address), (SharedMemory, Address)>,
-    wide_observations: imbl::HashMap<(u64, Variable), (SharedMemory, Address)>,
+    wide_observations: imbl::HashMap<(u64, Variable), (ProgramPoint, Address)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     read_observations: read_observations::State,
     pointers:
@@ -3465,7 +3547,7 @@ pub(crate) fn registered_load_for_variable(variable: &Variable) -> Option<(Share
         registry
             .borrow()
             .get(variable)
-            .map(|load| (load.memory.clone(), load.pointer.clone()))
+            .map(|load| (load.point.shared_memory().clone(), load.pointer.clone()))
     })
 }
 
@@ -3475,7 +3557,7 @@ pub(crate) fn registered_load_term_for_variable(variable: &Variable) -> Option<M
     LOAD_VARIABLE_REGISTRY.with(|registry| {
         registry.borrow().get(variable).map(|load| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(&load.memory),
+                load.point.clone(),
                 Box::new(load.pointer.clone()),
                 load.kind,
             )
@@ -3500,7 +3582,7 @@ pub(crate) fn registered_scalar_read_term(
                 read.address.as_ref().map(|address| {
                     crate::kernel::KernelTerm::shared_scalar_read_descriptor(
                         format,
-                        &ProgramPoint::at(&read.memory),
+                        &read.point,
                         address,
                         read.kind,
                     )
@@ -3521,7 +3603,8 @@ pub(crate) struct ScalarReadObservation {
     pub pointer: Address,
     pub kind: LoadKind,
     pub bytes: u32,
-    pub origin: Option<SharedMemory>,
+    /// The producing observation in the current load-origin epoch.
+    pub origin: Option<ProgramPoint>,
 }
 
 mod read_observations;
@@ -3561,7 +3644,7 @@ pub(crate) fn scalar_read_for_exact_cell_at(
     kind: LoadKind,
     bytes: u32,
 ) -> MachineTerm {
-    let id = read_observations::record_at(point, pointer, kind, point.shared_memory(), bytes);
+    let id = read_observations::record_at(point, pointer, kind, point, bytes);
     read_observations::select(id);
     MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), kind)
 }
@@ -3941,18 +4024,19 @@ pub(crate) fn registered_load_origin_for_variable(
     let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
         &MachineTerm::Variable(*variable),
     ))?;
-    Some((read.origin?, read.pointer))
+    Some((read.origin?.into_shared_memory(), read.pointer))
 }
 
 /// [`registered_load_origin_for_variable`] as the load term it names there:
 /// the same read, kind included, at the live origin.
 pub(crate) fn registered_load_origin_term_for_variable(variable: &Variable) -> Option<MachineTerm> {
-    let (origin, pointer) = registered_load_origin_for_variable(variable)?;
-    let kind = registered_load_kind_for_variable(variable)?;
+    let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
+        &MachineTerm::Variable(*variable),
+    ))?;
     Some(MachineTerm::MemoryLoad(
-        ProgramPoint::at(&origin),
-        Box::new(pointer),
-        kind,
+        read.origin?,
+        Box::new(read.pointer),
+        read.kind,
     ))
 }
 
@@ -4004,7 +4088,11 @@ fn pointer_load_origin(identity: PointerLoadId) -> Option<SharedMemory> {
     }
     let observation =
         POINTER_LOAD_SOURCES.with(|sources| sources.borrow().get(&identity).copied())?;
-    read_observations::observation(observation)?.origin
+    Some(
+        read_observations::observation(observation)?
+            .origin?
+            .into_shared_memory(),
+    )
 }
 
 pub(crate) fn loaded_pointer_read_predates_block(
@@ -4237,19 +4325,24 @@ pub(crate) fn canonical_cell_value(
     if let ProgramType::Parameter(parameter) = value_type {
         return AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter);
     }
+    if value_type == ProgramType::Bool
+        && let Some(value) = point_named_symbolic_read(Some(source), pointer, value_type)
+    {
+        return value;
+    }
     if let Some(read) = point_named_pointer_cell_read(source, pointer, value_type) {
         return ProgramValue::Pointer(read);
     }
     crate::kernel::cell_run_value(value_type, canonical_cell_load(source, pointer, value_type))
 }
 
-/// Name a complete object pointer cell from its typed store or entry point.
+/// Name a complete pointer cell from its typed store or entry point.
 pub(crate) fn point_named_pointer_cell_read(
     source: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<Pointer> {
-    if !value_type.is_object_pointer() {
+    if !value_type.is_pointer() {
         return None;
     }
     let version = source.ordinary_typed_version(pointer, value_type)?;
@@ -4280,9 +4373,6 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
         .or_else(|| indexed_resource_scalar_read(source, pointer, ty))
         .or_else(|| {
             let kind = LoadKind::of_type(ty)?;
-            if !kind.is_word32() {
-                return None;
-            }
             let point = source.entry_cell_version(pointer, ty)?;
             Some(MachineTerm::MemoryLoad(
                 point,
@@ -4307,13 +4397,7 @@ fn record_indexed_cell_read(source: &ProgramPoint, read: &MachineTerm) {
     let MachineTerm::MemoryLoad(version, pointer, kind) = read else {
         unreachable!("indexed resource read")
     };
-    read_observations::record_at(
-        version,
-        pointer,
-        *kind,
-        source.shared_memory(),
-        kind.byte_width(),
-    );
+    read_observations::record_at(version, pointer, *kind, source, kind.byte_width());
 }
 
 /// The test-only audit of the creation-time invariant (see
@@ -5274,9 +5358,25 @@ fn mint_load_variable_identity(
     origin: &SharedMemory,
     bytes: u32,
 ) -> Variable {
+    mint_load_variable_at(
+        &ProgramPoint::at(memory),
+        pointer,
+        kind,
+        &ProgramPoint::at(origin),
+        bytes,
+    )
+}
+
+fn mint_load_variable_at(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+    origin: &ProgramPoint,
+    bytes: u32,
+) -> Variable {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    memory.hash(&mut hasher);
+    point.hash(&mut hasher);
     pointer.hash(&mut hasher);
     let hash = hasher.finish();
     let range = load_variable_range();
@@ -5297,12 +5397,12 @@ fn mint_load_variable_identity(
             let variable = Variable(LOAD_VARIABLE_BASE + slot);
             match registry.get_mut(&variable) {
                 Some(RegisteredLoad {
-                    memory: known_memory,
+                    point: known_point,
                     pointer: known_pointer,
                     kind: known_kind,
                     observation,
                     ..
-                }) if known_memory == memory && known_pointer == pointer && *known_kind == kind => {
+                }) if known_point == point && known_pointer == pointer && *known_kind == kind => {
                     read_observations::refresh(*observation, origin, bytes);
                     return variable;
                 }
@@ -5324,12 +5424,13 @@ fn mint_load_variable_identity(
                         RegisteredLoad {
                             address: crate::kernel::KernelTerm::scalar_read_address(pointer),
                             terms: Default::default(),
-                            memory: memory.clone(),
+                            point: point.clone(),
                             pointer: pointer.clone(),
                             kind,
                             observation: {
-                                let id =
-                                    read_observations::record(memory, pointer, kind, origin, bytes);
+                                let id = read_observations::record_at(
+                                    point, pointer, kind, origin, bytes,
+                                );
                                 read_observations::select(id);
                                 id
                             },
@@ -5354,22 +5455,24 @@ fn record_wide_load_observation(term: &MachineTerm, variable: Variable) {
     }
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     crate::instrumentation::record_deterministic_work(1);
+    let point = if has_selected_read_point(memory) {
+        memory.clone()
+    } else {
+        ProgramPoint::at(memory.shared_memory())
+    };
     WIDE_LOAD_OBSERVATIONS.with(|registry| {
         let mut registry = registry.borrow_mut();
         let key = (epoch, variable);
         if registry
             .get(&key)
-            .is_some_and(|(known_memory, known_pointer)| {
-                known_memory == memory.shared_memory() && known_pointer == pointer.as_ref()
+            .is_some_and(|(known_point, known_pointer)| {
+                *known_point == point && known_pointer == pointer.as_ref()
             })
         {
             return;
         }
         crate::instrumentation::record_deterministic_work(1);
-        registry.insert(
-            key,
-            (memory.shared_memory().clone(), pointer.as_ref().clone()),
-        );
+        registry.insert(key, (point, pointer.as_ref().clone()));
     });
 }
 
@@ -5408,12 +5511,8 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
         registry
             .borrow()
             .get(&(epoch, *variable))
-            .map(|(memory, pointer)| {
-                MachineTerm::MemoryLoad(
-                    ProgramPoint::at(memory),
-                    Box::new(pointer.clone()),
-                    LoadKind::Bits64,
-                )
+            .map(|(point, pointer)| {
+                MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
             })
     })
 }
@@ -5530,7 +5629,19 @@ pub(crate) fn load_variable_for_term(bits: &MachineTerm) -> Option<(Variable, Ma
     Some(computed)
 }
 
+fn has_selected_read_point(point: &ProgramPoint) -> bool {
+    point.read_version_id().is_some() && point.has_certified_read_view()
+}
+
 fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, MachineTerm)> {
+    if let MachineTerm::MemoryLoad(point, pointer, kind) = bits
+        && has_selected_read_point(point)
+    {
+        let bytes =
+            observed_scalar_read_width(point, pointer, *kind).unwrap_or_else(|| kind.byte_width());
+        let variable = mint_load_variable_at(point, pointer, *kind, point, bytes);
+        return Some((variable, bits.clone()));
+    }
     let canonical = crate::kernel::memory_history::canonicalize_atomic_loads(bits);
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = &canonical {
         let MachineTerm::MemoryLoad(origin, _, _) = bits else {
@@ -5672,14 +5783,17 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
             },
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::Variable(variable)),
-            // The registered variable is the structural read term used by
-            // logical lowering. Keep the raw descriptor in the producer
-            // binding below, not as a second term form in a citable fact.
-            right: Box::new(canonical_form_of_load(
-                memory.shared_memory().clone(),
-                pointer.as_ref().clone(),
-                *kind,
-            )),
+            // Cite the same read as logical lowering. A selected point already
+            // supplies the read's name.
+            right: Box::new(if has_selected_read_point(memory) {
+                load.clone()
+            } else {
+                canonical_form_of_load(
+                    memory.shared_memory().clone(),
+                    pointer.as_ref().clone(),
+                    *kind,
+                )
+            }),
         },
         true,
     );
@@ -6031,13 +6145,304 @@ mod tests {
         assert_eq!(&legacy, second_identity.as_legacy_read());
         let observation =
             scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&legacy)).unwrap();
-        assert_eq!(observation.origin, Some(after));
+        assert_eq!(observation.origin, Some(ProgramPoint::at(&after)));
         assert_eq!(observation.bytes, 4);
         assert_eq!(
             canonical_scalar_read(&second),
             legacy,
             "warm compatibility path"
         );
+    }
+
+    #[test]
+    fn an_unwritten_static_word_names_function_entry_after_a_local_declaration() {
+        check_unwritten_static_scalar_version(ProgramType::Int32, 0);
+    }
+
+    #[test]
+    fn an_unwritten_static_array_element_uses_the_same_entry_point() {
+        check_unwritten_static_scalar_version(ProgramType::Int32, 4);
+    }
+
+    #[test]
+    fn an_unwritten_static_halfword_uses_the_same_entry_point() {
+        check_unwritten_static_scalar_version(ProgramType::UInt16, 2);
+    }
+
+    #[test]
+    fn an_unwritten_static_wide_word_uses_the_same_entry_point() {
+        check_unwritten_static_scalar_version(ProgramType::UInt64, 8);
+    }
+
+    fn check_unwritten_static_scalar_version(ty: ProgramType, offset: u32) {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = SymbolicMemory::global_pointer("unwritten").offset_by_bytes(offset);
+        let entry = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(cell.base.clone(), 16))
+            .begin_function_entry_memory();
+        let next = entry
+            .clone()
+            .with_memory(
+                entry
+                    .memory()
+                    .clone()
+                    .with_block(SymbolicMemory::local_pointer("local").base, 4),
+            )
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                ResourceFact::view_memory(MemoryRange::access(cell.clone(), ty)),
+            ));
+        let point = next.program_point();
+        assert_ne!(point.id(), entry.program_point_id());
+        assert_eq!(
+            point
+                .indexed_array_version(&cell.base)
+                .and_then(|version| version.read_version_id()),
+            entry.program_point_id(),
+        );
+
+        let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+            ProgramValue::typed_pointer(cell.clone(), ty.pointer_to().expect("pointer to scalar")),
+        )));
+        let paths = super::super::evaluate_expression_value_paths(
+            &next,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked C read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("static storage supplies the word: {:?}", path.outcome);
+        };
+        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value.native())
+        else {
+            panic!("one symbolic word read");
+        };
+        assert_eq!(version.read_version_id(), entry.program_point_id());
+        assert_eq!(*address, cell);
+        assert_eq!(kind, LoadKind::of_type(ty).expect("scalar load kind"));
+        assert_eq!(
+            point
+                .ordinary_typed_version(&cell, ty)
+                .and_then(|version| version.read_version_id()),
+            entry.program_point_id(),
+        );
+        let written = next.clone().with_memory(
+            next.memory()
+                .clone()
+                .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        assert!(
+            written
+                .program_point()
+                .unwritten_static_scalar_version(&cell, ty)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_wrote_its_static_word() {
+        check_static_call_output_scalar_read(
+            ProgramType::Int32,
+            crate::kernel::effective_type::CScalarClass::Int,
+        );
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_wrote_its_static_wide_word() {
+        check_static_call_output_scalar_read(
+            ProgramType::UInt64,
+            crate::kernel::effective_type::CScalarClass::Long,
+        );
+    }
+
+    fn check_static_call_output_scalar_read(
+        ty: ProgramType,
+        class: crate::kernel::effective_type::CScalarClass,
+    ) {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = SymbolicMemory::global_pointer("call_output_static");
+        let start = ExecutionState::new().begin_function_entry_memory();
+        let entry = start.clone().with_function_entry_memory(
+            start.memory().clone().with_classed_scalar_block(
+                cell.base.clone(),
+                ty.byte_width(),
+                ty,
+                Some(crate::kernel::effective_type::CAccessClass::Scalar(class)),
+            ),
+        );
+        let facts = PureFactContext::new();
+        let range = MemoryRange::access(cell.clone(), ty);
+        let output = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_call_memory_havoc(
+                Variable(1_008_445),
+                std::slice::from_ref(&range),
+                &facts,
+                None,
+            ));
+        let next = output.clone().with_memory(
+            output
+                .memory()
+                .clone()
+                .with_block(SymbolicMemory::local_pointer("unrelated").base, 4),
+        );
+        let next = next.with_resource_context(
+            ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(range)),
+        );
+        let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+            ProgramValue::typed_pointer(cell.clone(), ty.pointer_to().expect("scalar pointer")),
+        )));
+        let paths = super::super::evaluate_expression_value_paths(
+            &next,
+            &expression,
+            &facts,
+            &mut ExecutionBudget::new(),
+        )
+        .expect("checked C access");
+        let [path] = paths.as_slice() else {
+            panic!("expected one checked read path");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("expected the call-modified value: {:?}", path.outcome);
+        };
+        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value.native())
+        else {
+            panic!("expected a typed integer read");
+        };
+        assert_eq!(version.read_version_id(), output.program_point_id());
+        assert_eq!(*address, cell);
+        assert_eq!(kind, LoadKind::of_type(ty).expect("scalar load kind"));
+        assert_eq!(
+            next.program_point()
+                .ordinary_typed_version(&cell, ty)
+                .and_then(|point| point.read_version_id()),
+            output.program_point_id(),
+        );
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_initialized_its_word() {
+        check_call_output_scalar_read(ProgramType::Int32);
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_initialized_its_halfword() {
+        check_call_output_scalar_read(ProgramType::UInt16);
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_initialized_its_wide_word() {
+        check_call_output_scalar_read(ProgramType::UInt64);
+    }
+
+    fn check_call_output_scalar_read(ty: ProgramType) {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = SymbolicMemory::local_pointer("output");
+        let bytes = ty.byte_width();
+        let start = ExecutionState::new().begin_function_entry_memory();
+        let declared =
+            start
+                .clone()
+                .with_memory(start.memory().clone().with_declared_scalar_block(
+                    cell.base.clone(),
+                    bytes,
+                    ty,
+                ));
+        let output = declared.clone().with_memory(
+            declared
+                .memory()
+                .clone()
+                .with_initialized_call_output(&cell, bytes),
+        );
+        let next = output.clone().with_memory(
+            output
+                .memory()
+                .clone()
+                .with_block(SymbolicMemory::local_pointer("other").base, 4),
+        );
+        let next = next.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::access(cell.clone(), ty)),
+        ));
+        let expected = next
+            .program_point()
+            .ordinary_typed_version(&cell, ty)
+            .expect("the local scalar has a recorded call output");
+        assert_eq!(expected.read_version_id(), output.program_point_id());
+        assert_ne!(expected.read_version_id(), next.program_point_id());
+
+        let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+            ProgramValue::typed_pointer(cell.clone(), ty.pointer_to().expect("pointer to scalar")),
+        )));
+        let paths = super::super::evaluate_expression_value_paths(
+            &next,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked C read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("the call initialized the cell: {:?}", path.outcome);
+        };
+        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value.native())
+        else {
+            panic!("one typed word read");
+        };
+        assert_eq!(version.read_version_id(), expected.read_version_id());
+        assert_eq!(*address, cell);
+        assert_eq!(kind, LoadKind::of_type(ty).expect("scalar load kind"));
+    }
+
+    #[test]
+    fn a_checked_c_read_keeps_the_caller_pointer_cell_entry_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let ty = ProgramType::Int32Pointer;
+        let state = ExecutionState::new()
+            .begin_function_entry_memory()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                ResourceFact::view_memory(MemoryRange::access(cell.clone(), ty)),
+            ));
+        let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+            ProgramValue::typed_pointer(cell.clone(), ProgramType::Int32PointerPointer),
+        )));
+        let paths = super::super::evaluate_expression_value_paths(
+            &state,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked pointer read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!(
+                "the caller supplies a readable pointer cell: {:?}",
+                path.outcome
+            );
+        };
+        let pointer = value.pointer().expect("complete pointer read");
+        let defining_read = pointer.address().as_loaded_value().expect("read identity");
+        assert_eq!(
+            defining_read.point.read_version_id(),
+            state.program_point_id()
+        );
+        assert_eq!(defining_read.defining_address, cell);
+        assert_eq!(defining_read.value_type, Some(ty));
+        assert_eq!(pointer.provenance(), pointer.address());
+        assert_eq!(pointer.bounds_owner(), Some(pointer.address()));
     }
 
     #[test]
@@ -6256,7 +6661,7 @@ mod tests {
             4,
             "a new format is not a wider access"
         );
-        assert_eq!(observe(&other).origin, Some(memory.clone()));
+        assert_eq!(observe(&other).origin, Some(ProgramPoint::at(&memory)));
         begin_load_origin_epoch();
         assert!(
             observe(&term).origin.is_none(),
@@ -6265,7 +6670,7 @@ mod tests {
         assert!(observe(&other).origin.is_none());
         load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 8);
         assert_eq!(observe(&term).bytes, 8, "width updates are live");
-        assert_eq!(observe(&other).origin, Some(memory));
+        assert_eq!(observe(&other).origin, Some(ProgramPoint::at(&memory)));
         let saved = capture_load_variable_registry();
         clear_load_variable_registry();
         restore_load_variable_registry(&saved);
@@ -7276,6 +7681,39 @@ mod tests {
             panic!("the decided aliasing load should have one path");
         };
         assert_eq!(aliasing_path.outcome, ExpressionOutcome::Value(int32(2)));
+    }
+
+    #[test]
+    fn load_variable_names_keep_distinct_points_with_equal_memory() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = SymbolicMemory::new();
+        let address = Address::symbolic(Variable(89_007));
+        for kind in [LoadKind::Int32, LoadKind::Bits64] {
+            let read = || {
+                MachineTerm::MemoryLoad(
+                    ProgramPoint::starting_at(&memory).for_exact_read(),
+                    Box::new(address.clone()),
+                    kind,
+                )
+            };
+            let first = read();
+            let second = read();
+            let (first_name, first_definition) =
+                load_variable_for_term(&first).expect("first read");
+            let (second_name, second_definition) =
+                load_variable_for_term(&second).expect("second read");
+            assert_ne!(first_name, second_name);
+            assert_eq!(first_definition, first);
+            assert_eq!(second_definition, second);
+            assert_eq!(
+                registered_load_origin_term_for_variable(&first_name),
+                Some(first.clone())
+            );
+            if kind == LoadKind::Bits64 {
+                assert_eq!(latest_wide_load_observation(&first_name), Some(first));
+                assert_eq!(latest_wide_load_observation(&second_name), Some(second));
+            }
+        }
     }
 
     #[test]
@@ -10228,13 +10666,12 @@ mod float_memory_handoff_tests {
                 let forced = ordinary.clone().force_symbolic_external_loads();
                 for assumptions in [&ordinary, &forced] {
                     let logical = evaluate_logical_memory_load_paths_at(
-                        state.memory(),
+                        &origin,
                         address.clone(),
                         value_type,
                         ExecutionFacts::new(),
                         vec![],
                         assumptions,
-                        Some(&origin),
                     );
                     let [path] = logical.as_slice() else {
                         panic!("expected one logical read");
@@ -10243,7 +10680,7 @@ mod float_memory_handoff_tests {
                 }
 
                 let program = evaluate_retained_memory_load_paths(
-                    state.memory(),
+                    &origin,
                     address.clone(),
                     value_type,
                     ExecutionFacts::new(),
@@ -10253,7 +10690,7 @@ mod float_memory_handoff_tests {
                     false,
                     None,
                     None,
-                    Some(&origin),
+                    true,
                 );
                 let [path] = program.as_slice() else {
                     panic!("expected one program read");
@@ -10343,7 +10780,7 @@ mod float_memory_handoff_tests {
                 );
                 assert_eq!(memory.known_value(&address), Some(native.clone()));
                 let paths = evaluate_retained_memory_load_paths(
-                    &memory,
+                    &ProgramPoint::of_memory(&memory),
                     address,
                     format.program_type(),
                     ExecutionFacts::new(),
@@ -10353,7 +10790,7 @@ mod float_memory_handoff_tests {
                     false,
                     None,
                     None,
-                    None,
+                    false,
                 );
                 assert_eq!(paths.len(), 1);
                 let ExpressionOutcome::Value(loaded) = &paths[0].outcome else {

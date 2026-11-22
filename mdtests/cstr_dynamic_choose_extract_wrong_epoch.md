@@ -32,7 +32,7 @@ uint64 read_terminator(uint8 bytes[]) {
             }));
             witness(found_len);
             all {
-                to_integer(found_len + 1u64) <= 9223372036854775807u64 => { solve(); }
+                found_len < 18446744073709551615u64 implies to_integer(found_len + 1u64) <= 9223372036854775807u64 => { solve(); }
                 found_len < 18446744073709551615u64 => { solve(); }
                 viewable(bytes[0..found_len + 1u64]) => {
                     have viewable(bytes[0..found_len + 1u64]) by { solve(); }

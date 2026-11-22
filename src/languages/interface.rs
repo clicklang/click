@@ -432,6 +432,11 @@ impl InterfaceType {
         CAbi::SUPPORTED.size_and_alignment(self).0
     }
 
+    /// The type's alignment in the supported ABI.
+    pub(crate) fn abi_alignment_bytes(self) -> u32 {
+        CAbi::SUPPORTED.size_and_alignment(self).1
+    }
+
     /// The same type with any `long long` rank replaced by `long`. Use it
     /// wherever only representation matters: arithmetic, value conversion,
     /// and matching a Click specification type (`int64`, `uint64`) against
@@ -1400,6 +1405,31 @@ impl RecordLayout {
         })
     }
 
+    /// The fields in declaration order: by offset, a fixed prefix's before
+    /// the fields at `offsetof` terms, which follow their layout's order.
+    pub fn fields_in_order(&self) -> Vec<(&str, &RecordField)> {
+        let mut fields = self
+            .fields
+            .iter()
+            .map(|(name, field)| (name.as_str(), field))
+            .collect::<Vec<_>>();
+        fields.sort_by_key(|(name, field)| {
+            (
+                match field.offset {
+                    crate::kernel::LayoutOffset::Bytes(bytes) => (0, bytes),
+                    crate::kernel::LayoutOffset::Field(_, index) => (1, index),
+                },
+                *name,
+            )
+        });
+        fields
+    }
+
+    /// Whether the record declares bit fields, which share storage units.
+    pub fn has_bit_fields(&self) -> bool {
+        self.bit_field_bytes.is_some()
+    }
+
     pub fn fields(&self) -> &BTreeMap<String, RecordField> {
         &self.fields
     }
@@ -1739,7 +1769,13 @@ impl ImportedParameter {
     }
 
     pub fn is_struct_value(&self) -> bool {
-        self.struct_name.is_some() && matches!(self.interface_type, InterfaceType::UInt8Array(_))
+        // A symbolic struct's value is an object of its `sizeof`, typed by
+        // its layout's value type (`record_value_type`).
+        self.struct_name.is_some()
+            && matches!(
+                self.interface_type,
+                InterfaceType::UInt8Array(_) | InterfaceType::Parameter(_)
+            )
     }
 }
 

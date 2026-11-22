@@ -12,6 +12,7 @@ mod shared_machine;
 pub(in crate::kernel) use shared_machine::{
     bitwise_tag_equation, execution_narrow_binary, execution_rust_shift,
 };
+mod operation_defined;
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (Resource, ExecutionFacts, Vec<ProofObligation>);
@@ -1137,40 +1138,112 @@ fn lower_spec_conjunction_left_spine_in(
     for right in right_operands.into_iter().rev() {
         let mut combined = Vec::new();
         for left_path in paths {
-            let right_assumptions = assumptions_with_path_context(
-                assumptions,
-                &left_path.facts,
-                &left_path.obligations,
-            );
-            for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            lower_guarded_conjunct_in(
                 scope,
+                &left_path,
                 right,
-                &right_assumptions,
+                assumptions,
                 budget,
-            )? {
-                if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
-                    &left_path.facts,
-                    &left_path.obligations,
-                    &right_path.facts,
-                    &right_path.obligations,
-                    assumptions,
-                    &right_assumptions,
-                ) {
-                    combined.push(SpecPropositionPath {
-                        introductions: Vec::new(),
-                        proposition: Proposition::And(
-                            Box::new(left_path.proposition.clone()),
-                            Box::new(right_path.proposition),
-                        ),
-                        facts,
-                        obligations,
-                    });
-                }
-            }
+                &mut combined,
+            )?;
         }
         paths = combined;
     }
     Ok(Some(paths))
+}
+
+/// Lowers the right operand of `and` where its left operand holds, as C's
+/// `&&` evaluates it: each of the right side's obligations is owed only there,
+/// as `left implies obligation`. The right side is lowered without assuming
+/// the left proposition, so the left side never changes the right term;
+/// establishing a guarded obligation assumes its guard
+/// (`ProofObligation::evaluation_requirement_is_established`).
+fn lower_guarded_conjunct_in(
+    scope: SpecScope<'_>,
+    left_path: &SpecPropositionPath,
+    right: &SpecProposition,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+    paths: &mut Vec<SpecPropositionPath>,
+) -> ExecutionResult<()> {
+    let right_assumptions =
+        assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
+    for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+        scope,
+        right,
+        &right_assumptions,
+        budget,
+    )? {
+        let mut guarded_right_obligations =
+            guard_right_obligations(&left_path.proposition, right_path.obligations);
+        let right_facts = guard_right_facts(
+            &left_path.proposition,
+            &right_path.facts,
+            &mut guarded_right_obligations,
+        );
+        if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
+            &left_path.facts,
+            &left_path.obligations,
+            &right_facts,
+            &guarded_right_obligations,
+            assumptions,
+            &right_assumptions,
+        ) {
+            paths.push(SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::And(
+                    Box::new(left_path.proposition.clone()),
+                    Box::new(right_path.proposition),
+                ),
+                facts,
+                obligations,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The obligations of a right operand read only where `left` holds, owed
+/// as `left implies obligation`.
+/// The path facts of a side read only where `guard` holds. Its logical read
+/// equations stay facts, being consequences of the values read; every other
+/// condition its evaluation selected is owed where the guard holds, as its
+/// obligations are.
+fn guard_right_facts(
+    guard: &Proposition,
+    facts: &ExecutionFacts,
+    obligations: &mut Vec<ProofObligation>,
+) -> ExecutionFacts {
+    if !facts.has_path_conditions() {
+        return facts.clone();
+    }
+    obligations.extend(
+        facts
+            .iter()
+            .filter(|fact| !fact.is_logical_read_equation())
+            .map(|fact| {
+                ProofObligation::evaluation_domain(Proposition::Implies(
+                    Box::new(guard.clone()),
+                    Box::new(fact.proposition().clone()),
+                ))
+            }),
+    );
+    facts.filtered(|fact| fact.is_logical_read_equation())
+}
+
+fn guard_right_obligations(
+    left: &Proposition,
+    right_obligations: Vec<ProofObligation>,
+) -> Vec<ProofObligation> {
+    right_obligations
+        .into_iter()
+        .map(|obligation| {
+            let antecedent = left.clone();
+            obligation.map_proposition(|proposition| {
+                Proposition::Implies(Box::new(antecedent), Box::new(proposition))
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone)]
@@ -1581,38 +1654,14 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
             )? {
-                let right_assumptions = assumptions_with_path_context(
-                    assumptions,
-                    &left_path.facts,
-                    &left_path.obligations,
-                );
-                for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                lower_guarded_conjunct_in(
                     scope,
+                    &left_path,
                     right,
-                    &right_assumptions,
+                    assumptions,
                     budget,
-                )? {
-                    if let Some((facts, obligations)) =
-                        merge_execution_pure_facts_and_obligations_under(
-                            &left_path.facts,
-                            &left_path.obligations,
-                            &right_path.facts,
-                            &right_path.obligations,
-                            assumptions,
-                            &right_assumptions,
-                        )
-                    {
-                        paths.push(SpecPropositionPath {
-                            introductions: Vec::new(),
-                            proposition: Proposition::And(
-                                Box::new(left_path.proposition.clone()),
-                                Box::new(right_path.proposition),
-                            ),
-                            facts,
-                            obligations,
-                        });
-                    }
-                }
+                    &mut paths,
+                )?;
             }
             Ok(paths)
         }
@@ -1670,17 +1719,8 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     &right_assumptions,
                     budget,
                 )? {
-                    let guarded_right_obligations = right_path
-                        .obligations
-                        .iter()
-                        .cloned()
-                        .map(|obligation| {
-                            let antecedent = left_path.proposition.clone();
-                            obligation.map_proposition(|proposition| {
-                                Proposition::Implies(Box::new(antecedent), Box::new(proposition))
-                            })
-                        })
-                        .collect::<Vec<_>>();
+                    let guarded_right_obligations =
+                        guard_right_obligations(&left_path.proposition, right_path.obligations);
                     if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                         &left_path.facts,
                         &left_path.obligations,
@@ -2083,55 +2123,66 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         SpecProposition::Defined(expression) => {
             let mut checked = SpecEvaluation::checked(budget);
             checked.program_definedness = true;
-            // Definedness is decided from no facts, except that a contract
-            // entry's own requirement keeps assuming what its caller checked
-            // about opaque pointer bounds.
-            let context = if assumptions.should_assume_entry_clause_spans() {
-                PureFactContext::new().assume_entry_clause_spans()
-            } else {
-                PureFactContext::new()
-            };
+            let context = definedness_context(assumptions);
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
                 expression,
                 &context,
                 &mut checked,
             )?;
-            let mut normal_paths = paths.into_iter().map(|path| {
-                proposition_and_all(
-                    path.facts
-                        .into_iter()
-                        // Certified consequences (including read equations and
-                        // ledger bounds) describe the value; they are not
-                        // additional conditions for evaluating it.
-                        .filter(|fact| !fact.is_certified())
-                        .filter_map(|fact| {
-                            drop_verified_load_definition_conjuncts(fact.proposition().clone())
-                        })
-                        .chain(path.obligations.into_iter().filter_map(|obligation| {
-                            drop_verified_load_definition_conjuncts(
-                                obligation.proposition().clone(),
-                            )
-                        }))
-                        .collect(),
-                )
-            });
-            let proposition = normal_paths.next().map_or_else(
-                || Proposition::condition_is(ConditionTerm::Constant(false), true),
-                |first| {
-                    normal_paths.fold(first, |left, right| {
-                        Proposition::Or(Box::new(left), Box::new(right))
-                    })
-                },
-            );
             Ok(vec![SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition,
+                proposition: definedness_claim(paths),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
+        SpecProposition::OperationDefined(expression) => {
+            operation_defined::lower(scope, expression, assumptions, budget)
+        }
     }
+}
+
+/// Definedness is decided from no facts, except that a contract entry's own
+/// requirement keeps assuming what its caller checked about opaque pointer
+/// bounds.
+#[inline(never)]
+fn definedness_context(assumptions: &PureFactContext) -> PureFactContext {
+    if assumptions.should_assume_entry_clause_spans() {
+        PureFactContext::new().assume_entry_clause_spans()
+    } else {
+        PureFactContext::new()
+    }
+}
+
+/// The condition under which an evaluation reaches a value: on some path,
+/// every condition the path owes or selects. Certified consequences
+/// (including read equations and ledger bounds) describe the value; they are
+/// not additional conditions for evaluating it.
+#[inline(never)]
+fn definedness_claim(paths: Vec<SpecExpressionPath>) -> Proposition {
+    let mut normal_paths = paths.into_iter().map(|path| {
+        proposition_and_all(
+            path.facts
+                .into_iter()
+                .filter(|fact| !fact.is_certified())
+                .filter_map(|fact| {
+                    drop_verified_load_definition_conjuncts(fact.proposition().clone())
+                })
+                .chain(path.obligations.into_iter().filter_map(|obligation| {
+                    drop_verified_load_definition_conjuncts(obligation.proposition().clone())
+                }))
+                .collect(),
+        )
+    });
+    normal_paths.next().map_or_else(
+        || Proposition::condition_is(ConditionTerm::Constant(false), true),
+        |first| {
+            normal_paths.fold(first, |left, right| {
+                Proposition::Or(Box::new(left), Box::new(right))
+            })
+        },
+    )
 }
 
 /// Combines alternative evaluation paths without moving an existential across
@@ -2247,6 +2298,7 @@ fn evaluate_spec_integer_expression_paths_in(
             else_branch,
             assumptions,
             budget,
+            false,
         ),
         SpecIntegerExpression::FromMachine(machine) => {
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -3122,6 +3174,28 @@ fn evaluate_spec_integer_comparison_operand_in(
             true,
         );
     }
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let SpecIntegerExpression::If {
+            condition,
+            then_branch,
+            else_branch,
+        } = expression
+        && simple_integer_if_arm(then_branch)
+        && simple_integer_if_arm(else_branch)
+        && super::functions::spec_proposition_is_state_independent(condition)
+    {
+        budget.consume_expression_step()?;
+        return evaluate_spec_integer_if_paths_in(
+            scope,
+            condition,
+            then_branch,
+            else_branch,
+            assumptions,
+            budget,
+            true,
+        );
+    }
     evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)
 }
 
@@ -3581,7 +3655,7 @@ fn lower_spec_algebraic_comparison_at_state_in(
         && super::functions::spec_algebraic_expression_is_obligation_free(left)
         && super::functions::spec_algebraic_expression_is_state_independent(left);
     for left_path in
-        evaluate_spec_algebraic_at_state_with_bindings_in(scope, left, assumptions, budget)?
+        evaluate_spec_algebraic_comparison_operand_in(scope, left, assumptions, budget)?
     {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
@@ -3594,12 +3668,7 @@ fn lower_spec_algebraic_comparison_at_state_in(
                 obligations: Vec::new(),
             }]
         } else {
-            evaluate_spec_algebraic_at_state_with_bindings_in(
-                scope,
-                right,
-                &right_assumptions,
-                budget,
-            )?
+            evaluate_spec_algebraic_comparison_operand_in(scope, right, &right_assumptions, budget)?
         };
         for right_path in right_paths {
             if left_path.value.algebraic_type() != right_path.value.algebraic_type() {
@@ -3636,6 +3705,38 @@ fn lower_spec_algebraic_comparison_at_state_in(
         }
     }
     Ok(paths)
+}
+
+fn evaluate_spec_algebraic_comparison_operand_in(
+    scope: SpecScope<'_>,
+    expression: &SpecAlgebraicExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let SpecAlgebraicExpressionNode::If {
+            condition,
+            then_branch,
+            else_branch,
+        } = &expression.node
+        && simple_algebraic_if_arm(then_branch)
+        && simple_algebraic_if_arm(else_branch)
+        && super::functions::spec_proposition_is_state_independent(condition)
+    {
+        budget.consume_expression_step()?;
+        return evaluate_spec_algebraic_if_paths_in(
+            scope,
+            &expression.algebraic_type,
+            condition,
+            then_branch,
+            else_branch,
+            assumptions,
+            budget,
+            true,
+        );
+    }
+    evaluate_spec_algebraic_at_state_with_bindings_in(scope, expression, assumptions, budget)
 }
 
 #[cfg(test)]
@@ -3906,6 +4007,7 @@ fn evaluate_spec_algebraic_non_call_in(
             else_branch,
             assumptions,
             budget,
+            false,
         ),
         SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
             if !spec_algebraic_result_match_arms_are_well_formed(&scrutinee.algebraic_type, arms) {
@@ -6299,7 +6401,7 @@ fn lower_spec_predicate_proposition_at_state_in(
         paths = next_paths;
     }
 
-    if name == SAME_OBJECT_PREDICATE_NAME {
+    if name == SAME_ALLOCATION_PREDICATE_NAME {
         for path in &mut paths {
             let Proposition::Predicate { arguments, .. } = &path.proposition else {
                 unreachable!("predicate lowering retains its proposition carrier")
@@ -6322,7 +6424,8 @@ fn lower_spec_predicate_proposition_at_state_in(
             {
                 return Ok(Vec::new());
             }
-            path.proposition = pointer_same_object_proposition(left.address(), right.address());
+            // The fact stays one predicate, so it raises to itself. Admitting it
+            // relates the two provenances (`PureFactContext::adjust_same_allocation_fact`).
         }
     }
     Ok(paths)
@@ -8210,22 +8313,29 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         value_type: *value_type,
                     }));
                 }
-                let read_point = || match memory {
+                let read_point = match memory {
                     SpecPoint::At(point) => point.clone(),
                     _ => selected_state.expect("selected read state").program_point(),
                 };
-                let version = if !*exact && ProgramPoint::supports_indexed_version(&pointer) {
-                    read_point().ordinary_typed_version(&pointer, *value_type)
+                let integer_read_through_loaded_pointer =
+                    MachineIntegerType::from_program_type(*value_type).is_some()
+                        && matches!(pointer.base, AddressBase::LoadedPointer(_));
+                let version = if !*exact
+                    && (ProgramPoint::supports_indexed_version(&pointer)
+                        || integer_read_through_loaded_pointer
+                        || ProgramPoint::supports_static_entry_version(&pointer, *value_type))
+                {
+                    read_point.ordinary_typed_version(&pointer, *value_type)
                 } else {
                     None
                 };
-                let observation = (!*exact && crate::kernel::eval::typed_reads::is_active())
-                    .then(|| (read_point(), pointer.clone()));
+                let observation = crate::kernel::eval::typed_reads::is_active()
+                    .then(|| (read_point.clone(), pointer.clone()));
                 let retain_pointer = value_type.is_pointer() && (*exact || version.is_some());
                 let read_paths = if let Some(version) = version {
                     vec![crate::kernel::eval::evaluate_indexed_read(
                         version,
-                        &read_point(),
+                        &read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -8235,7 +8345,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     && *value_type == ProgramType::UInt32
                     && matches!(pointer.offset, AddressOffset::Constant(0))
                     && let Some((value, byte_facts)) = crate::kernel::eval::indexed_uint32_byte_read(
-                        &read_point(),
+                        &read_point,
                         &pointer,
                         budget.budget.program_byte_order(),
                     )
@@ -8249,7 +8359,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     }]
                 } else if *exact {
                     crate::kernel::eval::evaluate_exact_logical_memory_load_paths(
-                        read_point(),
+                        read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -8257,15 +8367,12 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     )
                 } else {
                     crate::kernel::eval::evaluate_logical_memory_load_paths_at(
-                        memory_view,
+                        &read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
                         obligations,
                         assumptions,
-                        KernelFloatType::from_program_type(*value_type)
-                            .map(|_| read_point())
-                            .as_ref(),
                     )
                 };
                 if let Some((point, address)) = observation
@@ -8864,6 +8971,11 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         return version;
     }
     let start = source.parameter_read_start(block);
+    // A certified view can name the array at this point even when the
+    // index has no earlier version for its storage.
+    if start.has_certified_read_view() {
+        return start.for_exact_read();
+    }
     let version = crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(block),
         &start,
@@ -9104,8 +9216,9 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
 }
 
 /// The value paths of a C-level evaluation, for a specification that reads
-/// them. A path that ended in a runtime error carries no value and is
-/// dropped. When every path did, the first error is recorded on the budget:
+/// them. A path that ended in a runtime error or undefined behavior carries
+/// no value and is dropped. When every path did, the first error, or else the
+/// first undefined behavior, is recorded on the budget:
 /// a proposition with no evaluation path is reported by count, and the count
 /// says nothing about why (a load of the wrong width, a read no resource
 /// permits). Zero paths stays an ordinary answer here, since a requirement
@@ -9127,6 +9240,7 @@ fn spec_execution_value_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> Vec<SpecExpressionPath> {
     let mut first_error = None;
+    let mut first_undefined_behavior = None;
     let mut values = Vec::new();
     for path in paths {
         if let Some(error) = refuted_narrowing_error(&path.obligations) {
@@ -9149,13 +9263,17 @@ fn spec_execution_value_paths_in(
             ExpressionOutcome::RuntimeError(error) => {
                 first_error.get_or_insert(error);
             }
-            ExpressionOutcome::UndefinedBehavior(_) => {}
+            ExpressionOutcome::UndefinedBehavior(behavior) => {
+                first_undefined_behavior.get_or_insert(behavior);
+            }
         }
     }
-    if values.is_empty()
-        && let Some(error) = first_error
-    {
-        budget.dropped_runtime_error.get_or_insert(error);
+    if values.is_empty() {
+        if let Some(error) = first_error {
+            budget.dropped_runtime_error.get_or_insert(error);
+        } else if let Some(behavior) = first_undefined_behavior {
+            budget.dropped_undefined_behavior.get_or_insert(behavior);
+        }
     }
     values
 }
@@ -9783,9 +9901,43 @@ fn obligations_owed_under(
         .collect()
 }
 
-/// An algebraic `if`, as [`evaluate_spec_if_paths_in`] evaluates a scalar
-/// one: a literally constant condition selects its branch, and any other
-/// lowers both into one conditional term.
+fn simple_integer_if_arm(expression: &SpecIntegerExpression) -> bool {
+    matches!(
+        expression,
+        SpecIntegerExpression::Term(IntegerTerm::Constant(_) | IntegerTerm::Variable(_))
+    )
+}
+
+/// Constructor trees with literal or bound fields require no evaluation
+/// domain. Partial operations and calls still use the selected-arm evaluator.
+fn simple_algebraic_if_arm(expression: &SpecAlgebraicExpression) -> bool {
+    use walk::{SpecNode, Visit, spec_tree_all};
+    spec_tree_all(SpecNode::Algebraic(expression), |node| {
+        crate::instrumentation::record_deterministic_work(1);
+        match node {
+            SpecNode::Algebraic(value) => match value.node {
+                SpecAlgebraicExpressionNode::Variable(_)
+                | SpecAlgebraicExpressionNode::Binding(_) => Visit::Skip,
+                SpecAlgebraicExpressionNode::Constructor { .. } => Visit::Descend,
+                _ => Visit::Stop(()),
+            },
+            SpecNode::AlgebraicValue(_) => Visit::Descend,
+            SpecNode::Integer(value) if simple_integer_if_arm(value) => Visit::Skip,
+            SpecNode::Expression(SpecExpression::Value(_)) => Visit::Skip,
+            _ => Visit::Stop(()),
+        }
+    })
+}
+
+fn retains_closed_value_if(proposition: &Proposition) -> bool {
+    proposition
+        .condition_native()
+        .is_some_and(|(condition, _)| {
+            crate::kernel::proof::fact_reasoning::literal_value_if_guard(condition).is_some()
+        })
+}
+
+/// Preserve a closed guard over simple arms in a logical comparison.
 fn evaluate_spec_algebraic_if_paths_in(
     scope: SpecScope<'_>,
     algebraic_type: &AlgebraicType,
@@ -9794,6 +9946,7 @@ fn evaluate_spec_algebraic_if_paths_in(
     else_branch: &SpecAlgebraicExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
+    retain_closed: bool,
 ) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
     if then_branch.algebraic_type != *algebraic_type
         || else_branch.algebraic_type != *algebraic_type
@@ -9812,7 +9965,11 @@ fn evaluate_spec_algebraic_if_paths_in(
             &condition_path.facts,
             &condition_path.obligations,
         );
-        let branch_paths = match constant_spec_condition_value(&condition_path.proposition) {
+        let retain_closed = retain_closed && retains_closed_value_if(&condition_path.proposition);
+        let branch_paths = match (!retain_closed)
+            .then(|| constant_spec_condition_value(&condition_path.proposition))
+            .flatten()
+        {
             Some(truth) => evaluate_spec_algebraic_at_state_with_bindings_in(
                 scope,
                 if truth { then_branch } else { else_branch },
@@ -9870,7 +10027,16 @@ fn evaluate_spec_algebraic_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecAlgebraicPath {
-                            value: if budget.machine_result_production_disabled {
+                            value: if retain_closed {
+                                AlgebraicResult::Shared(KernelTerm::algebraic_if_raw(
+                                    algebraic_type.clone(),
+                                    [
+                                        KernelTermImport::default().condition(&condition),
+                                        then_value.into_kernel(),
+                                        else_value.into_kernel(),
+                                    ],
+                                ))
+                            } else if budget.machine_result_production_disabled {
                                 AlgebraicTerm::if_then_else(
                                     condition.clone(),
                                     then_value.into_native_compat(),
@@ -9912,9 +10078,7 @@ fn evaluate_spec_algebraic_if_paths_in(
     Ok(paths)
 }
 
-/// An Integer `if`, as [`evaluate_spec_if_paths_in`] evaluates a scalar
-/// one: a literally constant condition selects its branch, and any other
-/// lowers both into one conditional term.
+/// Preserve a closed guard over simple arms in a logical comparison.
 fn evaluate_spec_integer_if_paths_in(
     scope: SpecScope<'_>,
     condition: &SpecProposition,
@@ -9922,6 +10086,7 @@ fn evaluate_spec_integer_if_paths_in(
     else_branch: &SpecIntegerExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
+    retain_closed: bool,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
     let mut paths = Vec::new();
     for condition_path in {
@@ -9937,7 +10102,11 @@ fn evaluate_spec_integer_if_paths_in(
             &condition_path.facts,
             &condition_path.obligations,
         );
-        let branch_paths = match constant_spec_condition_value(&condition_path.proposition) {
+        let retain_closed = retain_closed && retains_closed_value_if(&condition_path.proposition);
+        let branch_paths = match (!retain_closed)
+            .then(|| constant_spec_condition_value(&condition_path.proposition))
+            .flatten()
+        {
             Some(truth) => evaluate_spec_integer_expression_paths_in(
                 scope,
                 if truth { then_branch } else { else_branch },
@@ -9995,11 +10164,19 @@ fn evaluate_spec_integer_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecIntegerPath {
-                            value: IntegerResult::conditional(
-                                condition.clone(),
-                                then_value,
-                                else_value,
-                            ),
+                            value: if retain_closed {
+                                IntegerResult::from_kernel(KernelTerm::integer_if_raw([
+                                    KernelTermImport::default().condition(&condition),
+                                    then_value.into_kernel(),
+                                    else_value.into_kernel(),
+                                ]))
+                            } else {
+                                IntegerResult::conditional(
+                                    condition.clone(),
+                                    then_value,
+                                    else_value,
+                                )
+                            },
                             facts,
                             obligations,
                         });
@@ -11169,6 +11346,7 @@ mod arithmetic_domain_scaling_tests {
     include!("../scaling_tests/kernel/spec/arithmetic_domains.rs");
     include!("../scaling_tests/kernel/spec/rust_shifts.rs");
     include!("../scaling_tests/kernel/spec/call_arguments.rs");
+    include!("../scaling_tests/kernel/spec/guarded_definedness.rs");
 }
 
 #[cfg(test)]

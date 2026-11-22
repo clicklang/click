@@ -2,31 +2,33 @@
 
 This page is the procedure for repairing a failed proof from its diagnostic
 and `--trace-proof` output: find the goal that could not be proved, prove it
-through explicit intermediate goals, and stop at one of seven named outcomes. It
+through explicit intermediate goals, and stop at a named outcome. It
 replaces trial-and-error tactic variation with a decomposition that each
 attempt must advance.
 
 [Proof-failure triage](proof-failure-triage.md) classifies a failure once it
 is understood. This page is how you come to understand it.
 
-## Every proof error has a goal
+## Classify the verification outcome
 
-Click reports four kinds of error. Only a proof error enters this procedure.
+Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-behavior).
 
 | Error kind | What it means | What to do |
 | --- | --- | --- |
 | `syntax error` | The sidecar does not parse. | Fix the source at the reported line. |
 | `type error` | The sidecar parses but does not elaborate. | Fix the named declaration. |
-| `internal error` | The verifier failed. | The outcome is [`unclear-trace`](#outcomes). |
-| `proof error` | A checked operation could not establish something. | Follow the procedure below. |
+| `internal error` | Click detected its own failure. | Stop at [`internal-error`](#outcomes) and capture the command, version, output, and inputs. |
+| `limit error` | A configured work limit stopped verification. | Record the limit and the operation that reached it. |
+| `contract error` | Click identified a rule it believes a written contract clause violates. | Check the rule under the contract’s requirements. Correct the clause or report a supported `contract-bug`. |
+| `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
+| `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
+| `incomplete proof` | The proof ended with a requirement outstanding. | Establish the named requirement before closing, such as a resource promised on return. |
+| `execution prerequisite unmet` | A checked operation needs evidence at its program point. | Record the requirement and follow the procedure below. |
+| `contract entry refused` | Click could not enter a contract. | Inspect the named clauses and work from the available goal. |
+| `execution refused`, `termination not established`, `invalid divergence declaration`, or `unsupported proof` | Click identified a specific execution, termination, or proof-driver refusal. | Investigate the reported cause. |
 
-A proof error may give a more specific diagnostic. A `tactic failure`
-identifies a refused checked step. If it stops while executing C, read the
-named expression and reason before looking for a goal. A `proof search miss`
-means search found no proof or elided argument.
-
-When a proof error reports a **goal**, it names the proposition that had to be true at a
-point and was not proved there. A goal can come from an `ensures`
+When a proposition had to be true at a point and Click did not prove it,
+the report prints it on a `goal:` line. That goal can come from an `ensures`
 clause, a written `have`, a call's precondition, a definedness requirement such
 as the absence of signed overflow, or a memory access. The report prints it on
 a `goal:` line. Whatever its source, a goal is proved the same way: by the implicit tail when
@@ -72,7 +74,7 @@ in a proof that succeeds; use it to see the facts available at a point where
 you intend to write a `have`.
 
 The trace lists each checked step on the failing path and the facts it added
-(`adds:`), then a `failed check` section with the goal, the resources held,
+(`adds:`), then a `proof refusal` section with the goal, the resources held,
 and the available premises. Those premises are what an explicit proof of the
 goal can use. [Reading trace output](#reading-trace-output) describes the
 notation.
@@ -112,7 +114,7 @@ that every current implementation meets the checking-cost contract.
 | Introduce an assumption or binder, split cases, or instantiate a universal fact | [Introducing a binder or premise](../reference/tactics/index.md#introducing-a-binder-or-premise), [explicit cases](../reference/tactics/index.md#explicit-cases), [instantiation with selected premises](../reference/tactics/index.md#universal-instantiation) | The connective or quantified fact, witnesses, and branch obligations |
 | Replace an equal term | [Rewriting](../reference/tactics/index.md#rewriting) | The equality, direction, and expression being rewritten |
 | Evaluate a definition or computation | [Unfolding pure functions](../reference/tactics/index.md#unfolding-pure-functions), [context-free normalization](../reference/tactics/index.md#context-free-normalization) | The named definition/application or explicit expression |
-| Apply a mathematical or separation law | [Theorem application with selected premises](../reference/tactics/index.md#theorem-application-with-selected-premises), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
+| Apply a mathematical or separation law | [Theorem application](../reference/tactics/index.md#theorem-application), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
 | Establish arithmetic | [Ordinary arithmetic proofs](../reference/tactics/index.md#ordinary-arithmetic-proofs) | Named laws, cited premises, and explicit intermediate facts |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
 | Preserve a fact across a state transition | [Preservation](../reference/tactics/index.md#preservation), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
@@ -132,7 +134,7 @@ and the inference is sound, but no supported primitive expresses it, stop at
 `missing-rule`. Give that inference for design discussion instead of repeatedly
 changing tactics or demanding intermediate facts with no rule to connect them.
 If a documented rule already covers the link and refuses it, use
-`failing-tactic` instead. If the mathematics itself is not established, use
+`tactic-bug` instead. If the mathematics itself is not established, use
 `unclear-goal`; a failed search alone is not evidence of a missing rule.
 
 ### One-step preservation must be fast
@@ -202,13 +204,15 @@ premises; it does not by itself certify that checking is fast.
 ## The procedure
 
 1. **Record the goal.** Write down the failing goal `G`, the point
-   where it is required, and the premises available there. If the report
-   should name a goal but omits it or gives an unreadable one, stop at
-   `unclear-trace`. A checked execution step may identify a Click limitation
-   before generating a goal. Reduce that step as `failing-tactic`.
+   where it is required, and the premises available there. If the report has
+   no `goal:` line, or you cannot read it, stop at `unclear-trace`.
 2. **Decide whether `G` is true.** Check it against the contract, the branch
-   facts, and the C semantics. If it is false on some execution the contract
-   admits, stop at `false-goal`.
+   facts, and the C semantics. If an admitted execution refutes `G`, check
+   the original claim on that execution and the rule that introduced `G`.
+   Use `false-claim` if the execution refutes the original claim. Use
+   `obligation-bug` if Click generated `G` without support from the
+   applicable semantics or documented rule. Revise a stronger intermediate
+   goal that the proof author chose and the argument does not need.
 3. **Write the argument.** State why `G` follows from the premises as a chain
    of intermediate facts: the premises imply `A`, `A` implies `B`, and `B`
    implies `G`. Write each link as a `have` at that point, so the proof
@@ -226,9 +230,9 @@ premises; it does not by itself certify that checking is fast.
    link as primitive solely because it is one tactic call.
    The [tactic table](../reference/tactics/index.md) gives each tactic's class,
    and `click docs NAME` prints its forms and documented behavior. A refusal
-   may identify the tactic with `refused by:`; `refused by: nothing` means
-   that the proof ended with the goal open. If a written primitive is refused
-   within its documented **Accepts** list, stop at `failing-tactic`.
+   may identify the tactic with `refused by:`. An `incomplete proof` names
+   the requirement still outstanding when the proof closes. If a written primitive is refused
+   within its documented **Accepts** list, stop at `tactic-bug`.
 
    To split a link that a smart tactic proved part of, read its trace: a step
    marked ``(from `implicit tail`)``, ``(from `solve`)`` or
@@ -239,10 +243,10 @@ premises; it does not by itself certify that checking is fast.
 6. **On a search miss, write the argument.** An elided form, such as
    `apply(t(x))` or a bare `transport(P, Q)`, searches for an argument that
    a simple form of the same tactic takes written. When the search finds
-   nothing, the refusal says "this is a search miss" and its `refused by:`
-   line says the search found nothing. State the missing fact with `have`
+   nothing, the heading is `unsuccessful search` and the report may name the
+   tactic on a `refused by:` line. State the missing fact with `have`
    first, or write the `using` form, and run again. Only the written form's
-   refusal can be `failing-tactic`.
+   refusal can be `tactic-bug`.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its written form, or its position without changing the chain
@@ -266,31 +270,51 @@ The procedure ends at exactly one of these:
 | Outcome | Meaning |
 | --- | --- |
 | `success` | The proof verifies. Keep the explicit links that the default automation needed; they document the argument. |
-| `false-goal` | `G` does not hold on some execution the contract admits. Give the counterexample: the claim, the contract, or the C is wrong, not the proof. |
-| `unclear-goal` | You cannot say why `G` holds. Give `G`, the premises, and what you tried. |
+| `false-claim` | An execution admitted by the contract violates the original claim. Give the counterexample so the proof author can revisit the claim, contract, or program. |
+| `obligation-bug` | Click generated a requirement unsupported by the applicable semantics or documented rule. Give the discrepancy so Click maintainers can investigate obligation generation. |
+| `unclear-goal` | You can read `G` and its premises, but have neither a justification nor a counterexample. Say why you expected the proof to work and identify the local gap in the argument. |
 | `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
-| `failing-tactic` | Every link is written, and one link is a single simple tactic that is refused although the link is within what that tactic is documented to do, or a checked execution tactic names a Click limitation on valid C. Report the reduced refusal. |
-| `unclear-trace` | The report omits or obscures the goal or the reason a tactic refused (for example, it prints an unnameable `<unnamed A>` instead of the required value). Report a bug. |
+| `contract-bug` | Click refuses a contract that satisfies the documented rule. Quote the clause and exact refusal and show how the contract satisfies the rule. Click maintainers follow up. |
+| `tactic-bug` | Click refuses a minimized simple tactic whose written premises justify its goal and whose documented **Accepts** list covers the link. Report a Click bug. |
+| `unclear-trace` | You could not determine what the output says was refused. Quote the output and identify what you could not determine. |
+| `internal-error` | Click printed `internal error`. Tell the user immediately that Click detected a verifier failure. A proof goal or a minimized tactic link is optional evidence. |
 
-A smart tactic that does not prove a link is never `failing-tactic`: smart
-tactics may miss even a primitive link; identify its rule and supply its premises. A search miss is never
-`failing-tactic` either: the argument is still to be written. `false-goal` and
-`unclear-goal` usually mean the claim, the contract, or the argument needs
-another look rather than that Click is wrong.
+The `proof refusal:` heading locates a refusal. The outcome depends on what
+the proof-repair investigation establishes. For a smart-tactic miss or a
+failed search for an omitted argument, identify the primitive and state
+its premises. Report diagnosis as in progress while checking the inference
+and its documented support. An `unclear-trace` leaves the reason for the
+refusal undetermined. File a diagnostic bug only when you can demonstrate
+a specific defect in the output.
 
 ### Reporting a bug
 
-The three bug outcomes, a crash, and a hang are defects in Click. Report one
-with the user's approval, as an issue at
+Report a Click defect with the user's approval as an issue at
 <https://github.com/clicklang/click/issues> that contains enough to reproduce
 it. Label the issue with its outcome (`tracing: inexpressible-fact`,
-`tracing: failing-tactic`, `tracing: unclear-trace`, `crash`, or `hang`), and
-start its title with it in brackets (`[failing-tactic] ...`, `[hang] ...`) so
+`tracing: contract-bug`, `tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-trace`,
+`tracing: internal-error`, `crash`, or `hang`), and
+start its title with it in brackets (`[tactic-bug] ...`, `[hang] ...`) so
 it shows even without permission to set labels.
 
-A crash or hang report contains what [Crashes and hangs](#crashes-and-hangs)
-lists. A report of one of the three outcomes contains:
+For `internal-error`, include the exact command, the `click --version` output,
+the full diagnostic, and the inputs needed to reproduce it. For a crash or
+hang, follow [Crashes and hangs](#crashes-and-hangs).
+
+For `contract-bug`, include the reduced inputs, the exact command,
+`click --version`, and the complete diagnostic. Identify the clause, cite
+the contract rule, and show how the original contract satisfies it under
+its stated requirements.
+
+For `obligation-bug`, include a reduced reproduction, the original claim,
+the generated goal at its program point, and the exact command and output.
+Cite the rule or semantics that governs the check and show what it actually
+requires. Include any execution that satisfies the claim while refuting the
+generated goal.
+
+For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
+found during `unclear-trace` triage, include:
 
 - the smallest C and Click that still fail, keeping the original source
   pattern, with the exact command and its output, including the `goal:` line;
@@ -300,9 +324,9 @@ lists. A report of one of the three outcomes contains:
 - the nearest passing link and what differs from it;
 - why the link holds, in one line of mathematics, and the step of that
   argument Click did not take; and
-- for `failing-tactic`, the item of that tactic's **Accepts** list that
-  covers the link, or for `unclear-trace`, what in the output is missing or
-  misleading.
+- for `tactic-bug`, the item of that tactic's **Accepts** list that
+  covers the link, or for a diagnostic defect, the specific missing or
+  misleading output and the evidence of the defect.
 
 ## Worked example
 
@@ -333,7 +357,7 @@ that the addition does not overflow. It ends with the goal and how to prove it
 (abbreviated):
 
 ```text
-proof error:
+unsuccessful search:
   `frame.ensures_0` tactic 0
   `step()` produced undefined behavior
   signed overflow
@@ -347,7 +371,7 @@ help: to prove the goal explicitly, step to this statement and prove it there wi
 ```
 
 1. **Goal.** `inner <= 2147483646` before `return inner + 1;`. The trace's
-   failed check lists the bounds on `w` and `h`, and the call step added
+   proof refusal lists the bounds on `w` and `h`, and the call step added
    `inner == w * h`.
 2. **True?** Yes: `w * h` is at most `1000 * 1000`.
 3. **Argument.** `inner == w * h`, `w * h <= 1000000`, and `1000000 <=
@@ -388,7 +412,7 @@ This describes a representation mismatch, not additional proof evidence.
 Within a trace, goals, requirements, and traced facts share names and memory
 labels. A `transport` refusal that finds no frame evidence prints its own
 legend first, and the trace continues its numbering, so a label in the refusal
-and in the `failed check` goal means the same value or memory. A field of a named pointer prints as that name
+and in the `proof refusal` goal means the same value or memory. A field of a named pointer prints as that name
 plus its byte offset (`g + 16 bytes`). A bounded legend defines
 generated addresses and memory labels, including immutable proof names, pointer-read
 constructions, pure pointer calls with their typed arguments, byte offsets,
@@ -474,13 +498,13 @@ A step that a search produced says which one. A step that smart work checked
 ends its header with ``(from `implicit tail`)`` or the like, naming its
 origin: `implicit tail` for the steps the implicit tail took and for its
 closer, `solve` for a written `solve()`, and
-`implicit closer` for an obligation a `step()` or `fold` left open. A step whose `using` list a search chose, under a smart tactic or in an
-elided form such as `apply(t(x))` or a bare `transport(P, Q)`, has a `chosen:`
-line with the step written out in full, as `click expand` writes it:
+`implicit closer` for an obligation a `step()` or `fold` left open. A step
+whose arguments a search chose can have a `chosen:` line with the tactic
+written out as `click expand` writes it:
 
 ```text
 tactic@11: apply
-  chosen: apply(le_trans(x, y, z)) using { x <= y; y <= z; };
+  chosen: apply(le_trans(x, y, z));
   adds: x <= z
 ```
 
@@ -488,12 +512,12 @@ Writing the `chosen:` form removes the search for those arguments. It does
 not establish that the checked implementation avoids history walks; apply
 the one-step cost requirement above separately. A step with neither mark is one the script wrote.
 
-A failure trace also ends with a separately labelled `failed check`. It retains
+A failure trace also ends with a separately labelled `proof refusal`. It retains
 the refusal, checking stage, proof context, up to sixteen available premises,
 and up to twelve resources from the retained C state, even when the first operation fails before a checked step can
 be recorded. For postcondition failures, current-state names and resources come from the
 selected outcome; permissions consumed by a call are not shown as still held.
-The failed check is not an accepted execution step. A proposition
+The proof refusal is not an accepted execution step. A proposition
 proof has a fixed execution state; an execution tactic refused there names that
 restriction rather than implying that the tactic is unavailable everywhere.
 When an explicit script ends with a goal still open, its failure retains the

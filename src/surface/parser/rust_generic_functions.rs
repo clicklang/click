@@ -470,6 +470,24 @@ fn instance(
             source[at - 1].0,
             Token::Dot | Token::Arrow | Token::ColonColon
         );
+        // A crate struct argument, named by the importer's encoded name in
+        // the head, is read in the clauses at its path, `crate_name::Pair`.
+        if let Token::Ident(word) = token
+            && let Some(argument) = substitution.get(word)
+            && let spelled = crate::languages::rust::names::display_rust_names(argument)
+            && spelled.contains("::")
+        {
+            // The path's type arguments, `generic_stack::Node<T>`, are
+            // tokens of their own.
+            let (spelled, _) = tokenizer::tokenize(&spelled, None).map_err(|_| {
+                error_at(
+                    position,
+                    format!("type argument `{spelled}` is no Rust type"),
+                )
+            })?;
+            tokens.extend(spelled.into_iter().map(|token| (token, position.clone())));
+            continue;
+        }
         tokens.push(match token {
             Token::Ident(word) if substitution.contains_key(word) => {
                 (Token::Ident(substitution[word].clone()), position.clone())

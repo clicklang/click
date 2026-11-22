@@ -31,7 +31,7 @@ impl SourceContext {
             tactic,
             ProofTactic::ObserveResource(
                 ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_)
-            ) | ProofTactic::ObserveSavedMemory { .. }
+            ) | ProofTactic::ObserveSubject(_)
         ) {
             return true;
         }
@@ -40,8 +40,8 @@ impl SourceContext {
                 tactic,
                 ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
+                    | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Induct { .. }
-                    | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::Witness(_)
@@ -99,6 +99,7 @@ impl SourceContext {
                     | ProofTactic::IntroAs(_)
                     | ProofTactic::IntroBinder(_)
                     | ProofTactic::Known
+                    | ProofTactic::Enumerate
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::ArithmeticUsing(_)

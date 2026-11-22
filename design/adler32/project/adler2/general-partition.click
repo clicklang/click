@@ -8,12 +8,12 @@ import click::integer;
 theorem adler_general_multiple_of_four(n: Integer) {
  requires 0 <= n;
  ensures truncating_remainder(n * 4, 4) == 0 by {
-  apply(integer::positive_divisor_quotient_lower(n * 4, 4, n)) using { 4 != 0; 1 <= 4; n * 4 <= n * 4; };
+  apply(integer::positive_divisor_quotient_lower(n * 4, 4, n));
   have 0 < n + 1 by solve() using { 0 <= n; };
   have n * 4 < (n + 1) * 4 by solve() using {};
-  apply(integer::positive_divisor_quotient_strict_upper(n * 4, 4, n + 1)) using { 4 != 0; 1 <= 4; 0 < n + 1; n * 4 < (n + 1) * 4; };
+  apply(integer::positive_divisor_quotient_strict_upper(n * 4, 4, n + 1));
   have truncating_quotient(n * 4, 4) == n by solve() using { n <= truncating_quotient(n * 4, 4); truncating_quotient(n * 4, 4) < n + 1; };
-  apply(integer::truncation_identity(n * 4, 4)) using { 4 != 0; };
+  apply(integer::truncation_identity(n * 4, 4));
   solve() using { n * 4 == truncating_quotient(n * 4, 4) * 4 + truncating_remainder(n * 4, 4); truncating_quotient(n * 4, 4) == n; };
  }
 }
@@ -26,11 +26,11 @@ theorem adler_general_short_integer_remainder(n: Integer, d: Integer) {
  ensures truncating_remainder(n, d) == n by {
   have 0 * d <= n by solve() using { 0 <= n; };
   have n < 1 * d by solve() using { n < d; };
-  apply(integer::positive_divisor_quotient_lower(n, d, 0)) using { d != 0; 1 <= d; 0 * d <= n; };
-  apply(integer::positive_divisor_quotient_strict_upper(n, d, 1)) using { d != 0; 1 <= d; n < 1 * d; };
+  apply(integer::positive_divisor_quotient_lower(n, d, 0));
+  apply(integer::positive_divisor_quotient_strict_upper(n, d, 1));
   have truncating_quotient(n, d) == 0 by solve() using { 0 <= truncating_quotient(n, d); truncating_quotient(n, d) < 1; };
-  apply(integer::truncation_identity(n, d)) using { d != 0; };
-  have truncating_quotient(n, d) * d == 0 by { rewrite(truncating_quotient(n, d), 0); normalize(); }
+  apply(integer::truncation_identity(n, d));
+  have truncating_quotient(n, d) * d == 0 by { rewrite(truncating_quotient(n, d), 0); known(); }
   solve() using { n == truncating_quotient(n, d) * d + truncating_remainder(n, d); truncating_quotient(n, d) * d == 0; };
  }
 }
@@ -41,19 +41,19 @@ theorem adler_u64_index_observation(value: uint64) {
  ensures to_integer(value as uint32 as int32) == to_integer(value) and (0 <= value as uint32 as int32 and value as uint32 as int32 <= 2147483647) by {
   have to_integer(value as uint32 as int32) == to_integer(value) by { solve() using { 0 <= to_integer(value); to_integer(value) <= 2147483647; }; }
   have 0 <= to_integer(value as uint32 as int32) by { rewrite(to_integer(value as uint32 as int32), to_integer(value)); known(); }
-  all { to_integer(((value as uint32) as int32)) == to_integer(value) => { known(); } 0 <= ((value as uint32) as int32) => { known(); } ((value as uint32) as int32) <= 2147483647 => { normalize(); } }
+  all { to_integer(((value as uint32) as int32)) == to_integer(value) => { known(); } 0 <= ((value as uint32) as int32) => { known(); } ((value as uint32) as int32) <= 2147483647 => { known(); } }
  }
 }
 
 theorem adler_multiple_of_full_batch(n: Integer) {
  requires 0 <= n;
  ensures truncating_remainder(n * 22208, 22208) == 0 by {
-  apply(integer::positive_divisor_quotient_lower(n * 22208, 22208, n)) using { 22208 != 0; 1 <= 22208; n * 22208 <= n * 22208; };
+  apply(integer::positive_divisor_quotient_lower(n * 22208, 22208, n));
   have 0 < n + 1 by solve() using { 0 <= n; };
   have n * 22208 < (n + 1) * 22208 by solve() using {};
-  apply(integer::positive_divisor_quotient_strict_upper(n * 22208, 22208, n + 1)) using { 22208 != 0; 1 <= 22208; 0 < n + 1; n * 22208 < (n + 1) * 22208; };
+  apply(integer::positive_divisor_quotient_strict_upper(n * 22208, 22208, n + 1));
   have truncating_quotient(n * 22208, 22208) == n by solve() using { n <= truncating_quotient(n * 22208, 22208); truncating_quotient(n * 22208, 22208) < n + 1; };
-  apply(integer::truncation_identity(n * 22208, 22208)) using { 22208 != 0; };
+  apply(integer::truncation_identity(n * 22208, 22208));
   solve() using { n * 22208 == truncating_quotient(n * 22208, 22208) * 22208 + truncating_remainder(n * 22208, 22208); truncating_quotient(n * 22208, 22208) == n; };
  }
 }
@@ -99,10 +99,10 @@ theorem adler_aligned_outer_partition_u64(p: Integer) {
  requires 0 <= p;
  requires truncating_remainder(p, 4) == 0;
  ensures 0 <= truncating_remainder(p, 22208) and truncating_remainder(p, 22208) <= 22204 by {
-  apply(integer::truncation_identity(p, 4)) using { 4 != 0; };
-  apply(integer::truncation_identity(p, 22208)) using { 22208 != 0; };
-  apply(integer::nonnegative_dividend_remainder(p, 22208)) using { 22208 != 0; 0 <= p; };
-  apply(integer::positive_divisor_remainder_upper(p, 22208)) using { 22208 != 0; 0 < 22208; };
+  apply(integer::truncation_identity(p, 4));
+  apply(integer::truncation_identity(p, 22208));
+  apply(integer::nonnegative_dividend_remainder(p, 22208));
+  apply(integer::positive_divisor_remainder_upper(p, 22208));
   have truncating_remainder(p, 22208) <= 22207 by { solve() using { truncating_remainder(p, 22208) <= 22208 - 1; }; }
   have truncating_remainder(p, 22208) == (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)) * 4 by solve() using { p == truncating_quotient(p, 4) * 4 + truncating_remainder(p, 4); truncating_remainder(p, 4) == 0; p == truncating_quotient(p, 22208) * 22208 + truncating_remainder(p, 22208); };
   have truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) <= 5551 by {
@@ -123,9 +123,9 @@ theorem adler_aligned_outer_partition_u64(p: Integer) {
   }
  }
  ensures truncating_remainder(truncating_remainder(p, 22208), 4) == 0 by {
-  apply(integer::truncation_identity(p, 4)) using { 4 != 0; };
-  apply(integer::truncation_identity(p, 22208)) using { 22208 != 0; };
-  apply(integer::nonnegative_dividend_remainder(p, 22208)) using { 22208 != 0; 0 <= p; };
+  apply(integer::truncation_identity(p, 4));
+  apply(integer::truncation_identity(p, 22208));
+  apply(integer::nonnegative_dividend_remainder(p, 22208));
   have truncating_remainder(p, 22208) == (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)) * 4 by solve() using { p == truncating_quotient(p, 4) * 4 + truncating_remainder(p, 4); truncating_remainder(p, 4) == 0; p == truncating_quotient(p, 22208) * 22208 + truncating_remainder(p, 22208); };
   have 0 <= truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) by {
    if truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) < 0 {
@@ -137,7 +137,7 @@ theorem adler_aligned_outer_partition_u64(p: Integer) {
     solve() using { not (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) < 0); };
    }
   }
-  apply(adler_general_multiple_of_four(truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208))) using { 0 <= truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208); };
+  apply(adler_general_multiple_of_four(truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)));
   rewrite(truncating_remainder(p, 22208), (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)) * 4);
   known();
  }
@@ -145,24 +145,24 @@ theorem adler_aligned_outer_partition_u64(p: Integer) {
 
 theorem adler_general_prefix_divisible_u64(n: uint64) {
  ensures (n - n % 4u64) % 4u64 == 0u64 by {
-  have 0u64 <= n by normalize();
-  apply(integer::positive_divisor_quotient_lower(to_integer(n), 4, 0)) using { 4 != 0; 1 <= 4; 0 * 4 <= to_integer(n); };
-  apply(adler_general_multiple_of_four(truncating_quotient(to_integer(n), 4))) using { 0 <= truncating_quotient(to_integer(n), 4); };
-  apply(integer::truncation_identity(to_integer(n), 4)) using { 4 != 0; };
-  have n % 4u64 <= n by normalize();
-  have to_integer(4u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(n, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
+  have 0u64 <= n by known();
+  apply(integer::positive_divisor_quotient_lower(to_integer(n), 4, 0));
+  apply(adler_general_multiple_of_four(truncating_quotient(to_integer(n), 4)));
+  apply(integer::truncation_identity(to_integer(n), 4));
+  have n % 4u64 <= n by known();
+  have to_integer(4u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(n, 4u64));
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
   have to_integer(n - n % 4u64) == truncating_quotient(to_integer(n), 4) * 4 by {
    rewrite(to_integer(n - n % 4u64), to_integer(n) - to_integer(n % 4u64));
    rewrite(to_integer(n % 4u64), truncating_remainder(to_integer(n), to_integer(4u64)));
    solve() using { to_integer(n) == truncating_quotient(to_integer(n), 4) * 4 + truncating_remainder(to_integer(n), 4); };
   }
-  apply(integer::uint64_remainder_to_integer(n - n % 4u64, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
+  apply(integer::uint64_remainder_to_integer(n - n % 4u64, 4u64));
   have to_integer((n - n % 4u64) % 4u64) == to_integer(0u64) by {
    rewrite(to_integer((n - n % 4u64) % 4u64), truncating_remainder(to_integer(n - n % 4u64), to_integer(4u64)));
    rewrite(to_integer(n - n % 4u64), truncating_quotient(to_integer(n), 4) * 4);
-   normalize() using { truncating_remainder(truncating_quotient(to_integer(n), 4) * 4, 4) == 0; };
+   solve() using { truncating_remainder(truncating_quotient(to_integer(n), 4) * 4, 4) == 0; };
   }
   known();
  }
@@ -171,14 +171,14 @@ theorem adler_general_prefix_divisible_u64(n: uint64) {
 theorem adler_outer_remainder_bounds_u64(p: uint64) {
  requires p % 4u64 == 0u64;
  ensures p % 22208u64 <= 22204u64 by {
-  have 0u64 <= p by normalize();
-  have to_integer(4u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(p, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
-  have to_integer(p % 4u64) == 0 by { rewrite(p % 4u64, 0u64); normalize(); }
+  have 0u64 <= p by known();
+  have to_integer(4u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(p, 4u64));
+  have to_integer(p % 4u64) == 0 by { rewrite(p % 4u64, 0u64); known(); }
   have truncating_remainder(to_integer(p), 4) == 0 by solve() using { to_integer(p % 4u64) == truncating_remainder(to_integer(p), to_integer(4u64)); to_integer(p % 4u64) == 0; };
-  apply(adler_aligned_outer_partition_u64(to_integer(p))) using { 0 <= to_integer(p); truncating_remainder(to_integer(p), 4) == 0; };
-  have to_integer(22208u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(p, 22208u64)) using { 22208u64 != 0u64; to_integer(22208u64) != 0; };
+  apply(adler_aligned_outer_partition_u64(to_integer(p)));
+  have to_integer(22208u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(p, 22208u64));
   have to_integer(p % 22208u64) <= to_integer(22204u64) by {
    rewrite(to_integer(p % 22208u64), truncating_remainder(to_integer(p), to_integer(22208u64)));
    solve() using { truncating_remainder(to_integer(p), 22208) <= 22204; };
@@ -186,19 +186,19 @@ theorem adler_outer_remainder_bounds_u64(p: uint64) {
   known();
  }
  ensures (p % 22208u64) % 4u64 == 0u64 by {
-  have 0u64 <= p by normalize();
-  have to_integer(4u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(p, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
-  have to_integer(p % 4u64) == 0 by { rewrite(p % 4u64, 0u64); normalize(); }
+  have 0u64 <= p by known();
+  have to_integer(4u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(p, 4u64));
+  have to_integer(p % 4u64) == 0 by { rewrite(p % 4u64, 0u64); known(); }
   have truncating_remainder(to_integer(p), 4) == 0 by solve() using { to_integer(p % 4u64) == truncating_remainder(to_integer(p), to_integer(4u64)); to_integer(p % 4u64) == 0; };
-  apply(adler_aligned_outer_partition_u64(to_integer(p))) using { 0 <= to_integer(p); truncating_remainder(to_integer(p), 4) == 0; };
-  have to_integer(22208u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(p, 22208u64)) using { 22208u64 != 0u64; to_integer(22208u64) != 0; };
-  apply(integer::uint64_remainder_to_integer(p % 22208u64, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
+  apply(adler_aligned_outer_partition_u64(to_integer(p)));
+  have to_integer(22208u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(p, 22208u64));
+  apply(integer::uint64_remainder_to_integer(p % 22208u64, 4u64));
   have to_integer((p % 22208u64) % 4u64) == to_integer(0u64) by {
    rewrite(to_integer((p % 22208u64) % 4u64), truncating_remainder(to_integer(p % 22208u64), to_integer(4u64)));
    rewrite(to_integer(p % 22208u64), truncating_remainder(to_integer(p), to_integer(22208u64)));
-   normalize() using { truncating_remainder(truncating_remainder(to_integer(p), 22208), 4) == 0; };
+   known();
   }
   known();
  }
@@ -206,25 +206,25 @@ theorem adler_outer_remainder_bounds_u64(p: uint64) {
 
 theorem adler_outer_bulk_divisible_u64(p: uint64) {
  ensures (p - p % 22208u64) % 22208u64 == 0u64 by {
-  have 0u64 <= p by normalize();
+  have 0u64 <= p by known();
   have 0 * 22208 <= to_integer(p) by { solve() using { 0u64 <= p; }; }
-  apply(integer::positive_divisor_quotient_lower(to_integer(p), 22208, 0)) using { 22208 != 0; 1 <= 22208; 0 * 22208 <= to_integer(p); };
-  apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(p), 22208))) using { 0 <= truncating_quotient(to_integer(p), 22208); };
-  apply(integer::truncation_identity(to_integer(p), 22208)) using { 22208 != 0; };
-  have p % 22208u64 <= p by normalize();
-  have to_integer(22208u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(p, 22208u64)) using { 22208u64 != 0u64; to_integer(22208u64) != 0; };
+  apply(integer::positive_divisor_quotient_lower(to_integer(p), 22208, 0));
+  apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(p), 22208)));
+  apply(integer::truncation_identity(to_integer(p), 22208));
+  have p % 22208u64 <= p by known();
+  have to_integer(22208u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(p, 22208u64));
   have to_integer(p - (p % 22208u64)) == to_integer(p) - to_integer((p % 22208u64));
   have to_integer(p - p % 22208u64) == truncating_quotient(to_integer(p), 22208) * 22208 by {
    rewrite(to_integer(p - p % 22208u64), to_integer(p) - to_integer(p % 22208u64));
    rewrite(to_integer(p % 22208u64), truncating_remainder(to_integer(p), to_integer(22208u64)));
    solve() using { to_integer(p) == truncating_quotient(to_integer(p), 22208) * 22208 + truncating_remainder(to_integer(p), 22208); };
   }
-  apply(integer::uint64_remainder_to_integer(p - p % 22208u64, 22208u64)) using { 22208u64 != 0u64; to_integer(22208u64) != 0; };
+  apply(integer::uint64_remainder_to_integer(p - p % 22208u64, 22208u64));
   have to_integer((p - p % 22208u64) % 22208u64) == to_integer(0u64) by {
    rewrite(to_integer((p - p % 22208u64) % 22208u64), truncating_remainder(to_integer(p - p % 22208u64), to_integer(22208u64)));
    rewrite(to_integer(p - p % 22208u64), truncating_quotient(to_integer(p), 22208) * 22208);
-   normalize() using { truncating_remainder(truncating_quotient(to_integer(p), 22208) * 22208, 22208) == 0; };
+   solve() using { truncating_remainder(truncating_quotient(to_integer(p), 22208) * 22208, 22208) == 0; };
   }
   known();
  }
@@ -234,27 +234,27 @@ theorem adler_outer_remaining_step_divisible_u64(remaining: uint64) {
  requires 22208u64 <= remaining;
  requires remaining % 22208u64 == 0u64;
  ensures (remaining - 22208u64) % 22208u64 == 0u64 by {
-  have to_integer(22208u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(remaining, 22208u64)) using { 22208u64 != 0u64; to_integer(22208u64) != 0; };
+  have to_integer(22208u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(remaining, 22208u64));
   have truncating_remainder(to_integer(remaining), 22208) == 0 by {
    rewrite(truncating_remainder(to_integer(remaining), 22208), truncating_remainder(to_integer(remaining), to_integer(22208u64)));
    rewrite(truncating_remainder(to_integer(remaining), to_integer(22208u64)), to_integer(remaining % 22208u64));
    rewrite(remaining % 22208u64, 0u64);
-   normalize();
+   known();
   }
-  apply(integer::truncation_identity(to_integer(remaining), 22208)) using { 22208 != 0; };
+  apply(integer::truncation_identity(to_integer(remaining), 22208));
   have to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 by solve() using { to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 + truncating_remainder(to_integer(remaining), 22208); truncating_remainder(to_integer(remaining), 22208) == 0; };
   have 1 * 22208 <= to_integer(remaining) by { solve() using { 22208u64 <= remaining; }; }
-  apply(integer::positive_divisor_quotient_lower(to_integer(remaining), 22208, 1)) using { 22208 != 0; 1 <= 22208; 1 * 22208 <= to_integer(remaining); };
+  apply(integer::positive_divisor_quotient_lower(to_integer(remaining), 22208, 1));
   have 0 <= truncating_quotient(to_integer(remaining), 22208) - 1 by solve() using { 1 <= truncating_quotient(to_integer(remaining), 22208); };
-  apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(remaining), 22208) - 1)) using { 0 <= truncating_quotient(to_integer(remaining), 22208) - 1; };
+  apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(remaining), 22208) - 1));
   have to_integer(remaining - 22208u64) == to_integer(remaining) - to_integer(22208u64);
   have to_integer(remaining - 22208u64) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208 by solve() using { to_integer(remaining - 22208u64) == to_integer(remaining) - to_integer(22208u64); to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208; };
-  apply(integer::uint64_remainder_to_integer(remaining - 22208u64, 22208u64)) using { 22208u64 != 0u64; to_integer(22208u64) != 0; };
+  apply(integer::uint64_remainder_to_integer(remaining - 22208u64, 22208u64));
   have to_integer((remaining - 22208u64) % 22208u64) == to_integer(0u64) by {
    rewrite(to_integer((remaining - 22208u64) % 22208u64), truncating_remainder(to_integer(remaining - 22208u64), to_integer(22208u64)));
    rewrite(to_integer(remaining - 22208u64), (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208);
-   normalize() using { truncating_remainder((truncating_quotient(to_integer(remaining), 22208) - 1) * 22208, 22208) == 0; };
+   solve() using { truncating_remainder((truncating_quotient(to_integer(remaining), 22208) - 1) * 22208, 22208) == 0; };
   }
   known();
  }
@@ -265,14 +265,14 @@ theorem adler_outer_exhausted_remaining_u64(remaining: uint64) {
  requires remaining % 22208u64 == 0u64;
  ensures remaining == 0u64 by {
   have to_integer(remaining) <= 18446744073709551615;
-  apply(adler_general_short_integer_remainder(to_integer(remaining), 22208)) using { 0 <= to_integer(remaining); to_integer(remaining) < 22208; 1 <= 22208; 22208 != 0; };
+  apply(adler_general_short_integer_remainder(to_integer(remaining), 22208));
   have to_integer(remaining % 22208u64) == truncating_remainder(to_integer(remaining), to_integer(22208u64));
   have to_integer(remaining) == to_integer(0u64) by {
    rewrite(to_integer(remaining), truncating_remainder(to_integer(remaining), 22208));
    rewrite(truncating_remainder(to_integer(remaining), 22208), truncating_remainder(to_integer(remaining), to_integer(22208u64)));
    rewrite(truncating_remainder(to_integer(remaining), to_integer(22208u64)), to_integer(remaining % 22208u64));
    rewrite(remaining % 22208u64, 0u64);
-   normalize();
+   known();
   }
   known();
  }
@@ -282,14 +282,14 @@ theorem adler_outer_exhausted_remaining_u64(remaining: uint64) {
 theorem adler_outer_remainder_integer_bounds_u64(p: uint64) {
  requires p % 4u64 == 0u64;
  ensures 0 <= to_integer(p % 22208u64) and to_integer(p % 22208u64) <= 22204 by {
-  have 0u64 <= p by normalize();
-  have to_integer(4u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(p, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
-  have to_integer(p % 4u64) == 0 by { rewrite(p % 4u64, 0u64); normalize(); }
+  have 0u64 <= p by known();
+  have to_integer(4u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(p, 4u64));
+  have to_integer(p % 4u64) == 0 by { rewrite(p % 4u64, 0u64); known(); }
   have truncating_remainder(to_integer(p), 4) == 0 by solve() using { to_integer(p % 4u64) == truncating_remainder(to_integer(p), to_integer(4u64)); to_integer(p % 4u64) == 0; };
-  apply(adler_aligned_outer_partition_u64(to_integer(p))) using { 0 <= to_integer(p); truncating_remainder(to_integer(p), 4) == 0; };
-  have to_integer(22208u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(p, 22208u64)) using { 22208u64 != 0u64; to_integer(22208u64) != 0; };
+  apply(adler_aligned_outer_partition_u64(to_integer(p)));
+  have to_integer(22208u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(p, 22208u64));
   rewrite(to_integer(p % 22208u64), truncating_remainder(to_integer(p), to_integer(22208u64)));
   all { 0 <= truncating_remainder(to_integer(p), to_integer(22208u64)) => { known(); } truncating_remainder(to_integer(p), to_integer(22208u64)) <= 22204 => { known(); } }
  }
@@ -298,9 +298,9 @@ theorem adler_outer_remainder_integer_bounds_u64(p: uint64) {
 theorem adler_outer_remainder_signed_bound_u64(p: uint64) {
  requires p % 4u64 == 0u64;
  ensures 0 <= (p % 22208u64) as uint32 as int32 and (p % 22208u64) as uint32 as int32 <= 22204 by {
-  apply(adler_outer_remainder_integer_bounds_u64(p)) using { p % 4u64 == 0u64; };
+  apply(adler_outer_remainder_integer_bounds_u64(p));
   have to_integer(p % 22208u64) <= 2147483647 by solve() using { to_integer(p % 22208u64) <= 22204; };
-  apply(adler_u64_index_observation(p % 22208u64)) using { 0 <= to_integer(p % 22208u64); to_integer(p % 22208u64) <= 2147483647; };
+  apply(adler_u64_index_observation(p % 22208u64));
   have to_integer((p % 22208u64) as uint32 as int32) <= 22204 by { rewrite(to_integer((p % 22208u64) as uint32 as int32), to_integer(p % 22208u64)); known(); }
   all { 0 <= (((p % 22208u64) as uint32) as int32) => { known(); } (((p % 22208u64) as uint32) as int32) <= 22204 => { known(); } }
  }
@@ -309,17 +309,17 @@ theorem adler_outer_remainder_signed_bound_u64(p: uint64) {
 theorem adler_outer_remainder_signed_divisible_u64(p: uint64) {
  requires p % 4u64 == 0u64;
  ensures ((p % 22208u64) as uint32 as int32) % 4 == 0 by {
-  apply(adler_outer_remainder_bounds_u64(p)) using { p % 4u64 == 0u64; };
-  apply(adler_outer_remainder_integer_bounds_u64(p)) using { p % 4u64 == 0u64; };
+  apply(adler_outer_remainder_bounds_u64(p));
+  apply(adler_outer_remainder_integer_bounds_u64(p));
   have to_integer(p % 22208u64) <= 2147483647 by solve() using { to_integer(p % 22208u64) <= 22204; };
-  apply(adler_u64_index_observation(p % 22208u64)) using { 0 <= to_integer(p % 22208u64); to_integer(p % 22208u64) <= 2147483647; };
-  have to_integer(4u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(p % 22208u64, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
-  have to_integer((p % 22208u64) % 4u64) == 0 by { rewrite((p % 22208u64) % 4u64, 0u64); normalize(); }
+  apply(adler_u64_index_observation(p % 22208u64));
+  have to_integer(4u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(p % 22208u64, 4u64));
+  have to_integer((p % 22208u64) % 4u64) == 0 by { rewrite((p % 22208u64) % 4u64, 0u64); known(); }
   have truncating_remainder(to_integer(p % 22208u64), 4) == 0 by solve() using { to_integer((p % 22208u64) % 4u64) == truncating_remainder(to_integer(p % 22208u64), to_integer(4u64)); to_integer((p % 22208u64) % 4u64) == 0; };
-  have defined(((p % 22208u64) as uint32 as int32) % 4) by normalize();
-  have to_integer(4) != 0 by { normalize(); }
-  apply(integer::int32_remainder_to_integer((p % 22208u64) as uint32 as int32, 4)) using { defined(((p % 22208u64) as uint32 as int32) % 4); to_integer(4) != 0; };
+  have defined(((p % 22208u64) as uint32 as int32) % 4) by known();
+  have to_integer(4) != 0 by { known(); }
+  apply(integer::int32_remainder_to_integer((p % 22208u64) as uint32 as int32, 4));
   have to_integer(((p % 22208u64) as uint32 as int32) % 4) == 0 by {
    rewrite(to_integer(((p % 22208u64) as uint32 as int32) % 4), truncating_remainder(to_integer((p % 22208u64) as uint32 as int32), to_integer(4)));
    rewrite(to_integer((p % 22208u64) as uint32 as int32), to_integer(p % 22208u64));
@@ -330,12 +330,12 @@ theorem adler_outer_remainder_signed_divisible_u64(p: uint64) {
 }
 
 theorem adler_general_tail_metadata_u64(n: uint64) {
- ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64) by normalize();
+ ensures to_integer(n - (n - n % 4u64)) == to_integer(n % 4u64) by known();
  ensures n % 4u64 <= 3u64 by {
-  have 0u64 <= n by normalize();
-  have to_integer(4u64) != 0 by { normalize(); }
-  apply(integer::uint64_remainder_to_integer(n, 4u64)) using { 4u64 != 0u64; to_integer(4u64) != 0; };
-  apply(integer::positive_divisor_remainder_upper(to_integer(n), 4)) using { 4 != 0; 0 < 4; };
+  have 0u64 <= n by known();
+  have to_integer(4u64) != 0 by { known(); }
+  apply(integer::uint64_remainder_to_integer(n, 4u64));
+  apply(integer::positive_divisor_remainder_upper(to_integer(n), 4));
   have truncating_remainder(to_integer(n), 4) <= 3 by { solve() using { truncating_remainder(to_integer(n), 4) <= 4 - 1; }; }
   have to_integer(n % 4u64) <= to_integer(3u64) by { rewrite(to_integer(n % 4u64), truncating_remainder(to_integer(n), to_integer(4u64))); known(); }
   known();

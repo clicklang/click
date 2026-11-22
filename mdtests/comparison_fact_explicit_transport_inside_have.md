@@ -21,18 +21,14 @@ void mark(int32 *next, int32 *visited) {
 } by {
     mark entry;
     have at(entry, 0 <= next[0]) by known();
-    have contains(memory(next[0..1]), memory(next[0])) by { normalize(); }
-    have contains(memory(visited[0..1]), memory(visited[0])) by { normalize(); }
+    have contains(memory(next[0..1]), memory(next[0])) by { apply(click::separation::contains_element(next, 0, 1, 0)); }
+    have contains(memory(visited[0..1]), memory(visited[0])) by { apply(click::separation::contains_element(visited, 0, 1, 0)); }
     have separate(memory(next[0]), memory(visited[0])) by {
-        apply(click::separation::separate_restrict(memory(next[0..1]), memory(visited[0..1]), memory(next[0]), memory(visited[0]))) using {
-            separate(memory(next[0..1]), memory(visited[0..1]));
-            contains(memory(next[0..1]), memory(next[0]));
-            contains(memory(visited[0..1]), memory(visited[0]));
-        };
+        apply(click::separation::separate_restrict(memory(next[0..1]), memory(visited[0..1]), memory(next[0]), memory(visited[0])));
     }
     step();
     have separate(statement(0).footprint, memory(next[0])) by {
-        normalize() using { separate(memory(next[0]), memory(visited[0])); };
+        solve() using { separate(memory(next[0]), memory(visited[0])); };
     }
     have next[0] == at(entry, next[0]) by {
         preserve(memory(next[0]), statement(0));

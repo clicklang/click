@@ -126,7 +126,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let resources = declarations.arities(DeclarationKind::Resource);
     let theorems = declarations.arities(DeclarationKind::Theorem);
     let mut proposition_calls = predicates.clone();
-    proposition_calls.insert("same_object".to_string(), 2);
+    proposition_calls.insert("same_allocation".to_string(), 2);
     proposition_calls.insert("little_endian".to_string(), 0);
     proposition_calls.insert("held".to_string(), 1);
     proposition_calls.extend(
@@ -794,10 +794,10 @@ fn validate_contract_applications_in_proposition_one(
                     Err(ClickError::new("little_endian expects no arguments"))
                 };
             }
-            if name == "same_object" {
+            if name == "same_allocation" {
                 let [left, right] = arguments.as_slice() else {
                     return Err(ClickError::new(format!(
-                        "same_object expects two pointer arguments in {context}, got {}",
+                        "same_allocation expects two pointer arguments in {context}, got {}",
                         arguments.len()
                     )));
                 };
@@ -810,7 +810,7 @@ fn validate_contract_applications_in_proposition_one(
                     )?;
                     if !actual.is_some_and(InterfaceType::is_object_pointer) {
                         return Err(ClickError::new(format!(
-                            "same_object expects pointer arguments in {context}, got {}",
+                            "same_allocation expects pointer arguments in {context}, got {}",
                             actual.map_or_else(
                                 || "an unknown type".to_string(),
                                 describe_interface_type
@@ -1667,8 +1667,8 @@ fn validate_resource_fact_memory_read_authority(
         ))
     })?;
     let state = root.with_materialized_memory_at_current_point(memory);
-    let array_refs = pure_theorem_array_refs(definition.parameters(), &values, state.memory());
     let at = state.program_point();
+    let array_refs = pure_theorem_array_refs(definition.parameters(), &values, &at);
     let mut scalar_assumptions = formation
         .recorded
         .into_iter()
@@ -1690,8 +1690,8 @@ fn validate_resource_fact_memory_read_authority(
         )?;
     }
     let empty_memory = SymbolicMemory::new();
-    let empty_array_refs = pure_theorem_array_refs(definition.parameters(), &values, &empty_memory);
     let empty_at = crate::kernel::ProgramPoint::starting_at(&empty_memory);
+    let empty_array_refs = pure_theorem_array_refs(definition.parameters(), &values, &empty_at);
     collect_resource_fact_scalar_assumptions_from_proposition(
         fact,
         predicate_definitions,

@@ -14,7 +14,7 @@ theorem integer_exists_from_have() {
     ensures exists (z: Integer) { z == 0 } by {
         have exists (x: Integer) { x == 0 } by {
             witness(0);
-            normalize();
+            solve();
         }
         let candidate = obtain(exists (candidate: Integer) { candidate == 0 });
         witness(candidate);

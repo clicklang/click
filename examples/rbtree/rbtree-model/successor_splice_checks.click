@@ -193,7 +193,7 @@ theorem immediate_successor_rejects_zero_height(erased: struct rb_node*,
                 rb_reparent(splice_black_leaf(l, erased), successor), Context::Top));
         unfold(ctx_rb(Context::Right(successor, above, Color::Black,
             rb_reparent(splice_black_leaf(l, erased), successor), Context::Top), Nat::Zero, Color::Black));
-        normalize() using {
+        solve() using {
             is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1;
             not(black_height(rb_reparent(splice_black_leaf(l, erased), successor)) == Nat::Zero);
         };
@@ -207,7 +207,8 @@ theorem other_successor_cases(successor: struct rb_node*, parent: struct rb_node
     ensures not(rb_minimum(RbTree::Node(successor, parent, Color::Red, RbTree::Empty, RbTree::Empty))
         == RbMinimum::Found(successor, Color::Black, RbTree::Empty)) by {
         unfold(rb_minimum(RbTree::Node(successor, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
-        normalize();
+        intro();
+        known();
     }
 
     ensures not(rb_minimum(RbTree::Node(successor, parent, Color::Black, RbTree::Empty,
@@ -215,7 +216,8 @@ theorem other_successor_cases(successor: struct rb_node*, parent: struct rb_node
         == RbMinimum::Found(successor, Color::Black, RbTree::Empty)) by {
         unfold(rb_minimum(RbTree::Node(successor, parent, Color::Black, RbTree::Empty,
             RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty))));
-        normalize();
+        intro();
+        known();
     }
 }
 

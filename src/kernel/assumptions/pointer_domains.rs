@@ -78,7 +78,10 @@ impl PureFactContext {
 
     /// Match the held resource's carrier, or check a particular access against
     /// an admitted domain for the required pointer. Supplier coverage and
-    /// ownership are checked separately.
+    /// ownership are checked separately. Callers also accept a holding of the
+    /// same provenance when coverage evidence for the required pointer's own
+    /// opaque domain contains the access: whether the bytes are held and
+    /// whether this pointer may reach them are separate questions.
     fn access_provenance_matches_span(
         &self,
         required: (&Address, Option<&Address>),
@@ -126,6 +129,12 @@ impl PureFactContext {
                 &bounds.width,
                 1,
             )
+        }) || required.1.is_some_and(|owner| {
+            // An opaque domain known only by coverage: evidence that the
+            // reader's own domain contains these bytes bounds the access,
+            // and the holding of the same provenance supplies them.
+            self.provenance_equal(required.0, &available.provenance)
+                && self.opaque_domain_covers(owner, pointer, pointer, bytes)
         })
     }
 
@@ -160,6 +169,23 @@ impl PureFactContext {
                     1,
                 )
             })
+        }) || required.1.is_some_and(|owner| {
+            // As for one access: coverage evidence for the clause pointer's
+            // own domain contains both ends of the range.
+            let (start, end, wide) = match range.wide_bounds() {
+                Some((start, end)) => (start, end, true),
+                None => (range.start(), range.end(), false),
+            };
+            self.provenance_equal(required.0, &available.provenance)
+                && [start, end].into_iter().all(|bound| {
+                    let endpoint = range.base().offset_by_typed_elements(
+                        bound.clone(),
+                        range.element_width(),
+                        wide,
+                        wide,
+                    );
+                    self.opaque_domain_covers(owner, range.base(), &endpoint, 0)
+                })
         })
     }
 

@@ -6,10 +6,8 @@ premise there is the readability the contract's own `views a[0..3]` already
 gives: the clause is lowered to the same `viewable` fact the theorem's premise
 lowers to, so the two meet as one exact fact.
 
-The premise is named in the `using` list by its fact form, `viewable(a[0..3])`.
-A `using` list is a list of propositions and stays one — there is no `views`
-statement inside it — which is also why the theorem's requirement is printed in
-that form when an application cannot discharge it; see
+The application finds the premise as `viewable(a[0..3])`. An application
+that cannot discharge the requirement prints it in that form. See
 `mdtests/views_theorem_premise_must_be_established.md`.
 
 The range here has a constant span, so nothing else is owed. A symbolic range
@@ -44,9 +42,7 @@ int32 second(int32 a[]) {
     ensures element(a, 1) == to_integer(result);
 } by {
     step();
-    apply(element_of_a_viewed_range(a, 0, 3, 1)) using {
-        viewable(a[0..3]);
-    };
+    apply(element_of_a_viewed_range(a, 0, 3, 1));
     solve();
 }
 ```

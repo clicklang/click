@@ -190,9 +190,7 @@ fn apply_using_checks_only_with_its_explicit_premises() {
                 requires x < 2147483647;
                 ensures to_integer(result) == to_integer(x + 1);
             } by {
-                apply(increment_is_defined(x)) using {
-                    x < 2147483647;
-                }
+                apply(increment_is_defined(x));
                 step();
                 solve();
             }
@@ -201,16 +199,15 @@ fn apply_using_checks_only_with_its_explicit_premises() {
     verify_c_sources(click_source, &[("increment.c", c_source)])
         .expect("explicit theorem premises should check");
 
-    let missing_premise = click_source.replace(
-        "apply(increment_is_defined(x)) using {
-                    x < 2147483647;
-                }",
-        "apply(increment_is_defined(x)) using {}",
+    let (lemma, caller) = click_source.split_once("int32 increment").unwrap();
+    let missing_premise = format!(
+        "{lemma}int32 increment{}",
+        caller.replace("requires x < 2147483647;", ""),
     );
     let error = verify_c_sources(&missing_premise, &[("increment.c", c_source)])
-        .expect_err("apply using must not search ambient facts for an omitted premise");
+        .expect_err("the theorem requirement must be established");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -240,9 +237,7 @@ fn apply_using_uses_ambient_loadability_only_to_lower_explicit_premises() {
             } by {
                 have data[0] == data[0] by solve();
                 step();
-                apply(preserve_equal(data[0], data[0])) using {
-                    data[0] == data[0];
-                }
+                apply(preserve_equal(data[0], data[0]));
                 solve();
             }
         "#;
@@ -297,8 +292,8 @@ fn source_expander_makes_theorem_application_premises_explicit() {
         })
         .count();
     assert_eq!(
-        simple_apply_checks, 0,
-        "ordinary verification must not feed the extracted explicit application through a second acceptance pass"
+        simple_apply_checks, 1,
+        "ordinary verification should record the written application once"
     );
 
     let expanded = expand_c_claim_source(
@@ -309,8 +304,8 @@ fn source_expander_makes_theorem_application_premises_explicit() {
     )
     .expect("bare theorem application should expand");
 
-    assert!(expanded.contains("apply(increment_is_defined(x)) using {"));
-    assert!(expanded.contains("x < 2147483647;"));
+    assert!(expanded.contains("apply(increment_is_defined(x));"));
+    assert!(!expanded.contains("apply(increment_is_defined(x)) using"));
     verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded theorem application should check");
 }
@@ -391,7 +386,7 @@ fn known_computes_leaves_and_uses_exact_propagation() {
         } by {
             step();
             have y == 0 by {
-                apply(x == 0 implies y == 0) using { x == 0; };
+                apply(x == 0 implies y == 0);
             }
             step();
             normalize();
@@ -401,10 +396,7 @@ fn known_computes_leaves_and_uses_exact_propagation() {
     verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("explicit extraction and normalization should verify");
 
-    let implicit_extract = click_source.replace(
-        "apply(x == 0 implies y == 0) using { x == 0; };",
-        "known();",
-    );
+    let implicit_extract = click_source.replace("apply(x == 0 implies y == 0);", "known();");
     verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
         .expect("known sees the exactly propagated consequence");
     let missing_guard = implicit_extract.replace("requires x == 0;", "");
@@ -526,7 +518,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             let saved: Integer = x;
             ensures exists (x: Integer) { saved == x } by {
                 witness(x);
-                normalize();
+                known();
             }
         }
 
@@ -537,8 +529,8 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             } by {
                 witness(x);
                 intro();
-                have x == x by { normalize(); }
-                normalize();
+                have x == x by { known(); }
+                known();
             }
         }
     "#;
@@ -936,7 +928,7 @@ fn rejects_unknown_predicate_call() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_07")]
-fn rejects_same_object_with_non_pointer_arguments() {
+fn rejects_same_allocation_with_non_pointer_arguments() {
     let c_source = r#"
             int32 identity(int32 x) {
                 return x;
@@ -946,18 +938,18 @@ fn rejects_same_object_with_non_pointer_arguments() {
             verifying "identity.c";
 
             int32 identity(int32 x) {
-                requires same_object(x, x);
+                requires same_allocation(x, x);
                 ensures result == x;
             }
         "#;
 
     let error = verify_c_sources(source, &[("identity.c", c_source)])
-        .expect_err("same_object should require object pointers");
+        .expect_err("same_allocation should require object pointers");
 
     assert!(
         error
             .message()
-            .contains("same_object expects pointer arguments"),
+            .contains("same_allocation expects pointer arguments"),
         "{}",
         error.message()
     );
@@ -965,14 +957,14 @@ fn rejects_same_object_with_non_pointer_arguments() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_07")]
-fn rejects_redefinition_of_same_object() {
+fn rejects_redefinition_of_same_allocation() {
     let source = r#"
-            predicate same_object(x: int32) {
+            predicate same_allocation(x: int32) {
                 x == x
             }
         "#;
 
-    let error = parse(source).expect_err("same_object should remain a built-in proposition");
+    let error = parse(source).expect_err("same_allocation should remain a built-in proposition");
 
     assert!(
         error
@@ -1761,11 +1753,11 @@ fn cases_eliminates_a_disjunctive_premise() {
                 cases {
                     x == 1 => {
                         rewrite(x, 1);
-                        normalize();
+                        known();
                     }
                     x == 2 => {
                         rewrite(x, 2);
-                        normalize();
+                        known();
                     }
                 }
             }
@@ -2048,10 +2040,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
         expanded_debug.matches("Have").count() >= 2,
         "{expanded_debug}"
     );
-    assert!(
-        expanded_debug.contains("ApplyTheoremUsing"),
-        "{expanded_debug}"
-    );
+    assert!(expanded_debug.contains("ApplyTheorem("), "{expanded_debug}");
 
     let expanded_source = expand_c_claim_source(
         click_source,
@@ -2061,8 +2050,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
     )
     .expect("nested checked scopes should serialize");
     assert!(
-        expanded_source.contains("apply(restate_zero(x)) using {")
-            && !expanded_source.contains("apply(restate_zero(x));"),
+        expanded_source.contains("apply(restate_zero(x));"),
         "{expanded_source}"
     );
     verify_c_sources(&expanded_source, &[("keep.c", c_source)])
@@ -2434,7 +2422,7 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         .expanded_proof_tactics()
         .expect("the retained branch-local theorem paths should expand");
     assert!(
-        format!("{expanded:?}").contains("ApplyTheoremUsing"),
+        format!("{expanded:?}").contains("ApplyTheorem("),
         "{expanded:#?}"
     );
     let expanded_source = expand_c_claim_source(
@@ -2445,10 +2433,8 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
     )
     .expect("the checked fixed-state branch paths should serialize");
     assert!(
-        expanded_source.contains("apply(equality_case(x)) using {")
-            && expanded_source.contains("apply(inequality_case(x)) using {")
-            && !expanded_source.contains("apply(equality_case(x));")
-            && !expanded_source.contains("apply(inequality_case(x));"),
+        expanded_source.contains("apply(equality_case(x));")
+            && expanded_source.contains("apply(inequality_case(x));"),
         "{expanded_source}"
     );
     verify_c_sources(&expanded_source, &[("keep.c", c_source)])
@@ -2615,14 +2601,14 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
                     true => {
                         step();
                         have selected == left or selected == right by {
-                            have selected == left by { normalize(); }
+                            have selected == left by { known(); }
                             known();
                         }
                     }
                     false => {
                         step();
                         have selected == left or selected == right by {
-                            have selected == right by { normalize(); }
+                            have selected == right by { known(); }
                             known();
                         }
                     }
@@ -2803,9 +2789,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
             requires x < y;
 
             ensures 0 < y by {
-                apply(less_equal_less_than_transitive(0, x, y)) using {
-                    x < y;
-                };
+                apply(less_equal_less_than_transitive(0, x, y));
                 known();
             }
         }
@@ -2814,7 +2798,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a transitivity application missing its non-strict leg must fail");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -2859,9 +2843,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
             requires 2 <= bound;
 
             ensures 2 < bound by {
-                apply(less_than_less_equal_transitive(2, 2, bound)) using {
-                    2 <= bound;
-                };
+                apply(less_than_less_equal_transitive(2, 2, bound));
                 known();
             }
         }
@@ -2870,7 +2852,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a false constant leg must not be rubber-stamped");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -2892,10 +2874,7 @@ fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
             requires value <= bound;
 
             ensures to_integer(value - 1) <= to_integer(bound) by {
-                apply(nonnegative_predecessor_upper_bound(value, bound)) using {
-                    0 <= value;
-                    value <= bound;
-                };
+                apply(nonnegative_predecessor_upper_bound(value, bound));
             }
         }
     "#;
@@ -2971,9 +2950,7 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
             requires value <= bound;
 
             ensures value - 1 <= bound by {
-                apply(nonnegative_predecessor_upper_bound(value, bound)) using {
-                    value <= bound;
-                };
+                apply(nonnegative_predecessor_upper_bound(value, bound));
                 known();
             }
         }
@@ -2982,7 +2959,7 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a predecessor bound application missing its nonnegative leg must fail");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -3005,9 +2982,7 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
             requires -1 <= bound;
 
             ensures -1 - 1 <= bound by {
-                apply(nonnegative_predecessor_upper_bound(-1, bound)) using {
-                    -1 <= bound;
-                };
+                apply(nonnegative_predecessor_upper_bound(-1, bound));
                 known();
             }
         }
@@ -3016,7 +2991,7 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a false nonnegative leg must not be rubber-stamped");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -3562,8 +3537,8 @@ test_batches! {
     ],
     logical_tactics_batch_07: [
         rejects_unknown_predicate_call,
-        rejects_same_object_with_non_pointer_arguments,
-        rejects_redefinition_of_same_object,
+        rejects_same_allocation_with_non_pointer_arguments,
+        rejects_redefinition_of_same_allocation,
         rejects_predicate_call_with_wrong_arity,
     ],
     logical_tactics_batch_08: [
@@ -3844,13 +3819,13 @@ fn local_predicate_unfold_preserves_proposition_values() {
 }
 
 #[test]
-fn apply_fact_checks_source_and_selected_evidence() {
+fn apply_fact_checks_source_and_antecedents() {
     let source = r#"
         theorem demo(x: int32, y: int32) {
             requires x > 0;
             requires x > 0 implies y > 0;
             ensures y > 0 by {
-                apply(x > 0 implies y > 0) using { x > 0; };
+                apply(x > 0 implies y > 0);
             }
         }
     "#;
@@ -3860,13 +3835,13 @@ fn apply_fact_checks_source_and_selected_evidence() {
             source.replace("requires x > 0 implies y > 0;", ""),
             "source implication",
         ),
+        (source.replace("requires x > 0;", ""), "antecedent"),
         (
-            source.replace("requires x > 0;", ""),
-            "premise that is not available",
-        ),
-        (
-            source.replace("using { x > 0; }", "using { }"),
-            "antecedent",
+            source.replace(
+                "apply(x > 0 implies y > 0);",
+                "apply(x > 0 implies y > 0) using { x > 0; };",
+            ),
+            "implication application takes no `using` list",
         ),
         (
             source.replace("apply(x > 0 implies y > 0)", "apply(x > 0)"),
@@ -3895,9 +3870,9 @@ fn apply_fact_is_available_at_execution_frontiers_and_outcomes() {
     for application in [
         "apply(x > 0 implies x != 0); step();",
         "have h: x > 0 implies x != 0 by known(); apply(h); step();",
-        "have x > 0; apply(x > 0 implies x != 0) using { x > 0; }; step();",
+        "have x > 0; apply(x > 0 implies x != 0); step();",
         "step(); apply(x > 0 implies x != 0);",
-        "step(); have x > 0; apply(x > 0 implies x != 0) using { x > 0; };",
+        "step(); have x > 0; apply(x > 0 implies x != 0);",
     ] {
         let source = template.replace("APPLICATION", application);
         verify_c_sources(&source, &[("identity.c", c)])

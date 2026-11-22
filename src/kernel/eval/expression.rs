@@ -42,21 +42,6 @@ fn integer_to_float_value(value: ProgramValue, target_type: ProgramType) -> Opti
     })
 }
 
-fn float_integer_bound_bits(
-    source_type: ProgramType,
-    exponent: u32,
-    negative: bool,
-) -> Option<MachineTerm> {
-    let magnitude = 1u128.checked_shl(exponent)?;
-    Some(match source_type {
-        ProgramType::Float32 => MachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
-        ProgramType::Float64 => {
-            MachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude))
-        }
-        _ => return None,
-    })
-}
-
 fn add_float_to_integer_obligations(
     value: &MachineTerm,
     source_type: ProgramType,
@@ -75,96 +60,62 @@ fn add_float_to_integer_obligations(
         ProgramType::UInt64 => (false, 64),
         _ => return None,
     };
-    let finite = match source_type {
-        ProgramType::Float32 => {
-            ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite)
-        }
-        ProgramType::Float64 => {
-            ConditionTerm::float64_classification(value.clone(), FloatClassification::Finite)
-        }
+    let precision = match source_type {
+        ProgramType::Float32 => f32::MANTISSA_DIGITS,
+        ProgramType::Float64 => f64::MANTISSA_DIGITS,
         _ => return None,
     };
+    // The ordered lower and upper comparisons also exclude NaN and infinities.
+    let bound = |magnitude, negative, operator| {
+        let condition = match source_type {
+            ProgramType::Float32 => ConditionTerm::float32_compare(
+                value.clone(),
+                MachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
+                operator,
+            ),
+            ProgramType::Float64 => ConditionTerm::float64_compare(
+                value.clone(),
+                MachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude)),
+                operator,
+            ),
+            _ => unreachable!(),
+        };
+        Proposition::condition_is(condition, true)
+    };
+
+    let minimum_magnitude = if signed { 1u128 << (bits - 1) } else { 0 };
+    // Truncation admits values strictly above MIN - 1. If MIN - 1 is
+    // unrepresentable, MIN is the next float above that threshold.
+    let lower = if minimum_magnitude < (1u128 << precision) {
+        // An exact premise at the stronger integral bound also proves this
+        // side of the range. Look up just that bound, including +0 for unsigned.
+        let integral_bound = bound(minimum_magnitude, signed, ComparisonOperator::GreaterEqual);
+        if assumptions.proves_exact(&integral_bound) {
+            None
+        } else {
+            Some(bound(
+                minimum_magnitude + 1,
+                true,
+                ComparisonOperator::GreaterThan,
+            ))
+        }
+    } else {
+        Some(bound(
+            minimum_magnitude,
+            true,
+            ComparisonOperator::GreaterEqual,
+        ))
+    };
+    if let Some(lower) = lower {
+        add_proof_obligation(obligations, assumptions, lower)?;
+    }
+
+    let upper_magnitude = 1u128 << if signed { bits - 1 } else { bits };
     add_proof_obligation(
         obligations,
         assumptions,
-        Proposition::condition_is(finite, true),
-    )?;
-
-    if signed {
-        let lower = float_integer_bound_bits(source_type, bits - 1, true)?;
-        let upper = float_integer_bound_bits(source_type, bits - 1, false)?;
-        let lower = match source_type {
-            ProgramType::Float32 => ConditionTerm::float32_compare(
-                value.clone(),
-                lower,
-                ComparisonOperator::GreaterEqual,
-            ),
-            ProgramType::Float64 => ConditionTerm::float64_compare(
-                value.clone(),
-                lower,
-                ComparisonOperator::GreaterEqual,
-            ),
-            _ => unreachable!(),
-        };
-        let upper = match source_type {
-            ProgramType::Float32 => {
-                ConditionTerm::float32_compare(value.clone(), upper, ComparisonOperator::LessThan)
-            }
-            ProgramType::Float64 => {
-                ConditionTerm::float64_compare(value.clone(), upper, ComparisonOperator::LessThan)
-            }
-            _ => unreachable!(),
-        };
-        add_proof_obligation(
-            obligations,
-            assumptions,
-            Proposition::condition_is(lower, true),
-        )?;
-        add_proof_obligation(
-            obligations,
-            assumptions,
-            Proposition::condition_is(upper, true),
-        )?;
-    } else {
-        let lower = match source_type {
-            ProgramType::Float32 => ConditionTerm::float32_compare(
-                value.clone(),
-                MachineTerm::constant(0),
-                ComparisonOperator::GreaterEqual,
-            ),
-            ProgramType::Float64 => ConditionTerm::float64_compare(
-                value.clone(),
-                MachineTerm::uint64_constant(0),
-                ComparisonOperator::GreaterEqual,
-            ),
-            _ => unreachable!(),
-        };
-        let upper_bits = float_integer_bound_bits(source_type, bits, false)?;
-        let upper = match source_type {
-            ProgramType::Float32 => ConditionTerm::float32_compare(
-                value.clone(),
-                upper_bits,
-                ComparisonOperator::LessThan,
-            ),
-            ProgramType::Float64 => ConditionTerm::float64_compare(
-                value.clone(),
-                upper_bits,
-                ComparisonOperator::LessThan,
-            ),
-            _ => unreachable!(),
-        };
-        add_proof_obligation(
-            obligations,
-            assumptions,
-            Proposition::condition_is(lower, true),
-        )?;
-        add_proof_obligation(
-            obligations,
-            assumptions,
-            Proposition::condition_is(upper, true),
-        )?;
-    }
-    Some(())
+        bound(upper_magnitude, false, ComparisonOperator::LessThan),
+    )
 }
 
 fn float_to_integer_conversion_value(
@@ -960,27 +911,56 @@ pub(in crate::kernel) fn cast_program_value_to_type(
     )
 }
 
-pub(super) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
-    // Character-to-character casts retain the selected byte view.
-    // Other casts to bytes, and every void cast, widen that view.
-    let byte_to_byte = matches!(
-        pointer.program_type(),
-        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-    ) && matches!(
-        target_type,
-        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-    );
+/// A pointer conversion, written or implicit. C11 6.3.2.3p7 gives one
+/// conversion a meaning of its own: converting to a character pointer forms
+/// a view of the object's bytes. That view spans the allocation (TS 6010's
+/// provenance granularity), so it is not bounded by the member the operand
+/// was formed from. A conversion between character types keeps the existing
+/// view, and every other conversion, including to `void *`, keeps the value
+/// (`design/pointer-model.md`).
+pub(in crate::kernel) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
+    let forms_byte_view =
+        is_character_pointer(target_type) && !is_character_pointer(pointer.program_type());
     let pointer = pointer.with_type(target_type);
-    if !byte_to_byte
-        && matches!(
-            target_type,
-            ProgramType::VoidPointer | ProgramType::UInt8Pointer | ProgramType::Int8Pointer
-        )
-    {
+    if forms_byte_view {
         pointer.with_root_bounds()
     } else {
         pointer
     }
+}
+
+/// A pointer to a structure's initial member, converted to the structure's
+/// type, points to the structure (C11 6.7.2.1p15). When the operand's array
+/// object is a member starting at its address and narrower than the struct,
+/// the result's array object is the `size` bytes of the struct there. An
+/// operand whose bounds are not yet known keeps them: they remain the opaque
+/// domain the bounds evidence of each access decides. Whether such a struct exists
+/// is the effective-type question each access through the result already
+/// asks (C11 6.5p7). Any other operand keeps its value: a pointer inside a
+/// member is not an initial member's, and an array object that already
+/// covers the struct, such as an allocation used as an array of it, is not
+/// narrowed.
+fn struct_view_of_initial_member(pointer: Pointer, size: u32) -> Pointer {
+    if pointer.is_null() || pointer.address().base.is_function() {
+        return pointer;
+    }
+    match pointer.bounds() {
+        Some(bounds)
+            if bounds.start == *pointer.address()
+                && bounds.constant_width().is_some_and(|width| width < size) =>
+        {
+            let start = pointer.address().clone();
+            pointer.with_bounds(Some(SubobjectBounds::constant(start, size)))
+        }
+        _ => pointer,
+    }
+}
+
+fn is_character_pointer(program_type: ProgramType) -> bool {
+    matches!(
+        program_type,
+        ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+    )
 }
 
 fn cast_program_value_to_type_with_integer_origin(
@@ -1363,6 +1343,7 @@ pub(super) fn evaluate_native_expression_paths(
             target_type,
             integer_mode,
             pointee_struct: _,
+            pointee_struct_size,
             pointee_volatile,
             pointee_constant,
             explicit_qualification,
@@ -1371,6 +1352,7 @@ pub(super) fn evaluate_native_expression_paths(
             expression,
             *target_type,
             *integer_mode,
+            *pointee_struct_size,
             *pointee_volatile,
             *pointee_constant,
             *explicit_qualification,
@@ -1950,6 +1932,7 @@ fn evaluate_program_cast_paths(
     expression: &ProgramExpression,
     target_type: ProgramType,
     integer_mode: IntegerCastMode,
+    pointee_struct_size: Option<u32>,
     pointee_volatile: bool,
     pointee_constant: bool,
     explicit_qualification: bool,
@@ -2050,6 +2033,12 @@ fn evaluate_program_cast_paths(
                     }
                     _ => None,
                 };
+                let first_conversion_obligation = obligations.len();
+                let float_to_integer =
+                    matches!(value, ProgramValue::Float32(_) | ProgramValue::Float64(_))
+                        && MachineIntegerType::from_program_type(target_type).is_some()
+                        && !SpecificationAccessScope::is_active();
+                let pointer_operand = matches!(&value, ProgramValue::Pointer(_));
                 let implicit_pointer_conversion = matches!(
                     integer_mode,
                     IntegerCastMode::CConversion | IntegerCastMode::ResultConversion
@@ -2066,7 +2055,20 @@ fn evaluate_program_cast_paths(
                                     || target_type != ProgramType::VoidPointer
                                     || pointer.program_type().is_object_pointer()) =>
                         {
-                            Ok(ProgramValue::Pointer(pointer.with_type(target_type)))
+                            // Of C's implicit pointer conversions, only one
+                            // from `void *` reaches a character pointer, and
+                            // it forms the byte view as a written one does.
+                            // A coercion lowering inserts is a retype that
+                            // keeps the value.
+                            Ok(ProgramValue::Pointer(
+                                if implicit_pointer_conversion
+                                    && pointer.program_type() == ProgramType::VoidPointer
+                                {
+                                    cast_pointer_value(pointer, target_type)
+                                } else {
+                                    pointer.with_type(target_type)
+                                },
+                            ))
                         }
                         _ => Err(RuntimeError::TypeMismatch),
                     }
@@ -2130,6 +2132,13 @@ fn evaluate_program_cast_paths(
                         integer_pointer_origin,
                     )
                 };
+                if float_to_integer {
+                    // Cast bounds belong to the statement's proof driver.
+                    // Evaluation cannot assume them on its tentative path.
+                    for obligation in &mut obligations[first_conversion_obligation..] {
+                        obligation.assumable = false;
+                    }
+                }
                 if let (Some(source), Ok(converted)) = (&checked_source, &coerced) {
                     facts.extend(
                         checked_narrowing_identity(source, converted)
@@ -2193,6 +2202,12 @@ fn evaluate_program_cast_paths(
                 {
                     add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
                 }
+                let coerced = match (coerced, pointee_struct_size) {
+                    (Ok(ProgramValue::Pointer(pointer)), Some(size)) if pointer_operand => Ok(
+                        ProgramValue::Pointer(struct_view_of_initial_member(pointer, size)),
+                    ),
+                    (coerced, _) => coerced,
+                };
                 match coerced {
                     Ok(value) => {
                         // A cast the source wrote yields exactly the
@@ -3204,46 +3219,56 @@ fn record_call_output_read(
     outcome: &ExpressionOutcome<ExecutionValue>,
     facts: &mut ExecutionFacts,
 ) {
-    if lvalue.value_type != ProgramType::Int32
-        || lvalue.is_volatile()
+    if lvalue.is_volatile()
         || SpecificationAccessScope::is_active()
-        || !ProgramPoint::supports_local_call_word(pointer)
+        || !ProgramPoint::supports_local_call_output(pointer)
     {
         return;
     }
     let ExpressionOutcome::Value(value) = outcome else {
         return;
     };
+    let Some(format) = MachineIntegerType::from_program_type(lvalue.value_type) else {
+        return;
+    };
+    let kind = LoadKind::of_type(lvalue.value_type).expect("integer call output");
     let Some(version) = state
         .program_point()
-        .call_output_integer_version(pointer, LoadKind::Int32)
+        .call_output_integer_version(pointer, kind)
     else {
         return;
     };
     let value = value.native();
-    let ProgramValue::Int32(bits) = value.numeric_value() else {
+    let value = value.numeric_value();
+    if !LoadKind::of_value(value).is_some_and(|value_kind| kind.reads_word_of(value_kind)) {
+        return;
+    }
+    let Some(bits) = crate::kernel::spec::program_value_bitvector_term(value) else {
         return;
     };
-    let read = scalar_read_for_exact_cell_at(
-        &version,
-        pointer,
-        LoadKind::Int32,
-        ProgramType::Int32.byte_width(),
-    );
-    if bits != &read {
-        facts.push(ExecutionPureFact {
-            logical_read_equation: true,
-            ..ExecutionPureFact::certified(Proposition::condition_is(
-                ConditionTerm::machine_compare(
-                    MachineIntegerType::Int32,
-                    CompareRelation::Equal,
-                    read,
-                    bits.clone(),
-                ),
-                true,
-            ))
-        });
+    let read = scalar_read_for_exact_cell_at(&version, pointer, kind, kind.byte_width());
+    if bits == read {
+        return;
     }
+    let comparison = if matches!(
+        format,
+        MachineIntegerType::Int128 | MachineIntegerType::UInt128
+    ) {
+        let Some(comparison) = wide_integer_comparison_condition(
+            ComparisonOperator::Equal,
+            &format.value_from_term(read),
+            value,
+        ) else {
+            return;
+        };
+        comparison
+    } else {
+        ConditionTerm::machine_compare(format, CompareRelation::Equal, read, bits)
+    };
+    facts.push(ExecutionPureFact {
+        logical_read_equation: true,
+        ..ExecutionPureFact::certified(Proposition::condition_is(comparison, true))
+    });
 }
 
 fn read_retained_lvalue_paths_without_ranges(
@@ -3582,26 +3607,56 @@ fn read_retained_lvalue_paths_without_ranges(
                     }
                 }
                 let can_name_read = !lvalue.is_volatile() || SpecificationAccessScope::is_active();
-                // A pointer in a resource expression names the same entry
-                // cell as a logical read of that field.
-                let names_entry_pointer =
-                    lvalue.value_type.is_object_pointer() && SpecificationReadScope::is_active();
                 let uses_entry_version = has_read_resource
-                    && (names_entry_pointer
+                    && (lvalue.value_type.is_pointer()
                         || matches!(
                             lvalue.value_type,
-                            ProgramType::Int32 | ProgramType::UInt32 | ProgramType::Parameter(_)
+                            ProgramType::Int8
+                                | ProgramType::UInt8
+                                | ProgramType::Int16
+                                | ProgramType::UInt16
+                                | ProgramType::Int32
+                                | ProgramType::UInt32
+                                | ProgramType::Int64
+                                | ProgramType::UInt64
+                                | ProgramType::Int128
+                                | ProgramType::UInt128
+                                | ProgramType::Parameter(_)
                         ))
                     && pointer.base == AddressBase::ExternalArgument
                     && can_name_read;
-                let origin = (uses_entry_version
+                let is_integer =
+                    crate::kernel::MachineIntegerType::from_program_type(lvalue.value_type)
+                        .is_some();
+                let may_use_loaded_entry_version = has_read_resource
+                    && can_name_read
+                    && matches!(pointer.base, AddressBase::LoadedPointer(_))
+                    && is_integer;
+                let may_use_recorded_integer_version = can_name_read
+                    && ((is_integer && ProgramPoint::supports_local_call_output(pointer))
+                        || ProgramPoint::supports_static_entry_version(pointer, lvalue.value_type));
+                let point = state.program_point();
+                let uses_recorded_point = uses_entry_version
+                    || may_use_loaded_entry_version
+                    || may_use_recorded_integer_version
                     || (can_name_read
-                        && crate::kernel::KernelFloatType::from_program_type(lvalue.value_type)
-                            .is_some()))
-                .then(|| state.program_point());
-                let entry_read = origin.as_ref().and_then(|point| {
+                        && (lvalue.value_type == ProgramType::Bool
+                            || crate::kernel::KernelFloatType::from_program_type(
+                                lvalue.value_type,
+                            )
+                            .is_some()));
+                let entry_read = uses_recorded_point.then_some(&point).and_then(|point| {
                     let entry = match lvalue.value_type {
-                        ProgramType::Int32 => point.entry_integer_version(pointer, LoadKind::Int32),
+                        ProgramType::Int8
+                        | ProgramType::UInt8
+                        | ProgramType::Int16
+                        | ProgramType::UInt16
+                        | ProgramType::Int32
+                        | ProgramType::Int64
+                        | ProgramType::UInt64
+                        | ProgramType::Int128
+                        | ProgramType::UInt128 => point
+                            .entry_integer_version(pointer, LoadKind::of_type(lvalue.value_type)?),
                         ProgramType::Parameter(parameter) => {
                             point.generic_entry_version(pointer, parameter)
                         }
@@ -3623,7 +3678,7 @@ fn read_retained_lvalue_paths_without_ranges(
                     ]
                 } else {
                     evaluate_retained_memory_load_paths(
-                        &state.memory,
+                        &point,
                         pointer.clone(),
                         lvalue.value_type,
                         facts,
@@ -3633,7 +3688,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
                         source,
                         budget.program_byte_order(),
-                        origin.as_ref(),
+                        uses_recorded_point,
                     )
                 };
                 for path in &mut paths {

@@ -159,6 +159,53 @@ fn relower_written_proposition(
     relower_written_proposition_with_states(surface, state, state, &RecordedStates::default())
 }
 
+#[test]
+fn a_printed_void_pointer_coercion_round_trips_its_pointer_type() {
+    let parse = |text: &str| {
+        parser::parse(&format!(
+            "void probe(int32* pointer, void* other) {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap()
+    };
+    let file = parse("other == pointer");
+    let function = &file.function_blocks()[0];
+    let Requirement::Proposition(mut proposition) = function.requires()[0].clone() else {
+        panic!("expected a comparison requirement");
+    };
+    let ClickProposition::Comparison { right, .. } = &mut proposition else {
+        panic!("expected a comparison");
+    };
+    *right = crate::surface::lowering::pure_function_parameter_argument(
+        &function.signature().parameters()[1],
+        right,
+    );
+    let state = ExecutionState::new()
+        .with_local(
+            "pointer",
+            ProgramValue::typed_pointer(
+                Address::symbolic(Variable(910_001)),
+                ProgramType::Int32Pointer,
+            ),
+        )
+        .with_local(
+            "other",
+            ProgramValue::typed_pointer(
+                Address::symbolic(Variable(910_002)),
+                ProgramType::VoidPointer,
+            ),
+        );
+    let written = crate::surface::printing::source_click_proposition(&proposition);
+    let parsed = parse(&written);
+    let Requirement::Proposition(reparsed) = &parsed.function_blocks()[0].requires()[0] else {
+        panic!("expected a comparison requirement");
+    };
+    assert_eq!(
+        relower_written_proposition(reparsed, &state).unwrap(),
+        relower_written_proposition(&proposition, &state).unwrap(),
+        "{written}"
+    );
+}
+
 fn relower_written_proposition_with_states(
     surface: &ClickProposition,
     pre_state: &ExecutionState,
@@ -3477,6 +3524,86 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
 }
 
 #[test]
+fn entry_model_raising_uses_the_binder_that_minted_the_field() {
+    use crate::kernel::{
+        AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, Resource, ResourceContext, ResourceFact,
+        ResourceFieldSchema, ResourceFieldType, ResourceInstance, TypeParameterName,
+        model_fields::{self, ModelFieldOrigin, ModelMint},
+    };
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let identity = crate::kernel::InstanceId::from_variable(Variable(930_011));
+    let model_variable = Variable(930_012);
+    let model = AlgebraicTerm {
+        algebraic_type: TypeParameterName::intern("Tree").algebraic_type(),
+        node: AlgebraicTermNode::Variable(model_variable),
+    };
+    let size = Variable(930_013);
+    let schema = ResourceFieldSchema::new(vec![
+        (
+            "model".into(),
+            ResourceFieldType::Algebraic(model.algebraic_type.clone()),
+        ),
+        (
+            "size".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        ),
+    ])
+    .unwrap();
+    let instance = ResourceInstance::new(
+        identity,
+        "tree".into(),
+        vec![].into(),
+        schema,
+        vec![
+            AlgebraicValue::Algebraic(model.clone()),
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(size))),
+        ]
+        .into(),
+    )
+    .unwrap();
+    let entry = ExecutionState::new().with_resource_context(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own(Resource::Instance(instance))),
+    );
+    let _entry = SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry))));
+    // A different binder registered this identity before the current contract.
+    model_fields::register_instance_spelling(identity, "after");
+    for (field_index, (variable, field)) in [(model_variable, "model"), (size, "size")]
+        .into_iter()
+        .enumerate()
+    {
+        model_fields::register_model_field_variable(
+            variable,
+            ModelFieldOrigin {
+                identity,
+                field: field.into(),
+                field_index,
+                minted_by: ModelMint::ContractEntry { owner: "t".into() },
+            },
+        );
+    }
+    let current = ExecutionState::new();
+    let model = synthesize_surface_algebraic(
+        &model,
+        ParameterBinding::default(),
+        &current,
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    let size = synthesize_scalar_model_field(size, &current).unwrap();
+    for (raised, name) in [(model, "model"), (size, "size")] {
+        let ContractExpression::Old(inner) = raised else {
+            panic!("the entry field must raise through old: {raised:?}");
+        };
+        assert!(
+            matches!(*inner, ContractExpression::ResourceField(ref access)
+                if access.owner == "t" && access.field == name),
+            "{inner:?}"
+        );
+    }
+}
+
+#[test]
 fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_introduced() {
     // A call replaces `o`'s model, so the earlier `o.size` value is held by
     // no current instance; the point after the first call held it.
@@ -5544,7 +5671,6 @@ fn float_bit_literals_round_trip_exact_native_values() {
         0xffc12345,
     ] {
         values.push(ProgramValue::Float32(MachineTerm::constant(bits)));
-        values.push(ProgramValue::Float32(MachineTerm::uint32_constant(bits)));
     }
     for bits in [
         0,
@@ -5577,6 +5703,18 @@ fn float_bit_literals_round_trip_exact_native_values() {
             let file =
                 parser::parse(&format!("{prefix} function probe() -> {ty} {{ {text} }}")).unwrap();
             let expression = file.click_function_definitions()[0].body().unwrap();
+            if let ProgramValue::Float32(_) = &value {
+                let bits = text.strip_suffix(')').unwrap();
+                let suffixed = parser::parse(&format!(
+                    "{prefix} function probe() -> {ty} {{ {bits}u32) }}"
+                ))
+                .unwrap();
+                assert_eq!(
+                    suffixed.click_function_definitions()[0].body(),
+                    Some(expression),
+                    "{text}, rust={rust}"
+                );
+            }
             let spec = crate::surface::lowering::elaborate_fixed_state_expression(
                 expression,
                 BTreeMap::new(),
@@ -5640,7 +5778,7 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
         ProgramValue::Float32(MachineTerm::Variable(Variable(999804))),
         ProgramValue::Float64(MachineTerm::Variable(Variable(999805))),
         ProgramValue::Float32(MachineTerm::constant(0x80000000)),
-        ProgramValue::Float32(MachineTerm::uint32_constant(0x7f800123)),
+        ProgramValue::Float32(MachineTerm::constant(0x7f800123)),
         ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
         ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff8000000000123)),
     ];
@@ -5759,6 +5897,7 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                 target_type: ProgramType::VoidPointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -5766,6 +5905,7 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
             target_type: pointer_type,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -5844,13 +5984,45 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
         );
-    let read = crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(state.memory()));
-    let condition = ConditionTerm::boolean_cell_read(read, pointer.clone());
+    let detached = ConditionTerm::boolean_cell_read(
+        crate::kernel::ProgramPoint::of_memory(state.memory()),
+        pointer.clone(),
+    );
+    assert!(
+        synthesize_boolean_cell_read(
+            crate::kernel::BooleanOperandView::Native(detached.bool_negation_operand().unwrap()),
+            ParameterBinding::default(),
+            &state,
+            &BTreeMap::new(),
+        )
+        .is_none()
+    );
+
+    let read = crate::kernel::SpecExpression::MemoryLoad {
+        point: crate::kernel::SpecPoint::Current,
+        pointer: Box::new(crate::kernel::SpecExpression::Value(
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
+        )),
+        value_type: ProgramType::Bool,
+        exact: false,
+    };
+    let (value, _) =
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            &state,
+            &read,
+            Some(&state),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    let ProgramValue::Bool(word) = value else {
+        panic!("the typed source read is a Boolean");
+    };
+    let condition = ConditionTerm::truth_of_bool_word(&word);
     let root = crate::kernel::KernelTermImport::default().condition(&condition);
     let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
         .expect("name of the Boolean cell read");
     let text = diagnostics::describe_contract_expression(&surface);
-    assert_eq!(text, "load<Bool>(p)");
+    assert_eq!(text, "exact(load<Bool>(p))");
     let parsed = parser::parse(&format!("function probe(p: uint8*) -> Bool {{ {text} }}"))
         .expect("typed Boolean load parses");
     let expression = parsed.click_function_definitions()[0].body().unwrap();
@@ -5898,7 +6070,7 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
         .expect("name of the Boolean read at entry");
     assert_eq!(
         diagnostics::describe_contract_expression(&old),
-        "old(load<Bool>(p))"
+        "old(exact(load<Bool>(p)))"
     );
     assert_eq!(
         relower_written_proposition_with_states(
@@ -6449,6 +6621,7 @@ fn numeric_float_cast_spellings_match_native_conversions_and_round_trip() {
                 target_type,
                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -6900,7 +7073,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
         crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
             operator: crate::kernel::ComparisonOperator::LessThan,
             left: Box::new(variable.clone()),
-            right: Box::new(MachineTerm::uint32_constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         });
     let source = MachineTerm::ClickFunctionApplication {
         name: "mixed_sink".into(),
@@ -9918,4 +10091,111 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
     )
     .expect("the generic entry read has a spelling");
     assert_eq!(lower(&raised), Ok(original));
+}
+
+/// A definedness fact about one operation whose operand is itself an
+/// operation raises to Surface text that lowers back to that same fact.
+/// `defined(...)` claims its root operation's domain with its operands taken
+/// as values, so `defined((a + b) + c)` is the outer addition's domain alone,
+/// as the kernel files it, and not also the inner addition's.
+#[test]
+fn nested_operand_definedness_round_trips() {
+    let format = MachineIntegerType::Int32;
+    let a = MachineTerm::Variable(Variable(973_001));
+    let b = MachineTerm::Variable(Variable(973_002));
+    let c = MachineTerm::Variable(Variable(973_003));
+    let state = ExecutionState::new()
+        .with_local("a", ProgramValue::Int32(a.clone()))
+        .with_local("b", ProgramValue::Int32(b.clone()))
+        .with_local("c", ProgramValue::Int32(c.clone()));
+    let inner = MachineTerm::machine_binary(format, MachineBinaryOp::Add, a, b);
+    let range = Proposition::signed_arithmetic_domain(format, MachineBinaryOp::Add, &inner, &c);
+    let flat_atom = Proposition::condition_is(
+        ConditionTerm::Overflows {
+            format,
+            op: OverflowOperation::Add,
+            left: Box::new(MachineTerm::Variable(Variable(973_001))),
+            right: Box::new(MachineTerm::Variable(Variable(973_002))),
+        },
+        false,
+    );
+    let atom = Proposition::condition_is(
+        ConditionTerm::Overflows {
+            format,
+            op: OverflowOperation::Add,
+            left: Box::new(inner),
+            right: Box::new(c),
+        },
+        false,
+    );
+    // Shallow `defined((a + b) + c)` claims the outer addition's domain
+    // alone: the same kernel fact as evaluating that addition owes.
+    let spelled = |atom: &Proposition| match synthesize_surface_proposition(
+        atom,
+        ParameterBinding::default(),
+        &state,
+    ) {
+        Some(ClickProposition::Defined { expression }) => expression,
+        other => panic!("an overflow atom raises as `defined`: {other:?}"),
+    };
+    let ab = spelled(&flat_atom);
+    let ac = spelled(&Proposition::condition_is(
+        ConditionTerm::Overflows {
+            format,
+            op: OverflowOperation::Add,
+            left: Box::new(MachineTerm::Variable(Variable(973_001))),
+            right: Box::new(MachineTerm::Variable(Variable(973_003))),
+        },
+        false,
+    ));
+    let ContractExpression::Add(_, c_term) = &ac else {
+        panic!("`a + c`: {ac:?}");
+    };
+    let nested = ClickProposition::Defined {
+        expression: ContractExpression::Add(Box::new(ab), c_term.clone()),
+    };
+    assert_eq!(
+        relower_written_proposition(&nested, &state).as_ref(),
+        Ok(&range),
+        "shallow `defined(a + b + c)` is the outer addition's domain"
+    );
+    // Each fact raises to Surface text that lowers to the domain the kernel
+    // files for its operation. The overflow atom is the search's private
+    // query for that domain; its spelling lowers to the filed range form.
+    let flat_range = Proposition::signed_arithmetic_domain(
+        format,
+        MachineBinaryOp::Add,
+        &MachineTerm::Variable(Variable(973_001)),
+        &MachineTerm::Variable(Variable(973_002)),
+    );
+    let mut failures = Vec::new();
+    for (name, fact, expected) in [
+        ("range", range.clone(), range.clone()),
+        ("overflow atom", atom, range),
+        ("flat atom", flat_atom, flat_range),
+    ] {
+        for (polarity, fact, expected) in [
+            ("", fact.clone(), expected.clone()),
+            (
+                "not ",
+                Proposition::Not(Box::new(fact)),
+                Proposition::Not(Box::new(expected)),
+            ),
+        ] {
+            let Some(raised) =
+                synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
+            else {
+                failures.push(format!("{polarity}{name}: no spelling"));
+                continue;
+            };
+            let lowered = relower_written_proposition(&raised, &state);
+            if lowered.as_ref() != Ok(&expected) {
+                failures.push(format!(
+                    "{polarity}{name}:\n  raised:   {}\n  lowered:  {lowered:?}\n  expected: {expected:?}",
+                    crate::surface::printing::source_click_proposition(&raised),
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

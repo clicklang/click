@@ -64,7 +64,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer(x0 as uint32) <= 1073741823 by solve() using { to_integer(x0 as uint32) <= 255; };
  have x0 as uint32 <= 4294967295u32 / 4u32 by solve() using { x0 as uint32 <= 1073741823u32; };
  have 4u32 == 0u32 or x0 as uint32 <= 4294967295u32 / 4u32 by known();
- apply(integer::uint32_multiply_to_integer(x0 as uint32, 4u32)) using { 4u32 == 0u32 or x0 as uint32 <= 4294967295u32 / 4u32; };
+ apply(integer::uint32_multiply_to_integer(x0 as uint32, 4u32));
  have to_integer((x0 as uint32 * 4u32)) == (to_integer(x0 as int32) * 4) by {
   rewrite(to_integer((x0 as uint32 * 4u32)), to_integer(x0 as uint32) * to_integer(4u32));
   rewrite(to_integer(x0 as uint32), to_integer(x0 as int32));
@@ -84,7 +84,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer(x1 as uint32) <= 1073741823 by solve() using { to_integer(x1 as uint32) <= 255; };
  have x1 as uint32 <= 4294967295u32 / 4u32 by solve() using { x1 as uint32 <= 1073741823u32; };
  have 4u32 == 0u32 or x1 as uint32 <= 4294967295u32 / 4u32 by known();
- apply(integer::uint32_multiply_to_integer(x1 as uint32, 4u32)) using { 4u32 == 0u32 or x1 as uint32 <= 4294967295u32 / 4u32; };
+ apply(integer::uint32_multiply_to_integer(x1 as uint32, 4u32));
  have to_integer((x1 as uint32 * 4u32)) == (to_integer(x1 as int32) * 4) by {
   rewrite(to_integer((x1 as uint32 * 4u32)), to_integer(x1 as uint32) * to_integer(4u32));
   rewrite(to_integer(x1 as uint32), to_integer(x1 as int32));
@@ -124,7 +124,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer(x2 as uint32) <= 1073741823 by solve() using { to_integer(x2 as uint32) <= 255; };
  have x2 as uint32 <= 4294967295u32 / 4u32 by solve() using { x2 as uint32 <= 1073741823u32; };
  have 4u32 == 0u32 or x2 as uint32 <= 4294967295u32 / 4u32 by known();
- apply(integer::uint32_multiply_to_integer(x2 as uint32, 4u32)) using { 4u32 == 0u32 or x2 as uint32 <= 4294967295u32 / 4u32; };
+ apply(integer::uint32_multiply_to_integer(x2 as uint32, 4u32));
  have to_integer((x2 as uint32 * 4u32)) == (to_integer(x2 as int32) * 4) by {
   rewrite(to_integer((x2 as uint32 * 4u32)), to_integer(x2 as uint32) * to_integer(4u32));
   rewrite(to_integer(x2 as uint32), to_integer(x2 as int32));
@@ -228,14 +228,14 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) <= 397210 by solve() using { to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) == to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) + to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))); 195802 <= to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))); to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) <= 199627; 195798 <= to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))); to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) <= 197583; };
  have to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)) == 1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32) by solve() using { to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)) == ((((1 + to_integer(x0 as int32)) + to_integer(x1 as int32)) + to_integer(x2 as int32)) + to_integer(x3 as int32)); };
  have to_integer(65521u32) != 0 by normalize();
- apply(integer::uint32_remainder_to_integer((((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)), 65521u32)) using { 65521u32 != 0u32; to_integer(65521u32) != 0; };
+ apply(integer::uint32_remainder_to_integer((((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)), 65521u32));
  have to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32) % 65521u32) == truncating_remainder(1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32), 65521) by {
   rewrite(to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32) % 65521u32), truncating_remainder(to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)), 65521));
   rewrite(to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)), 1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32));
   normalize();
  }
  have to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) == 4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32) + 393126 by solve() using { to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) == ((((4 + (to_integer(x0 as int32) * 4)) + ((to_integer(x1 as int32) * 4) + (65521 - to_integer(x1 as int32)))) + ((to_integer(x2 as int32) * 4) + ((65521 - to_integer(x2 as int32)) * 2))) + ((to_integer(x3 as int32) * 4) + ((65521 - to_integer(x3 as int32)) * 3))); };
- apply(integer::uint32_remainder_to_integer((((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))), 65521u32)) using { 65521u32 != 0u32; to_integer(65521u32) != 0; };
+ apply(integer::uint32_remainder_to_integer((((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))), 65521u32));
  have 0 <= 4 * to_integer(x0 as int32) by solve() using { 0 <= to_integer(x0 as int32); };
  have 0 <= 4 + 4 * to_integer(x0 as int32) by solve() using { 0 <= 4 * to_integer(x0 as int32); };
  have 0 <= 3 * to_integer(x1 as int32) by solve() using { 0 <= to_integer(x1 as int32); };

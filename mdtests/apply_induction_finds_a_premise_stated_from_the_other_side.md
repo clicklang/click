@@ -1,7 +1,7 @@
 # `apply(ih(m))` finds a premise stated from the other side
 
 The elided `apply(ih(n - 1))` looks its premises up among the available
-facts and proves none. As in an `apply(ih(m)) using { ... }` list, a premise
+facts and proves none. As in an `apply(ih(m));` list, a premise
 is also found when the proof states the same order claim from the other side:
 `to_integer(n - 1) >= 0` for `0 <= to_integer(n - 1)`, and
 `to_integer(n) > to_integer(n - 1)` for `to_integer(n - 1) < to_integer(n)`.
@@ -19,14 +19,14 @@ theorem countdown_is_zero(n: int32) {
         let ih = induct(n);
         if n <= 0 {
             unfold(countdown(n));
-            normalize() using { n <= 0; };
+            solve() using { n <= 0; };
         } else {
             have to_integer(n - 1) >= 0;
             have to_integer(n) > to_integer(n - 1);
             apply(ih(n - 1));
             unfold(countdown(n));
             rewrite(countdown(n - 1), 0);
-            normalize();
+            known();
         }
     }
 }

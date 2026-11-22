@@ -53,12 +53,29 @@ fn main() {
 fn report_error(message: String) -> ! {
     // A Rust item prints as the path its sidecar writes.
     let message = click::surface::display_source_names(&message);
-    if message.starts_with("proof error:")
-        || message.starts_with("proof error in `")
-        || message.starts_with("syntax error:")
-        || message.starts_with("type error:")
-        || message.starts_with("internal error:")
-    {
+    if [
+        "tactic error",
+        "unsuccessful search",
+        "incomplete proof",
+        "contract error",
+        "contract entry refused",
+        "execution prerequisite unmet",
+        "execution refused",
+        "termination not established",
+        "invalid divergence declaration",
+        "unsupported proof",
+        "unclassified verification refusal",
+        "syntax error",
+        "type error",
+        "internal error",
+        "limit error",
+    ]
+    .iter()
+    .any(|heading| {
+        message
+            .strip_prefix(heading)
+            .is_some_and(|rest| rest.starts_with(':') || rest.starts_with(" in `"))
+    }) {
         eprintln!("{message}");
     } else {
         eprintln!("click: {message}");
@@ -135,7 +152,7 @@ mod tests {
             "{error}"
         );
         assert!(!error.contains("outside the owned footprint"), "{error}");
-        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.starts_with("unsuccessful search:"), "{error}");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -330,7 +347,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "proof error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
             )),
             "{error}"
         );
@@ -339,7 +356,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "proof error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
+                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
             "{error}"
         );
@@ -500,11 +517,57 @@ uint64 spell(const uint8* b, uint64 n) {
         assert!(!trace.contains("<symbol "), "{trace}");
     }
 
+    #[test]
+    fn verify_distinguishes_termination_from_an_invalid_divergence_declaration() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (fixture, heading) in [
+            (
+                "termination_callback_self_application_rejected.md",
+                "termination not established:",
+            ),
+            (
+                "diverges_rejects_unjustified_marker.md",
+                "invalid divergence declaration:",
+            ),
+        ] {
+            let report = entry([
+                "verify".to_string(),
+                root.join(fixture).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(report.starts_with(heading), "{report}");
+        }
+    }
+
+    #[test]
+    fn source_proof_tails_close_in_their_scope_and_expand_for_explicit_replay() {
+        let source = r#"
+            function successor(n: int32) -> int32 { n + 1 }
+            theorem tail(x: int32, b: int32) {
+                requires x == 3;
+                ensures successor(x) == 4 by {
+                    if b == 0 {
+                        have successor(x) == 4 by { unfold(successor(x)); }
+                    } else {
+                        unfold(successor(x));
+                    }
+                }
+            }
+        "#;
+        use click::surface::{verify_c_sources, without_implicit_solve};
+        assert!(without_implicit_solve(|| verify_c_sources(source, &[])).is_err());
+        verify_c_sources(source, &[]).unwrap();
+        let expanded =
+            click::surface::expand_c_claim_source_by_label(source, &[], "tail.ensures_0").unwrap();
+        assert_ne!(expanded, source);
+        without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+    }
+
     /// Every refused statement names its goal: the requirement it could not
     /// establish at its pre-state, in source names, with the explicit form
     /// that proves it. A refused call precondition, and an overflow that the
     /// implicit `solve` did not rule out, read alike; a trace repeats the goal
-    /// in its failed check and leaves out verifier bookkeeping no proof can
+    /// in its proof refusal and leaves out verifier bookkeeping no proof can
     /// cite.
     #[test]
     fn verify_names_the_goal_of_a_refused_statement() {
@@ -529,6 +592,32 @@ uint64 spell(const uint8* b, uint64 n) {
         };
         let help = "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`";
 
+        let before_exit = run(
+            "int32 half(int32 x) { ensures result == x / 2; } by { solve(); }",
+            &[],
+        );
+        assert!(before_exit.starts_with("tactic error:\n"), "{before_exit}");
+        assert!(
+            before_exit.contains("step_until(function.exit)"),
+            "{before_exit}"
+        );
+
+        for (body, arguments) in [
+            ("", &[][..]),
+            (" by { step_until(function.exit); solve(); }", &[][..]),
+            (
+                " by { step_until(function.exit); solve(); }",
+                &["--trace-proof", "half"][..],
+            ),
+        ] {
+            let miss = run(
+                &format!("int32 half(int32 x) {{ ensures result == 17; }}{body}"),
+                arguments,
+            );
+            assert!(miss.starts_with("unsuccessful search:\n"), "{miss}");
+            assert!(miss.contains("\ngoal: "), "{miss}");
+        }
+
         let call = run(
             "int32 callee(int32 n) {\n    requires n >= 0;\n    ensures result == n;\n}\nint32 caller(int32 n) {\n    ensures result == n + 1;\n} by {\n    step(); step(); step(); solve();\n}\n",
             &[],
@@ -537,11 +626,11 @@ uint64 spell(const uint8* b, uint64 n) {
             call.contains(&format!("\ngoal: n >= 0\n{help}\n")),
             "{call}"
         );
+        assert!(call.starts_with("unsuccessful search:\n"), "{call}");
         // A written `step()` is simple, but the implicit `solve` proves its
         // open requirements, so the refusal is that smart tactic's miss.
         assert!(
-            call.contains("\nproof search miss: the implicit closer")
-                && call.contains(
+            call.contains(
                 "\nrefused by: the implicit closer that proves this statement's requirements (smart: "
             ) && call.contains("\nsee: click docs tracing\n"),
             "{call}"
@@ -571,7 +660,7 @@ uint64 spell(const uint8* b, uint64 n) {
             " ∧ integer-condition((machine-integer<Int32>(inner)+1) >= -2147483648) is true)",
         );
         assert!(
-            traced.contains("\nfailed check:\n")
+            traced.contains("\nproof refusal:\n")
                 && traced.contains(&format!("\ngoal: {typed_goal}\n")),
             "{traced}"
         );
@@ -608,17 +697,19 @@ uint64 spell(const uint8* b, uint64 n) {
             "{overflow}"
         );
 
-        // The implicit closer runs on the goal that a pure script establishes.
-        let pure_search = run(
-            "function successor(n: int32) -> int32 { n + 1 }\ntheorem incomplete(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 5 by {\n        unfold(successor(x));\n    }\n}\n",
+        let tail_miss = run(
+            "function successor(n: int32) -> int32 { n + 1 }\ntheorem tail_miss(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 5 by {\n        unfold(successor(x));\n    }\n}\n",
             &[],
         );
         assert!(
-            pure_search.contains("proof search miss")
-                && pure_search.contains("\ngoal: to_integer(x + 1) == 5")
-                && !pure_search.contains("refused by: nothing"),
-            "{pure_search}"
+            tail_miss.starts_with("unsuccessful search:\n"),
+            "{tail_miss}"
         );
+        assert!(
+            tail_miss.contains("goal: to_integer(x + 1) == 5"),
+            "{tail_miss}"
+        );
+        assert!(!tail_miss.contains("refused by: `unfold`"), "{tail_miss}");
 
         // `normalize()` evaluates without context, so a goal that needs the
         // premise is outside what it does.
@@ -627,8 +718,7 @@ uint64 spell(const uint8* b, uint64 n) {
             &[],
         );
         assert!(
-            closer.contains("\ntactic failure: `normalize` refused the checked step")
-                && closer.contains(
+            closer.contains(
                 "\nrefused by: `normalize` (simple: a refusal within its documented behavior is a bug)\nsee: click docs normalize\n"
             ),
             "{closer}"
@@ -723,7 +813,7 @@ uint64 spell(const uint8* b, uint64 n) {
         );
 
         let error = verify(failing.display().to_string()).unwrap_err();
-        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.starts_with("tactic error:"), "{error}");
         assert!(error.contains("tactic@9:"), "{error}");
         assert!(error.contains("\n  step();"), "{error}");
         assert!(!error.contains("-->"), "{error}");
@@ -739,7 +829,7 @@ uint64 spell(const uint8* b, uint64 n) {
     }
 
     #[test]
-    fn verify_traces_an_obligation_refused_at_execution_completion() {
+    fn execution_completion_uses_the_guarded_call_paths_facts() {
         let directory = tempfile::tempdir().unwrap();
         fs::write(
             directory.path().join("demo.c"),
@@ -785,41 +875,65 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
         )
         .unwrap();
 
-        let trace = entry([
+        entry([
             "verify".to_owned(),
             "--trace-proof".to_owned(),
             "clear_has_contract".to_owned(),
             sidecar.display().to_string(),
         ])
+        .expect("the nonnull path proves its write separate from the view");
+    }
+
+    #[test]
+    fn verify_names_a_fold_arguments_unproved_read() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("fold.c"),
+            "struct link { int *next; };\nint check(struct link *node) { int value = 0; return value; }",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("fold.click");
+        fs::write(
+            &sidecar,
+            r#"resource tag(value: int32*) {}
+verifying "fold.c";
+int32 check(struct link* node) {
+    ensures result == 0;
+} by {
+    step();
+    fold(tag(node->next));
+    step_until(function.exit);
+    solve();
+}
+"#,
+        )
+        .unwrap();
+        let path = sidecar.display().to_string();
+        let ordinary = entry(["verify".to_owned(), path.clone()]).unwrap_err();
+        assert!(
+            ordinary.contains("could not lower resource `tag` argument 0"),
+            "{ordinary}"
+        );
+        assert!(ordinary.contains("goal: defined(node[0])"), "{ordinary}");
+
+        let trace = entry([
+            "verify".to_owned(),
+            "--trace-proof".to_owned(),
+            "check".to_owned(),
+            path,
+        ])
         .unwrap_err();
-        let (prefix, failed) = trace
-            .split_once("\nfailed check:\n")
+        let (_, failed) = trace
+            .split_once("\nproof refusal:\n")
             .unwrap_or_else(|| panic!("{trace}"));
         assert!(
-            prefix.contains("proof trace (checked tactics and branch facts)"),
+            failed.lines().any(|line| {
+                line.starts_with("goal: defined-read(current, state#") && line.ends_with(", node)")
+            }),
             "{trace}"
         );
-        assert!(prefix.contains("branch (then arm)"), "{trace}");
-        assert!(!prefix.contains("branch (else arm)"), "{trace}");
-        assert!(prefix.contains("step(clear"), "{trace}");
-        assert!(
-            failed.contains("stage: execution path certification"),
-            "{trace}"
-        );
-        assert!(
-            failed.contains("clear_has_contract.contract path 0"),
-            "{trace}"
-        );
-        assert!(
-            failed.contains(
-                "goal: memory(p[Int32:0..1], stride=4) separate memory(q[Int32:0..1], stride=4)"
-            ),
-            "{trace}"
-        );
-        assert!(
-            failed.contains("available premises at the failed check"),
-            "{trace}"
-        );
+        assert!(!trace.contains("<unrecorded point"), "{trace}");
+        assert!(!trace.contains("<pointer A>"), "{trace}");
     }
 
     #[test]
@@ -838,7 +952,7 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.starts_with("tactic error:"), "{error}");
         assert!(error.contains("\n\ntactic@2:"), "{error}");
         assert!(
             error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
@@ -852,7 +966,7 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(traced.starts_with("proof error:\n"), "{traced}");
+        assert!(traced.starts_with("tactic error:\n"), "{traced}");
         assert!(traced.contains("\n\ntactic@2:"), "{traced}");
         assert!(!traced.contains("\n  --> "), "{traced}");
         assert!(
@@ -865,7 +979,7 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
         );
         assert!(traced.contains("steps through: return 1"), "{traced}");
         assert!(!traced.contains("error kind:"), "{traced}");
-        assert!(traced.contains("failed check:"), "{traced}");
+        assert!(traced.contains("proof refusal:"), "{traced}");
         assert!(traced.contains("stage: proof step"), "{traced}");
         assert!(!traced.contains("To get a trace:"), "{traced}");
 
@@ -1227,7 +1341,7 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.starts_with("execution refused:"), "{error}");
         assert!(
             error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
             "{error}"
@@ -1248,7 +1362,7 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
     }
 
     /// A refused `transport using` prints its own legend. The trace keeps
-    /// that numbering, so the failed check's goal names the states and
+    /// that numbering, so the proof refusal's goal names the states and
     /// values the refusal defined; its cell walks print one per line; and a
     /// field of a named pointer prints as that name plus its offset.
     #[test]
@@ -1344,7 +1458,7 @@ void parent(int32* p) {
         ])
         .expect_err("the saved argument fact cannot close the current read goal");
         let (trace, failed_check) = report
-            .split_once("\nfailed check:\n")
+            .split_once("\nproof refusal:\n")
             .unwrap_or_else(|| panic!("{report}"));
         let read_state = |section: &str, prefix: &str| {
             section
@@ -2371,14 +2485,11 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         )
         .unwrap();
         let sidecar = directory.join("f.click");
-        fs::write(
-            &sidecar,
-            "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n}\n",
-        )
-        .unwrap();
+        let contract = "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n}\n";
+        fs::write(&sidecar, contract).unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        fs::remove_dir_all(&directory).unwrap();
-        assert!(error.starts_with("proof error:\n"), "{error}");
+        assert!(error.starts_with("contract error:\n"), "{error}");
+        assert!(error.contains("signed overflow"), "{error}");
         assert!(
             error.contains("could not open contract entry for `release.body_safety`"),
             "{error}"
@@ -2390,6 +2501,384 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
             )),
             "{error}"
         );
+        fs::write(
+            &sidecar,
+            contract.replace(
+                "requires i <= j;",
+                "requires i <= j;\n    requires j < 100;",
+            ),
+        )
+        .unwrap();
+        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn proven_entry_ownership_overlap_reports_a_contract_error() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for name in [
+            "write_resources_reject_proven_overlap.md",
+            "kept_pointer_aliases_do_not_duplicate_ownership.md",
+            "two_folded_entry_instances_cannot_own_the_same_cell.md",
+        ] {
+            let path = fixtures.join(name);
+            let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+            assert!(error.starts_with("contract error:\n"), "{name}: {error}");
+            assert!(
+                error.contains("overlapping owned memory resource facts"),
+                "{name}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn folded_input_view_overlap_reports_a_contract_error() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("f.c"),
+            "void hold(int32 *x, int32 *y) {}\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        let verify = |clauses: &str| {
+            fs::write(
+                &sidecar,
+                format!(
+                    r#"verifying "f.c";
+resource cell(p: int32*) {{ owns p[0]; }}
+resource read_cell(p: int32*) {{ views p[0]; }}
+resource wrapped_cell(p: int32*) {{ owns cell(p); }}
+void hold(int32 *x, int32 *y) {{ {clauses} }}
+"#
+                ),
+            )
+            .unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()])
+        };
+        for (clauses, owner, view) in [
+            ("owns cell(x); views cell(x);", "cell(x)", "cell(x)"),
+            ("views cell(x); owns cell(x);", "cell(x)", "cell(x)"),
+            (
+                "requires y == x; owns cell(x); views cell(y);",
+                "cell(x)",
+                "cell(y)",
+            ),
+            ("owns cell(x); views x[0];", "cell(x)", "x[0]"),
+            (
+                "owns cell(x); views read_cell(x);",
+                "cell(x)",
+                "read_cell(x)",
+            ),
+            (
+                "requires y == x; owns wrapped_cell(x); views read_cell(y);",
+                "wrapped_cell(x)",
+                "read_cell(y)",
+            ),
+        ] {
+            let error = verify(clauses).unwrap_err();
+            assert!(error.starts_with("contract error:\n"), "{error}");
+            assert!(error.contains(&format!("`views {view}`")), "{error}");
+            assert!(error.contains(&format!("`owns {owner}`")), "{error}");
+        }
+        verify("views cell(x);").unwrap();
+        verify("owns cell(x); views cell(y);").unwrap();
+        verify("owns wrapped_cell(x); views read_cell(y);").unwrap();
+    }
+
+    #[test]
+    fn documented_entry_restrictions_report_contract_errors() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, detail) in [
+            (
+                "program_entry_rejects_preconditions.md",
+                "requires no parameters or preconditions",
+            ),
+            (
+                "mutex_use_rejects_consume.md",
+                "require preserving owned inputs",
+            ),
+            (
+                "mutex_helper_transfers_rejects_missing_state.md",
+                "requires one matching named protected state transfer",
+            ),
+        ] {
+            let path = fixtures.join(name);
+            let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+            assert!(error.starts_with("contract error:\n"), "{name}: {error}");
+            assert!(error.contains(detail), "{name}: {error}");
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("startup.c"),
+            "int x; int main(void) { return 0; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("startup.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "startup.c";
+resource cell(p: int32*) { field tag: int32; owns p[0]; }
+int main() { owns data: cell(&x); }
+"#,
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("contract error:\n"), "{error}");
+        assert!(
+            error.contains("can name only the hosted stdout stream"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn contract_argument_read_reports_the_missing_view() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/contract_owns_composite_argument_rejects_missing_access.md");
+        let error = entry(["verify".to_string(), fixture.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("contract error:\n"), "{error}");
+        assert!(error.contains("add `views node->left;`"), "{error}");
+
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("f.c"),
+            "struct node { struct node *left; int32 value; };\nvoid probe(struct node *node) {}\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        let verify = |views: &str| {
+            fs::write(
+                &sidecar,
+                format!(
+                    r#"verifying "f.c";
+resource pair(node: struct node*) {{ owns node->left->left; }}
+void probe(struct node *node) {{
+    requires node != 0;
+    {views}
+    owns pair(node->left->left);
+}}
+"#
+                ),
+            )
+            .unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()])
+        };
+        for (views, missing) in [
+            ("", "node->left"),
+            ("views node->left;", "node->left->left"),
+        ] {
+            let error = verify(views).unwrap_err();
+            assert!(error.starts_with("contract error:\n"), "{error}");
+            assert!(error.contains("pair(node->left->left)"), "{error}");
+            assert!(
+                error.contains(&format!("add `views {missing};`")),
+                "{error}"
+            );
+        }
+        verify("views node->left;\nviews node->left->left;").unwrap();
+    }
+
+    #[test]
+    fn contract_with_many_guards_reaches_the_return_obligation() {
+        let directory = tempfile::tempdir().unwrap();
+        let parameters = (0..14)
+            .map(|index| format!("int32 n{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let clauses = (0..14)
+            .map(|index| format!("    if n{index} > 0 {{ produces ticket({index}); }}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(
+            directory.path().join("f.c"),
+            format!("void f({parameters}) {{}}\n"),
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(
+            &sidecar,
+            format!(
+                "verifying \"f.c\";\nabstract resource ticket(n: int32);\nvoid f({parameters}) {{\n{clauses}\n}}\n"
+            ),
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
+        assert!(error.contains("ticket(0)"), "{error}");
+    }
+
+    #[test]
+    fn contract_refinement_reports_the_reason_it_cannot_verify() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (fixture, heading, reason) in [
+            (
+                "c_named_contract_refinement_rejects_extra_effect.md",
+                "contract error",
+                "the target contract does not supply the resources required by the source contract",
+            ),
+            (
+                "c_named_contract_refinement_rejects_insufficient_quantity.md",
+                "contract error",
+                "the target contract does not supply the resources required by the source contract",
+            ),
+            (
+                "c_named_contract_refinement_rejects_unreturned_quantity.md",
+                "contract error",
+                "the source contract does not return the resources promised by the target contract",
+            ),
+            (
+                "c_named_function_contract_refinement_theorem_requires_unfold.md",
+                "tactic error",
+                "requires explicit `unfold(contract(callback))` applications",
+            ),
+            (
+                "c_named_function_contract_refinement_rejects_missing_rewrite.md",
+                "tactic error",
+                "`all` requires a conjunction goal",
+            ),
+            (
+                "c_named_function_contract_refinement_theorem_rejects_false_claim.md",
+                "unsuccessful search",
+                "result > 0",
+            ),
+        ] {
+            let path = fixtures.join(fixture);
+            let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+            assert!(
+                error.starts_with(&format!("{heading}:\n")),
+                "{fixture}: {error}"
+            );
+            assert!(error.contains(reason), "{fixture}: {error}");
+        }
+    }
+
+    #[test]
+    fn contract_refinement_without_a_proof_is_incomplete() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(directory.path().join("f.c"), "int f(void) { return 0; }").unwrap();
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+contract int32 Zero() { ensures result == 0; }
+int32 f() { ensures result == 0; }
+theorem implements_zero() { ensures Zero(&f); }
+"#,
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
+        assert!(
+            error.contains("requires an explicit contract-refinement proof"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn return_clause_failures_report_incomplete_proofs() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("f.c");
+        let sidecar = directory.path().join("f.click");
+        for (c, contract, reason, detail) in [
+            (
+                "struct node { struct node *child; }; void f(struct node *p) {}",
+                "abstract resource ticket(p: struct node*);\nvoid f(struct node* p) { requires p != 0; produces ticket(p->child); }",
+                "could not evaluate returned resource `ticket(p->child)`",
+                "missing pure fact",
+            ),
+            (
+                "int *first(int *left, int *right) { return left; }",
+                "int32* first(int32* left, int32* right) { views *left; views *right as right_input; produces view(*left) from right_input; ensures result == left; }",
+                "The selected input `views right[0]` does not establish coverage of `views left[0]`",
+                "Requires produces views left[0..1]",
+            ),
+        ] {
+            fs::write(&source, c).unwrap();
+            fs::write(&sidecar, format!("verifying \"f.c\";\n{contract}\n")).unwrap();
+            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(error.starts_with("incomplete proof:\n"), "{error}");
+            assert!(error.contains(reason), "{error}");
+            assert!(error.contains(detail), "{error}");
+        }
+    }
+
+    #[test]
+    fn returned_memory_without_promised_initialization_is_an_incomplete_proof() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("f.c");
+        fs::write(&source, "void init(int *p) {}\n").unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+                void init(int32* p) {
+                    consumes uninitialized(p[0..1]);
+                    produces p[0..1];
+                }
+            "#,
+        )
+        .unwrap();
+        let verify = || entry(["verify".to_string(), sidecar.display().to_string()]);
+        let error = verify().unwrap_err();
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
+        assert!(error.contains("has not initialized every byte"), "{error}");
+        assert!(error.contains("Requires produces p[0]"), "{error}");
+
+        fs::write(&source, "void init(int *p) { *p = 1; }\n").unwrap();
+        verify().expect("the write supplies the promised initialized memory");
+    }
+
+    #[test]
+    fn contract_closing_identifies_implicit_and_written_tactic_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("f.c"),
+            "int32 counter = 0;\nint32 f() { counter = 1; return 1; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        let verify = |proof: &str| {
+            fs::write(
+                &sidecar,
+                format!("verifying \"f.c\";\nint32 f() {{ ensures result == 1; }}{proof}\n"),
+            )
+            .unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err()
+        };
+        for proof in [
+            "",
+            " by { step_until(function.exit); }",
+            " by { step_until(function.exit); known(); }",
+        ] {
+            let error = verify(proof);
+            assert!(error.starts_with("tactic error:\n"), "{error}");
+            assert!(error.contains("write to `&counter`"), "{error}");
+            assert!(
+                error.contains("refused by: implicit step (contract closing)"),
+                "{error}"
+            );
+            assert!(!error.contains("tactic@"), "{error}");
+        }
+        let traced = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "f".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(traced.starts_with("tactic error:\n"), "{traced}");
+        assert!(
+            traced.contains("refused by: implicit step (contract closing)")
+                && traced.contains("location: implicit step (contract closing)"),
+            "{traced}"
+        );
+
+        let error =
+            verify(" by { step_until(function.exit); known(); known(); known(); known(); }");
+        assert!(error.starts_with("tactic error:\n"), "{error}");
+        assert!(error.contains("write to `&counter`"), "{error}");
+        assert!(error.contains("refused by: `known`"), "{error}");
+        assert!(!error.contains("refused by: implicit step"), "{error}");
     }
 
     /// A failure at a C operation names that statement. A proof failure with

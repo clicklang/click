@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::AlgebraicValueType;
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
-use crate::kernel::program_function_contract_refinement_obligations;
+use crate::kernel::check_program_function_contract_refinement_obligations;
 
 mod execution_theorems;
 use execution_theorems::verify_execution_theorem;
@@ -386,7 +386,6 @@ pub(super) struct PureInductionSetup {
 #[derive(Clone, Debug)]
 pub(super) struct PureStructuralInductionApplication {
     /// The selected theorem's exact requirements at this child instance.
-    pub(super) surface_premises: Vec<ClickProposition>,
     pub(super) kernel_premises: Vec<Proposition>,
     pub(super) implication: Proposition,
     pub(super) conclusion: Proposition,
@@ -678,16 +677,6 @@ fn prepare_pure_induction_tactics(
                         arguments: application.arguments.clone(),
                     })
                 }
-                ProofTactic::ApplyTheoremUsing {
-                    application,
-                    premises,
-                } if active && application.name == hypothesis => {
-                    Ok(ProofTactic::ApplyInductionUsing {
-                        hypothesis: hypothesis.to_string(),
-                        arguments: application.arguments.clone(),
-                        premises: premises.clone(),
-                    })
-                }
                 ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                     condition: proof_if.condition.clone(),
                     ensuring: proof_if.ensuring.clone(),
@@ -759,11 +748,9 @@ fn prepare_pure_induction_tactics(
                             .collect::<Result<_, ClickError>>()?,
                     })))
                 }
-                ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
-                    Err(ClickError::new(
-                        "internal induction-application syntax is not accepted directly",
-                    ))
-                }
+                ProofTactic::ApplyInduction { .. } => Err(ClickError::new(
+                    "internal induction-application syntax is not accepted directly",
+                )),
                 tactic => Ok(tactic.clone()),
             })
             .collect()
@@ -863,7 +850,7 @@ pub(super) fn pure_theorem_context(
         &theorem.generic_pointer_parameters,
     );
     let integer_values = pure_theorem_parameter_integer_values(theorem.parameters());
-    let array_refs = pure_theorem_array_refs(theorem.parameters(), &values, &memory);
+    let array_refs = pure_theorem_array_refs(theorem.parameters(), &values, &point);
     // A theorem's premises are its `requires` clauses in source order, each
     // normalized to the proposition it states: a `views` range states its
     // readability, the same proposition `loadable` states. Keeping the list
@@ -1396,7 +1383,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
     values: &ProgramValueBindings,
-    memory: &SymbolicMemory,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     parameters
         .iter()
@@ -1409,7 +1396,7 @@ pub(in crate::surface) fn pure_theorem_array_refs(
             Some((
                 parameter.name().to_string(),
                 ClickArrayRef {
-                    point: crate::kernel::ProgramPoint::of_memory(memory),
+                    point: point.clone(),
                     pointer: pointer.address().clone(),
                     element_type,
                 },
@@ -1683,6 +1670,67 @@ fn verify_theorem_ensure(
     })
 }
 
+fn refinement_preparation_error(
+    error: crate::kernel::ContractRefinementPreparationError,
+) -> ClickError {
+    use crate::kernel::{ContractRefinementPreparationError as PreparationError, ExecutionLimit};
+    use crate::surface::{ClickErrorKind, ProofRefusal};
+
+    match error {
+        PreparationError::Unsupported(detail) => {
+            ClickError::new(detail).with_proof_refusal(ProofRefusal::UnsupportedProof)
+        }
+        PreparationError::Incompatible(detail) => {
+            ClickError::new(detail).with_proof_refusal(ProofRefusal::Contract)
+        }
+        PreparationError::Evaluation { clause, detail } => {
+            let message = match detail {
+                Some(detail) => format!("could not evaluate {clause}: {detail}"),
+                None => format!("could not evaluate {clause}"),
+            };
+            ClickError::new(message).with_proof_refusal(ProofRefusal::IncompleteProof)
+        }
+        PreparationError::Stopped(stop) => {
+            let error = ClickError::new(format!(
+                "preparing refinement obligations stopped at {}",
+                stop.describe()
+            ));
+            match stop {
+                ExecutionLimit::ExecutionIdentityBesideLiveState => {
+                    error.with_kind(ClickErrorKind::Internal)
+                }
+                ExecutionLimit::Deadline
+                | ExecutionLimit::ExpressionSteps
+                | ExecutionLimit::StatementSteps
+                | ExecutionLimit::FunctionCalls
+                | ExecutionLimit::LoopUnrolls
+                | ExecutionLimit::KernelVariables { .. }
+                | ExecutionLimit::MatchBinderVariables { .. } => {
+                    error.with_kind(ClickErrorKind::Limit)
+                }
+                ExecutionLimit::UnsupportedPureFunctionResult(_)
+                | ExecutionLimit::BoolComparedWithInteger
+                | ExecutionLimit::BoolOrdered
+                | ExecutionLimit::BoolArithmetic
+                | ExecutionLimit::MixedBoolArms => {
+                    error.with_proof_refusal(ProofRefusal::UnsupportedProof)
+                }
+                ExecutionLimit::Paths
+                | ExecutionLimit::LoopIterationsUnbound
+                | ExecutionLimit::ResourceFieldInstanceUnavailable
+                | ExecutionLimit::AuthorityCountNeedsExactPointer
+                | ExecutionLimit::AuthorityCountNeedsResolvedMember
+                | ExecutionLimit::AuthorityCountNeedsOwnership
+                | ExecutionLimit::AuthorityCountLentToWorker
+                | ExecutionLimit::AuthorityCountPendingLockedWorker
+                | ExecutionLimit::DisjunctionRightUndefined => {
+                    error.with_proof_refusal(ProofRefusal::IncompleteProof)
+                }
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn verify_contract_refinement_theorem(
     theorem: &TheoremDefinition,
@@ -1695,6 +1743,9 @@ fn verify_contract_refinement_theorem(
     theorem_environment: &TheoremEnvironment,
     function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Option<VerifiedPureTheorem>, ClickError> {
+    use super::smart_closures::LinearScriptDecline;
+    use crate::surface::{ClickErrorKind, ProofRefusal};
+
     let ClickProposition::PredicateCall { name, arguments } = surface_goal else {
         return Ok(None);
     };
@@ -1816,7 +1867,7 @@ fn verify_contract_refinement_theorem(
             .expect("a refinement theorem has a recognized subject");
         return Err(ClickError::new(format!(
             "`{claim_label}`: proving `{name}({subject})` requires an explicit contract-refinement proof"
-        )));
+        )).with_proof_refusal(ProofRefusal::IncompleteProof));
     };
     // Contract refinement opens explicitly selected contract applications.
     // Compare the lowered applications, including callback and value arguments.
@@ -1835,7 +1886,7 @@ fn verify_contract_refinement_theorem(
     let Some((prefix, proof_tactics)) = tactics.split_at_checked(count) else {
         return Err(ClickError::new(format!(
             "`{claim_label}`: contract refinement must begin by unfolding its selected contract applications"
-        )));
+        )).with_proof_refusal(ProofRefusal::IncompleteProof));
     };
     let mut expected = vec![goal.clone()];
     if source_contract.is_some() {
@@ -1849,7 +1900,7 @@ fn verify_contract_refinement_theorem(
         let Some(selected) = selected_application(tactic)? else {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: contract refinement requires explicit `unfold(contract(callback))` applications"
-            )));
+            )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic(tactic_name(tactic)));
         };
         let Some(index) = expected
             .iter()
@@ -1857,7 +1908,9 @@ fn verify_contract_refinement_theorem(
         else {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: unfold selects a different contract application"
-            )));
+            ))
+            .with_proof_refusal(ProofRefusal::Tactic)
+            .with_failed_tactic(tactic_name(tactic)));
         };
         expected.remove(index);
     }
@@ -1914,17 +1967,15 @@ fn verify_contract_refinement_theorem(
             "`{claim_label}`: contract parameter count does not match its lowered function"
         )));
     }
-    let refinement_failure = || {
-        let subject = concrete_target
-            .map(|target| format!("&{target}"))
-            .or_else(|| symbolic_binding.map(str::to_string))
-            .expect("refinement subject");
-        ClickError::new(format!(
-            "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
-        ))
-    };
-    let obligations = program_function_contract_refinement_obligations(&refinement)
-        .ok_or_else(refinement_failure)?;
+    let subject = concrete_target
+        .map(|target| format!("&{target}"))
+        .or_else(|| symbolic_binding.map(str::to_string))
+        .expect("refinement subject");
+    let summary = format!(
+        "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
+    );
+    let obligations = check_program_function_contract_refinement_obligations(&refinement)
+        .map_err(|error| refinement_preparation_error(error).with_context(&summary))?;
     let arguments = argument_values
         .iter()
         .cloned()
@@ -1941,17 +1992,24 @@ fn verify_contract_refinement_theorem(
         })
         .collect::<Vec<_>>();
     let proof_goal = obligations.proposition().clone();
-    let presentation = super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
-        &proof_goal,
-        ParameterBinding::new(&parameters, &arguments),
-        obligations.entry(),
-        obligations.post(),
-    )
-    .ok_or_else(|| {
-        ClickError::new(format!(
-            "`{claim_label}`: cannot present contract-refinement obligations"
-        ))
-    })?;
+    let mut presentation =
+        super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
+            &proof_goal,
+            ParameterBinding::new(&parameters, &arguments),
+            obligations.entry(),
+            obligations.post(),
+        )
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "`{claim_label}`: cannot present contract-refinement obligations"
+            ))
+            .with_kind(ClickErrorKind::Internal)
+        })?;
+    // Expansion prints this presentation as source. A native comparison over
+    // arithmetic is spelled through its Integer observations, as written
+    // arithmetic in a comparison reads exactly; spelled bare, `result ==
+    // (x + 3)` would parse back as `to_integer(result) == to_integer(x) + 3`.
+    super::surface_synthesis::spell_conjunct_observations(&proof_goal, &mut presentation);
     let retained_states = RecordedStates::new();
     let mut surfaces = SurfacePropositionMap::default();
     let mut pending = vec![(&proof_goal, &presentation)];
@@ -1986,37 +2044,68 @@ fn verify_contract_refinement_theorem(
         theorem_environment,
     );
     let mut search = super::attempt::search_scope("contract refinement");
-    let script = super::smart_closures::with_implicit_closer(proof_tactics);
-    let attempted = match root.driver().try_authoritative_linear_script(&script) {
+    let mut declined = None;
+    let mut unfinished = None;
+    let sites = claim_script_sites(&root, proof_tactics, count);
+    let attempted = match root.driver().try_addressed_linear_script(
+        proof_tactics,
+        &sites,
+        &mut declined,
+        Some(&mut unfinished),
+        true,
+    ) {
         Ok(attempted) => attempted,
         Err(error) => {
             return Err(error
-                .with_context(refinement_failure().message())
+                .with_context(&summary)
                 .with_search_failures(search.finish()));
         }
     };
-    let proof = match attempted {
-        Some(proof) => {
-            search.succeed();
-            proof
-        }
-        None => return Err(refinement_failure().with_search_failures(search.finish())),
+    let Some(proof) = attempted else {
+        check_verification_deadline()?;
+        let focused = unfinished.as_ref().unwrap_or(&root);
+        let error = match declined {
+            Some(LinearScriptDecline::Shape) if proof_tactics.is_empty() => focused
+                .step_error("the proof ended without proving the refinement obligations")
+                .with_proof_refusal(ProofRefusal::IncompleteProof),
+            Some(LinearScriptDecline::Shape) => focused
+                .step_error("the proof contains an unsupported operation or control-flow shape")
+                .with_proof_refusal(ProofRefusal::UnsupportedProof),
+            Some(
+                LinearScriptDecline::Step(index) | LinearScriptDecline::UnsuccessfulSearch(index),
+            ) => {
+                let refusal = match declined {
+                    Some(LinearScriptDecline::UnsuccessfulSearch(_)) => {
+                        ProofRefusal::UnsuccessfulSearch
+                    }
+                    _ => ProofRefusal::Tactic,
+                };
+                focused
+                    .at_site(&sites[index])
+                    .step_error(format!(
+                        "could not complete `{}`",
+                        tactic_name(&proof_tactics[index])
+                    ))
+                    .with_proof_refusal(refusal)
+            }
+            None => focused
+                .step_error("the proof ended with a refinement obligation still open")
+                .with_proof_refusal(ProofRefusal::IncompleteProof),
+        };
+        return Err(error
+            .with_context(&summary)
+            .with_search_failures(search.finish()));
     };
+    search.succeed();
     let checked = proof.completed_proposition()?;
-    let kernel_authority = prove_program_function_contract_refinement(
-        &obligations,
-        goal.clone(),
-        &checked,
-    )
-    .ok_or_else(|| {
-        let subject = concrete_target
-            .map(|target| format!("&{target}"))
-            .or_else(|| symbolic_binding.map(str::to_string))
-            .expect("refinement theorem has a subject");
-        ClickError::new(format!(
-            "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
-        ))
-    })?;
+    let kernel_authority =
+        prove_program_function_contract_refinement(&obligations, goal.clone(), &checked)
+            .ok_or_else(|| {
+                ClickError::new(format!(
+                    "{summary}: Click could not issue a theorem from the completed proof of the refinement obligations"
+                ))
+                .with_kind(ClickErrorKind::Internal)
+            })?;
     let mut certificate_steps =
         ProofCertificate::from_proof_tactics(&tactics[..tactics.len() - proof_tactics.len()])
             .map_err(|error| ClickError::new(format!("{error}")))?
@@ -2158,11 +2247,12 @@ fn check_direct_pure_goal_with_proof(
             TacticTiming::new(claim_label, 0, 0, &ProofTactic::Solve, 0),
         )
     };
-    let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some(if implicit {
-        "implicit tail"
+    use crate::surface::proof_trace::TraceOrigin;
+    let _origin = if implicit {
+        TraceOrigin::enter_implicit("implicit tail")
     } else {
-        "solve"
-    }));
+        TraceOrigin::enter(Some("solve"))
+    };
     let (result, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| {
         crate::kernel::search::ProofSearch::try_solve_closure(&root)
     });
@@ -2671,8 +2761,6 @@ fn check_pure_script_with_proof(
         ),
     }
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
-    let tactics_with_closer = super::smart_closures::with_implicit_closer(tactics);
-    let tactics = tactics_with_closer.as_slice();
     let all_sites = claim_script_sites(&root, tactics, 0);
     let prefix = if entry_requirements.recorded.is_empty() {
         0
@@ -2691,6 +2779,7 @@ fn check_pure_script_with_proof(
             &all_sites[..prefix],
             &mut None,
             Some(&mut unfinished),
+            false,
         )?;
         if completed.is_some() {
             return Err(ClickError::new(
@@ -2713,6 +2802,7 @@ fn check_pure_script_with_proof(
         sites,
         &mut declined,
         Some(&mut unfinished),
+        true,
     ) {
         Ok(checked) => checked,
         Err(error) => return Err(error.with_search_failures(search.finish())),
@@ -2723,7 +2813,10 @@ fn check_pure_script_with_proof(
             Some(super::smart_closures::LinearScriptDecline::Shape) => {
                 "contains an unsupported operation or control-flow shape".to_string()
             }
-            Some(super::smart_closures::LinearScriptDecline::Step(index)) => format!(
+            Some(
+                super::smart_closures::LinearScriptDecline::Step(index)
+                | super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(index),
+            ) => format!(
                 "could not complete tactic {} (`{}`)",
                 prefix + index + 1,
                 tactic_name(&tactics[index])
@@ -2734,6 +2827,13 @@ fn check_pure_script_with_proof(
             .as_ref()
             .unwrap_or(&root)
             .step_error(format!("checked pure script for `{claim_label}` {detail}"))
+            .with_proof_refusal(match declined {
+                None => crate::surface::ProofRefusal::IncompleteProof,
+                Some(super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(_)) => {
+                    crate::surface::ProofRefusal::UnsuccessfulSearch
+                }
+                Some(_) => crate::surface::ProofRefusal::Tactic,
+            })
             .with_search_failures(search.finish()));
     };
     search.succeed();
@@ -3023,8 +3123,14 @@ pub(super) fn induction_application_surface_premises(
             &BTreeMap::from([(setup.parameter.clone(), argument.clone())]),
         )
         .map_err(ClickError::new)?;
-        if !premises.contains(&substituted) {
-            premises.push(substituted);
+        let mut pending = vec![substituted];
+        while let Some(premise) = pending.pop() {
+            if let ClickProposition::And(left, right) = premise {
+                pending.push(*right);
+                pending.push(*left);
+            } else if !premises.contains(&premise) {
+                premises.push(premise);
+            }
         }
     }
     Ok(premises)
@@ -3306,6 +3412,23 @@ fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theorem_array_parameter_retains_the_theorem_point() {
+        let file =
+            crate::surface::parse("theorem array_input(a: int32[]) { ensures true; }").unwrap();
+        let theorem = &file.theorem_definitions()[0];
+        let predicates = PredicateEnvironment::new(&[]);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let context =
+            pure_theorem_context(theorem, SpecDefinitions::new(&predicates, &functions)).unwrap();
+        let array = context
+            .array_refs
+            .get("a")
+            .expect("the theorem array parameter");
+        assert!(context.point.id().is_some());
+        assert_eq!(array.point.id(), context.point.id());
+    }
 
     #[test]
     fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {
@@ -3598,11 +3721,20 @@ mod tests {
             crate::surface::expand_c_claim_source_by_label(source, &[], "guarded_count.ensures_0")
                 .unwrap();
         crate::surface::verify_c_sources(&expanded, &[]).unwrap();
-        let missing_evidence = source.replace(
-            "apply(ih(n - 1));",
-            "apply(ih(n - 1)) using { 0 <= n - 1; n - 1 < n; }",
+        let missing_evidence = source
+            .lines()
+            .filter(|line| {
+                !line.contains("have n - 1 <= 1000000")
+                    && !line.contains("have to_integer(n - 1) <= 1000000")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let refusal = crate::surface::verify_c_sources(&missing_evidence, &[]).unwrap_err();
+        assert!(
+            refusal.message().contains("1000000"),
+            "{}",
+            refusal.report()
         );
-        assert!(crate::surface::verify_c_sources(&missing_evidence, &[]).is_err());
         let false_claim = source.replace(
             "ensures guarded_countdown(n) == 0 and",
             "ensures guarded_countdown(n) == 1 and",
@@ -3841,7 +3973,7 @@ mod tests {
         let error = verify_instantiation_theorem(&open)
             .expect_err("instantiation does not change the selected goal");
         assert!(
-            error.message().contains("goal still open"),
+            error.proof_refusal() == Some(crate::surface::ProofRefusal::UnsuccessfulSearch),
             "{}",
             error.message()
         );
@@ -4521,6 +4653,8 @@ fn constant_guard_value(proposition: &ClickProposition) -> Option<bool> {
 /// The machine integer types a constant guard reads.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ConstantType {
+    Int8,
+    UInt8,
     Int32,
     UInt32,
     Int64,
@@ -4530,6 +4664,8 @@ enum ConstantType {
 impl ConstantType {
     fn of(program_type: ProgramType) -> Option<Self> {
         Some(match program_type {
+            ProgramType::Int8 => Self::Int8,
+            ProgramType::UInt8 => Self::UInt8,
             ProgramType::Int32 => Self::Int32,
             ProgramType::UInt32 => Self::UInt32,
             ProgramType::Int64 => Self::Int64,
@@ -4539,11 +4675,13 @@ impl ConstantType {
     }
 
     fn is_signed(self) -> bool {
-        matches!(self, Self::Int32 | Self::Int64)
+        matches!(self, Self::Int8 | Self::Int32 | Self::Int64)
     }
 
     fn contains(self, value: i128) -> bool {
         match self {
+            Self::Int8 => i128::from(i8::MIN) <= value && value <= i128::from(i8::MAX),
+            Self::UInt8 => 0 <= value && value <= i128::from(u8::MAX),
             Self::Int32 => i128::from(i32::MIN) <= value && value <= i128::from(i32::MAX),
             Self::UInt32 => 0 <= value && value <= i128::from(u32::MAX),
             Self::Int64 => i128::from(i64::MIN) <= value && value <= i128::from(i64::MAX),
@@ -4564,14 +4702,43 @@ fn constant_integer(expression: &ContractExpression) -> Option<(i128, Option<Con
         ContractExpression::IntegerContext(inner) => constant_integer(inner),
         ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
             let ty = ConstantType::of(value.program_type())?;
-            let value = match value {
-                ProgramValue::Int32(bits) => i128::from(bits.as_const()? as i32),
-                ProgramValue::UInt32(bits) => i128::from(bits.as_const()?),
-                ProgramValue::Int64(bits) => i128::from(bits.int64_as_const()?),
-                ProgramValue::UInt64(bits) => i128::from(bits.uint64_as_const()?),
+            let value = MachineIntegerType::from_program_type(value.program_type())?
+                .constant_from_value(value)?
+                .to_i128()?;
+            Some((value, Some(ty)))
+        }
+        // A string literal is read-only, so its byte at a constant index is
+        // a constant: `"hi"[1u64]` is `105u8`.
+        ContractExpression::Index(base, index) => {
+            let mut base = base.as_ref();
+            while let ContractExpression::At { expression, .. } = base {
+                base = expression;
+            }
+            let ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Pointer(pointer),
+            )) = base
+            else {
+                return None;
+            };
+            let signed = match pointer.program_type() {
+                ProgramType::UInt8Pointer => false,
+                ProgramType::Int8Pointer => true,
                 _ => return None,
             };
-            Some((value, Some(ty)))
+            let address = pointer.address();
+            let crate::kernel::AddressBase::StringLiteral { bytes, .. } = &address.base else {
+                return None;
+            };
+            let crate::kernel::AddressOffset::Constant(offset) = address.offset else {
+                return None;
+            };
+            let (index, _) = constant_integer(index)?;
+            let byte = *bytes.get(usize::try_from(i128::from(offset) + index).ok()?)?;
+            Some(if signed {
+                (i128::from(byte as i8), Some(ConstantType::Int8))
+            } else {
+                (i128::from(byte), Some(ConstantType::UInt8))
+            })
         }
         ContractExpression::CUnary {
             operand,
@@ -4602,6 +4769,57 @@ fn constant_integer(expression: &ContractExpression) -> Option<(i128, Option<Con
     }
 }
 
+/// The program point at which `proposition` names `application`, when a
+/// postcondition spells it at the call's entry:
+/// `at(region(1).entry, statement(0).call(fprintf, 0).result)
+/// == at(region(1).entry, format_length(..))`. The call's array arguments
+/// are read at that point, so its value is a different term elsewhere.
+pub(super) fn application_point(
+    proposition: &ClickProposition,
+    application: &ClickFunctionApplication,
+) -> Option<ProgramPointSelector> {
+    fn in_expression(
+        term: &ContractExpression,
+        application: &ClickFunctionApplication,
+    ) -> Option<ProgramPointSelector> {
+        match term {
+            ContractExpression::At {
+                selector,
+                expression,
+            } => match expression.as_ref() {
+                ContractExpression::Call { name, arguments }
+                    if *name == application.name && *arguments == application.arguments =>
+                {
+                    Some(selector.clone())
+                }
+                inner => in_expression(inner, application),
+            },
+            ContractExpression::AlgebraicConstructor { arguments, .. }
+            | ContractExpression::Call { arguments, .. } => arguments
+                .iter()
+                .find_map(|argument| in_expression(argument, application)),
+            ContractExpression::Proposition(proposition) => {
+                application_point(proposition, application)
+            }
+            _ => None,
+        }
+    }
+    match proposition {
+        ClickProposition::Value(value) => in_expression(value, application),
+        ClickProposition::Comparison { left, right, .. } => {
+            in_expression(left, application).or_else(|| in_expression(right, application))
+        }
+        ClickProposition::And(left, right) | ClickProposition::Or(left, right) => {
+            application_point(left, application).or_else(|| application_point(right, application))
+        }
+        ClickProposition::Not(body)
+        | ClickProposition::At {
+            proposition: body, ..
+        } => application_point(body, application),
+        _ => None,
+    }
+}
+
 /// The largest nonnegative constant among `application`'s arguments, such as
 /// the measure `13` of `output_from(s, 0u64, 13)`: about the number of
 /// further unfolds a recursion over that measure takes.
@@ -4613,4 +4831,179 @@ pub(super) fn largest_constant_argument(application: &ClickFunctionApplication) 
         .filter_map(|(value, _)| usize::try_from(value).ok())
         .max()
         .unwrap_or(0)
+}
+
+/// The constant `value` of type `ty` as an expression: a machine constant, or
+/// an `Integer` literal when `ty` is `None`.
+fn constant_expression(value: i128, ty: Option<ConstantType>) -> Option<ContractExpression> {
+    let value = match ty {
+        None => return Some(ContractExpression::IntegerLiteral(value.to_string())),
+        Some(ConstantType::Int8) => {
+            crate::kernel::int8(MachineTerm::constant(i8::try_from(value).ok()? as u32))
+        }
+        Some(ConstantType::UInt8) => {
+            crate::kernel::uint8(MachineTerm::constant(u32::from(u8::try_from(value).ok()?)))
+        }
+        Some(ConstantType::Int32) => {
+            ProgramValue::Int32(MachineTerm::constant(i32::try_from(value).ok()? as u32))
+        }
+        Some(ConstantType::UInt32) => {
+            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::try_from(value).ok()?))
+        }
+        Some(ConstantType::Int64) => {
+            ProgramValue::Int64(MachineTerm::int64_constant(i64::try_from(value).ok()?))
+        }
+        Some(ConstantType::UInt64) => {
+            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::try_from(value).ok()?))
+        }
+    };
+    Some(ContractExpression::ProgramExpression(
+        ProgramExpression::Value(value),
+    ))
+}
+
+/// `application` with each constant argument written as its value, so
+/// `output_from(s, 0u64 + 1u64, 2 - 1)` is `output_from(s, 1u64, 1)`.
+fn with_constant_arguments(application: &ClickFunctionApplication) -> ClickFunctionApplication {
+    ClickFunctionApplication {
+        name: application.name.clone(),
+        arguments: application
+            .arguments
+            .iter()
+            .map(|argument| {
+                constant_integer(argument)
+                    .and_then(|(value, ty)| constant_expression(value, ty))
+                    .unwrap_or_else(|| argument.clone())
+            })
+            .collect(),
+    }
+}
+
+/// One level of a recursive function's evaluation at `application`: the arm
+/// of its definition that constant `if` guards select, and the one recursive
+/// call in that arm with its constant arguments evaluated, `None` at the
+/// base. `None` when a guard is not constant, the function is generic or
+/// not recursive, or the arm makes more than one recursive call.
+pub(super) fn ground_recursion_level(
+    functions: &ClickFunctionEnvironment,
+    application: &ClickFunctionApplication,
+) -> Option<(ContractExpression, Option<ClickFunctionApplication>)> {
+    let definition = functions.get(&application.name)?;
+    if definition.decreases().is_none()
+        || !definition.type_parameters().is_empty()
+        || definition.parameters().len() != application.arguments.len()
+    {
+        return None;
+    }
+    let substitutions = definition
+        .parameters()
+        .iter()
+        .zip(&application.arguments)
+        .map(|(parameter, argument)| {
+            (
+                parameter.binding_name(),
+                crate::surface::lowering::pure_function_parameter_argument_of_type(
+                    parameter, argument, None,
+                ),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut arm = crate::surface::lowering::substitute_contract_expression(
+        definition.body()?,
+        &substitutions,
+    )
+    .ok()?;
+    while let ContractExpression::If {
+        condition,
+        then_branch,
+        else_branch,
+    } = arm
+    {
+        arm = if constant_guard_value(&condition)? {
+            *then_branch
+        } else {
+            *else_branch
+        };
+    }
+    let calls = click_function_applications(&ClickProposition::Value(arm.clone()), &[])
+        .into_iter()
+        .filter(|call| call.name == application.name)
+        .collect::<Vec<_>>();
+    let arm = with_constant_fields(&arm);
+    match calls.as_slice() {
+        [] => Some((arm, None)),
+        [next] => Some((arm, Some(with_constant_arguments(next)))),
+        _ => None,
+    }
+}
+
+/// `expression` with each constant field of its constructors written as its
+/// value, such as a string literal's byte, so the equality closure compares
+/// it with a written list.
+fn with_constant_fields(expression: &ContractExpression) -> ContractExpression {
+    match expression {
+        ContractExpression::AlgebraicConstructor {
+            algebraic_type,
+            variant,
+            arguments,
+        } => ContractExpression::AlgebraicConstructor {
+            algebraic_type: algebraic_type.clone(),
+            variant: variant.clone(),
+            arguments: arguments.iter().map(with_constant_fields).collect(),
+        },
+        other => constant_integer(other)
+            .and_then(|(value, ty)| constant_expression(value, ty))
+            .unwrap_or_else(|| other.clone()),
+    }
+}
+
+/// The value of a ground recursion from its levels, each `(call, arm)` from
+/// [`ground_recursion_level`], first call first: the base arm, with each
+/// earlier arm's recursive call replaced by the value below it. `None` when
+/// an arm holds its call where no value can be put.
+pub(super) fn ground_recursion_value(
+    name: &str,
+    levels: &[(ClickFunctionApplication, ContractExpression)],
+) -> Option<ContractExpression> {
+    let ((_, base), rest) = levels.split_last()?;
+    let mut value = base.clone();
+    for (_, arm) in rest.iter().rev() {
+        value = with_call_replaced(arm, name, &value)?;
+    }
+    Some(value)
+}
+
+/// `expression` with its one call of `name` replaced by `value`, through
+/// constructors and `+` and `-`, the places a recursive arm holds its call.
+fn with_call_replaced(
+    expression: &ContractExpression,
+    name: &str,
+    value: &ContractExpression,
+) -> Option<ContractExpression> {
+    let replace = |expression: &ContractExpression| with_call_replaced(expression, name, value);
+    Some(match expression {
+        ContractExpression::Call { name: called, .. } if called == name => value.clone(),
+        ContractExpression::AlgebraicConstructor {
+            algebraic_type,
+            variant,
+            arguments,
+        } => ContractExpression::AlgebraicConstructor {
+            algebraic_type: algebraic_type.clone(),
+            variant: variant.clone(),
+            arguments: arguments.iter().map(replace).collect::<Option<_>>()?,
+        },
+        ContractExpression::Add(left, right) => {
+            ContractExpression::Add(Box::new(replace(left)?), Box::new(replace(right)?))
+        }
+        ContractExpression::Subtract(left, right) => {
+            ContractExpression::Subtract(Box::new(replace(left)?), Box::new(replace(right)?))
+        }
+        other => {
+            let calls = click_function_applications(&ClickProposition::Value(other.clone()), &[]);
+            if calls.iter().any(|call| call.name == name) {
+                return None;
+            }
+            other.clone()
+        }
+    })
 }

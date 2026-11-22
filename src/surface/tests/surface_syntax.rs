@@ -1082,15 +1082,18 @@ fn parses_and_prints_pure_induction_tactics() {
             if application.name == "ih" && application.arguments.len() == 1
     ));
 
+    let legacy = source.replace("apply(ih(n - 1));", "apply(ih(n - 1)) using { n > 0; };");
+    let error = parse(&legacy).unwrap_err();
+    assert!(error.message().contains("takes no `using` list"), "{error}");
+
     let printable = vec![
         tactics[0].clone(),
-        ProofTactic::ApplyInductionUsing {
+        ProofTactic::ApplyInduction {
             hypothesis: "ih".to_string(),
             arguments: match &tactics[1] {
                 ProofTactic::ApplyTheorem(application) => application.arguments.clone(),
                 _ => unreachable!(),
             },
-            premises: Vec::new(),
         },
         ProofTactic::Known,
     ];
@@ -1105,8 +1108,7 @@ fn parses_and_prints_pure_induction_tactics() {
     };
     assert!(matches!(
         &reparsed[1],
-        ProofTactic::ApplyTheoremUsing { application, premises }
-            if application.name == "ih" && premises.is_empty()
+        ProofTactic::ApplyTheorem(application) if application.name == "ih"
     ));
     assert!(matches!(&reparsed[2], ProofTactic::Known));
 }
@@ -1595,33 +1597,26 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
     let verified = verify_click_theorems(source).expect("bare apply should verify");
     assert!(matches!(
         verified[1].proof_tactics().as_deref(),
-        Some([ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }), ProofTactic::ApplyTheoremUsing { application, premises }])
-            if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "equality_symmetric" && premises.len() == 1
+        Some([ProofTactic::ApplyTheorem(application), ..])
+            if application.name == "equality_symmetric"
     ));
     assert!(matches!(
         verified[2].proof_tactics().as_deref(),
-        Some([
-            ProofTactic::Have(_),
-            ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
-            ProofTactic::ApplyTheoremUsing { application, premises },
-        ]) if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "equality_symmetric"
-            && matches!(premises.as_slice(), [ClickProposition::Comparison { .. }])
+        Some([ProofTactic::Have(_), ProofTactic::ApplyTheorem(application), ..])
+            if application.name == "equality_symmetric"
     ));
 
-    let explicit = source.replace(
-        "apply(equality_symmetric(first, second));",
-        "apply(equality_symmetric(first, second)) using { first == second; }",
-    );
-    let explicit_result = verify_click_theorems(&explicit);
-    explicit_result.expect("exported explicit steps should verify independently");
-
-    let corrupted = source.replace(
-        "apply(equality_symmetric(first, second));",
-        "apply(equality_symmetric(first, second)) using {}",
+    let (lemma, caller) = source.split_once("theorem use_equality_symmetric").unwrap();
+    let corrupted = format!(
+        "{lemma}theorem use_equality_symmetric{}",
+        caller.replacen("requires first == second;", "", 1),
     );
     let error = verify_click_theorems(&corrupted)
-        .expect_err("an independently supplied certificate cannot omit its premise");
-    assert!(error.message().contains("required exact fact"), "{error:?}");
+        .expect_err("a theorem application requires its instantiated premise");
+    assert!(
+        error.message().contains("has an unproved obligation"),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -1753,7 +1748,7 @@ fn verifies_explicit_structural_logic_tactics() {
         theorem intro_forall_rule() {
             ensures forall (k: int32) { k == k } by {
                 intro();
-                normalize();
+                known();
             }
         }
 
@@ -2401,11 +2396,13 @@ theorem false_guard(x: int32) {
             .expect("expected reflexive implication certificate"),
         &[ProofTactic::Intro, ProofTactic::Known]
     );
+    // `known` closes an implication whose consequent is available, here by
+    // computation, without introducing the antecedent.
     assert_eq!(
         verified[1]
             .proof_tactics()
             .expect("expected true-consequent certificate"),
-        &[ProofTactic::Intro, ProofTactic::Known]
+        &[ProofTactic::Known]
     );
     assert!(matches!(
         verified[2]
@@ -3259,7 +3256,7 @@ fn integer_datatype_match_bindings_shadow_each_source_carrier() {
         theorem extraction(value: Integer) {
             ensures match Pair::Make(0, value) {
                 Pair::Make(value, inner) => inner,
-            } == value by { normalize(); }
+            } == value by { known(); }
         }
     "#;
     verify_click_theorems(source).unwrap();

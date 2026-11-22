@@ -65,8 +65,8 @@ void initialize(struct pool* pool, int32 amount) {
         known();
     }
     known();
-    normalize();
-    normalize();
+    known();
+    known();
     known();
     known();
 }
@@ -167,7 +167,7 @@ void checkout(struct pool* pool, struct payload* p) {
     known();
     known();
     known();
-    normalize();
+    known();
 }
 void give_back(struct pool* pool, struct payload* p) {
     owns control(pool);
@@ -208,7 +208,7 @@ void give_back(struct pool* pool, struct payload* p) {
         mark before_decrement;
         step();
         have separate(statement(0).footprint, memory(p->value)) by {
-            normalize() using { separate(memory(p->value), memory(pool->checked_out)); };
+            solve() using { separate(memory(p->value), memory(pool->checked_out)); };
         }
         have p->value == at(before_decrement, p->value) by {
             preserve(memory(p->value), statement(0));
@@ -320,7 +320,7 @@ void give_back(struct pool* pool, struct payload* p) {
     known();
     known();
     have valid_pool(pool) by { unfold(valid_pool(pool)); known(); }
-    normalize();
+    known();
     known();
     known();
     known();
@@ -375,11 +375,11 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
         have second->value == 22;
     }
     have to_integer(count(item(pool, second))) == 1 by {
-        normalize();
+        known();
     }
     step();
     have to_integer(count(item(pool, first))) == 1 by {
-        normalize();
+        known();
     }
     step();
     step();

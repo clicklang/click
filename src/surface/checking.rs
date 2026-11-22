@@ -155,16 +155,17 @@ pub(super) fn prove_ensure_resource<'e>(
     guard_active: Option<bool>,
     guard_deferred: bool,
 ) -> Result<CheckedResourceClaim<'e>, ClickError> {
+    // Post-return resource folds can extend the checked path before final
+    // contract certification. The outcome proof supplies the returning state,
+    // and the original artifact supplies the path identity.
+    if checked_execution.paths().get(path_index).is_none() {
+        return Err(
+            ClickError::new("resource claim has no checked execution path")
+                .with_kind(ClickErrorKind::Internal),
+        );
+    }
     let mut requirement = None;
     let checked = (|| {
-        // Post-return resource folds can extend the checked path before final
-        // contract certification. Its typed outcome Proof supplies the returning
-        // state checked below; the original artifact supplies stable path identity.
-        if checked_execution.paths().get(path_index).is_none() {
-            return Err(ClickError::new(
-                "resource claim has no checked execution path",
-            ));
-        }
         let (result, post_state) = match outcome {
             FunctionOutcome::Return { value, state } => (value, state),
             FunctionOutcome::Throw { value, state } if borrowed => (value, state),
@@ -181,7 +182,8 @@ pub(super) fn prove_ensure_resource<'e>(
                         parameter_binding,
                         &execution_pure_facts()
                     )
-                )));
+                ))
+                .with_proof_refusal(ProofRefusal::Execution));
             }
         };
         if guard_deferred {
@@ -219,7 +221,7 @@ pub(super) fn prove_ensure_resource<'e>(
             )
         };
         let expected = match lower_at(clause_state) {
-            Ok(expected) => expected,
+            Ok(expected) => Ok(expected),
             Err(error) => {
                 // A clause whose argument loads a cell inside a folded
                 // field-bearing instance the function holds at this state reads
@@ -243,17 +245,24 @@ pub(super) fn prove_ensure_resource<'e>(
                     })
                     .collect::<Vec<_>>();
                 if published.is_empty() {
-                    return Err(error);
+                    Err(error)
+                } else {
+                    let published_state = clause_state.clone().with_resource_context(
+                        clause_state
+                            .resources()
+                            .clone()
+                            .unchecked_with_facts(published),
+                    );
+                    lower_at(&published_state).map_err(|_| error)
                 }
-                let published_state = clause_state.clone().with_resource_context(
-                    clause_state
-                        .resources()
-                        .clone()
-                        .unchecked_with_facts(published),
-                );
-                lower_at(&published_state).map_err(|_| error)?
             }
-        };
+        }
+        .map_err(|error| {
+            error.with_context(format!(
+                "could not evaluate returned resource `{}`",
+                crate::surface::validation::describe_resource_clause(resource)
+            ))
+        })?;
         crate::kernel::check_produced_view_source(
             checked_execution.function(),
             &claim_key,
@@ -335,10 +344,14 @@ pub(super) fn prove_ensure_resource<'e>(
         } else {
             let requirement = requirement
                 .unwrap_or_else(|| crate::surface::validation::describe_resource_clause(resource));
-            ClickError::new(format!(
+            let report = ClickError::new(format!(
                 "{}\nRequires produces {requirement}",
                 error.raw_summary()
-            ))
+            ));
+            match error.proof_refusal() {
+                Some(refusal) => report.with_proof_refusal(refusal),
+                None => report,
+            }
         }
     })
 }

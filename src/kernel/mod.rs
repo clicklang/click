@@ -198,8 +198,8 @@ pub(crate) use eval::registered_load_origin_for_variable;
 #[cfg(test)]
 pub(crate) use eval::resolve_pending_heap_allocations;
 pub(crate) use eval::resolve_pending_heap_allocations_with;
-pub(crate) use eval::scalar_read_observation;
 pub(crate) use eval::terms_have_same_canonical_form;
+pub(crate) use eval::{ScalarReadObservation, scalar_read_observation};
 pub(crate) use eval::{
     UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
@@ -404,7 +404,6 @@ impl VerificationSession {
             proof::signed_arithmetic::clear_shared_operand_keys();
             execution_value::storage_keys::clear_session_key_memos();
             proof::clear_selected_atom_cache();
-            proof::clear_rewritten_load_syntax_cache();
             proof::equality_rewrite::clear_shared_exact_rewrite_cache();
             primitives::clear_shared_machine_variable_cache();
             reasoning::order_reasoning::clear_fold_affine_bases();

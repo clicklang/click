@@ -78,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     ))
     jobs = root / "jobs"
     jobs.mkdir()
-    (jobs / "jobs.tsv").write_text("nightly\tfailure\naudit\tfailure\n")
+    (jobs / "jobs.tsv").write_text("slow-tests\tfailure\nexpansion-audit\tfailure\n")
     previous = root / "previous.json"
     previous.write_text(json.dumps({"commit": "0" * 40, "failures": [
         {"id": "mdtest:rb_next.md"},  # still failing
@@ -137,7 +137,7 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     assert "&lt;state A&gt;" in markdown and "<state A>" not in markdown, markdown
 
     # A job that failed without recording a check is reported as such.
-    (jobs / "jobs.tsv").write_text("nightly\tsuccess\naudit\tcancelled\n")
+    (jobs / "jobs.tsv").write_text("slow-tests\tsuccess\nexpansion-audit\tcancelled\n")
     empty = root / "empty"
     empty.mkdir()
     subprocess.run(
@@ -146,7 +146,8 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
         check=True, capture_output=True, text=True,
     )
     report = json.loads((out / "report.json").read_text())
-    assert [f["id"] for f in report["failures"]] == ["job:audit"], report["failures"]
+    assert [f["id"] for f in report["failures"]] == ["job:expansion-audit"], report["failures"]
+    assert report["failures"][0]["reproduce"] == "scripts/check.sh --audit expansion", report["failures"]
 
     # The lowering audits: an enforced fact-stability outcome fails, an audit
     # run whose corpus failed fails, and raise/lower counts are compared with
@@ -159,7 +160,9 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
         "raise-lower\tsame\t13790\nraise-lower\tdiffers\t1210\nraise-lower\tunlowered\t360\n")
     (lowering / "fact-stability.tsv").write_text(
         "refused\tx\tA\tB\tmdtest-r\ndiffers\tx\tA\tB\tmdtest-d\n")
-    (jobs / "jobs.tsv").write_text("nightly\tsuccess\naudit\tsuccess\nlowering\tsuccess\n")
+    (jobs / "jobs.tsv").write_text(
+        "slow-tests\tsuccess\nexpansion-audit\tsuccess\n"
+        "raise-lower-audit\tsuccess\nfact-stability-audit\tsuccess\n")
     previous.write_text(json.dumps({"commit": "0" * 40, "failures": [
         {"id": "lowering:fact-stability paths"},  # clean tonight: fixed
     ], "counts": [
@@ -178,7 +181,7 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     assert set(by_id) == {"lowering:fact-stability differs", "lowering:raise-lower run"}, sorted(by_id)
     assert by_id["lowering:fact-stability differs"]["summary"] == (
         "2 `differs` lowerings; first in mdtest-d"), by_id["lowering:fact-stability differs"]
-    assert by_id["lowering:fact-stability differs"]["reproduce"] == "scripts/fact-stability.sh"
+    assert by_id["lowering:fact-stability differs"]["reproduce"] == "scripts/audit.sh fact-stability"
     assert report["fixed"] == ["lowering:fact-stability paths"], report["fixed"]
     rows = {(c["audit"], c["outcome"]): c for c in report["counts"]}
     assert rows[("raise-lower", "differs")]["rose"] and not rows[("raise-lower", "same")]["rose"]
@@ -188,4 +191,41 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     assert "**Lowering audits rose:** raise-lower `differs` 1201 → 1210" in markdown, markdown
     assert "| raise-lower | `differs` | 1210 | 1201 | **+9** (rose) |" in markdown, markdown
     assert "| raise-lower | `unlowered` | 360 | 367 | -7 |" in markdown, markdown
+
+    # Every audit failure is in failures.tsv with a stable id and the night it
+    # first failed; one new since the previous night is listed in full, and
+    # failures are grouped by shape.
+    import hashlib
+    old_fact = ("unraised", "MemoryLoadable", "mdtests/a.md", "f.contract", "x == 1")
+    new_fact = ("differs", "MemoryLoadable", "mdtests/b.md", "g.contract", "y == 2")
+    (lowering / "raise-lower.failures.tsv").write_text("".join(
+        "\t".join(fact + ("raised", "", f"click audit raise-lower --claim {fact[3]} {fact[2]}")) + "\n"
+        for fact in (old_fact, new_fact)))
+    def run_report(*extra):
+        subprocess.run(
+            ["python3", "-I", str(Path(__file__).with_name("nightly-report.py")),
+             "--input", str(jobs), "--input", str(lowering), "--out", str(out),
+             "--commit", "e" * 40, "--date", "2026-11-21", *extra],
+            check=True, capture_output=True, text=True,
+        )
+        return json.loads((out / "report.json").read_text())
+    first = run_report()
+    assert first["new_audit_failures"] == [], first["new_audit_failures"]
+    old_id = hashlib.sha1("\x1f".join(("raise-lower",) + old_fact[2:]).encode()).hexdigest()[:12]
+    assert set(first["failure_first_seen"]) >= {old_id}, first["failure_first_seen"]
+    previous.write_text(json.dumps({"commit": "0" * 40, "failures": [], "counts": [],
+                                    "failure_first_seen": {old_id: "2026-11-01 000000000000"}}))
+    report = run_report("--previous", str(previous))
+    assert [row["container"] for row in report["new_audit_failures"]] == ["mdtests/b.md"], report
+    rows = [line.split("\t") for line in (out / "failures.tsv").read_text().splitlines()]
+    header, body = rows[0], rows[1:]
+    assert header[0] == "id" and header[-1] == "reproduce", header
+    seen = {row[header.index("container")]: row[header.index("first_seen")] for row in body}
+    assert seen == {"mdtests/a.md": "2026-11-01 000000000000",
+                    "mdtests/b.md": "2026-11-21 eeeeeeeeeeee"}, seen
+    shape = report["shapes"][0]
+    assert (shape["outcome"], shape["count"]) in {("unraised", 1), ("differs", 1)}, report["shapes"]
+    markdown = (out / "report.md").read_text()
+    assert "### New tonight" in markdown and "### By shape" in markdown, markdown
+    assert "`click audit raise-lower --claim g.contract mdtests/b.md`" in markdown, markdown
 print("nightly report: synthetic run summarized")

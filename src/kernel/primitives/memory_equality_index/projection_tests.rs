@@ -26,7 +26,7 @@ fn projection_context(
             crate::kernel::functions::checked_composite_projection_evidence(
                 head,
                 std::slice::from_ref(definition),
-                memory,
+                &ProgramPoint::of_memory(memory),
                 facts,
             )
             .is_some(),
@@ -175,7 +175,7 @@ fn projection_evidence_still_requires_a_viewed_head_and_matching_definition() {
         crate::kernel::functions::checked_composite_projection_evidence(
             &owned,
             std::slice::from_ref(&definition),
-            &memory,
+            &ProgramPoint::of_memory(&memory),
             &facts,
         )
         .is_none()
@@ -184,7 +184,7 @@ fn projection_evidence_still_requires_a_viewed_head_and_matching_definition() {
         crate::kernel::functions::checked_composite_projection_evidence(
             &head,
             &[],
-            &memory,
+            &ProgramPoint::of_memory(&memory),
             &facts,
         )
         .is_none()
@@ -412,4 +412,76 @@ fn fresh_resource_publication_tracks_late_equalities_and_persistent_deltas() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/memory_equality_index/projection_tests.rs");
+}
+
+#[test]
+fn checked_composite_projection_keeps_the_point_of_a_bound_read() {
+    use crate::kernel::borrows::CompositeProjectionEvidence;
+
+    let _session = VerificationSession::enter();
+    let slot = SymbolicMemory::global_pointer("projection_bound");
+    let target = Address::symbolic(Variable(881_010));
+    let typed = |pointer| ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer);
+    let head = ResourceFact::view_composite(
+        "point_projection".into(),
+        vec![typed(slot.clone()), typed(target)],
+    );
+    let definition = CompositeResourceDefinition::new(
+        "point_projection",
+        vec![
+            program_parameter("slot", ProgramType::Int32Pointer),
+            program_parameter("target", ProgramType::Int32Pointer),
+        ],
+        None,
+        false,
+        vec![
+            ResourceSpec::owned_memory(MemorySegment::new(
+                crate::kernel::program_expression::variable("slot"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
+            )),
+            ResourceSpec::owned_memory(MemorySegment::new(
+                crate::kernel::program_expression::variable("target"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("slot"),
+                ),
+            )),
+        ],
+        Vec::new(),
+    );
+    let state = ExecutionState::new().begin_function_entry_memory();
+    let state = state
+        .clone()
+        .with_function_entry_memory(state.memory().clone().with_block(slot.base.clone(), 4));
+    let point = state.program_point();
+    let assumptions = PureFactContext::new();
+    let definitions = std::slice::from_ref(&definition);
+    let context = ResourceContext::new()
+        .try_compose_with_fact(head.clone(), &assumptions)
+        .expect("a single viewed composite");
+    let (_, children, _) = crate::kernel::functions::expand_composite_resource_fact_with_children(
+        &context,
+        &head,
+        definitions,
+        &point,
+        &assumptions,
+    )
+    .expect("the viewed body expands at the recorded point");
+    assert!(children.iter().any(|child| {
+        child.memory_range().is_some_and(|range| {
+            matches!(range.end(), MachineTerm::MemoryLoad(at, address, LoadKind::Int32)
+                if **address == slot && at.read_version_id() == point.id())
+        })
+    }));
+    let expected = CompositeProjectionEvidence::from_checked_expansion(head.clone(), children)
+        .expect("all checked children are views");
+    let evidence = crate::kernel::functions::checked_composite_projection_evidence(
+        &head,
+        definitions,
+        &point,
+        &assumptions,
+    )
+    .expect("the projection recomputes the viewed body");
+    assert_eq!(evidence, expected);
 }

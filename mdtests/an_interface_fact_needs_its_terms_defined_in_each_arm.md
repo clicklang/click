@@ -53,7 +53,7 @@ int32 bubble_pass3(int32 p[3]) {
             have p[0] <= p[j] by {
                 if j == 0 {
                     rewrite(j, 0);
-                    normalize();
+                    known();
                 } else {
                     solve();
                 }
@@ -74,10 +74,10 @@ int32 bubble_pass3(int32 p[3]) {
                         } else {
                             have j == 1 by solve();
                             have separate(memory(p[1]), memory(p[0])) by {
-                                apply(separation::separate_elements(p, 1 as uint64, 0 as uint64)) using {};
+                                apply(separation::separate_elements(p, 1 as uint64, 0 as uint64));
                             }
                             have separate(memory(p[2]), memory(p[0])) by {
-                                apply(separation::separate_elements(p, 2 as uint64, 0 as uint64)) using {};
+                                apply(separation::separate_elements(p, 2 as uint64, 0 as uint64));
                             }
                             have separate(memory(p[j]), memory(p[0])) by { rewrite(j, 1); known(); }
                             have separate(memory(p[j + 1]), memory(p[0])) by { rewrite(j, 1); known(); }

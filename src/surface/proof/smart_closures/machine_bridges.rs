@@ -110,7 +110,7 @@ fn application(
     arguments: Vec<ContractExpression>,
     premises: Vec<ClickProposition>,
 ) -> ProofStep {
-    ProofStep::ApplyTheoremUsing {
+    ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: format!("click::integer::{name}"),
             arguments,
@@ -488,6 +488,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     target_type: format.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -855,7 +856,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let mathematical = integer_affine_claim(goal).is_some();
+        let narrow_native = matches!(goal, Proposition::ConditionIs(condition, _)
+            if condition.operand_view().comparison().is_some_and(|(format, _, _)| format.format().bits() < 32));
         if !mathematical
+            && !narrow_native
             && !non_numeric_conditional_goal(goal)
             && !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(goal)
                 .iter()
@@ -978,7 +982,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if proof.focused_discharged() {
             return Ok(Some(proof));
         }
-        if Self::known_bridge_using(&proof, &sources)?
+        let selected_goal = proof.goal().is_some_and(|goal| {
+            sources.iter().any(|source| {
+                proof
+                    .lower_cited_surface_proposition(source, "conditional arm premise")
+                    .is_ok_and(|premise| selected_premise_contains_goal(&premise, goal))
+            })
+        });
+        if selected_goal
+            || Self::known_bridge_using(&proof, &sources)?
             || proof
                 .goal()
                 .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)

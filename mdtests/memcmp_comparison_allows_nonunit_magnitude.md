@@ -38,7 +38,7 @@ theorem positive_seven(left: uint8[], right: uint8[]) {
                     } else {
                         have 0 <= to_integer(k) by { known(); }
                         have to_integer(k) <= 0 by {
-                            normalize() using { 0u64 >= k; };
+                            known();
                         }
                         have to_integer(k) == 0 by { solve(); }
                         have k == 0u64 by { known(); }

@@ -34,22 +34,17 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
         have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
         have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
         have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, 0, len, i, i + 1)) using {
-                defined(i + 1); 0 <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= len;
-            };
+            apply(separation::contains_subrange(p, 0, len, i, i + 1));
         }
         have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
-                defined(i + 1); separate(whole, memory(p[0..len])); contains(whole, kept);
-                contains(memory(p[0..len]), memory(p[i..i + 1]));
-            };
+            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1])));
         }
-        have contains(kept, kept) by { normalize(); }
-        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
-            defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
-            contains(memory(p[i..i + 1]), memory(p[i]));
-        };
+        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
+        have contains(memory(p[i..i + 1]), memory(p[i])) by {
+            have i < ((i + 1) as int32) by solve() using { i <= 2147483646; };
+            apply(separation::contains_element(p, i, i + 1, i));
+        }
+        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
     }
 }
 
@@ -100,44 +95,26 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     let { next: initial_next } = unfold(w);
     have 0 <= arena->capacity by { solve(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(*arena)) by { known(); }
-    have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[0..arena->capacity])) by { normalize(); }
+    have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[0..arena->capacity])) by { apply(click::separation::contains_refl(memory(arena->occupied[0..arena->capacity]))); }
     have contains(memory(*arena), memory(arena->data)) by { normalize(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data)) by {
-        apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->data))) using {
-            separate(memory(arena->occupied[0..arena->capacity]), memory(*arena));
-            contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[0..arena->capacity]));
-            contains(memory(*arena), memory(arena->data));
-        };
+        apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->data)));
     }
     have contains(memory(*arena), memory(arena->occupied)) by { normalize(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied)) by {
-        apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->occupied))) using {
-            separate(memory(arena->occupied[0..arena->capacity]), memory(*arena));
-            contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[0..arena->capacity]));
-            contains(memory(*arena), memory(arena->occupied));
-        };
+        apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->occupied)));
     }
     have contains(memory(*arena), memory(arena->capacity)) by { normalize(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->capacity)) by {
-        apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->capacity))) using {
-            separate(memory(arena->occupied[0..arena->capacity]), memory(*arena));
-            contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[0..arena->capacity]));
-            contains(memory(*arena), memory(arena->capacity));
-        };
+        apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->capacity)));
     }
     have 0 <= initial_next by { solve(); }
     have contains(memory(arena->data[0..arena->capacity]), memory(arena->data[initial_next..end])) by {
-        apply(separation::contains_subrange(arena->data, 0, arena->capacity, initial_next, end)) using {
-            0 <= initial_next; initial_next <= end; end <= arena->capacity;
-        };
+        apply(separation::contains_subrange(arena->data, 0, arena->capacity, initial_next, end));
     }
-    have contains(memory(*arena), memory(*arena)) by { normalize(); }
+    have contains(memory(*arena), memory(*arena)) by { apply(click::separation::contains_refl(memory(*arena))); }
     have separate(memory(arena->data[initial_next..end]), memory(*arena)) by {
-        apply(separation::separate_restrict(memory(arena->data[0..arena->capacity]), memory(*arena), memory(arena->data[initial_next..end]), memory(*arena))) using {
-            separate(memory(arena->data[0..arena->capacity]), memory(*arena));
-            contains(memory(arena->data[0..arena->capacity]), memory(arena->data[initial_next..end]));
-            contains(memory(*arena), memory(*arena));
-        };
+        apply(separation::separate_restrict(memory(arena->data[0..arena->capacity]), memory(*arena), memory(arena->data[initial_next..end]), memory(*arena)));
     }
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end), { next: initial_next });
     step(); step();
@@ -171,71 +148,46 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have 0 < arena->capacity by { solve(); }
             have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data)) by { known(); }
             have separate(memory(arena->occupied[i]), memory(arena->data)) by {
-                apply(separation::separate_symm(memory(arena->occupied[0..arena->capacity]), memory(arena->data))) using {
-                    separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data));
-                };
-                apply(separation::contains_refl(memory(arena->data))) using {};
-                apply(selected_array_cell(memory(arena->data), memory(arena->data), arena->occupied, arena->capacity, i)) using {
-                    separate(memory(arena->data), memory(arena->occupied[0..arena->capacity]));
-                    contains(memory(arena->data), memory(arena->data)); 0 <= i; i < arena->capacity;
-                };
-                apply(separation::separate_symm(memory(arena->data), memory(arena->occupied[i]))) using {
-                    separate(memory(arena->data), memory(arena->occupied[i]));
-                };
+                apply(separation::separate_symm(memory(arena->occupied[0..arena->capacity]), memory(arena->data)));
+                apply(separation::contains_refl(memory(arena->data)));
+                apply(selected_array_cell(memory(arena->data), memory(arena->data), arena->occupied, arena->capacity, i));
+                apply(separation::separate_symm(memory(arena->data), memory(arena->occupied[i])));
             }
             have separate(memory(arena->occupied[i]), memory(arena->occupied)) by {
-                apply(separation::separate_symm(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied))) using {
-                    separate(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied));
-                };
-                apply(separation::contains_refl(memory(arena->occupied))) using {};
-                apply(selected_array_cell(memory(arena->occupied), memory(arena->occupied), arena->occupied, arena->capacity, i)) using {
-                    separate(memory(arena->occupied), memory(arena->occupied[0..arena->capacity]));
-                    contains(memory(arena->occupied), memory(arena->occupied)); 0 <= i; i < arena->capacity;
-                };
-                apply(separation::separate_symm(memory(arena->occupied), memory(arena->occupied[i]))) using {
-                    separate(memory(arena->occupied), memory(arena->occupied[i]));
-                };
+                apply(separation::separate_symm(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied)));
+                apply(separation::contains_refl(memory(arena->occupied)));
+                apply(selected_array_cell(memory(arena->occupied), memory(arena->occupied), arena->occupied, arena->capacity, i));
+                apply(separation::separate_symm(memory(arena->occupied), memory(arena->occupied[i])));
             }
             have separate(memory(arena->occupied[i]), memory(arena->capacity)) by {
-                apply(separation::separate_symm(memory(arena->occupied[0..arena->capacity]), memory(arena->capacity))) using {
-                    separate(memory(arena->occupied[0..arena->capacity]), memory(arena->capacity));
-                };
-                apply(separation::contains_refl(memory(arena->capacity))) using {};
-                apply(selected_array_cell(memory(arena->capacity), memory(arena->capacity), arena->occupied, arena->capacity, i)) using {
-                    separate(memory(arena->capacity), memory(arena->occupied[0..arena->capacity]));
-                    contains(memory(arena->capacity), memory(arena->capacity)); 0 <= i; i < arena->capacity;
-                };
-                apply(separation::separate_symm(memory(arena->capacity), memory(arena->occupied[i]))) using {
-                    separate(memory(arena->capacity), memory(arena->occupied[i]));
-                };
+                apply(separation::separate_symm(memory(arena->occupied[0..arena->capacity]), memory(arena->capacity)));
+                apply(separation::contains_refl(memory(arena->capacity)));
+                apply(selected_array_cell(memory(arena->capacity), memory(arena->capacity), arena->occupied, arena->capacity, i));
+                apply(separation::separate_symm(memory(arena->capacity), memory(arena->occupied[i])));
             }
             have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i])) by {
-                apply(separation::contains_element(arena->occupied, 0, arena->capacity, i)) using { 0 <= i; i < arena->capacity; };
+                apply(separation::contains_element(arena->occupied, 0, arena->capacity, i));
             }
-            have contains(memory(*arena), memory(*arena)) by { normalize(); }
+            have contains(memory(*arena), memory(*arena)) by { known(); }
             have separate(memory(arena->occupied[i]), memory(*arena)) by {
-                apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[i]), memory(*arena))) using {
-                    separate(memory(arena->occupied[0..arena->capacity]), memory(*arena));
-                    contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i]));
-                    contains(memory(*arena), memory(*arena));
-                };
+                apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[i]), memory(*arena)));
             }
             mark opened;
             step();
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->data))) by {
-                normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->data))); };
+                known();
             }
             have arena->data == at(opened, arena->data) by {
                 preserve(at(opened, memory(arena->data)), loop(0).statement(0));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied))) by {
-                normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied))); };
+                known();
             }
             have arena->occupied == at(opened, arena->occupied) by {
                 preserve(at(opened, memory(arena->occupied)), loop(0).statement(0));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->capacity))) by {
-                normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->capacity))); };
+                known();
             }
             have arena->capacity == at(opened, arena->capacity) by { known(); }
             fold(at(opened, arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end))[i]);
@@ -263,18 +215,16 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     have 0 <= k;
                     have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using {
-                            at(opened, i) != k;
-                        };
+                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                     }
                     have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                        normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                        known();
                     }
                     have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                         preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                     }
                     have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                        normalize() using {};
+                        solve() using {};
                     }
                     have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                         preserve(memory(arena->occupied[k]), loop(0).statement(1));
@@ -284,7 +234,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     have k <= at(opened, i);
                     have k == at(opened, i);
                     rewrite(k, at(opened, i));
-                    normalize();
+                    known();
                 }
             }
             have forall (k: int32) {
@@ -310,18 +260,16 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 have k < at(opened, i);
                 have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                 have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using {
-                        at(opened, i) != k;
-                    };
+                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                 }
                 have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                    normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                    known();
                 }
                 have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                     preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                 }
                 have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                    normalize() using {};
+                    solve() using {};
                 }
                 have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                     preserve(memory(arena->occupied[k]), loop(0).statement(1));
@@ -353,18 +301,16 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 have 0 <= k;
                 have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
                 have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using {
-                        at(opened, i) != k;
-                    };
+                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                 }
                 have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                    normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                    known();
                 }
                 have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                     preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                 }
                 have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                    normalize() using {};
+                    solve() using {};
                 }
                 have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                     preserve(memory(arena->occupied[k]), loop(0).statement(1));

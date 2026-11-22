@@ -19,7 +19,6 @@
 
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use std::io::Write;
 
 use super::Proposition;
 
@@ -49,7 +48,7 @@ pub(crate) fn enabled() -> bool {
     if CAPTURE.with(|lines| lines.borrow().is_some()) {
         return true;
     }
-    crate::instrumentation::fact_stability_sink().is_some()
+    crate::instrumentation::FACT_STABILITY_RECORDS.enabled()
 }
 
 /// The outcome of the fact-free lowering beside the lowering under facts.
@@ -110,6 +109,7 @@ pub(crate) fn compare(site: &str, with_facts: &Proposition, fact_free: &FactFree
 }
 
 fn compare_uncharged(site: &str, with_facts: &Proposition, fact_free: &FactFree) {
+    crate::instrumentation::FACT_STABILITY_RECORDS.count_checked();
     let line = match fact_free {
         FactFree::Term(term) if same_up_to_binders(with_facts, term) => {
             return;
@@ -144,15 +144,11 @@ fn compare_uncharged(site: &str, with_facts: &Proposition, fact_free: &FactFree)
     }) {
         return;
     }
-    if let Some(sink) = crate::instrumentation::fact_stability_sink()
-        && let Ok(mut file) = sink.lock()
-    {
-        let _ = file.write_all(line.as_bytes());
-    }
+    crate::instrumentation::FACT_STABILITY_RECORDS.write(&line);
 }
 
 /// The running thread's name, which names the mdtest fixture under
-/// `scripts/fact-stability.sh`.
+/// `scripts/audit.sh fact-stability`.
 fn thread_name() -> String {
     std::thread::current().name().unwrap_or("").to_string()
 }

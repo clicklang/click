@@ -431,6 +431,6 @@ theorem sized_mirrored_context_focus_rotation_preserves_inorder(g: struct rb_nod
         unfold(list::append(List::Cons(g, List::Nil), List::Cons(p, rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))))));
         unfold(list::append(List::Nil, List::Cons(p, rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))))));
         unfold(list::append(List::Nil, List::Cons(g, List::Cons(p, rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right)))))));
-        normalize();
+        known();
     }
 }

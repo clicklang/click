@@ -49,7 +49,7 @@ int32 shared_for(int32 n) {
                         known();
                     } else {
                         have (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) == 0 by {
-                            normalize() using { at(statement(0).call(again, 0).entry, n) <= 0; };
+                            known();
                         }
                         have statement(0).call(again, 0).result == 0 by {
                             solve() using {
@@ -65,7 +65,7 @@ int32 shared_for(int32 n) {
                     have n >= 0 by known();
                     if n > 0 {
                         have to_integer(if n > 0 { 1 } else { 0 }) == 1 by {
-                            normalize() using { n > 0; };
+                            solve() using { n > 0; };
                         }
                         have to_integer(statement(0).call(again, 0).result) == 1 by {
                             solve() using {
@@ -74,7 +74,7 @@ int32 shared_for(int32 n) {
                             };
                         }
                         have to_integer(statement(0).call(again, 0).result) == 0 by {
-                            normalize() using { statement(0).call(again, 0).result == 0; };
+                            solve() using { statement(0).call(again, 0).result == 0; };
                         }
                         have 0 == 1 by {
                             solve() using {
@@ -115,7 +115,7 @@ int32 shared_do(int32 n) {
                         known();
                     } else {
                         have (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) == 0 by {
-                            normalize() using { at(statement(0).call(again, 0).entry, n) <= 0; };
+                            known();
                         }
                         have statement(0).call(again, 0).result == 0 by {
                             solve() using {
@@ -131,7 +131,7 @@ int32 shared_do(int32 n) {
                     have n >= 0 by known();
                     if n > 0 {
                         have to_integer(if n > 0 { 1 } else { 0 }) == 1 by {
-                            normalize() using { n > 0; };
+                            solve() using { n > 0; };
                         }
                         have to_integer(statement(0).call(again, 0).result) == 1 by {
                             solve() using {
@@ -140,7 +140,7 @@ int32 shared_do(int32 n) {
                             };
                         }
                         have to_integer(statement(0).call(again, 0).result) == 0 by {
-                            normalize() using { statement(0).call(again, 0).result == 0; };
+                            solve() using { statement(0).call(again, 0).result == 0; };
                         }
                         have 0 == 1 by {
                             solve() using {

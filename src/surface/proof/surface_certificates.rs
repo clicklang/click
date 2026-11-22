@@ -1574,6 +1574,11 @@ pub(super) fn resource_descriptor_rewrite_steps(
                 },
             ..
         }) => Some([base.clone(), start.clone(), end.clone()]),
+        ResourceSubject::SavedMemory {
+            base,
+            start,
+            end: Some(end),
+        } => Some([base.clone(), start.clone(), end.clone()]),
         _ => None,
     };
     let mut steps = Vec::new();
@@ -1747,7 +1752,7 @@ pub(super) fn viewability_restriction_steps(
         steps.push(ProofStep::Have {
             proposition: containment.clone(),
             proof: Box::new(
-                ProofCertificate::from_steps(vec![ProofStep::ApplyTheoremUsing {
+                ProofCertificate::from_steps(vec![ProofStep::ApplyPlannedTheorem {
                     application: TheoremApplication {
                         name: "click::separation::contains_subrange".into(),
                         arguments: [base, lo, hi, inner_lo, inner_hi]
@@ -1765,7 +1770,7 @@ pub(super) fn viewability_restriction_steps(
     if !cited.contains(&containment) {
         cited.push(containment);
     }
-    steps.push(ProofStep::ApplyTheoremUsing {
+    steps.push(ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: "click::separation::viewable_restrict".into(),
             arguments: vec![
@@ -1864,7 +1869,7 @@ pub(super) fn rebased_viewability_restriction_steps(
             right: observe(right),
         };
     let apply = |name: &str, arguments, premises| {
-        vec![ProofStep::ApplyTheoremUsing {
+        vec![ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: format!("click::separation::{name}"),
                 arguments,
@@ -2077,7 +2082,7 @@ pub(super) fn computed_viewability_restriction_steps(
     let identity = compare(observe(inner_hi.clone()), ComparisonOperator::Equal, exact);
     steps.push(have(
         identity.clone(),
-        vec![ProofStep::ApplyTheoremUsing {
+        vec![ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: law.into(),
                 arguments: vec![
@@ -2106,7 +2111,7 @@ pub(super) fn computed_viewability_restriction_steps(
     };
     steps.push(have(
         containment.clone(),
-        vec![ProofStep::ApplyTheoremUsing {
+        vec![ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: "click::separation::contains_subrange".into(),
                 arguments: [base, lo, hi, inner_lo, inner_hi]
@@ -2120,7 +2125,7 @@ pub(super) fn computed_viewability_restriction_steps(
     cited.push(containment);
     steps.push(have(
         target.clone(),
-        vec![ProofStep::ApplyTheoremUsing {
+        vec![ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: "click::separation::viewable_restrict".into(),
                 arguments: vec![
@@ -3300,7 +3305,7 @@ pub(super) fn uint64_increment_upper_bound_application(
     guard: &ClickProposition,
 ) -> Option<ProofStep> {
     let (value, upper) = surface_strict_parts(guard)?;
-    Some(ProofStep::ApplyTheoremUsing {
+    Some(ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: "click::integer::uint64_increment_upper_bound".into(),
             arguments: vec![value, upper],

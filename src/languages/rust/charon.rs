@@ -29,6 +29,7 @@ mod split_slices;
 #[cfg(test)]
 mod split_slices_tests;
 mod temporaries;
+pub(super) use temporaries::scalar_expression_operands;
 mod traits;
 mod user_iterators;
 mod vec_methods;
@@ -353,6 +354,7 @@ impl Adapter<'_> {
                     // type.
                     scalar if scalar.is_scalar() => Ok(Some(scalar)),
                     parameter @ Type::Parameter { .. } => Ok(Some(parameter)),
+                    record @ Type::Record { .. } => Ok(Some(record)),
                     _ => Err(unsupported(
                         "type parameter instantiated at a type other than a scalar",
                     )),
@@ -459,6 +461,56 @@ impl Adapter<'_> {
         Ok(name)
     }
 
+    /// The library's `Box` function `method`, `Box::new` or `Box::drop`, at
+    /// the crate struct `record`: its instance `Box::new<R>`, declared so the
+    /// import calls it under the library's contract.
+    pub(super) fn box_library_function(&self, method: &str, record: &str) -> String {
+        let function = super::standard_library::box_function(method, record);
+        let boxed = Type::Box {
+            pointee: Box::new(Type::Record {
+                name: record.to_string(),
+            }),
+        };
+        let (parameters, return_type) = if method == super::standard_library::BOX_NEW {
+            (
+                vec![(
+                    "x",
+                    Type::Record {
+                        name: record.to_string(),
+                    },
+                )],
+                boxed,
+            )
+        } else {
+            (vec![("b", boxed)], Type::Unit)
+        };
+        self.core_methods
+            .borrow_mut()
+            .entry(function.clone())
+            .or_insert_with(|| out::Function {
+                sites: Vec::new(),
+                name: function.clone(),
+                return_type,
+                parameters: parameters
+                    .into_iter()
+                    .map(|(name, value_type)| out::Place {
+                        name: name.into(),
+                        value_type,
+                        span: out::Span { line: 0, column: 0 },
+                    })
+                    .collect(),
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                instance_of: None,
+                core_method: Some(method.to_string()),
+                span: out::Span { line: 0, column: 0 },
+            });
+        function
+    }
+
     fn qualified_function_name(&self, name: &a::Name) -> Result<String, String> {
         self.qualified_function_name_at(name, None)
     }
@@ -557,6 +609,8 @@ fn record_argument_spelling(ty: &Type) -> Option<String> {
     Some(match ty {
         Type::Parameter { name } => name.clone(),
         scalar if scalar.is_scalar() => scalar.scalar_name()?.into(),
+        // A crate struct, by the importer's name for it.
+        Type::Record { name } => name.clone(),
         _ => return None,
     })
 }
@@ -715,7 +769,10 @@ impl Adapter<'_> {
                     // `&T` of an abstract type parameter, or of the scalar a
                     // generic callee's instance takes for it: a reference to
                     // one value.
-                    value if value.is_scalar() || matches!(value, Type::Parameter { .. }) => {
+                    value
+                        if value.is_scalar()
+                            || matches!(value, Type::Parameter { .. } | Type::Record { .. }) =>
+                    {
                         Type::Reference {
                             mutable: false,
                             pointee: Box::new(value),
@@ -1776,7 +1833,7 @@ impl BodyAdapter<'_, '_> {
             function: self.local(local)?,
             arguments,
             owned_arguments: Vec::new(),
-            destination: self.local(dest)?,
+            destination: Some(self.local(dest)?),
             target: target.index(),
             through_pointer: true,
             result: None,
@@ -2445,9 +2502,9 @@ impl BodyAdapter<'_, '_> {
                 Ok(Type::Box { .. } | Type::OptionBox { .. })
             ) =>
             {
-                let (Type::Box { pointee } | Type::OptionBox { pointee }) =
-                    self.adapter.ty(&place.ty)?
-                else {
+                let place_type = self.adapter.ty(&place.ty)?;
+                let optional = matches!(place_type, Type::OptionBox { .. });
+                let (Type::Box { pointee } | Type::OptionBox { pointee }) = place_type else {
                     unreachable!()
                 };
                 let Type::Record { name } = *pointee else {
@@ -2467,10 +2524,13 @@ impl BodyAdapter<'_, '_> {
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial box drop"));
                 };
+                self.adapter
+                    .box_library_function(super::standard_library::BOX_DROP, &name);
                 T::BoxFree {
                     local: self.local(local)?,
                     record: name,
                     glue,
+                    optional,
                     target: target.index(),
                 }
             }
@@ -2569,10 +2629,13 @@ impl BodyAdapter<'_, '_> {
                     let Type::Record { name } = *pointee else {
                         return Err(unsupported("box of a non-record"));
                     };
+                    self.adapter
+                        .box_library_function(super::standard_library::BOX_DROP, &name);
                     return Ok(T::BoxFree {
                         local: self.local(*local)?,
                         record: name,
                         glue: None,
+                        optional: false,
                         target: target.index(),
                     });
                 }
@@ -2603,12 +2666,26 @@ impl BodyAdapter<'_, '_> {
                     {
                         return Err(unsupported("Box::new destination type"));
                     }
-                    return Ok(T::BoxNew {
-                        source: Some(self.local(*source_local)?),
-                        fields: Vec::new(),
-                        record: name,
-                        destination: self.local(*destination)?,
+                    // The library's `Box::new<R>`, whose contract is the box.
+                    let function = self
+                        .adapter
+                        .box_library_function(super::standard_library::BOX_NEW, &name);
+                    let source_local = self.local(*source_local)?;
+                    return Ok(T::Call {
+                        function,
+                        arguments: vec![E::Local {
+                            name: source_local.clone(),
+                        }],
+                        owned_arguments: vec![out::OwnedArgument {
+                            index: 0,
+                            local: source_local,
+                            record: name,
+                            moved: true,
+                        }],
+                        destination: Some(self.local(*destination)?),
                         target: target.index(),
+                        through_pointer: false,
+                        result: None,
                     });
                 }
                 // A Rust core method the library specifies calls its
@@ -2643,7 +2720,7 @@ impl BodyAdapter<'_, '_> {
                             .map(|argument| self.operand(argument))
                             .collect::<Result<_, _>>()?,
                         owned_arguments: Vec::new(),
-                        destination: self.local(destination)?,
+                        destination: Some(self.local(destination)?),
                         target: target.index(),
                         through_pointer: false,
                         result: None,
@@ -2818,7 +2895,7 @@ impl BodyAdapter<'_, '_> {
                         function,
                         arguments,
                         owned_arguments,
-                        destination: self.local(dest)?,
+                        destination: Some(self.local(dest)?),
                         target: target.index(),
                         through_pointer: false,
                         result: None,
@@ -3159,6 +3236,23 @@ pub(super) fn decode_crate(
                         adapter.closure_calls.insert(id, state);
                         let name = adapter.closure_name(closure)?;
                         adapter.functions.insert(id, name);
+                        continue;
+                    }
+                    // A derived `clone` of a `Copy` type is the bitwise copy
+                    // Click makes of every `Copy` value; a `Copy` bound
+                    // reaches it as the supertrait's method, never a call.
+                    if tr.item_meta.lang_item == Some(LangItem::Clone)
+                        && krate.trait_impls.get(impl_ref.id).is_some_and(|imp| {
+                            imp.item_meta.attr_info.attributes.iter().any(|attribute| {
+                                matches!(
+                                    attribute,
+                                    a::Attribute::Builtin(
+                                        charon_lib::ast::from_rustc::AttributeKind::AutomaticallyDerived
+                                    )
+                                )
+                            })
+                        })
+                    {
                         continue;
                     }
                     if tr.item_meta.lang_item != Some(LangItem::Drop) {
@@ -3679,10 +3773,10 @@ pub(super) fn decode_crate(
                     .and_then(|file| file.contents.as_deref())
                     .and_then(super::source_statements::parse)
             });
-        let source_statements = parsed
+        let written = parsed
             .as_ref()
             .and_then(|file| {
-                super::source_statements::function_statements(
+                super::source_statements::function_source(
                     file,
                     (item_span.beg.line as usize, item_span.beg.col as usize),
                 )
@@ -3694,13 +3788,60 @@ pub(super) fn decode_crate(
                 .flatten()
                 .find(|data| data.file_id == item_span.file_id)?;
             super::source_statements::innermost(
-                &source_statements,
+                &written.statements,
                 (at.beg.line as usize, at.beg.col as usize),
             )
             .map(|index| index as u32)
         };
         let mut blocks = Vec::new();
         let mut coercions = Vec::new();
+        let mut literal_initializers = BTreeMap::new();
+        let mut ambiguous_literals = BTreeSet::new();
+        let written_range = |span: a::Span| {
+            let at = span.data();
+            if at.file_id != item_span.file_id || span.generated_from_span().is_some() {
+                return None;
+            }
+            Some((
+                (at.beg.line as usize, at.beg.col as usize),
+                (at.end.line as usize, at.end.col as usize),
+            ))
+        };
+        let literal_at = |span| {
+            written
+                .compound_literals
+                .get(&written_range(span)?)
+                .copied()
+        };
+        // Find the scalar backing objects before converting storage markers.
+        let mut borrowed_occurrences = BTreeMap::<_, Option<a::LocalId>>::new();
+        if !written.borrows.is_empty() {
+            for statement in b.body.body.iter().flat_map(|block| &block.statements) {
+                if let u::StatementKind::Assign(_, a::Rvalue::Ref { place, .. }) = &statement.kind
+                    && let Some(local) = place.as_local()
+                    && b.names
+                        .get(&local)
+                        .is_some_and(|name| temporaries.contains(name))
+                    && let Some(&ordinal) =
+                        written_range(statement.span).and_then(|range| written.borrows.get(&range))
+                    && b.adapter.ty(&place.ty).is_ok_and(|ty| ty.is_scalar())
+                {
+                    // A span shared by two different objects cannot identify either.
+                    borrowed_occurrences
+                        .entry(ordinal)
+                        .and_modify(|object| {
+                            if *object != Some(local) {
+                                *object = None;
+                            }
+                        })
+                        .or_insert(Some(local));
+                }
+            }
+        }
+        let borrowed_scalars: BTreeMap<_, _> = borrowed_occurrences
+            .into_iter()
+            .filter_map(|(ordinal, local)| Some((local?, ordinal)))
+            .collect();
         for (id, block) in b.body.body.iter_enumerated() {
             if let Some(message) = panic_messages.get(&id) {
                 coercions.push((blocks.len(), Vec::new()));
@@ -3716,17 +3857,25 @@ pub(super) fn decode_crate(
             let mut statements: Vec<S> = Vec::new();
             let mut current_site = None;
             for s in &block.statements {
-                let converted = match b.slice_pair_statement(s)? {
-                    Some(statements) => statements,
-                    None => b
-                        .statement(s)
-                        .map(|s| s.into_iter().collect::<Vec<_>>())
-                        .map_err(|e| {
-                            format!(
-                                "{} in {name}: {e}",
-                                refusal_location(&krate, source, s.span, f.item_meta.span)
-                            )
-                        })?,
+                let converted = if let u::StatementKind::StorageLive(local) = &s.kind
+                    && borrowed_scalars.contains_key(local)
+                {
+                    vec![S::BeginStorage {
+                        local: b.local(*local)?,
+                    }]
+                } else {
+                    match b.slice_pair_statement(s)? {
+                        Some(statements) => statements,
+                        None => b
+                            .statement(s)
+                            .map(|s| s.into_iter().collect::<Vec<_>>())
+                            .map_err(|e| {
+                                format!(
+                                    "{} in {name}: {e}",
+                                    refusal_location(&krate, source, s.span, f.item_meta.span)
+                                )
+                            })?,
+                    }
                 };
                 if converted.is_empty() {
                     continue;
@@ -3738,6 +3887,26 @@ pub(super) fn decode_crate(
                     statements.push(S::Site { site });
                 }
                 current_site = site;
+                let literal_local = match converted.as_slice() {
+                    [
+                        S::Assign {
+                            target: E::Local { name },
+                            value: E::Array { .. } | E::Repeat { .. },
+                        },
+                    ] => Some(name),
+                    [S::Initialize { target, .. }] => Some(target),
+                    _ => None,
+                };
+                if let Some(name) = literal_local
+                    && temporaries.contains(name)
+                    && let u::StatementKind::Assign(place, _) = &s.kind
+                    && let Some(local) = place.as_local()
+                    && let Some(ordinal) = literal_at(s.span)
+                    && literal_at(b.body.locals.locals[local].span) == Some(ordinal)
+                    && literal_initializers.insert(ordinal, name.clone()).is_some()
+                {
+                    ambiguous_literals.insert(ordinal);
+                }
                 statements.extend(converted);
             }
             let terminator_site = site_of(block.terminator.span);
@@ -3804,7 +3973,7 @@ pub(super) fn decode_crate(
             &temporaries,
             &constant_initializers,
         );
-        temporaries::box_initializers(&mut locals, &mut blocks, &temporaries);
+        temporaries::fold_callback_copies(&mut locals, &mut blocks, &temporaries, &parameter_types);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
@@ -3815,10 +3984,30 @@ pub(super) fn decode_crate(
             &mut blocks,
             &anonymous_slice_components,
         );
+        temporaries::bind_copied_call_arguments(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
+        let kept: BTreeSet<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        spellings.retain(|key, _| kept.contains(key.as_str()));
+        temporaries.retain(|key| kept.contains(key.as_str()));
+        let compound_literals = literal_initializers
+            .into_iter()
+            .filter(|(ordinal, local)| {
+                kept.contains(local.as_str()) && !ambiguous_literals.contains(ordinal)
+            })
+            .map(|(ordinal, local)| (local, ordinal))
+            .collect();
+        let borrowed_scalars = borrowed_scalars
+            .into_iter()
+            .filter_map(|(local, ordinal)| {
+                let name = b.names.get(&local)?;
+                kept.contains(name.as_str())
+                    .then(|| (name.clone(), ordinal))
+            })
+            .collect();
         functions.push(out::Function {
-            sites: source_statements
+            sites: written
+                .statements
                 .iter()
                 .map(|statement| statement.path.clone())
                 .collect(),
@@ -3832,17 +4021,10 @@ pub(super) fn decode_crate(
             parameters,
             body: vec![],
             mir: Some(out::MirBody {
-                spellings: {
-                    // Only the locals the passes kept.
-                    let kept: BTreeSet<&str> = locals
-                        .iter()
-                        .map(|local: &out::Place| local.name.as_str())
-                        .collect();
-                    spellings
-                        .into_iter()
-                        .filter(|(key, _): &(String, String)| kept.contains(key.as_str()))
-                        .collect()
-                },
+                spellings,
+                unnamed_locals: temporaries,
+                compound_literals,
+                borrowed_scalars,
                 locals,
                 blocks,
                 return_place,
@@ -4571,12 +4753,16 @@ mod tests {
                 .count(),
             2
         );
-        assert!(
-            mir.blocks
-                .iter()
-                .flat_map(|b| &b.statements)
-                .any(|s| matches!(s, S::SharedArrayMove { .. }))
+        // MIR builds the iterator in a temporary and moves it into the
+        // loop's; the move collapses, so the loop's local is built directly.
+        let statements = || mir.blocks.iter().flat_map(|b| &b.statements);
+        assert_eq!(
+            statements()
+                .filter(|s| matches!(s, S::SharedArrayInitialize { .. }))
+                .count(),
+            1
         );
+        assert!(!statements().any(|s| matches!(s, S::SharedArrayMove { .. })));
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         ProgramVerificationSession::new_program_prepared(ITERATION_CLAIM, &prepared).unwrap();
     }
@@ -5506,22 +5692,33 @@ mod tests {
             .mir
             .as_mut()
             .unwrap();
-        // Normalization substitutes the temporary into the array read.
-        // Mutate that index, rather than looking for its removed assignment.
-        let index = mir
-            .blocks
-            .iter_mut()
-            .flat_map(|b| &mut b.statements)
-            .find_map(|s| match s {
-                S::Assign {
-                    value: E::Index { index, .. },
-                    ..
-                } => match index.as_mut() {
-                    E::UsizeInteger { value } if *value == 999_999 => Some(value),
+        // Normalization substitutes the temporary into the array read, which
+        // the returned value now reads directly. Mutate that index, rather
+        // than looking for its removed assignment.
+        fn last_index(blocks: &mut [crate::languages::rust::schema::MirBlock]) -> Option<&mut u64> {
+            for block in blocks {
+                let assigned = block.statements.iter_mut().filter_map(|s| match s {
+                    S::Assign { value, .. } => Some(value),
                     _ => None,
-                },
-                _ => None,
-            })
+                });
+                let returned = match &mut block.terminator {
+                    crate::languages::rust::schema::MirTerminator::ReturnValue { value } => {
+                        Some(value)
+                    }
+                    _ => None,
+                };
+                for value in assigned.chain(returned) {
+                    if let E::Index { index, .. } = value
+                        && let E::UsizeInteger { value } = index.as_mut()
+                        && *value == 999_999
+                    {
+                        return Some(value);
+                    }
+                }
+            }
+            None
+        }
+        let index = last_index(&mut mir.blocks)
             .expect("the normalized read should retain the last in-bounds index");
         *index = 1_000_000;
         let prepared = super::super::import::prepared_for_test(export).unwrap();

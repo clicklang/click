@@ -738,6 +738,9 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
     })?;
     if preparing {
         for guard in &captured.1 {
+            if ProofObligation::evaluation_requirement_is_established(assumptions, guard) {
+                continue;
+            }
             crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
                 ClickError::new("Integer theorem argument has an evaluation obligation")
                     .with_unresolved_requirement(&ProofObligation::verification_condition(
@@ -971,6 +974,7 @@ pub(in crate::surface) fn evaluate_program_expression_through_kernel(
         false,
         None,
     )
+    .map_err(expression_evaluation_error_message)
 }
 
 /// Resource clauses use stable logical arguments even after the C parameter
@@ -991,6 +995,7 @@ pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
         true,
         None,
     )
+    .map_err(expression_evaluation_error_message)
 }
 
 pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
@@ -1000,7 +1005,7 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     contract_environment: ContractEnvironment<'_>,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
-) -> Result<ProgramValue, String> {
+) -> Result<ProgramValue, ClickError> {
     // Most resource fragments already carry their resolved C spelling.
     // Retain the source expression only where its `program::result` distinction
     // matters, and keep the typed null supplied by parameter lowering.
@@ -1033,7 +1038,7 @@ fn evaluate_program_expression_with_binding_policy(
     result: Option<&ProgramValue>,
     logical_arguments: bool,
     original: Option<&ContractExpression>,
-) -> Result<ProgramValue, String> {
+) -> Result<ProgramValue, ClickError> {
     let fragment = ContractExpression::ProgramExpression(expression.clone());
     let elaborated = original.unwrap_or(&fragment);
     // Bind only the names the fragment reads: a contract evaluates one
@@ -1071,14 +1076,16 @@ fn evaluate_program_expression_with_binding_policy(
         ),
         std::collections::BTreeSet::new(),
         BTreeMap::new(),
-    )?;
+    )
+    .map_err(ClickError::new)?;
     let (value, obligations) =
         crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
             &states.lowering_state,
             &spec,
             Some(&states.entry_state),
             assumptions,
-        )?;
+        )
+        .map_err(ClickError::new)?;
     refuse_unproved_conversion_bounds(
         &obligations,
         assumptions,
@@ -1087,30 +1094,40 @@ fn evaluate_program_expression_with_binding_policy(
             state,
             contract_environment.values,
         ),
-    )?;
-    let obligations = obligations
+    )
+    .map_err(ClickError::new)?;
+    let propositions = obligations
         .iter()
         .map(|obligation| obligation.proposition().clone())
         .collect::<Vec<_>>();
-    refuse_impossible_loads(&obligations, assumptions)?;
+    refuse_impossible_loads(&propositions, assumptions).map_err(ClickError::new)?;
     if !assumptions.should_allow_symbolic_contract_loads()
         && let Some(obligation) = obligations.iter().find(|obligation| {
             !crate::kernel::execution_state_justifies_loadability_obligation(
                 &states.lowering_state,
-                obligation,
+                obligation.proposition(),
                 assumptions,
             )
         })
     {
-        return Err(crate::surface::diagnostics::describe_missing_pure_fact(
-            obligation,
-            &[],
-            &[],
-            ParameterBinding::default(),
-            &[],
-        ));
+        return Err(ClickError::new("missing pure fact").with_unresolved_requirement(obligation));
     }
     Ok(value)
+}
+
+fn expression_evaluation_error_message(error: ClickError) -> String {
+    error.unresolved_requirement().map_or_else(
+        || error.raw_summary().to_owned(),
+        |requirement| {
+            crate::surface::diagnostics::describe_missing_pure_fact(
+                &requirement.proposition,
+                &[],
+                &[],
+                ParameterBinding::default(),
+                &[],
+            )
+        },
+    )
 }
 
 /// The array reference a proof-side expression names: a parameter's own

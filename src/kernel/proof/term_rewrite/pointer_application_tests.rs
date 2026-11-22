@@ -18,6 +18,131 @@ fn argument(pointer: Address) -> PureFunctionArgument {
 }
 
 #[test]
+fn rewriting_an_exact_scalar_read_keeps_its_named_point() {
+    let _session = VerificationSession::enter();
+    let memory = SymbolicMemory::new();
+    let point = ProgramPoint::starting_at(&memory).for_exact_read();
+    let other = ProgramPoint::starting_at(&memory).for_exact_read();
+    assert_ne!(point.id(), other.id());
+    let source = Address::symbolic(Variable(1008322));
+    let target = Address::symbolic(Variable(1008323));
+    let read = |point: &ProgramPoint, address: &Address| {
+        MachineTerm::MemoryLoad(point.clone(), Box::new(address.clone()), LoadKind::Bits64)
+    };
+    let original = read(&point, &source);
+    let expected = read(&point, &target);
+    let source_pointer = Pointer::new(source.clone(), ProgramType::UInt64Pointer);
+    let target_pointer = Pointer::new(target.clone(), ProgramType::UInt64Pointer);
+    for mut rewrite in [
+        TermRewrite::for_pointer_exact(&source, &target),
+        TermRewrite::for_pointer_value_exact(&source_pointer, &target_pointer),
+    ] {
+        let rewritten = rewrite.bits(&original);
+        assert_eq!(rewritten, expected);
+        assert_ne!(rewritten, read(&other, &target));
+    }
+}
+
+#[test]
+fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
+    let _session = VerificationSession::enter();
+    let point = ProgramPoint::starting_at(&SymbolicMemory::new()).for_exact_read();
+    let pointer = Address::symbolic(Variable(1008324));
+    let read = |address: Address| {
+        MachineTerm::MemoryLoad(point.clone(), Box::new(address), LoadKind::UInt32)
+    };
+    let from = AddressOffset::Constant(0);
+    let to = AddressOffset::Constant(4);
+    let expected = read(pointer.offset_by_bytes(4));
+    assert_eq!(
+        TermRewrite::for_pointer_offset_exact(&from, &to).bits(&read(pointer.clone())),
+        expected
+    );
+
+    let variable = MachineTerm::Variable(Variable(1008325));
+    let replacement = MachineTerm::constant(4);
+    let indexed = Address {
+        base: pointer.base,
+        offset: AddressOffset::Int32Scaled {
+            value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, variable.clone()),
+            byte_width: 1,
+        },
+    };
+    let new_address = TermRewrite::for_bits_checked(&variable, &replacement).pointer(&indexed);
+    assert_ne!(new_address, indexed);
+    assert_eq!(
+        TermRewrite::for_bits_checked(&variable, &replacement).bits(&read(indexed)),
+        read(new_address)
+    );
+}
+
+#[test]
+fn rewriting_a_scalar_store_read_keeps_its_program_point() {
+    let _session = VerificationSession::enter();
+    let source = SymbolicMemory::local_pointer("stored_word");
+    let target = Address::symbolic(Variable(1008326));
+    let kind = LoadKind::Int32;
+    let state = ExecutionState::new().with_memory(
+        SymbolicMemory::new()
+            .with_declared_scalar_block(source.base.clone(), 4, ProgramType::Int32)
+            .store(source.clone(), int32(8)),
+    );
+    let version = state
+        .program_point()
+        .indexed_integer_version(&source, kind)
+        .unwrap();
+    assert!(version.indexed_stored_value().is_some());
+    let original = MachineTerm::MemoryLoad(version.clone(), Box::new(source.clone()), kind);
+
+    let source_pointer = Pointer::new(source.clone(), ProgramType::Int32Pointer);
+    let target_pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer);
+    for mut rewrite in [
+        TermRewrite::for_pointer_exact(&source, &target),
+        TermRewrite::for_pointer_value_exact(&source_pointer, &target_pointer),
+    ] {
+        let rewritten = rewrite.bits(&original);
+        let MachineTerm::MemoryLoad(point, address, load_kind) = rewritten else {
+            panic!("the rewritten term is a read");
+        };
+        assert_eq!(point.read_version_id(), version.read_version_id());
+        assert!(point.is_exact_read());
+        assert!(point.indexed_stored_value().is_none());
+        assert_eq!(*address, target);
+        assert_eq!(load_kind, kind);
+    }
+}
+
+#[test]
+fn rewriting_a_scalar_caller_store_read_keeps_its_program_point() {
+    let _session = VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(4),
+    };
+    let target = source.offset_by_bytes(8);
+    let kind = LoadKind::Int32;
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let state = entry
+        .clone()
+        .with_memory(entry.memory().clone().store(source.clone(), int32(8)));
+    let version = state
+        .program_point()
+        .indexed_integer_version(&source, kind)
+        .expect("indexed caller store");
+    assert!(version.indexed_stored_value().is_some());
+    let original = MachineTerm::MemoryLoad(version.clone(), Box::new(source.clone()), kind);
+    let rewritten = TermRewrite::for_pointer_exact(&source, &target).bits(&original);
+    let MachineTerm::MemoryLoad(point, address, load_kind) = rewritten else {
+        panic!("the rewritten term is a read");
+    };
+    assert_eq!(point.read_version_id(), version.read_version_id());
+    assert!(point.is_exact_read());
+    assert!(point.indexed_stored_value().is_none());
+    assert_eq!(*address, target);
+    assert_eq!(load_kind, kind);
+}
+
+#[test]
 fn pure_pointer_calls_preserve_identity_and_do_not_imply_separation() {
     let p = Address::symbolic(Variable(410));
     let q = Address::symbolic(Variable(411));

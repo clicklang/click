@@ -33,10 +33,10 @@ use crate::kernel::{
     assume_universally_quantified_pure_implication, contract_refinement_context, int32,
     loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
     program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
-    program_function_contract_entry_state, program_function_contract_refinement_arguments,
-    program_function_contract_refinement_context, program_function_entry_state,
-    program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
-    program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
+    program_function_contract_refinement_arguments, program_function_contract_refinement_context,
+    program_function_entry_state, program_function_termination_plan, program_if,
+    program_pointer_offsets_proven_equal_for_effect, program_seq,
+    program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
     prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
     prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
@@ -82,6 +82,7 @@ pub use crate::languages::{claim_label_matches, display_source_names, source_dis
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
+mod struct_values;
 mod structural_clauses;
 pub use structural_clauses::StructuralClauses;
 mod surface_propositions;
@@ -100,21 +101,21 @@ use checking::*;
 pub(crate) use expansion::click_import_sites_in_container;
 pub use expansion::{
     ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite, ContractProofClaim,
-    ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate, SmartTacticSelectionError,
-    SmartTacticSourceSite, SourceClaim, SourcePosition, c_select_smart_tactic,
-    c_smart_tactic_source_sites, c_tactic_source_position, claim_at,
+    NormalizeSourceSite, ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate,
+    SmartTacticSelectionError, SmartTacticSourceSite, SourceClaim, SourcePosition,
+    c_select_smart_tactic, c_smart_tactic_source_sites, c_tactic_source_position, claim_at,
     click_declaration_source_position, click_import_sites, expand_c_claim_source,
     expand_c_claim_source_by_label, expand_c_prepared_claim_source_by_label,
     expand_c_prepared_tactic_source_at, expand_c_tactic_source_at, expand_c_tactics_source_at,
     expand_claim_by_label, expand_program_prepared_claim_source_by_label,
     expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, expand_project_tactics_source_at, expand_tactics_source_at,
-    expand_verified_function_claim_source_by_label, project_select_smart_tactic,
-    project_smart_tactic_source_sites, project_tactic_source_position,
-    project_tactic_source_positions, select_smart_tactic, selected_c_target,
-    selected_project_c_target, selected_project_thread_runtime, selected_thread_runtime,
-    smart_tactic_source_sites, tactic_source_position, tidy_expansion_closers,
-    verifying_source_paths,
+    expand_verified_function_claim_source_by_label, first_normalize_in_claim,
+    normalize_source_sites, project_select_smart_tactic, project_smart_tactic_source_sites,
+    project_tactic_source_position, project_tactic_source_positions, select_smart_tactic,
+    selected_c_target, selected_project_c_target, selected_project_thread_runtime,
+    selected_thread_runtime, smart_tactic_source_sites, tactic_source_position,
+    tidy_expansion_closers, verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -297,7 +298,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "resource",
     "region",
     "rewrite",
-    "same_object",
+    "same_allocation",
     "little_endian",
     "separate",
     "float32_from_bits",
@@ -704,20 +705,20 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/c/builtins.interface.click"),
     ),
     (
-        "library/c/string.interface.click",
-        include_str!("../library/c/string.interface.click"),
-    ),
-    (
         "library/integer.click",
         include_str!("../library/integer.click"),
     ),
     (
-        "library/c/stdio.click",
-        include_str!("../library/c/stdio.click"),
+        "library/c/string.interface.click",
+        include_str!("../library/c/string.interface.click"),
     ),
     (
         "library/c/stdarg.click",
         include_str!("../library/c/stdarg.click"),
+    ),
+    (
+        "library/c/stdio.click",
+        include_str!("../library/c/stdio.click"),
     ),
     (
         "library/cpp/vector_state.click",
@@ -1777,6 +1778,9 @@ pub struct FunctionBlock {
     /// parameters: a call supplies them from the instance a clause selects
     /// or the call map names, and the body is proved for every value.
     witness_count: usize,
+    /// The block's `allocates(result, n)`: the returned allocation is one
+    /// the call creates, a block no earlier pointer reaches.
+    allocates_result: bool,
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -3685,8 +3689,20 @@ struct RecordedRegionPoints {
     call_results: Vec<(usize, RetainedProgramValue)>,
 }
 
+#[derive(Default)]
+struct EntrySeparationSources {
+    facts: Vec<Proposition>,
+    ranges: BTreeMap<MemoryRange, ContractSegment>,
+}
+
 #[derive(Clone)]
 struct RecordedStates {
+    /// Source ranges from the contract's checked incoming resource section.
+    /// A proof mark at this point can cite their exact pre-copy terms.
+    entry_separation_sources: Option<(
+        crate::kernel::program_point::ProgramPointId,
+        std::sync::Arc<EntrySeparationSources>,
+    )>,
     effect_log: imbl::Vector<crate::kernel::Resource>,
     effect_gaps: imbl::Vector<usize>,
     effect_offsets: imbl::OrdMap<ProgramPointSelector, usize>,
@@ -3822,6 +3838,7 @@ struct RecordedInterfaceMarks {
 impl Default for RecordedStates {
     fn default() -> Self {
         Self {
+            entry_separation_sources: None,
             effect_log: imbl::Vector::new(),
             effect_gaps: imbl::Vector::new(),
             effect_offsets: imbl::OrdMap::new(),
@@ -6166,11 +6183,6 @@ pub enum ProofTactic {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
     },
-    ApplyInductionUsing {
-        hypothesis: String,
-        arguments: Vec<ContractExpression>,
-        premises: Vec<ClickProposition>,
-    },
     /// Apply an established implication, proving its antecedents.
     ApplyFact(ClickProposition),
     ApplyFactUsing {
@@ -6193,11 +6205,7 @@ pub enum ProofTactic {
     CallOutcomes(ProofCallOutcomes),
     Loop(StructuralClause),
     ObserveResource(ResourceClause),
-    ObserveSavedMemory {
-        base: ContractExpression,
-        start: ContractExpression,
-        end: ContractExpression,
-    },
+    ObserveSubject(ResourceSubject),
     /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
     Witness(ProofWitness),
@@ -6347,9 +6355,7 @@ pub enum SmartTacticKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ElidedArgument {
     /// `apply(theorem(args))`: the theorem's premises.
-    TheoremPremises,
     /// `apply(ih(m))`: the hypothesis's premises.
-    InductionPremises,
     /// `transport(P, Q)`: the frame evidence.
     FrameEvidence,
 }
@@ -6358,8 +6364,6 @@ impl ElidedArgument {
     /// The simple tactic the elided form is, once its argument is written.
     pub fn written_form(self) -> SimpleTactic {
         match self {
-            Self::TheoremPremises => SimpleTactic::ApplyTheorem,
-            Self::InductionPremises => SimpleTactic::ApplyInduction,
             Self::FrameEvidence => SimpleTactic::FactTransport,
         }
     }
@@ -6538,31 +6542,16 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "apply-induction",
         syntax: "apply(ih(m))",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "apply-induction-using",
-        syntax: "apply(ih(m)) using",
         class: "simple",
     },
     PublicTacticForm {
         id: "apply-fact",
         syntax: "apply(fact)",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "apply-fact-using",
-        syntax: "apply(fact) using",
         class: "simple",
     },
     PublicTacticForm {
         id: "apply-theorem",
         syntax: "apply(theorem(args))",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "apply-theorem-using",
-        syntax: "apply(theorem(args)) using",
         class: "simple",
     },
     PublicTacticForm {
@@ -6821,21 +6810,16 @@ impl ProofTactic {
             Self::UnfoldResource(_) | Self::UnfoldWitnesses { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldResource)
             }
-            Self::ObserveResource(_) | Self::ObserveSavedMemory { .. } => {
+            Self::ObserveResource(_) | Self::ObserveSubject(_) => {
                 TacticClass::Simple(SimpleTactic::ObserveResource)
             }
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
-            Self::ApplyInduction { .. } => {
-                TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
-            }
-            Self::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-            Self::ApplyFact(_) | Self::ApplyTheorem(_) => {
-                TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
-            }
-            Self::ApplyFactUsing { .. } | Self::ApplyTheoremUsing { .. } => {
-                TacticClass::Simple(SimpleTactic::ApplyTheorem)
-            }
+            Self::ApplyInduction { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
+            Self::ApplyFact(_)
+            | Self::ApplyFactUsing { .. }
+            | Self::ApplyTheorem(_)
+            | Self::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
             Self::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
             Self::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
@@ -6953,15 +6937,25 @@ pub struct ProofOpen {
     tactics: Vec<ProofTactic>,
     // The captured tail of a deferred close, merged into the matching scope
     // when the outcome proof is assembled.
-    deferred_tail: bool,
+    deferred_tail: Option<DeferredOpenTail>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeferredOpenTail {
+    Restore,
+    AlreadyRestored,
 }
 
 impl ProofOpen {
-    pub(crate) fn deferred_block_tail(resource: ResourceClause, haves: Vec<ProofTactic>) -> Self {
+    pub(crate) fn deferred_block_tail(
+        resource: ResourceClause,
+        tactics: Vec<ProofTactic>,
+        tail: DeferredOpenTail,
+    ) -> Self {
         Self {
             resource,
-            tactics: haves,
-            deferred_tail: true,
+            tactics,
+            deferred_tail: Some(tail),
         }
     }
 }
@@ -7467,6 +7461,10 @@ pub enum SpecialArithmeticNode {
         alignments: Vec<usize>,
         result: ClickProposition,
     },
+    FloatBound {
+        premise: usize,
+        result: ClickProposition,
+    },
     FloatReflexive {
         finite: usize,
         result: ClickProposition,
@@ -7854,6 +7852,7 @@ pub(crate) struct ParameterNaming {
     pub(crate) parameters: std::sync::Arc<[crate::languages::interface::ImportedParameter]>,
     pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
     pointer_sources: BTreeMap<Address, usize>,
+    float_sources: BTreeMap<(ProgramType, Variable), usize>,
 }
 
 impl ParameterNaming {
@@ -7862,19 +7861,45 @@ impl ParameterNaming {
         arguments: &[ProgramExpression],
     ) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
+        let mut pointer_sources = BTreeMap::new();
+        let mut float_sources = BTreeMap::new();
+        for (index, argument) in arguments.iter().enumerate() {
+            match argument {
+                ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
+                    pointer_sources
+                        .entry(pointer.address().clone())
+                        .or_insert(index);
+                }
+                ProgramExpression::Value(
+                    value @ (ProgramValue::Float32(MachineTerm::Variable(variable))
+                    | ProgramValue::Float64(MachineTerm::Variable(variable))),
+                ) => {
+                    float_sources
+                        .entry((value.program_type(), *variable))
+                        .or_insert(index);
+                }
+                _ => {}
+            }
+        }
         Self {
             parameters: parameters.into(),
             arguments: arguments.into(),
-            pointer_sources: arguments.iter().enumerate().fold(
-                BTreeMap::new(),
-                |mut sources, (index, argument)| {
-                    if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
-                        sources.entry(pointer.address().clone()).or_insert(index);
-                    }
-                    sources
-                },
-            ),
+            pointer_sources,
+            float_sources,
         }
+    }
+
+    pub(crate) fn float_source(
+        &self,
+        ty: ProgramType,
+        variable: Variable,
+    ) -> Option<(
+        &crate::languages::interface::ImportedParameter,
+        &ProgramExpression,
+    )> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.float_sources.get(&(ty, variable))?;
+        Some((self.parameters.get(index)?, self.arguments.get(index)?))
     }
 
     pub(crate) fn pointer_source(
@@ -8771,6 +8796,7 @@ pub enum ProofKind {
 struct ReportDetail {
     /// The prepared program's accessor spellings, retained for lazy reports.
     model_accessors: Option<diagnostics::CapturedModelAccessors>,
+    implicit_step: Option<&'static str>,
     missing_tactic_requirement: Option<String>,
     /// Instantiated declared theorem prerequisite, for discovery diagnostics only.
     missing_theorem_requirement: Option<String>,
@@ -8799,10 +8825,13 @@ struct ReportDetail {
 }
 
 impl ReportDetail {
-    fn capture_model_accessors() -> Option<std::sync::Arc<Self>> {
-        diagnostics::CapturedModelAccessors::capture().map(|model_accessors| {
+    fn capture() -> Option<std::sync::Arc<Self>> {
+        let model_accessors = diagnostics::CapturedModelAccessors::capture();
+        let implicit_step = proof_trace::implicit_step();
+        (model_accessors.is_some() || implicit_step.is_some()).then(|| {
             std::sync::Arc::new(Self {
-                model_accessors: Some(model_accessors),
+                model_accessors,
+                implicit_step,
                 ..Self::default()
             })
         })
@@ -8886,6 +8915,8 @@ pub struct ClickError {
     rendered: std::sync::OnceLock<Box<str>>,
     kind: ClickErrorKind,
     failed_tactic: Option<&'static str>,
+    proof_refusal: Option<ProofRefusal>,
+    work_limit_exhausted: bool,
     diagnostic: Option<std::sync::Arc<proof_diagnostics::ProofFailureDiagnostic>>,
     search_failures: Option<std::sync::Arc<Vec<proof_diagnostics::ProofSearchFailure>>>,
     unresolved_requirement: Option<std::sync::Arc<UnresolvedRequirement>>,
@@ -8930,8 +8961,41 @@ impl ClickErrorKind {
             Self::Syntax => "syntax error",
             Self::Limit => "limit error",
             Self::Type => "type error",
-            Self::Proof => "proof error",
+            Self::Proof => "unclassified verification refusal",
             Self::Internal => "internal error",
+        }
+    }
+}
+
+/// The reason a proof operation was refused, when the verifier can classify it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProofRefusal {
+    Tactic,
+    UnsuccessfulSearch,
+    ImplicitStatementSearch,
+    IncompleteProof,
+    Contract,
+    ContractEntry,
+    ExecutionPrerequisite,
+    Execution,
+    Termination,
+    DivergenceDeclaration,
+    UnsupportedProof,
+}
+
+impl ProofRefusal {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Tactic => "tactic error",
+            Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
+            Self::IncompleteProof => "incomplete proof",
+            Self::Contract => "contract error",
+            Self::ContractEntry => "contract entry refused",
+            Self::ExecutionPrerequisite => "execution prerequisite unmet",
+            Self::Execution => "execution refused",
+            Self::Termination => "termination not established",
+            Self::DivergenceDeclaration => "invalid divergence declaration",
+            Self::UnsupportedProof => "unsupported proof",
         }
     }
 }
@@ -9470,6 +9534,11 @@ impl ContractDefinition {
 }
 
 impl FunctionBlock {
+    /// Whether the block states `allocates(result, n)`.
+    pub(in crate::surface) fn allocates_result(&self) -> bool {
+        self.allocates_result
+    }
+
     /// Where the parser read this block's clauses.
     pub(in crate::surface) fn parsed_body(&self) -> &parser::DeclarationBody {
         &self.body
@@ -10726,12 +10795,13 @@ impl ClickError {
 
     fn new(message: impl Into<String>) -> Self {
         let message = Self::summary_without_rendered_diagnostic(message.into());
-        let message = match crate::instrumentation::exceeded_verification_limit_context() {
+        let work_limit = crate::instrumentation::exceeded_verification_limit_context();
+        let message = match &work_limit {
             // Deliberate limit diagnostics already include the active context
             // and often add useful target/premise detail. Preserve those;
             // replace only an unrelated semantic error constructed from a
             // conservative false/none after the limit fired.
-            Some(context) if !message.contains(&context) => {
+            Some(context) if !message.contains(context) => {
                 format!("verification budget exhausted inside {context}")
             }
             _ => message,
@@ -10742,10 +10812,12 @@ impl ClickError {
             rendered: std::sync::OnceLock::new(),
             kind,
             failed_tactic: None,
+            proof_refusal: None,
+            work_limit_exhausted: work_limit.is_some(),
             diagnostic: None,
             search_failures: None,
             unresolved_requirement: None,
-            report_detail: ReportDetail::capture_model_accessors(),
+            report_detail: ReportDetail::capture(),
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -10757,8 +10829,9 @@ impl ClickError {
     ) -> Self {
         let summary = Self::summary_without_rendered_diagnostic(summary.into());
         diagnostic.reason = Self::summary_without_rendered_diagnostic(diagnostic.reason);
-        let summary = match crate::instrumentation::exceeded_verification_limit_context() {
-            Some(context) if !summary.contains(&context) => {
+        let work_limit = crate::instrumentation::exceeded_verification_limit_context();
+        let summary = match &work_limit {
+            Some(context) if !summary.contains(context) => {
                 format!("verification budget exhausted inside {context}")
             }
             _ => summary,
@@ -10769,10 +10842,12 @@ impl ClickError {
             rendered: std::sync::OnceLock::new(),
             kind,
             failed_tactic: None,
+            proof_refusal: None,
+            work_limit_exhausted: work_limit.is_some(),
             diagnostic: Some(std::sync::Arc::new(diagnostic)),
             search_failures: None,
             unresolved_requirement: None,
-            report_detail: ReportDetail::capture_model_accessors(),
+            report_detail: ReportDetail::capture(),
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -10846,7 +10921,7 @@ impl ClickError {
             .as_deref()
             .unwrap_or_else(|| self.message());
         let (summary, context) = message.split_once('\n').unwrap_or((message, ""));
-        let mut report = format!("{summary}\n  error kind: {}", self.kind.label());
+        let mut report = format!("{summary}\n  error kind: {}", self.report_label());
         if let Some(tactic) = self.failed_tactic {
             report.push_str("\n  tactic: ");
             report.push_str(tactic);
@@ -10922,7 +10997,10 @@ impl ClickError {
                         .then_some(obligation)
                 });
             (
-                format!("proof error in `{function}` during contract certification:"),
+                format!(
+                    "{} in `{function}` during contract certification:",
+                    self.report_label()
+                ),
                 obligation.unwrap_or(detail),
                 obligation.is_some(),
             )
@@ -10934,12 +11012,12 @@ impl ClickError {
                 .map(|(function, _)| function)
         {
             (
-                format!("{} in `{function}`:", self.kind.label()),
+                format!("{} in `{function}`:", self.report_label()),
                 reason,
                 false,
             )
         } else {
-            (format!("{}:", self.kind.label()), reason, false)
+            (format!("{}:", self.report_label()), reason, false)
         };
         for (nested, line) in concise_reason_lines(reason) {
             report.push_str(if nested { "\n    " } else { "\n  " });
@@ -10956,6 +11034,9 @@ impl ClickError {
             }
         }
         let mut context = Vec::new();
+        if let Some(step) = self.implicit_tactic_step() {
+            context.push(format!("refused by: implicit step ({step})"));
+        }
         if let Some(tactic) = self.failed_tactic {
             context.push(format!("tactic: {tactic}"));
         }
@@ -11006,7 +11087,7 @@ impl ClickError {
                     );
                     if !premises.is_empty() {
                         let mut available = format!(
-                            "available premises at the failed check (showing up to 8 relevant facts from {} recorded premises):",
+                            "premises in scope (showing up to 8 relevant facts from {} recorded premises):",
                             state.premise_count(),
                         );
                         for premise in premises.iter().take(8) {
@@ -11194,6 +11275,50 @@ impl ClickError {
 
     pub fn kind(&self) -> ClickErrorKind {
         self.kind
+    }
+
+    /// The implicit proof operation that refused this tactic, if any.
+    pub fn implicit_tactic_step(&self) -> Option<&'static str> {
+        if self.proof_refusal() == Some(ProofRefusal::Tactic) {
+            self.report_detail.as_ref()?.implicit_step
+        } else {
+            None
+        }
+    }
+
+    /// The proof refusal the terminal report attributes to this error.
+    pub fn proof_refusal(&self) -> Option<ProofRefusal> {
+        if self.kind != ClickErrorKind::Proof || self.work_limit_exhausted {
+            return None;
+        }
+        self.proof_refusal.or_else(|| {
+            (self.failed_tactic.is_some() || self.proof_source_tactic_path().is_some())
+                .then_some(ProofRefusal::Tactic)
+        })
+    }
+
+    fn report_label(&self) -> &'static str {
+        if self.kind == ClickErrorKind::Proof && self.work_limit_exhausted {
+            return ClickErrorKind::Limit.label();
+        }
+        self.proof_refusal()
+            .map_or(self.kind.label(), ProofRefusal::label)
+    }
+
+    pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {
+        // Preserve the innermost operation's classification through wrappers.
+        if self.proof_refusal.is_none()
+            || matches!(
+                self.proof_refusal,
+                Some(ProofRefusal::Execution | ProofRefusal::ExecutionPrerequisite)
+            ) && matches!(
+                refusal,
+                ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
+            )
+        {
+            self.proof_refusal = Some(refusal);
+        }
+        self
     }
 
     /// The claim that supplied this proof failure's checked state, if any.
@@ -11527,7 +11652,7 @@ impl ClickError {
         mut self,
         checks: proof_diagnostics::CheckObservations,
     ) -> Self {
-        // The innermost failed check owns its observations. An enclosing
+        // The innermost proof refusal owns its observations. An enclosing
         // scope's capture may be empty because the nested collector already
         // consumed them; preserve that more precise record.
         if let Some(diagnostic) = &mut self.diagnostic
@@ -11619,6 +11744,8 @@ impl ClickError {
             rendered: std::sync::OnceLock::new(),
             kind: self.kind,
             failed_tactic: self.failed_tactic,
+            proof_refusal: self.proof_refusal,
+            work_limit_exhausted: self.work_limit_exhausted,
             diagnostic: self.diagnostic,
             search_failures: self.search_failures,
             unresolved_requirement: self.unresolved_requirement,
@@ -11653,6 +11780,8 @@ impl Clone for ClickError {
             rendered: std::sync::OnceLock::new(),
             kind: self.kind,
             failed_tactic: self.failed_tactic,
+            proof_refusal: self.proof_refusal,
+            work_limit_exhausted: self.work_limit_exhausted,
             diagnostic: self.diagnostic.clone(),
             search_failures: self.search_failures.clone(),
             unresolved_requirement: self.unresolved_requirement.clone(),
@@ -11668,6 +11797,8 @@ impl PartialEq for ClickError {
         self.message == other.message
             && self.kind == other.kind
             && self.failed_tactic == other.failed_tactic
+            && self.proof_refusal == other.proof_refusal
+            && self.work_limit_exhausted == other.work_limit_exhausted
             && self.diagnostic == other.diagnostic
             && self.search_failures == other.search_failures
             && self.unresolved_requirement == other.unresolved_requirement

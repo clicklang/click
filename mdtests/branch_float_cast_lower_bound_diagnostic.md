@@ -13,7 +13,6 @@ int32 positive(double d) {
 verifying "branch_float_cast.c";
 
 int32 positive(double d) {
-    requires isfinite(d);
     ensures result >= 0;
 } by {
     branch { true => { step(); solve(); } false => {} }
@@ -23,5 +22,5 @@ int32 positive(double d) {
 ```
 
 ```expect
-fail: `d >= float64_from_bits(0xc1e0000000000000u64)`
+fail: `d > float64_from_bits(0xc1e0000000200000u64)`
 ```

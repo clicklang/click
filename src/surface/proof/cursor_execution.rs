@@ -745,6 +745,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
                     crate::surface::diagnostics::describe_execution_statement_site(),
                 ))
                 .with_kind(runtime_refusal_kind(&error))
+                .with_proof_refusal(crate::surface::ProofRefusal::Execution)
             })?;
         execution
             .presentation
@@ -1418,7 +1419,7 @@ pub(super) fn route_throw_to_handler(
             )));
         };
         let next_state = next_state.clone();
-        execution.core.record_statement_transition_with_descent(
+        let footprint_bound = execution.core.record_statement_transition_with_descent(
             function,
             parameter_binding.arguments,
             &transition.native_step,
@@ -1443,6 +1444,8 @@ pub(super) fn route_throw_to_handler(
         );
         facts = transition.pure_facts.clone();
         introduced_facts.extend(transition.introduced_facts.iter().cloned());
+        facts.extend(footprint_bound.iter().cloned());
+        introduced_facts.extend(footprint_bound);
         state = *next_state;
     }
     *available_pure_facts = facts;
@@ -1783,7 +1786,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
     execution
         .presentation
         .record_generated_load_source_events(&transition.generated_load_source_events);
-    execution
+    let footprint_bound = execution
         .core
         .record_statement_transition_with_descent(
             function,
@@ -1807,6 +1810,9 @@ pub(super) fn apply_prepared_call_outcome_transition(
         &transition.execution_facts,
     );
     introduced_facts.extend(transition.introduced_facts.iter().cloned());
+    let mut successor_pure_facts = transition.pure_facts.clone();
+    successor_pure_facts.extend(footprint_bound.iter().cloned());
+    introduced_facts.extend(footprint_bound);
 
     let (next_state, is_throw) = match &transition.outcome {
         StatementOutcome::Normal(state) => (state.clone(), false),
@@ -1845,20 +1851,19 @@ pub(super) fn apply_prepared_call_outcome_transition(
             context,
             &value.native(),
             state,
-            &transition.pure_facts,
+            &successor_pure_facts,
         )? {
             // No handler: the throw is this path's function outcome.
             record_completed_continuation_exits(&mut execution.core.frontier);
             // Over a proof context the transition's facts are only what the
             // call added; the return is decided under that context with them.
             let return_assumptions = match context {
-                Some(context) => transition
-                    .pure_facts
+                Some(context) => successor_pure_facts
                     .iter()
                     .fold(context.clone(), |assumptions, fact| {
                         assumptions.assume_proposition(fact.clone())
                     }),
-                None => transition.pure_facts.context(),
+                None => successor_pure_facts.context(),
             };
             let case_outcomes =
                 crate::kernel::program_function_outcomes_from_statement_outcome_with_resource_cases(
@@ -1884,7 +1889,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
                 ));
             }
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
-            *available_pure_facts = transition.pure_facts.clone();
+            *available_pure_facts = successor_pure_facts;
             let completed =
                 crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                     prepared.execution_start_state.clone(),
@@ -1906,7 +1911,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
         return Ok(());
     }
 
-    *available_pure_facts = transition.pure_facts.clone();
+    *available_pure_facts = successor_pure_facts;
     execution.core.frontier.execution_start_state = Some(prepared.execution_start_state.clone());
     execution.core.state = (*next_state.clone()).into();
     let remaining = if let Some(remaining) = prepared.continuation_remaining.clone() {
@@ -1971,26 +1976,6 @@ pub(super) fn execute_step_successor_from_frontier_position(
         pure_facts: successor_facts,
         introduced_facts,
     })
-}
-
-fn step_runtime_refusal_description(
-    error: &crate::kernel::RuntimeError,
-    kind: crate::surface::ClickErrorKind,
-    tactic_name: &str,
-) -> String {
-    use crate::kernel::RuntimeError;
-    match error {
-        RuntimeError::IndeterminatePointeeType
-        | RuntimeError::UnsupportedPointerSubtractionOffsets
-        | RuntimeError::UnsupportedPointerComparisonOffsets
-        | RuntimeError::UnsupportedFunctionPointerOffset => {
-            format!("tactic failure: `{tactic_name}` failed while executing C")
-        }
-        _ if kind == crate::surface::ClickErrorKind::Internal => {
-            format!("`{tactic_name}` reached an unsupported modeled operation")
-        }
-        _ => format!("`{tactic_name}` could not verify C operation"),
-    }
 }
 
 /// Prefer parameter-relative places; where those leave a value unnamed, try
@@ -2890,7 +2875,9 @@ fn execute_step_from_frontier_position_selecting_path(
                         )
                     }
                 ));
-                let error = error.with_reported_assertion_goal(required);
+                let error = error
+                    .with_reported_assertion_goal(required)
+                    .with_proof_refusal(crate::surface::ProofRefusal::Execution);
                 let Some(goal) = goal else {
                     return Err(error);
                 };
@@ -2916,7 +2903,12 @@ fn execute_step_from_frontier_position_selecting_path(
                     })
             {
                 let kind = runtime_refusal_kind(error);
-                let description = step_runtime_refusal_description(error, kind, tactic_name);
+                let unsupported = kind == crate::surface::ClickErrorKind::Internal;
+                let description = if unsupported {
+                    "reached an unsupported modeled operation"
+                } else {
+                    "could not verify C operation"
+                };
                 let resources = step_diagnostic_resources(&current_state);
                 let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
                     error,
@@ -2947,10 +2939,12 @@ fn execute_step_from_frontier_position_selecting_path(
                     crate::kernel::RuntimeError::UninitializedMutex { .. }
                         | crate::kernel::RuntimeError::UnsupportedConcurrentMutex
                 ) {
-                    return Err(ClickError::new(detail).with_kind(kind));
+                    return Err(ClickError::new(detail)
+                        .with_kind(kind)
+                        .with_proof_refusal(crate::surface::ProofRefusal::Execution));
                 }
                 return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: {description}: {}\n  C operation: {}{}{}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
@@ -2963,7 +2957,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 )
             ))
             .with_kind(kind)
-            .with_runtime_missing_resource(error));
+            .with_runtime_missing_resource(error)
+            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
             }
             let path_case_split = statement_successors_are_path_cases(&transitions);
             let split_condition = if path_case_split {
@@ -3050,7 +3045,7 @@ fn execute_step_from_frontier_position_selecting_path(
             .record_loop_iterations_root(loop_index, iterations.clone());
     }
 
-    execution
+    let footprint_bound = execution
         .core
         .record_statement_transition_with_descent(
             function,
@@ -3234,7 +3229,9 @@ fn execute_step_from_frontier_position_selecting_path(
     let execution_pure_facts = transition.execution_facts;
     append_execution_effect_facts(&mut execution.core.effect_facts, &execution_pure_facts);
     let transition_obligations = transition.obligations;
-    let successor_pure_facts = transition.pure_facts;
+    let mut successor_pure_facts = transition.pure_facts;
+    successor_pure_facts.extend(footprint_bound.iter().cloned());
+    introduced_facts.extend(footprint_bound);
     // Falling off a void function is a return in the kernel's C semantics.
     // A source-less one-call proof can reach this boundary without the
     // explicit return node normally inserted by C parsing.
@@ -3296,6 +3293,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         crate::surface::diagnostics::describe_execution_statement_site(),
                     ))
                     .with_kind(runtime_refusal_kind(&error))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Execution)
                 })?;
             if loop_index.is_none() {
                 execution.core.last_footprint =
@@ -3724,11 +3722,17 @@ fn execute_step_from_frontier_position_selecting_path(
                     )
                 }
             ))
-            .with_reported_assertion_goal(required));
+            .with_reported_assertion_goal(required)
+            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
         }
         StatementOutcome::RuntimeError(error) => {
             let kind = runtime_refusal_kind(&error);
-            let description = step_runtime_refusal_description(&error, kind, tactic_name);
+            let unsupported = kind == crate::surface::ClickErrorKind::Internal;
+            let description = if unsupported {
+                "reached an unsupported modeled operation"
+            } else {
+                "could not verify C operation"
+            };
             let resources = step_diagnostic_resources(&current_state);
             let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
                 &error,
@@ -3759,10 +3763,12 @@ fn execute_step_from_frontier_position_selecting_path(
                 crate::kernel::RuntimeError::UninitializedMutex { .. }
                     | crate::kernel::RuntimeError::UnsupportedConcurrentMutex
             ) {
-                return Err(ClickError::new(detail).with_kind(kind));
+                return Err(ClickError::new(detail)
+                    .with_kind(kind)
+                    .with_proof_refusal(crate::surface::ProofRefusal::Execution));
             }
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: {description}: {}\n  C operation: {}{}{}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
@@ -3775,7 +3781,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 )
             ))
             .with_kind(kind)
-            .with_runtime_missing_resource(&error));
+            .with_runtime_missing_resource(&error)
+            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
         }
     }
     execution

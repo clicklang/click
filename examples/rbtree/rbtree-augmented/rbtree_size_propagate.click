@@ -63,16 +63,16 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             step();
             step();
             step();
-            have node as (void *) as (struct rb_node *) == old(rb);
+            have node as (uint8 *) as (struct rb_node *) == old(rb);
             have node->rb.rb_left == 0 by {
                 normalize() using {
-                    node as (void *) as (struct rb_node *) == old(rb);
+                    node as (uint8 *) as (struct rb_node *) == old(rb);
                     old(rb)->rb_left == 0;
                 };
             }
             have node->rb.rb_right == 0 by {
                 normalize() using {
-                    node as (void *) as (struct rb_node *) == old(rb);
+                    node as (uint8 *) as (struct rb_node *) == old(rb);
                     old(rb)->rb_right == 0;
                 };
             }

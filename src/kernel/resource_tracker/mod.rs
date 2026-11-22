@@ -869,7 +869,12 @@ fn replacing_change(left: &Version, right: &Version) -> Change {
     let replaced = [mint(left), mint(right)]
         .into_iter()
         .flatten()
-        .find(|mint| *mint != crate::kernel::model_fields::ModelMint::ContractEntry);
+        .find(|mint| {
+            !matches!(
+                mint,
+                crate::kernel::model_fields::ModelMint::ContractEntry { .. }
+            )
+        });
     Change::ModelReplaced { by: replaced }
 }
 
@@ -1260,15 +1265,15 @@ fn cell_last_same_version(
                     };
                     match bytes
                         .bytes()
-                        .and_then(|bytes| current.indexed_static_cell_store_version(pointer, bytes))
+                        .and_then(|bytes| current.indexed_static_cell_version(pointer, bytes))
                     {
-                        Some(StaticCellStoreVersion::Written(memory)) => {
+                        Some(StaticCellVersion::Written(memory)) => {
                             break Some(NamedCellVersion {
                                 memory,
                                 reason: StopReason::Affected,
                             });
                         }
-                        Some(StaticCellStoreVersion::Boundary(memory)) => {
+                        Some(StaticCellVersion::Boundary(memory)) => {
                             current = memory;
                             continue;
                         }
@@ -1379,21 +1384,20 @@ pub(crate) fn static_cell_unwritten_since_entry_on_path(
     pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<SharedMemory> {
+) -> Option<(SharedMemory, SharedMemory)> {
     if !pointer.base.is_static_storage_block() {
         return None;
     }
-    match cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)? {
-        cell_source::MemoryDagCell::Unwritten { node, .. }
-            if node != *at
-                && node.known_value(pointer).is_none()
-                && cell_last_same_version(&node, pointer, bytes.into())
-                    .is_some_and(|version| version.reason == StopReason::HistoryEnds) =>
-        {
-            Some(node)
-        }
-        _ => None,
+    let cell_source::MemoryDagCell::Unwritten { node, .. } =
+        cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)?
+    else {
+        return None;
+    };
+    if node == *at || node.known_value(pointer).is_some() {
+        return None;
     }
+    let root = cell_last_same_version(&node, pointer, bytes.into())?;
+    (root.reason == StopReason::HistoryEnds).then_some((node, root.memory))
 }
 
 thread_local! {
@@ -1819,11 +1823,7 @@ fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
                         pointer: read.pointer,
                         bytes: read.bytes.into(),
                     },
-                    ProgramPoint::at(
-                        &read
-                            .origin
-                            .unwrap_or_else(|| read.point.into_shared_memory()),
-                    ),
+                    read.origin.unwrap_or(read.point).for_legacy_read(),
                 );
             }
         }

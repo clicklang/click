@@ -55,19 +55,15 @@ void clear(struct region* region) {
             have i < arena->capacity;
             have contains(memory(*region), memory(region->start)) by { normalize(); }
             have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i])) by {
-                apply(click::separation::contains_element(arena->occupied, 0, arena->capacity, i)) using { 0 <= i; i < arena->capacity; };
+                apply(click::separation::contains_element(arena->occupied, 0, arena->capacity, i));
             }
             have separate(memory(region->start), memory(arena->occupied[i])) by {
-                apply(click::separation::separate_restrict(memory(*region), memory(arena->occupied[0..arena->capacity]), memory(region->start), memory(arena->occupied[i]))) using {
-                    separate(memory(*region), memory(arena->occupied[0..arena->capacity]));
-                    contains(memory(*region), memory(region->start));
-                    contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i]));
-                };
+                apply(click::separation::separate_restrict(memory(*region), memory(arena->occupied[0..arena->capacity]), memory(region->start), memory(arena->occupied[i])));
             }
             mark opened;
             step();
             have separate(loop(0).statement(0).footprint, memory(region->start)) by {
-                normalize() using { at(opened, separate(memory(region->start), memory(arena->occupied[i]))); };
+                solve() using { at(opened, separate(memory(region->start), memory(arena->occupied[i]))); };
             }
             have region->start == at(opened, region->start) by {
                 preserve(memory(region->start), loop(0).statement(0));

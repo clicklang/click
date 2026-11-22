@@ -419,3 +419,41 @@ fn charon_generic_resources_are_checked_once_and_used_at_each_type() {
         assert!(rendered.contains(expected), "{rendered}");
     }
 }
+
+const STRUCT_VALUE_SIDECAR: &str =
+    include_str!("../../design/charon-trial/generic-struct-values/values.click");
+
+// A generic function over a value of `T` is called at a `Copy` struct, and
+// its contract compares the struct values whole: every field of one equal to
+// the same field of the other. A struct's value is never its first field's.
+#[test]
+fn charon_generic_calls_at_a_copy_struct_compare_whole_struct_values() {
+    let p = Project::from_fixture("design/charon-trial/generic-struct-values");
+    fs::write(p.root.join("borrow.click"), STRUCT_VALUE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    ProgramVerificationSession::new_program_prepared(STRUCT_VALUE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        // The exchange moves `b`'s `x` into `a`, so `b.x` changed.
+        (
+            "    ensures b.x == old(a.x);",
+            "    ensures b.x == old(b.x);",
+            "generic_struct_values::swap_pairs.ensures_2",
+        ),
+        // A copy of one field does not make the structs equal.
+        (
+            "    ensures dst.x == src.x;\n}",
+            "    ensures *dst == *src;\n}",
+            "generic_struct_values::copy_first.ensures_0",
+        ),
+    ] {
+        assert!(STRUCT_VALUE_SIDECAR.contains(before), "{before}");
+        let invalid = STRUCT_VALUE_SIDECAR.replacen(before, after, 1);
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}

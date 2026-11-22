@@ -27,17 +27,13 @@ void mark(int32 *next, int32 *visited, int32 n, int32 j) {
 } by {
     mark entry;
     have contains(memory(visited[0..n]), memory(visited[j])) by {
-        apply(click::separation::contains_element(visited, 0, n, j)) using { 0 <= j; j < n; };
+        apply(click::separation::contains_element(visited, 0, n, j));
     }
     have contains(memory(next[0..n]), memory(next[0..n])) by {
         apply(click::separation::contains_refl(memory(next[0..n])));
     }
     have separate(memory(visited[j]), memory(next[0..n])) by {
-        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[j]), memory(next[0..n]))) using {
-            separate(memory(visited[0..n]), memory(next[0..n]));
-            contains(memory(visited[0..n]), memory(visited[j]));
-            contains(memory(next[0..n]), memory(next[0..n]));
-        };
+        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[j]), memory(next[0..n])));
     }
     step();
     have forall (k: int32) {
@@ -46,20 +42,16 @@ void mark(int32 *next, int32 *visited, int32 n, int32 j) {
         intro();
         intro();
         have contains(memory(next[0..n]), memory(next[k])) by {
-            apply(click::separation::contains_element(next, 0, n, k)) using { 0 <= k; k < n; };
+            apply(click::separation::contains_element(next, 0, n, k));
         }
         have contains(memory(visited[j]), memory(visited[j])) by {
             apply(click::separation::contains_refl(memory(visited[j])));
         }
         have separate(memory(visited[j]), memory(next[k])) by {
-            apply(click::separation::separate_restrict(memory(visited[j]), memory(next[0..n]), memory(visited[j]), memory(next[k]))) using {
-                separate(memory(visited[j]), memory(next[0..n]));
-                contains(memory(visited[j]), memory(visited[j]));
-                contains(memory(next[0..n]), memory(next[k]));
-            };
+            apply(click::separation::separate_restrict(memory(visited[j]), memory(next[0..n]), memory(visited[j]), memory(next[k])));
         }
         have separate(statement(0).footprint, memory(next[k])) by {
-            normalize() using { separate(memory(visited[j]), memory(next[k])); };
+            solve() using { separate(memory(visited[j]), memory(next[k])); };
         }
         have next[k] == at(entry, next[k]) by {
             preserve(memory(next[k]), statement(0));

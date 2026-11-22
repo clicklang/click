@@ -3364,9 +3364,12 @@ impl OpenedContractEntry {
         source_facts: &(impl super::PropositionSource + ?Sized),
         environment: &crate::kernel::ExecutionEnvironment,
     ) -> Result<Self, RuntimeError> {
-        let contract =
-            crate::kernel::program_function_contract_entry(caller_state, function, arguments)
-                .map_err(RuntimeError::FunctionContract)?;
+        let contract = crate::kernel::program_function_contract_entry_with_refusal(
+            caller_state,
+            function,
+            arguments,
+        )
+        .map_err(crate::kernel::ContractEntryRefusal::into_runtime_error)?;
         let mut propositions = Vec::new();
         let mut source_origins = Vec::new();
         let mut kept = std::collections::BTreeSet::new();
@@ -3413,22 +3416,15 @@ impl OpenedContractEntry {
             propositions.push(byte_order);
             source_origins.push(None);
         }
-        let cases = Arc::new(
-            crate::kernel::prepare_function_contract_entry_cases(
-                contract,
-                environment.byte_order_fact(),
-            )
-            .map_err(RuntimeError::FunctionContract)?,
-        );
+        // Contract facts and `function.entry` must name the same observation
+        // point, including when binding by-value parameters allocated storage.
+        let entry_state = contract.argument_state().clone();
+        let cases = Arc::new(crate::kernel::prepare_function_contract_entry_cases(
+            contract,
+            environment.byte_order_fact(),
+        ));
         let mut facts = PureFactStore::from_ordered(&propositions);
         facts.prepare_entry_resources(caller_state.resources());
-        let entry_state =
-            crate::kernel::program_function_entry_state(caller_state, function, arguments)
-                .ok_or_else(|| {
-                    RuntimeError::FunctionContract(
-                        "could not bind the function entry arguments".into(),
-                    )
-                })?;
         let entry = CheckedFunctionEntry::construct(
             caller_state,
             function,
@@ -3460,16 +3456,13 @@ impl OpenedContractEntry {
     pub(crate) fn open_contract_root(
         mut self,
         program: Option<&crate::kernel::ProgramContractBodies>,
-    ) -> Result<Self, RuntimeError> {
-        self.contract_root = Some(
-            match program {
-                Some(program) => {
-                    crate::kernel::WholeContractRoot::open_in_program(self.cases.clone(), program)
-                }
-                None => crate::kernel::WholeContractRoot::open(self.cases.clone()),
+    ) -> Result<Self, String> {
+        self.contract_root = Some(match program {
+            Some(program) => {
+                crate::kernel::WholeContractRoot::open_in_program(self.cases.clone(), program)?
             }
-            .map_err(RuntimeError::FunctionContract)?,
-        );
+            None => crate::kernel::WholeContractRoot::open(self.cases.clone())?,
+        });
         Ok(self)
     }
 
@@ -8578,8 +8571,11 @@ impl ExecutionProofCore {
             obligations,
             borrow_evidence,
         )
+        .map(|_| ())
     }
 
+    /// Returns the statement footprint's checked containment fact, if it has
+    /// a resource bound, for publication in the successor's pure fact store.
     pub(crate) fn record_statement_transition_with_descent(
         &mut self,
         function: &ProgramFunction,
@@ -8587,7 +8583,7 @@ impl ExecutionProofCore {
         native_step: &crate::kernel::SymbolicExecutionPath,
         context: PureFactContext,
         execution_facts: &(impl ExecutionFactSource + ?Sized),
-    ) -> Result<(), EvidenceRefusal> {
+    ) -> Result<Option<Proposition>, EvidenceRefusal> {
         if let Some(opened) = &self.descent {
             opened
                 .accept_at_state(native_step.descent_step.as_ref(), self.reached_state())
@@ -8615,7 +8611,7 @@ impl ExecutionProofCore {
         execution_facts: &(impl ExecutionFactSource + ?Sized),
         _obligations: &[crate::kernel::ProofObligation],
         borrow_evidence: &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
-    ) -> Result<(), EvidenceRefusal> {
+    ) -> Result<Option<Proposition>, EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
         let (outcome, source_after) =
             self.check_statement_evidence(function, arguments, &theorem, &context)?;
@@ -8652,16 +8648,17 @@ impl ExecutionProofCore {
                 execution_facts,
             )
         });
-        if let Some(fp) = &self.last_footprint
-            && let Some(bound) = &fp.resource_bound
-        {
-            let fact = Proposition::ResourceContains {
+        let footprint_bound = self.last_footprint.as_ref().and_then(|footprint| {
+            let bound = footprint.resource_bound.as_ref()?;
+            Some(Proposition::ResourceContains {
                 parent: Box::new(bound.clone()),
-                child: Box::new(Resource::Footprint(fp.clone())),
-            };
+                child: Box::new(Resource::Footprint(footprint.clone())),
+            })
+        });
+        if let Some(fact) = &footprint_bound {
             self.effect_facts
                 .push(ExecutionPureFact::new(fact.clone()).into_certified());
-            self.retain_step_case(fact);
+            self.retain_step_case(fact.clone());
         }
         let memory_effects = self.append_statement_effects(execution_facts);
         self.advance_path_context(&context);
@@ -8825,14 +8822,14 @@ impl ExecutionProofCore {
                     self.frontier.loop_control = LoopControlExit::BodyEnd;
                     self.evidence_state = Some(*state);
                     self.evidence_completed = true;
-                    return Ok(());
+                    return Ok(footprint_bound);
                 }
                 if self.frontier.in_loop_body && function.control_target(target).is_some() {
                     self.frontier.position = FrontierPosition::RegionBoundary;
                     self.frontier.loop_control = LoopControlExit::Jump(target);
                     self.evidence_state = Some(*state);
                     self.evidence_completed = true;
-                    return Ok(());
+                    return Ok(footprint_bound);
                 }
                 let target = function
                     .control_target(target)
@@ -8853,7 +8850,7 @@ impl ExecutionProofCore {
             | StatementOutcome::UndefinedBehavior(_)
             | StatementOutcome::RuntimeError(_) => self.evidence_completed = true,
         }
-        Ok(())
+        Ok(footprint_bound)
     }
 
     /// Abandon only the lexical continuations this transfer leaves. The
@@ -10620,6 +10617,37 @@ impl ExecutionProofCore {
         Ok(after_state)
     }
 
+    pub(crate) fn record_named_resource_observation(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        facts: &PureFactStore,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<crate::kernel::functions::ResourceInstanceRewriteResult, String> {
+        if self.evidence_completed {
+            return Err("a resource observation was recorded after the trace completed".into());
+        }
+        let definition = function
+            .proof_composite_resource_definition(instance.name())
+            .ok_or("resource instance has no visible body")?;
+        let before = self.reached_state();
+        let result = crate::kernel::functions::observe_resource_instance(
+            before,
+            instance,
+            definition,
+            function.composite_resource_definitions(),
+            facts.assumptions(),
+        )
+        .map_err(|refusal| refusal.describe())?;
+        let observation = CheckedResourceObservation {
+            before_state: before.clone(),
+            after_state: result.state.clone(),
+            definition: Some(definition.clone()),
+        };
+        self.record_checked_resource_observation(function, arguments, observation)?;
+        Ok(result)
+    }
+
     pub(crate) fn record_resource_observation(
         &mut self,
         function: &ProgramFunction,
@@ -10632,7 +10660,7 @@ impl ExecutionProofCore {
         if self.evidence_completed {
             return Err("a resource observation was recorded after the trace completed");
         }
-        let mut observation = CheckedResourceObservation::certify(
+        let observation = CheckedResourceObservation::certify(
             function,
             self.reached_state(),
             before_facts,
@@ -10642,6 +10670,15 @@ impl ExecutionProofCore {
             &self.function_entry_derivations,
             &self.checked_call_events,
         )?;
+        self.record_checked_resource_observation(function, arguments, observation)
+    }
+
+    fn record_checked_resource_observation(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        mut observation: CheckedResourceObservation,
+    ) -> Result<ExecutionState, &'static str> {
         let successor = observation.after_state.clone();
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             observation.before_state = crate::kernel::program_function_entry_state(

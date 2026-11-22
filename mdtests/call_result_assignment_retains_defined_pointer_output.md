@@ -32,7 +32,7 @@ int32 caller(int32 **slot) {
     have separate(memory(ignored), memory(*slot)) by { known(); }
     step();
     have separate(statement(1).assignment(ignored, 0).footprint, memory(*slot)) by {
-        normalize() using { separate(memory(ignored), memory(*slot)); };
+        solve() using { separate(memory(ignored), memory(*slot)); };
     }
     have defined(*slot) by {
         preserve(memory(*slot), statement(1).assignment(ignored, 0));

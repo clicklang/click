@@ -29,7 +29,8 @@ fn missing_prerequisite_error(
     message: impl Into<String>,
     obligation: &ProofObligation,
 ) -> ClickError {
-    let error = ClickError::new(message);
+    let error = ClickError::new(message)
+        .with_proof_refusal(crate::surface::ProofRefusal::ExecutionPrerequisite);
     if obligation.is_assumable() {
         error
     } else {
@@ -234,6 +235,7 @@ fn proof_condition_runtime_error(
         "{context_label} could not evaluate the C condition: {detail}.{guidance}"
     ))
     .with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))
+    .with_proof_refusal(crate::surface::ProofRefusal::Execution)
 }
 
 #[derive(Clone)]
@@ -337,7 +339,8 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                         kind,
                     ),
                     crate::surface::diagnostics::describe_execution_statement_site()
-                )).with_reported_assertion_goal(kind.required_goal().cloned())),
+                )).with_reported_assertion_goal(kind.required_goal().cloned())
+                .with_proof_refusal(crate::surface::ProofRefusal::Execution)),
                 ConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
                     error,
@@ -483,7 +486,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         kind,
                     ),
                     crate::surface::diagnostics::describe_execution_statement_site()
-                )).with_reported_assertion_goal(kind.required_goal().cloned())),
+                )).with_reported_assertion_goal(kind.required_goal().cloned())
+                .with_proof_refusal(crate::surface::ProofRefusal::Execution)),
                 Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::RuntimeError(error),
                     ..
@@ -491,7 +495,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     "{context_label} could not verify the C condition: {}{}",
                     crate::surface::diagnostics::describe_runtime_error_over_locals(error, state),
                     crate::surface::diagnostics::describe_execution_statement_site(),
-                )).with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))),
+                )).with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))
+    .with_proof_refusal(crate::surface::ProofRefusal::Execution)),
                 proposition => Err(ClickError::new(format!(
                     "{context_label} saw unexpected condition theorem `{}`",
                     crate::surface::proof_diagnostics::render::render_proposition(proposition),

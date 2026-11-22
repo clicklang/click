@@ -363,7 +363,14 @@ impl MemoryStateLabels {
     pub(crate) fn register_current_state(&mut self, state: &ExecutionState) {
         self.current_point = state.observation_point_id();
         self.current_state = Some(state.clone());
-        let (names, values) = crate::surface::diagnostics::local_naming_tables(state);
+        // A parameter among the state's locals keeps its source declaration,
+        // which the merge below would otherwise replace with a kernel type.
+        let declarations = self
+            .naming
+            .as_deref()
+            .map_or(&[][..], |(parameters, _)| parameters.as_slice());
+        let (names, values) =
+            crate::surface::diagnostics::local_naming_tables_with_declarations(state, declarations);
         let current = Self::naming(ParameterBinding::new(&names, &values));
         // A reassigned parameter's entry value is not its current value.
         for (variable, name) in &mut self.source_names {
@@ -759,7 +766,7 @@ impl MemoryStateLabels {
         if held != term {
             return None;
         }
-        let owner = model_fields::registered_instance_spelling(origin.identity)?;
+        let owner = origin.owner_spelling()?;
         Some(format!("{owner}.{}", origin.field))
     }
 
@@ -966,7 +973,7 @@ pub(crate) fn render_memory_history_check(
         })
         .unwrap_or_default();
     Some(format!(
-        "memory history without the failed check's facts stops at {retained_state}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}{miss}\n    supplemental history explanation: equality and ownership facts from the failed check are not used by this walk, so a store the check itself crosses (by a quantified fact's guard, for one) can stop it; it does not say why the check failed",
+        "memory history without facts at the refusal stops at {retained_state}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}{miss}\n    supplemental history explanation: equality and ownership facts at the refusal are not used by this walk, so a store the check itself crosses (by a quantified fact's guard, for one) can stop it; it does not say why the check failed",
         written_bytes,
     ))
 }

@@ -14,10 +14,10 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
 } by {
     match link.model {
         SizedContext::Top => {
-            have link.model == old(link.model) by { normalize(); }
+            have link.model == old(link.model) by { known(); }
             have sized_context_parent(link.model, 0) == 0 by {
                 rewrite(link.model, SizedContext::Top);
-                unfold(sized_context_parent(SizedContext::Top, 0)); normalize();
+                unfold(sized_context_parent(SizedContext::Top, 0)); known();
             }
             have sized_context_parent(link.model, 0) == 0 or replacement != sized_context_parent(link.model, 0) by {
                 known();
@@ -40,7 +40,7 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
             });
             have sized_context_parent(link.model, 0) == a by {
                 rewrite(link.model, SizedContext::Left(a, above, shade, value, sibling_model, up_model));
-                unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model), 0)); normalize();
+                unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model), 0)); known();
             }
             have replacement != sized_context_parent(link.model, 0) by {
                 rewrite(sized_context_parent(link.model, 0), a); known();
@@ -66,7 +66,7 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
             });
             have sized_context_parent(link.model, 0) == a by {
                 rewrite(link.model, SizedContext::Right(a, above, shade, value, sibling_model, up_model));
-                unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model), 0)); normalize();
+                unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model), 0)); known();
             }
             have replacement != sized_context_parent(link.model, 0) by {
                 rewrite(sized_context_parent(link.model, 0), a); known();

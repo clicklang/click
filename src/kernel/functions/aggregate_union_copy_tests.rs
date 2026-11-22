@@ -233,6 +233,43 @@ fn aggregate_copy_names_uncached_scalar_fields_at_the_caller_versions() {
 }
 
 #[test]
+fn aggregate_copy_keeps_the_entry_version_of_an_uncached_opaque_field() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let target = SymbolicMemory::frame_local_pointer(1, "opaque_record_copy");
+    let parameter = crate::kernel::TypeParameterName::intern("CopyField");
+    let ty = ProgramType::Parameter(parameter);
+    let layout = AggregateLayout::new(
+        ty.byte_width(),
+        4,
+        vec![AggregateField::new("value", 0, ty)],
+    );
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let state = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(target.base.clone(), layout.size_bytes()),
+    );
+    assert!(state.memory().known_value(&source).is_none());
+    assert_ne!(state.observation_point_id(), entry.program_point_id());
+
+    let copied = copy_aggregate_fields_checked_at(&state, &source, &target, &layout).unwrap();
+    let Some(ProgramValue::Parameter(read)) = copied.known_value(&target) else {
+        panic!("the copy contains a read of the opaque source field");
+    };
+    let crate::kernel::AlgebraicTermNode::MemoryLoad { point, pointer } = read.node else {
+        panic!("the copied value reads the caller's field");
+    };
+    assert_eq!(read.algebraic_type, parameter.algebraic_type());
+    assert_eq!(point.read_version_id(), entry.program_point_id());
+    assert_eq!(*pointer, source);
+}
+
+#[test]
 fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address {
@@ -520,7 +557,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         Some(&root)
     );
     let paths = crate::kernel::eval::evaluate_retained_memory_load_paths(
-        &copied,
+        &crate::kernel::ProgramPoint::of_memory(&copied),
         target.clone(),
         ProgramType::Int32Pointer,
         ExecutionFacts::new(),
@@ -530,7 +567,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         false,
         None,
         None,
-        None,
+        false,
     );
     assert_eq!(paths.len(), 1);
     let ExpressionOutcome::Value(value) = &paths[0].outcome else {

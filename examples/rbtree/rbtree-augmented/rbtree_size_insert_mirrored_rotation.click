@@ -1,9 +1,10 @@
 // First writable insertion callback: a right-right three-node rotation at the root.
-verifying "rb_insert_augmented.c";
+verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_rotate.c";
 verifying "rbtree_size_copy.c";
 verifying "rbtree_size_compute.c";
 import "rbtree_size_rotate_model.click";
+import "rbtree_size_rotate_root_parents.click";
 
 spec enum SizedInsertRightThreePhase {
     Before(struct rb_node*, struct rb_node*),
@@ -59,7 +60,7 @@ resource sized_insert_right_three_at(node: struct rb_node*, root: struct rb_root
     }
 }
 
-void __rb_insert(struct rb_node* node, struct rb_root* root,
+void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                   void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     requires RotateTreeLeft(augment_rotate);
     owns state: sized_insert_right_three_at(node, root);
@@ -94,23 +95,66 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(node->__rb_parent_color, address(p) + (node->__rb_parent_color & 1));
                 rewrite((node->__rb_parent_color & 1), 0); normalize();
             }
+            have g->rb_right == p by known();
+            have ((g->rb_right->__rb_parent_color & ~3) as (struct rb_node*)) == g by known();
+            have p->__rb_parent_color == g->rb_right->__rb_parent_color by {
+                rewrite(p, g->rb_right); known();
+            }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node*)) == g by {
+                rewrite(p->__rb_parent_color, g->rb_right->__rb_parent_color); known();
+            }
+            let parent_word = fold(sized_rotation_entry_word(p), {
+                up: g, word: p->__rb_parent_color, color: Color::Red
+            });
+            let grand_word = fold(sized_rotation_entry_word(g), {
+                up: 0 as (int32*), word: g->__rb_parent_color, color: Color::Black
+            });
             step(); step(); step(); step();
+            unfold(parent_word);
+            unfold(grand_word);
             unfold(n_right); unfold(n_left);
-            have node->rb_right == 0 by { known(); }
-            have node->rb_left == 0 by { known(); }
-            let n_right = fold(sized_at(node->rb_right), { model: SizedTree::Empty });
-            let n_left = fold(sized_at(node->rb_left), { model: SizedTree::Empty });
+            have g->rb_right->rb_right == node by known();
+            have g->rb_right->rb_right->rb_right == 0 by known();
+            have node->rb_right == 0 by {
+                rewrite(node, g->rb_right->rb_right); known();
+            }
+            have g->rb_right->rb_right->rb_left == 0 by known();
+            have node->rb_left == 0 by {
+                rewrite(node, g->rb_right->rb_right); known();
+            }
+            let n_right = fold(sized_at(0), { model: SizedTree::Empty });
+            let n_left = fold(sized_at(0), { model: SizedTree::Empty });
             let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), metadata: n_size, right: n_right, left: n_left });
             have p->rb_right == node by { known(); }
             have p->rb_right != p by {
                 known();
             }
-            have p->rb_left != p by {
-                known();
-            }
+            unfold(p_left);
+            have p->rb_left == 0 by known();
+            have p->rb_left != p by { rewrite(p->rb_left, 0); known(); }
+            let p_left = fold(sized_at(0), { model: SizedTree::Empty });
+            have separate(memory(p->__rb_parent_color), memory(g->__rb_parent_color)) by known();
+            have p != g by known();
+            have g->rb_right == p by known();
+            have g->rb_right != g by { rewrite(g->rb_right, p); known(); }
+            unfold(g_left);
+            have g->rb_left == 0 by known();
+            have g->rb_left != g by { rewrite(g->rb_left, 0); known(); }
+            let g_left = fold(sized_at(0), { model: SizedTree::Empty });
             let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)), metadata: p_size, right: focus, left: p_left });
+            have sized_parent_is(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)), g) == 1 by {
+                unfold(sized_parent_is(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)), g)); normalize();
+            }
+            unfold(sized_value(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))));
+            unfold(sized_value(SizedTree::Empty));
+            have to_integer(3) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)))) by {
+                rewrite(sized_value(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))), 2);
+                rewrite(sized_value(SizedTree::Empty), 0);
+                normalize();
+            }
             let tree = fold(sized_at(g), { model: old(state.model), metadata: g_size, right: parent_tree, left: g_left });
             let state = fold(sized_insert_right_three_at(node, root), { phase: SizedInsertRightThreePhase::Before(g, p), model: old(state.model), tree: tree });
+            step(); // Declare tmp before entering the loop.
             loop {
                 owns state: sized_insert_right_three_at(node, root);
                 decreases 0;
@@ -118,6 +162,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant parent == p;
                 invariant g == old(root->rb_node);
                 invariant p == old(g->rb_right);
+                invariant g->rb_right == p;
+                invariant p->rb_right == node;
                 invariant state.phase == SizedInsertRightThreePhase::Before(g, p);
                 invariant old(state.phase) == SizedInsertRightThreePhase::Before(g, p);
                 invariant state.model == sized_right_three_before(g, p, node);
@@ -131,6 +177,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     let { metadata: g_size, right: parent_tree, left: g_left } = unfold(loop_tree);
                     let { metadata: p_size, right: focus, left: p_left } = unfold(parent_tree);
+                    have p->rb_right == node by known();
+                    let parent_focus = fold(sized_rotation_saved_link(&p->rb_right), { child: node });
                     unfold(g_left); unfold(p_left);
                     let { metadata: n_size, right: n_right, left: n_left } = unfold(focus);
                     let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), metadata: n_size, right: n_right, left: n_left });
@@ -145,6 +193,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((g->__rb_parent_color & 1), color_bit(Color::Black));
                         rewrite(color_bit(Color::Black), 1); normalize();
                     }
+                    let rotating_word = fold(sized_rotation_entry_word(g), {
+                        up: 0 as (int32*), word: 1u64, color: Color::Black
+                    });
                     step(); step(); step(); step(); step(); step(); step();
                     have gparent == g by { known(); }
                     have parent == p by { known(); }
@@ -156,69 +207,40 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
                     have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
                     have separate(memory(gparent->rb_left), memory(root->rb_node));
-                    have separate(memory(parent->rb_right), memory(gparent->rb_right));
-                    have separate(memory(parent->rb_right), memory(parent->rb_left));
-                    have separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
-                    have separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                    have separate(memory(parent->rb_right), memory(root->rb_node));
                     have gparent->rb_right == parent by { known(); }
-                    mark before_link_writes;
-                    step(); step(); step();
+                    step(); step(); step(); // Skip the inner rotation.
+                    have gparent->rb_left == 0 by known();
+                    let grand_sibling = fold(sized_rotation_saved_link(&gparent->rb_left), { child: 0 as (int32*) });
+                    step(); // Replace the grandparent's child link.
                     have gparent->rb_right == 0 by { known(); }
-                    have separate(memory(gparent->rb_right), memory(parent->rb_left));
-                    mark after_right_write;
-                    step(); step(); step();
-                    transport(at(after_right_write, gparent->rb_right == 0), gparent->rb_right == 0) using {
-                        at(after_right_write, gparent->rb_right == 0);
-                        separate(memory(gparent->rb_right), memory(parent->rb_left));
-                    };
-                    have gparent->__rb_parent_color == 1 by { solve(); }
-                    have gparent->rb_right == 0 by { known(); }
-                    have separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                    have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                    have separate(memory(gparent->rb_right), memory(root->rb_node));
-                    mark before_parent_update;
-                    step();
-                    transport(at(before_parent_update, gparent->rb_right == 0), gparent->rb_right == 0) using {
-                        at(before_parent_update, gparent->rb_right == 0);
-                        separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                        separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                        separate(memory(gparent->rb_right), memory(root->rb_node));
-                    };
+                    let grand_middle = fold(sized_rotation_saved_link(&gparent->rb_right), { child: 0 as (int32*) });
+                    step(); // Link the demoted grandparent to the promoted parent.
+                    have parent->rb_left == gparent by known();
+                    have p->rb_left == g by {
+                        rewrite(p, parent);
+                        rewrite(g, gparent);
+                        known();
+                    }
+                    let rotated_link = fold(sized_rotation_saved_link(&p->rb_left), { child: g });
+                    step(); step(); // The middle child is null.
+                    unfold(rotating_word);
+                    have gparent->__rb_parent_color == 1 by known();
+                    step(insert::__rb_rotate_set_parents, {});
+                    unfold(grand_middle);
                     have g->rb_right == 0 by { known(); }
                     let p_left = fold(sized_at(0), { model: SizedTree::Empty });
-                    transport(at(before_link_writes, gparent->rb_left == 0), gparent->rb_left == 0) using {
-                        at(before_link_writes, gparent->rb_left == 0);
-                        separate(memory(gparent->rb_left), memory(gparent->rb_right));
-                        separate(memory(gparent->rb_left), memory(parent->rb_left));
-                        separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
-                        separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                        separate(memory(gparent->rb_left), memory(root->rb_node));
-                    };
+                    unfold(grand_sibling);
                     have g->rb_left == 0 by { known(); }
                     let g_left = fold(sized_at(0), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty),
                         metadata: g_size, right: p_left, left: g_left
                     });
-                    transport(at(before_link_writes, parent->rb_right == node), parent->rb_right == node) using {
-                        at(before_link_writes, parent->rb_right == node);
-                        at(before_link_writes, gparent->rb_right) == parent;
-                        separate(memory(parent->rb_right), memory(gparent->rb_right));
-                        separate(memory(parent->rb_right), memory(parent->rb_left));
-                        separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
-                        separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                        separate(memory(parent->rb_right), memory(root->rb_node));
-                    };
-                    have parent->rb_left == gparent by { solve(); }
-                    have p->rb_left == g by {
-                        rewrite(p, parent);
-                        rewrite(g, gparent);
-                        known();
-                    }
+                    unfold(parent_focus);
+                    unfold(rotated_link);
+                    have p->rb_left == g by known();
                     have parent == p by { known(); }
-                    have parent->__rb_parent_color == at(region(13).exit, gparent->__rb_parent_color) by { solve(); }
-                    have parent->__rb_parent_color == 1 by { solve(); }
+                    have parent->__rb_parent_color == 1 by known();
                     transport(parent->__rb_parent_color == 1, p->__rb_parent_color == 1);
                     have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
                         rewrite(p->__rb_parent_color, 1); normalize();
@@ -301,7 +323,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
     }
 }
 
-void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
+void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
                   void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     requires RotateTreeLeft(augment_rotate);
     owns state: sized_insert_right_three_at(node, root);
@@ -309,10 +331,10 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_right_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_right_three_expected(old(state.phase), node);
 } by {
-    step(__rb_insert, { state: state });
+    step(insert::__rb_insert, { state: state });
 }
 
-void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
+void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
                          const struct rb_augment_callbacks* augment) {
     views augment->rotate;
     requires RotateTreeLeft(augment->rotate);
@@ -321,5 +343,6 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_right_three_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_right_three_expected(old(state.phase), node);
 } by {
-    step(__rb_insert_augmented, { state: state });
+    have separate(state, memory(augment->rotate)) by known();
+    step(insert::__rb_insert_augmented, { state: state });
 }

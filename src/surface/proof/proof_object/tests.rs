@@ -185,7 +185,12 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             ProofStep::NormalizeUsing(premises) => {
                 count += premises.len();
             }
+            ProofStep::ApplyTheorem(application) => count += application.arguments.len(),
             ProofStep::ApplyTheoremUsing {
+                application,
+                premises,
+            }
+            | ProofStep::ApplyPlannedTheorem {
                 application,
                 premises,
             } => count += application.arguments.len() + premises.len(),
@@ -1431,7 +1436,7 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
         Ok(_) => panic!("an atomic claim rejects `intro`"),
         Err(error) => error,
     };
-    assert!(error.report().contains("error kind: proof error"));
+    assert!(error.report().contains("error kind: tactic error"));
     assert!(error.report().contains("tactic: intro()"));
     assert_eq!(split_proof.branches().collect::<Vec<_>>(), ids);
     assert!(
@@ -6108,9 +6113,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
                 ensures result <= upper;
             } by {
                 step_until(function.exit);
-                apply(less_than_implies_less_equal(result, upper)) using {
-                    result < upper;
-                }
+                apply(less_than_implies_less_equal(result, upper));
                 solve();
             }
         "#,
@@ -6318,7 +6321,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
                     &missing,
                     std::iter::empty()
                 )
-                .expect("an ordinary optional transport miss is not a proof error")
+                .expect("an ordinary optional transport miss is not a verification refusal")
                 .is_none()
             );
             assert!(
@@ -10424,7 +10427,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             closed.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
-                deferred_tail: false,
+                deferred_tail: None,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![
                         ProofStep::Have {
@@ -10493,7 +10496,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             terminal.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
-                deferred_tail: false,
+                deferred_tail: None,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![ProofStep::Step, ProofStep::Step]).unwrap(),
                 ),
@@ -13931,6 +13934,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                 lexical_bindings: None,
                 tactic_index: 0,
                 source_index: 0,
+                reads_deferred_obtain: false,
                 tactic: PostExecutionTactic::If {
                     condition: unknown.clone(),
                     disjunction: false,

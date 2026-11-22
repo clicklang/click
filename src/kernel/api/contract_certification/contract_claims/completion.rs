@@ -191,7 +191,7 @@ impl WholeContractProof {
         let declared_calls = Arc::new(crate::kernel::termination::termination_callees(function));
         let loop_exits =
             crate::kernel::termination::loop_evidence::PreparedLoopExits::open(function)?;
-        if entry.cases.is_empty() {
+        if entry.case_count == 0 {
             return Err("the contract entry has no cases".into());
         }
         // Fix reusable-rule eligibility at opening. A startup or a contract
@@ -210,7 +210,7 @@ impl WholeContractProof {
             }
         }
         let mut goals = Vec::new();
-        for case in 0..entry.cases.len() {
+        for case in 0..entry.case_count {
             crate::instrumentation::record_deterministic_work(1);
             goals.push(ContractCompletionGoal::Boundary { case });
             if function.contract_interface().has_call_ranked_recursion() {
@@ -415,7 +415,7 @@ impl ContractProofProgress {
 
     fn retire(&mut self, goal: ContractPathGoal) {
         self.remaining.remove(&goal);
-        for case in 0..self.owner.entry.cases.len() {
+        for case in 0..self.owner.entry.case_count {
             crate::instrumentation::record_deterministic_work(1);
             let closed = match &goal {
                 ContractPathGoal::Boundary => ContractCompletionGoal::Boundary { case },
@@ -557,10 +557,8 @@ mod tests {
         let mut entry = prepare_function_contract_entry_cases(
             program_function_contract_entry(&ExecutionState::new(), &function, &[]).unwrap(),
             ExecutionEnvironment::new().byte_order_fact(),
-        )
-        .unwrap();
-        entry.cases = vec![entry.cases[0].clone(); case_count];
-        entry.guard_cases = vec![vec![]; case_count];
+        );
+        entry.case_count = case_count;
         let owner = WholeContractProof::open(Arc::new(entry)).unwrap();
         let execution = prove_checked_program_function_execution_with_environment(
             ExecutionState::new(),

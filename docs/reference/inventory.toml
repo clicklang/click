@@ -858,7 +858,7 @@ id = "language.word.rewrite"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.same_object"
+id = "language.word.same_allocation"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1475,19 +1475,10 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.apply-induction"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.apply-induction-using"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
 id = "tactic-form.apply-fact"
 path = "reference/tactics/index.md#fact-application"
 [[item]]
-id = "tactic-form.apply-fact-using"
-path = "reference/tactics/index.md#fact-application"
-[[item]]
 id = "tactic-form.apply-theorem"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.apply-theorem-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.have"
@@ -1692,6 +1683,10 @@ path = "reference/cli/expand.md#options"
 
 [[item]]
 id = "cli.expand.--claim"
+path = "reference/cli/expand.md#options"
+
+[[item]]
+id = "cli.expand.--migrate-normalize"
 path = "reference/cli/expand.md#options"
 
 [[item]]
@@ -2347,6 +2342,10 @@ id = "primitive.extern.__click_constant_p_unknown"
 path = "reference/language/index.md#__click_constant_p_unknown"
 
 [[item]]
+id = "library.extern.fprintf"
+path = "reference/library/index.md#fprintf"
+
+[[item]]
 id = "library.extern.memcpy"
 path = "reference/library/index.md#memcpy"
 
@@ -2489,6 +2488,14 @@ path = "reference/library/index.md#stdspant"
 [[item]]
 id = "library.cpp.std::span<T>::subspan"
 path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.rust.Box::drop"
+path = "reference/library/index.md#boxt"
+
+[[item]]
+id = "library.rust.Box::new"
+path = "reference/library/index.md#boxt"
 
 [[item]]
 id = "library.rust.Option::expect"
@@ -5407,6 +5414,18 @@ path = "reference/library/index.md#writeattempt-and-stream"
 [[item]]
 id = "library.resource.stream"
 path = "reference/library/index.md#writeattempt-and-stream"
+
+[[item]]
+id = "library.function.stdio::format_output"
+path = "reference/library/index.md#stdioformat_output-stdioformat_length-and-stdioliteral_format"
+
+[[item]]
+id = "library.function.stdio::format_length"
+path = "reference/library/index.md#stdioformat_output-stdioformat_length-and-stdioliteral_format"
+
+[[item]]
+id = "library.function.stdio::literal_format"
+path = "reference/library/index.md#stdioformat_output-stdioformat_length-and-stdioliteral_format"
 
 [[item]]
 id = "library.function.stdio::write_requests"
