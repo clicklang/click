@@ -517,6 +517,7 @@ impl MachineTerm {
     /// 2026-10-30): the `int8` and `uint8` reads of one byte are two loads,
     /// neither a conversion of the other, related by the 8-bit sign cast
     /// when they read the same byte (R-mem).
+    #[cfg_attr(test, track_caller)]
     pub(crate) fn memory_read(
         memory: crate::kernel::SharedMemory,
         pointer: crate::kernel::Address,

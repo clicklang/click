@@ -8864,6 +8864,7 @@ impl SymbolicMemory {
             .is_some_and(|end| end <= block_size)
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Address) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8874,6 +8875,7 @@ impl SymbolicMemory {
 
     /// A signed byte read: the two's-complement conversion of the byte's
     /// one unsigned read ([`MachineTerm::memory_read`]).
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Address) -> ProgramValue {
         int8(MachineTerm::memory_read(
             crate::kernel::intern_memory(self.clone()),
@@ -8882,6 +8884,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Address) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8890,6 +8893,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Address) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8898,6 +8902,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Address) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8906,6 +8911,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Address) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8914,6 +8920,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::Int64(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8922,6 +8929,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::UInt64(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8930,6 +8938,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_wide_integer_load(
         &self,
         pointer: &Address,

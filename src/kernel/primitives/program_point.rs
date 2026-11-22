@@ -1539,7 +1539,10 @@ impl Ord for ProgramPoint {
 
 impl ProgramPoint {
     /// A point built from a bare memory state, with no place on a path.
+    #[cfg_attr(test, track_caller)]
     pub fn at(memory: &SharedMemory) -> Self {
+        #[cfg(test)]
+        crate::kernel::mixed_read_names::record_bare_point(memory, std::panic::Location::caller());
         Self {
             memory: memory.clone(),
             path: PathLink::default(),
@@ -1549,6 +1552,7 @@ impl ProgramPoint {
 
     /// The point a `SymbolicMemory` value stands at, interning it first. Callers
     /// that already hold an interned state use [`ProgramPoint::at`].
+    #[cfg_attr(test, track_caller)]
     pub(crate) fn of_memory(memory: &SymbolicMemory) -> Self {
         Self::at(&intern_memory(memory.clone()))
     }
@@ -3122,5 +3126,37 @@ mod tests {
     }
     mod scaling_tests {
         include!("../../scaling_tests/kernel/primitives/program_point.rs");
+    }
+
+    /// One cell at one memory state named by a selected point and by its
+    /// memory is reported once, with the line that built the bare point.
+    /// A cell named one way, however often, is not.
+    #[test]
+    fn the_mixed_read_name_audit_reports_a_cell_named_both_ways() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let selected = entry
+            .program_point()
+            .entry_integer_version(&cell, LoadKind::Int32)
+            .expect("an entry read");
+        let observe = |point: &ProgramPoint| {
+            crate::kernel::mixed_read_names::observe(point, &cell, LoadKind::Int32);
+        };
+        let reports = crate::kernel::mixed_read_names::capture(|| {
+            observe(&selected);
+            observe(&selected);
+            let bare = ProgramPoint::at(selected.shared_memory());
+            observe(&bare);
+            observe(&bare);
+        });
+        let [report] = reports.as_slice() else {
+            panic!("{reports:?}");
+        };
+        assert!(report.contains("program_point.rs"), "{report}");
+        assert!(crate::kernel::mixed_read_names::capture(|| observe(&selected)).is_empty());
     }
 }
