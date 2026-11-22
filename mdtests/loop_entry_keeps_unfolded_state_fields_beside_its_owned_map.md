@@ -6,6 +6,8 @@ the map. The fields the function keeps cannot be written by the loop, so at
 loop entry their cells are reinstalled whole into the loop's framed memory.
 This catches a loop frame that drops or misplaces the kept field cells, which
 the loop's bound `arena->capacity` is read from on every iteration.
+The maintenance proof preserves that field across the map store and the
+local increment before closing the invariant and ranking obligations.
 
 ```c filename=loop_entry_keeps_unfolded_state_fields_beside_its_owned_map.c
 struct arena {
@@ -24,6 +26,8 @@ void mark_all(struct arena* arena) {
 ```
 
 ```click
+import click::separation;
+
 resource state(arena: struct arena*) {
     owns arena->occupied;
     owns arena->capacity;
@@ -49,8 +53,30 @@ void mark_all(struct arena* arena) {
         invariant 0 <= i and i <= arena->capacity;
         initialize by solve();
         maintain by {
+            have separate(memory(arena->occupied[0..arena->capacity]), memory(*arena)) by { known(); }
+            apply(separation::contains_element(arena->occupied, 0, arena->capacity, i));
+            apply(separation::contains_refl(memory(*arena)));
+            apply(separation::separate_restrict(
+                memory(arena->occupied[0..arena->capacity]), memory(*arena),
+                memory(arena->occupied[i]), memory(*arena)
+            ));
             step();
+            have separate(loop(0).statement(0).footprint, memory(*arena)) by { known(); }
+            apply(separation::contains_refl(loop(0).statement(0).footprint));
+            apply(separation::separate_restrict(
+                loop(0).statement(0).footprint, memory(*arena),
+                loop(0).statement(0).footprint, memory((&arena->capacity)[0..1])
+            ));
+            have arena->capacity == at(loop(0).statement(0).entry, arena->capacity) by {
+                preserve(memory((&arena->capacity)[0..1]), loop(0).statement(0));
+            }
             step();
+            have separate(loop(0).statement(1).footprint, memory((&arena->capacity)[0..1])) by {
+                solve();
+            }
+            have arena->capacity == at(loop(0).statement(1).entry, arena->capacity) by {
+                preserve(memory((&arena->capacity)[0..1]), loop(0).statement(1));
+            }
             solve();
         }
     }

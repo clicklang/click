@@ -2,10 +2,10 @@
 
 The first `pair(node)` clause owns `node`'s `left` link and the `left` link
 of `node`'s left child.  The second clause must load `node->left->left` to form its
-argument; its access comes from the whole entry clause set, including the
-folded body of the first composite.  The clauses are intentionally written
-in dependency order here and are checked by the same kernel evaluator used
-for named contracts.
+argument; its access comes from the folded body of the first composite.
+The third clause follows another two links, using the second composite
+without claiming either of its cells again. Both contracts exercise the
+same dependency chain.
 
 ```c filename=dependent_pair.c
 struct node {
@@ -29,7 +29,7 @@ void probe(struct node* node) {
     requires node->left != 0;
     owns pair(node);
     owns pair(node->left->left);
-    owns pair(node->left->left->left);
+    owns pair(node->left->left->left->left);
 }
 
 contract void DependentPair(struct node* node) {
@@ -37,7 +37,7 @@ contract void DependentPair(struct node* node) {
     requires node->left != 0;
     owns pair(node);
     owns pair(node->left->left);
-    owns pair(node->left->left->left);
+    owns pair(node->left->left->left->left);
 }
 ```
 
