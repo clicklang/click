@@ -1,7 +1,9 @@
-# `solve` proves a `size_t`-bounded viewable range from a constant 32-bit one
+# A 32-bit byte range supplies the same view at a `size_t` bound
 
-`viewable(bytes[0..3])` and `viewable(bytes[0..n])` with `n == 3u64` name the same
-bytes, so the wide range follows from the stated 32-bit one.
+The constant endpoints describe the same three bytes at either index width.
+The proof establishes containment for the constant wide range and uses
+`n == 3u64` to prove containment for the symbolic wide range. Both views
+follow from the original 32-bit range.
 
 ```c filename=solve_proves_wide_viewable_from_a_constant_32_bit_range.c
 uint64 f(uint8 bytes[], uint64 n) {
@@ -17,12 +19,23 @@ uint64 f(uint8 bytes[], uint64 n) {
     requires n == 3u64;
 
     ensures result == 0u64 by {
-        have viewable(bytes[0..n]) by {
-            solve();
+        have contains(memory(bytes[0..3]), memory(bytes[0..3u64])) by {
+            normalize();
         }
-        have viewable(bytes[0..3u64]) by {
-            solve();
+        have viewable(memory(bytes[0..3u64])) by {
+            apply(click::separation::viewable_restrict(memory(bytes[0..3]), memory(bytes[0..3u64])));
+            known();
         }
+        have contains(memory(bytes[0..3]), memory(bytes[0..n])) by {
+            rewrite(n, 3u64);
+            known();
+        }
+        have viewable(memory(bytes[0..n])) by {
+            apply(click::separation::viewable_restrict(memory(bytes[0..3]), memory(bytes[0..n])));
+            known();
+        }
+        step();
+        solve();
     }
 }
 ```
