@@ -43,6 +43,8 @@ void erase_dummy(struct node *node, struct node *parent) {
 ```
 
 ```click
+import click::separation;
+
 verifying "rb_augment_callbacks.c";
 
 contract void Propagate(struct node* node, struct node* stop) {
@@ -85,8 +87,32 @@ void erase_augmented(struct node* node, struct node* parent,
     ensures parent->left == old(parent->left);
     ensures parent->right == old(parent->right);
 } by {
-    with(callback_suite(augment)) {
-    }
+    have separate(callback_suite(augment), memory(*parent)) by { known(); }
+    observe(callback_suite(augment));
+    apply(separation::contains_refl(memory(*parent)));
+    apply(separation::separate_restrict(callback_suite(augment), memory(*parent), memory(augment->propagate), memory(*parent)));
+    apply(separation::separate_restrict(callback_suite(augment), memory(*parent), memory(augment->copy), memory(*parent)));
+    apply(separation::separate_restrict(callback_suite(augment), memory(*parent), memory(augment->rotate), memory(*parent)));
+    apply(separation::separate_star(memory(augment->propagate), memory(augment->copy), memory(*parent)));
+    apply(separation::contains_joined_ranges(augment as (int32 *), 0, 2, 4));
+    apply(separation::separate_restrict(
+        memory(augment->propagate) * memory(augment->copy), memory(*parent),
+        memory((augment as (int32 *))[0..4]), memory(*parent)
+    ));
+    apply(separation::separate_star(memory((augment as (int32 *))[0..4]), memory(augment->rotate), memory(*parent)));
+    apply(separation::contains_joined_ranges(augment as (int32 *), 0, 4, 6));
+    apply(separation::separate_restrict(
+        memory((augment as (int32 *))[0..4]) * memory(augment->rotate), memory(*parent),
+        memory(*augment), memory(*parent)
+    ));
+    apply(separation::contains_subrange(parent as (int32 *), 0, 4, 0, 2));
+    apply(separation::contains_subrange(parent as (int32 *), 0, 4, 2, 4));
+    apply(separation::contains_refl(memory(*augment)));
+    apply(separation::separate_restrict(memory(*augment), memory(*parent), memory(*augment), memory(parent->left)));
+    apply(separation::separate_restrict(memory(*augment), memory(*parent), memory(*augment), memory(parent->right)));
+    step();
+    step();
+    step();
 }
 ```
 
