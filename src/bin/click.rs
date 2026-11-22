@@ -1278,38 +1278,29 @@ int32 check(struct link* node) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    const SHARED_POPULATION_FIXTURE: &str =
+        include_str!("../../mdtests/shared_heap_population_certification.md");
+
     #[test]
     #[ignore = "nightly: 6s in the parallel gate"]
     fn tautological_ensure_preserves_population_certification() {
-        let directory =
-            std::env::temp_dir().join(format!("click-certification-trace-{}", std::process::id()));
-        if directory.exists() {
-            fs::remove_dir_all(&directory).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let fixture = directory.path().join("shared_population.md");
+        let tautology = "    ensures old(p->kid) == old(p->kid);\n";
+        let baseline = SHARED_POPULATION_FIXTURE.replacen(tautology, "", 1);
+        assert_ne!(baseline, SHARED_POPULATION_FIXTURE);
+
+        for source in [baseline.as_str(), SHARED_POPULATION_FIXTURE] {
+            fs::write(&fixture, source).unwrap();
+            entry([
+                "verify".to_string(),
+                "--trace-proof".to_string(),
+                "parent_detach".to_string(),
+                fixture.display().to_string(),
+            ])
+            .unwrap();
         }
-        fs::create_dir(&directory).unwrap();
-        fs::write(
-            directory.join("shared_parent.c"),
-            include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        let sidecar = directory.join("shared_parent.click");
-        let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
-        let source = source.replacen(
-            "    produces p->kid;\n",
-            "    produces p->kid;\n    ensures old(p->kid) == old(p->kid);\n",
-            1,
-        );
-        assert!(source.contains("ensures old(p->kid) == old(p->kid);"));
-        fs::write(&sidecar, source).unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        entry([
-            "verify".to_string(),
-            "--trace-proof".to_string(),
-            "parent_detach".to_string(),
-            sidecar.display().to_string(),
-        ])
-        .unwrap();
-        fs::remove_dir_all(directory).unwrap();
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
     }
 
     // Simple claim closers must perform the same checked return exchange as
@@ -1317,23 +1308,22 @@ int32 check(struct link* node) {
     #[test]
     #[ignore = "nightly: 10s in the parallel gate"]
     fn shared_population_release_expansion_retains_lifetime() {
-        let directory = std::env::temp_dir().join(format!(
-            "click-population-release-expansion-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&directory).unwrap();
-        fs::write(
-            directory.join("shared_parent.c"),
-            include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        let sidecar = directory.join("shared_parent.click");
-        let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
-        fs::write(&sidecar, source).unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        let release_end = source.find("void parent_attach(").unwrap();
-        let solve = source[..release_end].rfind("        solve();").unwrap();
-        let line = source[..solve]
+        let directory = tempfile::tempdir().unwrap();
+        let fixture = directory.path().join("shared_population.md");
+        let source = SHARED_POPULATION_FIXTURE;
+        fs::write(&fixture, source).unwrap();
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
+        let click_start = source.find("```click\n").unwrap();
+        let release_start =
+            click_start + source[click_start..].find("void child_release(").unwrap();
+        let release_end =
+            release_start + source[release_start..].find("void parent_attach(").unwrap();
+        let final_release = "        solve();\n    } else {";
+        let final_closer = release_start
+            + source[release_start..release_end]
+                .find(final_release)
+                .unwrap();
+        let line = source[..final_closer]
             .bytes()
             .filter(|byte| *byte == b'\n')
             .count()
@@ -1341,11 +1331,12 @@ int32 check(struct link* node) {
         entry([
             "expand".to_string(),
             "--in-place".to_string(),
-            format!("{}:{line}:9", sidecar.display()),
+            format!("{}:{line}:9", fixture.display()),
         ])
         .unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        fs::remove_dir_all(directory).unwrap();
+        let expanded = fs::read_to_string(&fixture).unwrap();
+        assert_ne!(expanded, source);
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
     }
 
     #[test]
