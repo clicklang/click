@@ -6040,22 +6040,12 @@ fn retained_integer_comparison(
                 ConditionTerm::IntegerGreaterEqual(left, right)
             }
         };
-        // A comparison the operands' type range decides keeps its Integer
-        // form, so the range it states can be cited. Any other comparison
-        // uses the constructor a machine-spelled comparison of these operands
+        // The constructor a machine-spelled comparison of these operands
         // uses, so both spellings lower to one term.
-        let view = crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+        match crate::kernel::machine_integer::comparison::structural_native_comparison_view(
             &condition, true,
-        );
-        let decided = view.as_ref().is_some_and(|view| {
-            matches!(
-                view.boxed_condition(),
-                Some((ConditionTerm::Constant(_), _)) | None
-            )
-        });
-        match view
-            .filter(|_| !decided)
-            .map(|view| view.logical_condition())
+        )
+        .map(|view| view.logical_condition())
         {
             Some((native, _)) if !matches!(native, ConditionTerm::Compare { .. }) => {
                 Some(condition)
