@@ -6856,11 +6856,7 @@ fn describe_loaded_pointer_range(
     ))
 }
 
-/// The object whose address `rendered` spells, when it is `&name`. Reading
-/// through that address is the object itself: `(&value)[0]` and `*&value`
-/// are `value`, and `(&c)->field` is `c.field`. A reference parameter's
-/// carrying pointer is named this way, so its referent prints as the bare
-/// name a sidecar writes.
+/// The object whose address `rendered` spells, when it is `&name`.
 pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
     rendered
         .strip_prefix('&')
@@ -6868,7 +6864,11 @@ pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
 }
 
 fn describe_indexed_place(base: &str, index: &str) -> String {
-    if index == "0"
+    // Rust's reference carrier uses the referent's name. For C, keep the
+    // explicit load: a scalar lvalue can lower through a different read
+    // path from an index into the same object's address.
+    if rust_spelling()
+        && index == "0"
         && let Some(object) = object_at_address(base)
     {
         return object.to_string();

@@ -6086,6 +6086,28 @@ fn expansion_replays_explicit_call_requirements_inside_with() {
 }
 
 #[test]
+fn expansion_keeps_the_read_through_an_initializer_call_argument() {
+    let (source, sources) =
+        mdtest_sources("mdtests/an_initializer_produces_the_memory_it_initialized.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "caller.ensures_0";
+    let (session, verified) = ProgramVerificationSession::new(&source, &sources).unwrap();
+    let expanded =
+        crate::surface::expand_verified_function_claim_source_by_label(&source, &verified, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()))
+            .expect("verified caller claim should have a retained expansion");
+    drop(session);
+    assert!(
+        expanded.contains("have (&x)[0] == 1") && expanded.contains("rewrite((&x)[0], 1);"),
+        "{expanded}"
+    );
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn expanded_fold_preserves_machine_arithmetic_in_resource_arguments() {
     let (source, sources) =
         mdtest_sources("mdtests/iterated_ownership_released_cells_feed_an_external_claim.md");
