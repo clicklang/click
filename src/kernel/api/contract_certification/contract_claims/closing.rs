@@ -541,34 +541,28 @@ impl ContractExitObligations {
         {
             return Ok(Vec::new());
         }
-        let independent_cases;
-        let retained_cases = execution
+        let retained_entry = execution
             .entry_authority
             .as_ref()
             .map(|authority| authority.cases());
-        let cases = if deferred || retained_cases.is_some() && !context.effect_claims.is_empty() {
-            if let Some(authority) = &execution.entry_authority {
-                let entry = authority.cases();
-                &entry.guard_cases
-            } else {
-                // The independent conditional execution API has no opened
-                // contract proof. Keep its existing entry-validation route.
-                independent_cases = contract_resource_condition_cases(
-                    &context.caller,
-                    &context.function,
-                    &context.arguments,
-                    &context.entry_assumptions,
-                )
-                .ok_or_else(|| {
-                    ContractClosingRefusal::Resource(
-                        "could not create the conditional resource obligations".into(),
-                    )
-                })?;
-                &independent_cases
-            }
+        let check_guards =
+            deferred || retained_entry.is_some() && !context.effect_claims.is_empty();
+        let independent_guards;
+        let guards = if !check_guards {
+            &[][..]
+        } else if let Some(entry) = retained_entry {
+            entry
+                .closing_resource_guards()
+                .map_err(ContractClosingRefusal::Resource)?
         } else {
-            independent_cases = vec![vec![]];
-            &independent_cases
+            independent_guards = contract_resource_guards(
+                &context.caller,
+                &context.function,
+                &context.arguments,
+                &context.entry_assumptions,
+            )
+            .map_err(|error| ContractClosingRefusal::Resource(error.into_message()))?;
+            independent_guards.as_slice()
         };
         let checked_outcome = if outcome.is_exceptional {
             FunctionOutcome::Throw {
@@ -593,19 +587,48 @@ impl ContractExitObligations {
             .map(|claim| claim.key().clone())
             .collect::<Vec<_>>();
         let mut effect_paths = Vec::new();
-        for (case_index, case) in cases.iter().enumerate() {
-            let mut path = path.clone();
-            path.assumptions = assumptions_with_propositions(&path.assumptions, case);
-            let post = assumptions_with_propositions(facts.assumptions(), case);
+        let mut pending = vec![(0, Vec::new())];
+        while let Some((start, mut case)) = pending.pop() {
+            if crate::kernel::assumptions::reasoning_interrupted() {
+                return Err(ContractClosingRefusal::Resource(
+                    "checking conditional resources was interrupted".into(),
+                ));
+            }
+            // Decide guards from this checked outcome. Keep the other arm
+            // pending only for a guard whose truth this path leaves open.
+            let mut post = assumptions_with_propositions(facts.assumptions(), &case);
+            for (index, guard) in guards.iter().enumerate().skip(start) {
+                crate::instrumentation::record_deterministic_work(1);
+                let negated = negate_contract_case_proposition(guard);
+                let selected = if post.settles_exactly(guard) {
+                    guard.clone()
+                } else if post.settles_exactly(&negated) {
+                    negated
+                } else {
+                    let mut alternative = case.clone();
+                    alternative.push(negated);
+                    pending.push((index + 1, alternative));
+                    guard.clone()
+                };
+                post = post.assume_proposition(selected.clone());
+                case.push(selected);
+            }
             if post.has_retained_contradiction() {
                 continue;
             }
+            let mut path = path.clone();
+            path.assumptions = assumptions_with_propositions(&path.assumptions, &case);
             path.post_assumptions = Some(post);
-            let prepared = if let Some(entry) = retained_cases {
-                let selected = if deferred || !context.effect_claims.is_empty() {
-                    &entry.cases[case_index].closing_entry
-                } else {
+            let prepared = if let Some(entry) = retained_entry {
+                let case_entry;
+                let selected = if case.is_empty() {
                     &entry.closing_entry
+                } else {
+                    case_entry = entry
+                        .closing_entry
+                        .for_resource_case(&context.function, &case)
+                        .map_err(ContractClosingRefusal::Resource)?;
+                    &case_entry
                 };
                 prepare_closing_path(
                     &context.function,

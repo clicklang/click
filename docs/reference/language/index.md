@@ -2937,6 +2937,9 @@ resource owned_item(item: struct item*) {
 ```
 
 The conditional body gives a nullable factory one uniform result resource.
+The condition must be a well-typed proposition over values in scope. It may
+remain symbolic when the resource is declared. The proof checks the resource
+obligations for the alternatives that can occur.
 On the null branch the body is empty. On the success branch it packages both
 access and lifetime authority. A read-only helper can `views owned_item(item)`
 without gaining the ability to free it; a destructor must consume and unfold

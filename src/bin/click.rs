@@ -2680,6 +2680,35 @@ void probe(struct node *node) {{
         verify("views node->left;\nviews node->left->left;").unwrap();
     }
 
+    #[test]
+    fn contract_with_many_guards_reaches_the_return_obligation() {
+        let directory = tempfile::tempdir().unwrap();
+        let parameters = (0..14)
+            .map(|index| format!("int32 n{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let clauses = (0..14)
+            .map(|index| format!("    if n{index} > 0 {{ produces ticket({index}); }}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(
+            directory.path().join("f.c"),
+            format!("void f({parameters}) {{}}\n"),
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(
+            &sidecar,
+            format!(
+                "verifying \"f.c\";\nabstract resource ticket(n: int32);\nvoid f({parameters}) {{\n{clauses}\n}}\n"
+            ),
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("contract exit refused:\n"), "{error}");
+        assert!(error.contains("ticket(0)"), "{error}");
+    }
+
     /// A failure at a C operation names that statement. A proof failure with
     /// no site of its own is located at the declaration being verified.
     #[test]
