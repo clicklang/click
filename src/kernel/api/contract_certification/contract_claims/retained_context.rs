@@ -28,7 +28,7 @@ impl std::fmt::Debug for RetainedClosingEntry {
 }
 
 impl PreparedContractEntryCases {
-    pub(super) fn closing_resource_guards(&self) -> Result<&[Proposition], String> {
+    pub(super) fn closing_resource_guards(&self) -> Result<&[Proposition], ContractClosingRefusal> {
         if let Some(guards) = self.resource_guards.get() {
             return Ok(guards);
         }
@@ -51,8 +51,7 @@ impl PreparedContractEntryCases {
             &self.function,
             &entry.arguments,
             &entry.assumptions.clone().assume_entry_clause_spans(),
-        )
-        .map_err(ContractEntryRefusal::into_message)?;
+        )?;
         Ok(self.resource_guards.get_or_init(|| guards))
     }
 }
@@ -154,19 +153,27 @@ impl RetainedClosingEntry {
         &self,
         function: &ProgramFunction,
         guards: &[Proposition],
-    ) -> Result<Self, String> {
+    ) -> Result<Self, ContractClosingRefusal> {
         // Use only entry premises and the pre-state guard values selected
         // for this outcome. Other facts proved by the body are not entry facts.
         let assumptions = assumptions_with_propositions(&self.assumptions, guards);
         let mut state = program_function_entry_state(&self.caller, function, &self.arguments)
-            .ok_or("could not rebind arguments for a contract return check")?;
+            .ok_or_else(|| {
+                ContractClosingRefusal::Internal(
+                    "could not rebind arguments for a contract return check".into(),
+                )
+            })?;
         if !function
             .composite_resource_definitions()
             .iter()
             .any(CompositeResourceDefinition::is_recursive)
         {
-            let resources = expand_certification_exit(function, &state, &assumptions)
-                .ok_or("could not expand the entry resources for a contract return check")?;
+            let resources =
+                expand_certification_exit(function, &state, &assumptions).ok_or_else(|| {
+                    ContractClosingRefusal::Incomplete(
+                        "could not expand the entry resources for a contract return check".into(),
+                    )
+                })?;
             state = state.with_resource_context(resources);
         }
         Ok(Self::from_producer(
@@ -543,6 +550,67 @@ mod tests {
         assert!(Arc::ptr_eq(&case.checked, &entry.checked));
         assert!(case.assumptions.proves_exact(&guards[0]));
         assert!(!entry.assumptions.proves_exact(&guards[0]));
+    }
+
+    #[test]
+    fn a_deferred_return_without_its_recorded_reason_is_an_internal_error() {
+        let (function, entry, path, outcome) = fixture(0, 0);
+        let result = prepare_closing_path(
+            &function,
+            &path,
+            &entry.closing_entry,
+            &outcome,
+            vec![],
+            false,
+            true,
+            None,
+            false,
+            None,
+        );
+        let Err(failure) = result else {
+            panic!("a deferred return requires its original reason");
+        };
+        assert!(matches!(
+            failure.into_closing_refusal(),
+            ContractClosingRefusal::Internal(message) if message.contains("no valid boundary error")
+        ));
+    }
+
+    #[test]
+    fn a_write_outside_the_allowed_effect_ranges_reports_the_range() {
+        let (function, entry, path, outcome) = fixture(0, 0);
+        let mut prepared = prepare_closing_path(
+            &function,
+            &path,
+            &entry.closing_entry,
+            &outcome,
+            vec![],
+            false,
+            false,
+            None,
+            false,
+            None,
+        )
+        .unwrap();
+        let memory = prepared.caller_state.memory().clone();
+        let address = Address {
+            base: "global:counter".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let extent = crate::kernel::AccessExtent::Bytes(4);
+        let range = MemoryRange::of_access(&address, extent);
+        prepared.effect_facts = vec![crate::kernel::ExecutionPureFact::certified(
+            Proposition::MemoryMutatesOnly {
+                before: memory.clone(),
+                after: memory,
+                writes: vec![(address, extent)],
+            },
+        )]
+        .into();
+        assert!(matches!(
+            check_effect_on_prepared_path(&function, &prepared, &prepared.assumptions),
+            Err(ContractClosingRefusal::Range(actual)) if actual == range
+        ));
     }
 
     mod scaling_tests {
