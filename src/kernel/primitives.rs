@@ -8221,6 +8221,7 @@ pub enum RuntimeError {
     /// whose fields do not fit its variant. The message says which.
     EnumVariant(String),
     IndeterminatePointeeType,
+    UnsupportedPointerSubtractionOffsets,
     WrongArity {
         expected: usize,
         actual: usize,

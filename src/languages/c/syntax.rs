@@ -7115,6 +7115,7 @@ fn is_builtin_type_start(name: &str) -> bool {
             | "long"
             | "size_t"
             | "ssize_t"
+            | "ptrdiff_t"
             | "int8_t"
             | "int16_t"
             | "int64_t"
@@ -11327,7 +11328,7 @@ impl Parser {
                 "uint8" | "uint8_t" => InterfaceType::UInt8,
                 "uint16" | "uint16_t" => InterfaceType::UInt16,
                 "uint32" | "uint32_t" => InterfaceType::UInt32,
-                "int64" | "ssize_t" => InterfaceType::Int64(LongRank::Long),
+                "int64" | "ssize_t" | "ptrdiff_t" => InterfaceType::Int64(LongRank::Long),
                 "uint64" | "size_t" => InterfaceType::UInt64(LongRank::Long),
                 "int64_t" => InterfaceType::Int64(self.int64_t_rank),
                 "uint64_t" => InterfaceType::UInt64(self.int64_t_rank),
