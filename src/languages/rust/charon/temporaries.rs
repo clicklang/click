@@ -423,6 +423,7 @@ pub(super) fn substitute_pure_values(
         // borrow into a slice operation.
         fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
         fold_slice_coercion_operands(block, &substitutable, &mut removed);
+        fold_closure_argument(block, &substitutable, &mut removed);
         if !constant_initializers.is_empty() {
             fold_constant_remainder_casts(
                 &mut block.statements,
@@ -552,6 +553,40 @@ fn fold_adjacent_slice_borrows(
             }
         }
         statements.push(statement);
+    }
+}
+
+/// A closure built immediately for the first argument is evaluated there.
+/// Restrict this to the first argument so its captures still run before
+/// all other argument preparation.
+fn fold_closure_argument(
+    block: &mut MirBlock,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let T::Call {
+        arguments,
+        through_pointer: false,
+        ..
+    } = &mut block.terminator
+    else {
+        return;
+    };
+    let Some(argument @ E::Local { .. }) = arguments.first_mut() else {
+        return;
+    };
+    let Some(S::Assign {
+        target: E::Local { name },
+        value: value @ E::ClosureInstance { .. },
+    }) = block.statements.iter().rfind(
+        |statement| !matches!(statement, S::Site { site } if Some(*site) == block.terminator_site),
+    )
+    else {
+        return;
+    };
+    if matches!(argument, E::Local { name: read } if read == name) && substitutable(name) {
+        *argument = value.clone();
+        removed.insert(name.clone());
     }
 }
 
@@ -3894,6 +3929,44 @@ mod tests {
         super::substitute_pure_values(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
         let names = locals.into_iter().map(|local| local.name).collect();
         (names, blocks.pop().unwrap())
+    }
+
+    #[test]
+    fn a_closure_moves_only_into_its_immediate_first_argument() {
+        let closure = E::ClosureInstance {
+            function: "closure_body".into(),
+            captures: vec![local("a")],
+            value_type: Type::FnPointer {
+                parameters: vec![Type::U32],
+                result: Box::new(Type::U32),
+            },
+        };
+        for (arguments, intervening_write, folded) in [
+            (vec![local("t1"), local("b")], false, true),
+            (vec![local("b"), local("t1")], false, false),
+            (vec![local("t1"), local("t1")], false, false),
+            (vec![local("t1"), local("b")], true, false),
+        ] {
+            let mut statements = vec![assign("t1", closure.clone())];
+            statements.extend(intervening_write.then(|| assign("a", local("b"))));
+            let (locals, block) = substituted(
+                statements,
+                T::Call {
+                    function: "apply".into(),
+                    arguments,
+                    owned_arguments: vec![],
+                    through_pointer: false,
+                    destination: None,
+                    target: 1,
+                    result: None,
+                },
+            );
+            assert_eq!(!locals.iter().any(|name| name == "t1"), folded);
+            let T::Call { arguments, .. } = block.terminator else {
+                unreachable!("the call remains in place");
+            };
+            assert_eq!(matches!(arguments[0], E::ClosureInstance { .. }), folded);
+        }
     }
 
     #[test]
