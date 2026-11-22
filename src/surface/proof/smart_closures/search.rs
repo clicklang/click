@@ -6297,12 +6297,61 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .into_iter()
                 .map(|(selector, _)| selector.clone()),
         );
+        let pointer_field = match surface_goal {
+            ClickProposition::Comparison {
+                left: read @ ContractExpression::Field { .. },
+                operator: ComparisonOperator::Equal,
+                right,
+            } if matches!(right, ContractExpression::IntegerLiteral(value) if value == "0")
+                && matches!(
+                    search_input.goal().and_then(Proposition::condition_native),
+                    Some((
+                        ConditionTerm::PointerEqual(..) | ConditionTerm::AddressEqual(..),
+                        true
+                    ))
+                ) =>
+            {
+                Some(read)
+            }
+            _ => None,
+        };
         let mut tried = BTreeSet::new();
         for selector in selectors {
             if (names_result && !crate::surface::program_point_can_name_result(Some(&selector)))
                 || !tried.insert(selector.clone())
             {
                 continue;
+            }
+            // An exact equality between the two reads lets the historical
+            // null fact close by rewrite. Both facts must check in the
+            // ordinary proof; a failed candidate leaves the goal alone.
+            if let Some(read) = pointer_field {
+                let equality = ClickProposition::Comparison {
+                    left: read.clone(),
+                    operator: ComparisonOperator::Equal,
+                    right: ContractExpression::At {
+                        selector: selector.clone(),
+                        expression: Box::new(read.clone()),
+                    },
+                };
+                let proof = ProofCertificate::from_steps(vec![ProofStep::Known])
+                    .expect("known is an ordinary certificate step");
+                let steps = vec![
+                    ProofStep::Have {
+                        proposition: equality.clone(),
+                        proof: Box::new(proof),
+                    },
+                    ProofStep::Rewrite(equality),
+                    ProofStep::Known,
+                ];
+                if let Some(proof) = attempt::candidate_outcome(
+                    search_input
+                        .driver()
+                        .apply_ordinary_transport_steps(surface_goal, steps),
+                )? && proof.is_complete()
+                {
+                    return Ok(Some(proof));
+                }
             }
             let source = ClickProposition::At {
                 selector,
