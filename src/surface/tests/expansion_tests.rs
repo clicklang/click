@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn exposed_resource_paths_replay_after_expansion() {
+    for (fixture, claim) in [
+        ("mdtests/exposed_child_paths.md", "by_unfold.contract"),
+        ("mdtests/exposed_child_paths.md", "by_scope.contract"),
+        (
+            "mdtests/open_resource_member_values.md",
+            "read_witness.contract",
+        ),
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn refolds_replay_with_the_opened_witness() {
     let (source, program) = mdtest_sources("mdtests/refold_reuses_the_opened_witness.md");
     let program = crate::cli::source_refs(&program);
@@ -26821,34 +26842,12 @@ fn returned_member_domain_access_expands_and_replays() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
-fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
-    let (source, sources) =
-        mdtest_sources("mdtests/resource_unfold_field_binding_rejects_consumed_read.md");
-    let sources = sources
-        .iter()
-        .map(|(name, text)| (name.as_str(), text.as_str()))
-        .collect::<Vec<_>>();
-    let error = verify_c_sources(&source, &sources).unwrap_err();
-    assert!(
-        error.message().contains("before.prefix"),
-        "{}",
-        error.report()
-    );
-    assert!(
-        error.message().contains("unfold(before)` consumed it"),
-        "{}",
-        error.report()
-    );
-    // Only the intentionally invalid invariant changes in the positive control.
-    let control = source.replace(
-        "invariant 0 <= i and i <= old(before.prefix);",
-        "invariant 0 <= i and i <= p;",
-    );
-    assert_ne!(control, source);
-    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
-    assert!(!source.contains("transport("), "{source}");
-    let expanded = expand_c_claim_source_by_label(&control, &sources, "claim.contract").unwrap();
+#[ignore = "nightly: opened field, preservation expansion and cold replay"]
+fn opened_field_replays_with_ordinary_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/resource_unfold_reads_the_opened_field.md");
+    let sources = crate::cli::source_refs(&sources);
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "claim.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve_for_claim("claim.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())

@@ -1,9 +1,9 @@
-# An unfold names the child it leaves unbound
+# A partial unfold pattern leaves the child accessible by its path
 
-Unfolding a resource with a named child must bind that child. The refusal
-names the child and the binding to write.
+The proof binds the parent's fields and opens the child through its slot.
+An explicit fold then selects the replacement child.
 
-```c filename=named_child_unfold_without_binding_rejected.c
+```c filename=named_child_unfold_keeps_its_path.c
 #include <pthread.h>
 struct pair { pthread_mutex_t mu; int a; int b; };
 void copy_across(struct pair *p) {
@@ -16,7 +16,7 @@ void copy_across(struct pair *p) {
 ```click
 target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
-verifying "named_child_unfold_without_binding_rejected.c";
+verifying "named_child_unfold_keeps_its_path.c";
 resource cell(p: struct pair*) {
     field v: int32;
     owns p->b;
@@ -35,6 +35,7 @@ void copy_across(struct pair *p) {
 } by {
     let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
     let { a: a, b: b } = unfold(state);
+    unfold(state.second);
     step();
     let copied = fold(cell(p), { v: p->b });
     let restored = fold(pair_state(p), { a: p->a, b: p->b, second: copied });
@@ -45,5 +46,5 @@ void copy_across(struct pair *p) {
 ```
 
 ```expect
-fail: unfold of `pair_state` must bind its named child `second`
+pass
 ```

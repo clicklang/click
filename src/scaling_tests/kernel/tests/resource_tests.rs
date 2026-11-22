@@ -644,51 +644,61 @@ fn independent_children_kernel_work_ignores_unrelated_instances() {
         ("left".into(), InstanceId::from_variable(Variable(501))),
         ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
-    let mut samples = Vec::new();
-    for size in [16, 32, 64, 128] {
-        let mut state = initial.clone();
-        for identity in 10_000..10_000 + size {
-            state.resources.record_instance_consumption(
-                InstanceId::from_variable(Variable(identity)),
-                Some(InstanceConsumption::Unfold),
-            );
+    let slot = ["left".to_owned()];
+    for selected in [Some(children.as_slice()), None] {
+        let mut samples = Vec::new();
+        for size in [16, 32, 64, 128] {
+            let mut state = initial.clone();
+            for identity in 10_000..10_000 + size {
+                state.resources.record_instance_consumption(
+                    InstanceId::from_variable(Variable(identity)),
+                    Some(InstanceConsumption::FoldChild {
+                        parent: instance.identity(),
+                        slot: "unrelated".into(),
+                    }),
+                );
+            }
+            for identity in 2..=size {
+                let mut unrelated = instance.clone();
+                unrelated.identity = InstanceId::from_variable(Variable(identity));
+                state.resources = state
+                    .resources
+                    .unchecked_with_fact(ResourceFact::own(Resource::Instance(unrelated)));
+            }
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let open = crate::kernel::rewrite_resource_instance_selecting_children(
+                    &state,
+                    &instance,
+                    &definition,
+                    std::slice::from_ref(&definition),
+                    &assumptions,
+                    true,
+                    selected,
+                )
+                .unwrap()
+                .state;
+                assert!(open.instance_field_scope.is_empty());
+                assert!(
+                    open.resource_instance_at_path(instance.identity(), &slot)
+                        .is_some()
+                );
+                crate::kernel::rewrite_resource_instance_selecting_children(
+                    &open,
+                    &instance,
+                    &definition,
+                    std::slice::from_ref(&definition),
+                    &assumptions,
+                    false,
+                    selected,
+                )
+                .unwrap()
+            });
+            assert!(work > 0);
+            samples.push(work);
         }
-        for identity in 2..=size {
-            let mut unrelated = instance.clone();
-            unrelated.identity = InstanceId::from_variable(Variable(identity));
-            state.resources = state
-                .resources
-                .unchecked_with_fact(ResourceFact::own(Resource::Instance(unrelated)));
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] + 128, "{samples:?}");
         }
-        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let open = crate::kernel::rewrite_resource_instance_selecting_children(
-                &state,
-                &instance,
-                &definition,
-                std::slice::from_ref(&definition),
-                &assumptions,
-                true,
-                Some(&children),
-            )
-            .unwrap()
-            .state;
-            assert!(open.instance_field_scope.is_empty());
-            crate::kernel::rewrite_resource_instance_selecting_children(
-                &open,
-                &instance,
-                &definition,
-                std::slice::from_ref(&definition),
-                &assumptions,
-                false,
-                Some(&children),
-            )
-            .unwrap()
-        });
-        assert!(work > 0);
-        samples.push(work);
-    }
-    for pair in samples.windows(2) {
-        assert!(pair[1] <= pair[0] + 128, "{samples:?}");
     }
 }
 

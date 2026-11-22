@@ -3283,6 +3283,9 @@ path out, including a function return. For an ordinary named instance,
 `with(c) { ... }` selects the same instance as `unfold(c)`. The scope must
 restore its original identity and field values. If the proof already restored
 that exact instance with `fold(c)`, the scope closes without another fold.
+For a named parent, `with(r)` exposes its children under paths such as
+`r.child`. The closing fold takes those same children back. Nested `with`
+blocks can use a child path directly.
 
 Use a family call for unnamed resources, including population members and
 viewed resources. Opening and restoring a population member preserves its
@@ -3724,6 +3727,13 @@ can mix these labels whether the resource is selected by name or by a family
 call. Witness bindings need a live execution frontier before function exit.
 See [`unfold_binds_witness_and_child.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_binds_witness_and_child.md).
 
+After `unfold(r)`, a child from slot `child` is held under `r.child`. An alias
+such as `let { child: c } = unfold(r)` names that same instance. Resource
+tactics on the path require the exposed child to be held. A model field or
+`where` witness of the open parent, such as `r.tag` or `r.base`, reads the
+value captured at the opening. A field read after refolding reads the new
+folded instance's field. See [the checked child path example](https://github.com/clicklang/click/blob/master/mdtests/exposed_child_paths.md).
+
 **Accepts** a declared resource with a body that the current state holds
 directly, owned or viewed, in a C function proof (at the execution frontier
 before exit, or at a function outcome after the C has returned) or in a `tactic`'s
@@ -3778,6 +3788,9 @@ consume the contained resource facts, and produce the named composite resource.
 Pure facts remain available. Refolding the same instance reuses its opening's
 `let ... where` witness values and checks their facts at the current state.
 This also applies to the closing fold of a `with` block.
+`fold(r)` supplies the exact children retained from `unfold(r)`. Each must
+be held in folded form when the parent is restored. To supply a replacement,
+use the explicit construction map and name the replacement in its slot.
 Folding a definition whose body views memory makes
 the head hold that borrow open until the head is unfolded or consumed. At a
 function outcome, `fold` also [creates an ordinary abstract
@@ -4080,8 +4093,8 @@ decided:
 Write `observe(c)` for a named folded instance you own. Its own fields supply the
 body arguments and its immediate memory permissions become read-only views
 supported by the instance. `observe(at(point, c))` selects the saved instance
-and requires it to still be held and folded. Use `unfold` to bind named children
-or prove facts that need their fields.
+and requires it to still be held and folded. Use `unfold` to expose named
+children, then `observe(r.child)` to observe an exposed child.
 
 **Outside it**, with what to write instead:
 

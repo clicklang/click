@@ -107,6 +107,10 @@ impl ModelFieldOrigin {
 }
 
 thread_local! {
+    static OPENED_CHILD_IDS: std::cell::RefCell<
+        std::collections::HashMap<crate::kernel::primitives::ResourceOccurrenceId, std::collections::HashMap<String, InstanceId>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+    static OPENED_CHILD_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static MODEL_FIELD_VARIABLES: std::cell::RefCell<
         std::collections::HashMap<Variable, ModelFieldOrigin>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
@@ -124,6 +128,36 @@ thread_local! {
     static POPULATION_ENTRY_COUNTS: std::cell::RefCell<
         std::collections::HashMap<Variable, PopulationEntryCount>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The default identity of a child exposed from this exact owned occurrence.
+/// Replaying an opening selects the same ID; folding a replacement creates a
+/// new occurrence. These instance-only IDs are disjoint from source IDs and
+/// the kernel execution counter.
+pub(super) fn opened_child_identity(
+    parent: crate::kernel::primitives::ResourceOccurrenceId,
+    slot: &str,
+) -> Option<InstanceId> {
+    crate::instrumentation::record_deterministic_work(1);
+    OPENED_CHILD_IDS.with(|registry| {
+        let mut registry = registry.borrow_mut();
+        let children = registry.entry(parent).or_default();
+        if let Some(identity) = children.get(slot) {
+            return Some(*identity);
+        }
+        OPENED_CHILD_COUNT.with(|count| {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1 << 62);
+            if count.get() >= MAX_REGISTERED {
+                return None;
+            }
+            count.set(count.get() + 1);
+            let identity = InstanceId::from_variable(Variable(
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            ));
+            children.insert(slot.to_owned(), identity);
+            Some(identity)
+        })
+    })
 }
 
 /// Records one fresh field variable. One insert, at the site that already
@@ -253,6 +287,8 @@ pub(crate) fn restore_model_field_registry(state: &ModelFieldRegistryState) {
 }
 
 pub(crate) fn clear_model_field_registry() {
+    OPENED_CHILD_IDS.with(|registry| registry.borrow_mut().clear());
+    OPENED_CHILD_COUNT.with(|count| count.set(0));
     MODEL_FIELD_VARIABLES.with(|registry| registry.borrow_mut().clear());
     INSTANCE_SPELLINGS.with(|registry| registry.borrow_mut().clear());
     INSTANCE_FIELD_NAMES.with(|registry| registry.borrow_mut().clear());

@@ -1338,7 +1338,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
             .after_state
             .resources()
             .instance_consumption(instance.identity()),
-        Some(crate::kernel::primitives::InstanceConsumption::Unfold)
+        Some(crate::kernel::primitives::InstanceConsumption::Opened { .. })
     ));
     let observation = constructed.return_observation.clone().unwrap();
     assert_eq!(observation.after, produced.state);

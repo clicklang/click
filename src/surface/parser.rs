@@ -8305,7 +8305,7 @@ impl Parser {
                 self.position += 1;
                 continue;
             }
-            let instance = self.expect_ident("caller resource instance")?;
+            let instance = self.expect_resource_path()?;
             crate::instrumentation::record_deterministic_work(1);
             let Some(declaration) = declared.get(&binder) else {
                 return Err(self.error(format!(
@@ -8320,12 +8320,20 @@ impl Parser {
             if !bound.insert(binder.clone()) {
                 return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
             }
-            let Some((identity, family)) = self.names.resource_bindings.get(&instance).cloned()
+            let (root, path) = instance.split_once('.').unwrap_or((&instance, ""));
+            let Some((identity, root_family)) = self.names.resource_bindings.get(root).cloned()
             else {
-                return Err(self.unknown_instance(&instance, "resource instance"));
+                return Err(self.unknown_instance(root, "resource instance"));
             };
+            let slots = path
+                .split('.')
+                .filter(|slot| !slot.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let family = self.resource_path_family(&root_family, &slots);
             if let Some(expected) = &declaration.family
-                && family != *expected
+                && let Some(family) = family
+                && family != expected
                 && !(expected == "mutex_use" && family == "mutex_live")
                 && !self.child_slot_identities.contains(&identity)
             {
@@ -8333,7 +8341,7 @@ impl Parser {
                     "binder `{binder}` expects resource `{expected}`, but `{instance}` is `{family}`"
                 )));
             }
-            if !instances.insert(identity) {
+            if !instances.insert((identity, path.to_owned())) {
                 return Err(self.error(format!(
                     "resource instance `{instance}` cannot supply two binders of `{callee}`"
                 )));
@@ -9040,6 +9048,25 @@ impl Parser {
         }
         self.position = start;
         self.parse_resource_target(ResourceAccessMode::Own)
+    }
+
+    fn expect_resource_path(&mut self) -> Result<String, ClickError> {
+        let mut name = self.expect_ident("resource instance")?;
+        while self.peek() == Some(&Token::Dot) {
+            self.position += 1;
+            name.push('.');
+            name.push_str(&self.expect_ident("child resource name")?);
+        }
+        Ok(name)
+    }
+
+    fn resource_path_family<'a>(&'a self, family: &'a str, path: &[String]) -> Option<&'a str> {
+        path.iter().try_fold(family, |family, slot| {
+            self.declared_resource_child_slots
+                .get(family)?
+                .get(slot)?
+                .as_deref()
+        })
     }
 
     fn parse_region_proof_items(&mut self) -> Result<Vec<StructuralItem>, ClickError> {
@@ -10629,6 +10656,16 @@ impl Parser {
             if !slots.insert(slot.clone()) || !names.insert(name.clone()) {
                 return Err(self.error("duplicate child slot or resource name"));
             }
+            if !introduce && let Some((root, _)) = name.split_once('.') {
+                let identity = self
+                    .names
+                    .resource_bindings
+                    .get(root)
+                    .and_then(|(identity, _)| identity.instance())
+                    .ok_or_else(|| self.unknown_instance(root, "child resource"))?;
+                result.push((slot, name, identity));
+                continue;
+            }
             if self.names.contains(NameKind::ContractBinding, &name)
                 || matches!(
                     self.specification_binding_kind(&name),
@@ -10910,11 +10947,13 @@ impl Parser {
             ResourceClause::Named { binding, resource } => {
                 // A child keeps its parent's clause as a placeholder until
                 // its actual resource arguments are known.
+                let (root, _) = binding.name.split_once('.').unwrap_or((&binding.name, ""));
                 let family = self
                     .names
                     .resource_bindings
-                    .get(&binding.name)
-                    .map(|(_, family)| family.clone());
+                    .get(root)
+                    .and_then(|(_, family)| self.resource_path_family(family, &binding.children))
+                    .map(str::to_owned);
                 let declared_witnesses = family
                     .as_ref()
                     .and_then(|family| self.declared_resource_witnesses.get(family));
@@ -11008,7 +11047,7 @@ impl Parser {
                     }),
                 };
                 if is_child {
-                    children.push((key, self.expect_ident("child resource name")?));
+                    children.push((key, self.expect_resource_path()?));
                 } else {
                     let value = self.parse_contract_expression()?;
                     let value = if declared.iter().any(|field| {
@@ -11087,16 +11126,18 @@ impl Parser {
             else {
                 continue;
             };
-            let Some((_, family)) = self.names.resource_bindings.get(child) else {
+            let mut path = child.split('.');
+            let root = path.next().expect("a child path has a root");
+            let Some((_, family)) = self.names.resource_bindings.get(root) else {
                 continue;
             };
             fields.push((
                 field.name.clone(),
                 ContractExpression::ResourceField(ResourceFieldAccess {
-                    owner: child.clone(),
+                    owner: root.to_owned(),
                     resource_name: family.clone(),
                     identity: (*identity).into(),
-                    children: vec![],
+                    children: path.map(str::to_owned).collect(),
                     field: child_field.to_string(),
                     field_index: 0,
                     click_type: None,
@@ -11326,6 +11367,7 @@ impl Parser {
             } else {
                 self.parse_declared_resource_call()?
             };
+            let resource = self.hidden_binder(&resource).unwrap_or(resource);
             self.expect(Token::RParen)?;
             let tactics = self.parse_possibly_empty_tactic_block()?;
             if self.peek_ident() == Some("by") {

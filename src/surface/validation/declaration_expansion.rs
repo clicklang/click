@@ -7,6 +7,7 @@ mod tests;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct DeclaredResourceInfo {
     fields: std::sync::Arc<BTreeMap<String, (usize, ClickType)>>,
+    witnesses: std::sync::Arc<BTreeMap<String, InterfaceType>>,
     field_schema: Option<crate::kernel::ResourceFieldSchema>,
     parameter_types: Vec<InterfaceType>,
     resource_parameter_families: Vec<String>,
@@ -908,6 +909,9 @@ fn expand_declared_resource_clauses_with_rules(
                     fields: std::sync::Arc::new(definition.fields().iter().enumerate()
                         .map(|(index, field)| (field.name().to_string(), (index, field.click_type().clone())))
                         .collect()),
+                    witnesses: std::sync::Arc::new(definition.composite_body().into_iter()
+                        .flat_map(|body| body.witnesses())
+                        .map(|witness| (witness.name().to_owned(), witness.interface_type())).collect()),
                     field_schema: field_environment.as_ref().map(|environment|
                         crate::surface::lowering::resolve_resource_field_schema(definition, environment)
                     ).transpose()?,
@@ -961,6 +965,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: vec![InterfaceType::Int32Pointer, InterfaceType::Int32],
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         });
@@ -974,6 +979,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         },
@@ -988,6 +994,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         },
@@ -1002,6 +1009,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         },
@@ -1017,6 +1025,7 @@ fn expand_declared_resource_clauses_with_rules(
                 resource_parameter_families: Vec::new(),
                 parameter_types: vec![InterfaceType::VoidPointer],
                 kind: ResourceKind::Token,
+                witnesses: Default::default(),
                 child_slots: Default::default(),
                 arm_child_slots: Default::default(),
             },
@@ -1032,6 +1041,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: Vec::new(),
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         },
@@ -2345,7 +2355,7 @@ fn expand_declared_resource_clause(
             if !construction {
                 resource_definitions.refuse_ambiguous(binding.instance()?, &binding.name)?;
             }
-            let parent = if construction {
+            let mut parent = if construction {
                 name.clone()
             } else {
                 resource_definitions
@@ -2355,7 +2365,25 @@ fn expand_declared_resource_clause(
             // Unfold syntax can still carry the parser's provisional parent
             // family for a child. Keep the family resolved above, including
             // after an explicit child fold removed its slot annotation.
-            resource_definitions.record_instance(binding.instance()?, &parent, construction);
+            if binding.children.is_empty() {
+                resource_definitions.record_instance(binding.instance()?, &parent, construction);
+            } else if binding
+                .child_bindings
+                .as_ref()
+                .is_some_and(|children| !children.is_empty())
+            {
+                for slot in &binding.children {
+                    parent = resource_definitions
+                        .get(&parent)
+                        .and_then(|info| info.child_slots.get(slot))
+                        .and_then(Clone::clone)
+                        .ok_or_else(|| {
+                            ClickError::new(format!(
+                                "resource path has no unambiguous child slot `{slot}`"
+                            ))
+                        })?;
+                }
+            }
             if let Some(children) = binding.child_bindings.as_ref() {
                 let slots = resource_definitions
                     .get(&parent)
@@ -2389,6 +2417,12 @@ fn expand_declared_resource_clause(
                             "resource `{parent}` has no child slot or field `{slot}`"
                         )));
                     };
+                    if construction && child.contains('.') {
+                        // The path's root is the parent it is opened from,
+                        // not this argument's identity. The checked fold
+                        // resolves the path and checks the actual child.
+                        continue;
+                    }
                     // A slot whose resource differs between the parent's
                     // arms owns the one in the arm an enclosing proof
                     // `match` selects.
@@ -3267,8 +3301,7 @@ fn expand_declared_resource_expression_node(
                 .ok_or_else(|| {
                     ClickError::new(format!("unknown resource `{}`", access.resource_name))
                 })?;
-            // A hidden record retains child fields under their structural
-            // dotted path. Select that slot without opening the child.
+            let mut member = None;
             if !access.children.is_empty() {
                 let path = access
                     .children
@@ -3277,19 +3310,41 @@ fn expand_declared_resource_expression_node(
                     .chain(std::iter::once(access.field.as_str()))
                     .collect::<Vec<_>>()
                     .join(".");
-                if info.fields.contains_key(&path) {
-                    access.field = path;
-                    access.children.clear();
-                }
+                member = info.fields.get(&path).cloned();
             }
-            let (index, field) = info.fields.get(&access.field).ok_or_else(|| {
+            if member.is_none() {
+                let mut info = info;
+                for slot in &access.children {
+                    let family = info
+                        .child_slots
+                        .get(slot)
+                        .and_then(Option::as_ref)
+                        .ok_or_else(|| {
+                            ClickError::new(format!(
+                                "resource path has no unambiguous child slot `{slot}`"
+                            ))
+                        })?;
+                    info = resource_definitions
+                        .get(family)
+                        .ok_or_else(|| ClickError::new(format!("unknown resource `{family}`")))?;
+                }
+                member = info.fields.get(&access.field).cloned().or_else(|| {
+                    info.witnesses.get(&access.field).map(|ty| {
+                        (
+                            crate::kernel::ResourceFieldProjection::WITNESS,
+                            ClickType::Program(*ty),
+                        )
+                    })
+                });
+            }
+            let (index, field) = member.ok_or_else(|| {
                 ClickError::new(format!(
                     "resource `{}` has no field `{}`",
                     access.resource_name, access.field
                 ))
             })?;
-            access.field_index = *index;
-            access.click_type = Some(field.clone());
+            access.field_index = index;
+            access.click_type = Some(field);
             Ok(ContractExpression::ResourceField(access))
         }
         ContractExpression::ResourceCount(resource) => {

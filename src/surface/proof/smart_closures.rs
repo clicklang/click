@@ -4761,7 +4761,11 @@ fn source_backed_call_requirement_surface(
                     crate::surface::lowering::InstanceRename {
                         name: binding.instance().to_string(),
                         identity: binding.binder_identity().instance()?.into(),
-                        target_identity: Some(binding.identity().instance()?),
+                        target_identity: Some(
+                            binding
+                                .resolve_identity(&execution.core.state)?
+                                .instance()?,
+                        ),
                     },
                 ))
             })

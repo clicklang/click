@@ -3767,10 +3767,7 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
         .resources()
         .instance_consumption(access.identity.instance()?);
     let advice = match cause {
-        Some(
-            crate::kernel::InstanceConsumption::Unfold
-            | crate::kernel::InstanceConsumption::UnfoldWithWitnesses { .. },
-        ) => match &access.click_type {
+        Some(crate::kernel::InstanceConsumption::Opened { .. }) => match &access.click_type {
             Some(ClickType::Program(_)) => format!(
                 "`unfold({owner})` consumed it; name the field's folded value where the instance is \
                  unfolded with `let {{ {field}: name }} = unfold({owner});` and write `name` instead"
