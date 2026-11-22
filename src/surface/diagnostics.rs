@@ -4519,7 +4519,7 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
     pointer: &Address,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
-) -> Option<String> {
+) -> Option<(String, crate::kernel::ProgramType)> {
     for (parameter, argument) in parameter_binding
         .parameters
         .iter()
@@ -4555,8 +4555,11 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
                 && crate::kernel::LoadKind::of_type(ty.to_kernel_type())
                     .is_some_and(|read| read.reads_word_of(kind))
         });
-        if let (Some((field, _, _)), None) = (fields.next(), fields.next()) {
-            return Some(format!("{}{select}{field}", parameter.name()));
+        if let (Some((field, _, ty)), None) = (fields.next(), fields.next()) {
+            return Some((
+                format!("{}{select}{field}", parameter.name()),
+                ty.to_kernel_type(),
+            ));
         }
     }
     None
@@ -8516,6 +8519,12 @@ pub(super) fn describe_parameter_bitvector(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
+    // A constant is its literal. A local that happens to hold the same
+    // value does not name it: `b->content[0u64..n]` is not
+    // `b->content[skipped..n]`.
+    if matches!(term, MachineTerm::Constant { .. }) {
+        return None;
+    }
     for (parameter, argument) in parameter_binding
         .parameters
         .iter()
