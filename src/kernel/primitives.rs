@@ -8050,15 +8050,19 @@ impl RecursionAnchor {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TerminationErrorKind {
+    InvalidMeasure,
+    Internal,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminationError {
     pub(super) message: String,
     /// The function whose termination was being decided when the check
     /// failed, for a diagnostic to locate. It is not part of the verdict.
     pub(super) function: Option<String>,
-    /// The check refused a function-level measure because the function has
-    /// no recursive edge to rank.
-    pub(super) superfluous_recursive_measure: bool,
+    pub(super) kind: TerminationErrorKind,
 }
 
 impl VerifiedFunctionTerminationRule {}

@@ -50,7 +50,9 @@ it; shrink them if you can, but a report need not wait for that.
   links, or supply the missing argument or premises.
 - `incomplete proof`: the proof ended with a requirement still outstanding.
   Record what the report says the proof must establish and the path where it
-  is required. Add the missing steps before the proof closes. For a return
+  is required. Add the missing steps before the proof closes. For missing
+  termination evidence, follow the reported call chain to the unranked loop
+  or recursive call and prove the missing descent there. For a return
   resource, account for the units held on that path and what must go back to
   the caller. Use each owned unit once. If the resource can be assembled from
   parts already held, write the corresponding fold. If an allowed execution
@@ -63,9 +65,8 @@ it; shrink them if you can, but a report need not wait for that.
   Continue with the reported obligation when the diagnostic gives one. For
   an entry refusal, use `contract-bug` if you can show that the original
   contract satisfies the documented rule Click applied.
-- `execution refused`, `termination not established`, `invalid divergence
-  declaration`, or `unsupported proof`: investigate the reported operation,
-  termination check, declaration, or proof shape.
+- `execution refused`, `invalid divergence declaration`, or `unsupported
+  proof`: investigate the reported operation, declaration, or proof shape.
 - `unclassified verification refusal`: investigate the stated cause. If
   the trace leaves the refusal unclear, use `unclear-trace`.
 

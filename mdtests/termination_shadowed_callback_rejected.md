@@ -71,5 +71,5 @@ int32 caller(int32 n) {
 ```
 
 ```expect
-fail: could not certify termination for `caller`: it takes the address of `spin`, and a function reached through a function pointer must return without calling through one: the recursive call to `spin` is ranked by no function-level `decreases` measure
+fail: could not certify termination for `caller`: it takes the address of `spin`, which lacks the required callback termination evidence: the recursive call to `spin` is ranked by no function-level `decreases` measure
 ```

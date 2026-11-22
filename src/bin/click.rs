@@ -61,7 +61,6 @@ fn report_error(message: String) -> ! {
         "contract entry refused",
         "execution prerequisite unmet",
         "execution refused",
-        "termination not established",
         "invalid divergence declaration",
         "unsupported",
         "unsupported proof",
@@ -529,13 +528,33 @@ uint64 spell(const uint8* b, uint64 n) {
             ),
             (
                 "termination_shadowed_callback_rejected.md",
-                "termination not established:",
+                "incomplete proof:",
                 "the recursive call to `spin` is ranked by no function-level `decreases` measure",
             ),
             (
                 "program_entry_requires_loop_termination_before_completion.md",
-                "termination not established:",
+                "incomplete proof:",
                 "loop 0 declares no `decreases` measure",
+            ),
+            (
+                "c_decreases_rejects_recursive_inline_helper.md",
+                "incomplete proof:",
+                "callee `step_down` has no termination evidence",
+            ),
+            (
+                "diverges_named_contract_requires_marked_caller.md",
+                "contract error:",
+                "the named contract `Spinner` is declared `diverges`",
+            ),
+            (
+                "loop_decreases_model_function_must_decrease.md",
+                "unsuccessful search:",
+                "remained open",
+            ),
+            (
+                "termination_ordinary_proof_refuses_unproved_promise.md",
+                "tactic error:",
+                "`known` requires the current goal",
             ),
             (
                 "diverges_rejects_unjustified_marker.md",
@@ -562,6 +581,26 @@ uint64 spell(const uint8* b, uint64 n) {
         .unwrap_err();
         assert!(traced.starts_with("unsupported:"), "{traced}");
         assert!(traced.contains("proof refusal:"), "{traced}");
+    }
+
+    #[test]
+    fn a_nonrecursive_decreases_clause_is_a_contract_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(directory.path().join("f.c"), "int f(int n) { return n; }").unwrap();
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+int32 f(int32 n) {
+    decreases n;
+    ensures result == n;
+}
+"#,
+        )
+        .unwrap();
+        let report = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(report.starts_with("contract error:"), "{report}");
+        assert!(report.contains("has no recursive edge to rank"), "{report}");
     }
 
     #[test]
