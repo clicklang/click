@@ -3421,14 +3421,14 @@ impl OpenedContractEntry {
                 contract,
                 environment.byte_order_fact(),
             )
-            .map_err(RuntimeError::FunctionContract)?,
+            .map_err(crate::kernel::ContractEntryRefusal::into_runtime_error)?,
         );
         let mut facts = PureFactStore::from_ordered(&propositions);
         facts.prepare_entry_resources(caller_state.resources());
         let entry_state =
             crate::kernel::program_function_entry_state(caller_state, function, arguments)
                 .ok_or_else(|| {
-                    RuntimeError::FunctionContract(
+                    RuntimeError::ContractEntryInvariant(
                         "could not bind the function entry arguments".into(),
                     )
                 })?;

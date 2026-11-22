@@ -23,5 +23,5 @@ int32 positive(double d) {
 ```
 
 ```expect
-fail: `d >= float64_from_bits(0xc1e0000000000000u64)`
+fail: `d > float64_from_bits(0xc1e0000000200000u64)`
 ```

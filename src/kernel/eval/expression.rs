@@ -42,21 +42,6 @@ fn integer_to_float_value(value: ProgramValue, target_type: ProgramType) -> Opti
     })
 }
 
-fn float_integer_bound_bits(
-    source_type: ProgramType,
-    exponent: u32,
-    negative: bool,
-) -> Option<MachineTerm> {
-    let magnitude = 1u128.checked_shl(exponent)?;
-    Some(match source_type {
-        ProgramType::Float32 => MachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
-        ProgramType::Float64 => {
-            MachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude))
-        }
-        _ => return None,
-    })
-}
-
 fn add_float_to_integer_obligations(
     value: &MachineTerm,
     source_type: ProgramType,
@@ -75,13 +60,15 @@ fn add_float_to_integer_obligations(
         ProgramType::UInt64 => (false, 64),
         _ => return None,
     };
-    let finite = match source_type {
-        ProgramType::Float32 => {
-            ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite)
-        }
-        ProgramType::Float64 => {
-            ConditionTerm::float64_classification(value.clone(), FloatClassification::Finite)
-        }
+    let (precision, finite) = match source_type {
+        ProgramType::Float32 => (
+            f32::MANTISSA_DIGITS,
+            ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite),
+        ),
+        ProgramType::Float64 => (
+            f64::MANTISSA_DIGITS,
+            ConditionTerm::float64_classification(value.clone(), FloatClassification::Finite),
+        ),
         _ => return None,
     };
     add_proof_obligation(
@@ -90,81 +77,53 @@ fn add_float_to_integer_obligations(
         Proposition::condition_is(finite, true),
     )?;
 
-    if signed {
-        let lower = float_integer_bound_bits(source_type, bits - 1, true)?;
-        let upper = float_integer_bound_bits(source_type, bits - 1, false)?;
-        let lower = match source_type {
+    let bound = |magnitude, negative, operator| {
+        let condition = match source_type {
             ProgramType::Float32 => ConditionTerm::float32_compare(
                 value.clone(),
-                lower,
-                ComparisonOperator::GreaterEqual,
+                MachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
+                operator,
             ),
             ProgramType::Float64 => ConditionTerm::float64_compare(
                 value.clone(),
-                lower,
-                ComparisonOperator::GreaterEqual,
+                MachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude)),
+                operator,
             ),
             _ => unreachable!(),
         };
-        let upper = match source_type {
-            ProgramType::Float32 => {
-                ConditionTerm::float32_compare(value.clone(), upper, ComparisonOperator::LessThan)
-            }
-            ProgramType::Float64 => {
-                ConditionTerm::float64_compare(value.clone(), upper, ComparisonOperator::LessThan)
-            }
-            _ => unreachable!(),
-        };
-        add_proof_obligation(
-            obligations,
-            assumptions,
-            Proposition::condition_is(lower, true),
-        )?;
-        add_proof_obligation(
-            obligations,
-            assumptions,
-            Proposition::condition_is(upper, true),
-        )?;
+        Proposition::condition_is(condition, true)
+    };
+
+    let minimum_magnitude = if signed { 1u128 << (bits - 1) } else { 0 };
+    // Truncation admits values strictly above MIN - 1. If MIN - 1 is
+    // unrepresentable, MIN is the next float above that threshold.
+    let lower = if minimum_magnitude < (1u128 << precision) {
+        // An exact premise at the stronger integral bound also proves this
+        // side of the range. Look up just that bound, including +0 for unsigned.
+        let integral_bound = bound(minimum_magnitude, signed, ComparisonOperator::GreaterEqual);
+        if assumptions.proves_exact(&integral_bound) {
+            None
+        } else {
+            Some(bound(
+                minimum_magnitude + 1,
+                true,
+                ComparisonOperator::GreaterThan,
+            ))
+        }
     } else {
-        let lower = match source_type {
-            ProgramType::Float32 => ConditionTerm::float32_compare(
-                value.clone(),
-                MachineTerm::constant(0),
-                ComparisonOperator::GreaterEqual,
-            ),
-            ProgramType::Float64 => ConditionTerm::float64_compare(
-                value.clone(),
-                MachineTerm::uint64_constant(0),
-                ComparisonOperator::GreaterEqual,
-            ),
-            _ => unreachable!(),
-        };
-        let upper_bits = float_integer_bound_bits(source_type, bits, false)?;
-        let upper = match source_type {
-            ProgramType::Float32 => ConditionTerm::float32_compare(
-                value.clone(),
-                upper_bits,
-                ComparisonOperator::LessThan,
-            ),
-            ProgramType::Float64 => ConditionTerm::float64_compare(
-                value.clone(),
-                upper_bits,
-                ComparisonOperator::LessThan,
-            ),
-            _ => unreachable!(),
-        };
-        add_proof_obligation(
-            obligations,
-            assumptions,
-            Proposition::condition_is(lower, true),
-        )?;
-        add_proof_obligation(
-            obligations,
-            assumptions,
-            Proposition::condition_is(upper, true),
-        )?;
+        Some(bound(
+            minimum_magnitude,
+            true,
+            ComparisonOperator::GreaterEqual,
+        ))
+    };
+    if let Some(lower) = lower {
+        add_proof_obligation(obligations, assumptions, lower)?;
     }
-    Some(())
+
+    let upper_magnitude = 1u128 << if signed { bits - 1 } else { bits };
+    let upper = bound(upper_magnitude, false, ComparisonOperator::LessThan);
+    add_proof_obligation(obligations, assumptions, upper)
 }
 
 fn float_to_integer_conversion_value(
@@ -3583,7 +3542,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 }
                 let can_name_read = !lvalue.is_volatile() || SpecificationAccessScope::is_active();
                 let uses_entry_version = has_read_resource
-                    && (lvalue.value_type.is_object_pointer()
+                    && (lvalue.value_type.is_pointer()
                         || matches!(
                             lvalue.value_type,
                             ProgramType::Int8
@@ -3592,6 +3551,10 @@ fn read_retained_lvalue_paths_without_ranges(
                                 | ProgramType::UInt16
                                 | ProgramType::Int32
                                 | ProgramType::UInt32
+                                | ProgramType::Int64
+                                | ProgramType::UInt64
+                                | ProgramType::Int128
+                                | ProgramType::UInt128
                                 | ProgramType::Parameter(_)
                         ))
                     && pointer.base == AddressBase::ExternalArgument
@@ -3610,7 +3573,11 @@ fn read_retained_lvalue_paths_without_ranges(
                         | ProgramType::UInt8
                         | ProgramType::Int16
                         | ProgramType::UInt16
-                        | ProgramType::Int32 => point
+                        | ProgramType::Int32
+                        | ProgramType::Int64
+                        | ProgramType::UInt64
+                        | ProgramType::Int128
+                        | ProgramType::UInt128 => point
                             .entry_integer_version(pointer, LoadKind::of_type(lvalue.value_type)?),
                         ProgramType::Parameter(parameter) => {
                             point.generic_entry_version(pointer, parameter)

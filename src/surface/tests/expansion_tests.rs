@@ -6086,6 +6086,72 @@ fn expansion_replays_explicit_call_requirements_inside_with() {
 }
 
 #[test]
+fn expanded_fold_preserves_machine_arithmetic_in_resource_arguments() {
+    let (source, sources) =
+        mdtest_sources("mdtests/iterated_ownership_released_cells_feed_an_external_claim.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "recycle.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("requires (a as int32) <= ((b + 1) as int32)")
+            && expanded.contains("requires ((b + 1) as int32) <= capacity"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn computed_resource_fold_replays_without_discovery() {
+    let source = r#"
+verifying "window.c";
+resource window(capacity: int32, end: int32) {
+    field next: int32;
+    fact next <= end;
+    fact end <= capacity;
+}
+void make(int32 a, int32 b, int32 cap) {
+    requires 0 <= a and a <= b and b < cap;
+    requires defined(b + 1);
+    produces output: window(cap, b + 1);
+} by {
+    let output = fold(window(cap, b + 1), { next: a });
+    step_until(function.exit);
+    solve();
+}
+"#;
+    let sources = [("window.c", "void make(int32 a, int32 b, int32 cap) {}")];
+    let claim = "make.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn expansion_keeps_the_return_closing_fact_inside_with() {
+    let (source, sources) = mdtest_sources("mdtests/open_closing_fact_inside_block.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "set_last.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let (_, body) = expanded.split_once("void set_last(").unwrap();
+    assert!(
+        body.contains("        have p[0] > 0 or p[0] < -1 by {\n            known();\n        }\n    }\n    known();"),
+        "{expanded}"
+    );
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn expansion_keeps_explicit_return_fold_inside_with() {
     let (source, sources) = mdtest_sources("mdtests/with_accepts_an_already_restored_instance.md");
     let sources = crate::cli::source_refs(&sources);

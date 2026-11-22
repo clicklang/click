@@ -1975,6 +1975,7 @@ pub(super) fn describe_runtime_error(
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
             format!("function contract could not be applied: {message}")
         }
+        crate::kernel::RuntimeError::ContractEntryInvariant(message) => message.clone(),
         crate::kernel::RuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
             describe_pointer(mutex, parameter_binding)
@@ -2022,6 +2023,11 @@ pub(super) fn describe_runtime_error(
             "overlapping owned memory resource facts `owns {}` and `owns {}`",
             describe_memory_range(left, parameter_binding),
             describe_memory_range(right, parameter_binding)
+        ),
+        crate::kernel::RuntimeError::OverlappingContractInputView { owned, viewed } => format!(
+            "the contract's `views` clause overlaps its own `owns` clause: `{}` overlaps `{}`",
+            render_resource_fact_diagnostic(viewed, parameter_binding),
+            render_resource_fact_diagnostic(owned, parameter_binding),
         ),
         crate::kernel::RuntimeError::ProducedCompositeOverlapsHeldResource {
             produced,

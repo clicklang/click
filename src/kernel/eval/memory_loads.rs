@@ -382,6 +382,8 @@ pub(in crate::kernel) fn evaluate_indexed_read(
         };
     }
     let stored = version.indexed_integer_store_bits().cloned();
+    let entry_word =
+        stored.is_none() && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64);
     let kind = LoadKind::of_type(value_type).expect("indexed integer read");
     let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
     read_observations::record_at(&version, &pointer, kind, origin, value_type.byte_width());
@@ -421,6 +423,13 @@ pub(in crate::kernel) fn evaluate_indexed_read(
             ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
         });
     }
+    // The selected entry supplies the numeric bits. A complete load still
+    // carries the pointer representation of the observed cell.
+    let value = if entry_word {
+        complete_loaded_word(value, origin.memory(), &pointer)
+    } else {
+        value
+    };
     ExpressionPath {
         outcome: ExpressionOutcome::Value(value),
         facts,
@@ -4242,19 +4251,24 @@ pub(crate) fn canonical_cell_value(
     if let ProgramType::Parameter(parameter) = value_type {
         return AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter);
     }
+    if value_type == ProgramType::Bool
+        && let Some(value) = point_named_symbolic_read(Some(source), pointer, value_type)
+    {
+        return value;
+    }
     if let Some(read) = point_named_pointer_cell_read(source, pointer, value_type) {
         return ProgramValue::Pointer(read);
     }
     crate::kernel::cell_run_value(value_type, canonical_cell_load(source, pointer, value_type))
 }
 
-/// Name a complete object pointer cell from its typed store or entry point.
+/// Name a complete pointer cell from its typed store or entry point.
 pub(crate) fn point_named_pointer_cell_read(
     source: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<Pointer> {
-    if !value_type.is_object_pointer() {
+    if !value_type.is_pointer() {
         return None;
     }
     let version = source.ordinary_typed_version(pointer, value_type)?;

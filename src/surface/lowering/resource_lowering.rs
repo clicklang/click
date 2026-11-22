@@ -822,7 +822,8 @@ fn entry_cell_source<'a>(
     ty: ProgramType,
 ) -> &'a crate::kernel::ProgramPoint {
     if entry.entry_cell_version(pointer, ty).is_some()
-        || (crate::kernel::KernelFloatType::from_program_type(ty).is_some()
+        || ((ty == ProgramType::Bool
+            || crate::kernel::KernelFloatType::from_program_type(ty).is_some())
             && entry.has_certified_read_view())
     {
         entry

@@ -2534,6 +2534,60 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
     }
 
     #[test]
+    fn folded_input_view_overlap_reports_a_contract_error() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("f.c"),
+            "void hold(int32 *x, int32 *y) {}\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        let verify = |clauses: &str| {
+            fs::write(
+                &sidecar,
+                format!(
+                    r#"verifying "f.c";
+resource cell(p: int32*) {{ owns p[0]; }}
+resource read_cell(p: int32*) {{ views p[0]; }}
+resource wrapped_cell(p: int32*) {{ owns cell(p); }}
+void hold(int32 *x, int32 *y) {{ {clauses} }}
+"#
+                ),
+            )
+            .unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()])
+        };
+        for (clauses, owner, view) in [
+            ("owns cell(x); views cell(x);", "cell(x)", "cell(x)"),
+            ("views cell(x); owns cell(x);", "cell(x)", "cell(x)"),
+            (
+                "requires y == x; owns cell(x); views cell(y);",
+                "cell(x)",
+                "cell(y)",
+            ),
+            ("owns cell(x); views x[0];", "cell(x)", "x[0]"),
+            (
+                "owns cell(x); views read_cell(x);",
+                "cell(x)",
+                "read_cell(x)",
+            ),
+            (
+                "requires y == x; owns wrapped_cell(x); views read_cell(y);",
+                "wrapped_cell(x)",
+                "read_cell(y)",
+            ),
+        ] {
+            let error = verify(clauses).unwrap_err();
+            assert!(error.starts_with("contract error:\n"), "{error}");
+            assert!(error.contains(&format!("`views {view}`")), "{error}");
+            assert!(error.contains(&format!("`owns {owner}`")), "{error}");
+        }
+        verify("views cell(x);").unwrap();
+        verify("owns cell(x); views cell(y);").unwrap();
+        verify("owns wrapped_cell(x); views read_cell(y);").unwrap();
+    }
+
+    #[test]
     fn documented_entry_restrictions_report_contract_errors() {
         let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
         for (name, detail) in [
@@ -2555,6 +2609,28 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
             assert!(error.starts_with("contract error:\n"), "{name}: {error}");
             assert!(error.contains(detail), "{name}: {error}");
         }
+
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("startup.c"),
+            "int x; int main(void) { return 0; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("startup.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "startup.c";
+resource cell(p: int32*) { field tag: int32; owns p[0]; }
+int main() { owns data: cell(&x); }
+"#,
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("contract error:\n"), "{error}");
+        assert!(
+            error.contains("can name only the hosted stdout stream"),
+            "{error}"
+        );
     }
 
     #[test]

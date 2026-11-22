@@ -821,14 +821,21 @@ fn prove_claims_by_checked_tactics(
                 function_environment,
             )
             .map_err(|error| {
-                ClickError::new(format!(
+                let diagnostic = ClickError::new(format!(
                     "could not open contract entry for `{proof_label}`: {}",
                     crate::surface::diagnostics::describe_runtime_error(
                         &error,
                         ParameterBinding::new(parsed_function.parameters(), &arguments),
                     ),
-                ))
-                .with_proof_refusal(contract_entry_resource_refusal(&error))
+                ));
+                if matches!(
+                    error,
+                    crate::kernel::RuntimeError::ContractEntryInvariant(_)
+                ) {
+                    diagnostic.with_kind(ClickErrorKind::Internal)
+                } else {
+                    diagnostic.with_proof_refusal(contract_entry_resource_refusal(&error))
+                }
             })?;
             entry
                 .open_contract_root(function_source_registry.program())
@@ -4192,6 +4199,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         if let PostExecutionTactic::CloseOpen {
                             resource: ResourceClause::Named { binding, .. },
                             restoration: OpenResourceRestoration::Named(instance),
+                            ..
                         } = &deferred.tactic
                         {
                             named_open_templates.insert(binding.instance()?, instance);
@@ -4534,6 +4542,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::CloseOpen {
                                 resource,
                                 restoration,
+                                retain_deferred_body,
                             } => {
                                 if let ResourceClause::Named { binding, .. } = resource {
                                     named_open_templates.remove(&binding.instance()?);
@@ -4572,7 +4581,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     });
                                 outcome = closed.focused_outcome_state()?;
                                 outcome_proof = Some(closed);
-                                if tail.is_some() || named {
+                                if tail.is_some() || named || *retain_deferred_body {
                                     let deferred = ProofOpen::deferred_block_tail(
                                         resource.clone(),
                                         tail.map_or_else(Vec::new, |proof| {

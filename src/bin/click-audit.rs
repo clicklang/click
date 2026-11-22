@@ -550,6 +550,28 @@ impl AuditKind {
     }
 }
 
+/// `expansion.failures.tsv` under `records`: each failing site or container
+/// this run, with the command that reproduces it, in the columns the
+/// lowering audits' failures files use.
+fn write_expansion_failures(records: &Path) -> Result<(), String> {
+    let lines = EXPANSION_FAILURES
+        .lock()
+        .map(|failures| failures.concat())
+        .unwrap_or_default();
+    fs::create_dir_all(records)
+        .map_err(|error| format!("failed to create `{}`: {error}", records.display()))?;
+    let path = records.join("expansion.failures.tsv");
+    fs::write(&path, &lines)
+        .map_err(|error| format!("failed to write `{}`: {error}", path.display()))?;
+    if !lines.is_empty() {
+        println!(
+            "expansion audit: every failure, with its reproduce command, is in {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
 /// A lowering audit's own arguments: the path and any `--claim`s.
 fn lowering_arguments(raw: &[String]) -> Result<(PathBuf, Vec<String>), String> {
     let mut path = None;
@@ -600,7 +622,9 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
         raw.remove(index);
     }
     if kinds == [AuditKind::Expansion] {
-        return run_audit(parse_arguments(raw)?);
+        let result = run_audit(parse_arguments(raw)?);
+        write_expansion_failures(&records)?;
+        return result;
     }
     let expansion_arguments = if kinds.contains(&AuditKind::Expansion) {
         Some(parse_arguments(raw.clone())?)
@@ -620,6 +644,7 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
                 if let Err(error) = run_audit(arguments) {
                     failures.push(error);
                 }
+                write_expansion_failures(&records)?;
                 if let Some(headline) = EXPANSION_HEADLINE.lock().ok().and_then(|slot| slot.clone())
                 {
                     headlines.push(headline);
@@ -2094,6 +2119,44 @@ fn format_location(location: &SourceLocation) -> String {
 /// `click audit --claim` selects (or the source path, for a failure before
 /// any claim ran). This binary's own tests audit fixtures that are meant to
 /// fail, under the nightly's report directory too, so they record nothing.
+/// One `expansion.failures.tsv` line: `failed`, `site` or `container`, the
+/// container, the site or container name, the message's first line, two
+/// empty columns, and the command that reproduces it.
+fn expansion_failure_line(name: &str, message: &str) -> String {
+    let site_path = name.rsplit_once(':').and_then(|(rest, column)| {
+        let (path, line) = rest.rsplit_once(':')?;
+        (column.parse::<usize>().is_ok() && line.parse::<usize>().is_ok()).then_some(path)
+    });
+    let (container, kind, reproduce) = match site_path {
+        Some(path) => (
+            path,
+            "site",
+            format!(
+                "click audit expansion --claim {} {}",
+                cli::shell_quote(name),
+                cli::shell_quote(path)
+            ),
+        ),
+        None => (
+            name,
+            "container",
+            format!("click audit expansion {}", cli::shell_quote(name)),
+        ),
+    };
+    let summary = message
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("");
+    format!(
+        "failed\t{kind}\t{container}\t{name}\t{}\t\t\t{reproduce}\n",
+        summary.replace('\t', " ")
+    )
+}
+
+/// The expansion audit's failures this run, as `expansion.failures.tsv`
+/// lines, the format the lowering audits' failures files share.
+static EXPANSION_FAILURES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 fn record_audit_failure(name: &str, message: &str) {
     if cfg!(test) {
         return;
@@ -2104,6 +2167,10 @@ fn record_audit_failure(name: &str, message: &str) {
         name.strip_prefix(&format!("{}/", directory.display()))
             .map(str::to_string)
     });
+    let name_here = relative.as_deref().unwrap_or(name);
+    if let Ok(mut failures) = EXPANSION_FAILURES.lock() {
+        failures.push(expansion_failure_line(name_here, message));
+    }
     click::nightly_report::record(
         "audit",
         &click::nightly_report::NightlyResult {

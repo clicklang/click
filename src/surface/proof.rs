@@ -1953,21 +1953,28 @@ fn bind_hosted_startup(
         ClickError::new(
             "program-entry main currently requires no parameters or preconditions; ownership comes from startup",
         )
+        .with_proof_refusal(ProofRefusal::Contract)
     };
     if !parsed.parameters().is_empty() {
-        return Err(invalid().with_proof_refusal(ProofRefusal::Contract));
+        return Err(invalid());
     }
     let requirement = match function.requires() {
         [] => return Ok(state),
         [Requirement::Resource(requirement @ ResourceClause::Named { .. })] => requirement,
-        _ => return Err(invalid().with_proof_refusal(ProofRefusal::Contract)),
+        _ => return Err(invalid()),
+    };
+    let invalid_resource = || {
+        ClickError::new(
+            "program-entry main can name only the hosted stdout stream as an input resource",
+        )
+        .with_proof_refusal(ProofRefusal::Contract)
     };
     let Some(ProgramValue::Pointer(stdout)) = parsed
         .globals()
         .get("stdout")
         .and_then(|global| global.hosted_stdout())
     else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     let atom = super::lowering::lower_resource_clause_at_state(
         requirement,
@@ -1975,14 +1982,14 @@ fn bind_hosted_startup(
         &state,
     )?;
     let Resource::Instance(instance) = atom.resource() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if instance.name() != "stream" || !instance.resource_arguments().is_empty() {
-        return Err(invalid());
+        return Err(invalid_resource());
     }
     let arguments = instance.arguments().native_values();
     let [AlgebraicValue::Program(ProgramValue::Pointer(file))] = arguments.as_ref() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if file.address() != stdout.address() {
         return Err(ClickError::new(
@@ -1991,10 +1998,10 @@ fn bind_hosted_startup(
         .with_proof_refusal(ProofRefusal::Contract));
     }
     let [(field, ResourceFieldType::Algebraic(history))] = instance.schema().fields() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if field != "write_history" {
-        return Err(invalid());
+        return Err(invalid_resource());
     }
     let empty = AlgebraicValue::Algebraic(AlgebraicTerm {
         algebraic_type: history.clone(),
@@ -3139,11 +3146,20 @@ fn canonical_claim_caller_state(
     .map_err(|error| {
         use crate::kernel::ContractEntryRefusal;
 
-        let (refusal, reason) = match error {
-            ContractEntryRefusal::InvalidResource(reason) => (ProofRefusal::Contract, reason),
-            ContractEntryRefusal::Setup(reason) => (ProofRefusal::ContractEntry, reason),
-        };
-        ClickError::new(format!("`{claim_label}` {reason}")).with_proof_refusal(refusal)
+        match error {
+            ContractEntryRefusal::InvalidResource(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_proof_refusal(ProofRefusal::Contract)
+            }
+            ContractEntryRefusal::Internal(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_kind(ClickErrorKind::Internal)
+            }
+            ContractEntryRefusal::Setup(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_proof_refusal(ProofRefusal::ContractEntry)
+            }
+        }
     })?;
     Ok(state.with_resource_context(entry.resources().clone()))
 }

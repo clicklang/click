@@ -18,6 +18,32 @@ fn argument(pointer: Address) -> PureFunctionArgument {
 }
 
 #[test]
+fn rewriting_an_exact_scalar_read_keeps_its_named_point() {
+    let _session = VerificationSession::enter();
+    let memory = SymbolicMemory::new();
+    let point = ProgramPoint::starting_at(&memory).for_exact_read();
+    let other = ProgramPoint::starting_at(&memory).for_exact_read();
+    assert_ne!(point.id(), other.id());
+    let source = Address::symbolic(Variable(1008322));
+    let target = Address::symbolic(Variable(1008323));
+    let read = |point: &ProgramPoint, address: &Address| {
+        MachineTerm::MemoryLoad(point.clone(), Box::new(address.clone()), LoadKind::Bits64)
+    };
+    let original = read(&point, &source);
+    let expected = read(&point, &target);
+    let source_pointer = Pointer::new(source.clone(), ProgramType::UInt64Pointer);
+    let target_pointer = Pointer::new(target.clone(), ProgramType::UInt64Pointer);
+    for mut rewrite in [
+        TermRewrite::for_pointer_exact(&source, &target),
+        TermRewrite::for_pointer_value_exact(&source_pointer, &target_pointer),
+    ] {
+        let rewritten = rewrite.bits(&original);
+        assert_eq!(rewritten, expected);
+        assert_ne!(rewritten, read(&other, &target));
+    }
+}
+
+#[test]
 fn pure_pointer_calls_preserve_identity_and_do_not_imply_separation() {
     let p = Address::symbolic(Variable(410));
     let q = Address::symbolic(Variable(411));

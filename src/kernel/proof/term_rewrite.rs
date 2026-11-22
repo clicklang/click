@@ -6872,6 +6872,16 @@ impl<'a> TermRewrite<'a> {
                             *kind,
                         )
                     });
+                // An exact read names its written point. Use that point
+                // and the original width with the rewritten address.
+                if memory.is_exact_read()
+                    && memory.has_certified_read_view()
+                    && self.pointer_exact.is_some()
+                {
+                    return crate::kernel::eval::scalar_read_for_exact_cell_at(
+                        memory, &rewritten, *kind, bytes,
+                    );
+                }
                 // A projection belongs to the selected address. Instantiating
                 // an index must select the new address from that projection's
                 // recorded source, as direct lowering does. This is one indexed
