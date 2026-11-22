@@ -1635,9 +1635,9 @@ result sort, while execution-memory states stay opaque (regressions in
   be given the mark and use `continuing_from`.
 
 Match-arm binders do not need the execution counter: they are *bound*
-variables of the lowered term, drawn from
-`ExecutionBudget::MATCH_BINDER_VARIABLE_BASE` by a counter the budget owns,
-so nested matches get distinct binders and no binder equals a free identity.
+variables of the lowered term, with their own origin (`Variable::match_binder`)
+and numbered by a counter the budget owns, so nested matches get distinct
+binders and no binder equals a free identity, whatever its number.
 Separately lowered terms reuse binder identities safely because `TermRewrite`
 alpha-renames a binder that would capture and stops under a shadowing one.
 `rewrite_integer_match_typed_fields` receives an arm body without its `Match`,
@@ -1670,7 +1670,6 @@ stays within its own range:
 | `4_000_000 .. 4_000_000_000`, stepping by `65_536` | the surface's algebraic binders; lowering refuses at the ceiling |
 | `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
-| `1 << 41 .. 1 << 42` | match-arm binders (`MATCH_BINDER_VARIABLE_BASE`) |
 | `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
 | `1 << 43 .. 1 << 44` | spec fold binders (`spec_fold_bound_variable`, base plus hash) |
 
@@ -1690,12 +1689,13 @@ Direct contract `forall` certification introduces its witness through
 counter mean `Variable(n)` cannot forge its result. New kernel rules that need
 an arbitrary fresh variable use this allocator rather than another range.
 
-The match-binder and spec-fold-binder ranges carry soundness obligations:
-a binder that equals an unrelated free identity can capture it. The
-`the_match_binder_range_is_disjoint_from_every_other_producer` and
-`the_spec_fold_binder_range_is_disjoint_from_every_other_producer` tests assert
-their boundaries. Match lowering refuses with
-`ExecutionLimit::MatchBinderVariables` if it exhausts its range. Arm refutations
+The spec-fold-binder range carries a soundness obligation: a binder that
+equals an unrelated free identity can capture it. The
+`the_spec_fold_binder_range_is_disjoint_from_every_other_producer` test asserts
+its boundaries. Match binders need no range, because their origin separates
+them (`a_match_binder_is_no_other_producer_s_identity`); match lowering
+refuses with `ExecutionLimit::MatchBinderVariables` past
+`ExecutionBudget::MATCH_BINDER_LIMIT` binders. Arm refutations
 start at `1 << 56`, and structural induction starts at `1 << 60`, above the
 fold range.
 

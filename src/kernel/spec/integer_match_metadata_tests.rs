@@ -60,8 +60,8 @@ fn integer_match_metadata_rejects_duplicate_integer_identities() {
 /// The arm body reaches the binder-elimination rewrite without the match
 /// that bound it, so a free variable sharing the binder's identity is
 /// indistinguishable from the binder itself. The rewrite therefore
-/// substitutes only identities from the reserved match-binder range,
-/// which nothing free can carry.
+/// substitutes only match-binder identities, whose origin nothing free can
+/// carry.
 #[test]
 fn binder_elimination_refuses_an_execution_identity_as_a_binder() {
     let havocked = Variable(ExecutionBudget::KERNEL_VARIABLE_BASE);
@@ -81,7 +81,7 @@ fn binder_elimination_refuses_an_execution_identity_as_a_binder() {
 /// same body is left exactly as it was.
 #[test]
 fn binder_elimination_leaves_a_free_identity_alone() {
-    let binder = Variable(ExecutionBudget::MATCH_BINDER_VARIABLE_BASE);
+    let binder = Variable::match_binder(0);
     let havocked = Variable(ExecutionBudget::KERNEL_VARIABLE_BASE);
     let field = IntegerTerm::constant_i64(7);
     assert_eq!(
