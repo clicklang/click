@@ -1877,11 +1877,8 @@ fn evaluate_retained_memory_load_case(
         && let Some(version) = origin
             .unwritten_static_scalar_version(&pointer, value_type)
             .or_else(|| {
-                if value_type == ProgramType::Int32 {
-                    origin.call_output_integer_version(&pointer, LoadKind::Int32)
-                } else {
-                    None
-                }
+                MachineIntegerType::from_program_type(value_type)?;
+                origin.call_output_integer_version(&pointer, LoadKind::of_type(value_type)?)
             })
     {
         return vec![
@@ -6219,23 +6216,37 @@ mod tests {
 
     #[test]
     fn a_checked_c_read_names_the_call_that_initialized_its_word() {
+        check_call_output_scalar_read(ProgramType::Int32);
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_initialized_its_halfword() {
+        check_call_output_scalar_read(ProgramType::UInt16);
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_initialized_its_wide_word() {
+        check_call_output_scalar_read(ProgramType::UInt64);
+    }
+
+    fn check_call_output_scalar_read(ty: ProgramType) {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = SymbolicMemory::local_pointer("output");
-        let ty = ProgramType::Int32;
+        let bytes = ty.byte_width();
         let start = ExecutionState::new().begin_function_entry_memory();
         let declared =
             start
                 .clone()
                 .with_memory(start.memory().clone().with_declared_scalar_block(
                     cell.base.clone(),
-                    4,
+                    bytes,
                     ty,
                 ));
         let output = declared.clone().with_memory(
             declared
                 .memory()
                 .clone()
-                .with_initialized_call_output(&cell, 4),
+                .with_initialized_call_output(&cell, bytes),
         );
         let next = output.clone().with_memory(
             output
@@ -6254,7 +6265,7 @@ mod tests {
         assert_ne!(expected.read_version_id(), next.program_point_id());
 
         let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
-            ProgramValue::typed_pointer(cell.clone(), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(cell.clone(), ty.pointer_to().expect("pointer to scalar")),
         )));
         let paths = super::super::evaluate_expression_value_paths(
             &next,
@@ -6269,13 +6280,14 @@ mod tests {
         let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("the call initialized the cell: {:?}", path.outcome);
         };
-        let Some(MachineTerm::MemoryLoad(version, address, LoadKind::Int32)) =
+        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value.native())
         else {
             panic!("one typed word read");
         };
         assert_eq!(version.read_version_id(), expected.read_version_id());
         assert_eq!(*address, cell);
+        assert_eq!(kind, LoadKind::of_type(ty).expect("scalar load kind"));
     }
 
     #[test]

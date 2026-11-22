@@ -3625,14 +3625,15 @@ fn read_retained_lvalue_paths_without_ranges(
                         ))
                     && pointer.base == AddressBase::ExternalArgument
                     && can_name_read;
+                let is_integer =
+                    crate::kernel::MachineIntegerType::from_program_type(lvalue.value_type)
+                        .is_some();
                 let may_use_loaded_entry_version = has_read_resource
                     && can_name_read
                     && matches!(pointer.base, AddressBase::LoadedPointer(_))
-                    && crate::kernel::MachineIntegerType::from_program_type(lvalue.value_type)
-                        .is_some();
+                    && is_integer;
                 let may_use_recorded_integer_version = can_name_read
-                    && ((lvalue.value_type == ProgramType::Int32
-                        && ProgramPoint::supports_local_call_output(pointer))
+                    && ((is_integer && ProgramPoint::supports_local_call_output(pointer))
                         || ProgramPoint::supports_static_entry_version(pointer, lvalue.value_type));
                 let origin = (uses_entry_version
                     || may_use_loaded_entry_version
