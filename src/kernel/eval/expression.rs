@@ -3163,7 +3163,7 @@ fn record_call_output_read(
     outcome: &ExpressionOutcome<ExecutionValue>,
     facts: &mut ExecutionFacts,
 ) {
-    if lvalue.value_type != ProgramType::Int32
+    if !matches!(lvalue.value_type, ProgramType::Int32 | ProgramType::UInt32)
         || lvalue.is_volatile()
         || SpecificationAccessScope::is_active()
         || !ProgramPoint::supports_local_call_word(pointer)
@@ -3173,28 +3173,25 @@ fn record_call_output_read(
     let ExpressionOutcome::Value(value) = outcome else {
         return;
     };
+    let kind = LoadKind::of_type(lvalue.value_type).expect("call output word");
     let Some(version) = state
         .program_point()
-        .call_output_integer_version(pointer, LoadKind::Int32)
+        .call_output_integer_version(pointer, kind)
     else {
         return;
     };
     let value = value.native();
-    let ProgramValue::Int32(bits) = value.numeric_value() else {
+    let (ProgramValue::Int32(bits) | ProgramValue::UInt32(bits)) = value.numeric_value() else {
         return;
     };
-    let read = scalar_read_for_exact_cell_at(
-        &version,
-        pointer,
-        LoadKind::Int32,
-        ProgramType::Int32.byte_width(),
-    );
+    let read = scalar_read_for_exact_cell_at(&version, pointer, kind, kind.byte_width());
     if bits != &read {
         facts.push(ExecutionPureFact {
             logical_read_equation: true,
             ..ExecutionPureFact::certified(Proposition::condition_is(
                 ConditionTerm::machine_compare(
-                    MachineIntegerType::Int32,
+                    MachineIntegerType::from_program_type(lvalue.value_type)
+                        .expect("call output word"),
                     CompareRelation::Equal,
                     read,
                     bits.clone(),
