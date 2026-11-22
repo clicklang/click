@@ -557,7 +557,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         Some(&root)
     );
     let paths = crate::kernel::eval::evaluate_retained_memory_load_paths(
-        &copied,
+        &crate::kernel::ProgramPoint::of_memory(&copied),
         target.clone(),
         ProgramType::Int32Pointer,
         ExecutionFacts::new(),
@@ -567,7 +567,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         false,
         None,
         None,
-        None,
+        false,
     );
     assert_eq!(paths.len(), 1);
     let ExpressionOutcome::Value(value) = &paths[0].outcome else {

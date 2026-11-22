@@ -85,7 +85,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
     byte_order: Option<ByteOrder>,
 ) -> Vec<ExpressionPath> {
     evaluate_retained_memory_load_paths(
-        memory,
+        &ProgramPoint::of_memory(memory),
         pointer,
         value_type,
         facts,
@@ -95,7 +95,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
         volatile,
         source,
         byte_order,
-        None,
+        false,
     )
     .into_iter()
     .map(ExecutionValuePath::into_native)
@@ -104,7 +104,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
-    memory: &SymbolicMemory,
+    point: &ProgramPoint,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
@@ -114,8 +114,10 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
     volatile: bool,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
-    origin: Option<&ProgramPoint>,
+    uses_recorded_point: bool,
 ) -> Vec<ExecutionValuePath> {
+    let memory = point.memory();
+    let origin = uses_recorded_point.then_some(point);
     let _assumptions_id_scope = assumptions.enter_id_scope();
     if has_pending_reallocation_for_pointer(memory, &pointer) {
         return vec![ExpressionPath {
@@ -10596,7 +10598,7 @@ mod float_memory_handoff_tests {
                 }
 
                 let program = evaluate_retained_memory_load_paths(
-                    state.memory(),
+                    &origin,
                     address.clone(),
                     value_type,
                     ExecutionFacts::new(),
@@ -10606,7 +10608,7 @@ mod float_memory_handoff_tests {
                     false,
                     None,
                     None,
-                    Some(&origin),
+                    true,
                 );
                 let [path] = program.as_slice() else {
                     panic!("expected one program read");
@@ -10696,7 +10698,7 @@ mod float_memory_handoff_tests {
                 );
                 assert_eq!(memory.known_value(&address), Some(native.clone()));
                 let paths = evaluate_retained_memory_load_paths(
-                    &memory,
+                    &ProgramPoint::of_memory(&memory),
                     address,
                     format.program_type(),
                     ExecutionFacts::new(),
@@ -10706,7 +10708,7 @@ mod float_memory_handoff_tests {
                     false,
                     None,
                     None,
-                    None,
+                    false,
                 );
                 assert_eq!(paths.len(), 1);
                 let ExpressionOutcome::Value(loaded) = &paths[0].outcome else {

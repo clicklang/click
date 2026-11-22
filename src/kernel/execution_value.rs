@@ -1043,7 +1043,7 @@ mod tests {
             assert_eq!(recovered.shared(), Some(&root));
             assert!(recovered.pointer().unwrap().pointee_constant());
             let paths = crate::kernel::eval::evaluate_retained_memory_load_paths(
-                retained_state,
+                &crate::kernel::ProgramPoint::of_memory(retained_state),
                 address.clone(),
                 ProgramType::Int32Pointer,
                 ExecutionFacts::new(),
@@ -1053,7 +1053,7 @@ mod tests {
                 false,
                 None,
                 None,
-                None,
+                false,
             );
             assert_eq!(paths.len(), 1);
             let ExpressionOutcome::Value(loaded) = &paths[0].outcome else {
