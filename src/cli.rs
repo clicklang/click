@@ -444,22 +444,19 @@ pub fn with_run_limits<R>(
     let started = std::time::Instant::now();
     let (result, exhausted) = within_run_limits(limits, || {
         let result = operation();
-        (result, crate::instrumentation::run_work_exhaustion())
+        (result, crate::instrumentation::exhausted_run_work_context())
     });
     let elapsed = started.elapsed();
     match result {
         Err(message) if elapsed >= limits.time => Err(format!(
-            "{tool} was stopped after {} by {}; rerun on a less loaded machine or raise `--time-limit`\n{message}",
+            "timed out:\n  {tool} was stopped after {} by {}; rerun on a less loaded machine or raise `--time-limit`\n{}",
             format_fractional_duration(elapsed),
             crate::instrumentation::containment_bound_description(limits.time),
+            message.strip_prefix("timed out:\n").unwrap_or(&message),
         )),
         result => report_work_exhaustion(tool, result, exhausted),
     }
 }
-
-/// How a whole-run work budget's exhaustion is named, here and in
-/// `instrumentation`'s pending-limit message.
-const WHOLE_RUN_BUDGET_EXHAUSTED: &str = "exhausted its deterministic whole-run work budget";
 
 /// Installs both of `limits`' bounds around `operation`; [`with_run_limits`]
 /// is the ordinary route.
@@ -538,7 +535,7 @@ impl ProcessWatchdog {
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout)
                 ) {
                     eprintln!(
-                        "click: stopped by wall-clock crash-containment bound after {}",
+                        "timed out:\n  click stopped by wall-clock crash-containment bound after {}",
                         format_fractional_duration(time)
                     );
                     std::process::exit(1);
@@ -571,7 +568,7 @@ pub fn within_work_limit<R>(
 ) -> Result<R, String> {
     let (result, exhausted) = crate::instrumentation::with_run_work_limit(limit, || {
         let result = operation();
-        (result, crate::instrumentation::run_work_exhaustion())
+        (result, crate::instrumentation::exhausted_run_work_context())
     });
     report_work_exhaustion(tool, result, exhausted)
 }
@@ -583,28 +580,25 @@ pub fn within_work_limit<R>(
 fn report_work_exhaustion<R>(
     tool: &str,
     result: Result<R, String>,
-    exhausted: Option<(usize, usize)>,
+    stop_context: Option<String>,
 ) -> Result<R, String> {
-    match (result, exhausted) {
-        (result, Some((used, limit)))
-            if result
-                .as_ref()
+    let Some(context) = stop_context else {
+        return result;
+    };
+    match result {
+        Err(message) if message.starts_with("work limit reached:") => Err(message),
+        Err(message) if message.contains(&context) => {
+            Err(format!("work limit reached:\n  {message}"))
+        }
+        result => {
+            let details = result
                 .err()
-                .is_none_or(|message| !message.contains(WHOLE_RUN_BUDGET_EXHAUSTED)) =>
-        {
-            let below = result
-                .err()
-                .map(|message| {
-                    format!(
-                        "\nthe error below is where the verifier stopped; it may be a consequence of the exhausted budget rather than a property of the proof\n{message}"
-                    )
-                })
+                .map(|message| format!("\n  Details from where the verifier stopped:\n{message}"))
                 .unwrap_or_default();
             Err(format!(
-                "{tool} {WHOLE_RUN_BUDGET_EXHAUSTED} after {used} units ({limit} limit); raise `--work-limit` for a project larger than the calibrated corpus{below}"
+                "work limit reached:\n  {tool} stopped because {context}{details}"
             ))
         }
-        (result, _) => result,
     }
 }
 
@@ -2761,7 +2755,7 @@ mod tests {
         .expect_err("an exhausted budget fails the run");
         assert!(
             masked.starts_with(
-                "click verify exhausted its deterministic whole-run work budget after 11 units (10 limit)"
+                "work limit reached:\n  click verify stopped because the run exhausted its deterministic whole-run work budget after 11 units (10 limit)"
             ) && masked.ends_with("`normalize` goal did not normalize to true"),
             "{masked}"
         );
@@ -2772,10 +2766,11 @@ mod tests {
         })
         .expect_err("a run past its budget is not green");
         assert!(
-            green.contains("after 11 units (10 limit)") && !green.contains("error below"),
+            green.contains("after 11 units (10 limit)")
+                && !green.contains("Details from where the verifier stopped"),
             "{green}"
         );
-        // A message that already names the budget is kept as it is.
+        // A message that already names the stop only needs the heading.
         let named = with_run_limits("click verify", limits, || -> Result<(), String> {
             crate::instrumentation::record_deterministic_work(11);
             assert!(crate::instrumentation::deadline_exceeded());
@@ -2783,7 +2778,9 @@ mod tests {
         })
         .expect_err("an exhausted budget fails the run");
         assert!(
-            named.starts_with("the run exhausted its deterministic whole-run work budget"),
+            named.starts_with(
+                "work limit reached:\n  the run exhausted its deterministic whole-run work budget"
+            ),
             "{named}"
         );
         // Within the budget, the operation's result stands.

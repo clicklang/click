@@ -3021,10 +3021,8 @@ before its declaration. Use `apply(ih(m))` at the top level and inside nested
 
 An unsupported parameter type, changed goal, repeated induction, or unproved
 signed nonnegative domain fails with a message naming the case. `induct` in
-a C function proof is refused with the generic "no checked proof driver accepts this proof
-script's shape". Click opens the
-induction rule; expansion is unchanged, and profiling charges the structural
-setup.
+a C execution proof reports a `tactic error`. Click opens the induction
+rule during checking and profiling charges the structural setup.
 
 **Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
 [`an_induction_hypothesis_applies_inside_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_a_have.md),

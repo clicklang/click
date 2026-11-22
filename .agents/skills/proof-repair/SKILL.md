@@ -16,9 +16,9 @@ Two failures are bugs whatever the proof says, and end this loop at once:
 
 - `crash`: Click exits without a report: a panic, an abort, a stack
   overflow, or the process being killed.
-- `hang`: Click runs for a long time without returning. Click bounds its own
-  work and stops with a limit error, so a run that does not finish in
-  minutes, with no report, is a hang. Stop it and note how long it ran.
+- `hang`: Click runs for minutes without returning a report. Stop it and
+  note how long it ran. A wall-clock timeout can also result from CPU
+  starvation, so check whether the run was making progress.
 
 Do not change the proof, raise a limit, or retry to get past either one.
 Report it (below), labelled `crash` or `hang`, with the exact command, the
@@ -34,8 +34,9 @@ it; shrink them if you can, but a report need not wait for that.
   Otherwise stop at `unsupported` and explain how the user can request support.
 - `internal error`: stop at `internal-error`. Click has reported its own
   failure. Capture the error, version, command, and inputs.
-- `limit error`: record the limit and where Click stopped. The run did not
-  finish checking the proof.
+- `work limit reached`: stop at `work-limit-reached`.
+- `timed out`: stop at `timed-out`. If the run was hung, follow the `hang`
+  workflow above.
 - `tactic error`: read `click docs TACTIC` and check whether the tactic is valid
   at the reported point. Correct an invalid invocation. If the invocation and
   its premises satisfy the documented rule and Click still refuses, report
@@ -47,7 +48,7 @@ it; shrink them if you can, but a report need not wait for that.
   the proof author and check the intended correction. If the original contract
   satisfies the rule and Click still rejects it, stop at `contract-bug`.
 - `unsuccessful search`: explicit or implicit proof search ran and found no
-  proof. Record the goal. If it holds, write an explicit chain of smaller
+  proof. This includes search that exhausted its own work budget. Record the goal. If it holds, write an explicit chain of smaller
   links, or supply the missing argument or premises.
 - `incomplete proof`: the proof ended with a requirement still outstanding.
   Record what the report says the proof must establish and the path where it
@@ -64,10 +65,14 @@ it; shrink them if you can, but a report need not wait for that.
   Continue with the reported obligation when the diagnostic gives one. For
   an entry refusal, use `contract-bug` if you can show that the original
   contract satisfies the documented rule Click applied.
-- `execution refused` or `unsupported proof`: investigate the reported
-  operation or proof shape.
-- `unclassified verification refusal`: investigate the stated cause. If
-  the trace leaves the refusal unclear, use `unclear-trace`.
+- `execution refused`: investigate the reported operation.
+- `unclassified verification refusal`: investigate the stated cause.
+
+Use `unclear-output` when the available diagnostics lack the detail
+needed to tell whether the proof author or Click maintainers should follow
+up. Check the ordinary diagnostic, the applicable documentation, and the
+trace when available. A contract error may omit the clause or rule you
+need to check, or an implicit-step refusal may omit the operation Click tried.
 
 ## 2. Record the goal
 
@@ -89,9 +94,9 @@ line that defines each label the goal uses. Two written forms of one C address
 (`p` and `g + 16 bytes`, or a read at entry and a read in the loop) are often
 the whole story. Otherwise ignore the legend.
 
-If the report and trace leave the requirement or its program point unclear,
-use `unclear-trace`. A named resource and return path can identify the
-requirement directly.
+A named resource and return path can identify a requirement directly.
+Use `unclear-output` when the available output leaves the requirement or
+its program point unclear.
 
 ## 3. Decide whether `G` is true
 
@@ -238,14 +243,19 @@ Stop at exactly one outcome:
   its written premises justify the goal, and the tactic's documented
   **Accepts** list in `click docs NAME` covers the link. Click still refuses
   it. Report the exact refusal and the applicable documentation.
-- `unclear-trace`: you could not determine from the output what was refused,
-  such as the exact goal, its program point, or the facts the tactic used.
-  Quote the relevant output and say what you could not determine.
+- `unclear-output`: the available diagnostics leave responsibility
+  undetermined. Quote the output verbatim and name the missing or
+  ambiguous detail. Say what it prevented you from checking.
 - `unsupported`: a documented capability limit prevents the original case
   from being checked. Name the exact limitation and cite its documentation.
   Describe any supported route and the documented path to supporting the
   original case. The proof author can choose the supported route or request
   support from Click maintainers.
+- `work-limit-reached`: Click reached the overall `--work-limit`. Give the
+  work limit and the operation where checking stopped. Profile the run if
+  the work is unexpected.
+- `timed-out`: wall-clock containment stopped Click before a verdict. Give
+  the time limit and the last reported operation, if available.
 - `internal-error`: Click itself reports `internal error`. Tell the user
   immediately that Click detected a verifier failure. Use the original
   diagnostic. A proof goal and a minimized tactic link are optional evidence.
@@ -259,10 +269,10 @@ cannot justify the goal after investigation.
 
 In the outcome report, say explicitly what the result establishes about
 Click. `contract-bug`, `obligation-bug`, `tactic-bug`, `inexpressible-fact`,
-`internal-error`, `crash`, and `hang` identify Click defects. `unclear-trace`
-leaves the reason for the refusal undetermined. File a diagnostic bug only
-when you can demonstrate a specific defect in the output. `false-claim`
-gives a counterexample to the original claim.
+`internal-error`, `crash`, and `hang` identify Click defects. File a
+diagnostic bug from `unclear-output` only when you can demonstrate a
+specific defect in the output. `false-claim` gives a counterexample to
+the original claim.
 `unclear-goal` leaves the truth of the goal open. `missing-rule` identifies a
 gap in supported inference.
 
@@ -298,7 +308,7 @@ Report a Click defect as follows:
 3. Give the report below, enough for someone else to reproduce it.
 4. Label the issue with its outcome: `tracing: inexpressible-fact`,
    `tracing: contract-bug`, `tracing: obligation-bug`, `tracing: tactic-bug`,
-   `tracing: unclear-trace`, `tracing: internal-error`, `crash`, or `hang`.
+   `tracing: unclear-output`, `tracing: internal-error`, `crash`, or `hang`.
    Start the title with it in brackets too (`[tactic-bug] ...`,
    `[hang] ...`), so it shows even where you cannot set labels.
 
@@ -322,8 +332,13 @@ Cite the rule or semantics that governs the check. Show the discrepancy,
 including any execution that satisfies the original claim while refuting the
 generated goal.
 
-For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
-found during `unclear-trace` triage, give:
+For a confirmed diagnostic defect found during `unclear-output` triage,
+give the reduced inputs, exact command, `click --version`, and complete
+output. Identify the missing or misleading detail, show the evidence for
+the discrepancy, and say what the output should have made clear. Include
+a trace, goal, or proof link when it helps demonstrate the defect.
+
+For `tactic-bug` or `inexpressible-fact`, give:
 
 - The smallest C and Click that still fail, with the original source pattern,
   and the exact command and its output, including the `goal:` line.
@@ -334,5 +349,4 @@ found during `unclear-trace` triage, give:
 - Why the link holds, in one line of mathematics, and the step of that
   argument Click did not take.
 - For `tactic-bug`, the item of that tactic's **Accepts** list that
-  covers the link. For a diagnostic defect, the specific missing or
-  misleading output and the evidence of the defect.
+  covers the link.
