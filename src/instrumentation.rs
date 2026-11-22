@@ -557,6 +557,20 @@ fn charge_run_work(units: usize) -> bool {
 
 thread_local! {
     static UNCHARGED_WORK: Cell<bool> = const { Cell::new(false) };
+    static CERTIFICATE_PRESENTATION_WORK: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Choosing the spelling of an already checked step spends whole-run work
+/// without drawing from the tactic's allowance for finding and checking it.
+pub(crate) fn with_certificate_presentation_work<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CERTIFICATE_PRESENTATION_WORK.with(|flag| flag.set(self.0));
+        }
+    }
+    let _restore = Restore(CERTIFICATE_PRESENTATION_WORK.with(|flag| flag.replace(true)));
+    operation()
 }
 
 /// Runs `operation` charging none of the deterministic work it records:
@@ -575,9 +589,8 @@ pub(crate) fn without_charging<R>(operation: impl FnOnce() -> R) -> R {
 
 /// Records `units` of deterministic verifier work.
 ///
-/// This is the one accounting path: every unit charges each enclosing
-/// [`measure_deterministic_work`] counter and the innermost active tactic's
-/// work budget, whether it arrives here or through a cooperative checkpoint
+/// This is the common accounting path for deterministic work, whether it
+/// arrives here or through a cooperative checkpoint
 /// ([`deadline_exceeded`], [`deadline_exceeded_with_work`]). Recording does
 /// not interrupt the caller: an exhausted budget becomes a pending limit
 /// that the next checkpoint reports, and the verifier checks for one after
@@ -958,9 +971,9 @@ fn charge_checking_work(units: usize) -> bool {
     false
 }
 
-/// Charges `units` to every scaling counter, to the innermost active
-/// tactic's budget, and to every whole-run budget. Returns `false` when a
-/// budget is exhausted.
+/// Charges `units` to every scaling counter and whole-run budget. The
+/// innermost active tactic also pays for work within its allowance.
+/// Returns `false` when a budget is exhausted.
 fn charge_deterministic_work(units: usize) -> bool {
     spend_decision_fuel(units);
     WORK_COUNTERS.with(|counters| {
@@ -969,7 +982,12 @@ fn charge_deterministic_work(units: usize) -> bool {
         }
     });
     let checking = charge_checking_work(units);
-    let tactic = charge_tactic_work(units);
+    let tactic_units = if CERTIFICATE_PRESENTATION_WORK.with(Cell::get) {
+        0
+    } else {
+        units
+    };
+    let tactic = charge_tactic_work(tactic_units);
     let run = charge_run_work(units);
     checking && tactic && run
 }
@@ -1978,6 +1996,27 @@ mod tests {
             })
         });
         assert_eq!(work, 51);
+    }
+
+    #[test]
+    fn certificate_presentation_spends_run_work_outside_the_tactic_allowance() {
+        let limits = TacticWorkLimits {
+            smart: 2,
+            ..TacticWorkLimits::default()
+        };
+        with_tactic_work_limits(limits, || {
+            with_run_work_limit(100, || {
+                let tactic = tactic("smart", 0);
+                emit(VerificationEvent::TacticStarted(tactic.clone()));
+                with_certificate_presentation_work(|| {
+                    assert!(!deadline_exceeded_with_work(50));
+                });
+                assert_eq!(run_work_used(), Some(50));
+                assert!(!deadline_exceeded_with_work(2));
+                assert!(deadline_exceeded_with_work(1));
+                emit(VerificationEvent::TacticFailed(tactic));
+            });
+        });
     }
 
     #[test]

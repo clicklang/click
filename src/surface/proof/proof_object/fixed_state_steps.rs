@@ -695,14 +695,16 @@ impl<'a> Proof<'a> {
         application: &TheoremApplication,
         conclusions: &[Proposition],
     ) -> bool {
-        self.prepare_theorem_application(application)
-            .is_ok_and(|prepared| {
-                prepared.conclusions == conclusions
-                    && prepared
-                        .obligations
-                        .iter()
-                        .all(|requirement| self.theorem_obligation_available(requirement))
-            })
+        crate::instrumentation::with_certificate_presentation_work(|| {
+            self.prepare_theorem_application(application)
+                .is_ok_and(|prepared| {
+                    prepared.conclusions == conclusions
+                        && prepared
+                            .obligations
+                            .iter()
+                            .all(|requirement| self.theorem_obligation_available(requirement))
+                })
+        })
     }
 
     pub(in crate::surface::proof) fn finish_prepared_theorem_application(
