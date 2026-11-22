@@ -857,6 +857,11 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     {
         return Some(true);
     }
+    if constructor_match_forwards_payload(left, right)
+        || constructor_match_forwards_payload(right, left)
+    {
+        return Some(true);
+    }
     let projected_left = constructor_match_projection(left);
     let projected_right = constructor_match_projection(right);
     let left = projected_left.unwrap_or(left);
@@ -889,6 +894,72 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
             .then_some(false),
         _ => None,
     }
+}
+
+/// Check a selected constructor arm that forwards literal int32 payloads
+/// directly into its result. Compare the written fields without substituting
+/// into arbitrary expressions or building a rewritten match.
+fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
+    let (
+        AlgebraicTermNode::Match { scrutinee, arms },
+        AlgebraicTermNode::Constructor {
+            variant: expected_variant,
+            fields: expected_fields,
+        },
+    ) = (&matched.node, &expected.node)
+    else {
+        return false;
+    };
+    let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
+        return false;
+    };
+    crate::instrumentation::record_deterministic_work(arms.len());
+    let Some(arm) = arms.iter().find(|arm| arm.variant == *variant) else {
+        return false;
+    };
+    let AlgebraicTermNode::Constructor {
+        variant: result_variant,
+        fields: result_fields,
+    } = &arm.body.node
+    else {
+        return false;
+    };
+    if arm.bindings.len() != fields.len()
+        || result_variant != expected_variant
+        || result_fields.len() != expected_fields.len()
+    {
+        return false;
+    }
+
+    crate::instrumentation::record_deterministic_work(fields.len() + result_fields.len());
+    let mut payloads = std::collections::HashMap::with_capacity(fields.len());
+    for (binder, field) in arm.bindings.iter().zip(fields) {
+        let (
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))),
+            AlgebraicValue::Program(ProgramValue::Int32(int32_constant!(_))),
+        ) = (binder, field)
+        else {
+            return false;
+        };
+        if payloads.insert(*variable, field).is_some() {
+            return false;
+        }
+    }
+    result_fields
+        .iter()
+        .zip(expected_fields)
+        .all(|(field, expected)| {
+            let AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))) =
+                field
+            else {
+                return false;
+            };
+            payloads
+                .get(variable)
+                .is_some_and(|payload| *payload == expected)
+        })
+        && matched.is_well_formed()
+        && expected.is_well_formed()
 }
 
 /// Select an algebraic field when the match names its constructor and

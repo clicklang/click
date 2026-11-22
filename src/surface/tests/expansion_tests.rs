@@ -3221,6 +3221,23 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
 }
 
 #[test]
+fn rewritten_constructor_payload_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/algebraic_match_on_known_constructor.md");
+    let label = "rewritten.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+    let (_, proof) = expanded.split_once("theorem rewritten").unwrap();
+    assert!(proof.contains("known();"), "{expanded}");
+    assert!(!proof.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap();
+    let wrong = expanded.replace("== Output::Value(7) by", "== Output::Value(8) by");
+    assert_ne!(wrong, expanded);
+    assert!(verify_c_sources(&wrong, &[]).is_err());
+}
+
+#[test]
 fn constant_byte_containment_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/byte_containment_preserves_physical_width.md");
     let label = "last_byte.ensures_0";

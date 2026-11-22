@@ -2,6 +2,59 @@
 use super::*;
 
 #[test]
+fn selected_constructor_payload_check_scales_with_written_fields() {
+    for size in [8, 32, 128] {
+        let _session = VerificationSession::enter();
+        let mut scrutinee =
+            KernelMatch::test_scrutinee(vec![
+                AlgebraicValueType::Program(ProgramType::Int32);
+                size
+            ]);
+        let constructor = |fields| AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields,
+        };
+        let fields = (0..size)
+            .map(|i| AlgebraicValue::Program(int32(i as u32)))
+            .collect::<Vec<_>>();
+        scrutinee.node = constructor(fields.clone());
+        let bindings = (0..size)
+            .map(|i| {
+                AlgebraicValue::Program(int32(MachineTerm::Variable(Variable(992_100 + i as u64))))
+            })
+            .collect::<Vec<_>>();
+        let expected = AlgebraicTerm {
+            algebraic_type: scrutinee.algebraic_type.clone(),
+            node: constructor(fields.into_iter().rev().collect()),
+        };
+        let body = AlgebraicTerm {
+            algebraic_type: scrutinee.algebraic_type.clone(),
+            node: constructor(bindings.iter().cloned().rev().collect()),
+        };
+        let matched = AlgebraicTerm {
+            algebraic_type: scrutinee.algebraic_type.clone(),
+            node: AlgebraicTermNode::Match {
+                scrutinee: Box::new(scrutinee),
+                arms: vec![AlgebraicResultMatchArm {
+                    variant: "Arm".into(),
+                    binding_names: Default::default(),
+                    bindings,
+                    body,
+                }],
+            },
+        };
+        let goal = Proposition::Equal(
+            Term::Algebraic(matched.into()),
+            Term::Algebraic(expected.into()),
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
+        assert!(proved);
+        assert!((2 * size..=8 * size + 48).contains(&work), "{size}: {work}");
+    }
+}
+
+#[test]
 fn constructor_match_computation_visits_shared_terms_once() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
