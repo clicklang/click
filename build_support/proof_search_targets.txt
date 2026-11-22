@@ -277,3 +277,4 @@ try_interval_exclusion_using
 close_selected_signed_order
 retain_statement_order_bounds
 try_local_viewability_preservation
+try_masked_field_preservation

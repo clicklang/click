@@ -16711,6 +16711,27 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
 }
 
 #[test]
+fn masked_64_bit_field_expands_through_explicit_store_preservation() {
+    for fixture in [
+        "mdtests/int64_read_survives_store_and_resource_call.md",
+        "mdtests/uint64_read_survives_store_and_resource_call.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        assert!(expanded.contains("preserve("), "{fixture}: {expanded}");
+        without_implicit_solve_for_claim("caller.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit guarded read preservation expansion and cold replay"]
 fn guarded_definedness_preservation_expands_and_cold_replays() {
