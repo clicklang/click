@@ -19,6 +19,9 @@ use click::surface::{
 use cpp_description::{load_import, lock_section_mut, lock_source_mut, refresh_import};
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
+#[cfg(not(feature = "fast-gate"))]
+#[path = "support/quick_solve.rs"]
+mod quick_solve;
 #[path = "support/span_by_value.rs"]
 mod span_by_value;
 use pinned_clang::{output, pinned_clang, sha256};
@@ -5630,6 +5633,22 @@ fn pinned_streams_selected_fixture(
     probe_source: &str,
     additional_dependencies: &[&str],
 ) -> (PathBuf, PreparedCppImport) {
+    pinned_span_selected_fixture(
+        name,
+        logical_source,
+        function,
+        probe_source,
+        Some(additional_dependencies),
+    )
+}
+
+fn pinned_span_selected_fixture(
+    name: &str,
+    logical_source: &str,
+    function: &str,
+    probe_source: &str,
+    streams_dependencies: Option<&[&str]>,
+) -> (PathBuf, PreparedCppImport) {
     let root = std::env::temp_dir().join(format!(
         "click-bitcoin-streams-{name}-{}",
         std::process::id()
@@ -5693,14 +5712,23 @@ fn pinned_streams_selected_fixture(
     fs::copy(std::env::var("CLICK_CPP_EXPORTER").unwrap(), &exporter).unwrap();
     let header = "sysroot/usr/include/c++/12/bits/ios_base.h";
     let mut dependencies = vec![
-        "bitcoin-src/src/streams.h",
         "clang-resource/include/__stddef_size_t.h",
-        header,
         "sysroot/usr/include/c++/12/cstddef",
         "sysroot/usr/include/c++/12/span",
         "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
     ];
-    dependencies.extend_from_slice(additional_dependencies);
+    let library_assertions = if let Some(additional) = streams_dependencies {
+        dependencies.extend(["bitcoin-src/src/streams.h", header]);
+        dependencies.extend_from_slice(additional);
+        vec![serde_json::json!({
+                "kind": "opaque_exception_constructor",
+                "function": "std::ios_base::failure::failure",
+                "header": header,
+                "sha256": sha256(&fs::read(root.join(header)).unwrap()),
+        })]
+    } else {
+        Vec::new()
+    };
     dependencies.retain(|dependency| *dependency != logical_source);
     dependencies.sort_unstable();
     let config = serde_json::json!({
@@ -5709,8 +5737,7 @@ fn pinned_streams_selected_fixture(
         "compilation_database": "compile_commands.json", "working_directory": ".",
         "source": "span-probe.cpp", "logical_source": logical_source,
         "dependencies": dependencies,
-        "library_assertions": [{"kind": "opaque_exception_constructor", "function": "std::ios_base::failure::failure",
-            "header": header, "sha256": sha256(&fs::read(root.join(header)).unwrap())}],
+        "library_assertions": library_assertions,
         "function": function, "artifact": "span.click-cpp.json"
     });
     let config_path = root.join("span.import-description.json");
@@ -5719,6 +5746,58 @@ fn pinned_streams_selected_fixture(
     fs::remove_file(exporter).unwrap();
     let import = load_import(&config_path).unwrap();
     (root, import)
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: Quick Solve Test with pinned C++ headers"]
+fn pinned_span_memcpy_quick_solve_proves_a_copied_byte_defined() {
+    let (root, import) = pinned_span_selected_fixture(
+        "memcpy-quick-solve",
+        "span-probe.cpp",
+        "copy_into",
+        r#"#include <span>
+#include <string.h>
+
+void copy_into(std::span<std::byte> dst, unsigned long i) {
+    unsigned int src = 0;
+    auto out = dst.data();
+    auto n = dst.size();
+    memcpy(out, &src, n);
+}
+"#,
+        None,
+    );
+    let source = r#"verifying "span-probe.cpp";
+
+void copy_into(std::span<std::byte> dst, uint64 i) {
+    requires i < std_span_size(dst) and std_span_size(dst) <= 4u64;
+    owns uninitialized(std_span_data(dst)[0u64..std_span_size(dst)]);
+    ensures at(call(2).exit, defined(load<uint8>((call(0).result + i))));
+} by {
+    step_until(call(0).entry);
+    step();
+    step_until(call(1).entry);
+    let { result: count } = step();
+    step_until(call(2).entry);
+    have i < count by {
+        have count == old(std_span_size(dst)) by { known(); }
+        rewrite(count, old(std_span_size(dst)));
+        known();
+    }
+    step();
+    step_until(function.exit);
+    solve();
+}
+"#;
+    let path = root.join("CopyInto.click");
+    fs::write(&path, source).unwrap();
+    let project = read_click_project(&path, source).unwrap();
+    let (result, samples) =
+        instrumentation::collect_tactic_work(|| verify_program_prepared_project(&project, &import));
+    result.unwrap();
+    quick_solve::check_quick_solve(&samples, &Ok(())).unwrap();
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -5784,7 +5863,7 @@ fn pinned_spanreader_read_verifies_and_replays_both_outcomes_offline() {
     let inputs = ProgramInputs::program(&import);
     let expanded = expand_project_claim_source_by_label(&project, &inputs, &label).unwrap();
     let rewritten = project.with_entry_source(expanded.clone());
-    click::surface::without_implicit_solve_for_claim(&label, || {
+    click::surface::check_audit_claim(&label, true, || {
         verify_program_prepared_project(&rewritten, &import)
             .map_err(|error| error.message().to_string())
     })

@@ -1,8 +1,8 @@
 //! Common/native fold keys share the same scoped child walker and refusal rules.
 use super::*;
 use crate::kernel::{
-    KernelFold, KernelFoldIndex, KernelTermExport, KernelType, MachineOperandView,
-    SharedIntegerRangeEndpoint,
+    KernelFold, KernelFoldIndex, KernelIntegerOperator, KernelTerm, KernelTermExport,
+    KernelTermNode, KernelType, MachineOperandView, SharedIntegerRangeEndpoint,
 };
 
 pub(super) fn bindings() -> AlphaBindings {
@@ -72,75 +72,261 @@ pub(crate) fn integer_key(fold: &KernelFold) -> Option<IntegerFoldAlphaKey> {
         return None;
     }
     let mut bindings = bindings();
-    let mut next_binder = 0;
-    let mut nodes = Vec::new();
-    let mut memo = HashMap::new();
-    let mut export = KernelTermExport::default();
-    let [start, end, initial, body] = &fold.arguments;
     alpha_work_checkpoint(&mut bindings, 1)?;
-    let index = match fold.index {
-        KernelFoldIndex::Integer => {
-            let start = export.integer(start).ok()?;
-            let end = export.integer(end).ok()?;
-            AlphaIntegerRangeIndex::Integer(
-                alpha_integer_node(
-                    &start,
-                    &mut bindings,
-                    &mut memo,
-                    &mut nodes,
-                    &mut next_binder,
-                )?,
-                alpha_integer_node(&end, &mut bindings, &mut memo, &mut nodes, &mut next_binder)?,
-            )
-        }
-        KernelFoldIndex::Int32 | KernelFoldIndex::UInt64 => {
-            // Use the same word interpretation and admission rule as the
-            // existing Integer range endpoint wrapper.
-            let start = SharedIntegerRangeEndpoint::from_shared(start.clone())?;
-            let end = SharedIntegerRangeEndpoint::from_shared(end.clone())?;
-            let start = alpha_machine_key::<false>(
-                start.machine_operand().operand_view(),
-                &mut bindings,
-                &mut next_binder,
-            )?;
-            let end = alpha_machine_key::<false>(
-                end.machine_operand().operand_view(),
-                &mut bindings,
-                &mut next_binder,
-            )?;
-            if fold.index == KernelFoldIndex::Int32 {
-                AlphaIntegerRangeIndex::Int32(start, end)
-            } else {
-                AlphaIntegerRangeIndex::UInt64(start, end)
-            }
-        }
-    };
-    let initial = export.integer(initial).ok()?;
-    let body = export.integer(body).ok()?;
-    let initial = alpha_integer_node(
-        &initial,
-        &mut bindings,
-        &mut memo,
-        &mut nodes,
-        &mut next_binder,
-    )?;
-    let node = alpha_integer_fold_node(
-        index,
-        initial,
-        fold.accumulator,
-        fold.item,
-        &mut bindings,
-        &mut next_binder,
-        |bindings, next_binder| {
-            alpha_integer_node(&body, bindings, &mut memo, &mut nodes, next_binder)
-        },
-    )?;
-    let root = nodes.len();
-    nodes.push(node);
+    let mut builder = RetainedIntegerKey::default();
+    let node = builder.fold(fold, &mut bindings, &mut 0)?;
+    let root = builder.nodes.len();
+    builder.nodes.push(node);
     Some(IntegerFoldAlphaKey {
-        key: AlphaIntegerKey { nodes, root },
+        key: AlphaIntegerKey {
+            nodes: builder.nodes,
+            root,
+        },
         work_units: bindings.work_units,
     })
+}
+
+#[derive(Default)]
+struct RetainedIntegerKey {
+    nodes: Vec<AlphaIntegerNode>,
+    retained: HashMap<(u64, u64, u64), usize>,
+    native: HashMap<(u64, u64, u64), usize>,
+    argument_export: KernelTermExport,
+}
+
+impl RetainedIntegerKey {
+    fn node(
+        &mut self,
+        term: &KernelTerm,
+        bindings: &mut AlphaBindings,
+        next_binder: &mut usize,
+    ) -> Option<usize> {
+        let key = (term.id(), bindings.integer_scope, bindings.bitvector_scope);
+        if let Some(index) = self.retained.get(&key) {
+            return Some(*index);
+        }
+        alpha_work_checkpoint(bindings, 1)?;
+        use KernelTermNode as Node;
+        let node = match term.node() {
+            Node::IntegerLiteral(value) => {
+                alpha_work_checkpoint(bindings, (value.bits() as usize).saturating_add(1))?;
+                AlphaIntegerNode::Constant(value.clone())
+            }
+            Node::Variable(variable) => AlphaIntegerNode::Variable(alpha_variable_key::<false>(
+                *variable,
+                &bindings.integer,
+            )?),
+            Node::MachineObservation { format, operand } => {
+                let key = if operand.ty() == &KernelType::Program(format.program_type())
+                    && operand.is_shared_machine_operand()
+                {
+                    alpha_machine_key::<false>(
+                        MachineOperandView::Shared(operand),
+                        bindings,
+                        next_binder,
+                    )?
+                } else {
+                    let machine = KernelTermExport::machine(operand).ok()?;
+                    alpha_machine_key::<false>(
+                        MachineOperandView::Legacy(&machine),
+                        bindings,
+                        next_binder,
+                    )?
+                };
+                AlphaIntegerNode::Machine(*format, key)
+            }
+            Node::IntegerOperation {
+                operator,
+                arguments,
+            } => {
+                let left = self.node(&arguments[0], bindings, next_binder)?;
+                match operator {
+                    KernelIntegerOperator::Negate => AlphaIntegerNode::Negate(left),
+                    operator => {
+                        let operator = match operator {
+                            KernelIntegerOperator::Add => IntegerTermBinaryOp::Add,
+                            KernelIntegerOperator::Subtract => IntegerTermBinaryOp::Subtract,
+                            KernelIntegerOperator::Multiply => IntegerTermBinaryOp::Multiply,
+                            KernelIntegerOperator::TruncatingQuotient => {
+                                IntegerTermBinaryOp::TruncatingQuotient
+                            }
+                            KernelIntegerOperator::TruncatingRemainder => {
+                                IntegerTermBinaryOp::TruncatingRemainder
+                            }
+                            KernelIntegerOperator::Negate => unreachable!(),
+                        };
+                        AlphaIntegerNode::Binary {
+                            operator,
+                            left,
+                            right: self.node(&arguments[1], bindings, next_binder)?,
+                        }
+                    }
+                }
+            }
+            Node::Fold(fold) => self.fold(fold, bindings, next_binder)?,
+            Node::IntegerIf {
+                arguments: [condition, yes, no],
+            } => AlphaIntegerNode::If {
+                condition: Box::new(self.condition(condition, bindings, next_binder)?),
+                then_term: self.node(yes, bindings, next_binder)?,
+                else_term: self.node(no, bindings, next_binder)?,
+            },
+            Node::Call { name, arguments } => AlphaIntegerNode::PureFunctionApplication {
+                name: name.clone(),
+                arguments: self.arguments(arguments, bindings, next_binder)?,
+            },
+            Node::Legacy(value) => {
+                let PureFunctionArgument::Integer(value) = value.value() else {
+                    return None;
+                };
+                let index = alpha_integer_node(
+                    value,
+                    bindings,
+                    &mut self.native,
+                    &mut self.nodes,
+                    next_binder,
+                )?;
+                self.retained.insert(key, index);
+                return Some(index);
+            }
+            // The native alpha key refuses algebraic matches too.
+            _ => return None,
+        };
+        let index = self.nodes.len();
+        self.nodes.push(node);
+        self.retained.insert(key, index);
+        Some(index)
+    }
+
+    fn fold(
+        &mut self,
+        fold: &KernelFold,
+        bindings: &mut AlphaBindings,
+        next_binder: &mut usize,
+    ) -> Option<AlphaIntegerNode> {
+        let [start, end, initial, body] = &fold.arguments;
+        let index = match fold.index {
+            KernelFoldIndex::Integer => AlphaIntegerRangeIndex::Integer(
+                self.node(start, bindings, next_binder)?,
+                self.node(end, bindings, next_binder)?,
+            ),
+            KernelFoldIndex::Int32 | KernelFoldIndex::UInt64 => {
+                let start = SharedIntegerRangeEndpoint::from_shared(start.clone())?;
+                let end = SharedIntegerRangeEndpoint::from_shared(end.clone())?;
+                let start = alpha_machine_key::<false>(
+                    start.machine_operand().operand_view(),
+                    bindings,
+                    next_binder,
+                )?;
+                let end = alpha_machine_key::<false>(
+                    end.machine_operand().operand_view(),
+                    bindings,
+                    next_binder,
+                )?;
+                if fold.index == KernelFoldIndex::Int32 {
+                    AlphaIntegerRangeIndex::Int32(start, end)
+                } else {
+                    AlphaIntegerRangeIndex::UInt64(start, end)
+                }
+            }
+        };
+        let initial = self.node(initial, bindings, next_binder)?;
+        alpha_integer_fold_node(
+            index,
+            initial,
+            fold.accumulator,
+            fold.item,
+            bindings,
+            next_binder,
+            |bindings, next_binder| self.node(body, bindings, next_binder),
+        )
+    }
+
+    fn integer(
+        term: &KernelTerm,
+        bindings: &mut AlphaBindings,
+        next_binder: &mut usize,
+    ) -> Option<AlphaIntegerKey> {
+        let mut builder = Self::default();
+        let root = builder.node(term, bindings, next_binder)?;
+        Some(AlphaIntegerKey {
+            nodes: builder.nodes,
+            root,
+        })
+    }
+
+    fn arguments(
+        &mut self,
+        arguments: &[KernelTerm],
+        bindings: &mut AlphaBindings,
+        next_binder: &mut usize,
+    ) -> Option<Vec<AlphaPureFunctionArgumentKey>> {
+        arguments
+            .iter()
+            .map(|argument| {
+                if argument.ty() == &KernelType::Integer {
+                    alpha_work_checkpoint(bindings, 1)?;
+                    return Some(AlphaPureFunctionArgumentKey::Integer(Self::integer(
+                        argument,
+                        bindings,
+                        next_binder,
+                    )?));
+                }
+                // Mixed arguments still use the existing key for that value family.
+                let argument = self.argument_export.argument(argument).ok()?;
+                alpha_pure_function_argument_key_with_bindings::<false>(
+                    &argument,
+                    bindings,
+                    next_binder,
+                )
+            })
+            .collect()
+    }
+
+    fn condition(
+        &mut self,
+        condition: &KernelTerm,
+        bindings: &mut AlphaBindings,
+        next_binder: &mut usize,
+    ) -> Option<AlphaConditionKey> {
+        use KernelTermNode as Node;
+        alpha_work_checkpoint(bindings, 1)?;
+        Some(match condition.node() {
+            Node::IntegerCompare {
+                operator,
+                arguments: [left, right],
+            } => AlphaConditionKey::IntegerComparison(
+                *operator,
+                Self::integer(left, bindings, next_binder)?,
+                Self::integer(right, bindings, next_binder)?,
+            ),
+            Node::BoolEqual {
+                arguments: [left, right],
+            } => AlphaConditionKey::BoolEqual(
+                Box::new(self.condition(left, bindings, next_binder)?),
+                Box::new(self.condition(right, bindings, next_binder)?),
+            ),
+            Node::BoolIf {
+                arguments: [guard, yes, no],
+            } => AlphaConditionKey::BoolIf(
+                Box::new(self.condition(guard, bindings, next_binder)?),
+                Box::new(self.condition(yes, bindings, next_binder)?),
+                Box::new(self.condition(no, bindings, next_binder)?),
+            ),
+            Node::Call { name, arguments } => AlphaConditionKey::BoolApplication {
+                name: name.clone(),
+                arguments: self.arguments(arguments, bindings, next_binder)?,
+            },
+            _ => {
+                let condition = KernelTermExport::condition(condition).ok()?;
+                return alpha_condition_key_with_bindings::<false>(
+                    &condition,
+                    bindings,
+                    next_binder,
+                );
+            }
+        })
+    }
 }
 
 fn machine_key(fold: &KernelFold) -> Option<(AlphaBitvectorKey, usize)> {
@@ -177,7 +363,7 @@ pub(crate) fn alpha_equivalent(left: &KernelFold, right: &KernelFold) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{IntegerRangeFoldIndex, KernelTerm, KernelTermImport};
+    use crate::kernel::{IntegerRangeFoldIndex, KernelTermImport};
 
     fn machine_fold(accumulator: u64, item: u64, body: MachineTerm) -> MachineTerm {
         MachineTerm::RangeFold {
@@ -267,6 +453,58 @@ mod tests {
                 integer_fold_alpha_key(&reference.into())
             );
         }
+    }
+
+    #[test]
+    fn retained_integer_folds_match_native_keys_for_nested_scopes_and_calls() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let fold = |accumulator: u64, free: Variable| {
+            let acc = Variable(accumulator);
+            let item = Variable(accumulator + 1);
+            let zero = KernelTerm::integer_literal(0.into());
+            let acc_value = KernelTerm::variable(KernelType::Integer, acc);
+            let free_value = KernelTerm::variable(KernelType::Integer, free);
+            let index = KernelTerm::variable(KernelType::Integer, item);
+            let call = KernelTerm::checked_call(
+                KernelType::Integer,
+                "selected".to_owned(),
+                vec![acc_value.clone(), index.clone()],
+            );
+            let guard = KernelTerm::integer_comparison(
+                IntegerComparisonOperator::LessEqual,
+                [call.clone(), free_value.clone()],
+            )
+            .unwrap();
+            let inner = KernelFold::new(
+                KernelFoldIndex::Integer,
+                acc,
+                item,
+                [
+                    zero.clone(),
+                    free_value.clone(),
+                    index,
+                    KernelTerm::integer_if_raw([guard, call, acc_value]),
+                ],
+            )
+            .unwrap();
+            KernelFold::new(
+                KernelFoldIndex::Integer,
+                acc,
+                item,
+                [zero.clone(), free_value, zero, inner.into_term()],
+            )
+            .unwrap()
+        };
+        let free = Variable(100);
+        let folds = [fold(101, free), fold(201, free), fold(301, Variable(401))];
+        for fold in &folds {
+            let native = fold
+                .integer_compatibility(&mut KernelTermExport::default())
+                .unwrap();
+            assert_eq!(integer_key(fold), integer_fold_alpha_key(&native.into()));
+        }
+        assert_eq!(alpha_equivalent(&folds[0], &folds[1]), Some(true));
+        assert_eq!(alpha_equivalent(&folds[0], &folds[2]), Some(false));
     }
 
     #[test]
