@@ -570,8 +570,6 @@ cast, a `return`, and a call argument: `unsigned char c = -56` holds 200,
 `kernel` mode
 (`mdtests/an_out_of_range_integer_constant_converts_modulo_its_destination_width.md`,
 `mdtests/a_negative_char_constant_is_unsigned_on_the_kernel_target.md`).
-A narrowing of a value that is not an integer constant expression keeps the
-checked range rule of the scalar casts below.
 
 The character pointer types `char *`, `signed char *`, and `unsigned char *`
 convert to one another by an explicit one-level cast, which C11 6.3.2.3p7 and
@@ -1388,9 +1386,9 @@ assignments, and returns.
 `uint32` equality compares 32-bit values directly and its ordered comparisons
 use unsigned order. Its addition, subtraction, and multiplication wrap modulo
 2^32; division and remainder use unsigned operands. Its shifts preserve the
-promoted left operand's type, with logical right shift for `uint32`. Assigning or
-returning an `int32` into `int8`, `int16`, `uint8`, or `uint16`, including an explicit
-cast, requires Click to prove the corresponding target range. Conditional
+promoted left operand's type, with logical right shift for `uint32`. Narrowing
+an `int32` to `int8`, `int16`, `uint8`, or `uint16` uses the integer conversion
+described above in casts, assignments, and returns. Conditional
 expressions first convert arithmetic arms to their common C type, then evaluate
 only the selected branch.
 

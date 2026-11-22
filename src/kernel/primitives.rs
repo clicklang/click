@@ -8118,11 +8118,11 @@ pub struct VerifiedLoopRule {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum UndefinedBehavior {
     SignedOverflow,
-    /// The signed overflow of an `int32` division or remainder, which
-    /// happens at exactly one operand pair, `INT_MIN / -1`. Kept apart from
+    /// The signed overflow of a division or remainder, which happens
+    /// when the minimum value of the format is divided by -1. Kept apart from
     /// [`Self::SignedOverflow`] so the refusal names the pair the facts
     /// leave open instead of a bare `signed overflow`.
-    SignedDivisionOverflow,
+    SignedDivisionOverflow(MachineIntegerType),
     PointerArithmetic,
     DivisionByZero,
     FloatToIntegerOutOfRange,
@@ -8174,10 +8174,14 @@ impl UndefinedBehavior {
     pub fn description(&self) -> String {
         match self {
             Self::SignedOverflow => "signed overflow".to_string(),
-            Self::SignedDivisionOverflow => {
+            Self::SignedDivisionOverflow(MachineIntegerType::Int32) => {
                 "signed overflow (INT_MIN / -1 is the one int32 division or remainder that overflows)"
                     .to_string()
             }
+            Self::SignedDivisionOverflow(format) => format!(
+                "signed overflow (the minimum signed {}-bit value divided by -1 overflows division and remainder)",
+                format.format().bits(),
+            ),
             Self::PointerArithmetic => "pointer arithmetic left the pointed-to object".to_string(),
             Self::SubobjectAccess { .. } => {
                 "access outside the subobject the pointer designates".to_string()

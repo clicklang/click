@@ -3429,11 +3429,57 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            is_float_bound, signed_product_guard_requirements, signed_quotient_bridge_requirement,
+            is_float_bound, shift_count_mask_requirements, signed_product_guard_requirements,
+            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
+        if let Some(requirements) = shift_count_mask_requirements(goal) {
+            let mut proof = search_input.clone();
+            let mut surfaces = Vec::with_capacity(requirements.len());
+            for required in &requirements {
+                let Some(surface) = proof.structural_proposition_candidate(required) else {
+                    return Ok(None);
+                };
+                if !proof.facts().contains(required) {
+                    let Some(scope) =
+                        attempt::candidate_outcome(proof.driver().open_have(surface.clone()))?
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(closed) = scope
+                        .driver()
+                        .try_solve_closure_with_surfaces(introduced_surfaces)?
+                    else {
+                        return Ok(None);
+                    };
+                    proof = closed.join()?;
+                }
+                surfaces.push(surface);
+            }
+            return attempt::candidate_outcome(
+                proof
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(surfaces)),
+            );
+        }
+        if let Some(identity) = signed_shift_bound_mask_identity(goal)
+            && let Some(equality) = search_input.structural_proposition_candidate(&identity)
+            && let Some(scope) =
+                attempt::candidate_outcome(search_input.driver().open_have(equality.clone()))?
+            && let Some(closed) = scope
+                .driver()
+                .try_solve_closure_with_surfaces(introduced_surfaces)?
+            && let Some(rewritten) = attempt::candidate_outcome(
+                closed
+                    .join()?
+                    .driver()
+                    .apply_step(ProofStep::Rewrite(equality)),
+            )?
+        {
+            return attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known));
+        }
         if let Proposition::And(left, right) = goal
             && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
                 is_float_bound(leaf) || signed_product_guard_requirements(leaf, false).is_some()

@@ -846,10 +846,10 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_local_viewabi
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_history_indexed_equalities	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_bounded_arithmetic_closure	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	driver	11
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	resolve_solve_premises_unmeasured	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	select_float_bound	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_solve_closure_with_surfaces	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_solve_closure_with_surfaces	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_masked_read_preservation	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_masked_read_preservation	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_indexed_read_preservation	1
