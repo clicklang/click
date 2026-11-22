@@ -137,6 +137,8 @@ int32 run() {
     have private_file::read_private::local_table[2] < 1000 by solve();
     have private_file::read_private::local_table[3] > -1000 by solve();
     have private_file::read_private::local_table[3] < 1000 by solve();
+    step_until(statement(4).entry);
+    have private == 11;
 }
 ```
 
