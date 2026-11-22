@@ -95,9 +95,9 @@ read through a pointer loaded at entry can use that entry version when the
 pointer's own read names that entry and the recorded effects leave caller
 storage unchanged.
 
-When a checked call initializes an entire `int32` local with an unknown
-value, Click and C name its symbolic read by the call's recorded output
-point. An effect that can write the local retires that version.
+When a checked call initializes a whole integer local with an unknown value,
+Click and C name a matching typed read by the call's recorded output point.
+An effect that can write the local retires that version.
 
 An integer read of static storage uses the function-entry version when the
 whole-object index shows that the object is unchanged. This includes reads
