@@ -863,3 +863,5 @@ src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_single_write_indexed_separation	try_indexed_separation_restriction	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_indexed_separation_restriction	try_resource_separation_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	indexed_containment_step	1
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_indexed_read_preservation	try_distinct_indexed_store_separation	1
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_distinct_indexed_store_separation	driver	2

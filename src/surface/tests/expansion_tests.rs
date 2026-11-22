@@ -16686,6 +16686,42 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay fixed and variable array spans"]
+fn pruned_indexed_read_expands_through_distinct_store_preservation() {
+    for (fixture, function) in [
+        (
+            "mdtests/a_pruned_store_with_a_separated_read_is_framed.md",
+            "read_beside_a_pruned_store",
+        ),
+        (
+            "mdtests/a_pruned_store_over_a_variable_span_with_a_separated_read_is_framed.md",
+            "read_after_a_pruned_store",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, function).unwrap();
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        assert!(
+            expanded.contains("separation::separate_elements("),
+            "{fixture}: {expanded}"
+        );
+        assert!(
+            expanded.contains("preserve(memory(a[m])"),
+            "{fixture}: {expanded}"
+        );
+        without_implicit_solve_for_claim(&format!("{function}.contract"), || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expand and replay the separated-array store and call"]
 fn quantified_read_expands_through_store_and_call_preservation() {
     let (source, sources) = mdtest_sources(
