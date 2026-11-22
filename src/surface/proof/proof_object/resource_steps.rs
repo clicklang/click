@@ -839,70 +839,86 @@ impl<'a> Proof<'a> {
             // arguments and fields. Pair body clauses by the producer's
             // ordinal, rather than reconstructing those values from state.
             let mut written = BTreeMap::new();
-            let source_body =
-                if let (Some(fields), ResourceClause::Named { resource, .. }) =
-                    (&binding.fold_fields, resource)
-                    && let ResourceClause::Declared {
-                        name, arguments, ..
-                    } = resource.as_ref()
-                    && let Some(source_definition) = context.resource_environment.get(name)
-                    && let Some(body) = source_definition.composite_body()
-                {
-                    written.extend(source_definition.parameters().iter().zip(arguments).map(
-                        |(parameter, argument)| (parameter.name().to_owned(), argument.clone()),
-                    ));
-                    written.extend(fields.iter().cloned());
-                    // A field supplies the type of a contextual literal.
-                    // Preserve that type when the initializer is substituted
-                    // into an independently written obligation.
-                    for field in source_definition.fields() {
-                        if *field.click_type() == ClickType::Integer
-                            && let Some(value) = written.get_mut(field.name())
+            let source_body = if let (Some(fields), ResourceClause::Named { resource, .. }) =
+                (&binding.fold_fields, resource)
+                && let ResourceClause::Declared {
+                    name, arguments, ..
+                } = resource.as_ref()
+                && let Some(source_definition) = context.resource_environment.get(name)
+                && let Some(body) = source_definition.composite_body()
+            {
+                written.extend(source_definition.parameters().iter().zip(arguments).map(
+                    |(parameter, argument)| {
+                        // The application gives its argument a machine
+                        // type. Keep it when the body fact moves the
+                        // argument into an Integer arithmetic context.
+                        let argument = if crate::surface::parser::has_arithmetic_spine(argument)
+                            && crate::surface::lowering::pure_function_parameter_scalar_type(
+                                parameter,
+                            )
+                            .is_some()
                         {
-                            *value = ContractExpression::IntegerContext(Box::new(value.clone()));
-                        } else if let Some(value) = written.get_mut(field.name()) {
-                            // The kernel evaluates the initializer at the field's
-                            // declared type. Keep that same conversion in the
-                            // independently printed prerequisite: n + 1 for an
-                            // int32 field must not become Integer arithmetic.
-                            *value = crate::surface::lowering::pure_function_parameter_argument(
-                                &FunctionParameter {
-                                    slice_length: None,
-                                    name: field.name().to_owned(),
-                                    click_type: field.click_type().clone(),
-                                    struct_name: None,
-                                    function_pointer_signature: None,
-                                    constant: false,
-                                    pointee_constant: false,
-                                    reference: false,
-                                },
-                                value,
-                            );
-                        }
+                            crate::surface::lowering::pure_function_parameter_argument(
+                                parameter, argument,
+                            )
+                        } else {
+                            argument.clone()
+                        };
+                        (parameter.name().to_owned(), argument)
+                    },
+                ));
+                written.extend(fields.iter().cloned());
+                // A field supplies the type of a contextual literal.
+                // Preserve that type when the initializer is substituted
+                // into an independently written obligation.
+                for field in source_definition.fields() {
+                    if *field.click_type() == ClickType::Integer
+                        && let Some(value) = written.get_mut(field.name())
+                    {
+                        *value = ContractExpression::IntegerContext(Box::new(value.clone()));
+                    } else if let Some(value) = written.get_mut(field.name()) {
+                        // The kernel evaluates the initializer at the field's
+                        // declared type. Keep that same conversion in the
+                        // independently printed prerequisite: n + 1 for an
+                        // int32 field must not become Integer arithmetic.
+                        *value = crate::surface::lowering::pure_function_parameter_argument(
+                            &FunctionParameter {
+                                slice_length: None,
+                                name: field.name().to_owned(),
+                                click_type: field.click_type().clone(),
+                                struct_name: None,
+                                function_pointer_signature: None,
+                                constant: false,
+                                pointee_constant: false,
+                                reference: false,
+                            },
+                            value,
+                        );
                     }
-                    match &body.matched {
-                        None => Some(context.resource_environment.fold_source(name)?.body.clone()),
-                        Some(matched) => match written.get(&matched.field) {
-                            Some(ContractExpression::AlgebraicConstructor {
-                                variant,
-                                arguments,
-                                ..
-                            }) => {
-                                let (bindings, arm) = context
-                                    .resource_environment
-                                    .fold_source(name)?
-                                    .arms
-                                    .get(variant)
-                                    .ok_or_else(|| {
-                                        self.step_error("fold constructor has no source arm")
-                                    })?;
-                                let arguments = arguments.clone();
-                                // Constructor fields have their declared types,
-                                // including the implicit object-pointer coercion
-                                // of a void* field. Preserve that conversion in
-                                // the source obligation just as constructor
-                                // lowering does in the kernel term.
-                                written.extend(bindings.iter().cloned().zip(arguments).map(
+                }
+                match &body.matched {
+                    None => Some(context.resource_environment.fold_source(name)?.body.clone()),
+                    Some(matched) => match written.get(&matched.field) {
+                        Some(ContractExpression::AlgebraicConstructor {
+                            variant,
+                            arguments,
+                            ..
+                        }) => {
+                            let (bindings, arm) = context
+                                .resource_environment
+                                .fold_source(name)?
+                                .arms
+                                .get(variant)
+                                .ok_or_else(|| {
+                                    self.step_error("fold constructor has no source arm")
+                                })?;
+                            let arguments = arguments.clone();
+                            // Constructor fields have their declared types,
+                            // including the implicit object-pointer coercion
+                            // of a void* field. Preserve that conversion in
+                            // the source obligation just as constructor
+                            // lowering does in the kernel term.
+                            written.extend(bindings.iter().cloned().zip(arguments).map(
                                 |((name, click_type), argument)| {
                                     let value = if click_type == ClickType::Integer {
                                         ContractExpression::IntegerContext(Box::new(argument))
@@ -924,14 +940,14 @@ impl<'a> Proof<'a> {
                                     (name, value)
                                 },
                             ));
-                                Some(arm.clone())
-                            }
-                            _ => None,
-                        },
-                    }
-                } else {
-                    None
-                };
+                            Some(arm.clone())
+                        }
+                        _ => None,
+                    },
+                }
+            } else {
+                None
+            };
             let selected_by_name = selected_children
                 .as_deref()
                 .unwrap_or(&[])
