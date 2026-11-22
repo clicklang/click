@@ -9,15 +9,16 @@ items it checked fail.
 | `expansion` | every smart tactic expands to a simple proof that verifies | smart-tactic sites |
 | `raise-lower` | every fact and goal a step holds raises to Surface syntax that lowers back to the same term ([raise-lower principle](../../internals/raise-lower-principle.md)) | distinct facts and goals |
 | `fact-stability` | lowering never depends on the facts available ([fact-stable lowering](../../internals/raise-lower-principle.md#lowering-is-fact-stable)) | lowerings |
+| `legacy-walk` | no read is named by the legacy version walk over memory snapshots ([legacy-walk audit](#legacy-walk-audit)) | walk queries |
 
-With no audit named, all three run on the same target and the run ends with
+With no audit named, the first three run on the same target and the run ends with
 an `AUDITS:` block of their headlines. Only the expansion audit's failures
 fail the command; the lowering audits are tracked.
 
 ## Synopsis
 
 ```text
-usage: click audit [expansion|raise-lower|fact-stability] [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
+usage: click audit [expansion|raise-lower|fact-stability|legacy-walk] [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
 ```
 
 ## Lowering audits
@@ -64,6 +65,40 @@ A container that does not verify as its expectation says is counted after
 the headline and listed in `raise-lower.unexpected.tsv` or
 `fact-stability.unexpected.tsv`. The audit does not judge it: the gate and the
 nightly tests own verification verdicts.
+
+## Legacy-walk audit
+
+`legacy-walk` runs only when named. Like the lowering audits, it verifies each
+container once on its own thread and writes `legacy-walk.tsv` under
+`--records DIR`. It counts every query that names a read with the resource
+tracker's assumption-free version walk over memory snapshots
+(`resource_tracker::last_same_version_point` and the entries beside it). The
+[program-point migration](../../internals/memory-dag.md) replaces that walk
+with versions the program point carries, and the walk is deleted once this
+count reaches zero. A query is counted once, at its outermost entry, against
+the source line that called that entry.
+
+Each record is `queries, work, site, resource, storage, extent, container`:
+how many queries one container made from one call site for one kind of read
+(`cell` or `block`, the storage class of its block, and the cell's width),
+and the deterministic work they charged. Work is zero for queries made while
+the caller runs uncharged. The headline sums the queries, their work, the
+distinct call sites, and the containers with any query. After it, the audit
+lists the call sites and read kinds with the most work first, then the most
+queries, each with the container that made the most of them. On `examples/` at the change that
+added it:
+
+```text
+legacy-walk audit: 83943 queries named a read with the legacy version walk, charging 488727 work units, from 8 call sites in 136 of 156 proof containers; records: target/click-audit/legacy-walk.tsv
+  1. 641 queries in `src/kernel/memory_history.rs:5656` (examples/bounded-pool/bounded_pool.click)
+       read: cell external 4
+       cost: 106306 work units in 93 containers
+       reproduce: click audit legacy-walk examples/bounded-pool/bounded_pool.click
+```
+
+`legacy-walk.failures.tsv` and `legacy-walk.counts.tsv` sit beside the
+records in the lowering audits' columns; the counts file also has each read
+kind's query total, `work` and `sites`. The audit never fails the command.
 
 ## Expansion audit
 

@@ -225,7 +225,10 @@ have changed the cell at. It crosses a branch join only when both arms leave
 the cell alone back to their split. A continuation with no recorded step
 can be crossed when it carries its predecessor's execution view or a
 proof-only view certified at that point. The answer is a point on the
-reader's own path. This walk is used for tests and diagnostic comparisons.
+reader's own path. This walk is used for tests and diagnostic comparisons. The
+snapshot-keyed naming walk (`last_same_version_point`) is legacy: point
+versions replace it, and `click audit legacy-walk` counts the queries that
+still reach it.
 
 An interface join retains the identities of all incoming states in
 `join_inputs`, including through read projections. Two joins with empty cell
