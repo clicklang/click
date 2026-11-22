@@ -361,7 +361,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             surface_signed_integer_literal(target),
         ];
         Ok(Some(proof.driver().apply_step(
-            ProofStep::ApplyTheoremUsing {
+            ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
                     name: format!(
                         "click::integer::product_{}_bound",
@@ -6898,7 +6898,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let resource_arg = |r: &crate::surface::ResourceSubject| {
                     ContractExpression::Resource(Box::new(r.clone()))
                 };
-                proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                     application: TheoremApplication {
                         name: "click::separation::separate_restrict".into(),
                         arguments: vec![
@@ -6966,7 +6966,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             proof = closed.join()?;
             if reversed {
-                proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                     application: TheoremApplication {
                         name: "click::separation::separate_symm".into(),
                         arguments: vec![resource_arg(other), resource_arg(child)],
@@ -6976,7 +6976,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             premises.push(separate(child, other));
         }
-        proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+        proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: "click::separation::separate_star".into(),
                 arguments: vec![resource_arg(a), resource_arg(b), resource_arg(other)],
@@ -6984,7 +6984,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             premises,
         })?;
         if reversed {
-            proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+            proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
                     name: "click::separation::separate_symm".into(),
                     arguments: vec![resource_arg(right), resource_arg(left)],
@@ -9430,7 +9430,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator: ComparisonOperator::LessThan,
                             right: difference.clone(),
                         };
-                        let proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                        let proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                                 application: TheoremApplication {
                                     name: "click::integer::uint32_less_than_implies_positive_difference"
                                         .to_string(),
@@ -10726,7 +10726,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         return None;
                     }
                 };
-                let step = ProofStep::ApplyTheoremUsing {
+                let step = ProofStep::ApplyPlannedTheorem {
                     application,
                     premises: surfaces.to_vec(),
                 };

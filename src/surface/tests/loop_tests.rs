@@ -1193,10 +1193,9 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
     )
     .expect("the retained initialization theorem step should expand");
     assert!(
-        expanded.contains("apply(nonnegative_is_acceptable(x)) using"),
+        expanded.contains("apply(nonnegative_is_acceptable(x));"),
         "{expanded}"
     );
-    assert!(expanded.contains("x >= 0;"), "{expanded}");
     verify_c_sources(&expanded, &[("initialize_with_theorem.c", c_source)])
         .expect("expanded initialization theorem application should independently verify");
 }
@@ -1823,11 +1822,7 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("not at(loop(0).exit, i) < at(loop(0).exit, n)"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("click::integer::int32_less_equal_and_not_less_than_implies_equal"),
+        expanded.contains("apply(click::integer::int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, n)));"),
         "{expanded}"
     );
     assert!(!expanded.contains("normalize()"), "{expanded}");
@@ -2760,7 +2755,7 @@ fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("(p[0] as int32) == (old(p)[index] as int32);"),
+        expanded.contains("apply(same_byte(p[0], old(p)[index]));"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap();

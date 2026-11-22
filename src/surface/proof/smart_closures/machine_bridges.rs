@@ -110,7 +110,7 @@ fn application(
     arguments: Vec<ContractExpression>,
     premises: Vec<ClickProposition>,
 ) -> ProofStep {
-    ProofStep::ApplyTheoremUsing {
+    ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: format!("click::integer::{name}"),
             arguments,

@@ -676,11 +676,41 @@ impl<'a> Proof<'a> {
         })
     }
 
+    pub(in crate::surface::proof) fn theorem_obligation_available(
+        &self,
+        requirement: &UnresolvedRequirement,
+    ) -> bool {
+        self.facts().pure_known_available(&requirement.proposition)
+            || matches!(
+                normalize_proposition(&requirement.proposition),
+                NormalizedProposition::True
+            )
+    }
+
+    /// A selected application's premises were checked separately. Check that
+    /// a bare replay can reconstruct the same conclusions from the ambient
+    /// fact index, including any obligations for evaluating the arguments.
+    pub(in crate::surface::proof) fn planned_theorem_replays_bare(
+        &self,
+        application: &TheoremApplication,
+        conclusions: &[Proposition],
+    ) -> bool {
+        crate::instrumentation::with_certificate_presentation_work(|| {
+            self.prepare_theorem_application(application)
+                .is_ok_and(|prepared| {
+                    prepared.conclusions == conclusions
+                        && prepared
+                            .obligations
+                            .iter()
+                            .all(|requirement| self.theorem_obligation_available(requirement))
+                })
+        })
+    }
+
     pub(in crate::surface::proof) fn finish_prepared_theorem_application(
         &self,
         prepared: PreparedTheoremApplication,
         application: &TheoremApplication,
-        premises: Vec<ClickProposition>,
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
         let _operation =
@@ -712,10 +742,7 @@ impl<'a> Proof<'a> {
             node: ProofNode::step_child(
                 &self.node,
                 self.focused_branch_id(),
-                Arc::new(ProofStep::ApplyTheoremUsing {
-                    application: application.clone(),
-                    premises,
-                }),
+                Arc::new(ProofStep::ApplyTheorem(application.clone())),
             ),
         })
     }

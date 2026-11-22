@@ -105,7 +105,7 @@ crate::surface::tests::test_batches! {
         smart_sites_inside_and_after_cases_and_outcomes_resolve_to_their_source,
     ],
     expansion_api_batch_15: [
-        premise_free_applications_are_simple_but_required_premises_stay_smart,
+        named_applications_are_simple_with_ordinary_obligations,
         commented_selective_and_qualified_names_expand_and_recheck,
         solve_expands_disjunction_projection_to_cases_without_extract,
         solve_expands_propagated_partial_implication_to_known,
@@ -2641,7 +2641,7 @@ int32 inspect(uint8 p[], uint64 len) {
     )
     .expect("post-execution apply should expand");
 
-    assert!(expanded.contains("apply(string::len_has_terminator(p, len)) using"));
+    assert!(expanded.contains("apply(string::len_has_terminator(p, len));"));
     verify_c_sources(&expanded, &[("inspect.c", c_source)])
         .expect("explicit apply conclusions should remain available to the trailing solve");
 }
@@ -3121,14 +3121,9 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
     let selected = &expanded[expanded
         .find("theorem applied_then_solve")
         .expect("expanded source should retain the selected theorem")..];
-    assert!(
-        selected.contains("apply(required(x)) using {"),
-        "{selected}"
-    );
-    assert!(selected.contains("x >= 0;"), "{selected}");
+    assert!(selected.contains("apply(required(x));"), "{selected}");
     assert!(selected.contains("have x >= 0 by {"), "{selected}");
     assert!(selected.contains("known();"), "{selected}");
-    assert!(!selected.contains("apply(required(x));"), "{selected}");
     assert!(!selected.contains("solve();"), "{selected}");
     verify_click_theorems(&expanded)
         .expect("the serialized pure theorem certificate should independently reverify");
@@ -3169,12 +3164,9 @@ fn pure_branch_local_apply_expands_the_retained_proof_object_paths() {
     let selected = &expanded[expanded
         .find("theorem branch_apply")
         .expect("expanded source should retain the selected theorem")..];
+    assert!(selected.contains("apply(equality_case(x));"), "{selected}");
     assert!(
-        selected.contains("apply(equality_case(x)) using {"),
-        "{selected}"
-    );
-    assert!(
-        selected.contains("apply(inequality_case(x)) using {"),
+        selected.contains("apply(inequality_case(x));"),
         "{selected}"
     );
     assert!(!selected.contains("solve();"), "{selected}");
@@ -3225,13 +3217,8 @@ fn pure_nested_have_branch_apply_expands_the_retained_proof_object_scope() {
         "{selected}"
     );
     assert!(
-        selected.contains("apply(equality_case_nested(x)) using {")
-            && selected.contains("apply(inequality_case_nested(x)) using {"),
-        "{selected}"
-    );
-    assert!(
-        !selected.contains("apply(equality_case_nested(x));")
-            && !selected.contains("apply(inequality_case_nested(x));"),
+        selected.contains("apply(equality_case_nested(x));")
+            && selected.contains("apply(inequality_case_nested(x));"),
         "{selected}"
     );
     assert!(!selected.contains("solve();"), "{selected}");
@@ -3713,7 +3700,7 @@ mod scaling_tests {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_api_batch_15")]
-fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
+fn named_applications_are_simple_with_ordinary_obligations() {
     let source = r#"
         import click::integer;
         theorem unconditional(x: int32) { ensures x == x by solve(); }
@@ -3734,19 +3721,9 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
         }
     "#;
     let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
-    assert_eq!(
-        sites
-            .iter()
-            .filter(|site| site.claim_label == "client.ensures_0")
-            .map(|site| site.source_index)
-            .collect::<Vec<_>>(),
-        [1]
-    );
-    assert!(
-        sites
-            .iter()
-            .any(|site| site.claim_label == "computed.ensures_0")
-    );
+    assert!(sites.iter().all(|site| {
+        site.claim_label != "client.ensures_0" && site.claim_label != "computed.ensures_0"
+    }));
     verify_c_sources(source, &[]).unwrap();
     assert!(verify_c_sources(&source.replace("requires defined(x + 1i64);", ""), &[]).is_err());
     assert!(

@@ -1051,7 +1051,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let driver_proof = self.proof;
         let applied = driver_proof
             .driver()
-            .apply_step(ProofStep::ApplyTheoremUsing {
+            .apply_step(ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
                     name: name.to_string(),
                     arguments,

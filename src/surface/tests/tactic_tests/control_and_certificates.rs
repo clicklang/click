@@ -778,7 +778,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     };
     assert!(matches!(
         ProofTactic::ApplyTheorem(application.clone()).class(),
-        TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
+        TacticClass::Simple(SimpleTactic::ApplyTheorem)
     ));
     assert!(matches!(
         ProofTactic::ApplyTheoremUsing {

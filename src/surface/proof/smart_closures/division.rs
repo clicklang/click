@@ -92,7 +92,7 @@ fn apply(
             },
         );
     }
-    ProofStep::ApplyTheoremUsing {
+    ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: format!("click::integer::{name}"),
             arguments: args,

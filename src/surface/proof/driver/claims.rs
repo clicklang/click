@@ -4639,7 +4639,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
                                     )));
                                 };
-                                // The retained `apply using` step is prefixed to every
+                                // The retained application is prefixed to every
                                 // claim certificate, so independent verification holds the
                                 // same checked conclusions when the closer runs.
                                 for tactic in certificate.to_proof_tactics() {

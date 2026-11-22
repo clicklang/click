@@ -108,7 +108,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ),
                     };
                     let scope = proof.driver().open_have(equality)?;
-                    let closed = scope.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                    let closed = scope.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                         application: TheoremApplication {
                             name: "click::integer::multiply_commutative".into(),
                             arguments: vec![source.clone(), written.clone()],
@@ -117,7 +117,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     })?;
                     proof = closed.join()?;
                 }
-                let proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                let proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                     application: TheoremApplication {
                         name: format!(
                             "click::integer::multiply_order_{}",

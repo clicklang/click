@@ -348,7 +348,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 }
             };
         }
-        if let ProofStep::ApplyTheoremUsing { application, .. } = &step
+        if let ProofStep::ApplyTheorem(application) = &step {
+            return driver_proof
+                .driver()
+                .apply_prepared_theorem(application, false);
+        }
+        if let ProofStep::ApplyTheoremUsing { application, .. }
+        | ProofStep::ApplyPlannedTheorem { application, .. } = &step
             && matches!(
                 driver_proof.focused_obligation(),
                 Some(Obligation::FunctionOutcome(_))
@@ -511,6 +517,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::ApplyTheoremUsing {
                 application,
                 premises,
+            }
+            | ProofStep::ApplyPlannedTheorem {
+                application,
+                premises,
             } => driver_proof.apply_theorem_using(application, premises),
             ProofStep::TransportUsing {
                 source,
@@ -570,11 +580,29 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             transition.clear_existential_projection();
         }
 
+        let step = match step {
+            ProofStep::ApplyPlannedTheorem { application, .. }
+                if driver_proof
+                    .planned_theorem_replays_bare(&application, &transition.checked_facts) =>
+            {
+                ProofStep::ApplyTheorem(application)
+            }
+            ProofStep::ApplyTheoremUsing { application, .. }
+                if driver_proof.site().is_generated()
+                    && driver_proof
+                        .planned_theorem_replays_bare(&application, &transition.checked_facts) =>
+            {
+                ProofStep::ApplyTheorem(application)
+            }
+            step => step,
+        };
         let state = driver_proof.publish_checked_transition(transition)?;
         let state = if matches!(
             step,
             ProofStep::ApplyFactUsing { .. }
+                | ProofStep::ApplyTheorem(_)
                 | ProofStep::ApplyTheoremUsing { .. }
+                | ProofStep::ApplyPlannedTheorem { .. }
                 | ProofStep::TransportUsing { .. }
                 | ProofStep::LetSatisfy(_)
         ) {
@@ -583,7 +611,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             state
         };
         let application = match &step {
-            ProofStep::ApplyTheoremUsing { application, .. } => Some(application.clone()),
+            ProofStep::ApplyTheorem(application)
+            | ProofStep::ApplyTheoremUsing { application, .. }
+            | ProofStep::ApplyPlannedTheorem { application, .. } => Some(application.clone()),
             _ => None,
         };
         let applied = Proof {
@@ -666,7 +696,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             site: driver_proof.site.clone(),
             context: driver_proof.context.clone(),
             state: applied.state,
-            node: ProofNode::step_child(&driver_proof.node, branch, Arc::new(step)),
+            node: ProofNode::step_child(
+                &driver_proof.node,
+                branch,
+                applied.node.step.clone().unwrap_or_else(|| Arc::new(step)),
+            ),
         })
     }
 

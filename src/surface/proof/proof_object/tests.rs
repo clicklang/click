@@ -185,7 +185,12 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             ProofStep::NormalizeUsing(premises) => {
                 count += premises.len();
             }
+            ProofStep::ApplyTheorem(application) => count += application.arguments.len(),
             ProofStep::ApplyTheoremUsing {
+                application,
+                premises,
+            }
+            | ProofStep::ApplyPlannedTheorem {
                 application,
                 premises,
             } => count += application.arguments.len() + premises.len(),
