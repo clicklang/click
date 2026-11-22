@@ -6102,6 +6102,22 @@ pub(in crate::surface) fn describe_callback_source(expression: &syntax::CExpress
 
 thread_local! {
     static REFERENCE_RESULT_SOURCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static NULL_LITERAL_SOURCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A generated proof cannot rely on a C declaration for `NULL`.
+pub(super) struct NullLiteralSourceScope(bool);
+
+impl NullLiteralSourceScope {
+    pub(super) fn enter() -> Self {
+        Self(NULL_LITERAL_SOURCE.with(|slot| slot.replace(true)))
+    }
+}
+
+impl Drop for NullLiteralSourceScope {
+    fn drop(&mut self) {
+        NULL_LITERAL_SOURCE.with(|slot| slot.set(self.0));
+    }
 }
 
 /// Kernel reference results carry addresses. Function-directed proof printing
@@ -6260,6 +6276,18 @@ pub(in crate::surface) fn typed_load_type_argument(
 pub(super) fn describe_program_expression(expression: &ProgramExpression) -> String {
     match expression {
         ProgramExpression::StringLiteral(identity) => identity.to_string(),
+        ProgramExpression::Value(ProgramValue::Pointer(pointer))
+            if pointer.is_null()
+                && !matches!(pointer.program_type(), ProgramType::FunctionPointer(_))
+                && NULL_LITERAL_SOURCE.with(std::cell::Cell::get) =>
+        {
+            let target = qualified_native_pointer_spelling(
+                crate::kernel::program_type_spelling(pointer.program_type()),
+                pointer.pointee_constant(),
+                pointer.pointee_volatile(),
+            );
+            format!("({})", click_cast("0u64", &target))
+        }
         ProgramExpression::Value(value) => {
             describe_program_value(value, ParameterBinding::default())
         }
