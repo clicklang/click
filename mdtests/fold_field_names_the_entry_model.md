@@ -1,10 +1,7 @@
 # a fold field names the entry model of the instance it refolds
 
-The positive side of
-[`fold_field_names_a_consumed_model.md`](fold_field_names_a_consumed_model.md):
-the initializer that refusal prints. `unfold(c)` consumed the instance, so the
-`fold` names the field's value at function entry rather than at a state that
-holds nothing.
+This fold selects the rank at function entry explicitly. A proof can also
+[read the rank captured at the opening](fold_field_names_the_opened_model.md).
 
 ```c filename=fold_field_names_the_entry_model.c
 void touch(int32* p) {

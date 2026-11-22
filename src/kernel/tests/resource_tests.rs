@@ -1048,7 +1048,7 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     let open = rewrite(&state, &instance, true, &children).unwrap().state;
     assert!(matches!(
         open.resources().instance_consumption(instance.identity()),
-        Some(InstanceConsumption::Unfold)
+        Some(InstanceConsumption::Opened { .. })
     ));
     assert!(
         state
@@ -1100,7 +1100,7 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     // Refolding and unfolding a sibling state do not change the original.
     assert!(matches!(
         raw.resources().instance_consumption(left.identity()),
-        Some(InstanceConsumption::Unfold)
+        Some(InstanceConsumption::Opened { .. })
     ));
     assert_eq!(
         closed
@@ -1787,6 +1787,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
             projection: ResourceFieldProjection {
                 identity: InstanceId::from_variable(Variable(10)).into(),
                 children: vec![],
+                field_name: None,
                 field_index: 1,
                 at_entry,
             },
@@ -1809,6 +1810,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
         node: SpecAlgebraicExpressionNode::ResourceField(ResourceFieldProjection {
             identity: InstanceId::from_variable(Variable(10)).into(),
             children: vec![],
+            field_name: None,
             field_index: 0,
             at_entry,
         }),
@@ -1901,6 +1903,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
             projection: ResourceFieldProjection {
                 identity: InstanceId::from_variable(Variable(identity)).into(),
                 children: vec![],
+                field_name: None,
                 field_index,
                 at_entry: false,
             },
@@ -4103,6 +4106,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         // free Integer identity independent from that resource placeholder.
         identity: crate::kernel::InstanceRef::Body,
         children: vec![],
+        field_name: None,
         field_index: 1,
         at_entry: false,
     });

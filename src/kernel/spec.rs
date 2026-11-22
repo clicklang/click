@@ -2251,11 +2251,16 @@ fn evaluate_spec_integer_expression_paths_in(
             } else {
                 state
             };
-            let instance = retained_state
-                .resource_instance_at_path(projection.identity, &projection.children)
+            let (instance, index) = retained_state
+                .projected_resource_field(
+                    projection.identity,
+                    &projection.children,
+                    projection.field_index,
+                    projection.field_name.as_deref(),
+                )
                 .ok_or(ExecutionLimit::ResourceFieldInstanceUnavailable)?;
-            crate::kernel::eval::typed_reads::record_field(instance, projection.field_index);
-            if let Some(root) = instance.fields().retained_integer(projection.field_index) {
+            crate::kernel::eval::typed_reads::record_field(instance, index);
+            if let Some(root) = instance.fields().retained_integer(index) {
                 return Ok(vec![SpecIntegerPath {
                     value: IntegerResult::from_kernel(root.clone()),
                     facts: Vec::new().into(),
@@ -2263,7 +2268,7 @@ fn evaluate_spec_integer_expression_paths_in(
                 }]);
             }
             let Some(crate::kernel::ResourceFieldValue::Integer(value)) =
-                instance.fields().get(projection.field_index)
+                instance.fields().get(index)
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };
@@ -3907,11 +3912,16 @@ fn evaluate_spec_algebraic_non_call_in(
             } else {
                 state
             };
-            let instance = retained_state
-                .resource_instance_at_path(projection.identity, &projection.children)
+            let (instance, index) = retained_state
+                .projected_resource_field(
+                    projection.identity,
+                    &projection.children,
+                    projection.field_index,
+                    projection.field_name.as_deref(),
+                )
                 .ok_or(ExecutionLimit::ResourceFieldInstanceUnavailable)?;
-            crate::kernel::eval::typed_reads::record_field(instance, projection.field_index);
-            if let Some(root) = instance.fields().retained_algebraic(projection.field_index) {
+            crate::kernel::eval::typed_reads::record_field(instance, index);
+            if let Some(root) = instance.fields().retained_algebraic(index) {
                 if root.ty() != &KernelType::Algebraic(expression.algebraic_type.clone()) {
                     return Err(ExecutionLimit::Paths);
                 }
@@ -3927,7 +3937,7 @@ fn evaluate_spec_algebraic_non_call_in(
                 }]);
             }
             let Some(crate::kernel::ResourceFieldValue::Algebraic(value)) =
-                instance.fields().get(projection.field_index)
+                instance.fields().get(index)
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };
@@ -7309,14 +7319,35 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             } else {
                 state
             };
+            if projection.field_index == ResourceFieldProjection::WITNESS {
+                let value = projection
+                    .field_name
+                    .as_deref()
+                    .and_then(|name| {
+                        retained_state.resource_witness(
+                            projection.identity,
+                            &projection.children,
+                            name,
+                        )
+                    })
+                    .filter(|value| value.program_type() == *program_type)
+                    .ok_or(ExecutionLimit::ResourceFieldInstanceUnavailable)?;
+                return Ok(vec![SpecExpressionPath {
+                    value: value.clone().into(),
+                    facts: Vec::new().into(),
+                    obligations: Vec::new().into(),
+                }]);
+            }
             let Some(value) = retained_state
-                .resource_instance_at_path(projection.identity, &projection.children)
-                .and_then(|instance| {
-                    crate::kernel::eval::typed_reads::record_field(
-                        instance,
-                        projection.field_index,
-                    );
-                    instance.fields().program_value(projection.field_index)
+                .projected_resource_field(
+                    projection.identity,
+                    &projection.children,
+                    projection.field_index,
+                    projection.field_name.as_deref(),
+                )
+                .and_then(|(instance, index)| {
+                    crate::kernel::eval::typed_reads::record_field(instance, index);
+                    instance.fields().program_value(index)
                 })
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);

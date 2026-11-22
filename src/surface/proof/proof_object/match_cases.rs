@@ -517,12 +517,30 @@ impl<'a> Proof<'a> {
         // resources. Other algebraic expressions remain ordinary matches.
         let matched_resource_field = match &expression {
             ContractExpression::ResourceField(access) => {
-                Some(crate::kernel::ResourceFieldProjection {
-                    identity: access.identity,
-                    children: access.children.clone(),
-                    field_index: access.field_index,
-                    at_entry: false,
-                })
+                let state = &execution.core.state;
+                let name = access.projected_name();
+                if let Some((instance, field_index)) = state.projected_resource_field(
+                    access.identity,
+                    &access.children,
+                    access.field_index,
+                    name.as_deref(),
+                ) {
+                    Some(crate::kernel::ResourceFieldProjection {
+                        identity: instance.identity().into(),
+                        children: Vec::new(),
+                        field_name: None,
+                        field_index,
+                        at_entry: false,
+                    })
+                } else {
+                    Some(crate::kernel::ResourceFieldProjection {
+                        identity: access.identity,
+                        children: access.children.clone(),
+                        field_name: name,
+                        field_index: access.field_index,
+                        at_entry: false,
+                    })
+                }
             }
             _ => None,
         };

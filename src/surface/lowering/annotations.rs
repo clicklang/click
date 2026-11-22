@@ -5830,20 +5830,31 @@ impl AnnotationLowerer<'_> {
             crate::kernel::model_fields::register_instance_spelling(identity, &access.owner);
         }
         if let Some(state) = environment.reference_state.as_ref() {
-            return state
-                .resource_instance_at_path(access.identity, &access.children)
-                .and_then(|instance| {
-                    crate::kernel::record_transport_field(instance, access.field_index);
-                    instance.fields().get(access.field_index)
-                })
-                .map(crate::kernel::ResourceFieldValue::into_native)
-                .map(Some)
-                .ok_or_else(|| {
-                    format!(
-                        "resource instance `{}` is not owned at this state",
-                        access.owner
+            let value = if access.field_index == crate::kernel::ResourceFieldProjection::WITNESS {
+                state
+                    .resource_witness(access.identity, &access.children, &access.field)
+                    .cloned()
+                    .map(AlgebraicValue::Program)
+            } else {
+                state
+                    .projected_resource_field(
+                        access.identity,
+                        &access.children,
+                        access.field_index,
+                        access.projected_name().as_deref(),
                     )
-                });
+                    .and_then(|(instance, index)| {
+                        crate::kernel::record_transport_field(instance, index);
+                        instance.fields().get(index)
+                    })
+                    .map(crate::kernel::ResourceFieldValue::into_native)
+            };
+            return value.map(Some).ok_or_else(|| {
+                format!(
+                    "resource instance `{}` is not owned at this state",
+                    access.owner
+                )
+            });
         }
         Ok(None)
     }
@@ -6326,6 +6337,7 @@ impl AnnotationLowerer<'_> {
                 crate::kernel::ResourceFieldProjection {
                     identity: access.identity,
                     children: access.children.clone(),
+                    field_name: access.projected_name(),
                     field_index: access.field_index,
                     at_entry: environment.at_function_entry,
                 },
@@ -7133,6 +7145,7 @@ impl AnnotationLowerer<'_> {
                     projection: crate::kernel::ResourceFieldProjection {
                         identity: access.identity,
                         children: access.children.clone(),
+                        field_name: access.projected_name(),
                         field_index: access.field_index,
                         at_entry: environment.at_function_entry,
                     },
@@ -7914,6 +7927,7 @@ impl AnnotationLowerer<'_> {
                         crate::kernel::ResourceFieldProjection {
                             identity: access.identity,
                             children: access.children.clone(),
+                            field_name: access.projected_name(),
                             field_index: access.field_index,
                             at_entry: environment.at_function_entry,
                         },

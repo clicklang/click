@@ -437,9 +437,6 @@ impl<'a> Proof<'a> {
             let operation = if unfold { "unfold" } else { "fold" };
             return Err(self.step_error(format!("`{name}` has no resource body to {operation}")));
         }
-        if !binding.children.is_empty() {
-            return Err(self.step_error("parent-qualified resource handles are not supported; use `let { slot: child } = unfold(parent)` and the independent child name"));
-        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("instance fold/unfold requires a C execution proof"));
         };
@@ -584,15 +581,29 @@ impl<'a> Proof<'a> {
             before
                 .resource_instance_at_path(binding.instance()?, &binding.children)
                 .or_else(|| {
-                    if !unfold && binding.children.is_empty() {
-                        pre_state.owned_resource_instance(binding.identity.instance()?)
+                    if !unfold {
+                        before
+                            .opened_resource_at_path(
+                                binding.identity.instance()?,
+                                &binding.children,
+                            )
+                            .or_else(|| {
+                                binding
+                                    .children
+                                    .is_empty()
+                                    .then(|| {
+                                        pre_state
+                                            .owned_resource_instance(binding.identity.instance()?)
+                                    })
+                                    .flatten()
+                            })
                     } else {
                         None
                     }
                 })
                 .ok_or_else(|| {
                     self.step_error(
-                        "resource instance is not owned and has no entry-state fold template",
+                        "resource instance is not owned here or has no retained fold template",
                     )
                 })?
         };
@@ -609,9 +620,9 @@ impl<'a> Proof<'a> {
         } else {
             self.state().locals().clone()
         };
-        let selected_children = binding
-            .child_bindings
-            .as_ref()
+        let selected_children = (unfold || binding.fold_fields.is_some())
+            .then_some(binding.child_bindings.as_ref())
+            .flatten()
             .map(|children| {
                 children
                     .iter()
@@ -630,8 +641,13 @@ impl<'a> Proof<'a> {
                             );
                             *identity
                         } else {
+                            let path = name
+                                .split('.')
+                                .skip(1)
+                                .map(str::to_owned)
+                                .collect::<Vec<_>>();
                             before
-                                .owned_resource_instance(*identity)
+                                .resource_instance_at_path(*identity, &path)
                                 .ok_or_else(|| {
                                     self.step_error(format!(
                                         "child `{name}` is not owned in folded form"
@@ -1065,6 +1081,29 @@ impl<'a> Proof<'a> {
                     .map(|witness| witness.name())
                     .zip(&rewrite.witness_values),
             )?;
+        }
+        if unfold
+            && let Some(crate::kernel::InstanceConsumption::Opened { children, .. }) = rewrite
+                .state
+                .resources()
+                .instance_consumption(instance.identity())
+        {
+            let parent = crate::surface::printing::format_resource_call(resource);
+            let aliases = selected_children
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .map(|(slot, _)| slot.as_str())
+                .collect::<BTreeSet<_>>();
+            for (slot, identity) in children.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                if !aliases.contains(slot.as_str()) {
+                    crate::kernel::model_fields::register_instance_spelling(
+                        *identity,
+                        &format!("{parent}.{slot}"),
+                    );
+                }
+            }
         }
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {

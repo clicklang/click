@@ -294,6 +294,7 @@ fn return_coordinates_include_emitted_fields_but_defer_live_counts() {
             projection: ResourceFieldProjection {
                 identity: InstanceId::from_variable(Variable(8_915_300)).into(),
                 children: Vec::new(),
+                field_name: None,
                 field_index: 0,
                 at_entry: false,
             },

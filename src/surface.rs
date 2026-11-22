@@ -1491,6 +1491,19 @@ impl CallBinderBinding {
         self.identity
     }
 
+    pub(crate) fn resolve_identity(
+        &self,
+        state: &ExecutionState,
+    ) -> Option<crate::kernel::ResourceBinder> {
+        let Some((_, path)) = self.instance.split_once('.') else {
+            return Some(self.identity);
+        };
+        let path = path.split('.').map(str::to_owned).collect::<Vec<_>>();
+        state
+            .resource_instance_at_path(self.identity.instance()?, &path)
+            .map(|instance| crate::kernel::ResourceBinder::Instance(instance.identity()))
+    }
+
     pub(crate) fn family(&self) -> Option<&str> {
         self.family.as_deref()
     }
@@ -2318,6 +2331,14 @@ pub struct ResourceFieldAccess {
     field: String,
     field_index: usize,
     click_type: Option<ClickType>,
+}
+
+impl ResourceFieldAccess {
+    fn projected_name(&self) -> Option<String> {
+        (!self.children.is_empty()
+            || self.field_index == crate::kernel::ResourceFieldProjection::WITNESS)
+            .then(|| self.field.clone())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

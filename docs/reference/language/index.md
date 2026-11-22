@@ -2320,11 +2320,10 @@ cell the body does not own stays unreadable
 (`mdtests/contract_field_bearing_instance_views_grant_no_write.md`,
 `mdtests/contract_field_bearing_instance_views_only_owned_cells.md`).
 
-Unfolding consumes the instance, so its fields have nothing to read afterward:
-`before.prefix` is refused, and so is `old(before.prefix)` in a loop invariant,
-because a loop invariant reads `old(...)` at the loop's entry. The unfold
-pattern names a C-typed field's folded value instead, exactly as a proof
-`match` arm names a constructor payload:
+An open instance keeps its captured fields available by their ordinary names.
+After `unfold(before)`, `before.prefix` reads the captured prefix. A loop
+invariant can use `old(before.prefix)` to read it at loop entry.
+The unfold pattern can give a C-typed field a separate proof name:
 
 <!-- verified-example: mdtests/resource_unfold_binds_scalar_field.md -->
 ```click
@@ -2341,8 +2340,8 @@ fresh name that is not a C parameter or local in scope. Only C-typed fields
 bind this way; an algebraic or `Integer` field is refused. For an algebraic
 field, a proof `match` before the unfold names its constructor payloads.
 Expansion and audit print
-the pattern as written. The refusal for reading the consumed field is
-`mdtests/resource_unfold_field_binding_rejects_consumed_read.md`.
+the pattern as written. See the dotted form in
+`mdtests/resource_unfold_reads_the_opened_field.md`.
 
 A fold can also consume an instance as a child of its result. Reading that
 child's field afterward does not imply that the child was unfolded. If the
@@ -2684,9 +2683,11 @@ resource arena_prefix_state(arena: struct arena*) {
 }
 ```
 
-`let { marks: m, free: f } = unfold(state)` and
-`fold(arena_prefix_state(arena), { ..., marks: m, free: f })` expose and
-consume them as for an arm. A body or arm may also own a field-free declared
+`unfold(state)` exposes children at `state.marks` and `state.free`.
+`fold(state)` takes those same children back. To name them independently,
+use `let { marks: m, free: f } = unfold(state)`. To select inputs explicitly,
+use `fold(arena_prefix_state(arena), { ..., marks: m, free: f })`.
+A body or arm may also own a field-free declared
 resource without a name, `owns cell_value(cell);`; it stays folded while the
 parent is unfolded (`mdtests/resource_match_arm_unnamed_child.md`). A
 field-bearing resource owned in a body needs a child name. Loads must be readable from the immediate body's

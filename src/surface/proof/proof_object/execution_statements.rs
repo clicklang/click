@@ -191,9 +191,30 @@ impl<'a> Proof<'a> {
         bindings: &mut crate::kernel::ResourceBindings,
         binding: &crate::surface::CallBinderBinding,
         map: &str,
+        supplied: Option<&mut BTreeSet<crate::kernel::ResourceBinder>>,
     ) -> Result<bool, ClickError> {
+        let identity = self
+            .execution()
+            .and_then(|execution| binding.resolve_identity(&execution.core.state))
+            .ok_or_else(|| {
+                self.step_error(format!(
+                    "{map} requires a held resource `{}`",
+                    binding.instance()
+                ))
+            })?;
+        if let Some(supplied) = supplied
+            && !supplied.insert(identity)
+        {
+            return Err(self.step_error(format!(
+                "resource `{}` cannot supply two binders of the same call",
+                binding.instance()
+            )));
+        }
+        if let Some(identity) = identity.instance() {
+            crate::kernel::model_fields::register_instance_spelling(identity, binding.instance());
+        }
         bindings
-            .insert(binding.binder_identity(), binding.identity())
+            .insert(binding.binder_identity(), identity)
             .map_err(|()| {
                 let (expected, actual) = match binding.binder_identity() {
                     crate::kernel::ResourceBinder::Instance(_) => {
@@ -766,15 +787,20 @@ impl<'a> Proof<'a> {
             // One lookup per written entry builds the whole binding; the
             // kernel consults nothing else at this call.
             let mut bindings = crate::kernel::ResourceBindings::new();
-            for binding in transport.binders().iter().chain(transport.produced()) {
+            let mut supplied = BTreeSet::new();
+            for (index, binding) in transport
+                .binders()
+                .iter()
+                .chain(transport.produced())
+                .enumerate()
+            {
                 crate::instrumentation::record_deterministic_work(1);
-                if let Some(identity) = binding.identity().instance() {
-                    crate::kernel::model_fields::register_instance_spelling(
-                        identity,
-                        binding.instance(),
-                    );
-                }
-                if self.bind_call_map_entry(&mut bindings, binding, "call map")? {
+                if self.bind_call_map_entry(
+                    &mut bindings,
+                    binding,
+                    "call map",
+                    (index < transport.binders().len()).then_some(&mut supplied),
+                )? {
                     return Err(self.step_error(format!(
                         "duplicate binder `{}` in the call map",
                         binding.binder()
@@ -1028,9 +1054,20 @@ impl<'a> Proof<'a> {
             )));
         }
         let mut bindings = crate::kernel::ResourceBindings::new();
-        for binding in application.binders().iter().chain(application.produced()) {
+        let mut supplied = BTreeSet::new();
+        for (index, binding) in application
+            .binders()
+            .iter()
+            .chain(application.produced())
+            .enumerate()
+        {
             crate::instrumentation::record_deterministic_work(1);
-            if self.bind_call_map_entry(&mut bindings, binding, "tactic's map")? {
+            if self.bind_call_map_entry(
+                &mut bindings,
+                binding,
+                "tactic's map",
+                (index < application.binders().len()).then_some(&mut supplied),
+            )? {
                 return Err(self.step_error(format!(
                     "duplicate binder `{}` in the tactic's map",
                     binding.binder()
