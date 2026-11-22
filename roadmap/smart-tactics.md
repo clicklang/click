@@ -382,10 +382,6 @@ Do not count these as additional confirmed generated-output families:
 - `bound_universal_outcome_retains_instantiation_and_transport` fails in
   `bubble_pass3` before expansion, while proving the loop's quantified bound.
   It is not a current positive regression for its old output assertion.
-- `quantified_old_transport_expands_to_one_quantified_frame` and
-  `quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_proof`
-  both fail before expansion at the shifted-copy store's separation
-  prerequisite. Whole-quantifier transport is still unconfirmed by a passing fixture.
 - Residual scalar/address variants, logical wrappers beyond these examples,
   and other proof-context adapters remain source-audit candidates. They get
   another work item only after a successful expansion demonstrates it.
