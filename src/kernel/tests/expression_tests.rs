@@ -2745,13 +2745,14 @@ fn pointer_relational_comparison_orders_same_block_elements() {
 
 #[test]
 fn pointer_subtraction_returns_same_block_element_distance() {
+    let distance = i64::from(i32::MAX) + 2;
     let start = Address {
         base: "array".into(),
         offset: AddressOffset::Constant(0),
     };
     let end = Address {
         base: "array".into(),
-        offset: AddressOffset::Constant(8),
+        offset: AddressOffset::Constant(distance * 4),
     };
     let state = ExecutionState::new()
         .with_local("start", ProgramValue::pointer(start))
@@ -2769,7 +2770,9 @@ fn pointer_subtraction_returns_same_block_element_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value((int32(2)).into()),
+            outcome: ExpressionOutcome::Value(
+                ProgramValue::Int64(MachineTerm::int64_constant(distance)).into(),
+            ),
         }
     );
 }
@@ -2808,7 +2811,9 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value((int32(3)).into()),
+            outcome: ExpressionOutcome::Value(
+                ProgramValue::Int64(MachineTerm::int64_constant(3)).into(),
+            ),
         }
     );
 }

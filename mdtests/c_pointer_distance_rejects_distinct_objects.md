@@ -4,7 +4,7 @@ A pointer-distance helper may rely on a definedness requirement, but a caller
 cannot discharge it with unrelated local objects.
 
 ```c filename=c_pointer_distance_rejects_distinct_objects.c
-int32 distance(int32 *left, int32 *right) {
+long distance(int32 *left, int32 *right) {
     return right - left;
 }
 
@@ -18,7 +18,7 @@ int32 distance_locals(void) {
 ```click
 verifying "c_pointer_distance_rejects_distinct_objects.c";
 
-int32 distance(int32* left, int32* right) {
+int64 distance(int32* left, int32* right) {
     requires defined(right - left);
     ensures result == (right - left);
 }

@@ -1574,14 +1574,7 @@ pub(super) fn infer_scoped_spec_value_type(
             let result = match expression {
                 ContractExpression::Add(_, _) => pointer_arithmetic_type(left_c, right_c)
                     .or_else(|| arithmetic_result_type(left_c, right_c)),
-                ContractExpression::Subtract(_, _) => match (left_c, right_c) {
-                    (Some(left), Some(right))
-                        if type_is_data_pointer(left) && type_is_scalar(right) =>
-                    {
-                        Some(left)
-                    }
-                    _ => arithmetic_result_type(left_c, right_c),
-                },
+                ContractExpression::Subtract(_, _) => subtract_expression_type(left_c, right_c),
                 ContractExpression::Multiply(_, _) => arithmetic_result_type(left_c, right_c),
                 _ => unreachable!(),
             };
@@ -4702,12 +4695,7 @@ fn infer_subtract_expression_type(
         [(left_expression, left), (right_expression, right)],
         context,
     )?;
-    Ok(match (left, right) {
-        (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_scalar(right) => {
-            Some(left)
-        }
-        _ => arithmetic_result_type(left, right),
-    })
+    Ok(subtract_expression_type(left, right))
 }
 
 fn infer_c_add_type(
@@ -4727,9 +4715,19 @@ fn infer_c_subtract_type(
 ) -> Option<InterfaceType> {
     let left = infer_program_expression_type(left, variables);
     let right = infer_program_expression_type(right, variables);
+    subtract_expression_type(left, right)
+}
+
+fn subtract_expression_type(
+    left: Option<InterfaceType>,
+    right: Option<InterfaceType>,
+) -> Option<InterfaceType> {
     match (left, right) {
         (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_scalar(right) => {
             Some(left)
+        }
+        (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_data_pointer(right) => {
+            Some(InterfaceType::Int64(LongRank::Long))
         }
         _ => arithmetic_result_type(left, right),
     }

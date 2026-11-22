@@ -1067,6 +1067,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::IndeterminatePointeeType => {
             "a pointer operation has no known pointee type".to_string()
         }
+        RuntimeError::UnsupportedPointerSubtractionOffsets => {
+            "Click does not yet support pointer subtraction with these offsets".into()
+        }
         RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")
         }
