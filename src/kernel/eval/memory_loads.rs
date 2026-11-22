@@ -5267,6 +5267,89 @@ pub(crate) fn load_variable_for_cell_with_origin(
     mint_load_variable_identity(memory, pointer, kind, origin, bytes)
 }
 
+/// A test-only count of the facts that still hold a load variable when they
+/// enter a `PureFactContext`, by kind of fact, with one example each.
+/// Defining facts are left out: they are what minting a variable adds. The
+/// counts are the work list for removing load variables from facts
+/// (`docs/internals/canonicalization.md`, "Transitional load variables and
+/// shared reads").
+#[cfg(test)]
+pub(crate) mod load_variable_fact_census {
+    use super::*;
+
+    thread_local! {
+        static COUNTS: std::cell::RefCell<
+            Option<std::collections::BTreeMap<String, (usize, String)>>,
+        > = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Runs `run` and returns, per kind of fact, how many admitted facts held
+    /// a load variable and one example.
+    pub(crate) fn capture(
+        run: impl FnOnce(),
+    ) -> std::collections::BTreeMap<String, (usize, String)> {
+        let previous = COUNTS.with(|counts| counts.replace(Some(Default::default())));
+        run();
+        COUNTS
+            .with(|counts| counts.replace(previous))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn active() -> bool {
+        COUNTS.with(|counts| counts.borrow().is_some())
+    }
+
+    pub(crate) fn observe(proposition: &Proposition) {
+        if !active() || is_load_variable_defining_fact(proposition) {
+            return;
+        }
+        let mut variables = std::collections::BTreeSet::new();
+        crate::kernel::reasoning::variable_collection::collect_proposition_variables_for_load_presence(
+            proposition,
+            &mut variables,
+        );
+        if !variables.iter().any(is_load_variable) {
+            return;
+        }
+        let kind = match proposition {
+            Proposition::ConditionIs(condition, _) => match condition.native_compat() {
+                crate::kernel::integer_comparison_condition!(_, _) => {
+                    "condition: integer comparison".to_string()
+                }
+                ConditionTerm::Compare { .. } => "condition: native comparison".to_string(),
+                ConditionTerm::Overflows { .. } => "condition: overflow".to_string(),
+                condition => {
+                    let shown = format!("{condition:?}");
+                    let name = shown
+                        .split(|c: char| !c.is_alphanumeric())
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    format!("condition: {name}")
+                }
+            },
+            proposition => {
+                let shown = format!("{proposition:?}");
+                shown
+                    .split(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            }
+        };
+        COUNTS.with(|counts| {
+            if let Some(counts) = counts.borrow_mut().as_mut() {
+                let entry = counts.entry(kind).or_insert_with(|| {
+                    let shown = format!("{proposition:?}");
+                    (0, shown[..shown.len().min(300)].to_string())
+                });
+                entry.0 += 1;
+            }
+        });
+    }
+}
+
+
 /// A test-only audit of one read, one name (`docs/internals/raise-lower-principle.md`):
 /// while [`duplicate_read_names::capture`] runs, each load named at a new
 /// version of its cell is compared with the versions earlier loads of that

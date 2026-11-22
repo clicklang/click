@@ -6819,6 +6819,8 @@ impl PureFactContext {
 
     fn insert_shared_proposition_fact(&mut self, shared: std::sync::Arc<Proposition>) {
         let proposition = shared.as_ref();
+        #[cfg(test)]
+        crate::kernel::load_variable_fact_census::observe(proposition);
         self.execution_variable_ceiling
             .file_proposition(proposition);
         if let Proposition::ResourceComposition(resources) = proposition {
@@ -7792,6 +7794,13 @@ impl PureFactContext {
             return self;
         }
         crate::kernel::eval::check_canonical_at_creation(&condition, value);
+        #[cfg(test)]
+        if crate::kernel::load_variable_fact_census::active() {
+            crate::kernel::load_variable_fact_census::observe(&Proposition::condition_is(
+                condition.clone(),
+                value,
+            ));
+        }
         if cfg!(debug_assertions) {
             let widths = &mut self.variable_widths;
             crate::kernel::debug_assert_widths(
