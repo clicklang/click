@@ -4246,7 +4246,7 @@ theorem integer_exists_choose() {
         let expanded = expand_c_claim_source_by_label(source, &[], label)
             .expect("the Integer quantifier claim should expand");
         if label.ends_with("ordered") {
-            assert!(expanded.contains("normalize();"), "{label}: {expanded}");
+            assert!(expanded.contains("intro();"), "{label}: {expanded}");
         } else if label.ends_with("witnessed") {
             assert!(expanded.contains("known();"), "{label}: {expanded}");
         } else if label.ends_with("logical") {
