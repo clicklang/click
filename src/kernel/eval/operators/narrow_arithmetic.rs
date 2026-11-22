@@ -1,8 +1,7 @@
 //! Native 8- and 16-bit arithmetic (`design/machine-integers.md`, decisions
-//! G2 and G4). A specification operator at a narrow type and a Rust operator
-//! on narrow values are the operator of that type, `(a op b) mod 2^N`, built
-//! as its native node over the operands as written: no promotion to `int32`
-//! and no conversion back. C's narrow arithmetic is not this: it promotes,
+//! G2 and G4). Supported native operators build `(a op b) mod 2^N` over the
+//! operands as written. Rust signed division and remainder use a promoted
+//! term with a narrow safety check. C's narrow arithmetic promotes,
 //! and its conversion back is its own node, which the cross-format relations
 //! (R-dist with R-comp) meet with the native node.
 use super::*;
