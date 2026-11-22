@@ -100,7 +100,7 @@ const NIGHTLY: &[&str] = &[
     // 16s in a debug build: the loop closer's eleven branches reach the same
     // limit; `an_automatically_closed_loop_splits_at_its_c_branches.md`
     // keeps loop-body splitting in the gate.
-    "a_loop_body_stops_at_the_split_limit.md",
+    "a_branching_loop_stops_at_the_work_limit.md",
     // 1.9s focused; retain the full stack-pop case alongside the isolated
     // constructor-guard scaling regression.
     "refuted_implication_after_stack_pop.md",
