@@ -1335,12 +1335,18 @@ pub struct ContractEntry {
 
 #[derive(Clone, Debug)]
 struct ContractEntryResources {
+    argument_state: ExecutionState,
     state: ExecutionState,
     required: ResourceContext,
     checked: Arc<[crate::kernel::functions::CheckedResourceFact]>,
 }
 
 impl ContractEntry {
+    /// The bound argument frame used to evaluate this entry.
+    pub(crate) fn argument_state(&self) -> &ExecutionState {
+        &self.resources.argument_state
+    }
+
     /// The entry facts in the order the contract yields them.
     pub fn facts(&self) -> &[ContractEntryFact] {
         &self.facts
@@ -1538,35 +1544,26 @@ fn program_function_contract_entry_facts(
         return Err(ContractEntryRefusal::InvalidResource(message.to_owned()));
     }
     let mut budget = ExecutionBudget::beside_live_state();
-    let Some(mut entry_state) = program_function_entry_state(caller_state, function, arguments)
+    let Some(argument_state) = program_function_entry_state(caller_state, function, arguments)
     else {
         return Err(ContractEntryRefusal::Internal(
             "could not build the contract entry state from the call arguments".into(),
         ));
     };
+    let mut entry_state = argument_state.clone();
     if function
         .parameters()
         .iter()
         .any(|parameter| parameter.aggregate_layout().is_some())
     {
-        let argument_values = arguments
-            .iter()
-            .map(|argument| match argument {
-                ProgramExpression::Value(value) => Some(value.clone()),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| {
-                ContractEntryRefusal::Internal(
-                    "an aggregate contract argument is not a value at the contract entry".into(),
-                )
-            })?;
-        // As in the entry-resource pass below, the callee's own clauses
-        // establish the spans they name while its proof entry is opened.
-        entry_state = match prepare_function_contract_entry_state_with_values(
+        // Resource transfer uses the same argument frame, viewed without the
+        // proof's unfolded instance fields. The callee's own clauses provide
+        // the spans while the entry resources are prepared.
+        entry_state.instance_field_scope = ResourceContext::new();
+        entry_state = match crate::kernel::functions::prepare_bound_contract_entry_state(
             caller_state,
             function,
-            &argument_values,
+            entry_state,
             &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
@@ -2313,6 +2310,7 @@ fn program_function_contract_entry_facts(
         assumptions,
         entry_facts.0,
         ContractEntryResources {
+            argument_state,
             state: entry_state,
             required: required_resources,
             checked: required_entry_clauses.into(),

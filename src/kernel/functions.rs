@@ -14455,6 +14455,16 @@ pub(super) fn prepare_function_contract_entry_state_with_values(
             function.name()
         ))));
     };
+    prepare_bound_contract_entry_state(caller_state, function, callee_state, assumptions, budget)
+}
+
+pub(super) fn prepare_bound_contract_entry_state(
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    callee_state: ExecutionState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<ExecutionState, RuntimeError>> {
     let transfer = match crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
