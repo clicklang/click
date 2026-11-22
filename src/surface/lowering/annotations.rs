@@ -492,22 +492,6 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         let (Some(schema), Some(fields)) = (&binding.schema, &binding.fields) else {
             continue;
         };
-        for (field_index, ((field, _), value)) in
-            schema.fields().iter().zip(fields.iter()).enumerate()
-        {
-            let Some(variable) = crate::kernel::algebraic_value_variable(value) else {
-                continue;
-            };
-            crate::kernel::model_fields::register_model_field_variable(
-                variable,
-                crate::kernel::model_fields::ModelFieldOrigin {
-                    identity: instance,
-                    field: std::sync::Arc::from(field.as_str()),
-                    field_index,
-                    minted_by: crate::kernel::model_fields::ModelMint::ContractEntry,
-                },
-            );
-        }
         let spelling = if binding.name.starts_with('#') {
             let ResourceClause::Declared {
                 name, arguments, ..
@@ -522,6 +506,25 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         } else {
             binding.name.clone()
         };
+        let owner = std::sync::Arc::from(spelling.as_str());
+        for (field_index, ((field, _), value)) in
+            schema.fields().iter().zip(fields.iter()).enumerate()
+        {
+            let Some(variable) = crate::kernel::algebraic_value_variable(value) else {
+                continue;
+            };
+            crate::kernel::model_fields::register_model_field_variable(
+                variable,
+                crate::kernel::model_fields::ModelFieldOrigin {
+                    identity: instance,
+                    field: std::sync::Arc::from(field.as_str()),
+                    field_index,
+                    minted_by: crate::kernel::model_fields::ModelMint::ContractEntry {
+                        owner: std::sync::Arc::clone(&owner),
+                    },
+                },
+            );
+        }
         crate::kernel::model_fields::register_instance_spelling(instance, &spelling);
     }
 }
@@ -2106,6 +2109,7 @@ fn annotate_function(
                 .collect(),
         )
         .with_resource_summary(resource_requires, resource_ensures)
+        .with_fresh_result_allocation(function_block.allocates_result())
         .with_resource_constructors(resource_constructors)
         .with_composite_resource_definitions(composite_resource_definitions(
             resource_environment,
@@ -6956,6 +6960,9 @@ impl AnnotationLowerer<'_> {
                                     InterfaceType::Int64(_) | InterfaceType::UInt64(_)
                                 ))
                             )
+                            // A `void *` operand converts to the byte view as
+                            // the C conversion does (C11 6.3.2.3p7).
+                            && !self.contract_operand_is_void_pointer(operand, environment)
                             && !self
                                 .contract_pointer_element_type(operand, environment)
                                 .is_some_and(|element| {
@@ -10556,6 +10563,37 @@ impl AnnotationLowerer<'_> {
     /// The element type a contract expression steps by when it is a pointer:
     /// an array reference or a pointer-valued binding in scope, a pointer
     /// fragment, or pointer arithmetic on one. `None` for a scalar.
+    /// Whether a contract cast's operand is a `void *`, by its Surface type or,
+    /// for a C name, by its declared type.
+    fn contract_operand_is_void_pointer(
+        &self,
+        operand: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        if matches!(
+            self.contract_expression_click_type(operand, environment),
+            Some(ClickType::Program(InterfaceType::VoidPointer))
+        ) {
+            return true;
+        }
+        match operand {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                self.c_variable_type(name.clone()) == Some(ProgramType::VoidPointer)
+            }
+            ContractExpression::ProgramBinding(name) => matches!(
+                environment.values.get(name),
+                Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))
+                    if pointer.program_type() == ProgramType::VoidPointer
+            ),
+            ContractExpression::Old(expression)
+            | ContractExpression::Exact(expression)
+            | ContractExpression::At { expression, .. } => {
+                self.contract_operand_is_void_pointer(expression, environment)
+            }
+            _ => false,
+        }
+    }
+
     fn contract_pointer_element_type(
         &self,
         expression: &ContractExpression,

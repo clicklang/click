@@ -287,10 +287,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                         solve() using { aligned(parent, 8); };
                                                     }
                                                     have (7u64 & 1u64) == 1u64 by normalize();
-                                                    apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64)) using {
-                                                        (address(parent) & 7u64) == 0u64;
-                                                        (7u64 & 1u64) == 1u64;
-                                                    };
+                                                    apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64));
                                                     have (g->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                         rewrite(g->__rb_parent_color, address(parent));
                                                         rewrite(color_bit(Color::Red), 0); known();
@@ -462,10 +459,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                         solve() using { aligned(parent, 8); };
                                                     }
                                                     have (7u64 & 1u64) == 1u64 by normalize();
-                                                    apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64)) using {
-                                                        (address(parent) & 7u64) == 0u64;
-                                                        (7u64 & 1u64) == 1u64;
-                                                    };
+                                                    apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64));
                                                     have (g->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                         rewrite(g->__rb_parent_color, address(parent));
                                                         rewrite(color_bit(Color::Red), 0); known();
@@ -638,10 +632,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                         solve() using { aligned(parent, 8); };
                                                     }
                                                     have (7u64 & 1u64) == 1u64 by normalize();
-                                                    apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64)) using {
-                                                        (address(parent) & 7u64) == 0u64;
-                                                        (7u64 & 1u64) == 1u64;
-                                                    };
+                                                    apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64));
                                                     have (g->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                         rewrite(g->__rb_parent_color, address(parent));
                                                         rewrite(color_bit(Color::Red), 0); known();
@@ -814,10 +805,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                         solve() using { aligned(parent, 8); };
                                                     }
                                                     have (7u64 & 1u64) == 1u64 by normalize();
-                                                    apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64)) using {
-                                                        (address(parent) & 7u64) == 0u64;
-                                                        (7u64 & 1u64) == 1u64;
-                                                    };
+                                                    apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64));
                                                     have (g->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                         rewrite(g->__rb_parent_color, address(parent));
                                                         rewrite(color_bit(Color::Red), 0); known();

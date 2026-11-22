@@ -428,15 +428,37 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
 }
 
 #[test]
-fn opaque_call_word_versions_follow_checked_local_effects() {
+fn opaque_integer_call_outputs_follow_checked_local_effects() {
+    for ty in [
+        ProgramType::Int32,
+        ProgramType::UInt32,
+        ProgramType::Int8,
+        ProgramType::UInt8,
+        ProgramType::Int16,
+        ProgramType::UInt16,
+        ProgramType::Int64,
+        ProgramType::UInt64,
+        ProgramType::Int128,
+        ProgramType::UInt128,
+    ] {
+        assert_opaque_integer_call_output(ty);
+    }
+}
+
+fn assert_opaque_integer_call_output(ty: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
     let output = slot();
     let sibling = SymbolicMemory::local_pointer("disjoint");
-    let output_range = MemoryRange::new(output.clone(), 0.into(), 1.into());
+    let width = ty.byte_width();
+    let output_range =
+        MemoryRange::new_with_element_width(output.clone(), 0.into(), 1.into(), width);
     let sibling_range = MemoryRange::new(sibling.clone(), 0.into(), 1.into());
-    let start = ExecutionState::new().with_memory(
-        SymbolicMemory::new()
-            .with_declared_scalar_block(output.base.clone(), 4, ProgramType::Int32)
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let start = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_declared_scalar_block(output.base.clone(), width, ty)
             .with_block(sibling.base.clone(), 4),
     );
     let call = |state: &ExecutionState, index, range: &MemoryRange| {
@@ -450,23 +472,47 @@ fn opaque_call_word_versions_follow_checked_local_effects() {
             ))
     };
     let output_return = |mut state: ExecutionState| {
-        state.set_memory_directly(state.memory().clone().with_initialized_call_word(&output));
+        state.set_memory_directly(
+            state
+                .memory()
+                .clone()
+                .with_initialized_call_output(&output, width),
+        );
         state
     };
     let returned = output_return(call(&start, 38_201, &output_range));
-    let select = |state: &ExecutionState| {
-        state
-            .program_point()
-            .ordinary_typed_version(&output, ProgramType::Int32)
-    };
-    let version = select(&returned).expect("opaque output has a version");
+    let select = |state: &ExecutionState| state.program_point().ordinary_typed_version(&output, ty);
+    let version = select(&returned).unwrap_or_else(|| panic!("opaque {ty:?} output has a version"));
     assert_eq!(version.read_version_id(), returned.program_point_id());
+    assert_eq!(
+        returned
+            .program_point()
+            .indexed_array_version(&AddressBase::ExternalArgument)
+            .and_then(|version| version.read_version_id()),
+        entry.program_point_id(),
+        "an initialized local call output preserves the caller array version"
+    );
     assert!(version.indexed_integer_store_bits().is_none());
     assert!(returned.memory().known_value(&output).is_none());
+    // The output identifies one integer cell, even when another type uses
+    // the same load-kind carrier.
+    for unrelated_type in [
+        ProgramType::Bool,
+        ProgramType::Int32Pointer,
+        ProgramType::Float64,
+    ] {
+        assert!(
+            returned
+                .program_point()
+                .ordinary_typed_version(&output, unrelated_type)
+                .is_none(),
+            "{ty:?} output cannot name a {unrelated_type:?} read"
+        );
+    }
     assert!(
         returned
             .memory()
-            .has_initialized_bytes_under(&output, 4, &PureFactContext::new())
+            .has_initialized_bytes_under(&output, width, &PureFactContext::new())
     );
 
     let mut samples = Vec::new();
@@ -643,5 +689,128 @@ fn generic_entry_cells_and_compact_runs_keep_the_same_version_across_local_store
             .program_point()
             .generic_entry_version(&cell, parameter)
             .is_none()
+    );
+}
+
+#[test]
+fn a_static_scalar_entry_version_ignores_disjoint_writes_in_its_block() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = SymbolicMemory::global_pointer("static_read");
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let entry = entry
+        .clone()
+        .with_function_entry_memory(entry.memory().clone().with_block(cell.base.clone(), 4100));
+    let store = |state: &ExecutionState, address, bits| {
+        state.clone().with_memory(
+            state
+                .memory()
+                .clone()
+                .store(address, ProgramValue::Int32(MachineTerm::constant(bits))),
+        )
+    };
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = entry.clone();
+        for index in 1..=count {
+            state = store(&state, cell.offset_by_bytes(4 * index), index);
+        }
+        let point = state.program_point();
+        let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+            point.unwritten_static_scalar_version(&cell, ProgramType::Int32)
+        });
+        assert_eq!(
+            version.and_then(|point| point.read_version_id()),
+            entry.program_point_id(),
+        );
+        assert!(
+            store(&state, cell.clone(), 0)
+                .program_point()
+                .unwritten_static_scalar_version(&cell, ProgramType::Int32)
+                .is_none()
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn a_static_scalar_entry_version_ignores_disjoint_call_ranges_in_its_block() {
+    use crate::kernel::{ExecutionBudget, ExpressionOutcome, ProgramExpression};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = SymbolicMemory::global_pointer("static_call_read");
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let entry = entry
+        .clone()
+        .with_function_entry_memory(entry.memory().clone().with_block(cell.base.clone(), 8));
+    let facts = PureFactContext::new();
+    let range = |address| MemoryRange::new(address, 0u32.into(), 1u32.into());
+    let sibling = range(cell.offset_by_bytes(4));
+    let overlap = range(cell.clone());
+    let call = |state: &ExecutionState, id, writes: &MemoryRange| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_storage_memory_havoc(
+                Variable(id),
+                std::slice::from_ref(writes),
+                &facts,
+            ))
+    };
+    let selected = |state: &ExecutionState| {
+        state
+            .program_point()
+            .unwritten_static_scalar_version(&cell, ProgramType::Int32)
+    };
+    let read = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+        ProgramValue::typed_pointer(cell.clone(), ProgramType::Int32Pointer),
+    )));
+    let mut samples = Vec::new();
+    for count in [4, 64, 256] {
+        let mut state = entry.clone();
+        for index in 0..count {
+            state = call(&state, 91_000 + index, &sibling);
+        }
+        let (version, work) =
+            crate::instrumentation::measure_deterministic_work(|| selected(&state));
+        assert_eq!(
+            version.and_then(|point| point.read_version_id()),
+            entry.program_point_id()
+        );
+        let changed = call(&state, 92_000, &overlap);
+        assert!(selected(&changed).is_none());
+        assert!(selected(&call(&changed, 92_001, &sibling)).is_none());
+        samples.push(work);
+
+        let state = state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::access(cell.clone(), ProgramType::Int32)),
+        ));
+        let paths = crate::kernel::eval::evaluate_expression_value_paths(
+            &state,
+            &read,
+            &facts,
+            &mut ExecutionBudget::new(),
+        )
+        .expect("checked C read");
+        let [path] = paths.as_slice() else {
+            panic!("expected one read path");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("expected a symbolic int32 value");
+        };
+        let value = value.native();
+        let ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, LoadKind::Int32)) =
+            value.as_ref()
+        else {
+            panic!("expected a typed int32 load");
+        };
+        assert_eq!(**address, cell);
+        assert_eq!(point.read_version_id(), entry.program_point_id());
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
     );
 }

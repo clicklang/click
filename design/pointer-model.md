@@ -44,9 +44,32 @@ provenances may or may not be the same allocation.
 ### Types and qualifiers belong to accesses, not values
 
 A pointer's type, `const` and `volatile` are properties of the expression or
-access that uses it, not of the value. `(char *)p` is the same pointer value as
-`p`. Click's identity includes them today (`Pointer::identity`); this model
-removes them. Effective types (`design/effective-types.md`) stay with the
+access that uses it, not of the value. `(int *)p` and `(void *)p` are the
+same pointer value as `p`. Click's identity includes them today
+(`Pointer::identity`); this model removes them.
+
+One conversion has a meaning of its own in C: converting to a character
+pointer forms a view of the object's bytes (C11 6.3.2.3p7). In C provenance
+that view's array object is the allocation's bytes, TS 6010's granularity,
+not the member the operand was formed from. So `(char *)&s->f` keeps the
+address and allocation but widens the array object. The conversion forms the
+view whether written or implicit, and from any non-character type, including
+`void *`. A conversion between character types keeps the existing view. GNU
+C defines arithmetic on `void *` as character arithmetic, so it forms the same
+view; Linux's `container_of` relies on it. Whether a conversion forms the view
+depends on the operand's static type, which every conversion has, so the rule
+needs no type on the value (`design/pointer-subobject-bounds.md`, D4 as
+revised).
+
+A second conversion has a meaning of its own: a pointer to a structure's
+initial member, converted to a pointer to the structure, points to the
+structure (C11 6.7.2.1p15). When the operand's array object is a member
+starting at its address and narrower than the struct, the result's array
+object is the struct. Whether a struct is there is the effective-type
+question each access asks (C11 6.5p7). The kernel cannot yet tell an initial
+member from any other member that starts its own array object, because C
+provenance does not record the enclosing struct; recording it belongs with
+step 3's array object. Effective types (`design/effective-types.md`) stay with the
 allocation, which provenance names.
 
 ### Equality
@@ -135,6 +158,17 @@ Each step is one PR, measured with the gate and the raise-lower audit.
    and provenance. Move type and qualifiers to accesses, and fold subobject
    bounds into C provenance. This is the largest kernel change: equality, the
    equality graph, effective types and the raiser all change.
+   - 3a, step 1: every C load and store states the volatility of its lvalue's
+     type (C11 6.7.3p7), which the frontend computes as it computes pointee
+     `const`. The kernel still also reads the pointer value's flag. Over the
+     gate corpus the access's flag never misses a volatility the value has;
+     it adds one where the value lost it, in Linux's `__WRITE_ONCE`
+     (`*(volatile typeof(x) *)&(x) = v`).
+   - 3a, step 2: `volatile` leaves the pointer value. Pointer identity no
+     longer includes it, and parameter binding, local stores, casts and
+     `&` of a volatile object no longer record it on the value. An access is
+     volatile exactly when its own lvalue type is. `const` follows in a
+     separate step.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

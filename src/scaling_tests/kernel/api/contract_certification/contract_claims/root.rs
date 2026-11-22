@@ -14,13 +14,10 @@ fn selected_root_goal_and_script_join_do_not_scan_other_obligations() {
                 .collect(),
             true,
         );
-        let entry = Arc::new(
-            prepare_function_contract_entry_cases(
-                program_function_contract_entry(&ExecutionState::new(), &function, &[]).unwrap(),
-                ExecutionEnvironment::new().byte_order_fact(),
-            )
-            .unwrap(),
-        );
+        let entry = Arc::new(prepare_function_contract_entry_cases(
+            program_function_contract_entry(&ExecutionState::new(), &function, &[]).unwrap(),
+            ExecutionEnvironment::new().byte_order_fact(),
+        ));
         let root = WholeContractRoot::open(entry).unwrap();
         let selected = ContractCompletionGoal::Claim {
             case: 0,

@@ -17,7 +17,6 @@ long to_long(double x) { return (long)x; }
 verifying "cast.c";
 
 uint32 to_unsigned(double x) {
-    requires isfinite(x);
     requires x > float64_from_bits(0xbff0000000000000u64);
     requires x < float64_from_bits(0x0000000000000000u64);
     requires x < float64_from_bits(0x41f0000000000000u64);
@@ -25,7 +24,6 @@ uint32 to_unsigned(double x) {
 }
 
 int32 to_signed(double x) {
-    requires isfinite(x);
     requires x > float64_from_bits(0xc1e0000000200000u64);
     requires x < float64_from_bits(0xc1e0000000000000u64);
     requires x < float64_from_bits(0x41e0000000000000u64);
@@ -33,22 +31,19 @@ int32 to_signed(double x) {
 }
 
 int16 to_short(float x) {
-    requires isfinite(x);
-    requires x > float32_from_bits(0xc7000100);
+    requires x > float32_from_bits(0xc7000100u32);
     requires x < float32_from_bits(0xc7000000);
-    requires x < float32_from_bits(0x47000000);
+    requires x < float32_from_bits(0x47000000u32);
     ensures true;
 }
 
 int32 from_float(float x) {
-    requires isfinite(x);
     requires x >= float32_from_bits(0xcf000000);
     requires x < float32_from_bits(0x4f000000);
     ensures true;
 }
 
 int64 to_long(double x) {
-    requires isfinite(x);
     requires x >= float64_from_bits(0xc3e0000000000000u64);
     requires x < float64_from_bits(0x43e0000000000000u64);
     ensures true;

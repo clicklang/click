@@ -185,7 +185,12 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             ProofStep::NormalizeUsing(premises) => {
                 count += premises.len();
             }
+            ProofStep::ApplyTheorem(application) => count += application.arguments.len(),
             ProofStep::ApplyTheoremUsing {
+                application,
+                premises,
+            }
+            | ProofStep::ApplyPlannedTheorem {
                 application,
                 premises,
             } => count += application.arguments.len() + premises.len(),
@@ -6120,9 +6125,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
                 ensures result <= upper;
             } by {
                 step_until(function.exit);
-                apply(less_than_implies_less_equal(result, upper)) using {
-                    result < upper;
-                }
+                apply(less_than_implies_less_equal(result, upper));
                 solve();
             }
         "#,

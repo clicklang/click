@@ -3521,6 +3521,86 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
 }
 
 #[test]
+fn entry_model_raising_uses_the_binder_that_minted_the_field() {
+    use crate::kernel::{
+        AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, Resource, ResourceContext, ResourceFact,
+        ResourceFieldSchema, ResourceFieldType, ResourceInstance, TypeParameterName,
+        model_fields::{self, ModelFieldOrigin, ModelMint},
+    };
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let identity = crate::kernel::InstanceId::from_variable(Variable(930_011));
+    let model_variable = Variable(930_012);
+    let model = AlgebraicTerm {
+        algebraic_type: TypeParameterName::intern("Tree").algebraic_type(),
+        node: AlgebraicTermNode::Variable(model_variable),
+    };
+    let size = Variable(930_013);
+    let schema = ResourceFieldSchema::new(vec![
+        (
+            "model".into(),
+            ResourceFieldType::Algebraic(model.algebraic_type.clone()),
+        ),
+        (
+            "size".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        ),
+    ])
+    .unwrap();
+    let instance = ResourceInstance::new(
+        identity,
+        "tree".into(),
+        vec![].into(),
+        schema,
+        vec![
+            AlgebraicValue::Algebraic(model.clone()),
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(size))),
+        ]
+        .into(),
+    )
+    .unwrap();
+    let entry = ExecutionState::new().with_resource_context(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own(Resource::Instance(instance))),
+    );
+    let _entry = SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry))));
+    // A different binder registered this identity before the current contract.
+    model_fields::register_instance_spelling(identity, "after");
+    for (field_index, (variable, field)) in [(model_variable, "model"), (size, "size")]
+        .into_iter()
+        .enumerate()
+    {
+        model_fields::register_model_field_variable(
+            variable,
+            ModelFieldOrigin {
+                identity,
+                field: field.into(),
+                field_index,
+                minted_by: ModelMint::ContractEntry { owner: "t".into() },
+            },
+        );
+    }
+    let current = ExecutionState::new();
+    let model = synthesize_surface_algebraic(
+        &model,
+        ParameterBinding::default(),
+        &current,
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    let size = synthesize_scalar_model_field(size, &current).unwrap();
+    for (raised, name) in [(model, "model"), (size, "size")] {
+        let ContractExpression::Old(inner) = raised else {
+            panic!("the entry field must raise through old: {raised:?}");
+        };
+        assert!(
+            matches!(*inner, ContractExpression::ResourceField(ref access)
+                if access.owner == "t" && access.field == name),
+            "{inner:?}"
+        );
+    }
+}
+
+#[test]
 fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_introduced() {
     // A call replaces `o`'s model, so the earlier `o.size` value is held by
     // no current instance; the point after the first call held it.
@@ -5588,7 +5668,6 @@ fn float_bit_literals_round_trip_exact_native_values() {
         0xffc12345,
     ] {
         values.push(ProgramValue::Float32(MachineTerm::constant(bits)));
-        values.push(ProgramValue::Float32(MachineTerm::uint32_constant(bits)));
     }
     for bits in [
         0,
@@ -5621,6 +5700,18 @@ fn float_bit_literals_round_trip_exact_native_values() {
             let file =
                 parser::parse(&format!("{prefix} function probe() -> {ty} {{ {text} }}")).unwrap();
             let expression = file.click_function_definitions()[0].body().unwrap();
+            if let ProgramValue::Float32(_) = &value {
+                let bits = text.strip_suffix(')').unwrap();
+                let suffixed = parser::parse(&format!(
+                    "{prefix} function probe() -> {ty} {{ {bits}u32) }}"
+                ))
+                .unwrap();
+                assert_eq!(
+                    suffixed.click_function_definitions()[0].body(),
+                    Some(expression),
+                    "{text}, rust={rust}"
+                );
+            }
             let spec = crate::surface::lowering::elaborate_fixed_state_expression(
                 expression,
                 BTreeMap::new(),
@@ -5684,7 +5775,7 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
         ProgramValue::Float32(MachineTerm::Variable(Variable(999804))),
         ProgramValue::Float64(MachineTerm::Variable(Variable(999805))),
         ProgramValue::Float32(MachineTerm::constant(0x80000000)),
-        ProgramValue::Float32(MachineTerm::uint32_constant(0x7f800123)),
+        ProgramValue::Float32(MachineTerm::constant(0x7f800123)),
         ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
         ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff8000000000123)),
     ];
@@ -5803,6 +5894,7 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                 target_type: ProgramType::VoidPointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -5810,6 +5902,7 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
             target_type: pointer_type,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -6525,6 +6618,7 @@ fn numeric_float_cast_spellings_match_native_conversions_and_round_trip() {
                 target_type,
                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -6976,7 +7070,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
         crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
             operator: crate::kernel::ComparisonOperator::LessThan,
             left: Box::new(variable.clone()),
-            right: Box::new(MachineTerm::uint32_constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         });
     let source = MachineTerm::ClickFunctionApplication {
         name: "mixed_sink".into(),

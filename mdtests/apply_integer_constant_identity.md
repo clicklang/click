@@ -12,7 +12,7 @@ theorem equality_gives_order(a: Integer, b: Integer) {
 theorem concrete_application() {
     ensures 0 <= 0 by {
         have 0 == 0 + 0 by { known(); }
-        apply(equality_gives_order(0, 0 + 0)) using { 0 == 0 + 0; };
+        apply(equality_gives_order(0, 0 + 0));
         known();
     }
 }

@@ -183,14 +183,10 @@ expansion output.
   `fold(resource) { requires P by ...; }`, or leave it to the implicit closer
   that proves a step's open requirements.
 - `apply(theorem_name(args...));`: instantiate one verified pure theorem from
-  the standard library or current file. It looks each requirement up among
-  the current facts and proves none: a requirement it cannot find is a search
-  miss, so state it first with `have P by { ... }`. It adds the theorem's
-  conclusions and never changes the resource context. This bare form is
-  smart because it searches for its premises.
-- `apply(theorem_name(args...)) using { P; ... }`: the simple form,
-  drawing premises only from the listed facts. Expansion rewrites bare `apply`
-  into this form.
+  the standard library or current file. Known facts discharge its requirements.
+  Open requirements are ordinary proof obligations and can also be established
+  first with `have P by { ... }`. The application adds the theorem's
+  conclusions and leaves the resource context intact.
 - `have proposition by { ... }`: run a scoped fixed-state proof and add its proposition
   to the current pure facts. The nested proof accepts
   `unfold`, `apply`, `obtain`, `witness`, `solve`, nested `have`, and proof-level

@@ -72,7 +72,7 @@ pub(in crate::surface) struct SurfacePropositionStorage {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct StoreReadKey {
-    memory: (u32, u32),
+    point: crate::kernel::ProgramPoint,
     offset: crate::kernel::AddressOffset,
 }
 
@@ -98,7 +98,7 @@ impl StoreReadKey {
         }
         Some((
             Self {
-                memory: point.shared_memory().arena_id(),
+                point: point.clone(),
                 offset: address.offset.clone(),
             },
             address,
@@ -1412,5 +1412,60 @@ mod store_source_tests {
         assert_eq!(map.recorded_surface(&equation(1)), Some(&source));
         assert_eq!(map.recorded_surface(&equation(2)), None);
         assert_eq!(map.surfaces(&stored).collect::<Vec<_>>(), vec![&source]);
+    }
+
+    #[test]
+    fn store_sources_keep_distinct_points_with_equal_memory() {
+        use crate::kernel::{
+            AddressBase, AddressOffset, ExecutionState, LoadKind, ProgramType, ProgramValue,
+            VerificationSession,
+        };
+
+        let _session = VerificationSession::enter();
+        let address = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let write = || {
+            let state = ExecutionState::new().begin_function_entry_memory();
+            let memory = state.memory().clone().store(
+                address.clone(),
+                ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+            );
+            state
+                .with_memory(memory)
+                .program_point()
+                .ordinary_typed_version(&address, ProgramType::UInt32)
+                .expect("recorded scalar store")
+        };
+        let first = write();
+        let second = write();
+        assert_eq!(
+            first.shared_memory().arena_id(),
+            second.shared_memory().arena_id()
+        );
+        assert_ne!(first.read_version_id(), second.read_version_id());
+
+        let equation = |point| {
+            Arc::new(Proposition::condition_is(
+                ConditionTerm::uint32_equal(
+                    MachineTerm::MemoryLoad(point, Box::new(address.clone()), LoadKind::UInt32),
+                    MachineTerm::uint32_constant(7),
+                ),
+                true,
+            ))
+        };
+        let spelling = |name: &str| ClickProposition::Comparison {
+            left: ContractExpression::Binding(name.into()),
+            operator: crate::surface::ComparisonOperator::Equal,
+            right: ContractExpression::Binding("value".into()),
+        };
+        let (first, second) = (equation(first), equation(second));
+        let (first_source, second_source) = (spelling("first"), spelling("second"));
+        let mut map = SurfacePropositionMap::default();
+        assert!(map.record_store_source(&first, &first_source, &address));
+        assert!(map.record_store_source(&second, &second_source, &address));
+        assert_eq!(map.recorded_surface(&first), Some(&first_source));
+        assert_eq!(map.recorded_surface(&second), Some(&second_source));
     }
 }

@@ -22,8 +22,12 @@ weaken a `noexcept` declaration. Supported constructors, getters and normal
 cleanup can participate in exception-enabled proofs. `std::terminate` and
 opaque-class unwinding through destructible locals remain outside the model.
 
-Still pending: `SpanReader::read`, decoded serialization through that real
-reader, and exact/base-class typed catches. User constructors, lvalue throws,
+The pinned `SpanReader::read` now verifies unchanged, with exact copy and
+cursor guarantees on return and the failure bound and unchanged cursor on throw.
+Its integration test checks ordinary verification and expanded replay.
+
+Still pending: decoded serialization through `SpanReader` and exact/base-class
+typed catches. User constructors, lvalue throws,
 nontrivial exception classes, resource transitions and full C++ unwinding
 remain refused. No false acceptance is known.
 
@@ -60,8 +64,8 @@ The first slice now supports memory footprints on both exits and an opaque
 [architecture](../docs/internals/architecture.md#selected-control-flow-and-c-cleanup-model)
 and [the language reference](../docs/reference/language/index.md#exceptional-results).
 Handlers still match only `catch (int name)`; Bitcoin callers need
-`const std::ios_base::failure&` or `const std::exception&`. `read` and those
-handlers are the remaining application targets below.
+`const std::ios_base::failure&` or `const std::exception&`. Decoding through
+`read` and those handlers are the remaining application targets below.
 
 ## Violated invariant
 

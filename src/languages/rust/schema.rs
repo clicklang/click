@@ -514,6 +514,9 @@ pub struct MirBody {
     /// Materialized aggregate literals, keyed by MIR local, with their source occurrence ordinal.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub compound_literals: BTreeMap<String, u32>,
+    /// Unnamed scalar storage associated with a written borrow occurrence.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub borrowed_scalars: BTreeMap<String, u32>,
 }
 
 /// The name of a function's return place.
@@ -731,20 +734,6 @@ pub enum MirTerminator {
     Panic {
         message: String,
     },
-    /// `destination = Box::new(source)`: allocate the record on the heap,
-    /// move the record local `source` into it, and make `destination` its
-    /// address. A failed allocation aborts the process, so it never returns.
-    /// Without a `source`, `Box::new(R { a, b })` writes `fields`, the
-    /// record's field values in order, into the allocation itself.
-    BoxNew {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        source: Option<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        fields: Vec<Expression>,
-        record: String,
-        destination: String,
-        target: usize,
-    },
     /// The drop of the box `local`: run the record's drop `glue`, if it has
     /// one, on a non-null box, then free its allocation.
     BoxFree {
@@ -752,6 +741,9 @@ pub enum MirTerminator {
         record: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         glue: Option<String>,
+        /// Whether `local` is an `Option<Box<R>>`, null for `None`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        optional: bool,
         target: usize,
     },
 }

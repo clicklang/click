@@ -29,6 +29,67 @@ fn maybe_type() -> AlgebraicType {
 }
 
 #[test]
+fn logical_enum_read_uses_the_recorded_local_store() {
+    use crate::kernel::{AggregateLayout, TypeParameterName};
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = maybe_type();
+    let parameter = TypeParameterName::of(&ty);
+    let value_type = ProgramType::Parameter(parameter);
+    let slot = SymbolicMemory::local_pointer("enum_slot");
+    let value = ProgramValue::Parameter(Box::new(AlgebraicTerm {
+        algebraic_type: ty,
+        node: AlgebraicTermNode::Variable(Variable(1008321)),
+    }));
+    let initial = ExecutionState::new().begin_function_entry_memory();
+    let mut stored = initial.clone().with_memory(
+        initial
+            .memory()
+            .clone()
+            .with_block(slot.base.clone(), value_type.byte_width())
+            .store(slot.clone(), value),
+    );
+    stored.locals.set_aggregate_object_at(
+        "value",
+        AggregateLayout::holding_value(value_type),
+        slot.clone(),
+    );
+    let extra = SymbolicMemory::local_pointer("unrelated");
+    let state = stored
+        .clone()
+        .with_memory(stored.memory().clone().with_block(extra.base, 2));
+    let expected = state.held_local_value("value").expect("held enum");
+    let ProgramValue::Parameter(held) = &expected else {
+        panic!("held enum value");
+    };
+    let AlgebraicTermNode::MemoryLoad { point, pointer } = &held.node else {
+        panic!("the held enum has a load name");
+    };
+    assert_eq!(point.read_version_id(), stored.program_point_id());
+    assert_eq!(pointer.as_ref(), &slot);
+
+    let read = SpecExpression::MemoryLoad {
+        point: SpecPoint::Current,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
+            slot,
+            ProgramType::ParameterPointer(parameter),
+        ))),
+        value_type,
+        exact: false,
+    };
+    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        SpecScope::unbound(&state, None),
+        &read,
+        &PureFactContext::new(),
+        &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+    )
+    .unwrap();
+    let [path] = paths.as_slice() else {
+        panic!("one logical enum read");
+    };
+    assert_eq!(path.value.clone().into_native(), expected);
+}
+
+#[test]
 fn algebraic_case_paths_recognize_a_retained_legacy_constructor() {
     let value = AlgebraicResult::Shared(KernelTerm::native_observation_leaf(
         PureFunctionArgument::Algebraic(AlgebraicTerm {

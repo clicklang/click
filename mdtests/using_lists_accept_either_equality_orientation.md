@@ -16,7 +16,7 @@ theorem value_symmetric(a: int32, b: int32) {
 theorem pure_apply_mirrored(x: int32, y: int32) {
     requires x == y;
     ensures x == y by {
-        apply(value_symmetric(y, x)) using { y == x; };
+        apply(value_symmetric(y, x));
         known();
     }
 }

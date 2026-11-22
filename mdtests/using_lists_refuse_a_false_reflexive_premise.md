@@ -1,10 +1,4 @@
-# A `using` list refuses a reflexive premise that is false
-
-`n <= n` holds with no fact, so a `using` list accepts it
-(`mdtests/using_lists_accept_premises_that_hold_without_facts.md`). Its
-strict neighbour `n < n` is false for every `n`: the reflexive rule decides it
-false, it is not an available fact, and the list refuses it. Accepting it would
-let `strictly_below(n, n)` conclude the false `n < n`.
+# A theorem application refuses a strict reflexive bound
 
 ```c filename=using_lists_refuse_a_false_reflexive_premise.c
 int32 probe(int32 n) {
@@ -24,13 +18,11 @@ int32 probe(int32 n) {
     ensures result == 0;
 } by {
     step();
-    apply(strictly_below(n, n)) using {
-        n < n;
-    };
+    apply(strictly_below(n, n));
     solve();
 }
 ```
 
 ```expect
-fail: listed premise `n < n` is not an available fact
+fail: has an unproved obligation: `n < n`
 ```

@@ -9,7 +9,6 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
     );
     let opaque = Pointer::new(base.clone(), ProgramType::Int32Pointer)
         .with_pointee_constant(true)
-        .with_pointee_volatile(true)
         .with_object_class(Some(class.clone()));
     let member = opaque
         .clone()
@@ -41,7 +40,6 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
             unreachable!()
         };
         assert!(actual.pointee_constant());
-        assert!(actual.pointee_volatile());
         assert!(actual.supports_object_class(&class));
         let native = ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
@@ -50,6 +48,7 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
             target_type: ProgramType::VoidPointer,
             integer_mode: IntegerCastMode::PointerCoercion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -83,12 +82,9 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
         let [path] = paths.as_slice() else {
             panic!("one pointer value expected")
         };
-        let ProgramValue::Pointer(root) = &path.value.clone().into_native() else {
-            panic!("pointer expected")
-        };
-        assert!(root.bounds_are_known());
-        assert!(root.bounds().is_none());
-        assert_ne!(
+        // A written conversion to `void *` keeps the value too: C gives it no
+        // meaning beyond its round trip (C11 6.3.2.3p1).
+        assert_eq!(
             &path.value.clone().into_native(),
             &ProgramValue::Pointer(actual.clone())
         );
@@ -124,6 +120,7 @@ fn implicit_void_pointer_coercion_rejects_function_pointers() {
         target_type: ProgramType::VoidPointer,
         integer_mode: IntegerCastMode::PointerCoercion,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
@@ -175,6 +172,7 @@ fn native_pointer_word_round_trip_does_not_promote_declared_class_to_evidence() 
             target_type: ProgramType::Int32Pointer,
             integer_mode: IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,

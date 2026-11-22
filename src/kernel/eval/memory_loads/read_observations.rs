@@ -184,7 +184,7 @@ pub(super) fn selected(point: &ProgramPoint, pointer: &Address, kind: LoadKind) 
     })
 }
 
-pub(super) fn refresh(id: Id, origin: &SharedMemory, bytes: u32) {
+pub(super) fn refresh(id: Id, origin: &ProgramPoint, bytes: u32) {
     crate::instrumentation::record_deterministic_work(1);
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
@@ -194,7 +194,7 @@ pub(super) fn refresh(id: Id, origin: &SharedMemory, bytes: u32) {
                 .records
                 .get_mut(&id)
                 .expect("registered read observation"),
-            &ProgramPoint::at(origin),
+            origin,
             epoch,
             bytes,
             true,

@@ -462,10 +462,10 @@ uint64 label_copy(char* dst, const char* src) {
     step();
     step();
     step();
-    have 0u64 <= n by { normalize(); }
+    have 0u64 <= n by { solve(); }
     have n < 32u64 by { solve(); }
     have contains(memory(dst[0u64..32u64]), memory(dst[n])) by {
-        apply(separation::contains_element(dst, 0u64, 32u64, n)) using { 0u64 <= n; n < 32u64; };
+        apply(separation::contains_element(dst, 0u64, 32u64, n));
     }
     have separate(memory(dst[n]), memory(src[0u64..len + 1u64])) by { solve(); }
     with(cstr_at(src, len)) {

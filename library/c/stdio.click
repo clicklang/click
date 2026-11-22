@@ -985,10 +985,7 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= stdio::decimal_digit(v, k) by {
         if k < stdio::decimal_length(v) {
             apply(stdio::decimal_digit_power_nonzero(v, k));
-            apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k)) using {
-                stdio::decimal_length(v) == stdio::decimal_length(v);
-                k < stdio::decimal_length(v);
-            };
+            apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k));
             rewrite(stdio::decimal_digit(v, k), (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8);
             solve();
         } else {

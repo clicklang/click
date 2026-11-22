@@ -138,7 +138,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 have i < k by { known(); }
                 have i != k by { solve() using { i < k; }; }
                 have separate(memory(occupied[i]), memory(occupied[k])) by {
-                    apply(click::separation::separate_elements(occupied, i, k)) using { i != k; };
+                    apply(click::separation::separate_elements(occupied, i, k));
                 }
                 have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
                     solve() using { separate(memory(occupied[i]), memory(occupied[k])); };
@@ -147,22 +147,16 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     preserve(memory(occupied[k]), loop(0).statement(0));
                 }
                 have contains(memory(data[0..capacity]), memory(data[i])) by {
-                    apply(click::separation::contains_element(data, 0, capacity, i)) using { 0 <= i; i < capacity; };
+                    apply(click::separation::contains_element(data, 0, capacity, i));
                 }
                 have contains(memory(occupied[0..capacity]), memory(occupied[k])) by {
-                    apply(click::separation::contains_element(occupied, 0, capacity, k)) using { 0 <= k; k < capacity; };
+                    apply(click::separation::contains_element(occupied, 0, capacity, k));
                 }
                 have separate(memory(data[0..capacity]), memory(occupied[0..capacity])) by {
-                    apply(click::separation::separate_symm(memory(occupied[0..capacity]), memory(data[0..capacity]))) using {
-                        separate(memory(occupied[0..capacity]), memory(data[0..capacity]));
-                    };
+                    apply(click::separation::separate_symm(memory(occupied[0..capacity]), memory(data[0..capacity])));
                 }
                 have separate(memory(data[i]), memory(occupied[k])) by {
-                    apply(click::separation::separate_restrict(memory(data[0..capacity]), memory(occupied[0..capacity]), memory(data[i]), memory(occupied[k]))) using {
-                        separate(memory(data[0..capacity]), memory(occupied[0..capacity]));
-                        contains(memory(data[0..capacity]), memory(data[i]));
-                        contains(memory(occupied[0..capacity]), memory(occupied[k]));
-                    };
+                    apply(click::separation::separate_restrict(memory(data[0..capacity]), memory(occupied[0..capacity]), memory(data[i]), memory(occupied[k])));
                 }
                 have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
                     solve() using { separate(memory(data[i]), memory(occupied[k])); };

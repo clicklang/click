@@ -2688,22 +2688,28 @@ fn run_documented_session_versions(page: &str) -> BTreeMap<String, Vec<String>> 
             let (command, expected) = body.split_once('\n').unwrap_or((&body, ""));
             let arguments = command
                 .strip_prefix("$ click ")
-                .filter(|rest| rest.starts_with("verify ") || rest.starts_with("import lock "))
+                .filter(|rest| rest.starts_with("verify ") || rest.starts_with("capture "))
                 .unwrap_or_else(|| panic!("{page}: unexpected console command `{command}`"));
-            let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            // Both streams go to one file, so the session reads in the order
+            // a terminal shows it: a capture refresh notice before the result.
+            let transcript = directory.join(".session-output");
+            let file = fs::File::create(&transcript).unwrap();
+            Command::new(env!("CARGO_BIN_EXE_click"))
                 .args(arguments.split_whitespace())
                 .current_dir(&directory)
-                .output()
+                .stdout(file.try_clone().unwrap())
+                .stderr(file)
+                .status()
                 .unwrap();
             // The scratch directory is not a Git worktree, so no incremental
             // baseline can be recorded; that warning is not part of the session.
-            let stderr = String::from_utf8(output.stderr)
+            let actual = fs::read_to_string(&transcript)
                 .unwrap()
                 .lines()
                 .filter(|line| !line.contains("could not record incremental baseline"))
                 .map(|line| format!("{line}\n"))
                 .collect::<String>();
-            let actual = format!("{}{stderr}", String::from_utf8(output.stdout).unwrap());
+            fs::remove_file(&transcript).unwrap();
             assert_eq!(actual, expected, "{page}: `{command}`");
             sessions += 1;
         }
@@ -2977,7 +2983,7 @@ fn expanded_library_names_resolve_and_audit() {
         // dropping that list could turn a different application into search.
         if fixture == "qualified_library_names.md" {
             assert!(
-                source.contains("apply(click::list::append_left_identity(xs)) using {"),
+                source.contains("apply(click::list::append_left_identity(xs));"),
                 "{source}"
             );
         }

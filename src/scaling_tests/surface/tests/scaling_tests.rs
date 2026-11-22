@@ -148,9 +148,16 @@ int32 probe() {{
                 }
             }
             assert_eq!(completed, reads);
+            // A direct read after the array stores can use the recorded
+            // point's byte index without starting the legacy walk.
+            let limit = if local_store.is_none() && reads == 1 {
+                0
+            } else {
+                max_read_version_work * reads
+            };
             assert!(
-                (reads..=max_read_version_work * reads).contains(&version_work),
-                "local={local_store:?}, {stores} stores and {reads} reads used {version_work} version work"
+                version_work <= limit,
+                "local={local_store:?}, {stores} stores and {reads} reads used {version_work} version work, limit {limit}"
             );
         }
     }
@@ -9736,9 +9743,7 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             .map(|k| {
                 format!(
                     "            have i >= 0 - {k} by {{\n\
-                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i))) using {{\n\
-                     \x20                   0 - {k} <= 0; 0 <= to_integer(i);\n\
-                     \x20               }};\n            }}\n"
+                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i)));\n            }}\n"
                 )
             })
             .collect::<String>();
@@ -12055,7 +12060,7 @@ int32 probe() {{
     mark after;
     have 0 != 255 by {{ known(); }}
     have separate(memory(g[255]), memory(g[0])) by {{
-        apply(click::separation::separate_elements(g, 255, 0)) using {{ 0 != 255; }};
+        apply(click::separation::separate_elements(g, 255, 0));
     }}
     have separate(statement({calls}).footprint, memory(g[0])) by {{
         normalize() using {{ separate(memory(g[255]), memory(g[0])); }};

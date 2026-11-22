@@ -393,6 +393,47 @@ impl super::ProofSearch<PureFactContext> {
         })
     }
 
+    /// Choose one stronger float comparison from the goal's existing
+    /// dependency buckets. The certificate checks just the chosen premise.
+    pub(crate) fn select_float_bound(
+        context: &PureFactContext,
+        goal: &Proposition,
+    ) -> Option<Proposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_float_bound");
+        use crate::kernel::proof::arithmetic_special::{float_bound_weakens, is_float_bound};
+        if !is_float_bound(goal) {
+            return None;
+        }
+        for key in collect_atomic_connection_keys(goal) {
+            for fact in context.atomic_facts_connected_to(&key, false).0 {
+                if crate::instrumentation::deadline_exceeded_with_work(1) {
+                    return None;
+                }
+                match fact {
+                    AtomicConnectedFact::Condition(condition, true)
+                        if matches!(
+                            condition,
+                            ConditionTerm::Float32(_) | ConditionTerm::Float64(_)
+                        ) =>
+                    {
+                        let premise = Proposition::condition_is(condition.clone(), true);
+                        if float_bound_weakens(&premise, goal) {
+                            return Some(premise);
+                        }
+                    }
+                    AtomicConnectedFact::Proposition(premise)
+                        if float_bound_weakens(premise, goal) =>
+                    {
+                        return Some(premise.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
     /// Check one atomic theory consequence against this exact premise set.
     ///
     /// Unlike [`Self::derive_proposition`], this does not introduce logical

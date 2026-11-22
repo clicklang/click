@@ -19416,7 +19416,7 @@ int twice(int x) {
     ensures result == x + x;
 }
 theorem twice_doubles() {
-    ensures Doubling(&twice) by { unfold(Doubling); solve(); }
+    ensures Doubling(&twice) by { unfold(Doubling(&twice)); solve(); }
 }
 int apply(int (*f)(int), int x) {
     requires Doubling(f);
@@ -19464,9 +19464,10 @@ fn calls_through_a_cpp_function_pointer_meet_its_named_contract() {
 }
 
 // The call through `f` needs the contract `apply` requires of it, and the
-// call passing `&twice` needs `twice` to meet that contract: from its own
-// contract, through an explicit refinement theorem. Both the theorem and
-// the matching callback contract are required.
+// call passing `&twice` needs `twice` to meet that contract: through the
+// refinement theorem, or, since `Doubling` reads no memory, formed
+// automatically from `twice`'s own contract. A contract that does not imply
+// `Doubling` is refused either way.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
@@ -19475,7 +19476,7 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = project.directory.join("callback.click");
-    let theorem = "theorem twice_doubles() {\n    ensures Doubling(&twice) by { unfold(Doubling); solve(); }\n}\n";
+    let theorem = "theorem twice_doubles() {\n    ensures Doubling(&twice) by { unfold(Doubling(&twice)); solve(); }\n}\n";
     let without_theorem = FUNCTION_POINTER_SIDECAR
         .replace(theorem, "")
         .replace("apply(twice_doubles()); ", "");
@@ -19485,15 +19486,21 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
         verify_program_prepared_project(&parsed, &import)
     };
     verify(FUNCTION_POINTER_SIDECAR).unwrap_or_else(|error| panic!("{}", error.message()));
-    let error = verify(&without_theorem).expect_err("callback refinement must be explicit");
+    verify(&without_theorem).unwrap_or_else(|error| panic!("{}", error.message()));
+    let weak_twice = "    ensures result >= 0;\n}";
+    let weak_without_theorem = without_theorem.replace(
+        "int twice(int x) {\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;\n}",
+        &format!("int twice(int x) {{\n    requires 0 <= x and x <= 1000;\n{weak_twice}"),
+    );
+    assert_ne!(weak_without_theorem, without_theorem);
+    let error = verify(&weak_without_theorem).expect_err("a weaker callback must not form");
     assert!(
         error
             .message()
-            .contains("does not satisfy named contract `Doubling`"),
+            .contains("does not satisfy named contract `Doubling` automatically"),
         "{}",
         error.message()
     );
-    let weak_twice = "    ensures result >= 0;\n}";
     for hostile in [
         FUNCTION_POINTER_SIDECAR.replace("    requires Doubling(f);\n", ""),
         FUNCTION_POINTER_SIDECAR.replacen(
@@ -19543,7 +19550,7 @@ int twice(int x) {
     ensures result == x + x;
 }
 theorem twice_doubles() {
-    ensures Doubling(&twice) by { unfold(Doubling); solve(); }
+    ensures Doubling(&twice) by { unfold(Doubling(&twice)); solve(); }
 }
 int stored(int (*f)(int), int x) {
     requires Doubling(f);
@@ -19746,7 +19753,7 @@ int caller::(lambda#0)(int y) {
     ensures result == y + y;
 }
 theorem lambda_doubles() {
-    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling); solve(); }
+    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling(&caller::(lambda#0))); solve(); }
 }
 int caller(int x) {
     requires 0 <= x and x <= 1000;
@@ -19839,10 +19846,10 @@ int pair::(lambda#1)(int y) {
     ensures result == y + y;
 }
 theorem first_is_bounded() {
-    ensures Bounded(&pair::(lambda#0)) by { unfold(Bounded); solve(); }
+    ensures Bounded(&pair::(lambda#0)) by { unfold(Bounded(&pair::(lambda#0))); solve(); }
 }
 theorem second_is_bounded() {
-    ensures Bounded(&pair::(lambda#1)) by { unfold(Bounded); solve(); }
+    ensures Bounded(&pair::(lambda#1)) by { unfold(Bounded(&pair::(lambda#1))); solve(); }
 }
 int pair(int x) {
     requires 0 <= x and x <= 1000;
@@ -21609,7 +21616,7 @@ const int* probe(const int* p) noexcept { return invoke(&identity, p); }
     let source = r#"verifying "callback.cpp";
 contract const int32* Identity(const int32* p) { ensures result == p; }
 const int32* identity(const int32* p) { ensures result == p; }
-theorem identity_refines() { ensures Identity(&identity) by { unfold(Identity); solve(); } }
+theorem identity_refines() { ensures Identity(&identity) by { unfold(Identity(&identity)); solve(); } }
 const int32* invoke(const int32* (*f)(const int32*), const int32* p) {
     requires Identity(f); ensures result == p;
 }

@@ -35,7 +35,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
             have 0 <= k by { solve(); }
             have j != k by { solve(); }
             have separate(memory(v[j]), memory(v[k])) by {
-                apply(click::separation::separate_elements(v, j, k)) using { j != k; };
+                apply(click::separation::separate_elements(v, j, k));
             }
             have separate(statement(0).footprint, memory(v[k])) by {
                 solve() using { separate(memory(v[j]), memory(v[k])); };
@@ -43,14 +43,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
             preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); known(); }
-        apply(same_zeros(v, at(entry, v), lo, n, hi)) using {
-            0 <= lo;
-            0 <= hi;
-            hi <= n;
-            viewable(v[0..n]);
-            at(entry, viewable(v[0..n]));
-            forall (k: int32) { lo <= k and k < n implies v[k] == at(entry, v[k]) };
-        };
+        apply(same_zeros(v, at(entry, v), lo, n, hi));
         known();
     }
 }

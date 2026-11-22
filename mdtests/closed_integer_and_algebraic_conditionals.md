@@ -18,7 +18,7 @@ theorem integer_equality(x: Integer, y: Integer) {
 theorem algebraic_equality() {
     ensures forall (unused: Integer) {
         (if 1 == 2 { Choice::Left } else { Choice::Right }) == Choice::Right
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem algebraic_disequality() {

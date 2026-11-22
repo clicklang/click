@@ -24,8 +24,7 @@ fn whole_contract_retirement_is_indexed_and_preserves_candidate_forks() {
             let entry = prepare_function_contract_entry_cases(
                 program_function_contract_entry(&ExecutionState::new(), &function, &[]).unwrap(),
                 ExecutionEnvironment::new().byte_order_fact(),
-            )
-            .unwrap();
+            );
             let original = WholeContractProof::open(Arc::new(entry)).unwrap();
             let ((closed, work), indexed_work) = crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {

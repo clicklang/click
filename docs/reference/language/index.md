@@ -223,8 +223,10 @@ parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 and a pointer to a struct. Native pointer targets may add `const`, `volatile`,
 or both before the pointee type, such as `p as (const uint8 *)`; struct pointer
 targets support `const`. An unqualified byte view inherits its source's const
-qualification. In a contract, casting a `void *` to an unsigned byte pointer
-keeps the bounds carried by the void pointer. Qualifying a pointer grants no
+qualification. Casting a pointer from a non-character type, including
+`void *`, to a byte pointer forms the byte view of its allocation, as the C
+conversion does; casting to `void *` or between byte pointer types keeps the
+pointer's bounds. Qualifying a pointer grants no
 memory access permission. A Rust source's sidecar
 also writes Rust's scalar names, `x as u32`.
 
@@ -241,7 +243,8 @@ binary64 conversion rules, including integer rounding, width conversion,
 signed zero, infinities, and NaNs. Like integer targets, these Click forms
 cast the value observed by their operand, including `old(...)` and `at(...)`.
 They do not add a conversion from mathematical `Integer` or 128-bit integers.
-Float-to-integer casts keep their existing finite/range obligations. Checked
+Float-to-integer casts require ordered bounds on the range after truncation.
+Together these bounds exclude NaN and infinities. Checked
 examples: `mdtests/float_numeric_cast_spellings.md`.
 
 `as` binds tighter than every binary operator and looser than every unary
@@ -1329,9 +1332,8 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
 
 Nothing is lent by writing it and nothing is returned. Like every stated range
 it carries its valid-span facts, which the theorem's proof assumes and an
-application owes; see [Viewable ranges](../../concepts/viewability.md). An
-`apply ... using` list holds propositions, so the premise is named there as
-`viewable(v[lo..hi])`.
+application owes; see [Viewable ranges](../../concepts/viewability.md). The
+range premise can be stated with `have viewable(v[lo..hi]);`.
 
 Pure theorem scripts can simplify, unfold predicates and pure functions, apply
 theorems, introduce logical structure, rewrite, use exact assumptions, and
@@ -1373,11 +1375,9 @@ goal remains focused. The facts available at that step must establish that
 its parameter is nonnegative. `ih(m)` is available after that declaration and
 requires `m` to be nonnegative and strictly smaller, plus all theorem
 requirements after substituting `m` for the induction parameter. Other theorem
-parameters remain fixed. This is a pure proposition rule, not C execution or
-C termination evidence. Bare `apply(ih(m))` is smart: it looks those fixed
-obligations up among the available facts, proving none, and expansion emits
-`apply(ih(m)) using { ... }`. The `using` form is
-the simple checked operation and accepts only the exact listed obligations.
+parameters remain fixed. This is a pure proposition rule. `apply(ih(m))` checks
+those fixed obligations against the facts already in scope. Use `have` to
+establish a missing premise. Expansion keeps the same application.
 
 Pure-function calls can be opened explicitly with
 `unfold(function(args))`. This simple operation exposes one defining equation
@@ -1774,7 +1774,8 @@ proposition, and an unmet one is reported by its text. An `ensures` label
 names its postcondition claim. A loop `invariant` may be labeled the same
 way, and the label names it where a failure reports it: "loop 0 invariant
 `bounded` entry" for `invariant bounded: i <= n;`. To open an available existential precondition, write its
-proposition with `let k = obtain(exists (x: Type) { ... });`.
+proposition with `let k = obtain(exists (x: Type) { ... });` or
+`let k = obtain((lo..hi).any(|i| { ... }));`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
 integer element ranges. The byte count is derived from the base pointer's
@@ -1835,7 +1836,10 @@ variable or a literal, is defined.
 
 For two object pointers, `defined(right - left)` is C's precondition for
 pointer subtraction (C11 6.5.6p9): both point into the same array object, or
-one past its end, and their element distance fits in `int32`. It implies
+one past its end, and their element distance fits in `ptrdiff_t`,
+which is `int64` on this target. The model's pointer coordinates are signed 32-bit,
+so on this target shared provenance implies the distance fits
+(`mdtests/c_pointer_distance_widens_coordinates.md`). It implies
 `same_allocation(right, left)`. A modular pointer-distance helper can use that
 single requirement; a concrete same-array caller, including one using its
 one-past endpoint, discharges it from the pointer objects and their offsets.
@@ -2937,6 +2941,9 @@ resource owned_item(item: struct item*) {
 ```
 
 The conditional body gives a nullable factory one uniform result resource.
+The condition must be a well-typed proposition over values in scope. It may
+remain symbolic when the resource is declared. The proof checks the resource
+obligations for the alternatives that can occur.
 On the null branch the body is empty. On the success branch it packages both
 access and lifetime authority. A read-only helper can `views owned_item(item)`
 without gaining the ability to free it; a destructor must consume and unfold
@@ -3493,7 +3500,9 @@ instance supplies the fact that `base[0..bytes]` lies inside one block. The base
 argument accepts any modeled data, pointer-array or struct pointer; the owned
 range keeps the pointer's own element width. An `extern` allocator contract
 writes `produces allocation(result, bytes);`
-([C allocation](c.md#heap-allocation)).
+([C allocation](c.md#heap-allocation)), or `allocates(result, bytes);` when
+the allocation is new, a block no earlier pointer reaches
+([fresh allocations](c.md#fresh-allocations)).
 
 The declared byte count is an `int32`, and argument 1 also accepts a
 `uint64` (`size_t`) count, as argument 0 accepts any data pointer. `malloc`,
@@ -3853,7 +3862,11 @@ value or provenance, and the C body's own conversion reaches the same object.
 The direct `argument as (struct T *)` form accepts a `void*` C parameter and
 records one target struct per parameter for proof synthesis. Contracts may
 also write `pointer as (void *) as (struct T *)` for a current object-pointer expression,
-including a typed struct pointer, field, or resource parameter. This explicit
+including a typed struct pointer, field, or resource parameter. A pointer to
+a struct's initial member converted this way points to the struct (C11
+6.7.2.1p15), so its bounds are the struct's. `pointer as (uint8 *) as (struct T
+*)` converts from the byte view of the pointer's allocation, as C code that
+steps back from a member with `container_of` does. This explicit
 form retains the target layout on the expression and does not assign a layout
 to the source parameter. Integer and function-pointer operands are rejected.
 Source const qualifications survive the conversion; field reads and writes
@@ -4701,6 +4714,12 @@ A function's externally visible write footprint is exactly the memory its
 contract owns. There is no separate effect clause: `owns` permits stores and
 reads, `views` permits reads, and a store outside the owned memory fails at
 the store.
+
+For an ordinary call whose checked owned inputs bound all its writes, `step`
+can use separation between that resource bound and the live-view footprint.
+This also works when the input is a folded recursive resource and the call
+cannot name every byte it might write
+(`mdtests/recursive_call_keeps_a_separated_live_view.md`).
 
 Contract segment expressions are evaluated at function entry, so a shifted
 segment such as `owns (owner->data + owner->len)[0..2]` continues to denote the

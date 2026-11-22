@@ -763,11 +763,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
                     statement: 0,
                 };
             }
-            T::If { .. }
-            | T::Switch { .. }
-            | T::Drop { .. }
-            | T::BoxNew { .. }
-            | T::BoxFree { .. } => {
+            T::If { .. } | T::Switch { .. } | T::Drop { .. } | T::BoxFree { .. } => {
                 return Err(FrontierRefusal::UnsupportedFlow);
             }
         }
@@ -839,6 +835,7 @@ mod tests {
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
                 compound_literals: Default::default(),
+                borrowed_scalars: Default::default(),
                 locals: vec![
                     place("child", reference_type()),
                     place("alias", reference_type()),

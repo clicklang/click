@@ -4,6 +4,7 @@ apply_close_invariants_body
 apply_execution_statement_step
 apply_execution_steps_within
 apply_have_step
+apply_prepared_theorem
 apply_selected_theorem_application
 apply_step
 apply_step_at
@@ -66,7 +67,6 @@ apply_focused_expanded_execution_arm
 apply_expanded_execution_if
 plan_invariant_bundle_closure
 close_bundle_member_by_solve
-prove_theorem_application_obligations
 observe_step
 apply_ordinary_transport_steps
 apply_fact_application
@@ -85,3 +85,4 @@ try_rewrite_conditional_arms_using
 try_native_integer_bound
 plan_bare_statement_step
 try_signed_definedness_bounds
+try_indexed_separation_restriction

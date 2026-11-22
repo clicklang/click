@@ -142,24 +142,20 @@ impl ExecutionValue {
     pub(in crate::kernel) fn with_pointer_binding(
         self,
         program_type: ProgramType,
-        volatile: bool,
         constant: bool,
     ) -> Self {
         if let Self::Shared(root) = &self
             && let Some(pointer) = root.pointer_payload()
         {
             return root
-                .with_pointer_payload(pointer.with_binding_type_and_qualifiers(
-                    program_type,
-                    volatile,
-                    constant,
-                ))
+                .with_pointer_payload(
+                    pointer.with_binding_type_and_qualifiers(program_type, constant),
+                )
                 .into();
         }
         Self::retain_formed_pointer(
             self.into_native()
                 .retag_pointer(program_type)
-                .with_pointer_pointee_volatile(volatile)
                 .with_pointer_pointee_constant(constant),
         )
     }
@@ -926,20 +922,14 @@ mod tests {
             false,
         );
         assert_eq!(state.locals.get("p").unwrap().shared(), Some(&root));
-        for (volatile, constant) in [(false, true), (true, true), (true, false), (false, false)] {
-            let value = ExecutionValue::Shared(root.clone()).with_pointer_binding(
-                ProgramType::Int32Pointer,
-                volatile,
-                constant,
-            );
+        for constant in [true, false] {
+            let value = ExecutionValue::Shared(root.clone())
+                .with_pointer_binding(ProgramType::Int32Pointer, constant);
             assert!(matches!(
                 value.shared().unwrap().node(),
                 KernelTermNode::PointerCall { .. }
             ));
-            let expected = pointer
-                .clone()
-                .with_pointee_volatile(volatile)
-                .with_pointee_constant(constant);
+            let expected = pointer.clone().with_pointee_constant(constant);
             assert!(
                 value
                     .shared()
@@ -949,13 +939,9 @@ mod tests {
                     .same_source_payload(&SharedPointer::import(&expected))
             );
             assert_eq!(value.pointer().unwrap().pointee_constant(), constant);
-            assert_eq!(value.pointer().unwrap().pointee_volatile(), volatile);
         }
-        let retagged = ExecutionValue::Shared(root).with_pointer_binding(
-            ProgramType::VoidPointer,
-            false,
-            false,
-        );
+        let retagged =
+            ExecutionValue::Shared(root).with_pointer_binding(ProgramType::VoidPointer, false);
         assert_eq!(retagged.program_type(), ProgramType::VoidPointer);
         assert!(matches!(
             retagged.shared().unwrap().node(),
@@ -1043,7 +1029,7 @@ mod tests {
             assert_eq!(recovered.shared(), Some(&root));
             assert!(recovered.pointer().unwrap().pointee_constant());
             let paths = crate::kernel::eval::evaluate_retained_memory_load_paths(
-                retained_state,
+                &crate::kernel::ProgramPoint::of_memory(retained_state),
                 address.clone(),
                 ProgramType::Int32Pointer,
                 ExecutionFacts::new(),
@@ -1053,7 +1039,7 @@ mod tests {
                 false,
                 None,
                 None,
-                None,
+                false,
             );
             assert_eq!(paths.len(), 1);
             let ExpressionOutcome::Value(loaded) = &paths[0].outcome else {

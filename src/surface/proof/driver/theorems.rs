@@ -3,8 +3,7 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
-    /// An omitted evidence list proves each written antecedent in a `have`
-    /// scope, retaining those proofs before the explicit implication step.
+    /// Use established antecedents directly and retain proofs for open ones.
     pub(in crate::surface::proof) fn apply_fact_application(
         &self,
         fact: &ClickProposition,
@@ -15,10 +14,17 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .proof
                 .step_error("`apply(fact)` requires an implication fact"));
         }
+        let step = ProofStep::ApplyFact(fact.clone());
+        let direct = self.apply_step(step.clone());
+        if direct.is_ok() || implicit_solve_disabled() {
+            return direct;
+        }
         let mut current = self.proof.clone();
         for antecedent in &antecedents {
-            if implicit_solve_disabled() {
-                return Err(current.step_error("bare `apply(fact)` has implicit premise obligations; write `apply(fact) using { ... }`"));
+            let lowered =
+                current.lower_cited_surface_proposition(antecedent, "implication antecedent")?;
+            if current.facts().pure_known_available(&lowered) {
+                continue;
             }
             let scope = current.driver().open_have(antecedent.clone())?;
             let Some(closed) = scope.driver().try_solve_closure()? else {
@@ -32,10 +38,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             };
             current = closed.join()?;
         }
-        current.driver().apply_step(ProofStep::ApplyFactUsing {
-            fact: fact.clone(),
-            premises: antecedents,
-        })
+        current.driver().apply_step(step)
     }
 
     /// Retain an application's evaluated arguments and instantiated result,
@@ -44,25 +47,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         application: &TheoremApplication,
     ) -> Result<Proof<'a>, ClickError> {
-        if (matches!(
-            self.proof.context.as_ref(),
-            ProofContext::Pure(_) | ProofContext::FixedState(_)
-        ) || matches!(self.proof.context.as_ref(), ProofContext::Execution(_))
-            && (!self.proof.is_at_function_exit() || self.proof.focused_outcome_data().is_some()))
+        if !matches!(self.proof.context.as_ref(), ProofContext::Execution(_))
+            || !self.proof.is_at_function_exit()
+            || self.proof.focused_outcome_data().is_some()
         {
-            let prepared = self.proof.prepare_theorem_application(application)?;
-            let (current, premises) =
-                self.prove_theorem_application_obligations(application, &prepared.obligations)?;
-            let step = ProofStep::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: premises.clone(),
-            };
-            return current.driver().observe_step(step, |_| {
-                let applied =
-                    current.finish_prepared_theorem_application(prepared, application, premises)?;
-                Ok(current
-                    .driver()
-                    .spell_applied_conclusions(application, applied))
+            let step = ProofStep::ApplyTheorem(application.clone());
+            return self.observe_step(step, |_| {
+                self.apply_prepared_theorem(application, !implicit_solve_disabled())
             });
         }
         let driver_proof = self.proof;
@@ -80,52 +71,54 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .apply_selected_theorem_application(step)
     }
 
-    fn prove_theorem_application_obligations(
+    /// Apply the theorem after checking its own instantiated requirements.
+    /// Certificate replay calls this with solving disabled.
+    pub(in crate::surface::proof) fn apply_prepared_theorem(
         &self,
         application: &TheoremApplication,
-        obligations: &[UnresolvedRequirement],
-    ) -> Result<(Proof<'a>, Vec<ClickProposition>), ClickError> {
+        allow_solve: bool,
+    ) -> Result<Proof<'a>, ClickError> {
+        let prepared = self.proof.prepare_theorem_application(application)?;
         let mut current = self.proof.clone();
-        let mut premises = Vec::new();
-        for requirement in obligations {
-            if requirement.surface.is_none()
-                && matches!(
-                    normalize_proposition(&requirement.proposition),
-                    NormalizedProposition::True
-                )
-            {
+        let step = ProofStep::ApplyTheorem(application.clone());
+        for requirement in &prepared.obligations {
+            if current.theorem_obligation_available(requirement) {
                 continue;
             }
             let surface = current
-                .requirement_surface(
-                    requirement,
-                    &ProofStep::ApplyTheoremUsing {
-                        application: application.clone(),
-                        premises: vec![],
-                    },
-                )?
+                .requirement_surface(requirement, &step)?
                 .ok_or_else(|| {
                     current.step_error("theorem application obligation has no Surface form")
                 })?
                 .surface;
-            if implicit_solve_disabled() {
-                return Err(current.step_error("bare `apply` has implicit premise obligations; write `apply(...) using { ... }` to supply their proofs explicitly"));
-            }
             let scope = current.driver().open_have(surface.clone())?;
+            let refusal = || {
+                scope.body().step_error(format!(
+                    "theorem `{}` has an unproved obligation: `{}`",
+                    application.name,
+                    crate::surface::printing::source_click_proposition(&surface)
+                ))
+            };
+            if let Ok(closed) = scope.driver().apply_step(ProofStep::Known) {
+                current = closed.join()?;
+                continue;
+            }
+            if !allow_solve {
+                return Err(refusal());
+            }
+            let _timing = crate::surface::proof::timing::TacticTiming::implicit_solve();
+            let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
             let Some(closed) = scope.driver().try_solve_closure()? else {
-                return Err(scope
-                    .body()
-                    .step_error(format!(
-                        "theorem `{}` has an unproved obligation: `{}`",
-                        application.name,
-                        crate::surface::printing::source_click_proposition(&surface)
-                    ))
-                    .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch));
+                return Err(
+                    refusal().with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
+                );
             };
             current = closed.join()?;
-            premises.push(surface);
         }
-        Ok((current, premises))
+        let applied = current.finish_prepared_theorem_application(prepared, application)?;
+        Ok(current
+            .driver()
+            .spell_applied_conclusions(application, applied))
     }
 
     pub(in crate::surface::proof) fn apply_selected_theorem_application(

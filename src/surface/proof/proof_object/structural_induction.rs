@@ -112,7 +112,6 @@ impl<'a> Proof<'a> {
                 Proposition::Implies(Box::new(premise.clone()), Box::new(body))
             });
         Ok(PureStructuralInductionApplication {
-            surface_premises,
             kernel_premises,
             implication,
             conclusion,

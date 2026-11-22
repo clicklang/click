@@ -414,15 +414,9 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
                 unfold(rb_tree_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model)));
                 known();
             }
-            apply(plug_parent_consistent_ctx(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model, 0)) using {
-                rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
-            };
-            apply(ctx_consistent_left_focus(identity, grandparent, color, sibling_model, up_model, t.model, 0)) using {
-                ctx_consistent(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model, 0) == 1;
-            };
-            apply(rb_parent_consistent_parent_is(t.model, identity)) using {
-                rb_parent_consistent(t.model, identity) == 1;
-            };
+            apply(plug_parent_consistent_ctx(Context::Left(identity, grandparent, color, sibling_model, up_model), t.model, 0));
+            apply(ctx_consistent_left_focus(identity, grandparent, color, sibling_model, up_model, t.model, 0));
+            apply(rb_parent_consistent_parent_is(t.model, identity));
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { model: RbTree::Node(identity, grandparent, color, old(t.model), sibling_model), left: t, right: s });
             apply(ctx_depth_is_nonnegative(up_model));
@@ -442,15 +436,9 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
                 unfold(rb_tree_parent_consistent(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model)));
                 known();
             }
-            apply(plug_parent_consistent_ctx(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model, 0)) using {
-                rb_parent_consistent(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model), 0) == 1;
-            };
-            apply(ctx_consistent_right_focus(identity, grandparent, color, sibling_model, up_model, t.model, 0)) using {
-                ctx_consistent(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model, 0) == 1;
-            };
-            apply(rb_parent_consistent_parent_is(t.model, identity)) using {
-                rb_parent_consistent(t.model, identity) == 1;
-            };
+            apply(plug_parent_consistent_ctx(Context::Right(identity, grandparent, color, sibling_model, up_model), t.model, 0));
+            apply(ctx_consistent_right_focus(identity, grandparent, color, sibling_model, up_model, t.model, 0));
+            apply(rb_parent_consistent_parent_is(t.model, identity));
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { model: RbTree::Node(identity, grandparent, color, sibling_model, old(t.model)), left: s, right: t });
             apply(ctx_depth_is_nonnegative(up_model));
@@ -540,16 +528,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 known();
             }
             have ctx_node_is(c.model, node_parent) == 1 by {
-                apply(ctx_node_is_from_parent(c.model, t.model, node_parent)) using {
-                    ctx_holds(c.model, t.model) == 1;
-                    rb_has_parent(t.model, node_parent) == 1;
-                };
+                apply(ctx_node_is_from_parent(c.model, t.model, node_parent));
                 known();
             }
             have c.model == ctx_reroot(c.model, node_parent) by {
-                apply(ctx_reroot_fixed(c.model, node_parent)) using {
-                    ctx_node_is(c.model, node_parent) == 1;
-                };
+                apply(ctx_reroot_fixed(c.model, node_parent));
                 known();
             }
             have parent == node_parent;
@@ -583,9 +566,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             known();
                                         }
                                         have parent == cid by {
-                                            apply(ctx_node_is_left_identity(cid, cgp, ccolor, csib, cup, parent)) using {
-                                                ctx_node_is(Context::Left(cid, cgp, ccolor, csib, cup), parent) == 1;
-                                            };
+                                            apply(ctx_node_is_left_identity(cid, cgp, ccolor, csib, cup, parent));
                                             known();
                                         }
                                         let { sibling: cs, up: cu } = unfold(c);
@@ -601,9 +582,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             known();
                                         }
                                         have parent == cid by {
-                                            apply(ctx_node_is_right_identity(cid, cgp, ccolor, csib, cup, parent)) using {
-                                                ctx_node_is(Context::Right(cid, cgp, ccolor, csib, cup), parent) == 1;
-                                            };
+                                            apply(ctx_node_is_right_identity(cid, cgp, ccolor, csib, cup, parent));
                                             known();
                                         }
                                         let { sibling: cs, up: cu } = unfold(c);
@@ -619,9 +598,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             known();
                                         }
                                         have nparent == parent by {
-                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent)) using {
-                                                rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1;
-                                            };
+                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent));
                                             known();
                                         }
                                         have RbTree::Node(nid, 0, Color::Black, nleft, nright) == rb_recolor(RbTree::Node(nid, nparent, ncolor, nleft, nright), Color::Black) by {
@@ -633,9 +610,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             known();
                                         }
                                         have is_rb_root(plug(Context::Top, rb_recolor(RbTree::Node(nid, nparent, ncolor, nleft, nright), Color::Black))) == 1 by {
-                                            apply(ctx_insert_root_exit(RbTree::Node(nid, nparent, ncolor, nleft, nright))) using {
-                                                is_rb(RbTree::Node(nid, nparent, ncolor, nleft, nright)) == 1;
-                                            };
+                                            apply(ctx_insert_root_exit(RbTree::Node(nid, nparent, ncolor, nleft, nright)));
                                             known();
                                         }
                                         have is_rb_root(plug(Context::Top, RbTree::Node(nid, 0, Color::Black, nleft, nright))) == 1 by {
@@ -664,9 +639,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             known();
                                         }
                                         have rb_parent_consistent(rb_recolor(RbTree::Node(nid, nparent, ncolor, nleft, nright), Color::Black), 0) == 1 by {
-                                            apply(rb_recolor_parent_consistent(RbTree::Node(nid, nparent, ncolor, nleft, nright), Color::Black, 0)) using {
-                                                rb_parent_consistent(RbTree::Node(nid, nparent, ncolor, nleft, nright), 0) == 1;
-                                            };
+                                            apply(rb_recolor_parent_consistent(RbTree::Node(nid, nparent, ncolor, nleft, nright), Color::Black, 0));
                                             known();
                                         }
                                         have rb_parent_consistent(plug(Context::Top, RbTree::Node(nid, 0, Color::Black, nleft, nright)), 0) == 1 by {
@@ -731,19 +704,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         }
                                         have parent == cid by {
                                             apply(ctx_node_is_left_identity(cid, cgp, ccolor,
-                                                csib, cup, parent)) using {
-                                                ctx_node_is(Context::Left(cid, cgp, ccolor,
-                                                    csib, cup), parent) == 1;
-                                            };
+                                                csib, cup, parent));
                                             known();
                                         }
                                         have ctx_rb(Context::Left(cid, cgp, ccolor, csib, cup),
                                             black_height(t.model), Color::Black) == 1 by {
                                             apply(ctx_almost_rb_insert_black_focus(c.model,
-                                                black_height(t.model))) using {
-                                                ctx_almost_rb_insert(c.model,
-                                                    black_height(t.model)) == 1;
-                                            };
+                                                black_height(t.model)));
                                             rewrite(Context::Left(cid, cgp, ccolor, csib, cup), c.model);
                                             known();
                                         }
@@ -778,16 +745,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     known();
                                                 }
                                                 have ctx_rb(Context::Left(cid, cgp, Color::Black, csib, cup), black_height(t.model), rb_color(t.model)) == 1 by {
-                                                    apply(ctx_black_frame_left_restores(cid, cgp, csib, cup, black_height(t.model), rb_color(t.model))) using {
-                                                        ctx_almost_rb_insert(Context::Left(cid, cgp, Color::Black, csib, cup), black_height(t.model)) == 1;
-                                                    };
+                                                    apply(ctx_black_frame_left_restores(cid, cgp, csib, cup, black_height(t.model), rb_color(t.model)));
                                                     known();
                                                 }
                                                 have is_rb_root(plug(Context::Left(cid, cgp, Color::Black, csib, cup), t.model)) == 1 by {
-                                                    apply(ctx_insert_black_parent_exit(Context::Left(cid, cgp, Color::Black, csib, cup), t.model)) using {
-                                                        is_rb(t.model) == 1;
-                                                        ctx_rb(Context::Left(cid, cgp, Color::Black, csib, cup), black_height(t.model), rb_color(t.model)) == 1;
-                                                    };
+                                                    apply(ctx_insert_black_parent_exit(Context::Left(cid, cgp, Color::Black, csib, cup), t.model));
                                                     known();
                                                 }
                                                 have (parent->__rb_parent_color & 1) != 0 by {
@@ -828,11 +790,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     black_height(t.model), Color::Red) == 1 by {
                                                     apply(ctx_rb_left_red_up(cid, cgp, csib, cup,
                                                         black_height(t.model),
-                                                        Color::Black)) using {
-                                                        ctx_rb(Context::Left(cid, cgp, Color::Red,
-                                                            csib, cup), black_height(t.model),
-                                                            Color::Black) == 1;
-                                                    };
+                                                        Color::Black));
                                                     rewrite(cu.model, cup);
                                                     known();
                                                 }
@@ -852,11 +810,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 step(); // Assign the decoded grandparent.
                                                 have cu.model != Context::Top by {
                                                     apply(ctx_rb_red_focus_not_top(cu.model,
-                                                        black_height(t.model))) using {
-                                                        ctx_rb(cu.model,
-                                                            black_height(t.model),
-                                                            Color::Red) == 1;
-                                                    };
+                                                        black_height(t.model)));
                                                     known();
                                                 }
                                                 match cu.model {
@@ -872,10 +826,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     }
                                                     have cgp == uid by {
                                                         apply(ctx_node_is_left_identity(uid, ugp, ucolor,
-                                                            usib, uup, cgp)) using {
-                                                            ctx_node_is(Context::Left(uid, ugp, ucolor,
-                                                                usib, uup), cgp) == 1;
-                                                        };
+                                                            usib, uup, cgp));
                                                         known();
                                                     }
                                                     have ctx_rb(Context::Left(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1 by {
@@ -934,22 +885,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have color_bit(uncolor) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(unid, unp, uncolor, unl, unr)) using {
-                                                                        rb_root_black(RbTree::Node(unid, unp, uncolor, unl, unr)) == 1;
-                                                                    };
+                                                                    apply(rb_root_black_node_color_bit(unid, unp, uncolor, unl, unr));
                                                                     known();
                                                                 }
                                                                 have uncolor == Color::Black by {
-                                                                    apply(color_bit_one_is_black(uncolor)) using {
-                                                                        color_bit(uncolor) == 1;
-                                                                    };
+                                                                    apply(color_bit_one_is_black(uncolor));
                                                                     known();
                                                                 }
                                                                 step();
                                                                 have ucolor == Color::Black by {
-                                                                    apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                        ctx_rb(Context::Left(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                    };
+                                                                    apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                     known();
                                                                 }
                                                                 have rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1 by {
@@ -957,9 +902,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have unp == gparent by {
-                                                                    apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent)) using {
-                                                                        rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1;
-                                                                    };
+                                                                    apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent));
                                                                     known();
                                                                 }
                                                                 have usib == RbTree::Node(unid, gparent, Color::Black, unl, unr) by {
@@ -990,9 +933,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 step();
                                                                 step();
                                                                 have ucolor == Color::Black by {
-                                                                    apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                        ctx_rb(Context::Left(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                    };
+                                                                    apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                     known();
                                                                 }
                                                                 let un = fold(rb_at(tmp), { model: RbTree::Empty });
@@ -1013,9 +954,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             known();
                                                         }
                                                         have nparent == cid by {
-                                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent)) using {
-                                                                rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1;
-                                                            };
+                                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent));
                                                             solve();
                                                         }
                                                         have color_bit(ncolor) == 0 by {
@@ -1025,9 +964,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             known();
                                                         }
                                                         have ncolor == Color::Red by {
-                                                            apply(color_bit_zero_is_red(ncolor)) using {
-                                                                color_bit(ncolor) == 0;
-                                                            };
+                                                            apply(color_bit_zero_is_red(ncolor));
                                                             known();
                                                         }
                                                         have t.model == RbTree::Node(nid, cid, Color::Red, nleft, nright) by {
@@ -1061,12 +998,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rewrite(Color::Red, ccolor);
                                                             known();
                                                         }
-                                                        apply(ctx_insert_case3_left_step(ugp, gparent, cid, nid, nleft, nright, csib, usib, uup)) using {
-                                                            is_rb(RbTree::Node(nid, cid, Color::Red, nleft, nright)) == 1;
-                                                            rb_root_black(usib) == 1;
-                                                            ctx_rb(Context::Left(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), black_height(RbTree::Node(nid, cid, Color::Red, nleft, nright)), Color::Black) == 1;
-                                                            rb_parent_consistent(plug(Context::Left(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright)), 0) == 1;
-                                                        };
+                                                        apply(ctx_insert_case3_left_step(ugp, gparent, cid, nid, nleft, nright, csib, usib, uup));
                                                         let { left: nl_at, right: nr_at } = unfold(t);
                                                         have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                                 rewrite(Color::Red, ncolor); known();
@@ -1148,9 +1080,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have color_bit(scol) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(sx, sp, scol, sl, sr)) using {
-                                                                        rb_root_black(RbTree::Node(sx, sp, scol, sl, sr)) == 1;
-                                                                    };
+                                                                    apply(rb_root_black_node_color_bit(sx, sp, scol, sl, sr));
                                                                     known();
                                                                 }
                                                                 have rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr) by {
@@ -1203,9 +1133,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             solve();
                                                         }
                                                             have ctx_node_is(uu.model, ugp) == 1 by known();
-                                                            have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; }; }
+                                                            have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)); }
                                                             have gparent->__rb_parent_color == address(ugp) + 1 by known();
-                                                            apply(insert_black_context_word(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; };
+                                                            apply(insert_black_context_word(uu.model, ugp));
                                                             have ctx_parent_word(uu.model, gparent->__rb_parent_color) == 1 by {
                                                                 rewrite(gparent->__rb_parent_color, address(ugp) + 1);
                                                                 known();
@@ -1269,9 +1199,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             solve();
                                                                         }
                                                                         have ucolor == Color::Black by {
-                                                                            apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                                ctx_rb(Context::Left(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                            };
+                                                                            apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                             known();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1 by {
@@ -1279,9 +1207,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have unp == gparent by {
-                                                                            apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent)) using {
-                                                                                rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1;
-                                                                            };
+                                                                            apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent));
                                                                             known();
                                                                         }
                                                                         have usib == RbTree::Node(unid, gparent, Color::Red, unl, unr) by {
@@ -1298,10 +1224,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have almost_rb_insert(RbTree::Node(cid, cgp, Color::Red, t.model, csib)) == 1 by {
-                                                                            apply(ctx_insert_cursor_left_parent(cid, cgp, t.model, csib, cup)) using {
-                                                                                is_rb(t.model) == 1;
-                                                                                ctx_rb(Context::Left(cid, cgp, Color::Red, csib, cup), black_height(t.model), Color::Black) == 1;
-                                                                            };
+                                                                            apply(ctx_insert_cursor_left_parent(cid, cgp, t.model, csib, cup));
                                                                             known();
                                                                         }
                                                                         have almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)) == 1 by {
@@ -1309,10 +1232,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             rewrite(gparent, cgp);
                                                                             known();
                                                                         }
-                                                                        apply(ctx_insert_case1_left_step(ugp, gparent, cid, unid, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib, unl, unr, uup)) using {
-                                                                            almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)) == 1;
-                                                                            ctx_rb(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(RbTree::Node(nid, nparent, ncolor, nleft, nright)), Color::Red) == 1;
-                                                                        };
+                                                                        apply(ctx_insert_case1_left_step(ugp, gparent, cid, unid, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib, unl, unr, uup));
                                                                         have rb_inorder(plug(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib))) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
                                                                             apply(plug_left_frame(cid, cgp, ccolor, csib, cup, t.model));
                                                                             rewrite(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), cup);
@@ -1439,10 +1359,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     }
                                                     have cgp == uid by {
                                                         apply(ctx_node_is_right_identity(uid, ugp, ucolor,
-                                                            usib, uup, cgp)) using {
-                                                            ctx_node_is(Context::Right(uid, ugp, ucolor,
-                                                                usib, uup), cgp) == 1;
-                                                        };
+                                                            usib, uup, cgp));
                                                         known();
                                                     }
                                                     have ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1 by {
@@ -1488,22 +1405,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have color_bit(uncolor) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(unid, unp, uncolor, unl, unr)) using {
-                                                                        rb_root_black(RbTree::Node(unid, unp, uncolor, unl, unr)) == 1;
-                                                                    };
+                                                                    apply(rb_root_black_node_color_bit(unid, unp, uncolor, unl, unr));
                                                                     known();
                                                                 }
                                                                 have uncolor == Color::Black by {
-                                                                    apply(color_bit_one_is_black(uncolor)) using {
-                                                                        color_bit(uncolor) == 1;
-                                                                    };
+                                                                    apply(color_bit_one_is_black(uncolor));
                                                                     known();
                                                                 }
                                                                 step();
                                                                 have ucolor == Color::Black by {
-                                                                    apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                        ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                    };
+                                                                    apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                     known();
                                                                 }
                                                                 have rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1 by {
@@ -1511,9 +1422,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have unp == gparent by {
-                                                                    apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent)) using {
-                                                                        rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1;
-                                                                    };
+                                                                    apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent));
                                                                     known();
                                                                 }
                                                                 have usib == RbTree::Node(unid, gparent, Color::Black, unl, unr) by {
@@ -1556,9 +1465,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 step();
                                                                 step();
                                                                 have ucolor == Color::Black by {
-                                                                    apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                        ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                    };
+                                                                    apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                     known();
                                                                 }
                                                                     unfold(triangle_uncle_link);
@@ -1593,9 +1500,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             known();
                                                         }
                                                         have nparent == cid by {
-                                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent)) using {
-                                                                rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1;
-                                                            };
+                                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent));
                                                             solve();
                                                         }
                                                         have color_bit(ncolor) == 0 by {
@@ -1605,9 +1510,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             known();
                                                         }
                                                         have ncolor == Color::Red by {
-                                                            apply(color_bit_zero_is_red(ncolor)) using {
-                                                                color_bit(ncolor) == 0;
-                                                            };
+                                                            apply(color_bit_zero_is_red(ncolor));
                                                             known();
                                                         }
                                                         have t.model == RbTree::Node(nid, cid, Color::Red, nleft, nright) by {
@@ -1641,24 +1544,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rewrite(Color::Red, ccolor);
                                                             known();
                                                         }
-                                                        apply(ctx_insert_case2_right_exit_step(ugp, gparent, cid, nid, usib, nleft, nright, csib, uup)) using {
-                                                            is_rb(RbTree::Node(nid, cid, Color::Red, nleft, nright)) == 1;
-                                                            rb_root_black(usib) == 1;
-                                                            ctx_rb(Context::Left(cid, gparent, Color::Red, csib, Context::Right(gparent, ugp, Color::Black, usib, uup)), black_height(RbTree::Node(nid, cid, Color::Red, nleft, nright)), Color::Black) == 1;
-                                                            rb_parent_consistent(plug(Context::Left(cid, gparent, Color::Red, csib, Context::Right(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright)), 0) == 1;
-                                                        };
+                                                        apply(ctx_insert_case2_right_exit_step(ugp, gparent, cid, nid, usib, nleft, nright, csib, uup));
                                                         let { left: nl_at, right: nr_at } = unfold(t);
                                                             match InsertParent::To(node->rb_left) {
                                                                 InsertParent::To(original_left) => {
                                                                     have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
                                                                     have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
                                                                     have contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint) by known();
-                                                                    apply(separation::contains_refl(memory(node->rb_right))) using {};
-                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_right), statement(1).statement(2).call(0).footprint, memory(node->rb_right))) using {
-                                                                        at(before_gparent_call, separate(load_tag, memory(node->rb_right)));
-                                                                        contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
-                                                                        contains(memory(node->rb_right), memory(node->rb_right));
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(node->rb_right)));
+                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_right), statement(1).statement(2).call(0).footprint, memory(node->rb_right)));
                                                                     have at(statement(1).statement(2).call(0).exit, node->rb_right) == at(before_gparent_call, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(2).call(0)); }
                                                                     have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right)) by { known(); }
                                                                     have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(2).assignment(gparent, 0)); }
@@ -1670,12 +1564,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
                                                                     have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
                                                                     have contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint) by known();
-                                                                    apply(separation::contains_refl(memory(node->rb_left))) using {};
-                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_left), statement(1).statement(2).call(0).footprint, memory(node->rb_left))) using {
-                                                                        at(before_gparent_call, separate(load_tag, memory(node->rb_left)));
-                                                                        contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
-                                                                        contains(memory(node->rb_left), memory(node->rb_left));
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(node->rb_left)));
+                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_left), statement(1).statement(2).call(0).footprint, memory(node->rb_left)));
                                                                     have at(statement(1).statement(2).call(0).exit, node->rb_left) == at(before_gparent_call, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(2).call(0)); }
                                                                     have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left)) by { known(); }
                                                                     have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(2).assignment(gparent, 0)); }
@@ -1759,9 +1649,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 known();
                                                                             }
                                                                             have color_bit(bcol) == 1 by {
-                                                                                apply(rb_root_black_node_color_bit(bx, bp, bcol, bl, br)) using {
-                                                                                    rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1;
-                                                                                };
+                                                                                apply(rb_root_black_node_color_bit(bx, bp, bcol, bl, br));
                                                                                 known();
                                                                             }
                                                                             have rb_reparent(nright, cid) == RbTree::Node(bx, cid, bcol, bl, br) by {
@@ -1816,12 +1704,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     step();
 
                                                                     have contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint) by { known(); }
-                                                                    apply(separation::contains_refl(memory(parent->rb_left))) using {};
-                                                                    apply(separation::separate_restrict(memory(parent->rb_left), memory(parent->__rb_parent_color), memory(parent->rb_left), statement(1).statement(4).statement(12).statement(4).footprint)) using {
-                                                                        separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                                                                        contains(memory(parent->rb_left), memory(parent->rb_left));
-                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint);
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(parent->rb_left)));
+                                                                    apply(separation::separate_restrict(memory(parent->rb_left), memory(parent->__rb_parent_color), memory(parent->rb_left), statement(1).statement(4).statement(12).statement(4).footprint));
                                                                     have parent->rb_left == at(before_inner_parent_color, parent->rb_left) by {
                                                                         preserve(memory(parent->rb_left), statement(1).statement(4).statement(12).statement(4));
                                                                     }
@@ -1829,12 +1713,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(parent->rb_left, at(before_inner_parent_color, parent->rb_left));
                                                                         known();
                                                                     }
-                                                                    apply(separation::contains_refl(memory(parent->rb_right))) using {};
-                                                                    apply(separation::separate_restrict(memory(parent->rb_right), memory(parent->__rb_parent_color), memory(parent->rb_right), statement(1).statement(4).statement(12).statement(4).footprint)) using {
-                                                                        separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                                                                        contains(memory(parent->rb_right), memory(parent->rb_right));
-                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint);
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(parent->rb_right)));
+                                                                    apply(separation::separate_restrict(memory(parent->rb_right), memory(parent->__rb_parent_color), memory(parent->rb_right), statement(1).statement(4).statement(12).statement(4).footprint));
                                                                     have parent->rb_right == at(before_inner_parent_color, parent->rb_right) by {
                                                                         preserve(memory(parent->rb_right), statement(1).statement(4).statement(12).statement(4));
                                                                     }
@@ -1842,12 +1722,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(parent->rb_right, at(before_inner_parent_color, parent->rb_right));
                                                                         known();
                                                                     }
-                                                                    apply(separation::contains_refl(memory(gparent->rb_left))) using {};
-                                                                    apply(separation::separate_restrict(memory(gparent->rb_left), memory(parent->__rb_parent_color), memory(gparent->rb_left), statement(1).statement(4).statement(12).statement(4).footprint)) using {
-                                                                        separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
-                                                                        contains(memory(gparent->rb_left), memory(gparent->rb_left));
-                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint);
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(gparent->rb_left)));
+                                                                    apply(separation::separate_restrict(memory(gparent->rb_left), memory(parent->__rb_parent_color), memory(gparent->rb_left), statement(1).statement(4).statement(12).statement(4).footprint));
                                                                     have gparent->rb_left == at(before_inner_parent_color, gparent->rb_left) by {
                                                                         preserve(memory(gparent->rb_left), statement(1).statement(4).statement(12).statement(4));
                                                                     }
@@ -1855,12 +1731,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(gparent->rb_left, at(before_inner_parent_color, gparent->rb_left));
                                                                         known();
                                                                     }
-                                                                    apply(separation::contains_refl(memory(node->rb_right))) using {};
-                                                                    apply(separation::separate_restrict(memory(node->rb_right), memory(parent->__rb_parent_color), memory(node->rb_right), statement(1).statement(4).statement(12).statement(4).footprint)) using {
-                                                                        separate(memory(node->rb_right), memory(parent->__rb_parent_color));
-                                                                        contains(memory(node->rb_right), memory(node->rb_right));
-                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint);
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(node->rb_right)));
+                                                                    apply(separation::separate_restrict(memory(node->rb_right), memory(parent->__rb_parent_color), memory(node->rb_right), statement(1).statement(4).statement(12).statement(4).footprint));
                                                                     have node->rb_right == at(before_inner_parent_color, node->rb_right) by {
                                                                         preserve(memory(node->rb_right), statement(1).statement(4).statement(12).statement(4));
                                                                     }
@@ -1956,9 +1828,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 known();
                                                                             }
                                                                             have color_bit(rcol) == 1 by {
-                                                                                apply(rb_root_black_node_color_bit(rx, rp, rcol, rl, rr)) using {
-                                                                                    rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1;
-                                                                                };
+                                                                                apply(rb_root_black_node_color_bit(rx, rp, rcol, rl, rr));
                                                                                 known();
                                                                             }
                                                                             have rb_reparent(nleft, gparent) == RbTree::Node(rx, gparent, rcol, rl, rr) by {
@@ -2005,9 +1875,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         solve();
                                                                     }
                                                                     have ctx_node_is(uu.model, ugp) == 1 by known();
-                                                                    have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; }; }
+                                                                    have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)); }
                                                                     have gparent->__rb_parent_color == address(ugp) + 1 by known();
-                                                                    apply(insert_black_context_word(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; };
+                                                                    apply(insert_black_context_word(uu.model, ugp));
                                                                     have ctx_parent_word(uu.model, gparent->__rb_parent_color) == 1 by { rewrite(gparent->__rb_parent_color, address(ugp) + 1); known(); }
                                                                     let final_uncle = fold(insert_left_link(gparent), { link: InsertLink::To(at(triangle_uncle_pointer, tmp)) });
                                                                     let final_other = fold(insert_right_link(node), { link: InsertLink::To(at(triangle_old_parent, parent)) });
@@ -2087,9 +1957,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             solve();
                                                                         }
                                                                         have ucolor == Color::Black by {
-                                                                            apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                                ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                            };
+                                                                            apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                             known();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1 by {
@@ -2097,9 +1965,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have unp == gparent by {
-                                                                            apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent)) using {
-                                                                                rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1;
-                                                                            };
+                                                                            apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent));
                                                                             known();
                                                                         }
                                                                         have usib == RbTree::Node(unid, gparent, Color::Red, unl, unr) by {
@@ -2116,10 +1982,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have almost_rb_insert(RbTree::Node(cid, cgp, Color::Red, t.model, csib)) == 1 by {
-                                                                            apply(ctx_insert_cursor_left_parent(cid, cgp, t.model, csib, cup)) using {
-                                                                                is_rb(t.model) == 1;
-                                                                                ctx_rb(Context::Left(cid, cgp, Color::Red, csib, cup), black_height(t.model), Color::Black) == 1;
-                                                                            };
+                                                                            apply(ctx_insert_cursor_left_parent(cid, cgp, t.model, csib, cup));
                                                                             known();
                                                                         }
                                                                         have almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)) == 1 by {
@@ -2127,10 +1990,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             rewrite(gparent, cgp);
                                                                             known();
                                                                         }
-                                                                        apply(ctx_insert_case1_right_step(ugp, gparent, cid, unid, unl, unr, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib, uup)) using {
-                                                                            almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)) == 1;
-                                                                            ctx_rb(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(RbTree::Node(nid, nparent, ncolor, nleft, nright)), Color::Red) == 1;
-                                                                        };
+                                                                        apply(ctx_insert_case1_right_step(ugp, gparent, cid, unid, unl, unr, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib, uup));
                                                                         have rb_inorder(plug(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib))) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
                                                                             apply(plug_left_frame(cid, cgp, ccolor, csib, cup, t.model));
                                                                             rewrite(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), cup);
@@ -2260,19 +2120,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         }
                                         have parent == cid by {
                                             apply(ctx_node_is_right_identity(cid, cgp, ccolor,
-                                                csib, cup, parent)) using {
-                                                ctx_node_is(Context::Right(cid, cgp, ccolor,
-                                                    csib, cup), parent) == 1;
-                                            };
+                                                csib, cup, parent));
                                             known();
                                         }
                                         have ctx_rb(Context::Right(cid, cgp, ccolor, csib, cup),
                                             black_height(t.model), Color::Black) == 1 by {
                                             apply(ctx_almost_rb_insert_black_focus(c.model,
-                                                black_height(t.model))) using {
-                                                ctx_almost_rb_insert(c.model,
-                                                    black_height(t.model)) == 1;
-                                            };
+                                                black_height(t.model)));
                                             rewrite(Context::Right(cid, cgp, ccolor, csib, cup), c.model);
                                             known();
                                         }
@@ -2307,16 +2161,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     known();
                                                 }
                                                 have ctx_rb(Context::Right(cid, cgp, Color::Black, csib, cup), black_height(t.model), rb_color(t.model)) == 1 by {
-                                                    apply(ctx_black_frame_right_restores(cid, cgp, csib, cup, black_height(t.model), rb_color(t.model))) using {
-                                                        ctx_almost_rb_insert(Context::Right(cid, cgp, Color::Black, csib, cup), black_height(t.model)) == 1;
-                                                    };
+                                                    apply(ctx_black_frame_right_restores(cid, cgp, csib, cup, black_height(t.model), rb_color(t.model)));
                                                     known();
                                                 }
                                                 have is_rb_root(plug(Context::Right(cid, cgp, Color::Black, csib, cup), t.model)) == 1 by {
-                                                    apply(ctx_insert_black_parent_exit(Context::Right(cid, cgp, Color::Black, csib, cup), t.model)) using {
-                                                        is_rb(t.model) == 1;
-                                                        ctx_rb(Context::Right(cid, cgp, Color::Black, csib, cup), black_height(t.model), rb_color(t.model)) == 1;
-                                                    };
+                                                    apply(ctx_insert_black_parent_exit(Context::Right(cid, cgp, Color::Black, csib, cup), t.model));
                                                     known();
                                                 }
                                                 have (parent->__rb_parent_color & 1) != 0 by {
@@ -2357,11 +2206,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     black_height(t.model), Color::Red) == 1 by {
                                                     apply(ctx_rb_right_red_up(cid, cgp, csib, cup,
                                                         black_height(t.model),
-                                                        Color::Black)) using {
-                                                        ctx_rb(Context::Right(cid, cgp, Color::Red,
-                                                            csib, cup), black_height(t.model),
-                                                            Color::Black) == 1;
-                                                    };
+                                                        Color::Black));
                                                     rewrite(cu.model, cup);
                                                     known();
                                                 }
@@ -2381,11 +2226,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 step(); // Assign the decoded grandparent.
                                                 have cu.model != Context::Top by {
                                                     apply(ctx_rb_red_focus_not_top(cu.model,
-                                                        black_height(t.model))) using {
-                                                        ctx_rb(cu.model,
-                                                            black_height(t.model),
-                                                            Color::Red) == 1;
-                                                    };
+                                                        black_height(t.model)));
                                                     known();
                                                 }
                                                 match cu.model {
@@ -2401,10 +2242,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     }
                                                     have cgp == uid by {
                                                         apply(ctx_node_is_left_identity(uid, ugp, ucolor,
-                                                            usib, uup, cgp)) using {
-                                                            ctx_node_is(Context::Left(uid, ugp, ucolor,
-                                                                usib, uup), cgp) == 1;
-                                                        };
+                                                            usib, uup, cgp));
                                                         known();
                                                     }
                                                     have ctx_rb(Context::Left(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1 by {
@@ -2467,22 +2305,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have color_bit(uncolor) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(unid, unp, uncolor, unl, unr)) using {
-                                                                        rb_root_black(RbTree::Node(unid, unp, uncolor, unl, unr)) == 1;
-                                                                    };
+                                                                    apply(rb_root_black_node_color_bit(unid, unp, uncolor, unl, unr));
                                                                     known();
                                                                 }
                                                                 have uncolor == Color::Black by {
-                                                                    apply(color_bit_one_is_black(uncolor)) using {
-                                                                        color_bit(uncolor) == 1;
-                                                                    };
+                                                                    apply(color_bit_one_is_black(uncolor));
                                                                     known();
                                                                 }
                                                                 step();
                                                                 have ucolor == Color::Black by {
-                                                                    apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                        ctx_rb(Context::Left(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                    };
+                                                                    apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                     known();
                                                                 }
                                                                 have rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1 by {
@@ -2490,9 +2322,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have unp == gparent by {
-                                                                    apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent)) using {
-                                                                        rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1;
-                                                                    };
+                                                                    apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent));
                                                                     known();
                                                                 }
                                                                 have usib == RbTree::Node(unid, gparent, Color::Black, unl, unr) by {
@@ -2524,9 +2354,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 step();
                                                                 step();
                                                                 have ucolor == Color::Black by {
-                                                                    apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                        ctx_rb(Context::Left(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                    };
+                                                                    apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                     known();
                                                                 }
                                                                 have gparent->rb_right == tmp by { known(); }
@@ -2551,9 +2379,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             known();
                                                         }
                                                         have nparent == cid by {
-                                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent)) using {
-                                                                rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1;
-                                                            };
+                                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent));
                                                             solve();
                                                         }
                                                         have color_bit(ncolor) == 0 by {
@@ -2563,9 +2389,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             known();
                                                         }
                                                         have ncolor == Color::Red by {
-                                                            apply(color_bit_zero_is_red(ncolor)) using {
-                                                                color_bit(ncolor) == 0;
-                                                            };
+                                                            apply(color_bit_zero_is_red(ncolor));
                                                             known();
                                                         }
                                                         have t.model == RbTree::Node(nid, cid, Color::Red, nleft, nright) by {
@@ -2599,24 +2423,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rewrite(Color::Red, ccolor);
                                                             known();
                                                         }
-                                                        apply(ctx_insert_case2_left_exit_step(ugp, gparent, cid, nid, csib, nleft, nright, usib, uup)) using {
-                                                            is_rb(RbTree::Node(nid, cid, Color::Red, nleft, nright)) == 1;
-                                                            rb_root_black(usib) == 1;
-                                                            ctx_rb(Context::Right(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), black_height(RbTree::Node(nid, cid, Color::Red, nleft, nright)), Color::Black) == 1;
-                                                            rb_parent_consistent(plug(Context::Right(cid, gparent, Color::Red, csib, Context::Left(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright)), 0) == 1;
-                                                        };
+                                                        apply(ctx_insert_case2_left_exit_step(ugp, gparent, cid, nid, csib, nleft, nright, usib, uup));
                                                             let { right: nr_at, left: nl_at } = unfold(t);
                                                             match InsertParent::To(node->rb_right) {
                                                                 InsertParent::To(original_outer_child) => {
                                                                     have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
                                                                     have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_left)) by known();
                                                                     have contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint) by known();
-                                                                    apply(separation::contains_refl(memory(node->rb_left))) using {};
-                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_left), statement(1).statement(2).call(0).footprint, memory(node->rb_left))) using {
-                                                                        at(before_gparent_call, separate(load_tag, memory(node->rb_left)));
-                                                                        contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
-                                                                        contains(memory(node->rb_left), memory(node->rb_left));
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(node->rb_left)));
+                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_left), statement(1).statement(2).call(0).footprint, memory(node->rb_left)));
                                                                     have at(statement(1).statement(2).call(0).exit, node->rb_left) == at(before_gparent_call, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(2).call(0)); }
                                                                     have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_left)) by { known(); }
                                                                     have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_left) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_left) by { preserve(memory(node->rb_left), statement(1).statement(2).assignment(gparent, 0)); }
@@ -2628,12 +2443,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have separate(memory(((&gparent) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
                                                                     have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(node->rb_right)) by known();
                                                                     have contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint) by known();
-                                                                    apply(separation::contains_refl(memory(node->rb_right))) using {};
-                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_right), statement(1).statement(2).call(0).footprint, memory(node->rb_right))) using {
-                                                                        at(before_gparent_call, separate(load_tag, memory(node->rb_right)));
-                                                                        contains(at(before_gparent_call, load_tag), statement(1).statement(2).call(0).footprint);
-                                                                        contains(memory(node->rb_right), memory(node->rb_right));
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(node->rb_right)));
+                                                                    apply(separation::separate_restrict(at(before_gparent_call, load_tag), memory(node->rb_right), statement(1).statement(2).call(0).footprint, memory(node->rb_right)));
                                                                     have at(statement(1).statement(2).call(0).exit, node->rb_right) == at(before_gparent_call, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(2).call(0)); }
                                                                     have separate(statement(1).statement(2).assignment(gparent, 0).footprint, memory(node->rb_right)) by { known(); }
                                                                     have at(statement(1).statement(2).assignment(gparent, 0).exit, node->rb_right) == at(statement(1).statement(2).assignment(gparent, 0).entry, node->rb_right) by { preserve(memory(node->rb_right), statement(1).statement(2).assignment(gparent, 0)); }
@@ -2739,9 +2550,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 known();
                                                                             }
                                                                             have color_bit(bcol) == 1 by {
-                                                                                apply(rb_root_black_node_color_bit(bx, bp, bcol, br, bl)) using {
-                                                                                    rb_root_black(RbTree::Node(bx, bp, bcol, br, bl)) == 1;
-                                                                                };
+                                                                                apply(rb_root_black_node_color_bit(bx, bp, bcol, br, bl));
                                                                                 known();
                                                                             }
                                                                             have rb_reparent(nleft, cid) == RbTree::Node(bx, cid, bcol, br, bl) by {
@@ -2798,12 +2607,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     step();
 
                                                                     have contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint) by { known(); }
-                                                                    apply(separation::contains_refl(memory(parent->rb_right))) using {};
-                                                                    apply(separation::separate_restrict(memory(parent->rb_right), memory(parent->__rb_parent_color), memory(parent->rb_right), statement(1).statement(4).statement(2).statement(4).footprint)) using {
-                                                                        separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
-                                                                        contains(memory(parent->rb_right), memory(parent->rb_right));
-                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint);
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(parent->rb_right)));
+                                                                    apply(separation::separate_restrict(memory(parent->rb_right), memory(parent->__rb_parent_color), memory(parent->rb_right), statement(1).statement(4).statement(2).statement(4).footprint));
                                                                     have parent->rb_right == at(before_inner_parent_color, parent->rb_right) by {
                                                                         preserve(memory(parent->rb_right), statement(1).statement(4).statement(2).statement(4));
                                                                     }
@@ -2811,12 +2616,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(parent->rb_right, at(before_inner_parent_color, parent->rb_right));
                                                                         known();
                                                                     }
-                                                                    apply(separation::contains_refl(memory(parent->rb_left))) using {};
-                                                                    apply(separation::separate_restrict(memory(parent->rb_left), memory(parent->__rb_parent_color), memory(parent->rb_left), statement(1).statement(4).statement(2).statement(4).footprint)) using {
-                                                                        separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                                                                        contains(memory(parent->rb_left), memory(parent->rb_left));
-                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint);
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(parent->rb_left)));
+                                                                    apply(separation::separate_restrict(memory(parent->rb_left), memory(parent->__rb_parent_color), memory(parent->rb_left), statement(1).statement(4).statement(2).statement(4).footprint));
                                                                     have parent->rb_left == at(before_inner_parent_color, parent->rb_left) by {
                                                                         preserve(memory(parent->rb_left), statement(1).statement(4).statement(2).statement(4));
                                                                     }
@@ -2824,12 +2625,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(parent->rb_left, at(before_inner_parent_color, parent->rb_left));
                                                                         known();
                                                                     }
-                                                                    apply(separation::contains_refl(memory(gparent->rb_right))) using {};
-                                                                    apply(separation::separate_restrict(memory(gparent->rb_right), memory(parent->__rb_parent_color), memory(gparent->rb_right), statement(1).statement(4).statement(2).statement(4).footprint)) using {
-                                                                        separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
-                                                                        contains(memory(gparent->rb_right), memory(gparent->rb_right));
-                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint);
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(gparent->rb_right)));
+                                                                    apply(separation::separate_restrict(memory(gparent->rb_right), memory(parent->__rb_parent_color), memory(gparent->rb_right), statement(1).statement(4).statement(2).statement(4).footprint));
                                                                     have gparent->rb_right == at(before_inner_parent_color, gparent->rb_right) by {
                                                                         preserve(memory(gparent->rb_right), statement(1).statement(4).statement(2).statement(4));
                                                                     }
@@ -2837,12 +2634,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(gparent->rb_right, at(before_inner_parent_color, gparent->rb_right));
                                                                         known();
                                                                     }
-                                                                    apply(separation::contains_refl(memory(node->rb_left))) using {};
-                                                                    apply(separation::separate_restrict(memory(node->rb_left), memory(parent->__rb_parent_color), memory(node->rb_left), statement(1).statement(4).statement(2).statement(4).footprint)) using {
-                                                                        separate(memory(node->rb_left), memory(parent->__rb_parent_color));
-                                                                        contains(memory(node->rb_left), memory(node->rb_left));
-                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint);
-                                                                    };
+                                                                    apply(separation::contains_refl(memory(node->rb_left)));
+                                                                    apply(separation::separate_restrict(memory(node->rb_left), memory(parent->__rb_parent_color), memory(node->rb_left), statement(1).statement(4).statement(2).statement(4).footprint));
                                                                     have node->rb_left == at(before_inner_parent_color, node->rb_left) by {
                                                                         preserve(memory(node->rb_left), statement(1).statement(4).statement(2).statement(4));
                                                                     }
@@ -2938,9 +2731,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 known();
                                                                             }
                                                                             have color_bit(rcol) == 1 by {
-                                                                                apply(rb_root_black_node_color_bit(rx, rp, rcol, rr, rl)) using {
-                                                                                    rb_root_black(RbTree::Node(rx, rp, rcol, rr, rl)) == 1;
-                                                                                };
+                                                                                apply(rb_root_black_node_color_bit(rx, rp, rcol, rr, rl));
                                                                                 known();
                                                                             }
                                                                             have rb_reparent(nright, gparent) == RbTree::Node(rx, gparent, rcol, rr, rl) by {
@@ -2987,9 +2778,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         solve();
                                                                     }
                                                                     have ctx_node_is(uu.model, ugp) == 1 by known();
-                                                                    have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; }; }
+                                                                    have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)); }
                                                                     have gparent->__rb_parent_color == address(ugp) + 1 by known();
-                                                                    apply(insert_black_context_word(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; };
+                                                                    apply(insert_black_context_word(uu.model, ugp));
                                                                     have ctx_parent_word(uu.model, gparent->__rb_parent_color) == 1 by { rewrite(gparent->__rb_parent_color, address(ugp) + 1); known(); }
                                                                     let final_uncle = fold(insert_right_link(gparent), { link: InsertLink::To(at(triangle_uncle_pointer, tmp)) });
                                                                     let final_other = fold(insert_left_link(node), { link: InsertLink::To(at(triangle_old_parent, parent)) });
@@ -3065,9 +2856,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             solve();
                                                                         }
                                                                         have ucolor == Color::Black by {
-                                                                            apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                                ctx_rb(Context::Left(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                            };
+                                                                            apply(ctx_rb_left_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                             known();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1 by {
@@ -3075,9 +2864,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have unp == gparent by {
-                                                                            apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent)) using {
-                                                                                rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1;
-                                                                            };
+                                                                            apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent));
                                                                             known();
                                                                         }
                                                                         have usib == RbTree::Node(unid, gparent, Color::Red, unl, unr) by {
@@ -3094,10 +2881,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have almost_rb_insert(RbTree::Node(cid, cgp, Color::Red, csib, t.model)) == 1 by {
-                                                                            apply(ctx_insert_cursor_right_parent(cid, cgp, t.model, csib, cup)) using {
-                                                                                is_rb(t.model) == 1;
-                                                                                ctx_rb(Context::Right(cid, cgp, Color::Red, csib, cup), black_height(t.model), Color::Black) == 1;
-                                                                            };
+                                                                            apply(ctx_insert_cursor_right_parent(cid, cgp, t.model, csib, cup));
                                                                             known();
                                                                         }
                                                                         have almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))) == 1 by {
@@ -3106,16 +2890,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have black_height(csib) == black_height(t.model) by {
-                                                                            apply(ctx_insert_cursor_right_parent(cid, cgp, t.model, csib, cup)) using {
-                                                                                is_rb(t.model) == 1;
-                                                                                ctx_rb(Context::Right(cid, cgp, Color::Red, csib, cup), black_height(t.model), Color::Black) == 1;
-                                                                            };
+                                                                            apply(ctx_insert_cursor_right_parent(cid, cgp, t.model, csib, cup));
                                                                             known();
                                                                         }
-                                                                        apply(ctx_insert_case1_left_step(ugp, gparent, cid, unid, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright), unl, unr, uup)) using {
-                                                                            almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))) == 1;
-                                                                            ctx_rb(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(csib), Color::Red) == 1;
-                                                                        };
+                                                                        apply(ctx_insert_case1_left_step(ugp, gparent, cid, unid, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright), unl, unr, uup));
                                                                         have rb_inorder(plug(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)))) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
                                                                             apply(plug_right_frame(cid, cgp, ccolor, csib, cup, t.model));
                                                                             rewrite(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), cup);
@@ -3243,10 +3021,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     }
                                                     have cgp == uid by {
                                                         apply(ctx_node_is_right_identity(uid, ugp, ucolor,
-                                                            usib, uup, cgp)) using {
-                                                            ctx_node_is(Context::Right(uid, ugp, ucolor,
-                                                                usib, uup), cgp) == 1;
-                                                        };
+                                                            usib, uup, cgp));
                                                         known();
                                                     }
                                                     have ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1 by {
@@ -3292,22 +3067,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have color_bit(uncolor) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(unid, unp, uncolor, unl, unr)) using {
-                                                                        rb_root_black(RbTree::Node(unid, unp, uncolor, unl, unr)) == 1;
-                                                                    };
+                                                                    apply(rb_root_black_node_color_bit(unid, unp, uncolor, unl, unr));
                                                                     known();
                                                                 }
                                                                 have uncolor == Color::Black by {
-                                                                    apply(color_bit_one_is_black(uncolor)) using {
-                                                                        color_bit(uncolor) == 1;
-                                                                    };
+                                                                    apply(color_bit_one_is_black(uncolor));
                                                                     known();
                                                                 }
                                                                 step();
                                                                 have ucolor == Color::Black by {
-                                                                    apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                        ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                    };
+                                                                    apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                     known();
                                                                 }
                                                                 have rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1 by {
@@ -3315,9 +3084,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have unp == gparent by {
-                                                                    apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent)) using {
-                                                                        rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1;
-                                                                    };
+                                                                    apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent));
                                                                     known();
                                                                 }
                                                                 have usib == RbTree::Node(unid, gparent, Color::Black, unl, unr) by {
@@ -3360,9 +3127,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     step();
                                                                     step();
                                                                 have ucolor == Color::Black by {
-                                                                    apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                        ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                    };
+                                                                    apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                     known();
                                                                 }
                                                                     unfold(triangle_uncle_link);
@@ -3397,9 +3162,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             known();
                                                         }
                                                         have nparent == cid by {
-                                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent)) using {
-                                                                rb_parent_is(RbTree::Node(nid, nparent, ncolor, nleft, nright), parent) == 1;
-                                                            };
+                                                            apply(rb_parent_is_node_parent(nid, nparent, ncolor, nleft, nright, parent));
                                                             solve();
                                                         }
                                                         have color_bit(ncolor) == 0 by {
@@ -3409,9 +3172,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             known();
                                                         }
                                                         have ncolor == Color::Red by {
-                                                            apply(color_bit_zero_is_red(ncolor)) using {
-                                                                color_bit(ncolor) == 0;
-                                                            };
+                                                            apply(color_bit_zero_is_red(ncolor));
                                                             known();
                                                         }
                                                         have t.model == RbTree::Node(nid, cid, Color::Red, nleft, nright) by {
@@ -3445,12 +3206,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             rewrite(Color::Red, ccolor);
                                                             known();
                                                         }
-                                                        apply(ctx_insert_case3_right_step(ugp, gparent, cid, nid, usib, csib, nleft, nright, uup)) using {
-                                                            is_rb(RbTree::Node(nid, cid, Color::Red, nleft, nright)) == 1;
-                                                            rb_root_black(usib) == 1;
-                                                            ctx_rb(Context::Right(cid, gparent, Color::Red, csib, Context::Right(gparent, ugp, Color::Black, usib, uup)), black_height(RbTree::Node(nid, cid, Color::Red, nleft, nright)), Color::Black) == 1;
-                                                            rb_parent_consistent(plug(Context::Right(cid, gparent, Color::Red, csib, Context::Right(gparent, ugp, Color::Black, usib, uup)), RbTree::Node(nid, cid, Color::Red, nleft, nright)), 0) == 1;
-                                                        };
+                                                        apply(ctx_insert_case3_right_step(ugp, gparent, cid, nid, usib, csib, nleft, nright, uup));
                                                         let { left: nl_at, right: nr_at } = unfold(t);
                                                         have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                                 rewrite(Color::Red, ncolor); known();
@@ -3533,9 +3289,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     known();
                                                                 }
                                                                 have color_bit(scol) == 1 by {
-                                                                    apply(rb_root_black_node_color_bit(sx, sp, scol, sl, sr)) using {
-                                                                        rb_root_black(RbTree::Node(sx, sp, scol, sl, sr)) == 1;
-                                                                    };
+                                                                    apply(rb_root_black_node_color_bit(sx, sp, scol, sl, sr));
                                                                     known();
                                                                 }
                                                                 have rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr) by {
@@ -3588,9 +3342,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             solve();
                                                         }
                                                             have ctx_node_is(uu.model, ugp) == 1 by known();
-                                                            have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; }; }
+                                                            have ctx_identity(uu.model) == ugp by { apply(ctx_node_is_identity(uu.model, ugp)); }
                                                             have gparent->__rb_parent_color == address(ugp) + 1 by known();
-                                                            apply(insert_black_context_word(uu.model, ugp)) using { ctx_node_is(uu.model, ugp) == 1; };
+                                                            apply(insert_black_context_word(uu.model, ugp));
                                                             have ctx_parent_word(uu.model, gparent->__rb_parent_color) == 1 by {
                                                                 rewrite(gparent->__rb_parent_color, address(ugp) + 1);
                                                                 known();
@@ -3657,9 +3411,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             solve();
                                                                         }
                                                                         have ucolor == Color::Black by {
-                                                                            apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model))) using {
-                                                                                ctx_rb(Context::Right(uid, ugp, ucolor, usib, uup), black_height(t.model), Color::Red) == 1;
-                                                                            };
+                                                                            apply(ctx_rb_right_red_focus_black(uid, ugp, ucolor, usib, uup, black_height(t.model)));
                                                                             known();
                                                                         }
                                                                         have rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1 by {
@@ -3667,9 +3419,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have unp == gparent by {
-                                                                            apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent)) using {
-                                                                                rb_parent_is(RbTree::Node(unid, unp, uncolor, unl, unr), gparent) == 1;
-                                                                            };
+                                                                            apply(rb_parent_is_node_parent(unid, unp, uncolor, unl, unr, gparent));
                                                                             known();
                                                                         }
                                                                         have usib == RbTree::Node(unid, gparent, Color::Red, unl, unr) by {
@@ -3686,10 +3436,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have almost_rb_insert(RbTree::Node(cid, cgp, Color::Red, csib, t.model)) == 1 by {
-                                                                            apply(ctx_insert_cursor_right_parent(cid, cgp, t.model, csib, cup)) using {
-                                                                                is_rb(t.model) == 1;
-                                                                                ctx_rb(Context::Right(cid, cgp, Color::Red, csib, cup), black_height(t.model), Color::Black) == 1;
-                                                                            };
+                                                                            apply(ctx_insert_cursor_right_parent(cid, cgp, t.model, csib, cup));
                                                                             known();
                                                                         }
                                                                         have almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))) == 1 by {
@@ -3698,16 +3445,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             known();
                                                                         }
                                                                         have black_height(csib) == black_height(t.model) by {
-                                                                            apply(ctx_insert_cursor_right_parent(cid, cgp, t.model, csib, cup)) using {
-                                                                                is_rb(t.model) == 1;
-                                                                                ctx_rb(Context::Right(cid, cgp, Color::Red, csib, cup), black_height(t.model), Color::Black) == 1;
-                                                                            };
+                                                                            apply(ctx_insert_cursor_right_parent(cid, cgp, t.model, csib, cup));
                                                                             known();
                                                                         }
-                                                                        apply(ctx_insert_case1_right_step(ugp, gparent, cid, unid, unl, unr, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright), uup)) using {
-                                                                            almost_rb_insert(RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))) == 1;
-                                                                            ctx_rb(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), black_height(csib), Color::Red) == 1;
-                                                                        };
+                                                                        apply(ctx_insert_case1_right_step(ugp, gparent, cid, unid, unl, unr, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright), uup));
                                                                         have rb_inorder(plug(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)))) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model))) by {
                                                                             apply(plug_right_frame(cid, cgp, ccolor, csib, cup, t.model));
                                                                             rewrite(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), cup);

@@ -986,7 +986,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &application_context,
             &premises,
         )?);
-        Ok(ProofStep::ApplyTheoremUsing {
+        Ok(ProofStep::ApplyPlannedTheorem {
             application: written_application.clone(),
             premises,
         })
@@ -1197,7 +1197,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &application_context,
             &premises,
         )?);
-        Ok(ProofStep::ApplyTheoremUsing {
+        Ok(ProofStep::ApplyPlannedTheorem {
             application: written_application.clone(),
             premises,
         })
@@ -1340,7 +1340,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         continue;
                     }
                     let (surface, evidence) = search_input.argument_guard_source(&guard).ok_or_else(|| search_input.step_error(format!(
-                        "model theorem argument needs explicit source evidence for `{}`; cite its evaluation guard with `apply(...) using {{ ... }}`",
+                        "model theorem argument needs explicit source evidence for `{}`; establish its evaluation guard with `have` before applying the theorem",
                         crate::surface::proof_diagnostics::render::render_proposition(&guard))))?;
                     explicit = explicit.assume_proposition(evidence);
                     premises.push(surface);
@@ -1426,7 +1426,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     continue;
                 }
                 let (surface, evidence) = search_input.argument_guard_source(&guard).ok_or_else(|| search_input.step_error(format!(
-                    "Integer theorem argument needs explicit source evidence for `{}`; cite its evaluation guard with `apply(...) using {{ ... }}`",
+                    "Integer theorem argument needs explicit source evidence for `{}`; establish its evaluation guard with `have` before applying the theorem",
                     crate::surface::proof_diagnostics::render::render_proposition(&guard))))?;
                 explicit = explicit.assume_proposition(evidence);
                 premises.push(surface);

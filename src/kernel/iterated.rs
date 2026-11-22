@@ -148,19 +148,27 @@ fn guard_cell_value(
     {
         return Ok(value);
     }
-    if let Some(kind) = LoadKind::of_type(iterated.guard().cell_type)
-        && let Some(entry) = state.program_point().entry_integer_version(&cell, kind)
-    {
-        return Ok(MachineTerm::MemoryLoad(entry, Box::new(cell), kind));
-    }
-    let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
-        state.memory(),
-        cell,
-        iterated.guard().cell_type,
-        Vec::new().into(),
-        Vec::new(),
-        assumptions,
-    );
+    let point = state.program_point();
+    let value_type = iterated.guard().cell_type;
+    let paths = if let Some(version) = point.ordinary_typed_version(&cell, value_type) {
+        vec![crate::kernel::eval::evaluate_indexed_read(
+            version,
+            &point,
+            cell,
+            value_type,
+            ExecutionFacts::new(),
+            Vec::new(),
+        )]
+    } else {
+        crate::kernel::eval::evaluate_logical_memory_load_paths_at(
+            &point,
+            cell,
+            value_type,
+            ExecutionFacts::new(),
+            Vec::new(),
+            assumptions,
+        )
+    };
     match paths.as_slice() {
         [
             ExpressionPath {
@@ -742,6 +750,55 @@ pub(crate) fn plan_iterated_guard_store(
         replacements.push((fact.clone(), during, after));
     }
     Ok(IteratedStorePlan { replacements })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_static_guard_read_keeps_its_recorded_entry_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let guard = SymbolicMemory::global_pointer("guard");
+        let iterated = IteratedMemory::new(
+            "slots",
+            SymbolicMemory::global_pointer("elements"),
+            4,
+            1,
+            0,
+            1,
+            0u32.into(),
+            2u32.into(),
+            IteratedGuard {
+                base: guard.clone(),
+                cell_type: ProgramType::Int32,
+                cell_width: 4,
+                holds_when_equal: true,
+                value: MachineTerm::constant(1).into(),
+            },
+        )
+        .expect("one guard per element");
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let memory = entry.memory().clone().with_block(guard.base.clone(), 8);
+        let entry = entry.with_function_entry_memory(memory);
+        let written = entry.clone().with_memory(entry.memory().clone().store(
+            guard.offset_by_bytes(4),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
+        let read = guard_cell_value(
+            &written,
+            &iterated,
+            &MachineTerm::constant(0),
+            &PureFactContext::new(),
+        )
+        .expect("ordinary guard load");
+        let MachineTerm::MemoryLoad(point, address, LoadKind::Int32) = read else {
+            panic!("expected a symbolic integer guard read");
+        };
+        assert_eq!(*address, guard);
+        assert_eq!(point.read_version_id(), entry.program_point_id());
+        assert_ne!(point.read_version_id(), written.program_point_id());
+    }
 }
 
 #[cfg(test)]

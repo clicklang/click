@@ -172,15 +172,13 @@ Verification reports use these headings:
 
 | Heading | When Click uses it |
 | --- | --- |
-| `tactic error` | Click refused a specific tactic invocation, for example `step()` with no statement left. |
+| `tactic error` | Click refused a written tactic or an implicit proof step. For example, `step()` found no statement left, or contract closing could not establish permission for a write. |
 | `unsuccessful search` | A proof search ran and could not close a goal, for example a written `solve()` or a statement’s implicit closer. |
-| `unproved goal` | A goal was still open when the script finished. |
+| `incomplete proof` | The proof ended with a requirement outstanding, such as a resource the contract promises to return. |
 | `contract error` | Click identified a rule it believes the written contract violates, such as a potentially overflowing resource endpoint or a proven overlap between owned entry resources or between an owned resource and an input view. |
 | `contract entry refused` | Click could not establish the contract's initial state or resources. The diagnostic describes the setup check that stopped verification. |
 | `execution prerequisite unmet` | An exact execution check needs evidence at the current program point. |
 | `execution refused` | The modeled operation could not proceed on this path, for example an uninitialized read. |
-| `contract exit refused` | The checked outcome did not meet a resource or effect requirement. |
-| `contract refinement refused` | Click refused a contract-refinement check. |
 | `termination not established` | A ranking, call, or callback termination check was refused. |
 | `invalid divergence declaration` | The declared divergence conflicts with checked termination evidence. |
 | `unsupported proof` | Click's driver does not support the reported proof shape or depth. |
@@ -189,6 +187,9 @@ Verification reports use these headings:
 | `type error` | The source did not pass checking of names or types. |
 | `limit error` | A configured verification limit stopped the command. |
 | `internal error` | Click detected a verifier failure. |
+
+A tactic error at an implicit step names that operation in the report, even
+without a proof trace.
 
 When a verification refusal identifies a C function, theorem, or user-defined tactic that the sidecar
 selects, the CLI suggests a rerun with `--trace-proof` and fills in the proof

@@ -9,7 +9,7 @@ use crate::source::SourcePosition;
 use crate::surface::proof_diagnostics::ProofDiagnosticState;
 use crate::surface::proof_diagnostics::render::{self, MemoryStateLabels};
 use std::any::Any;
-use std::cell::{LazyCell, RefCell};
+use std::cell::{Cell, LazyCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -366,33 +366,52 @@ pub(super) fn visible_checked_fact(fact: &Proposition) -> bool {
 
 thread_local! {
     static CAPTURE: RefCell<Option<Capture>> = const { RefCell::new(None) };
+    static IMPLICIT_STEP: Cell<Option<&'static str>> = const { Cell::new(None) };
     /// The written tactics running under a trace, innermost last: the name
     /// of a smart tactic or elided form, or `None` for a simple tactic,
     /// whose checked steps are its own.
     static ORIGINS: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Marks a written tactic as running while a trace is captured, so the
-/// steps it checks are attributed to it ([`smart_origin`]). Inert without a
-/// trace.
-pub(super) struct TraceOrigin(bool);
+/// Attributes checked steps and errors to the proof operation running them.
+pub(super) struct TraceOrigin {
+    tracing: bool,
+    previous_implicit_step: Option<&'static str>,
+}
 
 impl TraceOrigin {
     pub(super) fn enter(smart: Option<&'static str>) -> Self {
-        let active = CAPTURE.with(|slot| slot.borrow().is_some());
-        if active {
+        Self::enter_step(smart, None)
+    }
+
+    pub(super) fn enter_implicit(step: &'static str) -> Self {
+        Self::enter_step(Some(step), Some(step))
+    }
+
+    fn enter_step(smart: Option<&'static str>, implicit_step: Option<&'static str>) -> Self {
+        let tracing = CAPTURE.with(|slot| slot.borrow().is_some());
+        if tracing {
             ORIGINS.with(|origins| origins.borrow_mut().push(smart));
         }
-        Self(active)
+        Self {
+            tracing,
+            previous_implicit_step: IMPLICIT_STEP.replace(implicit_step),
+        }
     }
 }
 
 impl Drop for TraceOrigin {
     fn drop(&mut self) {
-        if self.0 {
+        if self.tracing {
             ORIGINS.with(|origins| origins.borrow_mut().pop());
         }
+        IMPLICIT_STEP.set(self.previous_implicit_step);
     }
+}
+
+/// The current implicit operation, even when proof tracing is disabled.
+pub(super) fn implicit_step() -> Option<&'static str> {
+    IMPLICIT_STEP.get()
 }
 
 /// The smart tactic or elided form whose search is checking steps now: the

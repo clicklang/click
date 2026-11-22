@@ -299,7 +299,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
         if let [index] = indices {
-            let arm = driver_proof.enter_pure_match_case(plan, *index)?;
+            let (arm, constructor_equation) = driver_proof.enter_pure_match_case(plan, *index)?;
             let marker = arm.checkpoint();
             let written = source.arms[*index].tactics.len();
             let mut pending = None;
@@ -341,7 +341,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             };
             certificates.push(done.certificate_since(&marker)?);
             if let Some(trace) = trace {
-                trace.arms[*index] = Some(done.pure_match_arm_trace(&arm, &marker, source, *index));
+                let equation = constructor_equation
+                    .as_ref()
+                    .expect("traced match arm retains its constructor equation");
+                trace.arms[*index] =
+                    Some(done.pure_match_arm_trace(&arm, &marker, source, *index, equation));
             }
             return Ok(Some(done.leave_pure_match_case(plan, *index)?));
         }
@@ -467,7 +471,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 let _timing =
                     TacticTiming::new(proof.claim_label(), 0, 0, &ProofTactic::ImplicitSolve, 0);
                 let _origin =
-                    crate::surface::proof_trace::TraceOrigin::enter(Some("implicit tail"));
+                    crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit tail");
                 let mut search = attempt::search_scope("implicit script tail");
                 let (result, checks) = solve(&proof);
                 check_verification_deadline()?;
@@ -565,7 +569,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 ProofTactic::ApplyFact(_)
                     | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
-                    | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
@@ -581,16 +584,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
-                ProofTactic::ApplyInduction {
-                    hypothesis,
-                    arguments,
-                } => {
-                    proof = crate::kernel::search::ProofSearch::apply_smart_induction(
-                        &(proof),
-                        hypothesis,
-                        arguments,
-                    )?;
-                }
                 ProofTactic::ApplyFact(fact) => {
                     proof = proof.driver().apply_fact_application(fact)?;
                 }
@@ -677,6 +670,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 ProofTactic::Have(have) => {
                     let scope = proof.driver().open_have(have.proposition.clone())?;
                     let source_proof = have.checking_proof();
+                    let _origin = source_proof.uses_implicit_tail().then(|| {
+                        crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit solve")
+                    });
                     let selected = match source_proof.as_ref() {
                         SourceProof::Tactic(SmartTactic::ImplicitTail) => {
                             let Some(selected) = scope.driver().try_solve_closure()? else {
@@ -979,7 +975,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheorem(_)
                     | ProofTactic::ApplyTheoremUsing { .. }
-                    | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
@@ -1044,7 +1039,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let driver_proof = self.proof;
         let applied = driver_proof
             .driver()
-            .apply_step(ProofStep::ApplyTheoremUsing {
+            .apply_step(ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
                     name: name.to_string(),
                     arguments,

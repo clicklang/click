@@ -1649,7 +1649,6 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
         ProgramValue::Float64(_) => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
         ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
             Pointer::new(exhausted_pointer(), pointer.program_type())
-                .with_pointee_volatile(pointer.pointee_volatile())
                 .with_pointee_constant(pointer.pointee_constant()),
         ),
     }
@@ -6874,6 +6873,21 @@ impl<'a> TermRewrite<'a> {
                             *kind,
                         )
                     });
+                // Exact reads keep their written point. A pointer equality
+                // can also keep the point of an indexed store read.
+                // The store receipt applies only to the original address.
+                let indexed_store_read =
+                    self.pointer_exact.is_some() && memory.indexed_stored_value().is_some();
+                if (memory.is_exact_read() || indexed_store_read)
+                    && memory.has_certified_read_view()
+                {
+                    return crate::kernel::eval::scalar_read_for_exact_cell_at(
+                        &memory.clone().for_exact_read(),
+                        &rewritten,
+                        *kind,
+                        bytes,
+                    );
+                }
                 // A projection belongs to the selected address. Instantiating
                 // an index must select the new address from that projection's
                 // recorded source, as direct lowering does. This is one indexed

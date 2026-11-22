@@ -4339,6 +4339,75 @@ impl ResourceContext {
         Some((next, supports, next_origins))
     }
 
+    /// A whole object of a symbolic layout reserved from its pieces: the
+    /// object held with holes and, for each hole, that whole field. By the
+    /// layout's rule the field fills its hole and no other field's bytes, so
+    /// together they are the object, as `symbolic_object_with_field` joins
+    /// them. The pieces are found by their `SymbolicField` keys, one index
+    /// lookup per field of the layout.
+    fn reserve_symbolic_object_from_pieces(
+        mut self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
+        let range = required.memory_own_range()?;
+        let layout = range.symbolic_object()?;
+        if range.has_holes() || required.owned_quantity_term()?.as_const()? != 1 {
+            return None;
+        }
+        let base = range.base().clone();
+        let mut object = None;
+        let mut fields = BTreeMap::new();
+        for field in 0..layout.field_count() {
+            crate::instrumentation::record_deterministic_work(1);
+            let key = (
+                ResourceNormalizationKey::SymbolicField(base.clone(), layout, field, true),
+                true,
+            );
+            let Some(entries) = self.storage.index.written_normalization.entries.get(&key) else {
+                continue;
+            };
+            for &entry in entries.iter() {
+                let fact = self.fact(entry);
+                let Some(available) = fact.memory_own_range() else {
+                    continue;
+                };
+                if !fact.is_own() || !fact.has_proven_positive_quantity(assumptions) {
+                    continue;
+                }
+                if available.symbolic_object() == Some(layout)
+                    && available.base() == &base
+                    && available.holes().contains(&field)
+                {
+                    object.get_or_insert(entry);
+                } else if available.symbolic_field() == Some((base.clone(), layout, field)) {
+                    fields.entry(field).or_insert(entry);
+                }
+            }
+        }
+        let object = object?;
+        let mut joined = self.fact(object).memory_own_range()?.clone();
+        let holes = joined.holes().to_vec();
+        let mut pieces = vec![object];
+        for hole in &holes {
+            let field = *fields.get(hole)?;
+            joined = symbolic_object_with_field(
+                &joined,
+                self.fact(field).memory_own_range()?,
+                assumptions,
+            )?;
+            pieces.push(field);
+        }
+        if holes.is_empty() || !symbolic_object_covers_object(&joined, range) {
+            return None;
+        }
+        let supports = pieces.iter().map(|entry| self.occurrence(*entry)).collect();
+        for entry in pieces {
+            self.remove_entry(entry);
+        }
+        Some((self, supports))
+    }
+
     fn reserve_owned_memory_fragments_impl(
         mut self,
         required: &ResourceFact,
@@ -4348,6 +4417,12 @@ impl ResourceContext {
     ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
         if required.owned_quantity_term()?.as_const()? != 1 {
             return None;
+        }
+        if required
+            .memory_own_range()
+            .is_some_and(|range| range.symbolic_object().is_some())
+        {
+            return self.reserve_symbolic_object_from_pieces(required, assumptions);
         }
         let range = required.memory_own_range()?;
         let end = match range.wide_bounds() {
@@ -9524,8 +9599,12 @@ impl WrittenNormalizationIndex {
         let Some(range) = fact.memory_range() else {
             return Vec::new();
         };
+        // Constant ranges meet through the concrete index, except a field of
+        // a symbolic object, whose object is no constant range.
+        // Constant ranges meet through the concrete index, except a field of
+        // a symbolic object, whose object is no constant range.
         if constant_memory_coordinates(range).is_some() {
-            return Vec::new();
+            return symbolic_field_keys(fact);
         }
         ResourceNormalizationIndex {
             byte_endpoints: true,

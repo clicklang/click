@@ -131,10 +131,7 @@ int32 vector_copy(
         }
     }
     have i == length by {
-        apply(integer::int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, length))) using {
-            at(loop(0).exit, i) <= at(loop(0).exit, length);
-            not at(loop(0).exit, i) < at(loop(0).exit, length);
-        };
+        apply(integer::int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, length)));
         known();
     }
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
@@ -193,18 +190,12 @@ int32 vector_grow(struct vector* owner) {
 } by {
     unfold(before);
     have owner->cap < 2147483647 by {
-        apply(integer::int32_less_equal_less_than_transitive(owner->cap, 536870910, 2147483647)) using {
-            owner->cap <= 536870910;
-        };
+        apply(integer::int32_less_equal_less_than_transitive(owner->cap, 536870910, 2147483647));
         known();
     }
     have (owner->cap + 1) <= 536870911 by {
-        apply(integer::int32_less_equal_less_than_transitive(owner->cap, 536870910, 536870911)) using {
-            owner->cap <= 536870910;
-        };
-        apply(integer::int32_increment_upper_bound(owner->cap, 536870911)) using {
-            owner->cap < 536870911;
-        };
+        apply(integer::int32_less_equal_less_than_transitive(owner->cap, 536870910, 536870911));
+        apply(integer::int32_increment_upper_bound(owner->cap, 536870911));
         known();
     }
     step();
@@ -224,10 +215,7 @@ int32 vector_grow(struct vector* owner) {
     }
     have 1 <= new_capacity by {
         have 1 <= (owner->cap + 1) by {
-            apply(integer::int32_increment_lower_bound(owner->cap, 1, 2147483647)) using {
-                1 <= owner->cap;
-                owner->cap < 2147483647;
-            };
+            apply(integer::int32_increment_lower_bound(owner->cap, 1, 2147483647));
             known();
         }
         transport(1 <= (owner->cap + 1), 1 <= new_capacity) using {
@@ -240,10 +228,7 @@ int32 vector_grow(struct vector* owner) {
     }
     have owner->len <= new_capacity by {
         have owner->len <= (owner->cap + 1) by {
-            apply(integer::int32_increment_lower_bound(owner->cap, owner->len, 2147483647)) using {
-                owner->len <= owner->cap;
-                owner->cap < 2147483647;
-            };
+            apply(integer::int32_increment_lower_bound(owner->cap, owner->len, 2147483647));
             known();
         }
         transport(owner->len <= (owner->cap + 1), owner->len <= new_capacity) using {
@@ -255,9 +240,7 @@ int32 vector_grow(struct vector* owner) {
         known();
     }
     have 0 <= new_capacity by {
-        apply(integer::int32_less_equal_transitive(0, 1, new_capacity)) using {
-            1 <= new_capacity;
-        };
+        apply(integer::int32_less_equal_transitive(0, 1, new_capacity));
         known();
     }
     have 0 <= old_capacity by {
@@ -265,9 +248,7 @@ int32 vector_grow(struct vector* owner) {
             normalize();
         }
         rewrite(old_capacity, owner->cap);
-        apply(integer::int32_less_equal_transitive(0, 1, owner->cap)) using {
-            1 <= owner->cap;
-        };
+        apply(integer::int32_less_equal_transitive(0, 1, owner->cap));
         known();
     }
     have (new_capacity as uint32) <= 1073741823u32 by {
@@ -287,10 +268,7 @@ int32 vector_grow(struct vector* owner) {
         };
     }
     have owner->len <= 536870910 by {
-        apply(integer::int32_less_equal_transitive(owner->len, owner->cap, 536870910)) using {
-            owner->len <= owner->cap;
-            owner->cap <= 536870910;
-        };
+        apply(integer::int32_less_equal_transitive(owner->len, owner->cap, 536870910));
         known();
     }
     have (owner->len as uint32) <= 1073741823u32 by {
@@ -429,9 +407,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         solve();
     }
     have at(function.entry, owner->len) < at(function.entry, (owner->len + 1)) by {
-        apply(integer::int32_increment_strictly_increases(at(function.entry, owner->len), at(function.entry, owner->cap))) using {
-            at(function.entry, owner->len) < at(function.entry, owner->cap);
-        };
+        apply(integer::int32_increment_strictly_increases(at(function.entry, owner->len), at(function.entry, owner->cap)));
         known();
     }
     have result == (old(owner->len) + 1) by {
@@ -560,14 +536,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have old(owner->cap) <= 536870910;
             have 536870910 < 2147483647 by normalize();
-            have old(owner->cap) < 2147483647 by apply(integer::int32_less_equal_less_than_transitive(old(owner->cap), 536870910, 2147483647)) using {
-                old(owner->cap) <= 536870910;
-                536870910 < 2147483647;
-            };
-            have owner->cap <= old(owner->cap) + 1 by apply(integer::int32_increment_lower_bound(old(owner->cap), owner->cap, 2147483647)) using {
-                owner->cap <= old(owner->cap);
-                old(owner->cap) < 2147483647;
-            };
+            have old(owner->cap) < 2147483647 by apply(integer::int32_less_equal_less_than_transitive(old(owner->cap), 536870910, 2147483647));
+            have owner->cap <= old(owner->cap) + 1 by apply(integer::int32_increment_lower_bound(old(owner->cap), owner->cap, 2147483647));
             known();
             known();
             known();
@@ -607,13 +577,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have 536870911 < 2147483647 by {
                 normalize();
             }
-            apply(integer::int32_less_equal_less_than_transitive(at(function.entry, owner->cap), 536870911, 2147483647)) using {
-                at(function.entry, owner->cap) <= 536870911;
-                536870911 < 2147483647;
-            };
-            apply(integer::int32_increment_strictly_increases(at(function.entry, owner->cap), 2147483647)) using {
-                at(function.entry, owner->cap) < 2147483647;
-            };
+            apply(integer::int32_less_equal_less_than_transitive(at(function.entry, owner->cap), 536870911, 2147483647));
+            apply(integer::int32_increment_strictly_increases(at(function.entry, owner->cap), 2147483647));
             have owner->len < owner->cap by {
                 rewrite(owner->len, old(owner->len));
                 rewrite(owner->cap, (old(owner->cap) + 1));
@@ -760,10 +725,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             known();
         }
         have owner->len < owner->cap by {
-            apply(integer::int32_less_equal_and_not_equal_implies_less_than(owner->len, owner->cap)) using {
-                owner->len <= owner->cap;
-                not owner->len == owner->cap;
-            };
+            apply(integer::int32_less_equal_and_not_equal_implies_less_than(owner->len, owner->cap));
             known();
         }
         have old(owner->len) < old(owner->cap) by {
@@ -805,9 +767,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 };
                 known();
             }
-            apply(integer::int32_increment_upper_bound(at(region(0).entry, owner->len), at(region(0).entry, owner->cap))) using {
-                at(region(0).entry, owner->len) < at(region(0).entry, owner->cap);
-            };
+            apply(integer::int32_increment_upper_bound(at(region(0).entry, owner->len), at(region(0).entry, owner->cap)));
             known();
         }
         have result == 1 by {
@@ -863,14 +823,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         }
         have old(owner->cap) <= 536870910;
         have 536870910 < 2147483647 by normalize();
-        have old(owner->cap) < 2147483647 by apply(integer::int32_less_equal_less_than_transitive(old(owner->cap), 536870910, 2147483647)) using {
-            old(owner->cap) <= 536870910;
-            536870910 < 2147483647;
-        };
-        have owner->cap <= old(owner->cap) + 1 by apply(integer::int32_increment_lower_bound(old(owner->cap), owner->cap, 2147483647)) using {
-            owner->cap <= old(owner->cap);
-            old(owner->cap) < 2147483647;
-        };
+        have old(owner->cap) < 2147483647 by apply(integer::int32_less_equal_less_than_transitive(old(owner->cap), 536870910, 2147483647));
+        have owner->cap <= old(owner->cap) + 1 by apply(integer::int32_increment_lower_bound(old(owner->cap), owner->cap, 2147483647));
         known();
         known();
         known();

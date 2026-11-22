@@ -208,9 +208,7 @@ void pool_shrink(struct pool* pool, int32 amount) {
         step();
         have defined(old(count(pool_slot(pool))) - amount);
         have to_integer(count(pool_slot(pool))) == to_integer(old(count(pool_slot(pool)))) - to_integer(amount) by {
-            apply(integer::int32_subtract_to_integer(old(count(pool_slot(pool))), amount)) using {
-                defined(old(count(pool_slot(pool))) - amount);
-            };
+            apply(integer::int32_subtract_to_integer(old(count(pool_slot(pool))), amount));
         }
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }

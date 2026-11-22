@@ -1583,10 +1583,7 @@ impl LocalEnvironment {
             name,
             LocalBinding::Object {
                 storage_declared,
-                value: value
-                    .with_pointer_pointee_volatile(pointee_volatile)
-                    .with_pointer_pointee_constant(pointee_constant)
-                    .into(),
+                value: value.with_pointer_pointee_constant(pointee_constant).into(),
                 program_type,
                 slot,
                 volatile,
@@ -1732,7 +1729,7 @@ impl LocalEnvironment {
         let value = if value.program_type().is_pointer() {
             value
                 .into_value()
-                .with_pointer_binding(program_type, pointee_volatile, pointee_constant)
+                .with_pointer_binding(program_type, pointee_constant)
                 .into()
         } else {
             value
@@ -1785,7 +1782,7 @@ impl LocalEnvironment {
         let value = if value_type.is_pointer() {
             value
                 .into_value()
-                .with_pointer_binding(value_type, pointee_volatile, pointee_constant)
+                .with_pointer_binding(value_type, pointee_constant)
                 .into()
         } else {
             value
@@ -2836,6 +2833,82 @@ impl MemoryBlock {
 /// and the checker both visit these alone.
 fn call_havoc_candidates(mutable_ranges: &[MemoryRange]) -> AliasCandidates {
     AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().base))
+}
+
+/// The physical bounds of one exact local byte write. These offsets stay
+/// within the signed coordinate domain of the per-cell separation rule.
+fn call_havoc_exact_byte_write(mutable_ranges: &[MemoryRange]) -> Option<(Address, u32)> {
+    use crate::kernel::reasoning::store_gap::{CONSTANT_LIMIT, store_gap_skip_disabled};
+
+    if store_gap_skip_disabled()
+        || crate::kernel::assumptions::implicit_consulted_premises_capturing()
+        || crate::kernel::assumptions::reasoning_interrupted()
+    {
+        return None;
+    }
+    let [range] = mutable_ranges else {
+        return None;
+    };
+    let base = range.base();
+    // Byte indexing makes every constant cell offset an exact index in the
+    // range's coordinates, including a cell of a different scalar width.
+    if !base.base.is_local_block() || range.element_width() != 1 {
+        return None;
+    }
+    let AddressOffset::Constant(base_offset) = &base.offset else {
+        return None;
+    };
+    let exact = -CONSTANT_LIMIT..=CONSTANT_LIMIT;
+    if !exact.contains(base_offset) {
+        return None;
+    }
+    let start = *base_offset + range.signed_constant_start()?;
+    let end = *base_offset + range.signed_constant_end()?;
+    if !exact.contains(&start) || !exact.contains(&end) || end <= start {
+        return None;
+    }
+    let start_pointer = Address {
+        base: base.base.clone(),
+        offset: AddressOffset::Constant(start),
+    };
+    Some((start_pointer, (end - start) as u32))
+}
+
+/// The only slots the per-cell rule can reject in a constant-offset local
+/// run. Different bases, symbolic offsets and unknown widths need the
+/// existing per-slot rule because their byte coordinates may alias.
+fn call_havoc_run_window(write: Option<&(Address, u32)>, run: &CellRun) -> Option<(u32, u32)> {
+    use crate::kernel::reasoning::memory_resolution::{
+        cell_access_byte_width, run_elements_meeting,
+    };
+    use crate::kernel::reasoning::store_gap::CONSTANT_LIMIT;
+
+    let (pointer, bytes) = write?;
+    let (AddressOffset::Constant(start), AddressOffset::Constant(run_start)) =
+        (&pointer.offset, &run.base().offset)
+    else {
+        return None;
+    };
+    if pointer.base != run.base().base
+        || run.element_width() == 0
+        || run.value_width() == 0
+        || matches!(run.element_type(), ProgramType::Parameter(_))
+        || matches!(run.value_mode(), cell_store::RunValueMode::Constant(value)
+            if cell_access_byte_width(value) > run.value_width())
+    {
+        return None;
+    }
+    let span =
+        i64::from(run.count().checked_sub(1)?).checked_mul(i64::from(run.element_width()))?;
+    let exact = -CONSTANT_LIMIT..=CONSTANT_LIMIT;
+    if !exact.contains(run_start) || !exact.contains(&run_start.checked_add(span)?) {
+        return None;
+    }
+    Some(run_elements_meeting(
+        run,
+        start - run_start,
+        i64::from(*bytes),
+    ))
 }
 
 /// What a caller keeps unchanged across one call: the residual resource context
@@ -4832,6 +4905,11 @@ impl SymbolicMemory {
             offset: AddressOffset::Constant(0),
         };
         self.blocks.contains_key(&AddressBase::Heap(identity))
+            // An `allocates(result, n)` call's block, claimed by its contract.
+            || self
+                .heap
+                .live_allocations
+                .contains_key(&base(AddressBase::Heap(identity)))
             || self
                 .heap
                 .deallocated_allocations
@@ -4856,6 +4934,15 @@ impl SymbolicMemory {
                 AddressBase::Heap(identity) => Some(*identity),
                 _ => None,
             })
+            .chain(
+                self.heap
+                    .live_allocations
+                    .range(heap_base(0)..)
+                    .map_while(|(base, _)| match base.base {
+                        AddressBase::Heap(identity) => Some(identity),
+                        _ => None,
+                    }),
+            )
             .chain(
                 self.heap
                     .deallocated_allocations
@@ -5633,16 +5720,27 @@ impl SymbolicMemory {
         // (`mdtests/call_havoc_drops_a_union_member_view.md`). A callee can
         // only initialize more, so the automatic values that go stay
         // initialized.
-        let selected = kept.map(|kept| {
-            self.cells
-                .call_unowned_candidates(&kept.residual, &candidates)
-        });
+        let exact_write = call_havoc_exact_byte_write(mutable_ranges);
+        let cells_kept = exact_write
+            .as_ref()
+            .map_or_else(Vec::new, |(pointer, bytes)| {
+                crate::kernel::reasoning::store_gap::store_gap_kept_ranges(
+                    pointer,
+                    *bytes,
+                    assumptions,
+                )
+            });
+        let selected = self.cells.call_havoc_selection(
+            kept.map(|kept| &kept.residual),
+            &candidates,
+            &cells_kept,
+        );
         let scope = match selected.as_ref() {
-            Some((selected, runs)) => ForgetScope::Ordered {
+            Some(selected) => ForgetScope::Ordered {
                 candidates: &candidates,
-                selected,
+                selected: &selected.cells,
                 cells_kept: &[],
-                runs: Some(runs),
+                runs: selected.runs.as_deref(),
             },
             None => ForgetScope::candidates(&candidates),
         };
@@ -5663,7 +5761,10 @@ impl SymbolicMemory {
                 CallHavocCellRule::KeptByCaller => CachedValueFate::Forgotten,
                 CallHavocCellRule::Dropped => CachedValueFate::Forgotten,
             },
-            ask_every_slot,
+            |run| match call_havoc_run_window(exact_write.as_ref(), run) {
+                Some((low, high)) => (SlotSet::PerSlotIn(low, high), RuleAnswer::Exact),
+                None => ask_every_slot(run),
+            },
         );
         if let (Some(copy), Some(before)) = (copy, &base) {
             self.replace_initialization_for_representation_copy(before, copy);
@@ -5955,15 +6056,28 @@ impl SymbolicMemory {
         let mut visited = 0usize;
         let mut dropped_cells = Vec::new();
         let mut dropped_initialized = Vec::new();
-        let selected = kept.map(|kept| {
-            before
-                .cells
-                .call_unowned_candidates(&kept.residual, &candidates)
-        });
+        let exact_write = call_havoc_exact_byte_write(mutable_ranges);
+        let cells_kept = exact_write
+            .as_ref()
+            .map_or_else(Vec::new, |(pointer, bytes)| {
+                crate::kernel::reasoning::store_gap::store_gap_kept_ranges(
+                    pointer,
+                    *bytes,
+                    assumptions,
+                )
+            });
+        let selected = before.cells.call_havoc_selection(
+            kept.map(|kept| &kept.residual),
+            &candidates,
+            &cells_kept,
+        );
         let entries = before.cells.candidate_logical_entries_selected(
             &candidates,
-            selected.as_ref().map(|(cells, _)| cells.as_slice()),
-            selected.as_ref().map(|(_, runs)| runs.as_slice()),
+            selected.as_ref().map(|selected| selected.cells.as_slice()),
+            selected
+                .as_ref()
+                .and_then(|selected| selected.runs.as_deref()),
+            |run| call_havoc_run_window(exact_write.as_ref(), run),
         );
         for (pointer, value) in entries {
             visited += 1;
@@ -7714,7 +7828,10 @@ impl SymbolicMemory {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for (pointer, width) in dropped {
-            if pointer.base.is_local_block() || !self.heap.uninitialized_objects.is_empty() {
+            if pointer.base.is_local_block()
+                || pointer.base == AddressBase::ExternalArgument
+                || !self.heap.uninitialized_objects.is_empty()
+            {
                 changed |= record.record(pointer, *width);
             }
         }
@@ -7948,28 +8065,38 @@ impl SymbolicMemory {
     /// field guaranteed initialized by a checked construction summary. The
     /// cells describe values; this record outlives forgetting those values.
     pub(in crate::kernel) fn with_initialized_object(self, pointer: &Address, bytes: u32) -> Self {
-        self.record_object_initialization(pointer, bytes, false)
+        self.record_object_initialization(pointer, bytes, None)
     }
 
-    /// The checked call has returned four initialized bytes in one local
-    /// cell. Retain its output even if the earlier call initialized it too.
-    pub(in crate::kernel) fn with_initialized_call_word(self, pointer: &Address) -> Self {
-        let word_type = ProgramType::Int32;
-        let width = word_type.byte_width();
-        let call_word = self.blocks.get(&pointer.base).is_some_and(|block| {
-            block.declared_scalar_type == Some(word_type) && block.size().as_const() == Some(width)
-        }) && self.cells.explicitly_stored_value(pointer).is_none()
-            && self.cells.exact_run_slot_type(pointer) == Ok(None);
-        self.record_object_initialization(pointer, width, call_word)
+    /// The checked call initialized a whole local, with an unknown value.
+    /// Retain the effect even if an earlier call initialized the same bytes.
+    pub(in crate::kernel) fn with_initialized_call_output(
+        self,
+        pointer: &Address,
+        bytes: u32,
+    ) -> Self {
+        let kind = self
+            .blocks
+            .get(&pointer.base)
+            .filter(|block| block.size().as_const() == Some(bytes))
+            .and_then(|block| block.declared_scalar_type)
+            .filter(|&ty| MachineIntegerType::from_program_type(ty).is_some())
+            .and_then(LoadKind::of_type)
+            .filter(|kind| {
+                kind.byte_width() == bytes
+                    && self.cells.explicitly_stored_value(pointer).is_none()
+                    && self.cells.exact_run_slot_type(pointer) == Ok(None)
+            });
+        self.record_object_initialization(pointer, bytes, kind)
     }
 
     fn record_object_initialization(
         mut self,
         pointer: &Address,
         bytes: u32,
-        call_word: bool,
+        call_output: Option<LoadKind>,
     ) -> Self {
-        if call_word || !self.heap.initialized.covers(pointer, bytes) {
+        if call_output.is_some() || !self.heap.initialized.covers(pointer, bytes) {
             let base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
@@ -7980,7 +8107,7 @@ impl SymbolicMemory {
                     base,
                     pointer: pointer.clone(),
                     bytes,
-                    call_word,
+                    call_output,
                 },
             );
         }

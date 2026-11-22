@@ -1545,6 +1545,13 @@ impl ExecutionBudget {
         self.dropped_runtime_error.as_ref()
     }
 
+    /// The first undefined behavior an evaluation under this budget dropped
+    /// because every path of a sub-evaluation ended in it, for the message a
+    /// caller writes when the evaluation produced no value path at all.
+    pub fn dropped_undefined_behavior(&self) -> Option<&UndefinedBehavior> {
+        self.dropped_undefined_behavior.as_ref()
+    }
+
     /// The first constant element range this budget's lowering refused as a
     /// 32-bit byte span, for the message a caller writes when the lowering
     /// produced no path at all.
@@ -1617,6 +1624,7 @@ impl ExecutionBudget {
             next_match_binder_variable: Self::MATCH_BINDER_VARIABLE_BASE,
             refuses_execution_identities: false,
             dropped_runtime_error: None,
+            dropped_undefined_behavior: None,
             dropped_range_span: None,
             dropped_refuted_range_span: None,
             dropped_fold_body: None,

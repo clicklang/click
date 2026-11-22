@@ -297,6 +297,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     pub(in crate::surface::proof) fn try_execute_to_exit(
         &self,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter_implicit("implicit tail");
         let driver_proof = self.proof;
         let Some((body, added_facts)) =
             crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(
@@ -612,6 +613,25 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
             return Ok(None);
         };
         let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    pub(in crate::surface::proof) fn try_indexed_separation_restriction(
+        &self,
+        goal: &ClickProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_resource_separation_restriction_closure(
+                &self.proof.body,
+                goal,
+                &[],
+                true,
+            )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
         next.body = body;
         Ok(Some(next))
     }

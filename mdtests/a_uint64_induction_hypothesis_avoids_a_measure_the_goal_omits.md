@@ -23,7 +23,7 @@ theorem with_using(n: uint64) {
         } else {
             have 0u64 < n by solve();
             have to_integer(n - 1u64) < to_integer(n);
-            apply(ih(n - 1u64)) using { to_integer(n - 1u64) < to_integer(n); };
+            apply(ih(n - 1u64));
         }
     }
 }

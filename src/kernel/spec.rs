@@ -8327,28 +8327,29 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         value_type: *value_type,
                     }));
                 }
-                let read_point = || match memory {
+                let read_point = match memory {
                     SpecPoint::At(point) => point.clone(),
                     _ => selected_state.expect("selected read state").program_point(),
                 };
-                let wide_read_through_loaded_pointer =
-                    matches!(*value_type, ProgramType::Int64 | ProgramType::UInt64)
+                let integer_read_through_loaded_pointer =
+                    MachineIntegerType::from_program_type(*value_type).is_some()
                         && matches!(pointer.base, AddressBase::LoadedPointer(_));
                 let version = if !*exact
                     && (ProgramPoint::supports_indexed_version(&pointer)
-                        || wide_read_through_loaded_pointer)
+                        || integer_read_through_loaded_pointer
+                        || ProgramPoint::supports_static_entry_version(&pointer, *value_type))
                 {
-                    read_point().ordinary_typed_version(&pointer, *value_type)
+                    read_point.ordinary_typed_version(&pointer, *value_type)
                 } else {
                     None
                 };
-                let observation = (!*exact && crate::kernel::eval::typed_reads::is_active())
-                    .then(|| (read_point(), pointer.clone()));
+                let observation = crate::kernel::eval::typed_reads::is_active()
+                    .then(|| (read_point.clone(), pointer.clone()));
                 let retain_pointer = value_type.is_pointer() && (*exact || version.is_some());
                 let read_paths = if let Some(version) = version {
                     vec![crate::kernel::eval::evaluate_indexed_read(
                         version,
-                        &read_point(),
+                        &read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -8358,7 +8359,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     && *value_type == ProgramType::UInt32
                     && matches!(pointer.offset, AddressOffset::Constant(0))
                     && let Some((value, byte_facts)) = crate::kernel::eval::indexed_uint32_byte_read(
-                        &read_point(),
+                        &read_point,
                         &pointer,
                         budget.budget.program_byte_order(),
                     )
@@ -8372,7 +8373,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     }]
                 } else if *exact {
                     crate::kernel::eval::evaluate_exact_logical_memory_load_paths(
-                        read_point(),
+                        read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -8380,16 +8381,12 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     )
                 } else {
                     crate::kernel::eval::evaluate_logical_memory_load_paths_at(
-                        memory_view,
+                        &read_point,
                         pointer,
                         *value_type,
                         pointer_path.facts,
                         obligations,
                         assumptions,
-                        (*value_type == ProgramType::Bool
-                            || KernelFloatType::from_program_type(*value_type).is_some())
-                        .then(read_point)
-                        .as_ref(),
                     )
                 };
                 if let Some((point, address)) = observation
@@ -9233,8 +9230,9 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
 }
 
 /// The value paths of a C-level evaluation, for a specification that reads
-/// them. A path that ended in a runtime error carries no value and is
-/// dropped. When every path did, the first error is recorded on the budget:
+/// them. A path that ended in a runtime error or undefined behavior carries
+/// no value and is dropped. When every path did, the first error, or else the
+/// first undefined behavior, is recorded on the budget:
 /// a proposition with no evaluation path is reported by count, and the count
 /// says nothing about why (a load of the wrong width, a read no resource
 /// permits). Zero paths stays an ordinary answer here, since a requirement
@@ -9256,6 +9254,7 @@ fn spec_execution_value_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> Vec<SpecExpressionPath> {
     let mut first_error = None;
+    let mut first_undefined_behavior = None;
     let mut values = Vec::new();
     for path in paths {
         if let Some(error) = refuted_narrowing_error(&path.obligations) {
@@ -9278,13 +9277,17 @@ fn spec_execution_value_paths_in(
             ExpressionOutcome::RuntimeError(error) => {
                 first_error.get_or_insert(error);
             }
-            ExpressionOutcome::UndefinedBehavior(_) => {}
+            ExpressionOutcome::UndefinedBehavior(behavior) => {
+                first_undefined_behavior.get_or_insert(behavior);
+            }
         }
     }
-    if values.is_empty()
-        && let Some(error) = first_error
-    {
-        budget.dropped_runtime_error.get_or_insert(error);
+    if values.is_empty() {
+        if let Some(error) = first_error {
+            budget.dropped_runtime_error.get_or_insert(error);
+        } else if let Some(behavior) = first_undefined_behavior {
+            budget.dropped_undefined_behavior.get_or_insert(behavior);
+        }
     }
     values
 }

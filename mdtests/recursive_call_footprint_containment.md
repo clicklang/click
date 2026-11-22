@@ -24,12 +24,8 @@ void caller(struct node* child, int32* slot) {
     mark before_call;
     step();
     have contains(list(child), statement(0).footprint) by { known(); }
-    apply(separation::contains_refl(memory(*slot))) using {};
-    apply(separation::separate_restrict(list(child), memory(*slot), statement(0).footprint, memory(*slot))) using {
-        separate(list(child), memory(*slot));
-        contains(list(child), statement(0).footprint);
-        contains(memory(*slot), memory(*slot));
-    };
+    apply(separation::contains_refl(memory(*slot)));
+    apply(separation::separate_restrict(list(child), memory(*slot), statement(0).footprint, memory(*slot)));
     have *slot == at(before_call, *slot) by {
         preserve(memory(*slot), statement(0));
     }

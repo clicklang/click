@@ -194,6 +194,58 @@ int32 alg_if(int32 x) {
     }
 
     #[test]
+    fn indexed_field_view_read_definedness_round_trips_at_entry() {
+        for index_type in ["int32", "uint64"] {
+            let c = format!(
+                r#"
+struct Input {{ const uint8 *data; }};
+struct Options {{ uint64 flags; }};
+int32 probe(const struct Input *src, {index_type} n, {index_type} k, struct Options options) {{
+    int32 result = n != 0;
+    return result;
+}}
+"#
+            );
+            let zero = if index_type == "uint64" { "0u64" } else { "0" };
+            let source = format!(
+                r#"
+verifying "indexed_view.c";
+int32 probe(const struct Input* src, {index_type} n, {index_type} k, struct Options options) {{
+    views src->data;
+    views src->data[0..n];
+    requires {zero} <= k;
+    requires k < n;
+    ensures result >= 0;
+}} by {{
+    step();
+    have at(function.entry, defined(load<uint8>(src->data + k))) by {{
+        instantiate(at(function.entry, forall (i: {index_type}) {{
+            {zero} <= i and i < n implies defined(load<uint8>(src->data + i))
+        }}), k);
+        known();
+    }}
+    step();
+}}
+"#
+            );
+            let lines = capture(|| {
+                crate::surface::verify_c_sources(&source, &[("indexed_view.c", &c)]).unwrap();
+            });
+            for kind in ["implies/MemoryReadDefined", "MemoryReadDefined"] {
+                let prefix = format!("same\tfact\t{kind}\tprobe.contract\tinstantiate\t");
+                assert!(
+                    lines.iter().any(|line| line.starts_with(&prefix)
+                        && line
+                            .split('\t')
+                            .nth(7)
+                            .is_some_and(|raised| raised.contains("at(function.entry,"))),
+                    "{index_type}: missing {kind} round trip in {lines:#?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_round_trip_is_classified_by_the_term_it_lowers_to() {
         let less = compare(CompareRelation::LessThan, true);
         assert_eq!(classify(&less, &less), RoundTrip::Same);
@@ -344,6 +396,58 @@ int32 short_sum(int32 seed) {
         .collect()
     }
 
+    #[test]
+    fn reads_at_symbolic_indices_through_a_call_result_round_trip() {
+        let c = r#"
+uint8* make(uint64 n);
+struct holder { uint8* p; };
+int32 f(struct holder* h, uint64 n, uint64 k) {
+    h->p = make(n);
+    free(h->p);
+    return 0;
+}
+"#;
+        let source = r#"
+extern uint8* make(uint64 n) {
+    produces allocation(result, n);
+    produces result[0..n];
+    ensures forall (i: uint64) { 0u64 <= i and i < n implies defined(load<uint8>(result + i)) };
+}
+verifying "indexed.c";
+int32 f(struct holder* h, uint64 n, uint64 k) {
+    owns h->p;
+    requires n <= 100u64;
+    requires k < n;
+    ensures result >= 0;
+} by {
+    step();
+    have defined(load<uint8>(statement(0).call(make, 0).result + k)) by {
+        instantiate(forall (i: uint64) { 0u64 <= i and i < n implies defined(load<uint8>(statement(0).call(make, 0).result + i)) }, k);
+        known();
+    }
+    step_until(function.exit);
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[("indexed.c", c)]).unwrap();
+        });
+        for kind in [
+            "forall/implies/MemoryReadDefined",
+            "implies/MemoryReadDefined",
+            "MemoryReadDefined",
+        ] {
+            let prefix = format!("same\tfact\t{kind}\tf.contract\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with(&prefix)
+                    && line
+                        .split('\t')
+                        .nth(7)
+                        .is_some_and(|raised| raised.contains(".result + "))),
+                "missing {kind} round trip in {lines:#?}"
+            );
+        }
+    }
+
     /// A pointer a call returned raises as that call's result, and a read
     /// at an earlier point as `at(point, ..)`: the audit raises with the
     /// path's recorded points, as goal presentation does.
@@ -354,8 +458,8 @@ int32 short_sum(int32 seed) {
             include_str!("../../../mdtests/a_call_result_is_spelled_by_its_call.md"),
         );
         for original in [
-            "statement(0).call(make, 0).result == h[0]",
-            "at(statement(0).exit, h[0]) == h[0]",
+            "statement(0).call(make, 0).result == h->p",
+            "at(statement(0).exit, h->p) == h->p",
         ] {
             assert!(
                 lines.contains(&("same".to_string(), original.to_string())),

@@ -19,5 +19,5 @@ int32 invoke(void (*callback)(int32), int32 x) {
 ```
 
 ```expect
-fail: unproved resource obligation invoke.produces_0 `Permit(x)`
+fail: must return `Permit(x)` to satisfy `invoke.produces_0`
 ```

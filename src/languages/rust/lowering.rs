@@ -36,6 +36,7 @@ fn reference_view(
         target_type,
         integer_mode: IntegerCastMode::PointerCoercion,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile,
         pointee_constant,
         explicit_qualification: false,
@@ -950,8 +951,9 @@ fn lower_function(
         }
         if let Type::Record { name } = &p.value_type {
             // A generic function's instance takes the record as the
-            // generic function, whose MIR is checked, does.
-            if f.mir.is_none() && f.instance_of.is_none() {
+            // generic function, whose MIR is checked, does; a library
+            // function takes it as its contract says.
+            if f.mir.is_none() && f.instance_of.is_none() && f.core_method.is_none() {
                 return Err("owned record parameters require compiler MIR".into());
             }
             let layout = layouts.get(name).ok_or("missing parameter record layout")?;
@@ -1156,6 +1158,8 @@ fn lower_function(
                             _ => return None,
                         }
                         id
+                    } else if let Some(&ordinal) = mir.borrowed_scalars.get(&local.name) {
+                        LocalBindingId::temporary(owner.clone(), ordinal)
                     } else {
                         let spelling = mir.spellings.get(&local.name)?;
                         let ordinal = u32::try_from(ordinal).ok()?;

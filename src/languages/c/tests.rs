@@ -15393,3 +15393,39 @@ fn c_inferred_local_arrays_refuse_incomplete_and_oversized_shapes() {
         assert!(error.message().contains(expected), "{source}: {error:?}");
     }
 }
+
+#[test]
+fn a_store_through_a_volatile_cell_cast_is_a_volatile_access() {
+    // Linux's `__WRITE_ONCE`: the lvalue's type is volatile, so the store is
+    // a volatile access (C11 6.7.3p7) whatever the pointer value records.
+    let functions = syntax::parse_functions(
+        "struct node { struct node *left; };
+         void put(struct node *n, struct node *v) {
+             *(volatile typeof(n->left) *)&(n->left) = v;
+         }
+         void plain(struct node *n, struct node *v) {
+             *(typeof(n->left) *)&(n->left) = v;
+         }",
+    )
+    .unwrap();
+    fn store_volatility(statement: &crate::kernel::ProgramStatement) -> Option<bool> {
+        match statement {
+            crate::kernel::ProgramStatement::TypedStore { volatile, .. } => Some(*volatile),
+            crate::kernel::ProgramStatement::Store { .. } => Some(false),
+            crate::kernel::ProgramStatement::Seq(statements) => statements
+                .iter()
+                .find_map(|statement| store_volatility(statement)),
+            _ => None,
+        }
+    }
+    let volatility = |name: &str| {
+        let function = functions
+            .iter()
+            .find(|function| function.name() == name)
+            .unwrap()
+            .to_kernel_function();
+        store_volatility(function.body()).expect("the store survives kernel lowering")
+    };
+    assert!(volatility("put"));
+    assert!(!volatility("plain"));
+}

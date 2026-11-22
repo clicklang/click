@@ -1574,14 +1574,7 @@ pub(super) fn infer_scoped_spec_value_type(
             let result = match expression {
                 ContractExpression::Add(_, _) => pointer_arithmetic_type(left_c, right_c)
                     .or_else(|| arithmetic_result_type(left_c, right_c)),
-                ContractExpression::Subtract(_, _) => match (left_c, right_c) {
-                    (Some(left), Some(right))
-                        if type_is_data_pointer(left) && type_is_scalar(right) =>
-                    {
-                        Some(left)
-                    }
-                    _ => arithmetic_result_type(left_c, right_c),
-                },
+                ContractExpression::Subtract(_, _) => subtract_expression_type(left_c, right_c),
                 ContractExpression::Multiply(_, _) => arithmetic_result_type(left_c, right_c),
                 _ => unreachable!(),
             };
@@ -3267,7 +3260,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::Induct { .. }
             | ProofTactic::ApplyInduction { .. }
-            | ProofTactic::ApplyInductionUsing { .. }
             | ProofTactic::ApplyFact(_)
             | ProofTactic::ApplyFactUsing { .. }
             | ProofTactic::ApplyTheorem(_)
@@ -3386,7 +3378,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Induct { .. } => "induct",
         ProofTactic::Match(_) => "match",
         ProofTactic::ApplyInduction { .. } => "apply",
-        ProofTactic::ApplyInductionUsing { .. } => "apply",
         ProofTactic::ApplyTheorem(_) | ProofTactic::ApplyTheoremUsing { .. } => "apply",
         ProofTactic::Have(_) => "have",
         ProofTactic::Open(_) => "with",
@@ -4307,8 +4298,11 @@ fn validate_pointer_cast_operands(
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
                 if *target_type == ProgramType::UInt8Pointer && pointee_struct.is_none() {
+                    // A `void *` operand converts to the byte view as the C
+                    // conversion does (C11 6.3.2.3p7).
                     let actual = infer_program_expression_type(operand, variables);
                     if actual.is_some()
+                        && actual != Some(InterfaceType::VoidPointer)
                         && !actual.is_some_and(|ty| {
                             ty.to_kernel_type().pointee_type().is_some_and(|element| {
                                 !element.is_pointer() && element.byte_width() > 0
@@ -4321,9 +4315,17 @@ fn validate_pointer_cast_operands(
                     }
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
+                // A `void *` operand recovers the object; a character
+                // pointer operand recovers it from the byte view that
+                // converting to a character pointer formed (C11 6.3.2.3p7).
                 match infer_program_expression_type(operand, variables) {
                     None | Some(InterfaceType::VoidPointer) => {}
                     Some(actual) if actual.to_kernel_type() == *target_type => {}
+                    Some(actual)
+                        if matches!(
+                            actual.to_kernel_type(),
+                            ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+                        ) => {}
                     Some(actual) => {
                         return Err(ClickError::new(format!(
                             "pointer cast in {context} expects a `void *` operand, got `{actual:?}`"
@@ -4702,12 +4704,7 @@ fn infer_subtract_expression_type(
         [(left_expression, left), (right_expression, right)],
         context,
     )?;
-    Ok(match (left, right) {
-        (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_scalar(right) => {
-            Some(left)
-        }
-        _ => arithmetic_result_type(left, right),
-    })
+    Ok(subtract_expression_type(left, right))
 }
 
 fn infer_c_add_type(
@@ -4727,9 +4724,19 @@ fn infer_c_subtract_type(
 ) -> Option<InterfaceType> {
     let left = infer_program_expression_type(left, variables);
     let right = infer_program_expression_type(right, variables);
+    subtract_expression_type(left, right)
+}
+
+fn subtract_expression_type(
+    left: Option<InterfaceType>,
+    right: Option<InterfaceType>,
+) -> Option<InterfaceType> {
     match (left, right) {
         (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_scalar(right) => {
             Some(left)
+        }
+        (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_data_pointer(right) => {
+            Some(InterfaceType::Int64(LongRank::Long))
         }
         _ => arithmetic_result_type(left, right),
     }

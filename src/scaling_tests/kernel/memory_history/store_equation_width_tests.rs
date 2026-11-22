@@ -30,7 +30,13 @@ fn store_equation_work(unrelated: usize, stores: usize) -> usize {
         let facts: ExecutionFacts = operands
             .into_iter()
             .map(|(before, after, pointer, value)| {
-                ExecutionPureFact::certified_store(before, after, pointer, value, None)
+                ExecutionPureFact::certified_store(
+                    before,
+                    crate::kernel::ProgramPoint::of_memory(&after),
+                    pointer,
+                    value,
+                    None,
+                )
             })
             .collect::<Vec<_>>()
             .into();

@@ -1042,7 +1042,7 @@ pub(super) fn has_count_operand(expression: &ContractExpression) -> bool {
 /// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
 /// through `old`, `at`, the arms of a match and the branches of a
 /// conditional, each of which is in the position the whole is in.
-pub(super) fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
+pub(in crate::surface) fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
     match expression {
         ContractExpression::Add(..)
         | ContractExpression::Subtract(..)

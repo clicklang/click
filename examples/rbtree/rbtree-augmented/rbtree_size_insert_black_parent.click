@@ -107,5 +107,6 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.model == old(state.model);
     ensures state.parent_tag == old(state.parent_tag);
 } by {
+    have separate(state, memory(augment->rotate)) by known();
     step(__rb_insert_augmented, { state: state });
 }

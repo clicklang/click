@@ -84,6 +84,7 @@ fn native_cell<'a>(
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct IndexIntervals {
     intervals: HashedOrdSet<(u32, u32)>,
+    count: u64,
 }
 
 impl IndexIntervals {
@@ -173,8 +174,10 @@ impl IndexIntervals {
             low = low.min(other_low);
             high = high.max(other_high);
             self.intervals.remove(&(other_low, other_high));
+            self.count -= u64::from(other_high - other_low);
         }
         self.intervals.insert((low, high));
+        self.count += u64::from(high - low);
     }
 
     pub(crate) fn insert(&mut self, index: u32) {
@@ -190,8 +193,19 @@ impl IndexIntervals {
 
     /// The indexes in exactly one of the two.
     pub(crate) fn symmetric_difference(&self, other: &Self) -> Self {
-        let mut result = self.difference(other);
-        for (low, high) in other.difference(self).intervals.iter() {
+        // The intervals that both sides share are disjoint from every
+        // changed interval on either side, so they cancel before subtraction.
+        let mut left = Self::default();
+        let mut right = Self::default();
+        for &(low, high) in self.intervals.symmetric_difference(&other.intervals) {
+            if self.intervals.contains(&(low, high)) {
+                left.insert_range(low, high);
+            } else {
+                right.insert_range(low, high);
+            }
+        }
+        let mut result = left.difference(&right);
+        for (low, high) in right.difference(&left).intervals.iter() {
             result.insert_range(*low, *high);
         }
         result
@@ -208,6 +222,7 @@ impl IndexIntervals {
             return;
         };
         self.intervals.remove(&(low, high));
+        self.count -= 1;
         if low < index {
             self.intervals.insert((low, index));
         }
@@ -218,10 +233,7 @@ impl IndexIntervals {
 
     /// How many indexes the intervals hold.
     pub(crate) fn count(&self) -> u64 {
-        self.intervals
-            .iter()
-            .map(|(low, high)| u64::from(high - low))
-            .sum()
+        self.count
     }
 
     /// The indexes of `[0, count)` outside every interval, ascending, as
@@ -599,6 +611,27 @@ impl CellRun {
             .flat_map(|(low, high)| low..high)
     }
 
+    /// The live slots in one candidate interval. A hole lookup skips its
+    /// entire span, including a hole that began before `low`.
+    fn live_indexes_in(&self, low: u32, high: u32) -> impl Iterator<Item = u32> + '_ {
+        let high = high.min(self.count);
+        let mut next = low;
+        std::iter::from_fn(move || {
+            if next >= high {
+                return None;
+            }
+            if let Some((_, end)) = self.holes.interval_of(next) {
+                next = end;
+            }
+            if next >= high {
+                return None;
+            }
+            let index = next;
+            next += 1;
+            Some(index)
+        })
+    }
+
     /// Whether `other` is this run with possibly other holes: the same slots
     /// holding the same values wherever both are live.
     pub(crate) fn same_slots_as(&self, other: &Self) -> bool {
@@ -849,6 +882,8 @@ pub(crate) enum SlotSet {
     Elements(u32, u32),
     /// Every live slot except those of elements `low..high`.
     Except(u32, u32),
+    /// Keep slots outside `low..high`; ask the rule of live slots inside it.
+    PerSlotIn(u32, u32),
     /// Undecided for the run as a whole: ask the rule of every live slot.
     PerSlot,
 }
@@ -881,6 +916,7 @@ impl SlotSet {
             Self::Nothing => Some(false),
             Self::Elements(low, high) => Some(*low <= index && index < *high),
             Self::Except(low, high) => Some(!(*low <= index && index < *high)),
+            Self::PerSlotIn(low, high) => (!(*low..*high).contains(&index)).then_some(true),
             Self::PerSlot => None,
         }
     }
@@ -904,7 +940,7 @@ impl SlotSet {
                 *visited += indexes.len();
                 indexes
             }
-            Self::All | Self::PerSlot => {
+            Self::All | Self::PerSlot | Self::PerSlotIn(..) => {
                 let indexes = run.live_indexes().collect::<Vec<_>>();
                 *visited += indexes.len();
                 indexes
@@ -934,14 +970,14 @@ impl SlotSet {
 }
 
 impl CellRun {
-    /// Makes every live slot outside `decision` a hole; a `PerSlot` decision
-    /// asks `keep` of each live slot.
+    /// Makes rejected slots holes. A bounded per-slot decision returns the
+    /// new holes directly so callers do not need to diff the run's history.
     fn keep_only(
         &mut self,
         decision: SlotSet,
         keep: &mut impl FnMut(&Address, &ProgramValue) -> bool,
         visited: &mut usize,
-    ) {
+    ) -> Option<IndexIntervals> {
         match decision {
             SlotSet::All => {}
             SlotSet::Nothing => self.holes.insert_range(0, self.count),
@@ -952,6 +988,19 @@ impl CellRun {
             SlotSet::Except(low, high) => {
                 self.holes
                     .insert_range(low.min(self.count), high.min(self.count));
+            }
+            SlotSet::PerSlotIn(low, high) => {
+                let mut dropped = IndexIntervals::default();
+                for index in self.live_indexes_in(low, high) {
+                    *visited += 1;
+                    if !keep(&self.slot_pointer(index), &self.value(index)) {
+                        dropped.insert(index);
+                    }
+                }
+                for (low, high) in dropped.diagnostic_intervals() {
+                    self.holes.insert_range(low, high);
+                }
+                return Some(dropped);
             }
             SlotSet::PerSlot => {
                 let dropped = self
@@ -968,6 +1017,7 @@ impl CellRun {
                 }
             }
         }
+        None
     }
 }
 
@@ -1202,6 +1252,12 @@ fn collect_cells_outside_gaps(
             .range((start, Bound::Unbounded))
             .map(|(key, _)| key.clone()),
     );
+}
+
+pub(super) struct CallHavocSelection {
+    pub(super) cells: Vec<Address>,
+    /// A retained frame may exclude whole parameter runs.
+    pub(super) runs: Option<Vec<RunKey>>,
 }
 
 impl CellStore {
@@ -1476,20 +1532,29 @@ impl CellStore {
         guard
     }
 
-    /// Concrete cells not wholly held by the caller's retained flat owners.
-    pub(in crate::kernel) fn call_unowned_candidates(
+    /// Select concrete cells outside proven byte gaps and, when the call
+    /// has a retained frame, outside its flat parameter owners.
+    pub(super) fn call_havoc_selection(
         &self,
-        resources: &crate::kernel::ResourceContext,
+        resources: Option<&crate::kernel::ResourceContext>,
         candidates: &AliasCandidates,
-    ) -> (Vec<Address>, Vec<RunKey>) {
+        cells_kept: &[(Address, Address)],
+    ) -> Option<CallHavocSelection> {
+        let Some(resources) = resources else {
+            return (!cells_kept.is_empty()).then(|| CallHavocSelection {
+                cells: self.concrete_candidate_keys(candidates, cells_kept),
+                runs: None,
+            });
+        };
         let guard = self.prepare_parameter_partition(resources, None);
         let index = guard.as_ref().expect("prepared partition");
         let ordinary = candidates.excluding_external_arguments();
-        let mut cells = candidates
-            .entries(&index.unknown)
-            .map(|(key, _)| key.clone())
-            .chain(ordinary.entries(&self.concrete).map(|(key, _)| key.clone()))
-            .collect::<Vec<_>>();
+        let mut cells = self.concrete_candidate_keys(&ordinary, cells_kept);
+        cells.extend(
+            candidates
+                .entries(&index.unknown)
+                .map(|(key, _)| key.clone()),
+        );
         let mut runs = candidates
             .entries(&index.unknown_runs)
             .map(|(key, _)| key.clone())
@@ -1497,7 +1562,26 @@ impl CellStore {
             .collect::<Vec<_>>();
         cells.sort_unstable();
         runs.sort_unstable();
-        (cells, runs)
+        Some(CallHavocSelection {
+            cells,
+            runs: Some(runs),
+        })
+    }
+
+    fn concrete_candidate_keys(
+        &self,
+        candidates: &AliasCandidates,
+        cells_kept: &[(Address, Address)],
+    ) -> Vec<Address> {
+        if cells_kept.is_empty() {
+            return candidates
+                .entries(&self.concrete)
+                .map(|(key, _)| key.clone())
+                .collect();
+        }
+        let (entries, visited) = candidates.entries_outside(&self.concrete, cells_kept);
+        crate::instrumentation::record_deterministic_work(visited);
+        entries.into_iter().map(|(key, _)| key.clone()).collect()
     }
 
     /// Concrete cells whose canonical address lies on the region's line.
@@ -2390,7 +2474,7 @@ impl CellStore {
         &'a self,
         candidates: &'a AliasCandidates,
     ) -> impl Iterator<Item = (Address, ProgramValue)> + 'a {
-        self.candidate_logical_entries_selected(candidates, None, None)
+        self.candidate_logical_entries_selected(candidates, None, None, |_| None)
     }
 
     pub(crate) fn candidate_logical_entries_selected<'a>(
@@ -2398,6 +2482,7 @@ impl CellStore {
         candidates: &'a AliasCandidates,
         selected: Option<&'a [Address]>,
         selected_runs: Option<&'a [RunKey]>,
+        run_window: impl Fn(&CellRun) -> Option<(u32, u32)>,
     ) -> impl Iterator<Item = (Address, ProgramValue)> + 'a {
         type Sequence<'a> = Box<dyn Iterator<Item = (Address, ProgramValue)> + 'a>;
         let concrete: Sequence<'a> = match selected {
@@ -2419,6 +2504,15 @@ impl CellStore {
             None => Box::new(self.candidate_runs(candidates)),
         };
         for run in runs {
+            if let Some((low, high)) = run_window(run) {
+                // Selected runs have constant offsets. All their pointers,
+                // including slot zero, ascend in slot order.
+                sequences
+                    .push(Box::new(run.live_indexes_in(low, high).map(move |index| {
+                        (run.slot_pointer(index), run.value(index))
+                    })));
+                continue;
+            }
             // Element 0 is spelled as the base itself and every later element
             // as the base plus its shift, so the two are ascending apart.
             sequences.push(Box::new(
@@ -2881,7 +2975,7 @@ impl CellStore {
             visited += 1;
             let (decision, _) = run_rule(&run);
             let before = run.holes.clone();
-            run.keep_only(decision, &mut keeps_cell, &mut visited);
+            let _ = run.keep_only(decision, &mut keeps_cell, &mut visited);
             if run.holes != before {
                 blocks.insert(run.base().base.clone());
                 self.set_run(&key, Some(run));
@@ -2978,12 +3072,12 @@ impl CellStore {
             }
             let _ = answer;
             let before = run.holes.clone();
-            run.keep_only(decision, &mut keep, &mut visited);
-            if run.holes != before {
-                // Linear in the two hole interval counts, which the walk
-                // above already paid to build.
+            let newly_dropped = run
+                .keep_only(decision, &mut keep, &mut visited)
+                .or_else(|| (run.holes != before).then(|| run.holes.difference(&before)));
+            if let Some(elements) = newly_dropped.filter(|elements| elements.count() > 0) {
                 dropped.push(DroppedRunSlots {
-                    elements: run.holes.difference(&before),
+                    elements,
                     run: run.clone(),
                 });
                 updates.push((key, run));
@@ -3037,7 +3131,7 @@ impl CellStore {
                 });
             }
             let _ = answer;
-            run.keep_only(decision, &mut keep, &mut visited);
+            let _ = run.keep_only(decision, &mut keep, &mut visited);
             kept_runs.set_run(&key, Some(run));
         }
         if kept_runs.runs != self.runs {

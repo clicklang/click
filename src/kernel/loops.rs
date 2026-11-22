@@ -102,8 +102,7 @@ pub(super) fn assign_call_result(
             obligations,
             assumptions,
         )
-        .ok_or(RuntimeError::TypeMismatch)?
-        .with_pointer_pointee_volatile(pointee_volatile);
+        .ok_or(RuntimeError::TypeMismatch)?;
         value.retain_checked_pointer(converted).into()
     };
     if let Some(pointer) = state.locals.slot(target) {

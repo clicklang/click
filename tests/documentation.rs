@@ -1412,11 +1412,8 @@ fn tactic_form_inventory_is_bidirectional() {
         let matches_surface = |surface: &str| match form.id {
             "step" => surface == "`step()`",
             "apply-induction" => surface == "`apply(ih(m))`",
-            "apply-induction-using" => surface == "`apply(ih(m)) using { P; ... }`",
             "apply-fact" => surface == "`apply(fact)`",
-            "apply-fact-using" => surface == "`apply(fact) using { P; ... }`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
-            "apply-theorem-using" => surface == "`apply(theorem(args)) using { P; ... }`",
             "arithmetic" => surface == "`solve() using {}`",
             "normalize" => surface == "`normalize()`",
             "normalize-using" => surface == "`normalize() using { P; ... }`",

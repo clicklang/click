@@ -399,6 +399,7 @@ fn int32_widening_spelling(
             target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1504,6 +1505,7 @@ fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression
             target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1521,6 +1523,7 @@ fn native_uint32_split_operand(operand: ContractExpression) -> ContractExpressio
             target_type: crate::kernel::ProgramType::UInt32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1899,6 +1902,7 @@ impl<'a> Proof<'a> {
                                 target_type: crate::kernel::ProgramType::Int32,
                                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                                 pointee_struct: None,
+                                pointee_struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,
@@ -1984,6 +1988,7 @@ impl<'a> Proof<'a> {
                     target_type: view.format.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -3811,9 +3816,19 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
 }
 
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
-    let mut steps = vec![ProofStep::Known, ProofStep::Normalize];
-    // Without a proposition goal every candidate is refused alike; keep the
-    // complete list so the recorded refusals are unchanged.
+    let mut steps = vec![ProofStep::Known];
+    // These goals still rely on checked constructor reduction or byte-span
+    // containment. Keep their existing certificate until each has a closer.
+    if matches!(
+        goal,
+        Some(
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+                | Proposition::ResourceContains { .. }
+        )
+    ) {
+        steps.push(ProofStep::Normalize);
+    }
+    // Without a proposition goal, keep both candidate refusals in the trace.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
         steps.push(ProofStep::Enumerate);
     }
@@ -4358,6 +4373,7 @@ fn source_call_argument_surface(
         target_type: crate::kernel::ProgramType::Int32Pointer,
         integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
+        pointee_struct_size: _,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
@@ -4871,7 +4887,7 @@ fn initialized_byte_call_result(
     };
     let value = execution.core.state.step_result(*step)?;
     let pointer = value.pointer()?;
-    if pointer.program_type() != ProgramType::UInt8Pointer || pointer.pointee_volatile() {
+    if pointer.program_type() != ProgramType::UInt8Pointer {
         return None;
     }
     let region = context.constants.source_layout.step_region(*step)?;
