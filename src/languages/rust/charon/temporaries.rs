@@ -125,7 +125,10 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                 statement_uses(statement, &mut reads, &mut excluded);
                 matches!(
                     statement,
-                    S::Assert { .. } | S::Assign { .. } | S::SliceSplit { .. }
+                    S::Assert { .. }
+                        | S::Assign { .. }
+                        | S::Initialize { .. }
+                        | S::SliceSplit { .. }
                 )
             } else {
                 terminator_uses(&code.terminator, &mut reads, &mut excluded);

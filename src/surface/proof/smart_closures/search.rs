@@ -681,7 +681,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(proof));
         }
         if let Some(proof) =
-            Self::try_indexed_read_preservation(input, MAX_TRANSPORT_SOURCE_POINTS)?
+            Self::try_indexed_read_preservation(input, MAX_TRANSPORT_SOURCE_POINTS, false)?
         {
             return Ok(Some(proof));
         }
@@ -3561,6 +3561,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 search_input,
                 surface_goal,
                 introduced_surfaces,
+                false,
             )?
         {
             return Ok(Some(proof));
@@ -6351,8 +6352,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Introduce the index and its guard before framing this read. Reuse
         // the ordinary indexed equality proof rather than transporting the
         // entire quantified postcondition from function entry.
-        if search_input.focused_outcome_data().is_some()
-            && let ClickProposition::ForAll { body, .. } = surface_goal
+        if let ClickProposition::ForAll { body, .. } = surface_goal
             && let ClickProposition::Implies(_, consequent) = body.as_ref()
             && let ClickProposition::Comparison {
                 left: read @ ContractExpression::Index(..),
@@ -6360,6 +6360,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right: ContractExpression::Old(entry_read),
             } = consequent.as_ref()
             && read == entry_read.as_ref()
+            && (search_input.focused_outcome_data().is_some()
+                || search_input
+                    .execution_proposition_fixed_state_view()
+                    .is_some())
             && let Some(introduced) = attempt::candidate_outcome(
                 search_input
                     .driver()
@@ -6370,10 +6374,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if introduced.is_complete() {
                 return Ok(Some(introduced));
             }
-            if let Some(goal) = introduced.surface_goal()
+            if search_input.focused_outcome_data().is_some()
+                && let Some(goal) = introduced.surface_goal()
                 && let Some(source) = old_reflexive_transport_source(goal)
                 && let Some(proof) =
                     Self::try_history_indexed_equalities(&introduced, &source, goal)?
+            {
+                return Ok(Some(proof));
+            }
+            if let Some(proof) =
+                Self::try_indexed_read_preservation(&introduced, MAX_TRANSPORT_SOURCE_POINTS, true)?
+                && proof.is_complete()
             {
                 return Ok(Some(proof));
             }
@@ -7020,6 +7031,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_goal: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
+        indexed_read: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_resource_separation_restriction_closure");
@@ -7135,6 +7147,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     // Never recursively search for a larger separation here.
                     let closed = if index == 0 {
                         scope.driver().try_direct_logical_closure()?
+                    } else if indexed_read
+                        && let Some(step) = Self::indexed_containment_step(premise)
+                        && let Some(closed) =
+                            attempt::candidate_outcome(scope.driver().apply_step(step))?
+                    {
+                        Some(closed)
                     } else {
                         scope
                             .driver()

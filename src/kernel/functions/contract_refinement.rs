@@ -2,6 +2,50 @@
 
 use super::*;
 
+#[derive(Debug)]
+pub(crate) enum ContractRefinementPreparationError {
+    Unsupported(&'static str),
+    Incompatible(&'static str),
+    Evaluation {
+        clause: &'static str,
+        detail: Option<String>,
+    },
+    Stopped(ExecutionLimit),
+}
+
+impl From<ExecutionLimit> for ContractRefinementPreparationError {
+    fn from(limit: ExecutionLimit) -> Self {
+        Self::Stopped(limit)
+    }
+}
+
+impl ContractRefinementPreparationError {
+    pub(super) fn evaluating(clause: &'static str) -> Self {
+        Self::Evaluation {
+            clause,
+            detail: None,
+        }
+    }
+
+    fn evaluation_detail(clause: &'static str, detail: impl std::fmt::Display) -> Self {
+        Self::Evaluation {
+            clause,
+            detail: Some(detail.to_string()),
+        }
+    }
+}
+
+/// Automatic compatibility only needs the verdict. Preserve evaluator stops
+/// for callers that already distinguish them from ordinary incompatibility.
+fn compatibility(result: Result<(), ContractRefinementPreparationError>) -> ExecutionResult<bool> {
+    match result {
+        Ok(()) => Ok(true),
+        Err(ContractRefinementPreparationError::Stopped(limit)) => Err(limit),
+        Err(_) => Ok(false),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn compatible_resource_and_effect_interfaces(
     contract: &FunctionContractInterface,
     function: &FunctionContractInterface,
@@ -12,7 +56,30 @@ pub(super) fn compatible_resource_and_effect_interfaces(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
-    if !resource_transition_is_compatible(
+    compatibility(check_refinement_interfaces(
+        contract,
+        function,
+        contract_entry,
+        function_entry,
+        contract_post,
+        function_post,
+        assumptions,
+        budget,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn check_refinement_interfaces(
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
+    contract_post: &ExecutionState,
+    function_post: &ExecutionState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> Result<(), ContractRefinementPreparationError> {
+    if !exact_resource_interfaces_match(
         contract,
         function,
         contract_entry,
@@ -22,9 +89,18 @@ pub(super) fn compatible_resource_and_effect_interfaces(
         assumptions,
         budget,
     )? {
-        return Ok(false);
+        framed_resource_transition_refines(
+            contract,
+            function,
+            contract_entry,
+            function_entry,
+            contract_post,
+            function_post,
+            assumptions,
+            budget,
+        )?;
     }
-    mutable_footprint_is_compatible_for_interfaces(
+    check_refinement_write_ranges(
         contract,
         function,
         contract_entry,
@@ -180,41 +256,6 @@ pub(super) fn checked_access_mode_refinement_adapter(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn resource_transition_is_compatible(
-    contract: &FunctionContractInterface,
-    function: &FunctionContractInterface,
-    contract_entry: &ExecutionState,
-    function_entry: &ExecutionState,
-    contract_post: &ExecutionState,
-    function_post: &ExecutionState,
-    assumptions: &PureFactContext,
-    budget: &mut ExecutionBudget,
-) -> ExecutionResult<bool> {
-    if exact_resource_interfaces_match(
-        contract,
-        function,
-        contract_entry,
-        function_entry,
-        contract_post,
-        function_post,
-        assumptions,
-        budget,
-    )? {
-        return Ok(true);
-    }
-    framed_resource_transition_refines(
-        contract,
-        function,
-        contract_entry,
-        function_entry,
-        contract_post,
-        function_post,
-        assumptions,
-        budget,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
 pub(super) fn exact_resource_interfaces_match(
     contract: &FunctionContractInterface,
     function: &FunctionContractInterface,
@@ -329,19 +370,6 @@ pub(super) fn resource_spec_supports_framed_refinement(resource: &ResourceSpec) 
     )
 }
 
-pub(super) fn evaluate_refinement_resource_context(
-    state: &ExecutionState,
-    resources: &[ResourceSpec],
-    definitions: &[CompositeResourceDefinition],
-    assumptions: &PureFactContext,
-    budget: &mut ExecutionBudget,
-) -> ExecutionResult<Option<ResourceContext>> {
-    Ok(
-        (evaluate_function_resource_context(state, resources, definitions, assumptions, budget)?)
-            .ok(),
-    )
-}
-
 /// Checks that the named requirements can supply the concrete requirements,
 /// preserving everything the concrete transition only borrows or does not
 /// need as a frame. Then requires the concrete ensures together with that
@@ -350,7 +378,7 @@ pub(super) fn evaluate_refinement_resource_context(
 /// exact token and folded-composite identity, and scoped borrowing; no project
 /// functions, composite definitions, or unrelated proof state are inspected.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn framed_resource_transition_refines(
+fn framed_resource_transition_refines(
     contract: &FunctionContractInterface,
     function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
@@ -359,7 +387,8 @@ pub(super) fn framed_resource_transition_refines(
     function_post: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<bool> {
+) -> Result<(), ContractRefinementPreparationError> {
+    use ContractRefinementPreparationError::{Incompatible, Unsupported};
     if !contract
         .resource_requires()
         .iter()
@@ -368,48 +397,42 @@ pub(super) fn framed_resource_transition_refines(
         .chain(function.resource_ensures())
         .all(resource_spec_supports_framed_refinement)
     {
-        return Ok(false);
+        return Err(Unsupported(
+            "this refinement needs framing for a kind of resource Click cannot frame here",
+        ));
     }
-    let Some(contract_requires) = evaluate_refinement_resource_context(
+    let evaluate = |state, specs, definitions, clause, budget: &mut ExecutionBudget| {
+        evaluate_function_resource_context(state, specs, definitions, assumptions, budget)?
+            .map_err(|error| ContractRefinementPreparationError::evaluation_detail(clause, error))
+    };
+    let contract_requires = evaluate(
         contract_entry,
         contract.resource_requires(),
         contract.composite_resource_definitions(),
-        assumptions,
+        "the target contract's required resources",
         budget,
-    )?
-    else {
-        return Ok(false);
-    };
-    let Some(function_requires) = evaluate_refinement_resource_context(
+    )?;
+    let function_requires = evaluate(
         function_entry,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        assumptions,
+        "the source contract's required resources",
         budget,
-    )?
-    else {
-        return Ok(false);
-    };
-    let Some(function_ensures) = evaluate_refinement_resource_context(
+    )?;
+    let function_ensures = evaluate(
         function_post,
         function.resource_ensures(),
         function.composite_resource_definitions(),
-        assumptions,
+        "the source contract's returned resources",
         budget,
-    )?
-    else {
-        return Ok(false);
-    };
-    let Some(contract_ensures) = evaluate_refinement_resource_context(
+    )?;
+    let contract_ensures = evaluate(
         contract_post,
         contract.resource_ensures(),
         contract.composite_resource_definitions(),
-        assumptions,
+        "the target contract's returned resources",
         budget,
-    )?
-    else {
-        return Ok(false);
-    };
+    )?;
     if [
         &contract_requires,
         &function_requires,
@@ -419,29 +442,42 @@ pub(super) fn framed_resource_transition_refines(
     .into_iter()
     .any(|resources| !context_contains_only_refinable_resources(resources))
     {
-        return Ok(false);
+        return Err(Unsupported(
+            "this refinement needs framing for a resource quantity or access mode Click cannot frame here",
+        ));
     }
 
     let Some(frame) = contract_requires
         .clone()
         .without_facts(function_requires.facts(), assumptions)
     else {
-        return Ok(false);
+        return Err(Incompatible(
+            "the target contract does not supply the resources required by the source contract",
+        ));
     };
     let concrete_output = match frame.try_compose_with_facts_delaying_normalization(
         function_ensures.facts().iter().cloned(),
         assumptions,
     ) {
         Ok(resources) => resources,
-        Err(_) => return Ok(false),
+        Err(_) => {
+            return Err(Incompatible(
+                "the source contract's returned resources cannot be combined with the resources it leaves untouched",
+            ));
+        }
     };
-    Ok(resource_context_definitionally_contains(
+    if !resource_context_definitionally_contains(
         &concrete_output,
         &contract_ensures,
         &[],
         contract_post.memory(),
         assumptions,
-    ))
+    ) {
+        return Err(Incompatible(
+            "the source contract does not return the resources promised by the target contract",
+        ));
+    }
+    Ok(())
 }
 
 /// Checks that every range the implementation may write lies inside the
@@ -475,6 +511,24 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
+    compatibility(check_refinement_write_ranges(
+        contract,
+        function,
+        contract_entry,
+        function_entry,
+        assumptions,
+        budget,
+    ))
+}
+
+fn check_refinement_write_ranges(
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> Result<(), ContractRefinementPreparationError> {
     if !contract.resource_derived_mutable_frame()
         && !function.resource_derived_mutable_frame()
         && (contract
@@ -486,7 +540,7 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
                 .iter()
                 .any(|segment| segment.guard().is_some()))
     {
-        return explicit_refinement_effects_are_compatible(
+        return check_guarded_refinement_write_ranges(
             contract,
             function,
             contract_entry,
@@ -496,14 +550,23 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
         );
     }
     let contract_projection =
-        project_refinement_effects(contract, contract_entry, assumptions, budget)?;
+        project_refinement_effects(contract, contract_entry, assumptions, budget)?.map_err(
+            |reason| {
+                ContractRefinementPreparationError::evaluation_detail(
+                    "the target contract's permitted writes",
+                    reason,
+                )
+            },
+        )?;
     let function_projection =
-        project_refinement_effects(function, function_entry, assumptions, budget)?;
-    let (Ok(contract_projection), Ok(function_projection)) =
-        (contract_projection, function_projection)
-    else {
-        return Ok(false);
-    };
+        project_refinement_effects(function, function_entry, assumptions, budget)?.map_err(
+            |reason| {
+                ContractRefinementPreparationError::evaluation_detail(
+                    "the source contract's permitted writes",
+                    reason,
+                )
+            },
+        )?;
     // Range containment is indexed by memory family and element width before
     // the proof-sensitive endpoint check. This avoids comparing every
     // implementation range with every unrelated target range while retaining
@@ -516,14 +579,14 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
         .iter()
         .any(MemoryRange::is_unnamed_footprint)
     {
-        return Ok(true);
+        return Ok(());
     }
     if function_projection
         .ranges()
         .iter()
         .any(MemoryRange::is_unnamed_footprint)
     {
-        return Ok(false);
+        return Err(write_ranges_do_not_refine());
     }
     let mut available_by_family: BTreeMap<(AddressBase, u32), Vec<&MemoryRange>> = BTreeMap::new();
     for available in contract_projection.ranges() {
@@ -532,7 +595,7 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
             .or_default()
             .push(available);
     }
-    Ok(function_projection.ranges().iter().all(|required_range| {
+    if !function_projection.ranges().iter().all(|required_range| {
         if let Some(candidates) = available_by_family.get(&(
             required_range.base.base.clone(),
             required_range.element_width,
@@ -545,21 +608,31 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
                 memory_range_covers(available_range, required_range, assumptions)
             })
         }
-    }))
+    }) {
+        return Err(write_ranges_do_not_refine());
+    }
+    Ok(())
+}
+
+fn write_ranges_do_not_refine() -> ContractRefinementPreparationError {
+    ContractRefinementPreparationError::Incompatible(
+        "the target contract does not cover all writes permitted by the source contract",
+    )
 }
 
 /// Guarded explicit effects need one projection per implementation guard: the
 /// implementation's guard is the active path assumption, while a target guard
 /// must already be established on that path. Range lowering itself still goes
 /// through the shared projection evaluator.
-pub(super) fn explicit_refinement_effects_are_compatible(
+fn check_guarded_refinement_write_ranges(
     contract: &FunctionContractInterface,
     function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<bool> {
+) -> Result<(), ContractRefinementPreparationError> {
+    use ContractRefinementPreparationError as Refusal;
     let mut guard_assumptions = assumptions.clone();
     let Some(contract_guards) = lower_refinement_mutable_guards_for_interface(
         contract,
@@ -568,7 +641,9 @@ pub(super) fn explicit_refinement_effects_are_compatible(
         budget,
     )?
     else {
-        return Ok(false);
+        return Err(Refusal::evaluating(
+            "a guard on the target contract's writes",
+        ));
     };
     let Some(function_guards) = lower_refinement_mutable_guards_for_interface(
         function,
@@ -577,7 +652,9 @@ pub(super) fn explicit_refinement_effects_are_compatible(
         budget,
     )?
     else {
-        return Ok(false);
+        return Err(Refusal::evaluating(
+            "a guard on the source contract's writes",
+        ));
     };
     for (required_segment, required_guard) in
         function.contract_mutable().iter().zip(function_guards)
@@ -594,20 +671,21 @@ pub(super) fn explicit_refinement_effects_are_compatible(
         if let Some(guard) = required_guard {
             active_assumptions = active_assumptions.assume_proposition(guard);
         }
-        let Ok(required) = project_explicit_memory_segments(
+        let required = project_explicit_memory_segments(
             function_entry,
             std::slice::from_ref(required_segment),
             &active_assumptions,
             budget,
             true,
         )?
-        else {
-            return Ok(false);
-        };
+        .map_err(|reason| {
+            Refusal::evaluation_detail("a write range in the source contract", reason)
+        })?;
         let Some(required_range) = required.ranges.first() else {
-            return Ok(false);
+            return Err(Refusal::evaluating("a write range in the source contract"));
         };
         let mut covered = false;
+        let mut evaluation_failure = None;
         for (available_segment, available_guard) in
             contract.contract_mutable().iter().zip(&contract_guards)
         {
@@ -618,15 +696,18 @@ pub(super) fn explicit_refinement_effects_are_compatible(
             }
             let mut available_segment = available_segment.clone();
             available_segment.guard = None;
-            let Ok(available) = project_explicit_memory_segments(
+            let available = match project_explicit_memory_segments(
                 contract_entry,
                 std::slice::from_ref(&available_segment),
                 &active_assumptions,
                 budget,
                 true,
-            )?
-            else {
-                continue;
+            )? {
+                Ok(available) => available,
+                Err(reason) => {
+                    evaluation_failure.get_or_insert(reason);
+                    continue;
+                }
             };
             if available.ranges.iter().any(|available_range| {
                 memory_range_covers(available_range, required_range, &active_assumptions)
@@ -636,10 +717,15 @@ pub(super) fn explicit_refinement_effects_are_compatible(
             }
         }
         if !covered {
-            return Ok(false);
+            return Err(match evaluation_failure {
+                Some(reason) => {
+                    Refusal::evaluation_detail("a write range in the target contract", reason)
+                }
+                None => write_ranges_do_not_refine(),
+            });
         }
     }
-    Ok(true)
+    Ok(())
 }
 
 pub(super) fn project_refinement_effects(

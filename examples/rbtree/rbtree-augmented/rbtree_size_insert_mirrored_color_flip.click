@@ -298,5 +298,6 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     requires sized_mirrored_flip_pending(state.phase) == 1;
     ensures state.phase == sized_mirrored_flip_finish(old(state.phase));
 } by {
+    have separate(state, memory(augment->rotate)) by known();
     step(__rb_insert_augmented, { state: state });
 }

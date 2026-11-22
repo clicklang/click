@@ -1269,3 +1269,22 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     }
 }
 
+
+
+// Carries the typed parent and color across insertion's read-only prefix.
+resource sized_rotation_entry_word(node: struct rb_node*) {
+    field up: int32*;
+    field word: uint64;
+    field color: Color;
+    owns node->__rb_parent_color;
+    fact node->__rb_parent_color == word;
+    fact ((node->__rb_parent_color & ~3) as (struct rb_node*)) == up;
+    fact node->__rb_parent_color == address(up) + (node->__rb_parent_color & 1);
+    fact (node->__rb_parent_color & 1) == color_bit(color);
+}
+
+resource sized_rotation_saved_link(slot: struct rb_node**) {
+    field child: int32*;
+    owns *slot;
+    fact *slot == child;
+}

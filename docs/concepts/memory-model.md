@@ -90,7 +90,10 @@ expressions, and nonvolatile C loads can name a caller-supplied pointer cell
 at its verified function-entry point when the recorded effects preserve
 that cell. Its address, provenance, and bounds owner share that read identity.
 The same entry index names caller-supplied signed and unsigned 16-bit cells
-in logical reads, resource expressions, and nonvolatile C loads.
+in logical reads, resource expressions, and nonvolatile C loads. An integer
+read through a pointer loaded at entry can use that entry version when the
+pointer's own read names that entry and the recorded effects leave caller
+storage unchanged.
 
 A declared little-endian `uint32` can be read as four complete indexed byte
 reads. Each byte uses its own version. Click spells it with the bitwise OR
