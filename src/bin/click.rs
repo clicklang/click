@@ -63,6 +63,7 @@ fn report_error(message: String) -> ! {
         "execution refused",
         "termination not established",
         "invalid divergence declaration",
+        "unsupported",
         "unsupported proof",
         "unclassified verification refusal",
         "syntax error",
@@ -518,16 +519,28 @@ uint64 spell(const uint8* b, uint64 n) {
     }
 
     #[test]
-    fn verify_distinguishes_termination_from_an_invalid_divergence_declaration() {
+    fn verify_distinguishes_unsupported_callbacks_from_other_termination_failures() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
-        for (fixture, heading) in [
+        for (fixture, heading, detail) in [
             (
                 "termination_callback_self_application_rejected.md",
+                "unsupported:",
+                "`spin` can call through a function pointer",
+            ),
+            (
+                "termination_shadowed_callback_rejected.md",
                 "termination not established:",
+                "the recursive call to `spin` is ranked by no function-level `decreases` measure",
+            ),
+            (
+                "program_entry_requires_loop_termination_before_completion.md",
+                "termination not established:",
+                "loop 0 declares no `decreases` measure",
             ),
             (
                 "diverges_rejects_unjustified_marker.md",
                 "invalid divergence declaration:",
+                "remove the marker",
             ),
         ] {
             let report = entry([
@@ -536,7 +549,19 @@ uint64 spell(const uint8* b, uint64 n) {
             ])
             .unwrap_err();
             assert!(report.starts_with(heading), "{report}");
+            assert!(report.contains(detail), "{report}");
         }
+        let traced = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "program.termination".to_string(),
+            root.join("termination_callback_self_application_rejected.md")
+                .display()
+                .to_string(),
+        ])
+        .unwrap_err();
+        assert!(traced.starts_with("unsupported:"), "{traced}");
+        assert!(traced.contains("proof refusal:"), "{traced}");
     }
 
     #[test]
