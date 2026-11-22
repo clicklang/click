@@ -14,6 +14,7 @@ use std::sync::{Arc, Weak};
 use crate::kernel::MachineIntegerType;
 use crate::persistent::{PersistentMap, PersistentSet};
 
+use super::cell_version_intervals::CellVersionIntervals;
 use super::{
     Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, MemoryRange,
     ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory, intern_memory,
@@ -308,8 +309,14 @@ struct ArrayBlockVersions {
 struct ArrayBlockWrite {
     point: Weak<PointNode>,
     /// Bytes written since the entry anchor. None means this block had an
-    /// effect without a fixed scalar footprint, or diverging branch versions.
-    static_bytes: Option<PersistentSet<i64>>,
+    /// effect without a known footprint, or diverging branch versions.
+    static_writes: Option<StaticPointWrites>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct StaticPointWrites {
+    stores: PersistentSet<i64>,
+    calls: CellVersionIntervals<()>,
 }
 
 impl PartialEq for ArrayBlockWrite {
@@ -361,7 +368,7 @@ impl ArrayBlockVersions {
                         block.clone(),
                         ArrayBlockWrite {
                             point: joined.clone(),
-                            static_bytes: None,
+                            static_writes: None,
                         },
                     );
                 } else {
@@ -431,18 +438,26 @@ impl ArrayBlockVersions {
             self.writes.remove(block);
             return Some(());
         }
-        let mut record_object = |block: &AddressBase| {
+        let mut record_object = |block: &AddressBase, range: Option<&MemoryRange>| {
             if indexed_array_object(block) {
-                let static_bytes = self.static_entry.as_ref().and_then(|_| {
-                    let (pointer, extent) = step.single_write_extent()?;
-                    let span = super::static_cell_byte_span(pointer, extent.bytes()?)?;
+                let static_writes = self.static_entry.as_ref().and_then(|_| {
                     let mut written = match self.writes.get(block) {
-                        Some(prior) => prior.static_bytes.clone()?,
-                        None => PersistentSet::default(),
+                        Some(prior) => prior.static_writes.clone()?,
+                        None => StaticPointWrites::default(),
                     };
-                    for byte in span {
-                        crate::instrumentation::record_deterministic_work(1);
-                        written = written.with_value(byte);
+                    if let Some(range) = range {
+                        if !matches!(step, MemoryDerivation::CallHavoc { .. }) {
+                            return None;
+                        }
+                        let (span, _) = super::static_call_range(range)?;
+                        written.calls.write(span, ());
+                    } else {
+                        let (pointer, extent) = step.single_write_extent()?;
+                        let span = super::static_cell_byte_span(pointer, extent.bytes()?)?;
+                        for byte in span {
+                            crate::instrumentation::record_deterministic_work(1);
+                            written.stores = written.stores.with_value(byte);
+                        }
                     }
                     Some(written)
                 });
@@ -450,7 +465,7 @@ impl ArrayBlockVersions {
                     block.clone(),
                     ArrayBlockWrite {
                         point: point.clone(),
-                        static_bytes,
+                        static_writes,
                     },
                 );
                 true
@@ -459,11 +474,11 @@ impl ArrayBlockVersions {
             }
         };
         match effect {
-            BlockVersionEffect::Object(block, _) if record_object(block) => Some(()),
+            BlockVersionEffect::Object(block, _) if record_object(block, None) => Some(()),
             BlockVersionEffect::WriteSet(ranges)
                 if ranges.iter().all(|range| {
                     crate::instrumentation::record_deterministic_work(1);
-                    record_object(&range.base().base)
+                    record_object(&range.base().base, Some(range))
                 }) =>
             {
                 Some(())
@@ -1721,12 +1736,22 @@ impl ProgramPoint {
         }
         let versions = current.array_block_versions.as_ref()?;
         if let Some(write) = versions.writes.get(&pointer.base) {
-            let written = write.static_bytes.as_ref()?;
+            let written = write.static_writes.as_ref()?;
             let mut span = super::static_cell_byte_span(pointer, value_type.byte_width())?;
-            if span.any(|byte| {
-                crate::instrumentation::record_deterministic_work(1);
-                written.contains(&byte)
-            }) {
+            // Indexed call ranges have signed 32-bit byte endpoints. A
+            // fixed scalar offset can use the rest of the address space.
+            let limit = i64::from(i32::MAX);
+            let changed_by_call = span.start < limit
+                && written
+                    .calls
+                    .latest(span.start as u32..span.end.min(limit) as u32)
+                    .is_some();
+            if changed_by_call
+                || span.any(|byte| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    written.stores.contains(&byte)
+                })
+            {
                 return None;
             }
         }
