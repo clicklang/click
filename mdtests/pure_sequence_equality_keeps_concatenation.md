@@ -4,7 +4,7 @@
 theorem keeps_concatenation(a: int32, b: int32) {
     ensures forall (unused: Integer) {
         [] ++ [a] ++ [b] == [a, b] ++ []
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem keeps_rewritten_concatenation(a: int32, b: int32) {
