@@ -6950,10 +6950,14 @@ impl AnnotationLowerer<'_> {
                         if *target_type == ProgramType::UInt8Pointer
                             && pointee_struct.is_none()
                             && *integer_mode != crate::kernel::IntegerCastMode::PointerCoercion
+                            // A `void *` operand converts to the byte view as
+                            // the C conversion does (C11 6.3.2.3p7).
                             && !matches!(
                                 self.contract_expression_click_type(operand, environment),
                                 Some(ClickType::Program(
-                                    InterfaceType::Int64(_) | InterfaceType::UInt64(_)
+                                    InterfaceType::Int64(_)
+                                        | InterfaceType::UInt64(_)
+                                        | InterfaceType::VoidPointer
                                 ))
                             )
                             && !self

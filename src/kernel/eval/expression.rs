@@ -2060,11 +2060,13 @@ fn evaluate_program_cast_paths(
                         {
                             // Of C's implicit pointer conversions, only one
                             // from `void *` reaches a character pointer, and
-                            // it forms the byte view as a written one does,
-                            // as does a contract's coercion from `void *`.
-                            // Other retypes keep the value.
+                            // it forms the byte view as a written one does.
+                            // A coercion lowering inserts is a retype that
+                            // keeps the value.
                             Ok(ProgramValue::Pointer(
-                                if pointer.program_type() == ProgramType::VoidPointer {
+                                if implicit_pointer_conversion
+                                    && pointer.program_type() == ProgramType::VoidPointer
+                                {
                                     cast_pointer_value(pointer, target_type)
                                 } else {
                                     pointer.with_type(target_type)

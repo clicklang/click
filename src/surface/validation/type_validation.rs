@@ -4307,8 +4307,11 @@ fn validate_pointer_cast_operands(
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
                 if *target_type == ProgramType::UInt8Pointer && pointee_struct.is_none() {
+                    // A `void *` operand converts to the byte view as the C
+                    // conversion does (C11 6.3.2.3p7).
                     let actual = infer_program_expression_type(operand, variables);
                     if actual.is_some()
+                        && actual != Some(InterfaceType::VoidPointer)
                         && !actual.is_some_and(|ty| {
                             ty.to_kernel_type().pointee_type().is_some_and(|element| {
                                 !element.is_pointer() && element.byte_width() > 0

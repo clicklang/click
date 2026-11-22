@@ -15215,11 +15215,6 @@ impl Parser {
                 "contract expression",
             )?;
         }
-        let recover_byte_view = target_type == ProgramType::UInt8Pointer
-            && crate::surface::validation::infer_program_expression_type(
-                &expression,
-                &self.names.program_parameter_types,
-            ) == Some(InterfaceType::VoidPointer);
         Ok(ContractExpression::CUnary {
             operand: Box::new(operand),
             lowered: ProgramExpression::Cast {
@@ -15227,11 +15222,10 @@ impl Parser {
                 target_type,
                 // This cast was written in the contract. Pointer targets
                 // use the specification cast rule, not the C conversion
-                // marker also used for inserted pointer coercions. A byte
-                // view recovered from void retains that pointer's bounds.
-                integer_mode: if recover_byte_view {
-                    crate::kernel::IntegerCastMode::PointerCoercion
-                } else if target_type.is_pointer() {
+                // marker also used for inserted pointer coercions, so a
+                // byte pointer cast from `void *` forms the byte view as
+                // the C conversion does (C11 6.3.2.3p7).
+                integer_mode: if target_type.is_pointer() {
                     crate::kernel::IntegerCastMode::Standard
                 } else {
                     crate::kernel::IntegerCastMode::CConversion
