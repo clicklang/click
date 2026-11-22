@@ -19398,7 +19398,6 @@ fn resource_clause_supply_with_fact(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> (ResourceContext, Vec<ResourceFact>) {
-    let memory = state.memory();
     let mut added = Vec::new();
     if !supply.facts().contains(&fact) {
         supply = supply.unchecked_with_fact(fact.clone());
@@ -19428,6 +19427,7 @@ fn resource_clause_supply_with_fact(
             added.push(view);
         }
     }
+    let at = state.program_point();
     let mut pending = VecDeque::from([fact]);
     let mut seen = BTreeSet::new();
     while let Some(composite) = pending.pop_front() {
@@ -19439,7 +19439,7 @@ fn resource_clause_supply_with_fact(
             &expansion_context,
             &composite,
             definitions,
-            &crate::kernel::ProgramPoint::of_memory(memory),
+            &at,
             assumptions,
         ) else {
             continue;
