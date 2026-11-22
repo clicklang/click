@@ -415,8 +415,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 );
                 for leaf in &leaves {
                     if let Some(next) =
-                        crate::kernel::search::ProofSearch::retain_statement_order_bounds(
-                            &frontier, leaf,
+                        crate::kernel::search::ProofSearch::retain_signed_order_bounds(
+                            &frontier, leaf, 3,
                         )
                     {
                         frontier = next;

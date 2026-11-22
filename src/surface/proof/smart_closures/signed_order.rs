@@ -196,15 +196,16 @@ fn retain_bounds<'a>(
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
-    pub(in crate::surface::proof) fn retain_statement_order_bounds(
+    pub(in crate::surface::proof) fn retain_signed_order_bounds(
         frontier: &Proof<'a>,
         goal: &ClickProposition,
+        minimum_edges: usize,
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("retain_statement_order_bounds");
+        crate::kernel::search::record_discovery("retain_signed_order_bounds");
         Link::from_surface(goal)?;
         let kernel = frontier
-            .lower_surface_proposition(goal, "statement order bound")
+            .lower_surface_proposition(goal, "signed order bound")
             .ok()?;
         if frontier.facts().contains(&kernel) {
             return None;
@@ -213,7 +214,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             frontier.facts().assumptions(),
             &kernel,
         )?;
-        if path.len() <= 2 {
+        if path.len() < minimum_edges {
             return None;
         }
         let premises = Self::resolve_solve_premises_unmeasured(frontier, &path, &[])?
