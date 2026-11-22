@@ -8328,7 +8328,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 } else {
                     None
                 };
-                let observation = (!*exact && crate::kernel::eval::typed_reads::is_active())
+                let observation = crate::kernel::eval::typed_reads::is_active()
                     .then(|| (read_point(), pointer.clone()));
                 let retain_pointer = value_type.is_pointer() && (*exact || version.is_some());
                 let read_paths = if let Some(version) = version {
