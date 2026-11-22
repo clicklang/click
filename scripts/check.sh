@@ -150,16 +150,17 @@ fi
 # fact and goal round-trips through Surface) and fact-stability (lowering
 # does not depend on facts), over the examples and mdtests. Each is a job of
 # the nightly workflow, not part of the budgeted gate. `--audit` alone runs
-# all three; `--audit <audit>` runs one.
+# all three; `--audit <audit>` runs one. `--audit legacy-walk` counts the
+# reads still named by the legacy version walk; it runs only when named.
 if [[ "${1:-}" == "--audit" ]]; then
     audit="${2:-}"
     # The expansion audit continues past a failure and paces its run.
     expansion_options=(--keep-going --time-limit 180m)
     case "$audit" in
         "" | expansion) exec scripts/audit.sh $audit . "${expansion_options[@]}" ;;
-        raise-lower | fact-stability) exec scripts/audit.sh "$audit" . ;;
+        raise-lower | fact-stability | legacy-walk) exec scripts/audit.sh "$audit" . ;;
         *)
-            echo "error: unknown audit \`$audit\`; expected expansion, raise-lower or fact-stability" >&2
+            echo "error: unknown audit \`$audit\`; expected expansion, raise-lower, fact-stability or legacy-walk" >&2
             exit 2
             ;;
     esac

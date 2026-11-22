@@ -578,3 +578,54 @@ fn cold_static_array_versions_ignore_disjoint_call_history() {
         assert_eq!(work, size, "one cold lookup for each of {size} arrays");
     }
 }
+
+/// The legacy naming walk's cost for a cell no store wrote is the stores
+/// into its block since that block's last version: the block-prefix jump
+/// stops at the first of them, and the memo is keyed by the cell. Reading a
+/// fresh cell after each of `n` stores into one block therefore costs
+/// quadratic work in total. Program-point versions replace this walk
+/// (`roadmap/smart-tactics.md`, "Program-point memory migration"); a step
+/// must not depend on it. This records the growth so that deleting the walk
+/// deletes this test, and a change that hides the growth while keeping the
+/// walk fails here.
+#[test]
+fn legacy_walk_naming_of_fresh_cells_still_grows_with_same_block_stores() {
+    for base in [
+        AddressBase::ExternalArgument,
+        block("local:f:buffer"),
+        AddressBase::Heap(77),
+    ] {
+        let samples = [16usize, 32, 64, 128].map(|size| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut memory = entry_memory();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 0..size {
+                    memory = memory
+                        .clone()
+                        .store(at(base.clone(), index as i64 * 4), one());
+                    let fresh = at(base.clone(), (size + index) as i64 * 4);
+                    let version = last_same_version_point(
+                        TrackedResource::Cell {
+                            pointer: &fresh,
+                            bytes: crate::kernel::AccessExtent::from(4),
+                        },
+                        &point(&memory),
+                    );
+                    assert!(version.is_some());
+                }
+            });
+            work
+        });
+        // Per doubling, n log n grows by a falling factor (2.5, 2.4, 2.33
+        // from 16); quadratic work grows by a factor rising toward 4.
+        let growth = samples
+            .windows(2)
+            .map(|pair| pair[1] as f64 / pair[0] as f64)
+            .collect::<Vec<_>>();
+        assert!(
+            growth.windows(2).all(|pair| pair[1] > pair[0]) && growth[2] > 3.0,
+            "{base:?}: the legacy walk no longer grows with same-block stores: \
+             {samples:?}, growth {growth:?}"
+        );
+    }
+}
