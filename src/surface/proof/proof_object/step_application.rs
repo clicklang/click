@@ -1120,10 +1120,9 @@ impl<'a> Proof<'a> {
         let mut machine_binding = None;
         let mut algebraic_binding = None;
         let mut antecedent_spelling = None;
-        let written_negation = matches!(self.surface_goal(), Some(ClickProposition::Not(_)));
         let state = self
             .state
-            .apply_intro_opening(|current, introduction, introduced| {
+            .apply_intro(|current, introduction, introduced| {
                 let mut surface_bindings = current.surface_bindings.clone();
                 let mut introduced_antecedents = current.introduced_antecedents.clone();
                 let renamed_recorded = match (rename.as_ref(), current.introductions.head()) {
@@ -1398,11 +1397,6 @@ impl<'a> Proof<'a> {
                             body.clone(),
                         )))
                     }
-                    // A negation's body becomes a fact and the goal `false`,
-                    // spelled so a later step that closes it can be retained.
-                    (_, PropositionIntroduction::Negation, _) => Some(Arc::new(
-                        ClickProposition::Value(crate::surface::bool_literal(false)),
-                    )),
                     _ => None,
                 };
                 PropositionPresentation {
@@ -1414,13 +1408,13 @@ impl<'a> Proof<'a> {
                     witness_refinement_kernel: current.witness_refinement_kernel.clone(),
                     generated_surface: current.generated_surface,
                 }
-            }, written_negation)
+            })
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
                     self.step_error("`intro` requires a proposition goal")
                 }
                 PropositionCloseError::ExpectedIntroduction(goal) => self.step_error(format!(
-                    "`intro` requires an implication, negation, or universal goal, got {}",
+                    "`intro` requires an implication or universal goal, got {}",
                     describe_known_goal(&goal)
                 )),
                 PropositionCloseError::IntegerFresheningExhausted => {

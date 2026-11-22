@@ -786,7 +786,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // would also capture an unused memory-history diagnostic.
             if !matches!(
                 proof.goal(),
-                Some(Proposition::Implies(..) | Proposition::ForAll { .. } | Proposition::Not(_))
+                Some(Proposition::Implies(..) | Proposition::ForAll { .. })
             ) {
                 return Ok(None);
             }

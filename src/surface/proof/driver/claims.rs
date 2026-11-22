@@ -3557,6 +3557,7 @@ fn opens_outcome_claim_scope(tactic: &ProofTactic) -> bool {
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
             | ProofTactic::IntroBinder(_)
+            | ProofTactic::IntroBlock { .. }
     )
 }
 
@@ -4603,26 +4604,54 @@ pub(super) fn finish_ordered_proof<'a>(
                                         }
                                     }
                                 };
-                                let step = SourceContext::PostExecution
-                                    .leaf_step(tactic)
-                                    .expect("a post-execution leaf converts to its checked step");
                                 let refreshed = opened
                                     .proof
                                     .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
                                 let before = refreshed.checkpoint();
-                                let proof = refreshed.driver().apply_step(step)?;
+                                let proof = if let ProofTactic::IntroBlock { binder, body } = tactic
+                                {
+                                    refreshed.driver().apply_scoped_intro(
+                                        binder.as_ref(),
+                                        body,
+                                        !implicit_solve_disabled(),
+                                    )?
+                                } else {
+                                    let step =
+                                        SourceContext::PostExecution.leaf_step(tactic).expect(
+                                            "a post-execution leaf converts to its checked step",
+                                        );
+                                    refreshed.driver().apply_step(step)?
+                                };
                                 let certificate = proof.certificate_since(&before)?;
-                                let introduces_scope = opened.introduces_scope
-                                    || matches!(
-                                        tactic,
-                                        ProofTactic::Intro
-                                            | ProofTactic::IntroAs(_)
-                                            | ProofTactic::IntroBinder(_)
-                                    );
-                                opened_claim = Some(OpenedClaimProof {
-                                    introduces_scope,
-                                    ..opened.with_proof(proof)
-                                });
+                                if matches!(tactic, ProofTactic::IntroBlock { .. }) {
+                                    let claim_index = opened.claim_index;
+                                    record_claim_closure(
+                                        &mut outcome_proof,
+                                        &mut closures,
+                                        claims,
+                                        &completed_execution,
+                                        path_index,
+                                        claim_index,
+                                        ClaimClosure::by_continued_proposition(
+                                            claims[claim_index].key(),
+                                            path_index,
+                                            Vec::new(),
+                                            proof.completed_proposition()?,
+                                        ),
+                                    )?;
+                                } else {
+                                    let introduces_scope = opened.introduces_scope
+                                        || matches!(
+                                            tactic,
+                                            ProofTactic::Intro
+                                                | ProofTactic::IntroAs(_)
+                                                | ProofTactic::IntroBinder(_)
+                                        );
+                                    opened_claim = Some(OpenedClaimProof {
+                                        introduces_scope,
+                                        ..opened.with_proof(proof)
+                                    });
+                                }
                                 for tactic in certificate.to_proof_tactics() {
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,

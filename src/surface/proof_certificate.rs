@@ -126,6 +126,10 @@ pub enum ProofStep {
     Intro,
     IntroAs(String),
     IntroBinder(SurfaceBinder),
+    IntroBlock {
+        binder: Option<SurfaceBinder>,
+        body: Box<ProofCertificate>,
+    },
     Enumerate,
     Contradiction(ClickProposition),
     Rewrite(ClickProposition),
@@ -213,6 +217,7 @@ pub enum CertificatePathSegment {
     LoopPreserve,
     LoopOtherwise,
     StepBody,
+    IntroBody,
     StepRequirement(usize),
 }
 
@@ -438,6 +443,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                     }
                 }
                 ProofStep::CloseInvariantsBy(proof)
+                | ProofStep::IntroBlock { body: proof, .. }
                 | ProofStep::Have { proof, .. }
                 | ProofStep::Open { proof, .. } => pending.extend(proof.steps.iter()),
                 ProofStep::StepProved { step, proof } => {
@@ -605,6 +611,12 @@ impl ProofStep {
             ProofTactic::CloseInvariants => {
                 unreachable!("bare invariant closure is smart")
             }
+            ProofTactic::IntroBlock { binder, body } => Self::IntroBlock {
+                binder: binder.clone(),
+                body: Box::new(ProofCertificate::from_validated_steps(
+                    body.iter().map(Self::from_validated_tactic).collect(),
+                )),
+            },
             ProofTactic::Have(proof_have) => Self::Have {
                 proposition: proof_have.proposition.clone(),
                 proof: Box::new(ProofCertificate::from_validated_proof(&proof_have.proof)),
@@ -974,6 +986,10 @@ impl ProofStep {
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
 
+            Self::IntroBlock { binder, body } => ProofTactic::IntroBlock {
+                binder: binder.clone(),
+                body: body.to_proof_tactics(),
+            },
             Self::Intro => ProofTactic::Intro,
             Self::IntroAs(name) => ProofTactic::IntroAs(name.clone()),
             Self::IntroBinder(name) => ProofTactic::IntroBinder(name.clone()),
@@ -1147,6 +1163,7 @@ impl CertificateError {
                 CertificatePathSegment::LoopInitialize => "loop `initialize`".to_string(),
                 CertificatePathSegment::LoopPreserve => "loop `maintain`".to_string(),
                 CertificatePathSegment::LoopOtherwise => "loop `otherwise`".to_string(),
+                CertificatePathSegment::IntroBody => "intro body".to_string(),
                 CertificatePathSegment::StepBody => "step `by` body".to_string(),
                 CertificatePathSegment::StepRequirement(index) => {
                     format!("step `requires` entry {index}")
@@ -1226,6 +1243,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_) => {
             TacticClass::Simple(SimpleTactic::Intro)
         }
+        ProofStep::IntroBlock { .. } => TacticClass::Control(ControlTactic::Intro),
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
@@ -1333,6 +1351,15 @@ pub(super) fn validate_certificate_tactics(
                     result
                 }
                 TacticClass::Simple(_) => Ok(()),
+                TacticClass::Control(ControlTactic::Intro) => {
+                    let ProofTactic::IntroBlock { body, .. } = tactic else {
+                        unreachable!()
+                    };
+                    path.push(CertificatePathSegment::IntroBody);
+                    let result = validate_certificate_tactics(body, path);
+                    path.pop();
+                    result
+                }
                 TacticClass::Control(ControlTactic::StepProofs) => {
                     let ProofTactic::StepProved { proof, .. } = tactic else {
                         unreachable!("tactic class and variant must agree")

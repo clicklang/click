@@ -6246,6 +6246,10 @@ pub enum ProofTactic {
     /// name the proof chooses instead of the one the proposition wrote.
     IntroAs(String),
     IntroBinder(SurfaceBinder),
+    IntroBlock {
+        binder: Option<SurfaceBinder>,
+        body: Vec<ProofTactic>,
+    },
     Enumerate,
     Contradiction(ClickProposition),
     CloseInvariants,
@@ -6407,6 +6411,7 @@ pub enum SmartSite {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControlTactic {
+    Intro,
     Match,
     CloseInvariants,
     /// A `step` with proofs of its open obligations.
@@ -6772,6 +6777,7 @@ impl ProofTactic {
                     .collect(),
             },
             Self::Have(have) => vec![Obligation(Source(&have.proof))],
+            Self::IntroBlock { body, .. } => vec![Obligation(Script(body))],
             Self::Open(open) => vec![Continuing(Script(&open.tactics))],
             Self::If(proof_if) => vec![
                 Continuing(Script(&proof_if.then_tactics)),
@@ -6875,6 +6881,7 @@ impl ProofTactic {
             Self::Solve | Self::SolveUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
             Self::ImplicitSolve => TacticClass::Smart(SmartSite::Implicit),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
+            Self::IntroBlock { .. } => TacticClass::Control(ControlTactic::Intro),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
             Self::If(_) => TacticClass::Control(ControlTactic::If),
             Self::Match(_) => TacticClass::Control(ControlTactic::Match),

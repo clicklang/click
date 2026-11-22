@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn scoped_introduction_replays_after_expansion() {
+    let (source, program) = mdtest_sources("mdtests/scoped_intro.md");
+    let program = crate::cli::source_refs(&program);
+    for (claim, intro) in [
+        ("scoped_implication.ensures_0", "intro(k) {"),
+        ("scoped_claim.contract", "intro() {"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains(intro), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn exposed_resource_paths_replay_after_expansion() {
     for (fixture, claim) in [
         ("mdtests/exposed_child_paths.md", "by_unfold.contract"),

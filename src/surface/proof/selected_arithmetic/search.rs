@@ -272,10 +272,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Some((kernel, surface))
     }
 
-    /// Close a disequality goal `a != b` by refuting `a == b`: `intro()`
-    /// adds the equality and leaves `false`, which `arithmetic` proves from
-    /// the listed premises and the equality. `None` when the goal is not an
-    /// integer disequality.
+    /// Refute the equality in one arm of a proof-level split. The other arm
+    /// has the requested disequality as a fact.
     pub(in crate::surface::proof) fn disequality_by_refutation(
         search_input: &Proof<'a>,
         premises: &[ClickProposition],
@@ -284,17 +282,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("disequality_by_refutation");
         let (_, equality) =
             crate::kernel::search::ProofSearch::disequality_goal_equality(search_input)?;
-        let introduced = match search_input.driver().apply_step(ProofStep::Intro) {
-            Ok(introduced) => introduced,
-            Err(error) => return Some(Err(error)),
-        };
         let mut listed = premises.to_vec();
-        listed.push(equality);
-        Some(
-            introduced
+        listed.push(equality.clone());
+        Some((|| {
+            let (split_proof, split, ids) = search_input.split_focused_if(equality.clone())?;
+            let marker = split_proof.checkpoint();
+            let equal_arm = split_proof.focus_branch(ids[0])?;
+            let falsehood = ClickProposition::Value(crate::surface::bool_literal(false));
+            let refuted_scope = equal_arm.driver().open_have(falsehood.clone())?;
+            let refuted = refuted_scope
                 .driver()
-                .apply_step(ProofStep::ArithmeticUsing(listed)),
-        )
+                .apply_step(ProofStep::ArithmeticUsing(listed))?
+                .join()?;
+            let equal_done = refuted
+                .driver()
+                .apply_step(ProofStep::Contradiction(falsehood))?;
+            let unequal_done = equal_done
+                .focus_branch(ids[1])?
+                .driver()
+                .apply_step(ProofStep::Known)?;
+            unequal_done.join_focused_if(&marker, split, ids, equality)
+        })())
     }
 
     /// `solve`'s route for a disequality goal `a != b`: a linear refutation

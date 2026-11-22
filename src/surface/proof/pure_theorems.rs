@@ -585,6 +585,7 @@ fn prepare_pure_induction_tactics(
                     parameter,
                     hypothesis,
                 } => found.push((parameter, hypothesis)),
+                ProofTactic::IntroBlock { body, .. } => declarations(body, found),
                 ProofTactic::If(proof_if) => {
                     declarations(&proof_if.then_tactics, found);
                     declarations(&proof_if.else_tactics, found);
@@ -678,6 +679,10 @@ fn prepare_pure_induction_tactics(
                         arguments: application.arguments.clone(),
                     })
                 }
+                ProofTactic::IntroBlock { binder, body } => Ok(ProofTactic::IntroBlock {
+                    binder: binder.clone(),
+                    body: transform(body, hypothesis, structural, active)?,
+                }),
                 ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                     condition: proof_if.condition.clone(),
                     ensuring: proof_if.ensuring.clone(),

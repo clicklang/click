@@ -11769,6 +11769,40 @@ impl Parser {
         })
     }
 
+    fn parse_intro_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        if self.peek() != Some(&Token::LParen) {
+            return Err(self.error("`intro` requires parentheses; write `intro()`"));
+        }
+        self.expect(Token::LParen)?;
+        let binder = if self.peek() == Some(&Token::RParen) {
+            None
+        } else {
+            Some(self.expect_surface_binder("introduced variable")?)
+        };
+        self.expect(Token::RParen)?;
+        if binder.is_none() && self.peek() != Some(&Token::LBrace) {
+            if self.peek_ident() == Some("as") {
+                return Err(self.error("write `intro(name) { ... }` to introduce a named binder"));
+            }
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::Intro);
+        }
+        let scope = self.names.scope();
+        let old_names = self.names.take(NameKind::ProofBinder);
+        let body = (|| {
+            if let Some(name) = binder.as_ref() {
+                self.named_intro(name.clone())?;
+            }
+            self.parse_possibly_empty_tactic_block()
+        })();
+        self.names.end(scope);
+        self.names.replace(NameKind::ProofBinder, old_names);
+        Ok(ProofTactic::IntroBlock {
+            binder,
+            body: body?,
+        })
+    }
+
     // Keep the large leaf-tactic dispatch frame out of recursive proof-body
     // parsing. Expanded both/if/closure scopes can nest while reading terms.
     #[inline(never)]
@@ -12055,13 +12089,7 @@ impl Parser {
                 };
                 ProofTactic::Preserve(separation)
             }
-            "intro" => {
-                self.expect_empty_tactic_args(&name)?;
-                if self.peek_ident() == Some("as") {
-                    return Err(self.error("`intro() as name` is now `let name = intro();`"));
-                }
-                ProofTactic::Intro
-            }
+            "intro" => return self.parse_intro_tactic(),
             "split" | "left" | "right" => {
                 return Err(self.error(format!(
                     "`{name}()` is now `known()`, which closes a conjunction whose sides are facts and a disjunction with one side a fact"
