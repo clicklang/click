@@ -34,16 +34,9 @@ uint8 last(const uint8* p, uint64 n, uint64 k) {
     have to_integer(k + 4u64) <= to_integer(n);
     have viewable(p[k..k + 4u64]) by {
         have contains(memory(p[0u64..n]), memory(p[k..k + 4u64])) by {
-            apply(click::separation::contains_subrange(p, 0u64, n, k, k + 4u64)) using {
-                0u64 <= k;
-                to_integer(k) <= to_integer(k + 4u64);
-                to_integer(k + 4u64) <= to_integer(n);
-            };
+            apply(click::separation::contains_subrange(p, 0u64, n, k, k + 4u64));
         }
-        apply(click::separation::viewable_restrict(memory(p[0u64..n]), memory(p[k..k + 4u64]))) using {
-            viewable(p[0..n]);
-            contains(memory(p[0u64..n]), memory(p[k..k + 4u64]));
-        };
+        apply(click::separation::viewable_restrict(memory(p[0u64..n]), memory(p[k..k + 4u64])));
     }
     step();
     step();

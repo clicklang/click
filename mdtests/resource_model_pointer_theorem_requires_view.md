@@ -34,7 +34,7 @@ void keep(const uint8* p, int32 i) {
  match h.model {
   Link::Node(q) => {
    unfold(h);
-   have viewable(q[0..4]) by { apply(readable_byte_pointer(q)) using {}; }
+   have viewable(q[0..4]) by { apply(readable_byte_pointer(q)); }
    let h = fold(Cell(p, i), { model: Link::Node(q) });
   },
  }

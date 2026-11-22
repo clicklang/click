@@ -160,7 +160,11 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             path_index,
             tactic_index,
             available,
-            evidence_assumptions(),
+            if preparing_application() {
+                lowering_assumptions
+            } else {
+                evidence_assumptions()
+            },
             context,
             spec_definitions,
         );
@@ -562,20 +566,24 @@ fn instantiate_integer_range_fold_theorem_application(
             application.arguments.len()
         )));
     }
-    let fold = capture_fixed_state_integer_expression(
-        &application.arguments[0],
-        context.integer_values,
-        assumptions,
-        ContractEnvironment::new(context.values, context.array_refs)
-            .with_parameters(context.parameters),
-        FixedStateFrame::new(
-            context.pre_state,
-            context.post_state,
-            context.result,
-            context.recorded_states,
-        ),
-        spec_definitions,
-    )
+    // The fold law substitutes the captured body at a new index. Check the
+    // body's scoped evaluation conditions before using that captured term.
+    let fold = with_application_preparation_mode(false, || {
+        capture_fixed_state_integer_expression(
+            &application.arguments[0],
+            context.integer_values,
+            assumptions,
+            ContractEnvironment::new(context.values, context.array_refs)
+                .with_parameters(context.parameters),
+            FixedStateFrame::new(
+                context.pre_state,
+                context.post_state,
+                context.result,
+                context.recorded_states,
+            ),
+            spec_definitions,
+        )
+    })
     .map_err(|message| {
         // The capture refusal already names which written subterm of the fold
         // carries the undischarged condition, or says that the argument did
@@ -1581,13 +1589,13 @@ mod observed_integer_argument_tests {
             theorem reverse_requirement(a: Integer, b: Integer) {
                 requires b == a;
                 ensures a == b by {
-                    apply(equal_arguments(a, b)) using { b == a; }
+                    apply(equal_arguments(a, b));
                 }
             }
             theorem reverse_citation(a: Integer, b: Integer) {
                 requires b == a;
                 ensures a == b by {
-                    apply(equal_arguments(a, b)) using { a == b; }
+                    apply(equal_arguments(a, b));
                 }
             }
             theorem reverse_transport(a: Integer, b: Integer) {
@@ -1599,9 +1607,7 @@ mod observed_integer_argument_tests {
             theorem reverse_observations(a: uint32, b: uint32) {
                 requires to_integer(b) == to_integer(a);
                 ensures to_integer(a) == to_integer(b) by {
-                    apply(equal_arguments(to_integer(a), to_integer(b))) using {
-                        to_integer(b) == to_integer(a);
-                    }
+                    apply(equal_arguments(to_integer(a), to_integer(b)));
                 }
             }
         "#;
@@ -1653,11 +1659,6 @@ mod observed_integer_argument_tests {
         assert!(!expanded.contains("have "), "{expanded}");
         crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         assert!(verify_c_sources(&source.replace("requires x < 10;", ""), &[]).is_err());
-        let explicit_without_guard = source.replace(
-            "apply(identity(x + 1));",
-            "apply(identity(x + 1)) using {}; ",
-        );
-        assert!(verify_c_sources(&explicit_without_guard, &[]).is_err());
     }
 
     #[test]

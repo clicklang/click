@@ -5848,13 +5848,8 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
     requires x <= 18446744073709551615u64 / y;
     ensures result == x * y;
 } by {
-    apply(usize::product_bound_from_division(x, y)) using {
-        y != 0u64;
-        x <= 18446744073709551615u64 / y;
-    };
-    apply(usize::multiply_to_integer(x, y)) using {
-        to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64);
-    };
+    apply(usize::product_bound_from_division(x, y));
+    apply(usize::multiply_to_integer(x, y));
     step_until(function.exit); solve();
 }"#,
     );

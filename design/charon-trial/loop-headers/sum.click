@@ -37,14 +37,10 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have 0 <= to_integer(((i as uint32) as int32)) by {
-                apply(integer::int32_less_equal_to_integer(0, ((i as uint32) as int32))) using {
-                    0 <= ((i as uint32) as int32);
-                }
+                apply(integer::int32_less_equal_to_integer(0, ((i as uint32) as int32)));
             }
             have to_integer(((i as uint32) as int32)) <= 1000 by {
-                apply(integer::int32_less_equal_to_integer(((i as uint32) as int32), 1000)) using {
-                    1000 >= ((i as uint32) as int32);
-                }
+                apply(integer::int32_less_equal_to_integer(((i as uint32) as int32), 1000));
             }
             have to_integer(total) <= 255000 by {
                 solve() using {
@@ -77,14 +73,10 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have 0 <= to_integer((bytes[((i as uint32) as int32)] as int32)) by {
-                apply(integer::int32_less_equal_to_integer(0, (bytes[((i as uint32) as int32)] as int32))) using {
-                    0 <= (bytes[((i as uint32) as int32)] as int32);
-                }
+                apply(integer::int32_less_equal_to_integer(0, (bytes[((i as uint32) as int32)] as int32)));
             }
             have to_integer((bytes[((i as uint32) as int32)] as int32)) <= 255 by {
-                apply(integer::int32_less_equal_to_integer((bytes[((i as uint32) as int32)] as int32), 255)) using {
-                    255 >= (bytes[((i as uint32) as int32)] as int32);
-                }
+                apply(integer::int32_less_equal_to_integer((bytes[((i as uint32) as int32)] as int32), 255));
             }
             have to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) >= -2147483648 by {
                 solve() using {
@@ -99,21 +91,13 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have defined(total + (bytes[((i as uint32) as int32)] as int32)) by {
-                apply(integer::int32_add_defined_by_integer_bounds(total, (bytes[((i as uint32) as int32)] as int32))) using {
-                    to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) >= -2147483648;
-                    to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) <= 2147483647;
-                } solve();
+                apply(integer::int32_add_defined_by_integer_bounds(total, (bytes[((i as uint32) as int32)] as int32))); solve();
             }
             have to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
-                apply(integer::int32_add_to_integer(total, (bytes[((i as uint32) as int32)] as int32))) using {
-                    defined(total + (bytes[((i as uint32) as int32)] as int32));
-                }
+                apply(integer::int32_add_to_integer(total, (bytes[((i as uint32) as int32)] as int32)));
             }
             have (((i as uint32) as int32)) < 2147483647 by {
-                apply(int32_le_lt_transitive(((i as uint32) as int32), 1000, 2147483647)) using {
-                    1000 >= ((i as uint32) as int32);
-                    1000 < 2147483647;
-                }
+                apply(int32_le_lt_transitive(((i as uint32) as int32), 1000, 2147483647));
             }
             have prefix(bytes, ((i as uint32) as int32) + 1) == prefix(bytes, ((i as uint32) as int32)) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
                 unfold(prefix(bytes, ((i as uint32) as int32) + 1));
@@ -127,14 +111,10 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have defined(((i as uint32) as int32) + 1) by {
-                apply(integer::int32_increment_below_max_is_defined(((i as uint32) as int32))) using {
-                    (((i as uint32) as int32)) < 2147483647;
-                }
+                apply(integer::int32_increment_below_max_is_defined(((i as uint32) as int32)));
             }
             have to_integer(((i as uint32) as int32) + 1) == to_integer(((i as uint32) as int32)) + 1 by {
-                apply(integer::int32_add_to_integer(((i as uint32) as int32), 1)) using {
-                    defined(((i as uint32) as int32) + 1);
-                }
+                apply(integer::int32_add_to_integer(((i as uint32) as int32), 1));
             }
             have 0 <= to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
                 solve() using {

@@ -238,15 +238,12 @@ mod tests {
         theorem mask(p: int32*, word: uint64) {
             requires aligned(p, 8);
             ensures ((address(p) + word) & 7u64) == (word & 7u64) by {
-                apply(click::integer::uint64_mask_add_low(address(p), word, 7u64)) using {
-                    (7u64 & (7u64 + 1u64)) == 0u64;
-                    aligned(p, 8);
-                };
+                apply(click::integer::uint64_mask_add_low(address(p), word, 7u64));
             }
         }
         theorem offset(p: int32*, i: int32) {
             ensures address(p + i) == ((address(p) + (i as uint64) * 4u64) as uint64) by {
-                apply(click::integer::int32_pointer_add_address_int32(p, i)) using {};
+                apply(click::integer::int32_pointer_add_address_int32(p, i));
             }
         }
         "#;
@@ -390,7 +387,7 @@ mod tests {
             );
             assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
         }
-        let source = "theorem bad(base: uint64,tag: uint64) { requires (base & 5u64) == 0u64; ensures ((base + tag) & 5u64) == (tag & 5u64) by { apply(click::integer::uint64_mask_add_low(base,tag,5u64)) using { (base & 5u64) == 0u64; }; } }";
+        let source = "theorem bad(base: uint64,tag: uint64) { requires (base & 5u64) == 0u64; ensures ((base + tag) & 5u64) == (tag & 5u64) by { apply(click::integer::uint64_mask_add_low(base,tag,5u64)); } }";
         assert!(verify_c_sources(source, &[]).is_err());
     }
     #[test]

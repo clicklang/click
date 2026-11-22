@@ -5,11 +5,11 @@ import click::separation;
 theorem missing(A: Resource, B: Resource) {
     requires contains(A, B);
     ensures viewable(B) by {
-        apply(separation::viewable_restrict(A, B)) using { contains(A, B); };
+        apply(separation::viewable_restrict(A, B));
     }
 }
 ```
 
 ```expect
-fail: requirement 1 `viewable(A)`
+fail: has an unproved obligation: `viewable(A)`
 ```

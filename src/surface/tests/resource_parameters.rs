@@ -8,11 +8,7 @@ theorem restrict_again(A: Resource, B: Resource, a: Resource, b: Resource) {
     requires contains(A, a);
     requires contains(B, b);
     ensures separate(a, b) by {
-        apply(separation::separate_restrict(A, B, a, b)) using {
-            separate(A, B);
-            contains(A, a);
-            contains(B, b);
-        };
+        apply(separation::separate_restrict(A, B, a, b));
     }
 }
 "#;
@@ -35,9 +31,10 @@ fn resource_parameters_apply_explicit_axiom_and_expand() {
     feature = "fast-gate",
     ignore = "covered by resource_parameters_batch_00"
 )]
-fn resource_parameters_require_every_listed_premise() {
+fn resource_parameters_require_every_theorem_premise() {
     for premise in ["separate(A, B);", "contains(A, a);", "contains(B, b);"] {
-        let missing = ABSTRACT_PROOF.replace(&format!("            {premise}"), "");
+        let missing = ABSTRACT_PROOF.replace(&format!("requires {premise}"), "");
+        assert_ne!(missing, ABSTRACT_PROOF);
         assert!(
             without_implicit_solve(|| verify_click_theorems(&missing)).is_err(),
             "{premise}"
@@ -83,9 +80,7 @@ fn resource_parameters_capture_simultaneously() {
         requires contains(B, b);
         requires contains(A, a);
         ensures separate(b, a) by {
-            apply(restrict_again(B, A, b, a)) using {
-                separate(B, A); contains(B, b); contains(A, a);
-            };
+            apply(restrict_again(B, A, b, a));
         }
     }
     "#;
@@ -108,9 +103,7 @@ fn resource_parameters_accept_declared_descriptors() {
     theorem declared(p: int32*, id: int32) {
         requires separate(cell(p), ticket(id));
         ensures separate(cell(p), ticket(id)) by {
-            apply(transport(cell(p), ticket(id))) using {
-                separate(cell(p), ticket(id));
-            };
+            apply(transport(cell(p), ticket(id)));
         }
     }
     "#;
@@ -175,7 +168,7 @@ fn generic_pointer_parameters_require_consistent_element_types() {
         }
         theorem wrong(p: int32*, q: uint8*) {
             ensures true by {
-                apply(same(p, q)) using {};
+                apply(same(p, q));
             }
         }
     "#;
@@ -227,7 +220,8 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
     }
 
     let no_origin = source.replace("theorem identity<T>", "theorem requires_item(p: struct item*) { ensures p == p by { normalize(); } }\ntheorem identity<T>")
-        .replace("have p == p by { apply(identity(p)) using {}; }", "have p == p by { apply(identity(p)) using {}; }\n    have p == p by { apply(requires_item(p)) using {}; }");
+        .replace("have p == p by { apply(identity(p)); }", "have p == p by { apply(identity(p)); }\n    have p == p by { apply(requires_item(p)); }");
+    assert!(no_origin.contains("apply(requires_item(p));"));
     let error = without_implicit_solve(|| verify_c_sources(&no_origin, &sources)).unwrap_err();
     assert!(
         error.report().contains("requires original object class"),
@@ -298,7 +292,7 @@ fn elements_separation_requires_distinct_indices() {
             theorem invalid(p: uint8*, i: {ty}, j: {ty}) {{
                 {requirement}
                 ensures separate(memory(p[i]), memory(p[j])) by {{
-                    apply(separation::separate_elements(p, {arguments})) using {{}};
+                    apply(separation::separate_elements(p, {arguments}));
                 }}
             }}
         "#
@@ -339,7 +333,7 @@ fn elements_separation_does_not_widen_byte_cells() {
         theorem invalid(p: uint8*, i: int32, j: int32) {
             requires i != j;
             ensures separate(memory(p[i..i+4]), memory(p[j])) by {
-                apply(separation::separate_elements(p, i, j)) using { i != j; };
+                apply(separation::separate_elements(p, i, j));
             }
         }
     "#;
@@ -447,12 +441,10 @@ fn element_containment_expands_without_implicit_solve() {
         let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
         without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     }
-    for missing in ["lo <= i;", "i < hi;"] {
-        let source = source.replace(
-            "using { lo <= i; i < hi; }",
-            &format!("using {{ {} }}", "lo <= i; i < hi;".replace(missing, "")),
-        );
-        assert!(without_implicit_solve(|| verify_click_theorems(&source)).is_err());
+    for premise in ["requires lo <= i;", "requires i < hi;"] {
+        let missing = source.replacen(premise, "", 1);
+        assert_ne!(missing, source);
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
     }
 }
 
@@ -488,14 +480,9 @@ fn adjacent_ranges_apply_and_replay_without_search() {
         let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
         without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     }
-    for premise in ["lo <= mid;", "mid <= hi;"] {
-        let missing = source.replace(
-            "using { lo <= mid; mid <= hi; }",
-            &format!(
-                "using {{ {} }}",
-                "lo <= mid; mid <= hi;".replace(premise, "")
-            ),
-        );
+    for premise in ["requires lo <= mid;", "requires mid <= hi;"] {
+        let missing = source.replacen(premise, "", 1);
+        assert_ne!(missing, source);
         assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
     }
     let overlap = source.replace("memory(p[mid..hi])", "memory(p[lo..hi])");
@@ -508,7 +495,7 @@ test_batches! {
     marker: "resource_parameters_batch_",
     resource_parameters_batch_00: [
         resource_parameters_apply_explicit_axiom_and_expand,
-        resource_parameters_require_every_listed_premise,
+        resource_parameters_require_every_theorem_premise,
         resource_parameters_refuse_numeric_arguments,
         resource_parameters_prove_field_separation_without_search,
     ],

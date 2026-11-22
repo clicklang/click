@@ -6572,11 +6572,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "apply-theorem-using",
-        syntax: "apply(theorem(args)) using",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "have",
         syntax: "have P by",
         class: "control",

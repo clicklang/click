@@ -1,7 +1,4 @@
-# An explicit evidence list cannot import an omitted ambient guard
-
-The whole sum is known defined. Listing only the inner addition does not
-provide the theorem with the outer guard.
+# An addition theorem needs the outer sum to be defined
 
 ```c filename=omitted_guard.c
 int32 probe(int32 a, int32 b, int32 c) { return 0; }
@@ -16,13 +13,13 @@ theorem add_observation(left: int32, right: int32) {
 }
 
 int32 probe(int32 a, int32 b, int32 c) {
-    requires defined(a + b + c);
+    requires defined(a + b);
     ensures result == 0;
 } by {
-    apply(add_observation(a + b, c)) using { defined(a + b); };
+    apply(add_observation(a + b, c));
 }
 ```
 
 ```expect
-fail: required exact fact for theorem `add_observation` is unavailable
+fail: theorem `add_observation` has an unproved obligation
 ```

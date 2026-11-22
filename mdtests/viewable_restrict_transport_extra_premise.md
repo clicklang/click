@@ -1,20 +1,15 @@
-# Viewability restriction checks every cited premise
+# Viewability restriction requires containment
 
 ```click
 import click::separation;
 theorem restrict_view(A: Resource, B: Resource) {
     requires viewable(A);
-    requires contains(A, B);
     ensures viewable(B) by {
-        apply(separation::viewable_restrict(A, B)) using {
-            viewable(A);
-            contains(A, B);
-            0 == 1;
-        };
+        apply(separation::viewable_restrict(A, B));
     }
 }
 ```
 
 ```expect
-fail: premise
+fail: theorem `click::separation::viewable_restrict` has an unproved obligation
 ```
