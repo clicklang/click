@@ -12,9 +12,17 @@ pub(in crate::surface) fn computes_with_known(goal: &Proposition) -> bool {
     }
 }
 
-/// Choose a checked goal-local closer.
+/// Choose a goal-local closer without enlarging `known`'s checking rules.
+/// The broad legacy normalization fallback remains explicit when computation
+/// alone cannot close the goal.
 pub(in crate::surface) fn plan_context_free_closer(goal: &Proposition) -> Option<ProofTactic> {
-    computes_with_known(goal).then_some(ProofTactic::Known)
+    if computes_with_known(goal) {
+        Some(ProofTactic::Known)
+    } else if normalizes_context_free(goal) {
+        Some(ProofTactic::Normalize)
+    } else {
+        None
+    }
 }
 
 /// The single explicit-certificate search shared by every smart-simplification

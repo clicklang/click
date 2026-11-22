@@ -3054,7 +3054,8 @@ pub(super) fn plan_recorded_pointer_word(
 }
 
 /// A pointer-alignment decision is certified by a checked special certificate
-/// naming the retained base fact, or by `known` for an intrinsic alignment.
+/// naming the retained base fact, or as `normalize` when the base is a heap
+/// allocation and the alignment is intrinsic.
 pub(super) fn plan_recorded_pointer_alignment(
     goal: &Proposition,
     derivation: &PropositionDerivation,

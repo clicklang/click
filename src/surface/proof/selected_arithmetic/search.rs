@@ -1655,8 +1655,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // around it is not complete yet.
         let closes = |proof: &Proof<'a>| proof.focused_discharged() || proof.is_complete();
         if let RewriteClosers::Listed(premise_pairs) = closers {
-            if let Ok(Some(closed)) =
-                crate::kernel::search::ProofSearch::try_checked_closure(search_input, None)
+            if let Ok(closed) =
+                crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)
                 && closes(&closed)
             {
                 return Ok(Some(closed));
@@ -1681,10 +1681,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )
                     })
                     .or_else(|| {
-                        crate::kernel::search::ProofSearch::try_checked_closure(search_input, None)
-                            .ok()
-                            .flatten()
-                            .filter(closes)
+                        crate::kernel::search::ProofSearch::apply_normalization_closure(
+                            search_input,
+                            None,
+                        )
+                        .ok()
+                        .filter(closes)
                     })
             {
                 return Ok(Some(closed));
@@ -1707,10 +1709,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )
                     })
                     .or_else(|| {
-                        crate::kernel::search::ProofSearch::try_checked_closure(search_input, None)
-                            .ok()
-                            .flatten()
-                            .filter(closes)
+                        crate::kernel::search::ProofSearch::apply_normalization_closure(
+                            search_input,
+                            None,
+                        )
+                        .ok()
+                        .filter(closes)
                     });
             return Ok(closed.filter(closes));
         }
@@ -1719,8 +1723,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
-        if let Ok(Some(closed)) =
-            crate::kernel::search::ProofSearch::try_checked_closure(search_input, None)
+        if let Ok(closed) =
+            crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)
             && closes(&closed)
         {
             return Ok(Some(closed));

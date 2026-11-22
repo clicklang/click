@@ -6327,10 +6327,13 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                         contradiction(false);
                     }
                     not (right < left) => {
-                        have left <= right by {
-                            solve();
-                        }
-                        solve();
+                        have to_integer(left) <= to_integer(right) by known();
+                        have to_integer(right) <= to_integer(left) by known();
+                        apply(integer::le_antisymmetric(to_integer(left), to_integer(right))) using {
+                            to_integer(left) <= to_integer(right);
+                            to_integer(right) <= to_integer(left);
+                        };
+                        known();
                     }
                 }
             }
