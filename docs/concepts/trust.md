@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 69 `axiom`s, which are trusted, not proved.
+The library also declares 70 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -170,6 +170,14 @@ runs `core`'s code over them. Another is `integer::uint32_difference_decreases_a
 `value < bound`, `(0 - value) + (bound - 1)` is below `(0 - value) + bound`
 as integers, because neither `bound - value` nor `(bound - 1) - value`
 wraps.
+
+`separation::viewable_offset_nonnull` states C11 6.3.2.3p3 for viewed
+memory: an address from the start of a nonempty viewable range through one
+past its end is not null. Viewability holds only for storage of a live
+object, which C never places at the null pointer, and pointer arithmetic
+past one beyond an object is already undefined, so every such address is an
+object address. An empty range is excluded because C allows a null pointer
+with a zero length.
 
 The unsigned address-word library adds twelve elementary word axioms and twenty
 scalar-pointer offset axioms (ten pointee types, with `int32` and `int64`

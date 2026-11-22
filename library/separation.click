@@ -60,6 +60,17 @@ theorem viewable_restrict(A: Resource, B: Resource) {
     ensures viewable(B);
 }
 
+// No pointer to an object is null (C11 6.3.2.3p3). A nonempty viewable range
+// lies in a live object, and so does every address from its start through one
+// past its end (C11 6.5.6p8, 6.5.9p6).
+axiom viewable_offset_nonnull<T>(p: T*, lo: uint64, hi: uint64, k: uint64) {
+    requires viewable(memory(p[lo..hi]));
+    requires lo < hi;
+    requires lo <= k;
+    requires k <= hi;
+    ensures &p[k] != 0;
+}
+
 // Rebase one nonnegative element interval without inspecting its contents.
 theorem contains_rebase<T, I>(p: T*, lo: I, hi: I) {
     requires 0 <= to_integer(lo);
