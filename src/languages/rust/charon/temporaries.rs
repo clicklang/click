@@ -239,6 +239,7 @@ pub(super) fn substitute_pure_values(
     // statement or terminator field, which no substitution can reach.
     let mut reads = BTreeMap::<String, usize>::new();
     let mut named = BTreeSet::<String>::new();
+    let mut switch_locals = BTreeSet::new();
     let mut assignments = BTreeMap::<String, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
@@ -252,7 +253,14 @@ pub(super) fn substitute_pure_values(
                 *assignments.entry(name.clone()).or_default() += 1;
             }
         }
-        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(name) = enum_switch_local(&block.terminator) {
+            // Keep enum scrutinees out of general substitution, but count
+            // the switch as a read for the adjacent borrowed-match rewrite.
+            switch_locals.insert(name.clone());
+            *reads.entry(name.clone()).or_default() += 1;
+        } else {
+            terminator_uses(&block.terminator, &mut reads, &mut named);
+        }
         if let Some(destination) = call_destination(&block.terminator) {
             named.insert(destination.clone());
         }
@@ -262,12 +270,13 @@ pub(super) fn substitute_pure_values(
             }
         }
     }
-    let substitutable = |name: &str| {
+    let single_read = |name: &str| {
         temporaries.contains(name)
             && !named.contains(name)
             && reads.get(name) == Some(&1)
             && assignments.get(name) == Some(&1)
     };
+    let substitutable = |name: &str| single_read(name) && !switch_locals.contains(name);
     let mut removed = BTreeSet::new();
     for block in blocks.iter_mut() {
         // The pure values defined so far in this block whose read is still
@@ -427,6 +436,7 @@ pub(super) fn substitute_pure_values(
     fold_scalar_successors(locals, blocks, &predecessors, &substitutable, &mut removed);
     for block in blocks.iter_mut() {
         fold_scalar_condition(block, &substitutable, &mut removed);
+        fold_borrowed_enum_switch(block, &single_read, &mut removed);
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
             S::Assign {
@@ -437,6 +447,57 @@ pub(super) fn substitute_pure_values(
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// A two-arm match can test a borrowed enum directly. The switch lowers to
+/// one variant test, so the original load still runs exactly once.
+fn fold_borrowed_enum_switch(
+    block: &mut MirBlock,
+    single_read: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    use super::super::schema::SwitchLabel;
+
+    let T::Switch {
+        scrutinee,
+        cases,
+        otherwise: None,
+    } = &mut block.terminator
+    else {
+        return;
+    };
+    let E::Local { name } = scrutinee else { return };
+    let [first, second] = cases.as_slice() else {
+        return;
+    };
+    if first.target == second.target
+        || !matches!(
+            (&first.label, &second.label),
+            (SwitchLabel::Variant { .. }, SwitchLabel::Variant { .. })
+        )
+        || !single_read(name)
+    {
+        return;
+    }
+    let Some(S::Assign {
+        target: E::Local { name: target },
+        value:
+            value @ E::Deref {
+                reference,
+                value_type: Type::Enum { .. },
+            },
+    }) = block.statements.iter().rfind(|statement| match statement {
+        S::Site { site } => Some(*site) != block.terminator_site,
+        S::EndStorage { local } => local != name,
+        _ => true,
+    })
+    else {
+        return;
+    };
+    if target == name && matches!(reference.as_ref(), E::Local { .. }) {
+        removed.insert(name.clone());
+        *scrutinee = value.clone();
+    }
 }
 
 /// A borrow consumed by the adjacent slice operation is the operation's
