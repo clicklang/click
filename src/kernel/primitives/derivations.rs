@@ -1459,9 +1459,8 @@ impl ExecutionBudget {
     /// The first identity a symbolic execution may invent.
     pub(in crate::kernel) const KERNEL_VARIABLE_BASE: u64 = 1_000_000;
 
-    /// The first identity a symbolic execution may not invent: the surface's
-    /// quantifier variables start here, and load variables are in a separate
-    /// higher band beginning at `1 << 40`. Those producers use bounded counters or a name hash in
+    /// The first identity a symbolic execution may not invent. Load variables
+    /// are in a separate higher band beginning at `1 << 40`. Those producers use bounded counters or a name hash in
     /// their own ranges, so they cannot avoid an execution
     /// that has counted into their range; the execution refuses instead.
     pub(in crate::kernel) const KERNEL_VARIABLE_CEILING: u64 = 2_000_000;

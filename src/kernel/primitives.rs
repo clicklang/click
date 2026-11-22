@@ -283,6 +283,16 @@ pub(crate) enum Producer {
     /// An Integer binder of a resource `match` arm, numbered once for a
     /// function's whole resource environment.
     ResourceIntegerBinding,
+    /// A variable Surface lowering binds while it lowers a quantifier, fold
+    /// or `match` in a fixed-state proof proposition, numbered per lowering.
+    ProofQuantifier,
+    /// The same while lowering a function's annotations.
+    FunctionQuantifier,
+    /// The same while lowering a requirement or contract summary.
+    RequirementQuantifier,
+    /// The same while lowering a resource body, condition or fold-read
+    /// definition.
+    ResourceQuantifier,
     /// A Surface algebraic binder, by its binder index: a written algebraic
     /// quantifier or `let`, or a constructor field a proof `match` splits on.
     /// The index is how the binder raises back to Surface.
@@ -382,6 +392,14 @@ impl Variable {
         Self {
             number: (number,),
             origin: VariableOrigin::Produced(producer),
+        }
+    }
+
+    /// The producer that minted this variable, if a named one did.
+    pub(crate) fn producer(&self) -> Option<Producer> {
+        match self.origin {
+            VariableOrigin::Produced(producer) => Some(producer),
+            _ => None,
         }
     }
 
