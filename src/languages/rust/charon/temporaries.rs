@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// followed by reads in its continuation. The final reader ends the result. A slot read
 /// through its address, written by another operation, or live across a
 /// control-flow edge where other paths can enter still needs storage.
-/// A box pointer copied from a field solely for drop can also be retained.
+/// A box pointer can also be retained for a single assignment or field drop.
 pub(in crate::languages::rust) fn scalar_expression_operands(
     mir: &MirBody,
     loop_tests: &BTreeSet<usize>,
@@ -179,20 +179,35 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                 return None;
             }
             let producers = definitions.get(name.as_str())?.as_slice();
-            if !local.value_type.is_scalar()
-                && !(matches!(local.value_type, Type::Box { .. } | Type::OptionBox { .. })
-                    && first == last
-                    && matches!(&mir.blocks[last.block].terminator, T::BoxFree { local, .. }
-                        if local == name && last.statement == mir.blocks[last.block].statements.len())
-                    && matches!(producers, [producer]
-                        if matches!(&mir.blocks[producer.block].statements[producer.statement],
-                            S::Assign { value: E::Field { .. }, .. })))
-            {
-                return None;
+            let boxed = matches!(local.value_type, Type::Box { .. } | Type::OptionBox { .. });
+            if !local.value_type.is_scalar() {
+                let [producer] = producers else { return None };
+                if !boxed || first != last {
+                    return None;
+                }
+                let S::Assign { value, .. } = &mir.blocks[producer.block].statements[producer.statement]
+                else { return None };
+                let reader = &mir.blocks[last.block];
+                let supported = match reader.statements.get(last.statement) {
+                    Some(S::Assign { value: E::Local { name: source }, .. }) if source == name => {
+                        matches!(value, E::Local { .. } | E::Field { .. } | E::CallResult { .. })
+                    }
+                    None => matches!(value, E::Field { .. }) && matches!(&reader.terminator, T::BoxFree { local, .. } if local == name),
+                    _ => false,
+                };
+                if !supported {
+                    return None;
+                }
             }
             let reaches_reader = match producers {
                 [producer] => {
-                    fragments[producer.block] == fragments[first.block] && *producer < first
+                    // An intervening drop can run arbitrary glue. A captured
+                    // box pointer still denotes the value read before the drop.
+                    let continues_after_drop = boxed && incoming[first.block] == 1
+                        && matches!(&mir.blocks[producer.block].terminator,
+                            T::BoxFree { target, .. } if *target == first.block);
+                    (fragments[producer.block] == fragments[first.block] || continues_after_drop)
+                        && *producer < first
                 }
                 [left, right] => {
                     // Both tails publish the result. This gives diagnostics
