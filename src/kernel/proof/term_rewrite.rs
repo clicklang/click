@@ -1649,7 +1649,6 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
         ProgramValue::Float64(_) => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
         ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
             Pointer::new(exhausted_pointer(), pointer.program_type())
-                .with_pointee_volatile(pointer.pointee_volatile())
                 .with_pointee_constant(pointer.pointee_constant()),
         ),
     }

@@ -144,12 +144,9 @@ impl AlgebraicFieldResult {
         }
         if let Some(pointer) = root.pointer_payload() {
             let payload = pointer.node();
-            let volatile = payload.qualifiers.as_ref().is_some_and(|q| q.volatile);
-            let result = root.with_pointer_payload(pointer.with_binding_type_and_qualifiers(
-                payload.program_type,
-                volatile,
-                false,
-            ));
+            let result = root.with_pointer_payload(
+                pointer.with_binding_type_and_qualifiers(payload.program_type, false),
+            );
             match self {
                 Self::Imported(_) => Self::Imported(result),
                 Self::Shared(_) => Self::Shared(result),

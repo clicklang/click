@@ -223,9 +223,7 @@ mod tests {
             let ProgramValue::Pointer(pointer) = memory.symbolic_pointer_load(&address, ty) else {
                 panic!("pointer producer");
             };
-            let pointer = pointer
-                .with_pointee_constant(true)
-                .with_pointee_volatile(true);
+            let pointer = pointer.with_pointee_constant(true);
             let expected = SharedPointer::import(&pointer);
             let native = ProgramValue::Pointer(pointer);
             let result = crate::kernel::ExecutionValue::retain_native(native.clone());
