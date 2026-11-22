@@ -3044,6 +3044,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
             projection: ResourceFieldProjection {
                 identity: InstanceId::from_variable(Variable(10)).into(),
                 children: vec![],
+                field_name: None,
                 field_index: 0,
                 at_entry: false,
             },

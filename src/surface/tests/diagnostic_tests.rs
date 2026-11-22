@@ -2024,39 +2024,25 @@ fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
-fn unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern() {
-    let fixture = folded_child_loop_fixture();
-    let sources = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    let mut click = fixture.click_source.unwrap();
-    let loop_start = click.find("    loop {").unwrap();
-    click.truncate(loop_start);
-    click.push_str(
-        r#"
-        match w.model {
-            Wrap::Wrap(entry_model) => {
-                let { inner: child } = unfold(w);
-                have w.model == Wrap::Wrap(entry_model) by { solve(); }
-            },
-        }
-    }
-    "#,
+fn unfolded_algebraic_field_keeps_its_captured_model() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/loop_invariant_binds_model_from_a_folded_parent.md");
+    let fixture =
+        crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    let click = fixture.click_source.unwrap();
+    let insertion = "        Wrap::Wrap(entry_model) => {";
+    assert!(click.contains(insertion));
+    let click = click.replacen(
+        insertion,
+        r#"        Wrap::Wrap(entry_model) => {
+            unfold(w);
+            have w.model == Wrap::Wrap(entry_model) by { solve(); }
+            fold(w);"#,
+        1,
     );
-    let error = verify_c_sources(&click, &sources).unwrap_err();
-    assert!(
-        error.message().contains("`unfold(w)` consumed it"),
-        "{error:?}"
-    );
-    assert!(
-        error
-            .message()
-            .contains("an unfold pattern cannot bind an algebraic field"),
-        "{error:?}"
-    );
-    assert!(!error.message().contains("let { model:"), "{error:?}");
+    verify_c_sources(&click, &sources)
+        .unwrap_or_else(|error| panic!("the open parent's captured model must verify: {error:?}"));
 }
 
 #[test]
@@ -4606,7 +4592,7 @@ test_batches! {
     ],
     diagnostic_batch_12: [
         folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy,
-        unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern,
+        unfolded_algebraic_field_keeps_its_captured_model,
         unheld_field_without_a_checked_consumption_does_not_invent_one,
         source_unknown_local_pointer_diagnostics_identify_byte_units,
     ],

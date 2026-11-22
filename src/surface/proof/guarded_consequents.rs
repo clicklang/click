@@ -377,11 +377,13 @@ impl GuardedTermRaiser<'_, '_> {
         state: &'s ExecutionState,
         access: &ResourceFieldAccess,
     ) -> Option<&'s MachineTerm> {
-        match state
-            .resource_instance_at_path(access.identity, &access.children)?
-            .fields()
-            .get(access.field_index)?
-        {
+        let (instance, index) = state.projected_resource_field(
+            access.identity,
+            &access.children,
+            access.field_index,
+            access.projected_name().as_deref(),
+        )?;
+        match instance.fields().get(index)? {
             crate::kernel::ResourceFieldValue::Program(
                 crate::kernel::integer64_c_value!(value),
             ) => Some(value),

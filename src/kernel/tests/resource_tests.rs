@@ -1048,7 +1048,7 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     let open = rewrite(&state, &instance, true, &children).unwrap().state;
     assert!(matches!(
         open.resources().instance_consumption(instance.identity()),
-        Some(InstanceConsumption::Unfold)
+        Some(InstanceConsumption::Opened { .. })
     ));
     assert!(
         state
@@ -1058,9 +1058,11 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     );
     assert!(open.instance_field_scope.is_empty());
     assert!(open.resource_instance_fields(instance.identity()).is_none());
-    assert!(
-        open.resource_instance_at_path(instance.identity(), &["left".into()])
-            .is_none()
+    let left_path = ["left".into()];
+    assert_eq!(
+        open.resource_instance_at_path(instance.identity(), &left_path)
+            .map(ResourceInstance::identity),
+        Some(children[0].1)
     );
     let left = open
         .owned_resource_instance(InstanceId::from_variable(Variable(501)))
@@ -1068,6 +1070,10 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
         .clone();
     let raw = rewrite(&open, &left, true, &[]).unwrap().state;
     assert!(raw.owned_resource_instance(left.identity()).is_none());
+    assert!(
+        raw.resource_instance_at_path(instance.identity(), &left_path)
+            .is_none()
+    );
     assert!(rewrite(&raw, &instance, false, &children).is_err());
     let mut replacement = left.clone();
     replacement.identity = InstanceId::from_variable(Variable(503));
@@ -1100,7 +1106,7 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     // Refolding and unfolding a sibling state do not change the original.
     assert!(matches!(
         raw.resources().instance_consumption(left.identity()),
-        Some(InstanceConsumption::Unfold)
+        Some(InstanceConsumption::Opened { .. })
     ));
     assert_eq!(
         closed
@@ -1110,9 +1116,13 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
         *state.resources()
     );
     assert!(closed.instance_field_scope.is_empty());
+    assert!(
+        closed
+            .resource_instance_at_path(instance.identity(), &left_path)
+            .is_none()
+    );
     for bad in [
-        vec![],
-        vec![("left".into(), InstanceId::from_variable(Variable(501)))],
+        vec![("absent".into(), InstanceId::from_variable(Variable(501)))],
         vec![
             ("left".into(), InstanceId::from_variable(Variable(501))),
             ("right".into(), InstanceId::from_variable(Variable(501))),
@@ -1227,14 +1237,23 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
 }
 
 #[test]
-fn recursive_child_kernel_rejects_implicit_parent_handles() {
+fn recursive_child_kernel_restores_children_through_parent_handles() {
     let (instance, definition, state) = recursive_child_fixture();
     let assumptions = PureFactContext::new();
-    assert_eq!(
-        rewrite_resource_instance(&state, &instance, &definition, &assumptions, true)
-            .unwrap_err()
-            .describe(),
-        "recursive children require explicit independent child selections"
+    let opened = rewrite_resource_instance(&state, &instance, &definition, &assumptions, true)
+        .unwrap()
+        .state;
+    assert!(
+        opened
+            .resource_instance_at_path(instance.identity(), &["left".into()])
+            .is_some()
+    );
+    assert!(
+        rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
+            .unwrap()
+            .state
+            .owned_resource_instance(instance.identity())
+            .is_some()
     );
     let children = [
         ("left".into(), InstanceId::from_variable(Variable(501))),
@@ -1257,8 +1276,18 @@ fn recursive_child_kernel_rejects_implicit_parent_handles() {
             .is_none()
     );
     assert!(opened.instance_field_scope.is_empty());
+    assert_eq!(
+        opened
+            .resource_instance_at_path(instance.identity(), &["left".into()])
+            .map(ResourceInstance::identity),
+        Some(children[0].1)
+    );
     assert!(
-        rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false).is_err()
+        rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
+            .unwrap()
+            .state
+            .owned_resource_instance(instance.identity())
+            .is_some()
     );
     let mut invalid = definition.clone();
     invalid.matched.as_mut().unwrap().arms[1].children[0].field_bindings =
@@ -1787,6 +1816,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
             projection: ResourceFieldProjection {
                 identity: InstanceId::from_variable(Variable(10)).into(),
                 children: vec![],
+                field_name: None,
                 field_index: 1,
                 at_entry,
             },
@@ -1809,6 +1839,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
         node: SpecAlgebraicExpressionNode::ResourceField(ResourceFieldProjection {
             identity: InstanceId::from_variable(Variable(10)).into(),
             children: vec![],
+            field_name: None,
             field_index: 0,
             at_entry,
         }),
@@ -1901,6 +1932,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
             projection: ResourceFieldProjection {
                 identity: InstanceId::from_variable(Variable(identity)).into(),
                 children: vec![],
+                field_name: None,
                 field_index,
                 at_entry: false,
             },
@@ -4103,6 +4135,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         // free Integer identity independent from that resource placeholder.
         identity: crate::kernel::InstanceRef::Body,
         children: vec![],
+        field_name: None,
         field_index: 1,
         at_entry: false,
     });

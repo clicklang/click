@@ -70,6 +70,7 @@ fn wide_matched_instance_projection_keeps_native_loadability() {
     let projection = ResourceFieldProjection {
         identity: instance.identity().into(),
         children: vec![],
+        field_name: None,
         field_index: 0,
         at_entry: false,
     };

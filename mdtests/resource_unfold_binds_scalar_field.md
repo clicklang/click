@@ -1,10 +1,7 @@
 # An unfold pattern binds a scalar resource field
 
 `let { field: name } = unfold(instance);` names the folded value of a C-typed
-field, as a proof `match` arm names a constructor payload. `unfold` consumes
-the instance, so after it `before.prefix` has nothing to read, and a loop
-invariant cannot say `old(before.prefix)` either: a loop invariant reads
-`old(..)` at the loop's entry, where the instance is already gone. The bound
+field, as a proof `match` arm names a constructor payload. The bound
 name is a plain proof value that survives the unfold, so the scan loop's
 invariant, its `decreases` measure, the post-loop facts, and the refold can
 all name it.
@@ -18,8 +15,8 @@ outside the resource for the contract to produce.
 
 The mixed child-and-field form is
 [`resource_unfold_binds_children_and_fields.md`](resource_unfold_binds_children_and_fields.md);
-the refusal to read the consumed instance's field is
-[`resource_unfold_field_binding_rejects_consumed_read.md`](resource_unfold_field_binding_rejects_consumed_read.md).
+the dotted form is
+[`resource_unfold_reads_the_opened_field.md`](resource_unfold_reads_the_opened_field.md).
 `src/surface/tests/expansion_tests.rs` expands this fixture's smart sites and
 reverifies the result.
 

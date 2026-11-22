@@ -4702,10 +4702,17 @@ pub enum SpecAlgebraicExpressionNode {
 pub struct ResourceFieldProjection {
     pub identity: InstanceRef,
     pub children: Vec<String>,
+    /// Written member for a path whose final schema can differ from the
+    /// parent's retained record. A witness uses its name, with no field index.
+    pub field_name: Option<String>,
     pub field_index: usize,
     /// Select the explicit entry state supplied to spec evaluation. There is
     /// no fallback to the current state when that state is unavailable.
     pub at_entry: bool,
+}
+
+impl ResourceFieldProjection {
+    pub(crate) const WITNESS: usize = usize::MAX;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -11862,10 +11869,10 @@ pub(super) struct ResourceContextStorage {
 
 #[derive(Clone)]
 pub(crate) enum InstanceConsumption {
-    Unfold,
-    UnfoldWithWitnesses {
+    Opened {
         instance: std::sync::Arc<ResourceInstance>,
-        values: std::sync::Arc<[ProgramValue]>,
+        children: std::sync::Arc<std::collections::BTreeMap<String, InstanceId>>,
+        values: std::sync::Arc<std::collections::BTreeMap<String, ProgramValue>>,
     },
     FoldChild {
         parent: InstanceId,
@@ -12590,7 +12597,8 @@ impl InstanceId {
     /// ([`ExecutionBudget::allocate_instance_identity`]) rather than a
     /// binder the surface named.
     pub fn created_by_execution(self) -> bool {
-        self.0.0 >= ExecutionBudget::KERNEL_VARIABLE_BASE
+        (ExecutionBudget::KERNEL_VARIABLE_BASE..ExecutionBudget::KERNEL_VARIABLE_CEILING)
+            .contains(&self.0.0)
     }
 }
 
