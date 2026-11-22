@@ -4139,7 +4139,7 @@ fn apply_fact_expands_antecedent_proofs_without_extract_or_search() {
     let expanded =
         expand_pure_theorem_source(source, &[], "demo", 0).expect("fact application expands");
     assert!(
-        expanded.contains("apply(x > 0 implies y > 0) using {"),
+        expanded.contains("apply(x > 0 implies y > 0);"),
         "{expanded}"
     );
     assert!(!expanded.contains("extract("), "{expanded}");
@@ -4173,8 +4173,10 @@ fn apply_fact_c_frontier_and_outcome_expansion_rechecks_without_search() {
         verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{body}: {error}"));
         let expanded = expand_c_claim_source_by_label(&source, &sources, "identity.contract")
             .unwrap_or_else(|error| panic!("{body}: {error}"));
-        assert!(expanded.contains("apply("), "{expanded}");
-        assert!(expanded.contains("using {"), "{expanded}");
+        assert!(
+            expanded.contains("apply(x > 0 implies x != 0);"),
+            "{expanded}"
+        );
         without_implicit_solve(|| verify_c_sources(&expanded, &sources))
             .unwrap_or_else(|error| panic!("{body}: {error}\n{expanded}"));
     }

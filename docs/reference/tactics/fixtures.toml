@@ -103,11 +103,6 @@ path = "mdtests/apply_implication_fact.md"
 needle = "apply(h);"
 
 [[form]]
-id = "apply-fact-using"
-path = "mdtests/apply_implication_fact.md"
-needle = "apply(x > 0 implies y > 0 implies z > 0) using"
-
-[[form]]
 id = "apply-theorem"
 path = "mdtests/pure_theorem_apply.md"
 needle = "apply(nonnegative_body(y));"

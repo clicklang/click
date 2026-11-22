@@ -459,6 +459,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::CheckTerminationCallbacks => Some(
                 driver_proof.apply_termination_check(crate::kernel::TerminationCheck::Callbacks),
             ),
+            ProofStep::ApplyFact(fact) => Some(driver_proof.apply_fact_from_scope(fact)),
             ProofStep::ApplyFactUsing { fact, premises } => {
                 Some(driver_proof.apply_fact_using(fact, premises))
             }

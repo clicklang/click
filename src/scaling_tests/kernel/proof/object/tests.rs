@@ -1134,6 +1134,11 @@ fn apply_fact_uses_only_selected_implication_and_evidence() {
                         .unwrap()
                         .is_complete()
                 );
+                assert!(
+                    root.apply_fact_from_scope(&implication)
+                        .unwrap()
+                        .is_complete()
+                );
                 assert!(root.apply_fact(&implication, &[]).is_err());
                 assert!(
                     root.apply_fact(&implication, &[atom("missing".into())])
@@ -1147,6 +1152,7 @@ fn apply_fact_uses_only_selected_implication_and_evidence() {
                     root.apply_fact(&missing, std::slice::from_ref(&antecedent))
                         .is_err()
                 );
+                assert!(root.apply_fact_from_scope(&missing).is_err());
                 assert!(
                     !root.is_complete(),
                     "application must leave the persistent input unchanged"

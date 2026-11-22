@@ -218,7 +218,7 @@ guard and remainder laws apply the division observation axioms and the
 truncating-division lemmas), and add no kernel operation. The prelude and the kernel ship in one executable, so
 ordinary verifications apply these declarations as dependencies without
 re-checking them; expanded user proofs use the ordinary simple
-`apply(...) using { ... }` tactic.
+`apply(...)` tactic.
 
 ### Execution and contract evidence
 

@@ -1659,6 +1659,18 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         fact: &Proposition,
         premises: &[Proposition],
     ) -> Result<Self, &'static str> {
+        self.apply_implication(fact, Some(premises))
+    }
+
+    pub(crate) fn apply_fact_from_scope(&self, fact: &Proposition) -> Result<Self, &'static str> {
+        self.apply_implication(fact, None)
+    }
+
+    fn apply_implication(
+        &self,
+        fact: &Proposition,
+        premises: Option<&[Proposition]>,
+    ) -> Result<Self, &'static str> {
         let branch = self
             .state
             .open_branches
@@ -1672,7 +1684,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             return Err("`apply(fact)` source implication is not an available fact");
         }
         let mut selected = crate::kernel::PureFactContext::new();
-        for premise in premises {
+        for premise in premises.unwrap_or_default() {
             if !facts.listed_premise_available(premise, &[], true) {
                 return Err("`apply(fact) using` lists a premise that is not available");
             }
@@ -1681,13 +1693,15 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let mut conclusion = fact;
         while let Proposition::Implies(antecedent, consequent) = conclusion {
             if first_unavailable_connective_side(antecedent, &|side| {
-                selected.contains_known(side) || super::fact_reasoning::computes_leaf(side)
+                (if premises.is_some() {
+                    selected.contains_known(side)
+                } else {
+                    facts.pure_known_available(side) || facts.assumptions().contains_known(side)
+                }) || super::fact_reasoning::computes_leaf(side)
             })
             .is_some()
             {
-                return Err(
-                    "`apply(fact) using` cannot prove an antecedent from the listed premises",
-                );
+                return Err("`apply(fact)` has an unproved antecedent");
             }
             conclusion = consequent;
         }

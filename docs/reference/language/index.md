@@ -1332,9 +1332,8 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
 
 Nothing is lent by writing it and nothing is returned. Like every stated range
 it carries its valid-span facts, which the theorem's proof assumes and an
-application owes; see [Viewable ranges](../../concepts/viewability.md). An
-`apply ... using` list holds propositions, so the premise is named there as
-`viewable(v[lo..hi])`.
+application owes; see [Viewable ranges](../../concepts/viewability.md). The
+range premise can be stated with `have viewable(v[lo..hi]);`.
 
 Pure theorem scripts can simplify, unfold predicates and pure functions, apply
 theorems, introduce logical structure, rewrite, use exact assumptions, and

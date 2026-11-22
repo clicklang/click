@@ -1481,9 +1481,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.apply-fact"
 path = "reference/tactics/index.md#fact-application"
 [[item]]
-id = "tactic-form.apply-fact-using"
-path = "reference/tactics/index.md#fact-application"
-[[item]]
 id = "tactic-form.apply-theorem"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]

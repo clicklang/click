@@ -1414,7 +1414,6 @@ fn tactic_form_inventory_is_bidirectional() {
             "apply-induction" => surface == "`apply(ih(m))`",
             "apply-induction-using" => surface == "`apply(ih(m)) using { P; ... }`",
             "apply-fact" => surface == "`apply(fact)`",
-            "apply-fact-using" => surface == "`apply(fact) using { P; ... }`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
             "arithmetic" => surface == "`solve() using {}`",
             "normalize" => surface == "`normalize()`",

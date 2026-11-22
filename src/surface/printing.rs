@@ -1206,16 +1206,10 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CheckTerminationCallbacks => {
             line(output, &prefix, "check_termination_callbacks();")
         }
-        ProofTactic::ApplyFact(fact) => line(
+        ProofTactic::ApplyFact(fact) | ProofTactic::ApplyFactUsing { fact, .. } => line(
             output,
             &prefix,
             &format!("apply({});", source_click_proposition(fact)),
-        ),
-        ProofTactic::ApplyFactUsing { fact, premises } => write_using_premises(
-            output,
-            &format!("apply({})", source_click_proposition(fact)),
-            premises,
-            indent,
         ),
         ProofTactic::Known => line(output, &prefix, "known();"),
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
