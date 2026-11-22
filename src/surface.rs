@@ -8953,6 +8953,7 @@ pub enum ClickErrorKind {
     Limit,
     Type,
     Proof,
+    Unsupported,
     Internal,
 }
 
@@ -8963,6 +8964,7 @@ impl ClickErrorKind {
             Self::Limit => "limit error",
             Self::Type => "type error",
             Self::Proof => "unclassified verification refusal",
+            Self::Unsupported => "unsupported",
             Self::Internal => "internal error",
         }
     }
@@ -10941,19 +10943,20 @@ impl ClickError {
             report.push('\n');
             report.push_str(context);
         }
-        if self.kind == ClickErrorKind::Proof
-            && let Some(trace) = self.diagnostic.as_ref().and_then(|diagnostic| {
-                diagnostic.state.as_ref()?.proof_trace(
-                    &diagnostic.claim_label,
-                    &mut memory_state_labels,
-                    &|_| None,
-                    &|_, _| None,
-                    &|_, _| false,
-                    None,
-                    diagnostic.failing_path,
-                )
-            })
-        {
+        if matches!(
+            self.kind,
+            ClickErrorKind::Proof | ClickErrorKind::Unsupported
+        ) && let Some(trace) = self.diagnostic.as_ref().and_then(|diagnostic| {
+            diagnostic.state.as_ref()?.proof_trace(
+                &diagnostic.claim_label,
+                &mut memory_state_labels,
+                &|_| None,
+                &|_, _| None,
+                &|_, _| false,
+                None,
+                diagnostic.failing_path,
+            )
+        }) {
             report.push('\n');
             report.push_str(&trace);
         }
@@ -11215,7 +11218,10 @@ impl ClickError {
     ) -> Option<String> {
         let _accessors = self.report_model_accessor_scope();
         let diagnostic = self.diagnostic.as_ref()?;
-        if self.kind != ClickErrorKind::Proof || !proof_trace::enabled_for(&diagnostic.claim_label)
+        if !matches!(
+            self.kind,
+            ClickErrorKind::Proof | ClickErrorKind::Unsupported
+        ) || !proof_trace::enabled_for(&diagnostic.claim_label)
         {
             return None;
         }

@@ -614,8 +614,10 @@ fn failure_declaration_position(
     // A proof failure records the declaration it arose in. A declaration
     // check records only which declaration was being visited, which a check
     // made between visits does not update, so what its message names wins.
-    if error.kind() == ClickErrorKind::Proof
-        && let Some(position) = recorded()
+    if matches!(
+        error.kind(),
+        ClickErrorKind::Proof | ClickErrorKind::Unsupported
+    ) && let Some(position) = recorded()
     {
         return Some(position);
     }
@@ -737,10 +739,17 @@ fn verification_error_report(
                 .and_then(|claim| claim.split_once('.'))
                 .map(|(declaration, _)| declaration)
         });
-        if matches!(error.kind(), ClickErrorKind::Proof | ClickErrorKind::Type)
-            && let Some(source) = project.entry_source()
+        if matches!(
+            error.kind(),
+            ClickErrorKind::Proof | ClickErrorKind::Type | ClickErrorKind::Unsupported
+        ) && let Some(source) = project.entry_source()
             && let Some(position) = declaration
-                .filter(|_| error.kind() == ClickErrorKind::Proof)
+                .filter(|_| {
+                    matches!(
+                        error.kind(),
+                        ClickErrorKind::Proof | ClickErrorKind::Unsupported
+                    )
+                })
                 .and_then(|declaration| {
                     click::surface::click_declaration_source_position(source, declaration)
                 })
@@ -835,15 +844,16 @@ fn verification_error_report(
     }
     // The hint is printed only for a command that `--trace-proof` accepts:
     // both resolve the name through `trace_unit`.
-    if error.kind() == ClickErrorKind::Proof
-        && let Some(declaration) = error.proof_claim_label().and_then(|claim| {
-            if claim == "program.termination" {
-                Some(claim)
-            } else {
-                claim.split_once('.').map(|(declaration, _)| declaration)
-            }
-        })
-        && let Ok(unit) = trace_unit(declaration, project, inputs)
+    if matches!(
+        error.kind(),
+        ClickErrorKind::Proof | ClickErrorKind::Unsupported
+    ) && let Some(declaration) = error.proof_claim_label().and_then(|claim| {
+        if claim == "program.termination" {
+            Some(claim)
+        } else {
+            claim.split_once('.').map(|(declaration, _)| declaration)
+        }
+    }) && let Ok(unit) = trace_unit(declaration, project, inputs)
     {
         report.push_str(&format!(
             "\n\nTo get a trace:\n  click verify --trace-proof {} {}",

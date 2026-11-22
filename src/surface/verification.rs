@@ -4217,14 +4217,14 @@ fn c_statement_calls_recording(
 /// is named by its source spelling and followed to the defect that refused
 /// it, so the report ends at something the user can repair, with the repairs
 /// the function that owns the defect has.
-fn termination_refusal_report(
+fn termination_refusal_report<'a>(
     name: &str,
-    refusal: &TerminationRefusal,
-    refusals: &BTreeMap<String, TerminationRefusal>,
+    refusal: &'a TerminationRefusal,
+    refusals: &'a BTreeMap<String, TerminationRefusal>,
     declared_diverging: &BTreeSet<String>,
     unsuitable_callback: Option<&UnsuitableCallback>,
     tactics: &BTreeSet<String>,
-) -> String {
+) -> (String, &'a TerminationRefusal) {
     let spelling = |name: &str| {
         name.split_once('#')
             .map_or(name, |(name, _)| name)
@@ -4251,19 +4251,19 @@ fn termination_refusal_report(
                         "{shown}; rank it with function-level `decreases` clauses, or declare `{owner}` `diverges`"
                     ));
                 }
-                return report;
+                return (report, current);
             }
             TerminationRefusal::UnrankedLoop { .. } => {
                 report.push_str(&format!(
                     "{current}; give it one, or mark it `loop diverges` and declare `{owner}` `diverges`"
                 ));
-                return report;
+                return (report, current);
             }
             TerminationRefusal::DivergingContract { .. } => {
                 report.push_str(&format!(
                     "{current}; declare `{owner}` `diverges` too, or require a contract without the marker"
                 ));
-                return report;
+                return (report, current);
             }
             TerminationRefusal::IndirectCall { .. } => {
                 report.push_str(&current.to_string());
@@ -4274,11 +4274,11 @@ fn termination_refusal_report(
                         spelling(&unsuitable.callback)
                     ));
                 }
-                return report;
+                return (report, current);
             }
             TerminationRefusal::DeclaredDiverging => {
                 report.push_str(&current.to_string());
-                return report;
+                return (report, current);
             }
         };
         let shown = TerminationRefusal::Callee {
@@ -4289,10 +4289,10 @@ fn termination_refusal_report(
             report.push_str(&format!(
                 ": it is declared `diverges`; declare `{owner}` `diverges` too"
             ));
-            return report;
+            return (report, current);
         }
         let Some(next) = refusals.get(callee).filter(|_| visited.insert(callee)) else {
-            return report;
+            return (report, current);
         };
         report.push_str(": ");
         owner = spelling(callee);
@@ -8954,17 +8954,27 @@ pub(in crate::surface) fn program_contract_failure(
                     let unsuitable = &verdicts.unsuitable_callbacks[0];
                     let taker = spelling(&unsuitable.taker);
                     let callback = spelling(&unsuitable.callback);
-                    let lacks = match verdicts.refusals.get(&unsuitable.callback) {
-                        Some(refusal) => termination_refusal_report(
-                            &callback,
-                            refusal,
-                            &verdicts.refusals,
-                            declared_diverging,
-                            None,
-                            tactic_names,
-                        ),
-                        None => "it has no termination evidence".to_string(),
+                    let (lacks, cause) = match verdicts.refusals.get(&unsuitable.callback) {
+                        Some(refusal) => {
+                            let (report, cause) = termination_refusal_report(
+                                &callback,
+                                refusal,
+                                &verdicts.refusals,
+                                declared_diverging,
+                                None,
+                                tactic_names,
+                            );
+                            (report, Some(cause))
+                        }
+                        None => ("it has no termination evidence".to_string(), None),
                     };
+                    if matches!(cause, Some(TerminationRefusal::IndirectCall { .. })) {
+                        return ClickError::new(format!(
+                            "`{taker}` takes the address of `{callback}`, and `{callback}` can call through a function pointer. Click's termination checker requires callbacks to return without indirect calls. {lacks}"
+                        ))
+                        .at_declaration(&taker)
+                        .with_kind(ClickErrorKind::Unsupported);
+                    }
                     ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker).with_proof_refusal(ProofRefusal::Termination)
                 }
                 ProgramContractGoal::Returns(name) => {
@@ -8980,6 +8990,7 @@ pub(in crate::surface) fn program_contract_failure(
                             verdicts.unsuitable_callbacks.first(),
                             tactic_names
                         )
+                        .0
                     ))
                     .at_declaration(&name)
                     .with_proof_refusal(ProofRefusal::Termination)
