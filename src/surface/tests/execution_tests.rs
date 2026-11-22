@@ -2515,7 +2515,6 @@ fn every_mdtest_names_each_read_once() {
 /// mdtests that produced the most. A report, not a check: run it by name to
 /// see what removing load variables from facts still has to change.
 #[test]
-#[cfg(not(feature = "fast-gate"))]
 #[ignore = "report: verifies every C mdtest under the load-variable fact census"]
 fn report_load_variables_in_facts() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
