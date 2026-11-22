@@ -1559,26 +1559,14 @@ borrow of a reference or slice parameter does not change it.
 from its storage markers and its writes of pure values, and a `()` temporary
 that is only a call's destination, which the call never writes.
 
-These still stay a temporary:
-
-- a call's result read more than once, so a slice, chunk or `enumerate`
-  loop's `next` result is one and a proof sees it;
-- a borrow, unless its one read in its block takes it whole: a call
-  argument (`t = &mut x; f(t)` is `f(&mut x)`, whose borrow lasts the call), a
-  local's whole value (`let r = &mut x`), a record's first field
-  (`Guard { slot: &mut *value, saved }`), or a reborrow (`&mut *t` is the
-  borrow). A borrow of a place rooted at a local moves past statements that
-  do not name that local;
-- a slice;
-- a local that roots a place (`&t`, `t.f`, `t[i]`);
-- an enum `match` scrutinee that still needs a local to supply its test and
-  payloads.
-
-This temporary is a defect to remove, not a design to extend. A proof should
-never see `__rust_mir_<N>` or any other name a front end or compiler invented. Do not add a temporary, a name check, or a special case
-that depends on one; where existing code needs one, remove it by moving toward
-the model: a call is a node of the expression that holds it, its result is
-named by its site, and no compiler temporary becomes a program variable.
+The importer can use numbered keys to connect MIR producers and readers.
+An unnamed local that survives normalization must lower through a supported
+representation, such as a scalar operand result, iterator state, or typed
+storage for a written literal or borrow. If lowering would declare a program
+variable using the raw MIR key, it reports an unsupported Rust construct at
+the local's source location. It selects this check using the importer's
+unnamed-local metadata, so source identifiers remain valid regardless of
+spelling.
 
 ### Paths and outcomes
 

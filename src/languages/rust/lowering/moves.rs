@@ -243,6 +243,14 @@ pub(super) fn lower(
         let statement = match &local.value_type {
             Type::Unit => program_skip(),
             Type::Reference { .. } if iterator_reference(&local.value_type) => program_skip(),
+            _ if mir.unnamed_locals.contains(&local.name)
+                && !cx.bindings.contains_key(&local.name) =>
+            {
+                return Err(format!(
+                    "{}:{}:{}: unsupported Rust construct: an unnamed compiler local requires storage with no supported identity",
+                    cx.source, local.span.line, local.span.column
+                ));
+            }
             Type::Record { name } => {
                 cx.owned_locals.insert(local.name.clone());
                 records.insert(local.name.as_str(), name.as_str());
