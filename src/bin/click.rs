@@ -61,7 +61,6 @@ fn report_error(message: String) -> ! {
         "contract entry refused",
         "execution prerequisite unmet",
         "execution refused",
-        "contract exit refused",
         "contract refinement refused",
         "termination not established",
         "invalid divergence declaration",

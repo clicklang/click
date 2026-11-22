@@ -177,7 +177,6 @@ impl<'a> Proof<'a> {
                 self.step_error(format!(
                     "could not apply checked contract resource effect: {message}"
                 ))
-                .with_proof_refusal(crate::surface::ProofRefusal::ContractExit)
             })?;
         let updated = self.with_outcome_state(&outcome)?;
         let Some(Obligation::FunctionOutcome(goal)) = updated.focused_obligation() else {
@@ -460,10 +459,7 @@ impl<'a> Proof<'a> {
             }
             _ => None,
         };
-        let is_write_permission_error = matches!(
-            refusal,
-            Refusal::Write(_) | Refusal::Range(_) | Refusal::Storage(_)
-        );
+
         let message = match refusal {
             Refusal::Internal(reason) => {
                 return self.contract_closing_internal_error(format!(
@@ -495,9 +491,9 @@ impl<'a> Proof<'a> {
                     .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof);
             }
             Refusal::Claim(key) => {
-                format!(
-                    "contract closing for `{label}` path {index}: unproved boundary claim {key:?}"
-                )
+                return self.contract_closing_internal_error(format!(
+                    "contract closing for `{label}` path {index}: unexpected returned resource claim {key:?}"
+                ));
             }
             #[cfg(test)]
             Refusal::Pending(kind) => {
@@ -508,8 +504,31 @@ impl<'a> Proof<'a> {
                     ))
                     .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof);
             }
-            Refusal::Resource(reason) => {
-                format!("contract closing for `{label}` path {index}: {reason}")
+            Refusal::Incomplete(reason) => {
+                return self
+                    .step_error(format!(
+                        "contract closing for `{label}` path {index}: {reason}"
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof);
+            }
+            Refusal::InvalidContract(reason) => {
+                return self
+                    .step_error(format!("contract for `{label}`: {reason}"))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Contract);
+            }
+            Refusal::Limit(reason) => {
+                return self
+                    .step_error(format!(
+                        "contract closing for `{label}` path {index}: {reason}"
+                    ))
+                    .with_kind(crate::surface::ClickErrorKind::Limit);
+            }
+            Refusal::Execution(reason) => {
+                return self
+                    .step_error(format!(
+                        "contract closing for `{label}` path {index}: {reason}"
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Execution);
             }
             Refusal::Runtime(error) => format!(
                 "`{label}` path {index}: C operation could not be verified: {}{}",
@@ -538,10 +557,7 @@ impl<'a> Proof<'a> {
             Some(kind) => error
                 .with_kind(kind)
                 .with_proof_refusal(crate::surface::ProofRefusal::Execution),
-            None if is_write_permission_error => {
-                error.with_proof_refusal(crate::surface::ProofRefusal::Tactic)
-            }
-            None => error.with_proof_refusal(crate::surface::ProofRefusal::ContractExit),
+            None => error.with_proof_refusal(crate::surface::ProofRefusal::Tactic),
         }
     }
 
