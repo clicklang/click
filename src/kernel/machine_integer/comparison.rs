@@ -986,7 +986,7 @@ impl NativeComparisonView<'_> {
         )
     }
 
-    fn boxed_condition(&self) -> Option<(ConditionTerm, bool)> {
+    pub(crate) fn boxed_condition(&self) -> Option<(ConditionTerm, bool)> {
         representation::comparison(
             self.format,
             self.relation,
