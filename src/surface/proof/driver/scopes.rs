@@ -645,12 +645,16 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         &self,
         tactics: &[ProofTactic],
         sites: &[ProofStepSite],
+        implicit_tail: bool,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let driver_proof = self.proof;
-        let Some(body) = driver_proof
-            .body
-            .driver()
-            .try_addressed_linear_script(tactics, sites, &mut None, None)?
+        let Some(body) = driver_proof.body.driver().try_addressed_linear_script(
+            tactics,
+            sites,
+            &mut None,
+            None,
+            implicit_tail,
+        )?
         else {
             return Ok(None);
         };
@@ -664,12 +668,18 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         tactics: &[ProofTactic],
         declined: &mut Option<crate::surface::proof::smart_closures::LinearScriptDecline>,
         unfinished: &mut Option<Proof<'a>>,
+        implicit_tail: bool,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let driver_proof = self.proof;
         let Some(body) = driver_proof
             .body
             .driver()
-            .try_authoritative_linear_script_reporting(tactics, declined, Some(unfinished))?
+            .try_authoritative_linear_script_reporting(
+                tactics,
+                declined,
+                Some(unfinished),
+                implicit_tail,
+            )?
         else {
             return Ok(None);
         };

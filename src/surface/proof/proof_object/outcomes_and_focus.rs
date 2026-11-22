@@ -177,6 +177,7 @@ impl<'a> Proof<'a> {
                 self.step_error(format!(
                     "could not apply checked contract resource effect: {message}"
                 ))
+                .with_proof_refusal(crate::surface::ProofRefusal::ContractExit)
             })?;
         let updated = self.with_outcome_state(&outcome)?;
         let Some(Obligation::FunctionOutcome(goal)) = updated.focused_obligation() else {
@@ -234,6 +235,7 @@ impl<'a> Proof<'a> {
             guard_active,
             guard_deferred,
         )
+        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractExit))
     }
 
     /// The guard decision and whether an unresolved guard defers the claim.
@@ -445,11 +447,17 @@ impl<'a> Proof<'a> {
         let binding = context.parameter_binding();
         let label = context.claim_label;
         let index = goal.path_index;
+        let refusal_kind = match &refusal {
+            Refusal::Runtime(error) => {
+                Some(crate::surface::diagnostics::runtime_refusal_kind(error))
+            }
+            _ => None,
+        };
         let message = match refusal {
             Refusal::Claim(key) => {
                 let claim = match key {
-                            FunctionContractClaimKey::Ensure(clause_index) => match context.function_block.ensures().get(clause_index) { Some(clause) => FunctionClaimRef::Ensure(clause_index, clause), None => return self.step_error(format!("contract closing for `{label}` path {index}: unproved generated returned-storage obligation")) },
-                            _ => return self.step_error(format!("contract closing for `{label}` path {index}: unproved boundary claim {key:?}")),
+                            FunctionContractClaimKey::Ensure(clause_index) => match context.function_block.ensures().get(clause_index) { Some(clause) => FunctionClaimRef::Ensure(clause_index, clause), None => return self.step_error(format!("contract closing for `{label}` path {index}: unproved generated returned-storage obligation")).with_proof_refusal(crate::surface::ProofRefusal::ContractExit) },
+                            _ => return self.step_error(format!("contract closing for `{label}` path {index}: unproved boundary claim {key:?}")).with_proof_refusal(crate::surface::ProofRefusal::ContractExit),
                         };
                 let clause = match claim.clause().ensure() {
                     Ensure::Resource(resource) => {
@@ -494,7 +502,13 @@ impl<'a> Proof<'a> {
                 )
             ),
         };
-        self.step_error(message)
+        let error = self.step_error(message);
+        match refusal_kind {
+            Some(kind) => error
+                .with_kind(kind)
+                .with_proof_refusal(crate::surface::ProofRefusal::Execution),
+            None => error.with_proof_refusal(crate::surface::ProofRefusal::ContractExit),
+        }
     }
 
     pub(in crate::surface::proof) fn first_open_outcome_goal(

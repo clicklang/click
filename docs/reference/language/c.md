@@ -2057,18 +2057,34 @@ the per-format contracts of [formatted output](#formatted-output).
 ## Formatted output
 
 On the hosted target, `printf("literal")` uses `stdout` and
-`fprintf(file, "literal")` uses its `FILE *` argument. Both use the projected
-`<stdio.h>` and require ownership of `stream(file)` for the target handle.
-The model supports literal output and `%%`, including concatenated C
-literals and truncation at the first NUL. It accepts up to 64 requested bytes
-per call. Each attempt adds the bytes and the return value to the front of
-`write_history`. The return is the byte count on success or negative on
-error. A failure can produce partial output, and success can leave data
+`fprintf(file, format, ...)` uses its `FILE *` argument. Both use the
+projected `<stdio.h>` and require ownership of `stream(file)` for the target
+handle. The model supports formats of ordinary characters and `%%`. Each
+attempt adds the requested characters and the return value to the front of
+`write_history`. The return is the character count on success or negative
+on error. A failure can produce partial output, and success can leave data
 buffered. The [stdio specification library](../library/index.md#clickcstdio)
 defines `write_requests` for projecting the history onto just the requests.
 
+`fprintf` has one Click contract, `library/c/fprintf.interface.click`, which
+the C front end's name table selects for the projected declaration. It reads
+the format as a C string the caller views: it requires
+`click::c::stdio::literal_format` of the format's `n` bytes, and states the
+characters written as `click::c::stdio::format_output` and their count as
+`click::c::stdio::format_length`. The format need not be a literal, and
+arguments it does not convert are ignored (C11 7.21.6.1p2). For a literal
+format, `solve` evaluates the three functions one level at a time, so a
+caller's proof states the output it expects with no written steps
+(`mdtests/printf_and_fprintf_share_the_streams_write_history.md`,
+`mdtests/fprintf_ignores_arguments_its_format_does_not_convert.md`). A
+format with a conversion is refused at the precondition
+(`mdtests/fprintf_refuses_a_format_that_converts.md`). `printf` still has a
+contract the front end writes for each literal format, with up to 64
+requested bytes, truncated at the first NUL; it moves to a Click contract
+once an `extern` contract can name `stdout`.
+
 `click verify` reports these imported assumptions as `printf: "<format>"`
-or `fprintf: "<format>"`. Hosted `main` may use the original K&R
+and, for `fprintf`, as a C library interface. Hosted `main` may use the original K&R
 `main() { ... }` spelling, and reaching the end of a hosted parameterless
 `int main` returns zero. The original example is in
 `examples/hello-world/`.

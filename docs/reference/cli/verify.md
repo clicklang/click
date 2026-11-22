@@ -175,7 +175,16 @@ Verification reports use these headings:
 | `tactic error` | Click refused a specific tactic invocation, for example `step()` with no statement left. |
 | `unsuccessful search` | A proof search ran and could not close a goal, for example a written `solve()` or a statement’s implicit closer. |
 | `unproved goal` | A goal was still open when the script finished. |
-| `verification error` | A check such as opening a contract entry or certifying a contract was refused. |
+| `contract error` | Click identified a rule it believes the written contract violates, such as a potentially overflowing resource endpoint or a proven overlap between owned entry resources or between an owned resource and an input view. |
+| `contract entry refused` | Click could not establish the contract's initial state or resources. The diagnostic describes the setup check that stopped verification. |
+| `execution prerequisite unmet` | An exact execution check needs evidence at the current program point. |
+| `execution refused` | The modeled operation could not proceed on this path, for example an uninitialized read. |
+| `contract exit refused` | The checked outcome did not meet a resource or effect requirement. |
+| `contract refinement refused` | Click refused a contract-refinement check. |
+| `termination not established` | A ranking, call, or callback termination check was refused. |
+| `invalid divergence declaration` | The declared divergence conflicts with checked termination evidence. |
+| `unsupported proof` | Click's driver does not support the reported proof shape or depth. |
+| `unclassified verification refusal` | The reported cause comes from a remaining check without a specific classification. |
 | `syntax error` | Input did not parse. |
 | `type error` | The source did not pass checking of names or types. |
 | `limit error` | A configured verification limit stopped the command. |

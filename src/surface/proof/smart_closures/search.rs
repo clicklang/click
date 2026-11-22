@@ -4027,6 +4027,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(rewritten));
         }
+        // A recursive call over constants: evaluate it one level at a time.
+        if allow_function_unfold
+            && let Some(evaluated) =
+                crate::kernel::search::ProofSearch::try_ground_recursion_closure(
+                    search_input,
+                    introduced_surfaces,
+                )?
+        {
+            return Ok(Some(evaluated));
+        }
         // A goal over a value a fact equates to a constructor, as a proof
         // `match` arm's case states it: evaluate from a rewrite.
         if allow_function_unfold
@@ -5100,6 +5110,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if applications.is_empty() {
             return Ok(None);
         }
+        // A recursion over constants is evaluated one level at a time before
+        // anything unfolds in this goal, whose size each unfold would grow.
+        if let Some(evaluated) = crate::kernel::search::ProofSearch::try_ground_recursion_closure(
+            search_input,
+            introduced_surfaces,
+        )? {
+            return Ok(Some(evaluated));
+        }
         let mut unfolded_any = false;
         let mut proof = search_input.clone();
         for application in applications {
@@ -5152,6 +5170,225 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Ok(None)
     }
 
+    /// Evaluate a recursive call over constants, such as a byte copy
+    /// `output_from(lit, 0u64, 13)` that a fact or the goal names, one level
+    /// at a time. Each level is a `have` that the call equals the arm of its
+    /// definition that constant guards select, `output_from(lit, 0u64, 13) ==
+    /// List::Cons(lit[0u64], output_from(lit, 0u64 + 1u64, 13 - 1))`, proved
+    /// by `unfold` and `known()`; the next level is the arm's recursive call
+    /// with its constants evaluated. Each `have` has the size of one level,
+    /// so the evaluation is linear in its depth, unlike unfolding in the goal,
+    /// which lowers the growing goal at each step. After the last level the
+    /// goal is closed from the equations, without this strategy. At most
+    /// `MAX_GROUND_RECURSION_LEVELS` levels.
+    pub(in crate::surface::proof) fn try_ground_recursion_closure(
+        search_input: &Proof<'a>,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_ground_recursion_closure");
+        // Closing the goal after an evaluation runs `solve` again, which must
+        // not evaluate again.
+        let Some(_scope) = SolveFallbackScope::enter(SolveFallback::GroundRecursion) else {
+            return Ok(None);
+        };
+        let functions = search_input.spec_functions();
+        let Some(surface_goal) = search_input.surface_goal() else {
+            return Ok(None);
+        };
+        // The goal and the facts connected to it, where a postcondition names
+        // the call: `out.write_history == List::Cons(.. output_from(..) ..)`
+        // or `result == f(..) or result < 0`.
+        let mut surfaces = vec![surface_goal.clone()];
+        if let Some(goal) = search_input.goal()
+            && let Some(facts) = crate::kernel::search::proposition_search::connected_facts(
+                search_input.facts().assumptions(),
+                goal,
+            )
+        {
+            for equality in facts.iter().take(CONSTRUCTOR_EVALUATION_FACTS) {
+                // A call under a quantifier is over its bound variable, not
+                // constants.
+                if matches!(
+                    equality,
+                    crate::kernel::Proposition::ForAll { .. }
+                        | crate::kernel::Proposition::Exists { .. }
+                ) {
+                    continue;
+                }
+                if let Some((_, surface)) =
+                    crate::kernel::search::ProofSearch::resolve_solve_premises(
+                        search_input,
+                        std::slice::from_ref(equality),
+                        &[],
+                    )
+                    .and_then(|mut spelled| spelled.pop())
+                {
+                    surfaces.push(surface);
+                }
+            }
+        }
+        // Every distinct call over constants the goal or those facts name,
+        // such as both the output and the length a postcondition states.
+        // Each is evaluated at the point a fact names it, if any.
+        let mut applications = Vec::new();
+        for surface in &surfaces {
+            for application in pure_theorems::click_function_applications(surface, &[]) {
+                if pure_theorems::largest_constant_argument(&application) > 0
+                    && !applications
+                        .iter()
+                        .any(|(_, known): &(_, ClickFunctionApplication)| *known == application)
+                {
+                    let point = pure_theorems::application_point(surface, &application);
+                    applications.push((point, application));
+                }
+            }
+        }
+        let mut proof = search_input.clone();
+        let mut levels = 0;
+        let mut evaluated_any = false;
+        for (point, application) in applications {
+            let at_point = |expression: ContractExpression| match &point {
+                Some(selector) => ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(expression),
+                },
+                None => expression,
+            };
+            // The levels down to the base, read from the definition alone.
+            let mut chain = Vec::new();
+            let mut current = Some(application.clone());
+            while let Some(call) = current {
+                levels += 1;
+                if levels > MAX_GROUND_RECURSION_LEVELS {
+                    attempt::record_search_note(
+                        "ground recursion evaluation",
+                        format!(
+                            "budget exhausted: {MAX_GROUND_RECURSION_LEVELS} levels of `{}`",
+                            call.name
+                        ),
+                    );
+                    return Ok(None);
+                }
+                check_verification_deadline()?;
+                let Some((arm, next)) = pure_theorems::ground_recursion_level(functions, &call)
+                else {
+                    chain.clear();
+                    break;
+                };
+                chain.push((call, arm));
+                current = next;
+            }
+            let Some(value) = pure_theorems::ground_recursion_value(&application.name, &chain)
+            else {
+                continue;
+            };
+            // One `have` for the call's value, proved from one `have` per
+            // level inside it: only the value joins the proof.
+            let call_value = ClickProposition::Comparison {
+                left: at_point(ContractExpression::Call {
+                    name: application.name.clone(),
+                    arguments: application.arguments.clone(),
+                }),
+                operator: ComparisonOperator::Equal,
+                right: at_point(value),
+            };
+            let Some(mut scope) = attempt::candidate_outcome(proof.driver().open_have(call_value))?
+            else {
+                continue;
+            };
+            let mut complete = true;
+            for (call, arm) in chain {
+                check_verification_deadline()?;
+                let call_expression = at_point(ContractExpression::Call {
+                    name: call.name.clone(),
+                    arguments: call.arguments.clone(),
+                });
+                let level = ClickProposition::Comparison {
+                    left: call_expression.clone(),
+                    operator: ComparisonOperator::Equal,
+                    right: at_point(arm),
+                };
+                let unfold = if point.is_some() {
+                    ProofStep::UnfoldProposition(ClickProposition::Value(call_expression))
+                } else {
+                    ProofStep::UnfoldFunction(call.clone())
+                };
+                let Some(nested) = attempt::candidate_outcome(scope.driver().open_have(level))?
+                else {
+                    complete = false;
+                    break;
+                };
+                let Some(mut nested) =
+                    attempt::candidate_outcome(nested.driver().apply_step(unfold))?
+                else {
+                    complete = false;
+                    break;
+                };
+                if !nested.is_complete() {
+                    // `known()` decides a level a constructor states; a
+                    // `Bool` level's guards are decided by `solve`, which does
+                    // not evaluate again (the scope above).
+                    if let Some(known) =
+                        attempt::candidate_outcome(nested.driver().apply_step(ProofStep::Known))?
+                    {
+                        nested = known;
+                    } else if let Some(solved) = nested.driver().try_solve_closure()? {
+                        nested = solved;
+                    } else {
+                        complete = false;
+                        break;
+                    }
+                }
+                let Some(joined) = attempt::candidate_outcome(scope.join_nested(nested))? else {
+                    complete = false;
+                    break;
+                };
+                scope = joined;
+            }
+            if !complete {
+                continue;
+            }
+            if !scope.is_complete() {
+                let Some(known) =
+                    attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+                else {
+                    continue;
+                };
+                scope = known;
+            }
+            let Some(joined) = attempt::candidate_outcome(scope.join())? else {
+                continue;
+            };
+            proof = joined;
+            evaluated_any = true;
+        }
+        if !evaluated_any {
+            return Ok(None);
+        }
+        if proof.is_complete() {
+            return Ok(Some(proof));
+        }
+        // The equations decide the goal through the equality closure:
+        // each call equals a constructor over the next.
+        if let Some(known) =
+            attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(known));
+        }
+        if let Some(closed) =
+            crate::kernel::search::ProofSearch::try_direct_logical_closure(&proof)?
+        {
+            return Ok(Some(closed));
+        }
+        crate::kernel::search::ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold(
+            &proof,
+            false,
+            introduced_surfaces,
+            false,
+        )
+    }
+
     /// Evaluate a goal's recursive applications over known constructors, at
     /// most `CONSTRUCTOR_EVALUATION_FUEL` checked steps. Each step is the
     /// first that applies of: an `unfold` of an application in the goal
@@ -5190,10 +5427,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .collect();
         let mut fact_equations_gathered = false;
         let mut proof = search_input.clone();
-        let mut fuel = CONSTRUCTOR_EVALUATION_FUEL;
-        let mut step = 0;
-        while step < fuel {
-            step += 1;
+        // Each step lowers the whole goal again, and the goal grows with each
+        // unfold, so the fuel stays small: a longer recursion over constants
+        // is `try_ground_recursion_closure`'s, one level at a time.
+        for _ in 0..CONSTRUCTOR_EVALUATION_FUEL {
             check_verification_deadline()?;
             let Some(surface_goal) = proof.surface_goal() else {
                 return Ok(None);
@@ -5213,15 +5450,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .driver()
                         .apply_step(ProofStep::UnfoldFunction(application.clone())),
                 )? {
-                    // A recursion over a constant measure takes about that
-                    // many unfolds in all, beyond the base fuel; the measure
-                    // of the first call is the largest.
-                    fuel = fuel
-                        .max(
-                            CONSTRUCTOR_EVALUATION_FUEL
-                                + pure_theorems::largest_constant_argument(&application),
-                        )
-                        .min(MAX_CONSTRUCTOR_EVALUATION_FUEL);
                     next = Some(unfolded);
                     break;
                 }
@@ -9682,6 +9910,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .try_authoritative_linear_script_leaving_open(
                         std::slice::from_ref(tactic),
                         &mut unfinished,
+                        false,
                     )
                     .ok()?
                     .or(unfinished)?;
@@ -10000,7 +10229,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let mut unfinished = None;
                     let Ok(completed) = search_input
                         .driver()
-                        .try_authoritative_linear_script_leaving_open(&tactics, &mut unfinished)
+                        .try_authoritative_linear_script_leaving_open(
+                            &tactics,
+                            &mut unfinished,
+                            false,
+                        )
                     else {
                         continue;
                     };

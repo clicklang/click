@@ -107,12 +107,12 @@ theorem sized_identity_shape(tree: SizedTree) {
             SizedTree::Empty => {
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(sized_identity(SizedTree::Empty));
-                unfold(rb_identity(RbTree::Empty)); normalize();
+                unfold(rb_identity(RbTree::Empty)); known();
             },
             SizedTree::Node(identity, parent, color, value, left, right) => {
                 unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left, right)));
                 unfold(sized_identity(SizedTree::Node(identity, parent, color, value, left, right)));
-                unfold(rb_identity(RbTree::Node(identity, parent, color, sized_shape(left), sized_shape(right)))); normalize();
+                unfold(rb_identity(RbTree::Node(identity, parent, color, sized_shape(left), sized_shape(right)))); known();
             },
         }
     }
@@ -129,7 +129,7 @@ tactic rb_identity_at(p: struct rb_node*) {
             unfold(tree);
             let checked = fold(rb_at(p), { model: RbTree::Empty });
             have rb_identity(checked.model) == p by {
-                rewrite(checked.model, RbTree::Empty); unfold(rb_identity(RbTree::Empty)); normalize();
+                rewrite(checked.model, RbTree::Empty); unfold(rb_identity(RbTree::Empty)); known();
             }
         },
         RbTree::Node(identity, parent, color, left_model, right_model) => {

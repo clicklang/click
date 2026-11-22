@@ -1954,6 +1954,7 @@ fn bind_hosted_startup(
         ClickError::new(
             "program-entry main currently requires no parameters or preconditions; ownership comes from startup",
         )
+        .with_proof_refusal(ProofRefusal::Contract)
     };
     if !parsed.parameters().is_empty() {
         return Err(invalid());
@@ -1963,12 +1964,18 @@ fn bind_hosted_startup(
         [Requirement::Resource(requirement @ ResourceClause::Named { .. })] => requirement,
         _ => return Err(invalid()),
     };
+    let invalid_resource = || {
+        ClickError::new(
+            "program-entry main can name only the hosted stdout stream as an input resource",
+        )
+        .with_proof_refusal(ProofRefusal::Contract)
+    };
     let Some(ProgramValue::Pointer(stdout)) = parsed
         .globals()
         .get("stdout")
         .and_then(|global| global.hosted_stdout())
     else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     let atom = super::lowering::lower_resource_clause_at_state(
         requirement,
@@ -1976,25 +1983,26 @@ fn bind_hosted_startup(
         &state,
     )?;
     let Resource::Instance(instance) = atom.resource() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if instance.name() != "stream" || !instance.resource_arguments().is_empty() {
-        return Err(invalid());
+        return Err(invalid_resource());
     }
     let arguments = instance.arguments().native_values();
     let [AlgebraicValue::Program(ProgramValue::Pointer(file))] = arguments.as_ref() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if file.address() != stdout.address() {
         return Err(ClickError::new(
             "program-entry stream ownership requires the hosted stdout handle",
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Contract));
     }
     let [(field, ResourceFieldType::Algebraic(history))] = instance.schema().fields() else {
-        return Err(invalid());
+        return Err(invalid_resource());
     };
     if field != "write_history" {
-        return Err(invalid());
+        return Err(invalid_resource());
     }
     let empty = AlgebraicValue::Algebraic(AlgebraicTerm {
         algebraic_type: history.clone(),
@@ -2930,8 +2938,13 @@ fn evaluate_entry_resource_context(
         Ok(Err(error)) => {
             return Err(ClickError::new(format!(
                 "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
-                crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-            )));
+                crate::surface::diagnostics::describe_contract_entry_resource_error(
+                    &error,
+                    parameter_binding,
+                    resource_environment.struct_layouts(),
+                )
+            ))
+            .with_proof_refusal(contract_entry_resource_refusal(&error)));
         }
         Err(limit) => {
             return Err(ClickError::new(format!(
@@ -2966,12 +2979,22 @@ fn evaluate_entry_resource_context(
                         &assumptions,
                     )
                 {
-                    return Err(surface_error.with_context(format!("`{claim_label}` setup failed")));
+                    let diagnostic =
+                        surface_error.with_context(format!("`{claim_label}` setup failed"));
+                    return Err(if error.missing_contract_read().is_some() {
+                        diagnostic.with_proof_refusal(ProofRefusal::Contract)
+                    } else {
+                        diagnostic
+                    });
                 }
                 return Err(ClickError::new(format!(
                     "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
-                    crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-                )));
+                    crate::surface::diagnostics::describe_contract_entry_resource_error(
+                        &error,
+                        parameter_binding,
+                        resource_environment.struct_layouts(),
+                    )
+                )).with_proof_refusal(contract_entry_resource_refusal(&error)));
             }
             Err(limit) => {
                 return Err(ClickError::new(format!(
@@ -2988,10 +3011,15 @@ fn evaluate_entry_resource_context(
         &assumptions,
     )
     .map_err(|error| {
-        ClickError::new(format!(
+        let diagnostic = ClickError::new(format!(
             "`{claim_label}` setup failed: {}",
             crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-        ))
+        ));
+        if error.is_contract_entry_resource_error() {
+            diagnostic.with_proof_refusal(ProofRefusal::Contract)
+        } else {
+            diagnostic
+        }
     })?;
     let state = state.with_resource_context(evaluated);
     // The entry partition (`kernel::contract_entry_partition_facts`): this
@@ -3110,14 +3138,39 @@ fn canonical_claim_caller_state(
     if !has_verified_loops {
         return Ok(state);
     }
-    let entry = program_function_contract_entry_state(
+    let entry = crate::kernel::program_function_contract_entry_state_with_refusal(
         &state,
         function,
         arguments,
         &assumptions_from_propositions(pure_facts),
     )
-    .map_err(|message| ClickError::new(format!("`{claim_label}` {message}")))?;
+    .map_err(|error| {
+        use crate::kernel::ContractEntryRefusal;
+
+        match error {
+            ContractEntryRefusal::InvalidResource(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_proof_refusal(ProofRefusal::Contract)
+            }
+            ContractEntryRefusal::Internal(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_kind(ClickErrorKind::Internal)
+            }
+            ContractEntryRefusal::Setup(reason) => {
+                ClickError::new(format!("`{claim_label}` {reason}"))
+                    .with_proof_refusal(ProofRefusal::ContractEntry)
+            }
+        }
+    })?;
     Ok(state.with_resource_context(entry.resources().clone()))
+}
+
+fn contract_entry_resource_refusal(error: &crate::kernel::RuntimeError) -> ProofRefusal {
+    if error.is_contract_entry_resource_error() {
+        ProofRefusal::Contract
+    } else {
+        ProofRefusal::ContractEntry
+    }
 }
 
 fn install_borrowed_contract_inputs(
@@ -3128,7 +3181,8 @@ fn install_borrowed_contract_inputs(
     proof_label: &str,
 ) -> Result<ExecutionState, ClickError> {
     if let Some(message) = crate::kernel::guard_contract_refusal(function.contract_interface()) {
-        return Err(ClickError::new(format!("`{proof_label}` {message}")));
+        return Err(ClickError::new(format!("`{proof_label}` {message}"))
+            .with_proof_refusal(ProofRefusal::Contract));
     }
     crate::kernel::execution_state_with_borrowed_contract_inputs(
         state,
@@ -3137,10 +3191,20 @@ fn install_borrowed_contract_inputs(
         &assumptions_from_propositions(pure_facts),
     )
     .map_err(|diagnostic| {
+        let subject = diagnostic.subject();
+        let refusal = if diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
+            && subject.resource_fact().is_some()
+            && subject.conflicting_resource_fact().is_some()
+        {
+            ProofRefusal::Contract
+        } else {
+            ProofRefusal::ContractEntry
+        };
         ClickError::new(format!(
             "`{proof_label}` could not establish stable authority for a contract input view: {}",
             crate::surface::diagnostics::describe_borrow_refusal(&diagnostic, parameter_binding,)
         ))
+        .with_proof_refusal(refusal)
     })
 }
 

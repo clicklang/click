@@ -372,9 +372,9 @@ theorem erase_unlink_red_if_not_black(c: Color) {
     ensures c == Color::Red by {
         let ih = induct(c);
         match c {
-            Color::Red => { normalize(); }
+            Color::Red => { known(); }
             Color::Black => {
-                have Color::Black == Color::Black by normalize();
+                have Color::Black == Color::Black by known();
                 contradiction(Color::Black == Color::Black);
             }
         }
@@ -494,10 +494,10 @@ theorem erase_outcome_deep(node: struct rb_node*, parent: struct rb_node*, color
     mn: struct rb_node*, mp: struct rb_node*, mc: Color, ml: RbTree, mr: RbTree,
     rr: RbTree, up: Context) {
     ensures erase_outcome(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), up) == erase_deep_outcome(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), up, rb_minimum(RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr))) by {
-        unfold(erase_outcome(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), up)); normalize();
+        unfold(erase_outcome(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), up)); known();
     }
     ensures erase_splice(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr))) == erase_deep_splice(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)), rb_minimum(RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr))) by {
-        unfold(erase_splice(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)))); normalize();
+        unfold(erase_splice(RbTree::Node(node, parent, color, RbTree::Node(ln, lp, lc, ll, lr), RbTree::Node(rn, rp, rc, RbTree::Node(mn, mp, mc, ml, mr), rr)))); known();
     }
 }
 

@@ -2085,6 +2085,26 @@ pub(crate) fn connected_equalities(
     Some(equalities)
 }
 
+/// Every fact connected to `goal` through shared atoms, of any shape: a
+/// disjunctive postcondition `result == f(..) or result < 0` among them.
+/// `solve`'s evaluation of a recursive call over constants reads the calls
+/// these facts name.
+pub(crate) fn connected_facts(
+    context: &PureFactContext,
+    goal: &Proposition,
+) -> Option<Vec<Proposition>> {
+    let (conditions, propositions, _, _) =
+        connected_atomic_premises(context, goal, &[], true, true, true)?;
+    Some(
+        conditions
+            .into_iter()
+            .map(|(condition, value)| Proposition::condition_is(condition, value))
+            .filter(|fact| !crate::kernel::is_verified_load_variable_defining_fact(fact))
+            .chain(propositions)
+            .collect(),
+    )
+}
+
 /// Walk syntax adjacency, never rebuilding an index of the ambient context.
 /// A wider smart fallback follows recent havoc bounds and general facts;
 /// its result still has to pass the restricted kernel query.

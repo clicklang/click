@@ -578,14 +578,18 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                     // obligation, where they may share a value spelling.
                     let written =
                         crate::surface::printing::source_click_proposition(item.proposition());
-                    error.with_context(format!("written invariant `{written}`"))
+                    error.with_rewritten_place(|reason| {
+                        Some(format!("written invariant `{written}`: {reason}"))
+                    })
                 } else {
                     error
                 };
-                error.with_context(format!(
-                    "loop {loop_index} {} entry, owing `{owed}`",
-                    item.title(invariant_index)
-                ))
+                error.with_rewritten_place(|reason| {
+                    Some(format!(
+                        "loop {loop_index} {} entry, owing `{owed}`: {reason}",
+                        item.title(invariant_index)
+                    ))
+                })
             })?;
             completions.push(checked.completed_loop_entry_goal()?);
             phase = checked.join()?;
@@ -633,17 +637,29 @@ fn check_loop_phase_goal<'a>(
     sites: Option<&[ProofStepSite]>,
     phase_name: &str,
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
+    let did_search = !matches!(source, SourceProof::Script(_));
     let checked = match source {
         SourceProof::Tactic(SmartTactic::ImplicitTail) => scope.driver().try_solve_closure()?,
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
             (scope).driver().try_solve_closure()?
         }
         SourceProof::Script(tactics) => match sites {
-            Some(sites) => scope.driver().try_addressed_linear_script(tactics, sites)?,
-            None => scope.driver().try_authoritative_linear_script(tactics)?,
+            Some(sites) => scope
+                .driver()
+                .try_addressed_linear_script(tactics, sites, true)?,
+            None => scope
+                .driver()
+                .try_authoritative_linear_script_reporting(tactics, &mut None, &mut None, true)?,
         },
     }
-    .ok_or_else(|| ClickError::new(format!("loop {phase_name} body did not close its goal")))?;
+    .ok_or_else(|| {
+        let reason = format!("loop {phase_name} body did not close its goal");
+        if did_search {
+            scope.body().solve_failure().with_context(reason)
+        } else {
+            ClickError::new(reason)
+        }
+    })?;
     if !checked.is_complete() {
         return Err(ClickError::new(format!(
             "loop {phase_name} body retained an open goal"
@@ -1180,17 +1196,20 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
             pending.extend(preservation_step_paths(&proof)?);
             continue;
         }
+        // A path may already know the condition, for example from assigning
+        // a comparison to a Boolean local. Retain its checked branch step.
+        let error = match preservation_smart_step(&proof) {
+            Ok(stepped) => {
+                pending.push(stepped);
+                continue;
+            }
+            Err(error) => error,
+        };
+        check_verification_deadline()?;
         // A Rust `match` arm's variant test splits into the variants the
         // facts leave live, each its own path to the back edge, as the
         // function's implicit tail splits it and as a written `match` would.
         if proof.is_at_enum_match_test()? {
-            let error = match preservation_smart_step(&proof) {
-                Ok(stepped) => {
-                    pending.push(stepped);
-                    continue;
-                }
-                Err(error) => error,
-            };
             let Some(split) = error.path_case_match().cloned() else {
                 return Err(error);
             };
@@ -1876,6 +1895,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 if tactics.is_empty() {
                     tactics.push(DeferredPostExecutionTactic {
                         lexical_bindings: None,
+                        reads_deferred_obtain: false,
                         tactic_index: environment.frontier_loop_source.loop_tactic_index,
                         source_index: environment.frontier_loop_source.loop_source_index,
                         tactic: PostExecutionTactic::Solve,

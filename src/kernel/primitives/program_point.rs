@@ -1536,7 +1536,13 @@ impl ProgramPoint {
         if !kind.is_word32()
             && !matches!(
                 kind,
-                LoadKind::Int8 | LoadKind::UInt8 | LoadKind::Int16 | LoadKind::UInt16
+                LoadKind::Int8
+                    | LoadKind::UInt8
+                    | LoadKind::Int16
+                    | LoadKind::UInt16
+                    | LoadKind::Bits64
+                    | LoadKind::Int128
+                    | LoadKind::UInt128
             )
         {
             return None;
@@ -1612,13 +1618,39 @@ impl ProgramPoint {
             | ProgramType::Int16
             | ProgramType::UInt16
             | ProgramType::Int32
-            | ProgramType::UInt32 => self.external_entry_read(pointer, true),
-            value_type if value_type.is_object_pointer() => self.external_entry_read(pointer, true),
+            | ProgramType::UInt32
+            | ProgramType::Int128
+            | ProgramType::UInt128 => self.external_entry_read(pointer, true),
+            ProgramType::Int64 | ProgramType::UInt64 => self
+                .external_entry_read(pointer, true)
+                .or_else(|| self.entry_read_through_loaded_pointer(pointer)),
+            value_type if value_type.is_pointer() => self.external_entry_read(pointer, true),
             ProgramType::Parameter(parameter) if !parameter.is_enum() => {
                 self.external_entry_read(pointer, true)
             }
             _ => None,
         }
+    }
+
+    /// A pointer read at this function's entry cannot designate a local
+    /// created later. A suffix already known to affect only local storage
+    /// therefore leaves the caller cell it designates at the entry version.
+    fn entry_read_through_loaded_pointer(&self, pointer: &Address) -> Option<Self> {
+        let loaded = pointer.as_loaded_value()?;
+        let current = self.path.0.as_ref()?;
+        if !self.has_certified_read_view() {
+            return None;
+        }
+        if current.function_entry {
+            return Some(self.clone().for_exact_read());
+        }
+        let entry = self.parameter_read_start(&AddressBase::ExternalArgument);
+        let root = entry.path.0.as_ref()?;
+        (root.function_entry
+            && entry.has_certified_read_view()
+            && loaded.point.has_certified_read_view()
+            && loaded.point.read_version_id() == entry.id())
+        .then(|| entry.for_exact_read())
     }
 
     pub(crate) fn ordinary_typed_version(

@@ -646,7 +646,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
     );
     assert_eq!(
         error.concise_report_parts().0,
-        "verification error in `use_mutex`:\n  could not prove that mutex `cell` was initialized on this path"
+        "execution refused in `use_mutex`:\n  could not prove that mutex `cell` was initialized on this path"
     );
     assert!(!error.message().contains("runtime error"), "{error:?}");
 }
@@ -3237,7 +3237,7 @@ fn ordinary_concise_diagnostics_bound_late_requirement_context() {
     );
     let report = error.concise_report();
     assert!(report.len() <= DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
-    assert!(report.starts_with("verification error:"));
+    assert!(report.starts_with("unclassified verification refusal:"));
     assert!(report.contains("requirement"));
     assert!(report.contains("diagnostic truncated"));
 }

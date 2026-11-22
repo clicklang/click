@@ -1971,9 +1971,11 @@ pub(super) fn describe_runtime_error(
             format!("call to `{callee}` has no checked byte bound for {effect} while {view} is live")
         }
         crate::kernel::RuntimeError::FunctionContract(message)
+        | crate::kernel::RuntimeError::InvalidContractResource(message)
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
             format!("function contract could not be applied: {message}")
         }
+        crate::kernel::RuntimeError::ContractEntryInvariant(message) => message.clone(),
         crate::kernel::RuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
             describe_pointer(mutex, parameter_binding)
@@ -2021,6 +2023,11 @@ pub(super) fn describe_runtime_error(
             "overlapping owned memory resource facts `owns {}` and `owns {}`",
             describe_memory_range(left, parameter_binding),
             describe_memory_range(right, parameter_binding)
+        ),
+        crate::kernel::RuntimeError::OverlappingContractInputView { owned, viewed } => format!(
+            "the contract's `views` clause overlaps its own `owns` clause: `{}` overlaps `{}`",
+            render_resource_fact_diagnostic(viewed, parameter_binding),
+            render_resource_fact_diagnostic(owned, parameter_binding),
         ),
         crate::kernel::RuntimeError::ProducedCompositeOverlapsHeldResource {
             produced,
@@ -6556,8 +6563,27 @@ pub(in crate::surface) fn diagnostic_load_place(
     is_place_spelling(&place).then_some(place)
 }
 
+pub(super) fn describe_contract_entry_resource_error(
+    error: &crate::kernel::RuntimeError,
+    parameter_binding: ParameterBinding<'_>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+) -> String {
+    let mut message = describe_runtime_error(error, parameter_binding);
+    if let Some(range) = error.missing_contract_read()
+        && range.constant_start() == Some(0)
+        && range.constant_end() == Some(1)
+        && let Some(place) =
+            describe_struct_field_load(range.base(), parameter_binding, Some(struct_layouts))
+    {
+        message.push_str(&format!(
+            "\n  cannot read `{place}` at entry. If the caller should supply read access, add `views {place};` to the contract"
+        ));
+    }
+    message
+}
+
 fn describe_load_at(pointer: &Address, parameter_binding: ParameterBinding<'_>) -> String {
-    if let Some(field) = describe_struct_field_load(pointer, parameter_binding) {
+    if let Some(field) = describe_struct_field_load(pointer, parameter_binding, None) {
         return field;
     }
     let address = describe_pointer(pointer, parameter_binding);
@@ -6619,6 +6645,7 @@ fn is_cell_spelling(text: &str) -> bool {
 fn describe_struct_field_load(
     pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
+    struct_layouts: Option<&BTreeMap<String, crate::languages::interface::RecordLayout>>,
 ) -> Option<String> {
     for (parameter, argument) in parameter_binding
         .parameters
@@ -6634,6 +6661,7 @@ fn describe_struct_field_load(
         let Some(layout) = parameter
             .pointee_struct_layout()
             .or_else(|| parameter.struct_layout())
+            .or_else(|| struct_layouts?.get(parameter.struct_name()?))
         else {
             continue;
         };

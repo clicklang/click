@@ -198,7 +198,7 @@ theorem adler_outer_remainder_bounds_u64(p: uint64) {
   have to_integer((p % 22208u64) % 4u64) == to_integer(0u64) by {
    rewrite(to_integer((p % 22208u64) % 4u64), truncating_remainder(to_integer(p % 22208u64), to_integer(4u64)));
    rewrite(to_integer(p % 22208u64), truncating_remainder(to_integer(p), to_integer(22208u64)));
-   normalize() using { truncating_remainder(truncating_remainder(to_integer(p), 22208), 4) == 0; };
+   known();
   }
   known();
  }

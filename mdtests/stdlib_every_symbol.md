@@ -53,6 +53,10 @@ function are used by
 The stream also appears in
 [`hosted_stdout_stream_follows_file_pointer_alias.md`](hosted_stdout_stream_follows_file_pointer_alias.md).
 
+The `stdio::format_output`, `stdio::format_length` and
+`stdio::literal_format` functions state the `fprintf` contract, used by
+[`printf_and_fprintf_share_the_streams_write_history.md`](printf_and_fprintf_share_the_streams_write_history.md).
+
 The `VarArg` datatype, the variable arguments a variadic C call passes, is
 used by
 [`a_variadic_contract_reads_its_variable_arguments.md`](a_variadic_contract_reads_its_variable_arguments.md)

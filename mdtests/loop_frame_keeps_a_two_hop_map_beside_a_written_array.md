@@ -192,7 +192,7 @@ void clear_data(struct region* region) {
                     };
                 }
                 have separate(loop(0).statement(0).footprint, at(opened, memory((&region->arena->occupied[k])[0..1]))) by {
-                    normalize() using { separate(at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1]))); };
+                    known();
                 }
                 have at(loop(0).statement(0).exit, load<int32>(at(opened, &region->arena->occupied[k])))
                         == at(loop(0).statement(0).entry, load<int32>(at(opened, &region->arena->occupied[k]))) by {

@@ -61,11 +61,16 @@ fn contract_closing_input(
     post_return_facts: &[(usize, PureFactStore)],
 ) -> Result<ContractClosingInput, ClickError> {
     let returned = if has_return_resource_rewrite {
-        let root =
-            root.ok_or_else(|| ClickError::new("return instance fold lost its outcome proof"))?;
+        let root = root.ok_or_else(|| {
+            ClickError::new("return instance fold lost its outcome proof")
+                .with_kind(ClickErrorKind::Internal)
+        })?;
         let core = &root
             .execution()
-            .ok_or_else(|| ClickError::new("return instance fold lost its checked execution"))?
+            .ok_or_else(|| {
+                ClickError::new("return instance fold lost its checked execution")
+                    .with_kind(ClickErrorKind::Internal)
+            })?
             .core;
         Some(core.checked_return_path(path_index).map_err(|refusal| {
             let message = format!("could not certify return instance fold: {}", refusal.reason);
@@ -87,6 +92,7 @@ fn contract_closing_input(
         Some(returned) => returned.path(),
         None => execution.paths().get(path_index).ok_or_else(|| {
             ClickError::new("return instance fold changed execution path coverage")
+                .with_kind(ClickErrorKind::Internal)
         })?,
     }
     .clone();
@@ -159,35 +165,176 @@ pub(in crate::surface) struct ClaimProofResult {
     pub(in crate::surface) theorems: Vec<VerifiedProgramTheorem>,
 }
 
-/// A deferred tactic still to visit, with its `outcomes` depth and the
-/// lexical scope of the `match` arm it sits in, if any.
-type PendingPostExecutionTactic<'a> = (
-    &'a DeferredPostExecutionTactic,
-    usize,
-    Option<PersistentBinderMap<ContractExpression>>,
-);
+/// A deferred tactic still to visit, or the end of a selected proof arm.
+enum PendingPostExecutionTactic<'a> {
+    Tactic(
+        &'a DeferredPostExecutionTactic,
+        usize,
+        Option<PersistentBinderMap<ContractExpression>>,
+    ),
+    EndIfArm {
+        choice: usize,
+        obtains_before_arm: usize,
+    },
+}
+
+/// The end of the written block containing each obtain, using the same
+/// source positions as the deferred program. Nested proposition proofs
+/// are checked separately and use their own locals.
+fn obtain_scope_ends(tactics: &[ProofTactic]) -> BTreeMap<usize, usize> {
+    fn visit(
+        tactics: &[ProofTactic],
+        position: &mut usize,
+        ends: &mut BTreeMap<usize, usize>,
+        outermost: bool,
+    ) {
+        let mut obtains = Vec::new();
+        for tactic in tactics {
+            if matches!(tactic, ProofTactic::Synthetic(_)) {
+                continue;
+            }
+            if matches!(tactic, ProofTactic::LetSatisfy(_)) {
+                obtains.push(*position);
+            }
+            *position += 1;
+            if matches!(
+                tactic,
+                ProofTactic::Open(_)
+                    | ProofTactic::If(_)
+                    | ProofTactic::Cases(_)
+                    | ProofTactic::Branch(_)
+                    | ProofTactic::CallOutcomes(_)
+                    | ProofTactic::Match(_)
+                    | ProofTactic::Loop(_)
+            ) {
+                for child in tactic.children() {
+                    match child {
+                        TacticChild::Continuing(ChildProof::Script(body)) => {
+                            visit(body, position, ends, false);
+                        }
+                        TacticChild::Continuing(ChildProof::Source(SourceProof::Script(body))) => {
+                            visit(body, position, ends, false);
+                        }
+                        TacticChild::Continuing(ChildProof::Source(SourceProof::Tactic(_))) => {
+                            *position += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        let end = if outermost { usize::MAX } else { *position };
+        ends.extend(obtains.into_iter().map(|start| (start, end)));
+    }
+
+    let mut ends = BTreeMap::new();
+    visit(tactics, &mut 0, &mut ends, true);
+    ends
+}
+
+/// Source scopes contain the lexical snapshots recorded during execution.
+/// An ambient obtain adds checked bindings during finalization, so those
+/// outputs also have to survive until their source block ends.
+#[derive(Default)]
+struct DeferredOutcomeLocals {
+    source: Option<PersistentBinderMap<ContractExpression>>,
+    obtained: PersistentBinderMap<ContractExpression>,
+    ends: BTreeMap<usize, Vec<String>>,
+    checked_obtains: usize,
+}
+
+impl DeferredOutcomeLocals {
+    fn enter<'a>(
+        &mut self,
+        proof: &mut Option<Proof<'a>>,
+        source_index: usize,
+        scope: Option<&PersistentBinderMap<ContractExpression>>,
+    ) {
+        let Some(root) = proof.as_ref() else { return };
+        let mut expired = Vec::new();
+        if source_index < SYNTHETIC_SOURCE_INDEX_BASE {
+            while self
+                .ends
+                .first_key_value()
+                .is_some_and(|(end, _)| *end <= source_index)
+            {
+                let (_, names) = self.ends.pop_first().expect("scope end was just inspected");
+                for name in &names {
+                    self.obtained.remove(name);
+                }
+                expired.extend(names);
+            }
+        }
+        if self.ends.is_empty() && expired.is_empty() {
+            if let Some(scope) = scope {
+                *proof = Some(root.with_surface_local_scope(scope));
+            }
+        } else {
+            *proof = Some(root.update_deferred_outcome_locals(
+                self.source.as_ref(),
+                scope,
+                &self.obtained,
+                &expired,
+            ));
+        }
+        if let Some(scope) = scope {
+            self.source = Some(scope.clone());
+        }
+    }
+
+    fn record(
+        &mut self,
+        before: &Proof<'_>,
+        after: &Proof<'_>,
+        binding: &ProofLetSatisfy,
+        end: usize,
+    ) {
+        if self.source.is_none() {
+            self.source = Some(before.surface_local_scope());
+        }
+        let names = self.ends.entry(end).or_default();
+        for (name, _) in &binding.bindings {
+            if let Some(value) = after.local_binding(name) {
+                self.obtained.insert(name.clone(), value.clone());
+            }
+            names.push(name.clone());
+        }
+    }
+}
 
 /// Visit one leaf at a time so each control node sees the checked facts left
 /// by all preceding leaves. `call_depth` follows nested `outcomes` arms only;
 /// sibling controls in the continuation keep their enclosing depth.
 fn next_checked_post_execution_tactic<'a>(
-    proof: Option<&Proof<'_>>,
+    proof: &mut Option<Proof<'_>>,
     pending: &mut Vec<PendingPostExecutionTactic<'a>>,
+    locals: &mut DeferredOutcomeLocals,
     choices: &mut Vec<SurfacePathChoice>,
     surface_tactics: &mut Vec<ProofTactic>,
     path_index: usize,
-) -> Result<
-    Option<(
-        &'a DeferredPostExecutionTactic,
-        Option<PersistentBinderMap<ContractExpression>>,
-    )>,
-    ClickError,
-> {
-    while let Some((deferred, call_depth, arm_scope)) = pending.pop() {
+) -> Result<Option<&'a DeferredPostExecutionTactic>, ClickError> {
+    while let Some(pending_tactic) = pending.pop() {
+        let (deferred, call_depth, arm_scope) = match pending_tactic {
+            PendingPostExecutionTactic::Tactic(deferred, call_depth, arm_scope) => {
+                (deferred, call_depth, arm_scope)
+            }
+            PendingPostExecutionTactic::EndIfArm {
+                choice,
+                obtains_before_arm,
+            } => {
+                let arm_end = SurfaceIfArmEnd {
+                    step_offset: surface_tactics.len(),
+                    nested_choices: choices.len() - choice - 1,
+                    binds_obtain: locals.checked_obtains != obtains_before_arm,
+                };
+                choices[choice].if_arm_end = Some(arm_end);
+                continue;
+            }
+        };
         // A deferred `match` takes the arm this path's constructor case
         // selected, under that arm's field bindings.
         if let PostExecutionTactic::Match { source, arms } = &deferred.tactic {
-            let proof = proof.ok_or_else(|| {
+            let proof = proof.as_ref().ok_or_else(|| {
                 ClickError::new("post-execution `match` has no focused outcome Proof")
             })?;
             let (arm, bindings) = proof
@@ -200,16 +347,14 @@ fn next_checked_post_execution_tactic<'a>(
                 selector: SurfacePathSelector::MatchArm(Arc::clone(source), arm),
                 value: true,
                 tactic_offset: surface_tactics.len(),
+                if_arm_end: None,
             });
             let tactics = arms.get(arm).ok_or_else(|| {
                 ClickError::new("a post-execution `match` path names an arm it does not have")
             })?;
-            pending.extend(
-                tactics
-                    .iter()
-                    .rev()
-                    .map(|tactic| (tactic, call_depth, Some(bindings.clone()))),
-            );
+            pending.extend(tactics.iter().rev().map(|tactic| {
+                PendingPostExecutionTactic::Tactic(tactic, call_depth, Some(bindings.clone()))
+            }));
             continue;
         }
         let mut scope = deferred
@@ -224,11 +369,18 @@ fn next_checked_post_execution_tactic<'a>(
                 then_tactics,
                 else_tactics,
             } => {
-                let proof = proof.ok_or_else(|| {
-                    ClickError::new("post-execution `if` has no focused outcome Proof")
-                })?;
-                let mut scoped = proof.clone().at_source_tactic(deferred.source_index);
-                if let Some(bindings) = &scope {
+                let has_obtains = !locals.ends.is_empty();
+                if has_obtains {
+                    locals.enter(proof, deferred.source_index, scope.as_ref());
+                }
+                let mut scoped = proof
+                    .as_ref()
+                    .ok_or_else(|| {
+                        ClickError::new("post-execution `if` has no focused outcome Proof")
+                    })?
+                    .clone()
+                    .at_source_tactic(deferred.source_index);
+                if !has_obtains && let Some(bindings) = &scope {
                     scoped = scoped.with_surface_local_scope(bindings);
                 }
                 if *disjunction
@@ -242,6 +394,8 @@ fn next_checked_post_execution_tactic<'a>(
                 }
                 let value = if *disjunction {
                     scoped.checked_outcome_cases_value(condition, *execution_route)
+                } else if deferred.reads_deferred_obtain {
+                    scoped.decide_outcome_if_from_facts(condition)
                 } else {
                     scoped.checked_outcome_if_value(condition, *execution_route)
                 }
@@ -262,7 +416,7 @@ fn next_checked_post_execution_tactic<'a>(
                 returned_tactics,
                 threw_tactics,
             } => {
-                let proof = proof.ok_or_else(|| {
+                let proof = proof.as_ref().ok_or_else(|| {
                     ClickError::new("post-execution `outcomes` has no focused outcome Proof")
                 })?;
                 let focused = proof.clone().at_source_tactic(deferred.source_index);
@@ -274,7 +428,17 @@ fn next_checked_post_execution_tactic<'a>(
                             "`outcomes` cannot bind `{name}`: this call edge has no bindable payload"
                         ))
                     })?;
-                    scope = Some(focused.scope_call_payload(scope.as_ref(), name, payload));
+                    scope = Some(focused.scope_call_payload(
+                        scope.as_ref().or_else(|| {
+                            if locals.ends.is_empty() {
+                                None
+                            } else {
+                                locals.source.as_ref()
+                            }
+                        }),
+                        name,
+                        payload,
+                    ));
                 }
                 (
                     SurfacePathSelector::CallOutcome(payload_bindings.clone()),
@@ -287,18 +451,28 @@ fn next_checked_post_execution_tactic<'a>(
                     call_depth + 1,
                 )
             }
-            _ => return Ok(Some((deferred, scope))),
+            _ => {
+                locals.enter(proof, deferred.source_index, scope.as_ref());
+                return Ok(Some(deferred));
+            }
         };
+        if matches!(selector, SurfacePathSelector::Proposition(_)) {
+            pending.push(PendingPostExecutionTactic::EndIfArm {
+                choice: choices.len(),
+                obtains_before_arm: locals.checked_obtains,
+            });
+        }
         choices.push(SurfacePathChoice {
             occurrence: deferred.source_index,
             selector,
             value,
             tactic_offset: surface_tactics.len(),
+            if_arm_end: None,
         });
         pending.extend(
-            arm.iter()
-                .rev()
-                .map(|tactic| (tactic, child_depth, scope.clone())),
+            arm.iter().rev().map(|tactic| {
+                PendingPostExecutionTactic::Tactic(tactic, child_depth, scope.clone())
+            }),
         );
     }
     Ok(None)
@@ -379,15 +553,24 @@ fn append_post_execution_paths_by_surface_leaf(
             .iter()
             .map(|&index| boolean_return(index))
             .collect::<Vec<_>>();
+        let choices = select(choices, &members);
+        let keep_scopes = outcome_paths_bind_obtain(&choices);
         let suffix = synthesize_post_execution_paths(
             &select(tactics, &members),
             &select(closers, &members),
-            &select(choices, &members),
+            &choices,
             &returns,
         )?;
-        append_surface_steps_at_step_branch_path(steps, &branch_path, suffix)?;
+        append_surface_steps_at_step_branch_path(steps, &branch_path, suffix, keep_scopes)?;
     }
     Ok(())
+}
+
+fn outcome_paths_bind_obtain(choices: &[Vec<SurfacePathChoice>]) -> bool {
+    choices
+        .iter()
+        .flatten()
+        .any(|choice| choice.if_arm_end.is_some_and(|end| end.binds_obtain))
 }
 
 fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimRef<'_>) -> String {
@@ -416,7 +599,7 @@ fn unsupported_proof_shape(
     if decline == Decline::RegionDepth {
         return ClickError::new(format!(
             "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
-        ));
+        )).with_proof_refusal(crate::surface::ProofRefusal::UnsupportedProof);
     }
     if decline == Decline::ShortOfExit {
         // The written shape is supported; what stopped the drivers is a path
@@ -424,7 +607,7 @@ fn unsupported_proof_shape(
         // unimplemented, since the fix is in the proof script.
         return ClickError::new(format!(
             "`{proof_label}`: a `branch` or proof `if` split the path, one arm returned, and the tactics after the split ran out before the continuing arm reached the function exit, so that path is still open. The proof after the split runs inside the continuing arm; finish it there (for example with `step_until(function.exit);`), or check the continuation's last tactics."
-        ));
+        )).with_proof_refusal(crate::surface::ProofRefusal::Execution);
     }
     let claim_description = if claim_labels.len() == 1 {
         format!("the contract claim `{}`", claim_labels[0])
@@ -443,7 +626,7 @@ fn unsupported_proof_shape(
     };
     ClickError::new(format!(
         "`{proof_label}`: no checked proof driver accepts this proof script's shape for {claim_description}, and none reported a tactic it refused. No listed claim was shown false. To find the tactic no driver supports here, remove tactics from the end of the script until it is accepted. {rewrite}"
-    ))
+    )).with_proof_refusal(crate::surface::ProofRefusal::UnsupportedProof)
 }
 
 pub(in crate::surface) fn prove_claim_by_tactics(
@@ -588,7 +771,11 @@ fn prove_claims_by_checked_tactics(
                 Some(&caller_source_owner),
             )
         })
-        .map_err(|error| error.at_declaration(function_block.signature().name()))?;
+        .map_err(|error| {
+            error
+                .at_declaration(function_block.signature().name())
+                .with_proof_refusal(crate::surface::ProofRefusal::ContractEntry)
+        })?;
     // A shared context was built for an earlier claim; name this function's
     // parameters for diagnostics as building it would have.
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
@@ -596,53 +783,70 @@ fn prove_claims_by_checked_tactics(
         &state,
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
-    let opened_entry = shared_entry.get_or_open(|| {
-        let function = annotated_function_with_assumptions(
-            function_block,
-            parsed_function,
-            &state,
-            &arguments,
-            spec_definitions,
-            resource_environment,
-            Some(ResourceFrameEntry {
-                assumptions: &assumptions_from_propositions(&pure_facts),
-                checked_entry_state: None,
-            }),
-            None,
-        )?;
-        let state = canonical_claim_caller_state(
-            state,
-            function_block.structural_clauses().any_loop(),
-            &function,
-            &arguments,
-            &pure_facts,
-            proof_label,
-        )?;
-        let state = install_borrowed_contract_inputs(
-            state,
-            &function,
-            &pure_facts,
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
-            proof_label,
-        )?;
-        crate::kernel::proof::OpenedContractEntry::open(
-            &state,
-            &function,
-            &arguments,
-            &pure_facts,
-            function_environment,
-        )
-        .and_then(|entry| entry.open_contract_root(function_source_registry.program()))
-        .map_err(|error| {
-            ClickError::new(format!(
-                "could not open contract entry for `{proof_label}`: {}",
-                crate::surface::diagnostics::describe_runtime_error(
-                    &error,
-                    ParameterBinding::new(parsed_function.parameters(), &arguments),
-                ),
-            ))
+    let opened_entry = shared_entry
+        .get_or_open(|| {
+            let function = annotated_function_with_assumptions(
+                function_block,
+                parsed_function,
+                &state,
+                &arguments,
+                spec_definitions,
+                resource_environment,
+                Some(ResourceFrameEntry {
+                    assumptions: &assumptions_from_propositions(&pure_facts),
+                    checked_entry_state: None,
+                }),
+                None,
+            )?;
+            let state = canonical_claim_caller_state(
+                state,
+                function_block.structural_clauses().any_loop(),
+                &function,
+                &arguments,
+                &pure_facts,
+                proof_label,
+            )?;
+            let state = install_borrowed_contract_inputs(
+                state,
+                &function,
+                &pure_facts,
+                ParameterBinding::new(parsed_function.parameters(), &arguments),
+                proof_label,
+            )?;
+            let entry = crate::kernel::proof::OpenedContractEntry::open(
+                &state,
+                &function,
+                &arguments,
+                &pure_facts,
+                function_environment,
+            )
+            .map_err(|error| {
+                let diagnostic = ClickError::new(format!(
+                    "could not open contract entry for `{proof_label}`: {}",
+                    crate::surface::diagnostics::describe_runtime_error(
+                        &error,
+                        ParameterBinding::new(parsed_function.parameters(), &arguments),
+                    ),
+                ));
+                if matches!(
+                    error,
+                    crate::kernel::RuntimeError::ContractEntryInvariant(_)
+                ) {
+                    diagnostic.with_kind(ClickErrorKind::Internal)
+                } else {
+                    diagnostic.with_proof_refusal(contract_entry_resource_refusal(&error))
+                }
+            })?;
+            entry
+                .open_contract_root(function_source_registry.program())
+                .map_err(|message| {
+                    ClickError::new(format!(
+                        "could not initialize the contract proof for `{proof_label}`: {message}"
+                    ))
+                    .with_kind(ClickErrorKind::Internal)
+                })
         })
-    })?;
+        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractEntry))?;
     // Every clause uses the function produced by this generative entry.
     // Re-lowering a sibling clause can allocate different binder identities.
     let function = opened_entry.function().clone();
@@ -1465,10 +1669,7 @@ fn apply_claim_step<'a>(
     }))
 }
 
-/// Selects the one ungrouped proposition claim refined by a local tactic
-/// and starts its result-aware judgment from the
-/// current outcome Proof. Every explicit operation advances this retained
-/// Proof and is serialized inside the claim body.
+/// Starts a result-aware proof for the same claim the ordinary closers focus.
 fn begin_outcome_claim_proof<'a>(
     outcome_root: &Proof<'a>,
     function: &ProgramFunction,
@@ -1476,62 +1677,33 @@ fn begin_outcome_claim_proof<'a>(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     claims: &[FunctionClaimRef<'_>],
-    closures: &[ClaimClosure],
     rewrite_claim_equalities: &[Vec<ClickProposition>],
+    tactic: &str,
 ) -> Result<(usize, ClickProposition, Proof<'a>), ClickError> {
-    let mut open = claims
-        .iter()
-        .enumerate()
-        .filter_map(|(claim_index, claim)| {
-            if closures[claim_index].is_closed() {
-                return None;
-            }
-            if !claim.applies_to(outcome) {
-                return None;
-            }
-            let ensure_clause = claim.clause();
-            let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
-                return None;
-            };
-            Some((claim_index, surface_goal.clone()))
-        });
-    let Some((claim_index, surface_goal)) = open.next() else {
-        return Err(ClickError::new(
-            "top-level existential operation has no current proposition claim",
-        ));
-    };
-    if open.next().is_some() {
-        return Err(ClickError::new(
-            "top-level existential operation is ambiguous across multiple proposition claims",
-        ));
-    }
-
-    let root = outcome_root.clone();
+    let (claim_index, surface_goal) = focused_proposition_claim(outcome_root, claims, tactic)?;
+    let claim_key = claims[claim_index].key();
     let kernel_goal = contract_closing_goal(
         function,
-        root.execution_context()
+        outcome_root
+            .execution_context()
             .and_then(|context| context.constants.entry_context.as_ref())
             .map(|entry| entry.cases.closing_entry()),
-        root.claim_goals()
-            .and_then(|goals| goals.target(&claims[claim_index].key())),
+        outcome_root
+            .claim_goals()
+            .and_then(|goals| goals.target(&claim_key)),
         pre_state,
         arguments,
         outcome,
-        root.facts().assumptions(),
+        outcome_root.facts().assumptions(),
         &mut None,
     )?;
-    let mut proof = focus_claim_goal(
-        &root,
-        kernel_goal,
-        &claims[claim_index].key(),
-        &surface_goal,
-    )?;
+    let mut proof = focus_claim_goal(outcome_root, kernel_goal, &claim_key, surface_goal)?;
     for equality in &rewrite_claim_equalities[claim_index] {
         proof = proof
             .driver()
             .apply_step(ProofStep::Rewrite(equality.clone()))?;
     }
-    Ok((claim_index, surface_goal, proof))
+    Ok((claim_index, surface_goal.clone(), proof))
 }
 
 /// Closes one proposition claim from the outcome Proof by the direct logical
@@ -1992,15 +2164,15 @@ pub(super) fn proof_case_fact_conflicts(
     Ok(conflicts)
 }
 
-/// One claim's own proof after execution, opened by `choose`, `witness`,
-/// `let` or `intro` and continued by the tactics after them.
+/// One claim's own proof after execution, opened by a goal refinement and
+/// continued by the tactics after it.
 struct OpenedClaimProof<'a> {
     claim_index: usize,
     surface_goal: ClickProposition,
     proof: Proof<'a>,
     /// An `intro` opened a scope: a later `have` extends this proof, and a
     /// closer that does not apply to it is read against the claims instead.
-    /// A proof only `choose`, `witness` or `let` opened commits to that
+    /// A proof only `choose` or `witness` opened commits to that
     /// choice, so a closer that does not apply to it is an error: reading it
     /// against the claims could close one without the witness.
     introduces_scope: bool,
@@ -3240,6 +3412,24 @@ fn main_goal_claim(
     }
 }
 
+fn focused_proposition_claim<'c>(
+    root: &Proof<'_>,
+    claims: &[FunctionClaimRef<'c>],
+    tactic: &str,
+) -> Result<(usize, &'c ClickProposition), ClickError> {
+    let Some(crate::kernel::proof::OutcomeGoal::Claim { position, .. }) =
+        root.first_open_outcome_goal()?
+    else {
+        return Err(root.step_error(format!("`{tactic}` requires an open claim")));
+    };
+    let Ensure::Proposition(goal) = claims[position].clause().ensure() else {
+        return Err(root.step_error(format!(
+            "`{tactic}` requires the focused claim to be a proposition"
+        )));
+    };
+    Ok((position, goal))
+}
+
 /// Records a claim's closure on the path. On a path with an outcome `Proof`
 /// it also closes that claim's goal there, so the outcome `Proof` decides
 /// which claims are still open; a closure the goal refuses is an error.
@@ -3275,7 +3465,6 @@ fn opens_outcome_claim_scope(tactic: &ProofTactic) -> bool {
     matches!(
         tactic,
         ProofTactic::Choose(_)
-            | ProofTactic::LetSatisfy(_)
             | ProofTactic::Witness(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -3354,6 +3543,7 @@ pub(super) fn finish_ordered_proof<'a>(
     claim_surface_builders: &mut Vec<(VerifiedClaim, std::sync::Arc<ProofCertificateBuilder>)>,
 ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
+    let obtain_ends = std::cell::OnceCell::new();
     let proof_label = if require_explicit_closers {
         function_block.contract_claim_label()
     } else {
@@ -3945,6 +4135,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         .unwrap_or(0);
                     let implicit_closer = DeferredPostExecutionTactic {
                         lexical_bindings: None,
+                        reads_deferred_obtain: false,
                         tactic_index: implicit_closer_index,
                         source_index: usize::MAX,
                         tactic: PostExecutionTactic::ImplicitSolve,
@@ -4008,6 +4199,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         if let PostExecutionTactic::CloseOpen {
                             resource: ResourceClause::Named { binding, .. },
                             restoration: OpenResourceRestoration::Named(instance),
+                            ..
                         } = &deferred.tactic
                         {
                             named_open_templates.insert(binding.instance()?, instance);
@@ -4015,13 +4207,17 @@ pub(super) fn finish_ordered_proof<'a>(
                     }
                     let mut pending_post_execution_tactics = Vec::new();
                     if require_explicit_closers {
-                        pending_post_execution_tactics.push((&implicit_closer, 0, None));
+                        pending_post_execution_tactics.push(PendingPostExecutionTactic::Tactic(
+                            &implicit_closer,
+                            0,
+                            None,
+                        ));
                     }
                     pending_post_execution_tactics.extend(
                         post_execution_tactics
                             .iter()
                             .rev()
-                            .map(|tactic| (tactic, 0, None)),
+                            .map(|tactic| PendingPostExecutionTactic::Tactic(tactic, 0, None)),
                     );
                     // A capture belongs only to paths that actually reach its
                     // source occurrence, including through newly decided arms.
@@ -4043,14 +4239,16 @@ pub(super) fn finish_ordered_proof<'a>(
                     // shares the persistent fact store.
                     let mut post_return_facts = Vec::new();
                     let mut post_execution_count = 0;
-                    while let Some((deferred, scope)) = {
+                    let mut deferred_locals = DeferredOutcomeLocals::default();
+                    while let Some(deferred) = {
                         // A checked closer belongs at its source occurrence,
                         // before the next post-return tactic. Include it in
                         // the prefix used to place any subsequent proof cases.
                         path_surface_post_tactics.append(&mut path_grouped_surface_closers);
                         next_checked_post_execution_tactic(
-                            outcome_proof.as_ref(),
+                            &mut outcome_proof,
                             &mut pending_post_execution_tactics,
+                            &mut deferred_locals,
                             &mut surface_post_choices,
                             &mut path_surface_post_tactics,
                             path_index,
@@ -4077,10 +4275,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         let path_requirements = outcome_proof
                             .as_ref()
                             .map_or_else(|| proof.facts().clone(), |root| root.facts().clone());
-                        if let Some(bindings) = &scope {
-                            outcome_proof =
-                                outcome_proof.map(|proof| proof.with_surface_local_scope(bindings));
-                        }
                         if !matches!(
                             deferred.tactic,
                             PostExecutionTactic::Leaf(ProofTactic::Known)
@@ -4091,6 +4285,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             deferred.tactic,
                             PostExecutionTactic::Leaf(
                                 ProofTactic::Known
+                                    | ProofTactic::Enumerate
                                     | ProofTactic::Normalize
                                     | ProofTactic::NormalizeUsing(_)
                                     | ProofTactic::ArithmeticUsing(_)
@@ -4102,6 +4297,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         let tactic_index = &deferred.tactic_index;
                         let source_index = &deferred.source_index;
                         let post_tactic = &deferred.tactic;
+                        if matches!(
+                            post_tactic,
+                            PostExecutionTactic::Leaf(ProofTactic::LetSatisfy(_))
+                        ) {
+                            deferred_locals.checked_obtains += 1;
+                        }
                         post_return_facts.push((*source_index, path_requirements.clone()));
                         if path_capture.is_some_and(|capture| {
                             capture.tactic_index == *tactic_index
@@ -4269,6 +4470,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                             tactic,
                                             ProofTactic::UnfoldProposition(_)
                                                 | ProofTactic::UnfoldFunction(_)
+                                                | ProofTactic::Rewrite(_)
+                                                | ProofTactic::LetSatisfy(_)
                                         )
                                     || unfolds_outcome_goal(
                                         tactic,
@@ -4277,9 +4480,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                         spec_definitions.predicates,
                                     ) =>
                             {
-                                // These leaves refine one claim's own goal, so
-                                // they run on that claim's existence proof,
-                                // opened by the first of them.
+                                // Goal refinements open the claim's own proof.
+                                // An obtain in that proof can use its local facts.
                                 let opened = match opened_claim.take() {
                                     Some(active) => active,
                                     None => {
@@ -4295,8 +4497,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                             arguments,
                                             &outcome,
                                             claims,
-                                            &closures,
                                             &rewrite_claim_equalities,
+                                            tactic_name(tactic),
                                         )?;
                                         OpenedClaimProof {
                                             claim_index,
@@ -4340,6 +4542,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::CloseOpen {
                                 resource,
                                 restoration,
+                                retain_deferred_body,
                             } => {
                                 if let ResourceClause::Named { binding, .. } = resource {
                                     named_open_templates.remove(&binding.instance()?);
@@ -4378,7 +4581,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     });
                                 outcome = closed.focused_outcome_state()?;
                                 outcome_proof = Some(closed);
-                                if tail.is_some() || named {
+                                if tail.is_some() || named || *retain_deferred_body {
                                     let deferred = ProofOpen::deferred_block_tail(
                                         resource.clone(),
                                         tail.map_or_else(Vec::new, |proof| {
@@ -4706,6 +4909,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                             PostExecutionTactic::Leaf(
                                 ProofTactic::Known
+                                | ProofTactic::Enumerate
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::ArithmeticUsing(_)
@@ -4746,7 +4950,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     path_index,
                                     |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
-                                            proof.driver().apply_all_source(both)
+                                            proof.driver().apply_all_source(both, true)
                                         } else {
                                             proof.driver().apply_step(closer_step.clone())
                                         }
@@ -4976,7 +5180,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 return Ok(focused
                                                     .at_source_tactic(*source_index)
                                                     .driver()
-                                                    .apply_all_source(both));
+                                                    .apply_all_source(both, true));
                                             }
                                             let PostExecutionTactic::Leaf(
                                                 ProofTactic::ArithmeticUsing(surface_premises),
@@ -5100,95 +5304,45 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `rewrite` requires a return outcome"
                                     )));
                                 };
-                                // Claim-goal rewrites focus fresh obligation
-                                // roots; the evolving outcome proof supplies
-                                // them when this path derived a goal, and the
-                                // path lineage itself is not advanced.
-                                let mut return_claim_context = None;
-                                let mut rewrote_any = false;
-                                let mut first_error = None;
-                                let mut retained_certificate = None;
-                                for (claim_index, claim) in claims.iter().enumerate() {
-                                    if closures[claim_index].is_closed() {
-                                        continue;
-                                    }
-                                    let ensure_clause = claim.clause();
-                                    let Ensure::Proposition(surface_goal) = ensure_clause.ensure()
-                                    else {
-                                        continue;
-                                    };
-                                    let kernel_goals = contract_closing_goal_forms(
-                                        function,
-                                        proof_context
-                                            .constants
-                                            .entry_context
-                                            .as_ref()
-                                            .map(|entry| entry.cases.closing_entry()),
-                                        outcome_proof
-                                            .as_ref()
-                                            .and_then(Proof::claim_goals)
-                                            .and_then(|goals| goals.target(&claim.key())),
-                                        contract_pre_state,
-                                        arguments,
-                                        &outcome,
-                                        &assumptions_from_propositions(&path_requirements),
-                                        &mut return_claim_context,
-                                    )?;
-                                    // Continue the retained claim judgment, or
-                                    // focus its exact lowering on the owning outcome.
-                                    let applied = apply_claim_step(
-                                        rewritten_claim_proofs[claim_index].as_ref(),
-                                        Some(required_outcome(&outcome_proof)?),
-                                        &claim.key(),
-                                        surface_goal,
-                                        || Ok(kernel_goals),
-                                        |proof, _| {
-                                            Ok(proof.driver().apply_step(rewrite_step.clone()))
-                                        },
-                                    )?;
-                                    let (rewritten_result, last_error) = match applied {
-                                        Ok(ClaimStepApplied { proof, certificate }) => (
-                                            Some((proof.goal().cloned(), certificate, proof)),
-                                            None,
-                                        ),
-                                        Err(ClaimStepMiss { error, .. }) => (None, error),
-                                    };
-                                    match rewritten_result {
-                                        Some((rewritten, certificate, chained)) => {
-                                            rewritten.ok_or_else(|| {
-                                                ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked `rewrite` lost its proposition goal"
-                                                ))
-                                            })?;
-                                            retained_certificate.get_or_insert(certificate);
-                                            let checkpoint = chained.checkpoint();
-                                            rewritten_claim_proofs[claim_index] =
-                                                Some((chained, checkpoint));
-                                            rewrite_claim_equalities[claim_index]
-                                                .push(surface_equality.clone());
-                                            rewrote_any = true;
-                                        }
-                                        None => {
-                                            if let Some(error) = last_error {
-                                                first_error.get_or_insert_with(|| {
-                                                    error.raw_summary().to_string()
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                                if !rewrote_any {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `rewrite` failed: {}",
-                                        first_error.unwrap_or_else(|| {
-                                            "there is no current proposition goal".to_string()
-                                        })
-                                    )));
-                                }
-                                for tactic in retained_certificate
-                                    .expect("a successful rewrite retains its checked Proof")
-                                    .to_proof_tactics()
-                                {
+                                let root = required_outcome(&outcome_proof)?;
+                                let (claim_index, surface_goal) =
+                                    focused_proposition_claim(root, claims, "rewrite")?;
+                                let claim = &claims[claim_index];
+                                let applied = apply_claim_step(
+                                    rewritten_claim_proofs[claim_index].as_ref(),
+                                    Some(root),
+                                    &claim.key(),
+                                    surface_goal,
+                                    || {
+                                        contract_closing_goal_forms(
+                                            function,
+                                            proof_context
+                                                .constants
+                                                .entry_context
+                                                .as_ref()
+                                                .map(|entry| entry.cases.closing_entry()),
+                                            root.claim_goals()
+                                                .and_then(|goals| goals.target(&claim.key())),
+                                            contract_pre_state,
+                                            arguments,
+                                            &outcome,
+                                            &assumptions_from_propositions(&path_requirements),
+                                            &mut None,
+                                        )
+                                    },
+                                    |proof, _| Ok(proof.driver().apply_step(rewrite_step.clone())),
+                                )?;
+                                let ClaimStepApplied { proof: chained, certificate } =
+                                    applied.map_err(|miss| {
+                                        miss.error.unwrap_or_else(|| root.step_error(
+                                            "`rewrite` could not focus the current proposition claim",
+                                        ))
+                                    })?;
+                                let checkpoint = chained.checkpoint();
+                                rewritten_claim_proofs[claim_index] = Some((chained, checkpoint));
+                                rewrite_claim_equalities[claim_index]
+                                    .push(surface_equality.clone());
+                                for tactic in certificate.to_proof_tactics() {
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
@@ -5336,6 +5490,14 @@ pub(super) fn finish_ordered_proof<'a>(
                                     } else {
                                         applied.certificate_since(&before)?.to_proof_tactics()
                                     };
+                                if let ProofTactic::LetSatisfy(binding) = tactic {
+                                    let end = obtain_ends
+                                        .get_or_init(|| obtain_scope_ends(certificate_tactics))
+                                        .get(source_index)
+                                        .copied()
+                                        .unwrap_or(usize::MAX);
+                                    deferred_locals.record(&evolving, &applied, binding, end);
+                                }
                                 outcome_proof = Some(applied);
                                 for tactic in surface_tactics {
                                     record_post_execution_surface_tactic(
@@ -5724,6 +5886,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         selector: SurfacePathSelector::Proposition(condition.clone()),
                         value,
                         tactic_offset: 0,
+                        if_arm_end: None,
                     },
                 );
             }
@@ -5776,6 +5939,42 @@ pub(super) fn finish_ordered_proof<'a>(
             }
             Ok(())
         };
+        let keep_post_execution_scopes = outcome_paths_bind_obtain(&surface_post_choices_by_path);
+        let append_paths_by_leaf = |steps: &mut Vec<ProofStep>, closers: &[Vec<ProofTactic>]| {
+            append_post_execution_paths_by_surface_leaf(
+                steps,
+                &surface_post_tactics_by_path,
+                closers,
+                &surface_post_choices_by_path,
+                |index| {
+                    direct_view.surface_step_branch_path(
+                        surface_post_path_indices[index],
+                        &retained_surface.steps,
+                    )
+                },
+                |index| {
+                    checked_boolean_return(
+                        execution.paths()[surface_post_path_indices[index]].outcome(),
+                    )
+                },
+            )
+        };
+        let append_scoped_suffix = |steps: &mut Vec<ProofStep>, closers: &[Vec<ProofTactic>]| {
+            match synthesize_post_execution_paths(
+                &surface_post_tactics_by_path,
+                closers,
+                &surface_post_choices_by_path,
+                &[],
+            ) {
+                Ok(suffix) => {
+                    append_surface_steps_in_order(steps, suffix);
+                    Ok(())
+                }
+                // A common suffix belongs after the execution branches.
+                // For distinct suffixes, use the retained branch routes.
+                Err(_) => append_paths_by_leaf(steps, closers),
+            }
+        };
         if proof_context.constants.grouped_contract {
             let mut expanded = retained_surface.clone();
             append_loop_return_closers(&mut expanded.steps, &loop_return_closures, None)?;
@@ -5784,7 +5983,13 @@ pub(super) fn finish_ordered_proof<'a>(
                 &expanded.steps,
                 &loop_return_closures,
             )?;
-            if surface_post_choices_by_path
+            if keep_post_execution_scopes {
+                if let Err(message) =
+                    append_scoped_suffix(&mut expanded.steps, &surface_grouped_closers_by_path)
+                {
+                    expanded.block(message);
+                }
+            } else if surface_post_choices_by_path
                 .iter()
                 .any(|choices| !choices.is_empty())
             {
@@ -5804,23 +6009,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // proof cases inside each C leaf instead.
                     Err(message) => {
                         let mut by_leaf = expanded.steps.clone();
-                        match append_post_execution_paths_by_surface_leaf(
-                            &mut by_leaf,
-                            &surface_post_tactics_by_path,
-                            &surface_grouped_closers_by_path,
-                            &surface_post_choices_by_path,
-                            |index| {
-                                direct_view.surface_step_branch_path(
-                                    surface_post_path_indices[index],
-                                    &retained_surface.steps,
-                                )
-                            },
-                            |index| {
-                                checked_boolean_return(
-                                    execution.paths()[surface_post_path_indices[index]].outcome(),
-                                )
-                            },
-                        ) {
+                        match append_paths_by_leaf(&mut by_leaf, &surface_grouped_closers_by_path) {
                             Ok(()) => expanded.steps = by_leaf,
                             Err(_) => expanded.block(message),
                         }
@@ -5874,7 +6063,12 @@ pub(super) fn finish_ordered_proof<'a>(
                 // the outcomes' recorded choices, as for a grouped proof.
                 // Without it the arms' tactics are emitted with no `if`
                 // around them, and lose the case fact each arm relies on.
-                let appended = if surface_post_choices_by_path
+                let appended = if keep_post_execution_scopes {
+                    append_scoped_suffix(
+                        &mut expanded.steps,
+                        &surface_closers_by_claim[claim_index],
+                    )
+                } else if surface_post_choices_by_path
                     .iter()
                     .any(|choices| !choices.is_empty())
                 {
@@ -6218,6 +6412,7 @@ mod tests {
                 selector: SurfacePathSelector::Proposition(condition.clone()),
                 value,
                 tactic_offset: 1,
+                if_arm_end: None,
             }]
         });
         let tactics = [true, true, false, false].map(|value| {

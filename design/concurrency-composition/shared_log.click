@@ -426,7 +426,7 @@ int32 vector_push(struct vector* owner, int32 value) {
     step();
     fold(vector_storage(owner));
     have at(function.entry, owner->len) <= at(function.entry, owner->len) by {
-        normalize();
+        solve();
     }
     have at(function.entry, owner->len) < at(function.entry, (owner->len + 1)) by {
         apply(integer::int32_increment_strictly_increases(at(function.entry, owner->len), at(function.entry, owner->cap))) using {
@@ -435,16 +435,16 @@ int32 vector_push(struct vector* owner, int32 value) {
         known();
     }
     have result == (old(owner->len) + 1) by {
-        normalize();
+        solve();
     }
     have owner->len == (old(owner->len) + 1) by {
-        normalize();
+        solve();
     }
     have owner->data[old(owner->len)] == value by {
-        normalize();
+        solve();
     }
     have owner->cap == old(owner->cap) by {
-        normalize();
+        solve();
     }
     have owner->data == old(owner->data) by {
         known();

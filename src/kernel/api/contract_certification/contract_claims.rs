@@ -152,6 +152,7 @@ pub(crate) fn program_checked_function_proposition_with_reason(
         }
         FunctionOutcome::RuntimeError(
             RuntimeError::FunctionContract(message)
+            | RuntimeError::InvalidContractResource(message)
             | RuntimeError::UnsuppliedResourceValue(message),
         ) => {
             return Err(format!(

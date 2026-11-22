@@ -526,7 +526,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             let saved: Integer = x;
             ensures exists (x: Integer) { saved == x } by {
                 witness(x);
-                normalize();
+                known();
             }
         }
 
@@ -537,8 +537,8 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             } by {
                 witness(x);
                 intro();
-                have x == x by { normalize(); }
-                normalize();
+                have x == x by { known(); }
+                known();
             }
         }
     "#;
@@ -1761,11 +1761,11 @@ fn cases_eliminates_a_disjunctive_premise() {
                 cases {
                     x == 1 => {
                         rewrite(x, 1);
-                        normalize();
+                        known();
                     }
                     x == 2 => {
                         rewrite(x, 2);
-                        normalize();
+                        known();
                     }
                 }
             }
@@ -2615,14 +2615,14 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
                     true => {
                         step();
                         have selected == left or selected == right by {
-                            have selected == left by { normalize(); }
+                            have selected == left by { known(); }
                             known();
                         }
                     }
                     false => {
                         step();
                         have selected == left or selected == right by {
-                            have selected == right by { normalize(); }
+                            have selected == right by { known(); }
                             known();
                         }
                     }

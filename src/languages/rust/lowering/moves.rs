@@ -414,9 +414,21 @@ pub(super) fn lower(
         Ok(())
     };
     for &block in &flow.order {
-        cx.mir_point = None;
+        let terminator = &mir.blocks[block].terminator;
+        cx.mir_point = matches!(
+            terminator,
+            T::ReturnValue { .. }
+                | T::Call {
+                    through_pointer: false,
+                    ..
+                }
+        )
+        .then_some(super::super::borrow_frontiers::MirPoint {
+            block,
+            statement: mir.blocks[block].statements.len(),
+        });
         cx.mir_nodes.clear();
-        let terminal = match &mir.blocks[block].terminator {
+        let terminal = match terminator {
             T::Goto { .. } | T::If { .. } | T::Switch { .. } => program_skip(),
             T::Return => {
                 if f.return_type == Type::Unit {
@@ -432,10 +444,6 @@ pub(super) fn lower(
             }
             // The value MIR wrote to its return place, returned as written.
             T::ReturnValue { value } => {
-                cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
-                    block,
-                    statement: mir.blocks[block].statements.len(),
-                });
                 let (checks, value) = cx.prepared_expr(value)?;
                 let return_type = scalar_type(&f.return_type)?.to_kernel_type();
                 program_seq(
@@ -576,6 +584,9 @@ pub(super) fn lower(
                 let call = if **result == Type::Unit {
                     program_call(function, arguments_values)
                 } else {
+                    let destination = destination
+                        .as_ref()
+                        .ok_or("missing Rust pointer call destination")?;
                     cx.call_then_assign(destination, function, arguments_values)
                 };
                 program_seq(prefix, call)
@@ -632,30 +643,36 @@ pub(super) fn lower(
                         result_pointee_constant: false,
                         callee: None,
                     }
-                } else if let Type::Record { name } = &callee.return_type {
-                    check(destination, name)?;
-                    let layout = cx
-                        .layouts
-                        .get(name.as_str())
-                        .ok_or("missing returned record layout")?
-                        .to_kernel_aggregate_layout();
-                    let (call, result) = cx.call_value(function, arguments_values);
-                    let copy = crate::kernel::program_copy_aggregate(
-                        crate::kernel::program_expression::variable(cx.binding(destination)),
-                        result,
-                        layout,
-                    );
-                    program_seq(call, copy)
-                } else if callee.return_type == Type::Unit {
+                } else if callee.return_type == Type::Unit
+                    || (destination.is_none() && callee.return_type.is_scalar())
+                {
                     program_call(function, arguments_values)
-                } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
-                    let (call, result) = cx.call_value(function, arguments_values);
-                    let address = cx.address(&E::Local {
-                        name: destination.clone(),
-                    })?;
-                    program_seq(call, program_typed_store(address, result, value_type))
+                } else if let Some(destination) = destination {
+                    if let Type::Record { name } = &callee.return_type {
+                        check(destination, name)?;
+                        let layout = cx
+                            .layouts
+                            .get(name.as_str())
+                            .ok_or("missing returned record layout")?
+                            .to_kernel_aggregate_layout();
+                        let (call, result) = cx.call_value(function, arguments_values);
+                        let copy = crate::kernel::program_copy_aggregate(
+                            crate::kernel::program_expression::variable(cx.binding(destination)),
+                            result,
+                            layout,
+                        );
+                        program_seq(call, copy)
+                    } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
+                        let (call, result) = cx.call_value(function, arguments_values);
+                        let address = cx.address(&E::Local {
+                            name: destination.clone(),
+                        })?;
+                        program_seq(call, program_typed_store(address, result, value_type))
+                    } else {
+                        cx.call_then_assign(destination, function, arguments_values)
+                    }
                 } else {
-                    cx.call_then_assign(destination, function, arguments_values)
+                    return Err("missing Rust call destination for a non-scalar result".into());
                 };
                 program_seq(prefix, call)
             }
@@ -1249,7 +1266,13 @@ fn loop_iterator(
         // The call whose result the test reads: by its destination, or by
         // its step when its result is the test's own.
         let reads = |terminator: &T| match (value.as_ref(), terminator) {
-            (E::Local { name }, T::Call { destination, .. }) => destination == name,
+            (
+                E::Local { name },
+                T::Call {
+                    destination: Some(destination),
+                    ..
+                },
+            ) => destination == name,
             (E::CallResult { call, .. }, T::Call { result, .. }) => *result == Some(*call),
             _ => false,
         };

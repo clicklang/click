@@ -22,7 +22,7 @@ void swap(int8* p, uint64 n) {
     have 0u64 < n - 1u64 by { solve(); }
     step_until(function.exit);
     have p[0] == old(p[n - 1]) by {
-        normalize() using { 2u64 <= n; n <= 1000u64; 0u64 < n - 1u64; };
+        known();
     }
 }
 ```

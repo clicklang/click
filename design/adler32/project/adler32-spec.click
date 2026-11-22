@@ -779,8 +779,8 @@ theorem adler_spec_b_concat(bytes: uint8[], prefix: int32, suffix: int32, a0: In
   apply(adler_sum_upper(bytes, prefix));
   apply(adler_weighted_nonnegative(bytes, prefix));
   apply(adler_weighted_nonnegative(bytes + prefix, suffix));
-  have prefix <= 2147483647 by { normalize(); }
-  have suffix <= 2147483647 by { normalize(); }
+  have prefix <= 2147483647 by { known(); }
+  have suffix <= 2147483647 by { known(); }
   have 0 <= to_integer(prefix) by { solve() using { to_integer(0) <= to_integer(prefix); }; }
   have to_integer(prefix) <= 2147483647 by { solve() using { to_integer(prefix) <= to_integer(2147483647); }; }
   have 0 <= to_integer(prefix) * a0 by { solve() using { 0 <= to_integer(prefix); to_integer(prefix) <= 2147483647; 0 <= a0; a0 <= 65520; }; }
@@ -919,7 +919,7 @@ theorem adler_sums_extensional(left: uint8[], right: uint8[], bound: int32, n: i
    rewrite(adler_byte_sum(right, 0), 0);
    rewrite(adler_weighted_sum(left, 0, weight), 0);
    rewrite(adler_weighted_sum(right, 0, weight), 0);
-   all { (0 : Integer) == 0 => { normalize(); } (0 : Integer) == 0 => { normalize(); } }
+   all { (0 : Integer) == 0 => { known(); } (0 : Integer) == 0 => { known(); } }
   } else {
    have 0 < n;
    have 0 <= to_integer(n - 1) by solve() using { 0 < n; };
@@ -942,14 +942,14 @@ theorem adler_sums_extensional(left: uint8[], right: uint8[], bound: int32, n: i
            rewrite(adler_byte_sum(right, n), adler_byte_sum(right, n - 1) + to_integer(right[n - 1] as int32));
            rewrite(adler_byte_sum(left, n - 1), adler_byte_sum(right, n - 1));
            rewrite(left[n - 1], right[n - 1]);
-           normalize();
+           known();
        }
        adler_weighted_sum(left, n, weight) == adler_weighted_sum(right, n, weight) => {
            rewrite(adler_weighted_sum(left, n, weight), adler_weighted_sum(left, n - 1, weight) + (to_integer(weight) - to_integer(n - 1)) * to_integer(left[n - 1] as int32));
            rewrite(adler_weighted_sum(right, n, weight), adler_weighted_sum(right, n - 1, weight) + (to_integer(weight) - to_integer(n - 1)) * to_integer(right[n - 1] as int32));
            rewrite(adler_weighted_sum(left, n - 1, weight), adler_weighted_sum(right, n - 1, weight));
            rewrite(left[n - 1], right[n - 1]);
-           normalize();
+           known();
        }
    }
   }
@@ -969,13 +969,13 @@ theorem adler_spec_extensional(left: uint8[], right: uint8[], length: int32, a0:
           unfold(adler_spec_a(left, length, a0));
           unfold(adler_spec_a(right, length, a0));
           rewrite(adler_byte_sum(left, length), adler_byte_sum(right, length));
-          normalize();
+          known();
       }
       adler_spec_b(left, length, a0, b0) == adler_spec_b(right, length, a0, b0) => {
           unfold(adler_spec_b(left, length, a0, b0));
           unfold(adler_spec_b(right, length, a0, b0));
           rewrite(adler_weighted_sum(left, length, length), adler_weighted_sum(right, length, length));
-          normalize();
+          known();
       }
   }
  }

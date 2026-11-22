@@ -386,7 +386,7 @@ int32 vector_grow(struct vector* owner) {
             have at(region(14).entry, 0) <= at(region(14).entry, k) and at(region(14).entry, k) < at(region(14).entry, owner->len);
             instantiate(forall (__click_q0: int32) { at(region(14).entry, 0) <= at(region(14).entry, __click_q0) and at(region(14).entry, __click_q0) < at(region(14).entry, owner->len) implies at(region(14).entry, new_data[__click_q0]) == at(region(14).entry, old_data[__click_q0]) }, k);
             have &owner->data[k] == at(region(14).entry, &new_data[k]) by {
-                normalize() using { owner->data == at(region(14).entry, new_data); };
+                known();
             }
             have separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
             have at(region(14).entry, old_data[k]) == old(owner->data[k]) by { known(); }
@@ -429,7 +429,7 @@ int32 vector_grow(struct vector* owner) {
             have new_data[k] == at(region(14).entry, new_data[k]) by { known(); }
             have new_data[k] == old(owner->data[k]) by { known(); }
             have &owner->data[k] == &new_data[k] by {
-                normalize() using { owner->data == new_data; };
+                known();
             }
             have owner->data[k] == new_data[k] by {
                 transport(new_data[k] == new_data[k], owner->data[k] == new_data[k]) using {

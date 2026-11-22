@@ -281,9 +281,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             });
         }
         if let ProofStep::CloseInvariantsBy(body) = &step {
-            return driver_proof
-                .driver()
-                .apply_close_invariants_body(&body.to_proof_tactics(), None);
+            return driver_proof.driver().apply_close_invariants_body(
+                &body.to_proof_tactics(),
+                None,
+                false,
+            );
         }
         if !super::execution_statements::implicit_solve_disabled()
             && matches!(
@@ -312,7 +314,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         if matches!(step, ProofStep::Both { .. } | ProofStep::All(_)) {
             return driver_proof
                 .driver()
-                .apply_all_source(&step.to_proof_tactic());
+                .apply_all_source(&step.to_proof_tactic(), false);
         }
         // A bare `fold` is checked as a bare step is: its fast path, then the
         // implicit `solve` for each body fact it leaves open.
@@ -546,8 +548,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::ObserveResource(resource) => {
                 driver_proof.apply_execution_resource_observation(resource)
             }
-            ProofStep::ObserveSavedMemory { base, start, end } => {
-                driver_proof.apply_saved_memory_observation(base, start, end)
+            ProofStep::ObserveSubject(resource) => {
+                driver_proof.apply_resource_subject_observation(resource)
             }
             ProofStep::Iterated(tactic) => driver_proof.apply_execution_iterated_step(tactic),
             ProofStep::Choose(choice) => driver_proof.apply_fixed_state_choose(choice),

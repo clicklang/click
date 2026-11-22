@@ -21,7 +21,7 @@ int32 g(int32 p[]) {
 } by {
     step_until(function.exit);
     known();
-    normalize();
+    known();
     known(); known(); known();
     normalize();
 }

@@ -7774,6 +7774,37 @@ pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> 
         .then_some("library/c/string.interface.click")
 }
 
+/// The `extern` contract a C library declaration of `header` brings, read
+/// with the sidecar as a C++ library interface is: `fprintf`, declared as the
+/// projected `<stdio.h>` does, `int fprintf(FILE *stream, const char *format,
+/// ...)`, has the contract of `library/c/fprintf.interface.click`.
+pub(crate) fn library_interface_contract(header: &CFunctionHeader) -> Option<&'static str> {
+    let is_format = |format: &ImportedParameter| {
+        matches!(format.interface_type, InterfaceType::CharPointer(_)) && format.pointee_constant
+    };
+    match (header.source_name.as_str(), header.parameters.as_slice()) {
+        ("fprintf", [file, format])
+            if !header.internal_linkage
+                && header.variadic
+                && header.return_type == InterfaceType::Int32
+                && header.name == header.source_name
+                && file.interface_type == InterfaceType::Int32Pointer
+                && file.struct_name() == Some(STDIO_FILE_TAG)
+                && !file.pointee_constant
+                && is_format(format) =>
+        {
+            Some(include_str!("../../../library/c/fprintf.interface.click"))
+        }
+        _ => None,
+    }
+}
+
+/// Whether `name` is a C library function whose contract
+/// [`library_interface_contract`] supplies.
+pub(crate) fn is_library_interface_function(name: &str) -> bool {
+    name == "fprintf"
+}
+
 /// Which standard stream writer this declaration denotes, if any.
 fn stream_output_prototype(
     header: &CFunctionHeader,
@@ -7789,16 +7820,10 @@ fn stream_output_prototype(
     let is_format = |format: &ImportedParameter| {
         matches!(format.interface_type, InterfaceType::CharPointer(_)) && format.pointee_constant
     };
+    // `fprintf` is an ordinary variadic call to its `library/c/stdio.click`
+    // contract.
     match (header.source_name.as_str(), header.parameters.as_slice()) {
         ("printf", [format]) if is_format(format) => Some(FormattedOutput::Printf),
-        ("fprintf", [file, format])
-            if file.interface_type == InterfaceType::Int32Pointer
-                && file.struct_name() == Some(STDIO_FILE_TAG)
-                && !file.pointee_constant
-                && is_format(format) =>
-        {
-            Some(FormattedOutput::Fprintf)
-        }
         _ => None,
     }
 }
@@ -17466,22 +17491,10 @@ impl Parser {
         &mut self,
         function: super::formatted_output::FormattedOutput,
     ) -> Result<Vec<CExpression>, CSyntaxError> {
-        use super::formatted_output::{self, FormattedOutput};
+        use super::formatted_output;
         let source_name = function.source_name();
         self.expect(Token::LParen)?;
-        let file = if matches!(function, FormattedOutput::Fprintf) {
-            let mut file = self.parse_expression_allow_direct_aggregate()?;
-            self.validate_struct_pointer_assignment(
-                Some(&STDIO_FILE_TAG.to_string()),
-                Some(InterfaceType::Int32Pointer),
-                &mut file,
-            )?;
-            self.reject_discarded_const_pointer(InterfaceType::Int32Pointer, false, &mut file)?;
-            self.expect(Token::Comma)?;
-            file
-        } else {
-            CExpression::Variable(BindingName::from(HOSTED_STDOUT_BINDING))
-        };
+        let file = { CExpression::Variable(BindingName::from(HOSTED_STDOUT_BINDING)) };
         let format = self.parse_output_format(source_name)?;
         formatted_output::stream_output_bytes(function, &format).map_err(|reason| {
             self.error_at_previous(format!("`{source_name}` format: {reason}"))

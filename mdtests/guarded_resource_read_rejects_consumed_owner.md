@@ -57,9 +57,7 @@ int32 f(struct cell* root) {
         };
     }
     have separate(statement(2).footprint, memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1])) by {
-        normalize() using {
-            separate(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1]));
-        };
+        known();
     }
     have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
         preserve(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), statement(2));

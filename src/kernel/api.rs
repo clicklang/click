@@ -4152,11 +4152,31 @@ fn install_borrowed_contract_inputs(
                 )
             })
     };
+    // Normalization can represent a folded input view as a projection of an
+    // owner. Such a view has no independent occurrence to borrow. Check the
+    // written owners before asking the state for a principal view occurrence.
+    let owned_composites = std::cell::LazyCell::new(|| {
+        ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
+            checked_inputs
+                .iter()
+                .map(|input| &input.fact)
+                .filter(|fact| {
+                    fact.is_own() && matches!(fact.resource(), Resource::Composite { .. })
+                })
+                .cloned(),
+        )
+    });
     let mut selected = BTreeMap::new();
-    for input in checked_inputs
-        .into_iter()
-        .filter(|input| input.fact.is_view())
-    {
+    for input in checked_inputs.iter().filter(|input| input.fact.is_view()) {
+        if matches!(input.fact.resource(), Resource::Composite { .. })
+            && let Some((_, owner)) = owned_composites
+                .directly_supporting_owned_entry_ignoring_separation(&input.fact, assumptions)
+        {
+            return Err(BorrowRefusal::ActiveDependency.proven_overlap_diagnostic(
+                BorrowRefusalOperation::Entry,
+                BorrowRefusalSubject::for_conflicting_resources(input.fact.clone(), owner.clone()),
+            ));
+        }
         if let Some(range) = input.fact.memory_range()
             && let Some(diagnostic) = refuse_owned_overlap(range)
         {
@@ -4176,7 +4196,7 @@ fn install_borrowed_contract_inputs(
         else {
             return Err(BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
                 BorrowRefusalOperation::Entry,
-                BorrowRefusalSubject::for_resource(input.fact),
+                BorrowRefusalSubject::for_resource(input.fact.clone()),
             ));
         };
         let viewed = state
@@ -4354,6 +4374,21 @@ pub fn program_function_contract_entry_state(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, String> {
+    program_function_contract_entry_state_with_refusal(
+        caller_state,
+        function,
+        arguments,
+        assumptions,
+    )
+    .map_err(ContractEntryRefusal::into_message)
+}
+
+pub(crate) fn program_function_contract_entry_state_with_refusal(
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+) -> Result<ExecutionState, ContractEntryRefusal> {
     let values = arguments
         .iter()
         .map(|argument| match argument {
@@ -4361,7 +4396,11 @@ pub fn program_function_contract_entry_state(
             _ => None,
         })
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| "contract entry arguments must be concrete symbolic values".to_string())?;
+        .ok_or_else(|| {
+            ContractEntryRefusal::Internal(
+                "contract entry arguments must be concrete symbolic values".into(),
+            )
+        })?;
     let mut budget = ExecutionBudget::beside_live_state();
     match prepare_function_contract_entry_state_with_values(
         caller_state,
@@ -4371,14 +4410,15 @@ pub fn program_function_contract_entry_state(
         &mut budget,
     ) {
         Ok(Ok(state)) => Ok(state),
-        Ok(Err(error)) => Err(format!(
-            "could not prepare contract resources: {}",
-            contract_certification::describe_certification_runtime_error(&error)
+        Ok(Err(error)) => Err(ContractEntryRefusal::from_resource_error(
+            "could not prepare contract resources",
+            &error,
         )),
         Err(limit) => Err(format!(
             "contract resource preparation stopped at {}",
             limit.describe()
-        )),
+        )
+        .into()),
     }
 }
 

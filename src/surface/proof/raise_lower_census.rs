@@ -1,38 +1,21 @@
-//! A measurement of the facts Click cannot raise.
+//! A test measurement of the facts a step's premise raising cannot spell.
 //!
 //! Every fact a proof state holds, and every goal it focuses, must have a
 //! Surface form that lowers back to it: expansion writes the proof out as
 //! steps a person could have written, so whatever those steps cite or prove
-//! must be writable (`docs/internals/raise-lower-principle.md`). Setting
-//! `CLICK_RAISE_LOWER_CENSUS=<path>` appends one line per fact a checked
-//! step adds, and per goal it leaves focused, saying whether raising produces
-//! a Surface form that lowers back to it. `scripts/raise-lower-census.sh` runs the
-//! corpus under it and summarizes the misses by kind.
+//! must be writable (`docs/internals/raise-lower-principle.md`). Under
+//! [`capture`], each checked step records one line per fact it adds, and per
+//! goal it leaves focused, saying whether premise raising (the route `solve`
+//! takes, `ProofSearch::resolve_solve_premises`) spells it. Tests assert on
+//! those lines. Over the corpus, `click audit raise-lower` measures the
+//! canonical raiser instead.
 //!
-//! The census only observes: it never changes a proof, and without the
-//! variable it costs one cached check per step.
+//! The census only observes: it never changes a proof, and outside a test
+//! capture it is off.
 
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use std::fs::File;
-use std::io::Write;
-use std::sync::{Mutex, OnceLock};
-
 use crate::kernel::{ConditionTerm, Proposition, Term};
-
-fn sink() -> Option<&'static Mutex<File>> {
-    static SINK: OnceLock<Option<Mutex<File>>> = OnceLock::new();
-    SINK.get_or_init(|| {
-        let path = std::env::var_os("CLICK_RAISE_LOWER_CENSUS")?;
-        File::options()
-            .create(true)
-            .append(true)
-            .open(path)
-            .ok()
-            .map(Mutex::new)
-    })
-    .as_ref()
-}
 
 #[cfg(test)]
 thread_local! {
@@ -53,7 +36,7 @@ pub(super) fn enabled() -> bool {
     if CAPTURE.with(|lines| lines.borrow().is_some()) {
         return true;
     }
-    sink().is_some()
+    false
 }
 
 /// What a censused proposition is, by its outermost kernel form. A quantifier
@@ -141,20 +124,13 @@ pub(super) fn record(raised: bool, role: &str, kind: &str, claim: &str, tactic: 
         if raised { "raised" } else { "unraised" }
     );
     #[cfg(test)]
-    if CAPTURE.with(|lines| {
-        lines
-            .borrow_mut()
-            .as_mut()
-            .map(|lines| lines.push(line.clone()))
-            .is_some()
-    }) {
-        return;
-    }
-    if let Some(sink) = sink()
-        && let Ok(mut file) = sink.lock()
-    {
-        let _ = file.write_all(line.as_bytes());
-    }
+    CAPTURE.with(|lines| {
+        if let Some(lines) = lines.borrow_mut().as_mut() {
+            lines.push(line);
+        }
+    });
+    #[cfg(not(test))]
+    let _ = line;
 }
 
 #[cfg(test)]
@@ -1168,6 +1144,7 @@ void set(int32* a, int32 i, int32 j) {
     ensures a[j] == 5;
 } by {
     step_until(function.exit);
+    known();
     rewrite(j, i);
 }
 "#;

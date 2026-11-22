@@ -119,9 +119,7 @@ void probe(struct node* g, struct node* n) {
                     have n->right == at(before_call, n->right);
                     have n->right == saved by {
                         have n->right == saved by {
-                            normalize() using {
-                                at(before_call, n->right == saved);
-                            };
+                            known();
                         }
                         known();
                     }

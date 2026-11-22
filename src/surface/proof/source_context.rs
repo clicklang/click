@@ -31,7 +31,7 @@ impl SourceContext {
             tactic,
             ProofTactic::ObserveResource(
                 ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_)
-            ) | ProofTactic::ObserveSavedMemory { .. }
+            ) | ProofTactic::ObserveSubject(_)
         ) {
             return true;
         }
@@ -99,6 +99,7 @@ impl SourceContext {
                     | ProofTactic::IntroAs(_)
                     | ProofTactic::IntroBinder(_)
                     | ProofTactic::Known
+                    | ProofTactic::Enumerate
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::ArithmeticUsing(_)

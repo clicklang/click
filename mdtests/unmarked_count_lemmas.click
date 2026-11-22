@@ -172,10 +172,10 @@ theorem unmarked_point_update(
                 unfold(unmarked(a, lo, hi));
                 unfold(unmarked(b, lo, hi));
                 have (if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
-                    normalize() using { a[hi - 1] == 0; };
+                    known();
                 }
                 have (if b[hi - 1] == 0 { 1 } else { 0 }) == 0 by {
-                    normalize() using { b[hi - 1] != 0; };
+                    known();
                 }
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
                     solve() using { (if a[hi - 1] == 0 { 1 } else { 0 }) == 1; };

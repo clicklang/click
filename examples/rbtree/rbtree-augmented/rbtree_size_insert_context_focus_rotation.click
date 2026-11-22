@@ -440,6 +440,6 @@ theorem sized_context_focus_rotation_preserves_inorder(g: struct rb_node*, p: st
         rewrite(list::append(list::append(rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), List::Cons(p, List::Nil)), List::Cons(g, List::Nil)), list::append(rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), list::append(List::Cons(p, List::Nil), List::Cons(g, List::Nil))));
         unfold(list::append(List::Cons(p, List::Nil), List::Cons(g, List::Nil)));
         unfold(list::append(List::Nil, List::Cons(g, List::Nil)));
-        normalize();
+        known();
     }
 }

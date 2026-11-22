@@ -3670,7 +3670,7 @@ const MAX_REFUTED_EQUALITY_PREMISES: usize = 4;
 const MAX_BOUND_VARIABLES: usize = 8;
 
 thread_local! {
-    static ACTIVE_SOLVE_FALLBACKS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static ACTIVE_SOLVE_FALLBACKS: std::cell::Cell<u16> = const { std::cell::Cell::new(0) };
 }
 
 #[derive(Clone, Copy)]
@@ -3682,6 +3682,7 @@ enum SolveFallback {
     MatchArithmetic = 32,
     RefutedEquality = 64,
     ElementAddress = 128,
+    GroundRecursion = 256,
 }
 
 /// A candidate can try the other fallback and descend through logical
@@ -3691,12 +3692,12 @@ struct SolveFallbackScope(SolveFallback);
 
 impl SolveFallbackScope {
     fn active(fallback: SolveFallback) -> bool {
-        ACTIVE_SOLVE_FALLBACKS.with(|active| active.get() & fallback as u8 != 0)
+        ACTIVE_SOLVE_FALLBACKS.with(|active| active.get() & fallback as u16 != 0)
     }
 
     fn enter(fallback: SolveFallback) -> Option<Self> {
         ACTIVE_SOLVE_FALLBACKS.with(|active| {
-            let bit = fallback as u8;
+            let bit = fallback as u16;
             if active.get() & bit != 0 {
                 return None;
             }
@@ -3708,17 +3709,15 @@ impl SolveFallbackScope {
 
 impl Drop for SolveFallbackScope {
     fn drop(&mut self) {
-        ACTIVE_SOLVE_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u8)));
+        ACTIVE_SOLVE_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u16)));
     }
 }
 
-/// The checked unfold and rewrite steps one constructor evaluation takes
-/// beyond those a constant measure adds.
+/// The checked unfold and rewrite steps one constructor evaluation takes.
 const CONSTRUCTOR_EVALUATION_FUEL: usize = 8;
 
-/// The most checked steps one constructor evaluation takes, however large
-/// the constant measures it unfolds.
-const MAX_CONSTRUCTOR_EVALUATION_FUEL: usize = 1024;
+/// The most levels one ground recursion evaluation takes.
+const MAX_GROUND_RECURSION_LEVELS: usize = 1024;
 
 /// The connected facts one constructor evaluation reads for constructor
 /// equations once it is stuck.

@@ -414,7 +414,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
             have rb_left(sub.model) == RbTree::Empty by {
                 rewrite(sub.model, RbTree::Empty);
                 unfold(rb_left(RbTree::Empty));
-                normalize();
+                known();
             }
             have plug(ctx.model, sub.model) == old(t.model) by {
                 rewrite(ctx.model, Context::Top);
@@ -437,12 +437,12 @@ struct rb_node* rb_first(const struct rb_root* root) {
             have ctx_all_left(ctx.model) == 1 by {
                 rewrite(ctx.model, Context::Top);
                 unfold(ctx_all_left(Context::Top));
-                normalize();
+                known();
             }
             have plug(ctx.model, t.model) == old(t.model) by {
                 rewrite(ctx.model, Context::Top);
                 unfold(plug(Context::Top, t.model));
-                normalize();
+                known();
             }
             have t.model != RbTree::Empty;
             have n != 0;

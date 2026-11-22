@@ -51,7 +51,7 @@ int32 later(int32 u) {
             have a[0] == at(before_store, a[0]) by {
                 preserve(memory(a[0]), statement(4));
             }
-            have a[0] == 3 by { normalize() using { a[0] == at(before_store, a[0]); at(before_store, a[0]) == 3; }; }
+            have a[0] == 3 by { rewrite(a[0], at(before_store, a[0])); known(); }
             known();
         }
     }

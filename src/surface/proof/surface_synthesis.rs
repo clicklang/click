@@ -5105,12 +5105,27 @@ pub(super) fn synthesize_surface_resource_subject(
                 _ => surface_base,
             }
         };
-    // The bounds are spelled as the terms they are, in either index kind.
+    // A wide range reads its bounds as uint64. A point-named word read
+    // carries the bits, so the range supplies the interpretation.
+    let wide = range.wide_bounds().is_some();
+    let raise_bound = |bound: &MachineTerm| {
+        if wide
+            && matches!(bound, MachineTerm::MemoryLoad(point, _, crate::kernel::LoadKind::Bits64)
+                if point.read_version_id().is_some())
+        {
+            return synthesize_typed_word_read(
+                bound,
+                ProgramType::UInt64,
+                parameter_binding,
+                state,
+                bound_variables,
+            );
+        }
+        synthesize_surface_bitvector(bound, parameter_binding, state, bound_variables)
+    };
     let (range_start, range_end) = range.bound_terms();
-    let surface_start =
-        synthesize_surface_bitvector(range_start, parameter_binding, state, bound_variables)?;
-    let surface_end =
-        synthesize_surface_bitvector(range_end, parameter_binding, state, bound_variables)?;
+    let surface_start = raise_bound(range_start)?;
+    let surface_end = raise_bound(range_end)?;
     let (Some(semantic_base), Some(start), Some(end)) = (
         contract_expression_to_program_expression(&surface_base),
         contract_expression_to_program_expression(&surface_start),
@@ -7782,7 +7797,16 @@ fn synthesize_surface_pointer(
         }
         // A field spelling reads this state; historical reads need their
         // recorded selector before entering this C-only source fragment.
-        pointer_read_address_in_state(pointer, state)?;
+        let defining_address = pointer_read_address_in_state(pointer, state)?;
+        // A pointer loaded from a static scalar slot has the declared name
+        // and type of that very slot, including its original pointee type.
+        if let Some(name) = state.locals().name_for_slot(&defining_address)
+            && state
+                .global_object_type(name)
+                .is_some_and(ProgramType::is_object_pointer)
+        {
+            return Some(ProgramExpression::Variable(name.clone()));
+        }
         // A resource retains an address, not its source pointer type. Recover
         // that type from the field declaration instead of assuming int32*;
         // byte pointers must round-trip through their actual field load.

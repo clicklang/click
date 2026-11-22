@@ -3494,9 +3494,8 @@ pub enum ModelFamily {
     Allocator,
     /// The contract the C front end writes for one `snprintf` format.
     Snprintf,
-    /// The contract the C front end writes for a literal `printf` or `fprintf`.
+    /// The contract the C front end writes for a literal `printf`.
     Printf,
-    Fprintf,
     /// A C++ standard-library catalog contract.
     CppStd,
     /// A Rust core-method contract.
@@ -3509,13 +3508,12 @@ pub enum ModelFamily {
 impl ModelFamily {
     /// Every family a function's assumptions can belong to; the thread
     /// runtime, which a whole verification assumes, is reported apart.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 8] = [
         Self::Extern,
         Self::CLibrary,
         Self::Allocator,
         Self::Snprintf,
         Self::Printf,
-        Self::Fprintf,
         Self::CppStd,
         Self::RustCore,
         Self::Primitive,
@@ -3529,7 +3527,6 @@ impl ModelFamily {
             Self::Allocator => "allocator",
             Self::Snprintf => "snprintf",
             Self::Printf => "printf",
-            Self::Fprintf => "fprintf",
             Self::CppStd => "C++ std",
             Self::RustCore => "Rust core",
             Self::Primitive => "primitive",
@@ -3594,8 +3591,12 @@ fn program_assumptions_parsed(
                 match function {
                     FormattedOutput::Snprintf => ModelFamily::Snprintf,
                     FormattedOutput::Printf => ModelFamily::Printf,
-                    FormattedOutput::Fprintf => ModelFamily::Fprintf,
                 }
+            } else if file.source_language() == crate::languages::SourceLanguage::C
+                && syntax::is_library_interface_function(name)
+            {
+                // A C library interface read with the sidecar, `fprintf`.
+                ModelFamily::CLibrary
             } else if library_models.is_some_and(|models| models.contains(name)) {
                 frontend_family
             } else {
@@ -5110,19 +5111,19 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
         .iter()
         .filter(|function| function.is_external())
         .map(|function| {
-            let variable_arguments =
-                function
-                    .signature()
-                    .parameters()
-                    .last()
-                    .is_some_and(|parameter| {
-                        matches!(
-                            parameter.click_type,
-                            ClickType::Program(InterfaceType::Parameter(parameter_type))
-                                if parameter_type
-                                    == crate::languages::c::variadic::variable_arguments_type()
-                        )
-                    });
+            let variable_arguments = function
+                .signature()
+                .parameters()
+                .iter()
+                // A contract's `let` value parameters follow `...args`.
+                .any(|parameter| {
+                    matches!(
+                        parameter.click_type,
+                        ClickType::Program(InterfaceType::Parameter(parameter_type))
+                            if parameter_type
+                                == crate::languages::c::variadic::variable_arguments_type()
+                    )
+                });
             (function.signature().name(), variable_arguments)
         })
         .collect::<Vec<_>>();
@@ -8162,6 +8163,10 @@ int32 reader(int32 p[], int32 q[]) {
             "{}",
             error.message()
         );
+        assert!(
+            error.concise_report().starts_with("contract error"),
+            "{error}"
+        );
         // The refusal names the invariant and both clauses, so the contract
         // can be repaired without reading the ledger.
         assert!(
@@ -8914,6 +8919,7 @@ pub(in crate::surface) fn program_contract_failure(
     tactic_names: &BTreeSet<String>,
 ) -> ClickError {
     use crate::kernel::{ProgramContractFailure, ProgramContractGoal};
+    use crate::surface::ProofRefusal;
     match failure {
         ProgramContractFailure::UnfinishedBody(name) => {
             let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
@@ -8921,9 +8927,11 @@ pub(in crate::surface) fn program_contract_failure(
                 "contract proof for `{name}` still owes its body obligations"
             ))
             .at_declaration(name)
+            .with_proof_refusal(ProofRefusal::ContractExit)
         }
         ProgramContractFailure::Analysis(error) => {
-            let located = ClickError::new(format!("could not certify C termination: {error}"));
+            let located = ClickError::new(format!("could not certify C termination: {error}"))
+                .with_proof_refusal(ProofRefusal::Termination);
             match error.function() {
                 Some(function) => located
                     .at_declaration(function.split_once('#').map_or(function, |(name, _)| name)),
@@ -8939,7 +8947,7 @@ pub(in crate::surface) fn program_contract_failure(
             match goal {
                 ProgramContractGoal::DivergencePolicy(name) => {
                     let name = spelling(&name);
-                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name)
+                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name).with_proof_refusal(ProofRefusal::DivergenceDeclaration)
                 }
                 ProgramContractGoal::CallbackSafety => {
                     let unsuitable = &verdicts.unsuitable_callbacks[0];
@@ -8956,7 +8964,7 @@ pub(in crate::surface) fn program_contract_failure(
                         ),
                         None => "it has no termination evidence".to_string(),
                     };
-                    ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker)
+                    ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker).with_proof_refusal(ProofRefusal::Termination)
                 }
                 ProgramContractGoal::Returns(name) => {
                     let refusal = &verdicts.refusals[&name];
@@ -8973,6 +8981,7 @@ pub(in crate::surface) fn program_contract_failure(
                         )
                     ))
                     .at_declaration(&name)
+                    .with_proof_refusal(ProofRefusal::Termination)
                 }
                 ProgramContractGoal::Program
                 | ProgramContractGoal::Body { .. }

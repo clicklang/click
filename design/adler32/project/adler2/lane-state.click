@@ -145,7 +145,7 @@ theorem adler_prefix_a_step_one(bytes: uint8[], n: int32, seed: Integer, represe
   have defined(n + 1) by solve() using { 0 <= n; n <= 2147483646; };
   have 0 < to_integer(n + 1) by solve() using { 0 <= n; n <= 2147483646; };
   apply(adler_sum_append(bytes, n + 1));
-  have adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32) by { rewrite(adler_byte_sum(bytes, n + 1), adler_byte_sum(bytes, n + 1 - 1) + to_integer(bytes[n + 1 - 1] as int32)); normalize(); }
+  have adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32) by { rewrite(adler_byte_sum(bytes, n + 1), adler_byte_sum(bytes, n + 1 - 1) + to_integer(bytes[n + 1 - 1] as int32)); known(); }
   have truncating_remainder(representative, 65521) == truncating_remainder(seed + adler_byte_sum(bytes, n), 65521) by { rewrite(truncating_remainder(representative, 65521), adler_spec_a(bytes, n, seed)); unfold(adler_spec_a(bytes, n, seed)); solve(); }
   unfold(adler_spec_a(bytes, n + 1, seed));
   rewrite(adler_byte_sum(bytes, n + 1), adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32));

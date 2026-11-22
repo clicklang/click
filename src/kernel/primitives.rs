@@ -8269,6 +8269,14 @@ pub enum RuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// A resource clause violates a contract rule.
+    InvalidContractResource(String),
+    /// An argument or state produced for opening a contract had the wrong representation.
+    ContractEntryInvariant(String),
+    OverlappingContractInputView {
+        owned: Box<ResourceFact>,
+        viewed: Box<ResourceFact>,
+    },
     /// A verified call may write memory for which it has no checked byte bound.
     UnboundedWriteWithLiveView {
         callee: String,
@@ -8518,6 +8526,31 @@ impl std::fmt::Display for RuntimeError {
 }
 
 impl RuntimeError {
+    /// The exact view requested by a load while evaluating a resource clause.
+    /// A comparison between held and required resources carries both operands.
+    pub(crate) fn missing_contract_read(&self) -> Option<&MemoryRange> {
+        match self {
+            Self::ContractResourceDiagnostic {
+                held: None,
+                required,
+                ..
+            } if required.is_view() => required.memory_range(),
+            _ => None,
+        }
+    }
+
+    /// Whether evaluating or admitting the declared entry resources identified a
+    /// violation of a contract rule.
+    pub(crate) fn is_contract_entry_resource_error(&self) -> bool {
+        self.missing_contract_read().is_some()
+            || matches!(
+                self,
+                Self::InvalidContractResource(_)
+                    | Self::OverlappingOwnedMemoryResources { .. }
+                    | Self::OverlappingContractInputView { .. }
+            )
+    }
+
     /// The sentence for [`RuntimeError::UnbackedReturnedView`], which the
     /// surface completes with the view in source terms.
     pub const UNBACKED_RETURNED_VIEW: &'static str =
@@ -8531,9 +8564,9 @@ impl RuntimeError {
     /// resource value another clause may still supply.
     pub fn function_contract_message(&self) -> Option<&str> {
         match self {
-            Self::FunctionContract(message) | Self::UnsuppliedResourceValue(message) => {
-                Some(message)
-            }
+            Self::FunctionContract(message)
+            | Self::InvalidContractResource(message)
+            | Self::UnsuppliedResourceValue(message) => Some(message),
             _ => None,
         }
     }
@@ -8773,6 +8806,9 @@ pub struct LocalEnvironment {
     /// every binding: a frame of N locals bound one at a time costs N log N.
     pub(super) bindings: crate::persistent::PersistentMap<BindingName, LocalBinding>,
     pub(super) slots: crate::persistent::PersistentMap<Address, BindingName>,
+    /// The slots that can designate automatic storage. Value-only parameter
+    /// pseudo-slots never have a block and do not participate in lifetime ends.
+    automatic_slots: crate::persistent::PersistentMap<Address, ()>,
     /// Each scalar object's name under a fingerprint of the integer term it
     /// holds, kept with `bindings`: naming a value looks up the objects that
     /// may hold it instead of comparing it with every binding.

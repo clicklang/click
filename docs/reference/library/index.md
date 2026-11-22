@@ -4693,6 +4693,81 @@ function write_requests(history: List<WriteAttempt>) -> List<List<uint8>>
 Returns the requested byte lists in history order, regardless of their
 outcomes. Verified in [`printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md).
 
+### `stdio::format_output`, `stdio::format_length` and `stdio::literal_format`
+
+```click
+function format_output(s: uint8[], k: uint64, remaining: int32) -> List<uint8>
+    decreases remaining
+{
+    if remaining <= 0 {
+        List<uint8>::Nil
+    } else {
+        if s[k] == 37u8 {
+            if remaining >= 2 {
+                List<uint8>::Cons(37u8, stdio::format_output(s, k + 2u64, remaining - 2))
+            } else {
+                List<uint8>::Nil
+            }
+        } else {
+            List<uint8>::Cons(s[k], stdio::format_output(s, k + 1u64, remaining - 1))
+        }
+    }
+}
+```
+
+```click
+function format_length(s: uint8[], k: uint64, remaining: int32, count: int32) -> int32
+    decreases remaining
+{
+    if remaining <= 0 {
+        count
+    } else {
+        if s[k] == 37u8 {
+            if remaining >= 2 {
+                stdio::format_length(s, k + 2u64, remaining - 2, count + 1)
+            } else {
+                count
+            }
+        } else {
+            stdio::format_length(s, k + 1u64, remaining - 1, count + 1)
+        }
+    }
+}
+```
+
+```click
+function literal_format(s: uint8[], k: uint64, remaining: int32) -> Bool
+    decreases remaining
+{
+    if remaining <= 0 {
+        true
+    } else {
+        if s[k] == 37u8 {
+            if remaining >= 2 {
+                if s[k + 1u64] == 37u8 {
+                    stdio::literal_format(s, k + 2u64, remaining - 2)
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            stdio::literal_format(s, k + 1u64, remaining - 1)
+        }
+    }
+}
+```
+
+The characters an `fprintf` format of ordinary characters and `%%` writes,
+from `remaining` bytes at `k`: each `%%` writes one `%`. `format_length`
+counts them onto `count`, so evaluating it over a format adds one to a known
+value at each character. `literal_format` holds when the bytes are ordinary
+characters and `%%` only, which the
+[`fprintf` contract](../language/c.md#formatted-output) requires. Each
+recurses on an `int32` measure; `solve` evaluates them over a string literal
+one level at a time. Verified in [`printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md) and [`fprintf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/fprintf_refuses_a_format_that_converts.md).
+
 ### Decimal formatting
 
 `click::c::stdio` states the characters C's `printf` family writes for an
@@ -5968,7 +6043,8 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
             solve() using { not (k < stdio::decimal_length(v)); };
         }
     }
-}```
+}
+```
 
 **Meaning:** Every decimal digit is a character from `'0'` up, so none is the terminator `0`.
 
@@ -5993,7 +6069,8 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
             solve() using { not (to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v))); 48u8 <= stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))); };
         }
     }
-}```
+}
+```
 
 **Meaning:** Every character of a `0`-padded field is a digit or the `'0'` pad, so none is the terminator; this is what a `%s` of a `%03u` fraction needs.
 
@@ -6014,6 +6091,35 @@ selects the C-string resource and its readability predicate.
 These declarations cover the narrow byte-oriented libc slice supported by Click.
 They are body-less assumptions: callers must satisfy their requirements, and
 Click does not verify an implementation of the external function.
+
+### `fprintf`
+
+```click
+int32 fprintf(FILE* file, const uint8* format, ...args) {
+    let n: uint64;
+    views click::c::string::cstr_at(format, n);
+    requires n <= 2147483647u64;
+    requires click::c::stdio::literal_format(format, 0u64, n as int32);
+    owns out: click::c::stdio::stream(file);
+    ensures result == click::c::stdio::format_length(format, 0u64, n as int32, 0) or result < 0;
+    ensures out.write_history == List::Cons(
+        WriteAttempt::Attempt(click::c::stdio::format_output(format, 0u64, n as int32), result),
+        old(out.write_history));
+    ensures click::c::stdio::write_requests(out.write_history) == List::Cons(
+        click::c::stdio::format_output(format, 0u64, n as int32),
+        old(click::c::stdio::write_requests(out.write_history)));
+}
+```
+
+**Meaning:** Writes the characters a format of ordinary characters and `%%`
+produces to the stream `file` and adds the attempt to the front of its
+history: the count on success, or a negative value on an error, which may
+follow partial output. The format is a C string the caller views, and its
+arguments, which such a format does not convert, are ignored. The C front end
+selects this contract for the projected `<stdio.h>` declaration
+([formatted output](../language/c.md#formatted-output)).
+
+**Verified use:** [`mdtests/printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md); a format that converts is refused in [`mdtests/fprintf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/fprintf_refuses_a_format_that_converts.md).
 
 ### `memcpy`
 

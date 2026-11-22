@@ -74,7 +74,7 @@ theorem sized_plug_preserves_shape(ctx: SizedContext, sub: SizedTree) {
                 unfold(sized_plug(SizedContext::Top, sub));
                 unfold(sized_context_shape(SizedContext::Top));
                 unfold(plug(Context::Top, sized_shape(sub)));
-                normalize();
+                known();
             },
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sub, sibling)));
@@ -100,7 +100,7 @@ theorem sized_context_depth_nonnegative(ctx: SizedContext) {
     ensures 0 <= sized_context_depth(ctx) by {
         let ih = induct(ctx);
         match ctx {
-            SizedContext::Top => { unfold(sized_context_depth(SizedContext::Top)); normalize(); },
+            SizedContext::Top => { unfold(sized_context_depth(SizedContext::Top)); known(); },
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 apply(ih(up));
                 unfold(sized_context_depth(SizedContext::Left(node, parent, color, value, sibling, up)));
@@ -174,7 +174,7 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
         match ctx {
             SizedContext::Top => {
                 unfold(sized_plug(SizedContext::Top, sub));
-                normalize();
+                known();
             },
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 apply(rb_subtree_size_nonnegative(sized_shape(sibling)));

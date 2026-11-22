@@ -91,7 +91,7 @@ theorem adler_weighted_sum_bridge(bytes: uint8[], m: uint64, w: int32) {
    rewrite(adler_weighted_sum(bytes, n - 1, w), adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)));
    rewrite(to_integer(n - 1), to_integer(m - 1u64));
    rewrite(to_integer(bytes[n - 1] as int32), to_integer(bytes[m - 1u64]));
-   normalize();
+   known();
   }
  }
 }

@@ -80,9 +80,7 @@ void probe(struct node *p, struct root *root) {
   mark after_store;
   have nid->right == at(before_store, nid->right) by {
    have separate(statement(2).footprint, memory(nid->right)) by {
-       normalize() using {
-           at(before_store, separate(memory(p->right), memory(nid->right)));
-       };
+       known();
    }
    preserve(memory(nid->right), statement(2));
   }

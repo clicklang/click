@@ -46,8 +46,10 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
     let mut reads_by_local = BTreeMap::new();
     let mut excluded = BTreeSet::new();
 
-    // A forward goto into a block with exactly one incoming edge continues
-    // the fragment. In particular a join or a loop back edge starts another.
+    // A forward goto or direct call into a block with exactly one incoming
+    // edge continues the fragment. A call can change what the producer read,
+    // but the captured value has already been evaluated. A join or a loop
+    // back edge starts another fragment.
     let mut incoming = vec![0usize; mir.blocks.len()];
     let mut predecessor = vec![None; mir.blocks.len()];
     for (index, block) in mir.blocks.iter().enumerate() {
@@ -56,7 +58,12 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                 *count += 1;
             }
         }
-        if let T::Goto { target } = block.terminator
+        if let T::Goto { target }
+        | T::Call {
+            target,
+            through_pointer: false,
+            ..
+        } = block.terminator
             && index < target
             && let Some(entry) = predecessor.get_mut(target)
         {
@@ -122,7 +129,14 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
             } else {
                 terminator_uses(&code.terminator, &mut reads, &mut excluded);
                 excluded.extend(call_destination(&code.terminator).cloned());
-                matches!(code.terminator, T::ReturnValue { .. })
+                matches!(
+                    code.terminator,
+                    T::ReturnValue { .. }
+                        | T::Call {
+                            through_pointer: false,
+                            ..
+                        }
+                )
             };
             for (name, count) in reads {
                 if !is_candidate(&name) {
@@ -375,6 +389,7 @@ pub(super) fn substitute_pure_values(
     }
     fold_scalar_successors(locals, blocks, &predecessors, &substitutable, &mut removed);
     for block in blocks.iter_mut() {
+        fold_scalar_condition(block, &substitutable, &mut removed);
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
             S::Assign {
@@ -629,6 +644,53 @@ fn fold_scalar_successors(
             }
         }
     }
+}
+
+/// The last scalar assignment can be the condition itself when its only
+/// reader is the branch and no intervening marker changes its storage.
+fn fold_scalar_condition(
+    block: &mut MirBlock,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let T::If { condition, .. } = &mut block.terminator else {
+        return;
+    };
+    // Charon emits a negated test when the switch lists the false case.
+    let operand = match condition {
+        E::Not { value } => value.as_mut(),
+        condition => condition,
+    };
+    let E::Local { name: read } = operand else {
+        return;
+    };
+    let Some(position) = block.statements.iter().rposition(|statement| {
+        !matches!(
+            statement,
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+        )
+    }) else {
+        return;
+    };
+    let S::Assign {
+        target: E::Local { name },
+        value,
+    } = &block.statements[position]
+    else {
+        return;
+    };
+    if read != name || !substitutable(name) || !straight_line_scalar(value) || checked(value) {
+        return;
+    }
+    let mentioned = mentioned_locals(&block.statements[position]);
+    if block.statements[position + 1..].iter().any(|statement| {
+        matches!(statement, S::BeginStorage { local } | S::EndStorage { local }
+            if mentioned.contains(local))
+    }) {
+        return;
+    }
+    *operand = value.clone();
+    removed.insert(name.clone());
 }
 
 /// These expressions read an existing local and have no effect of their own.
@@ -1171,7 +1233,12 @@ fn unchanged_parameters(
         for expression in terminator_expressions_mut(&mut terminator) {
             borrowed(expression, &mut changed, &pointer_like);
         }
-        if let T::Call { destination, .. } | T::BoxNew { destination, .. } = &block.terminator {
+        if let T::Call {
+            destination: Some(destination),
+            ..
+        }
+        | T::BoxNew { destination, .. } = &block.terminator
+        {
             changed.insert(destination.clone());
         }
     }
@@ -1217,7 +1284,11 @@ pub(super) fn remove_unused(
         terminator_uses(&block.terminator, &mut reads, &mut named);
         used.extend(reads.into_keys());
         used.extend(named);
-        if let T::Call { destination, .. } = &block.terminator {
+        if let T::Call {
+            destination: Some(destination),
+            ..
+        } = &block.terminator
+        {
             used.insert(destination.clone());
         }
         if let T::BoxNew {
@@ -1429,7 +1500,13 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock], re
                 })
                 .max()
                 .unwrap_or(0);
-            if let T::Call { result, .. } = &mut blocks[block].terminator {
+            if let T::Call {
+                destination,
+                result,
+                ..
+            } = &mut blocks[block].terminator
+            {
+                *destination = None;
                 *result = Some(call);
             }
             blocks[target].terminator = T::ReturnValue {
@@ -2468,7 +2545,7 @@ fn mentioned_in_expression(expression: &E, local: &str) -> bool {
 fn call_destination(terminator: &T) -> Option<&String> {
     match terminator {
         T::Call {
-            destination,
+            destination: Some(destination),
             result: None,
             ..
         } => Some(destination),
@@ -2476,25 +2553,22 @@ fn call_destination(terminator: &T) -> Option<&String> {
     }
 }
 
-/// Makes each call whose result only one later expression reads a call
-/// step: the call's `result` is a step number, and the read is
-/// `Expression::CallResult` of it, the value of the expression that holds
-/// the call. The destination must be a temporary of `temporaries` of scalar
-/// or enum type, assigned by nothing but this call and read once, in the call's
-/// successor, which only this call reaches. Every other call keeps its
-/// destination.
+/// Keep a scalar or enum call result as a call step when its sole reader is
+/// in a single-entry continuation. The call stays where it ran. An unread
+/// scalar temporary can discard the result entirely.
 pub(super) fn call_steps(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
     temporaries: &BTreeSet<String>,
 ) {
-    let mut reads = BTreeMap::<String, usize>::new();
+    let mut reads = BTreeMap::<String, (usize, usize)>::new();
     let mut named = BTreeSet::<String>::new();
     let mut assigned = BTreeMap::<String, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
-    for block in blocks.iter() {
+    for (index, block) in blocks.iter().enumerate() {
+        let mut block_reads = BTreeMap::new();
         for statement in &block.statements {
-            statement_uses(statement, &mut reads, &mut named);
+            statement_uses(statement, &mut block_reads, &mut named);
             if let S::Assign {
                 target: E::Local { name },
                 ..
@@ -2503,7 +2577,10 @@ pub(super) fn call_steps(
                 *assigned.entry(name.clone()).or_default() += 1;
             }
         }
-        terminator_uses(&block.terminator, &mut reads, &mut named);
+        terminator_uses(&block.terminator, &mut block_reads, &mut named);
+        for (name, count) in block_reads {
+            reads.entry(name).or_insert((0, index)).0 += count;
+        }
         if let Some(destination) = call_destination(&block.terminator) {
             *assigned.entry(destination.clone()).or_default() += 1;
         }
@@ -2540,20 +2617,16 @@ pub(super) fn call_steps(
             *mentions.entry(name).or_default() += 1;
         }
     }
-    let scalar = |name: &str| {
-        locals.iter().any(|local| {
-            local.name == name
-                && (local.value_type == super::super::schema::Type::Bool
-                    || local.value_type.integer_bits().is_some()
-                    || matches!(local.value_type, super::super::schema::Type::Enum { .. }))
-        })
-    };
+    let types: BTreeMap<_, _> = locals
+        .iter()
+        .map(|local| (local.name.as_str(), &local.value_type))
+        .collect();
     let mut removed = BTreeSet::new();
     let mut next_step = 0u32;
     for index in 0..blocks.len() {
         let T::Call {
             function,
-            destination,
+            destination: Some(destination),
             target,
             through_pointer: false,
             result: None,
@@ -2595,20 +2668,52 @@ pub(super) fn call_steps(
             {
                 **base = result(false);
             }
-            if let T::Call { result, .. } = &mut blocks[index].terminator {
+            if let T::Call {
+                destination,
+                result,
+                ..
+            } = &mut blocks[index].terminator
+            {
+                *destination = None;
                 *result = Some(call);
             }
             next_step += 1;
             removed.insert(destination);
             continue;
         }
+        let Some(ty) = types.get(destination.as_str()) else {
+            continue;
+        };
         if !temporaries.contains(&destination)
             || named.contains(&destination)
-            || reads.get(&destination) != Some(&1)
             || assigned.get(&destination) != Some(&1)
-            || !scalar(&destination)
+        {
+            continue;
+        }
+        if ty.is_scalar() && !reads.contains_key(&destination) {
+            if let T::Call { destination, .. } = &mut blocks[index].terminator {
+                *destination = None;
+            }
+            removed.insert(destination);
+            continue;
+        }
+        let Some(&(1, reader)) = reads.get(&destination) else {
+            continue;
+        };
+        if !(ty.is_scalar() || matches!(ty, Type::Enum { .. }))
             || target == index
             || predecessors.get(target) != Some(&1)
+        {
+            continue;
+        }
+        // In `[f(), g()]` the first result is read after the second call.
+        // Each edge in this continuation must be forward and single-entry.
+        if reader != target
+            && !(index < target
+                && target < reader
+                && predecessors.get(reader) == Some(&1)
+                && matches!(blocks[target].terminator,
+                    T::Call { target, through_pointer: false, .. } if target == reader))
         {
             continue;
         }
@@ -2625,7 +2730,7 @@ pub(super) fn call_steps(
             values: &mut values,
             refused: Vec::new(),
         };
-        let successor = &mut blocks[target];
+        let successor = &mut blocks[reader];
         for statement in &mut successor.statements {
             for expression in statement_expressions_mut(statement) {
                 substitute(expression, &mut pending, true);
@@ -2637,11 +2742,17 @@ pub(super) fn call_steps(
         for expression in terminator_expressions_mut(&mut successor.terminator) {
             substitute(expression, &mut pending, true);
         }
-        // Its one read is elsewhere: the call keeps its destination.
+        // A use that cannot take an expression still needs its local.
         if !values.is_empty() {
             continue;
         }
-        if let T::Call { result, .. } = &mut blocks[index].terminator {
+        if let T::Call {
+            destination,
+            result,
+            ..
+        } = &mut blocks[index].terminator
+        {
+            *destination = None;
             *result = Some(call);
         }
         next_step += 1;
@@ -3605,7 +3716,7 @@ mod tests {
                     function: "f".into(),
                     arguments: vec![local("a")],
                     owned_arguments: Vec::new(),
-                    destination: "t1".into(),
+                    destination: Some("t1".into()),
                     target: 1,
                     through_pointer: false,
                     result: None,
@@ -3681,7 +3792,7 @@ mod tests {
                 function: "f".into(),
                 arguments: vec![local("t1")],
                 owned_arguments: Vec::new(),
-                destination: "unit".into(),
+                destination: Some("unit".into()),
                 target: 0,
                 through_pointer: false,
                 result: None,
@@ -3703,7 +3814,7 @@ mod tests {
             function: "f".into(),
             arguments,
             owned_arguments: Vec::new(),
-            destination: "unit".into(),
+            destination: Some("unit".into()),
             target: 0,
             through_pointer: false,
             result: None,
@@ -4056,7 +4167,7 @@ mod tests {
                     function: "f".into(),
                     arguments: vec![local("x")],
                     owned_arguments: vec![],
-                    destination: "__rust_mir_0".into(),
+                    destination: Some("__rust_mir_0".into()),
                     target: 1,
                     through_pointer: false,
                     result: None,
@@ -4137,7 +4248,7 @@ mod tests {
                     function: "f".into(),
                     arguments: vec![local("t3")],
                     owned_arguments: vec![],
-                    destination: "t2".into(),
+                    destination: Some("t2".into()),
                     target: 1,
                     through_pointer: false,
                     result: None,
@@ -4227,7 +4338,7 @@ mod tests {
             function: function.into(),
             arguments: vec![local("t1")],
             owned_arguments: vec![],
-            destination: "unit".into(),
+            destination: Some("unit".into()),
             target,
             through_pointer: false,
             result: None,

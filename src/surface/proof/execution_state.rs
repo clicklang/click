@@ -498,6 +498,16 @@ pub(super) struct SurfacePathChoice {
     pub(super) selector: SurfacePathSelector,
     pub(super) value: bool,
     pub(super) tactic_offset: usize,
+    pub(super) if_arm_end: Option<SurfaceIfArmEnd>,
+}
+
+/// The checked arm ends before the source continuation. Both offsets refer
+/// to the same path as the choice, including cases nested inside this arm.
+#[derive(Clone, Copy)]
+pub(super) struct SurfaceIfArmEnd {
+    pub(super) step_offset: usize,
+    pub(super) nested_choices: usize,
+    pub(super) binds_obtain: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -562,7 +572,7 @@ fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: &Proof
 /// lexical arms. Outcome suffixes must stay there so constructor bindings
 /// cannot escape the resource block. An `ensuring` match instead rejoins
 /// before scope close and leaves later operations outside the block.
-fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
+pub(super) fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
     loop {
         match steps.last() {
             Some(ProofStep::Match { ensuring: None, .. }) => return true,
@@ -572,8 +582,8 @@ fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
     }
 }
 
-/// Append the deferred restoration facts to their open scope rather than
-/// leaving them in the function's post-execution suffix.
+/// Finish an exit-reaching open scope with its deferred operations and any
+/// restoration proof. Operations after the close are appended separately.
 fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bool {
     let ProofStep::Open {
         resource,
@@ -583,9 +593,8 @@ fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bo
     else {
         return false;
     };
-    // An explicit restoration at return was checked before the close, so its
-    // deferred operations have already been appended. Move them inside the
-    // open scope before publishing the checked close.
+    // The operations checked before this close have already been appended.
+    // Move them back into the scope where they were written.
     let is_open = |step: &ProofStep| {
         matches!(
             step,
@@ -595,14 +604,7 @@ fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bo
             }
         )
     };
-    let scope_index = match tail {
-        DeferredOpenTail::AlreadyRestored => steps.iter().rposition(is_open),
-        DeferredOpenTail::Restore => steps
-            .last()
-            .filter(|step| is_open(step))
-            .map(|_| steps.len() - 1),
-    };
-    let Some(scope_index) = scope_index else {
+    let Some(scope_index) = steps.iter().rposition(is_open) else {
         return false;
     };
     let suffix = &steps[scope_index + 1..];
@@ -618,9 +620,6 @@ fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bo
     if scope != resource {
         // A nested scope reached return before its enclosing scope closed.
         // Follow the enclosing certificate to the matching scope.
-        if *tail != DeferredOpenTail::AlreadyRestored {
-            return false;
-        }
         body.extend(suffix.iter().cloned());
         if !attach_deferred_open_tail(&mut body, step) {
             return false;
@@ -1069,6 +1068,7 @@ pub(super) fn append_surface_steps_at_step_branch_path(
     steps: &mut Vec<ProofStep>,
     branch_path: &[bool],
     suffix: Vec<ProofStep>,
+    keep_scopes: bool,
 ) -> Result<(), String> {
     let mut current = through_single_arm_matches_mut(steps);
     for selected_then in branch_path {
@@ -1091,10 +1091,23 @@ pub(super) fn append_surface_steps_at_step_branch_path(
     if matches!(current.last(), Some(ProofStep::If { .. })) {
         return Err("execution path stops before its surface branch leaf".to_string());
     }
-    for step in suffix {
-        append_surface_step_to_leaves(current, step);
+    if keep_scopes {
+        append_surface_steps_in_order(current, suffix);
+    } else {
+        for step in suffix {
+            append_surface_step_to_leaves(current, step);
+        }
     }
     Ok(())
+}
+
+/// Append a checked suffix whose steps already carry their lexical scopes.
+pub(super) fn append_surface_steps_in_order(steps: &mut Vec<ProofStep>, suffix: Vec<ProofStep>) {
+    for step in suffix {
+        if !attach_deferred_open_tail(steps, &step) {
+            steps.push(step);
+        }
+    }
 }
 
 /// Appends one context's post-execution surface tactics as a flat top-level
@@ -1126,7 +1139,7 @@ pub(super) fn append_surface_tactics_flat(
             append_surface_step_to_leaves(steps, step);
         }
     } else {
-        steps.extend(proof.into_steps());
+        append_surface_steps_in_order(steps, proof.into_steps());
     }
     Ok(())
 }
@@ -1373,14 +1386,16 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     }
     // Retain the splits that bind names used by the arm's tactics.
     if paths.len() == 1
-        && !paths[0]
-            .choices()
-            .iter()
-            .any(|choice| match &choice.selector {
-                SurfacePathSelector::MatchArm(..) => true,
-                SurfacePathSelector::CallOutcome(bindings) => bindings.iter().any(Option::is_some),
-                _ => false,
-            })
+        && !paths[0].choices().iter().any(|choice| {
+            choice.if_arm_end.is_some_and(|end| end.binds_obtain)
+                || match &choice.selector {
+                    SurfacePathSelector::MatchArm(..) => true,
+                    SurfacePathSelector::CallOutcome(bindings) => {
+                        bindings.iter().any(Option::is_some)
+                    }
+                    _ => false,
+                }
+        })
     {
         return Ok(paths[0].steps().to_vec());
     }
@@ -1464,6 +1479,16 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         return Ok(steps);
     }
 
+    if let SurfacePathSelector::Proposition(condition) = &first_choice.selector
+        && then_paths.iter().chain(&else_paths).any(|path| {
+            path.choices[path.choice - 1]
+                .if_arm_end
+                .is_some_and(|end| end.binds_obtain)
+        })
+    {
+        return synthesize_scoped_if(prefix, condition, then_paths, else_paths);
+    }
+
     let binds_payload = matches!(
         &first_choice.selector,
         SurfacePathSelector::CallOutcome(bindings) if bindings.iter().any(Option::is_some)
@@ -1512,6 +1537,49 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         SurfacePathSelector::MatchArm(..) => unreachable!("a match synthesizes above"),
     });
     Ok(steps)
+}
+
+/// Keep bindings local to their arm and emit the checked continuation after
+/// the source scope, including when different outcomes select different arms.
+fn synthesize_scoped_if<'p>(
+    mut prefix: Vec<ProofStep>,
+    condition: &ClickProposition,
+    then_paths: Vec<SurfacePathCursor<'p>>,
+    else_paths: Vec<SurfacePathCursor<'p>>,
+) -> Result<Vec<ProofStep>, String> {
+    let mut continuations = Vec::with_capacity(then_paths.len() + else_paths.len());
+    let mut synthesize_arm = |paths: Vec<SurfacePathCursor<'p>>| {
+        let mut arms = Vec::with_capacity(paths.len());
+        for path in paths {
+            let end = path.choices[path.choice - 1]
+                .if_arm_end
+                .ok_or_else(|| "a retained if arm has no checked end".to_string())?;
+            let choice_end = path.choice + end.nested_choices;
+            arms.push(SurfacePathCursor {
+                steps: &path.steps[..end.step_offset],
+                choices: &path.choices[..choice_end],
+                ..path
+            });
+            continuations.push(SurfacePathCursor {
+                step: end.step_offset,
+                choice: choice_end,
+                ..path
+            });
+        }
+        ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(arms)?)
+            .map(Box::new)
+            .map_err(|error| error.raw_summary().to_string())
+    };
+    let then_proof = synthesize_arm(then_paths)?;
+    let else_proof = synthesize_arm(else_paths)?;
+    prefix.push(ProofStep::If {
+        ensuring: None,
+        condition: condition.clone(),
+        then_proof,
+        else_proof,
+    });
+    prefix.extend(synthesize_surface_cursors(continuations)?);
+    Ok(prefix)
 }
 
 /// Distinguish certificates checked at the same surface leaf by the
@@ -1569,6 +1637,7 @@ pub(super) enum PostExecutionTactic {
     CloseOpen {
         resource: ResourceClause,
         restoration: OpenResourceRestoration,
+        retain_deferred_body: bool,
     },
     Apply(TheoremApplication),
     Have(ProofHave),
@@ -1618,6 +1687,28 @@ pub(super) enum PostExecutionTactic {
 pub(super) type DeferredArm = Arc<Vec<DeferredPostExecutionTactic>>;
 
 impl PostExecutionTactic {
+    pub(super) fn reads_deferred_obtain(&self, obtains: &PersistentBinderMap<()>) -> bool {
+        if obtains.is_empty() {
+            return false;
+        }
+        let proposition = match self {
+            Self::If {
+                condition,
+                disjunction: false,
+                execution_route: None,
+                ..
+            } => condition,
+            Self::Have(have) => &have.proposition,
+            _ => return false,
+        };
+        let mut names = BTreeSet::new();
+        crate::surface::lowering::collect_click_proposition_referenced_names(
+            proposition,
+            &mut names,
+        );
+        names.iter().any(|name| obtains.contains_key(name))
+    }
+
     /// The deferred tactics written in this control tactic's arms, every
     /// arm in source order; empty for a leaf.
     pub(super) fn nested_tactics(&self) -> impl Iterator<Item = &DeferredPostExecutionTactic> {
@@ -1660,6 +1751,9 @@ pub(super) struct LoopReturnProof {
 #[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
     pub(super) lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
+    /// Whether case preparation must leave this proposition for the ordered
+    /// outcome checker, which has the bindings produced by earlier obtains.
+    pub(super) reads_deferred_obtain: bool,
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,

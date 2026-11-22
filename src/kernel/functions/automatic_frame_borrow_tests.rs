@@ -33,20 +33,23 @@ fn automatic_frame_retirement_checks_its_live_borrows() {
     let caller = ExecutionState::new();
     let returned = ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer).into();
     for selected in [
-        end_inline_frame_automatic_lifetimes(&with_active_borrow),
+        end_inline_frame_automatic_lifetimes(&with_active_borrow).map(|end| end.memory),
         end_function_body_automatic_lifetimes(
             &with_active_borrow,
             &function,
             caller.memory(),
             None,
-        ),
+        )
+        .map(|end| end.memory),
         function_exit_memory(&caller, &with_active_borrow, &returned, &function),
     ] {
         assert!(matches!(selected, Err(RuntimeError::BorrowRefusal(_))));
     }
     assert_eq!(
-        end_function_body_automatic_lifetimes(&with_active_borrow, &function, &memory, None),
-        Ok(memory),
+        end_function_body_automatic_lifetimes(&with_active_borrow, &function, &memory, None)
+            .unwrap()
+            .memory,
+        memory,
     );
     let returned_share = ledger
         .transfer(opening.root_share, borrower, lender)
@@ -59,6 +62,7 @@ fn automatic_frame_retirement_checks_its_live_borrows() {
     assert!(
         !end_inline_frame_automatic_lifetimes(&recovered)
             .unwrap()
+            .memory
             .has_block(&slot.base)
     );
 }

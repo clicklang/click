@@ -1,6 +1,113 @@
 use super::*;
 
 #[test]
+fn outcome_if_keeps_its_obtain_scopes_in_expansion() {
+    let (source, program) = mdtest_sources("mdtests/obtain_outcome_binding_is_local_to_its_arm.md");
+    let branched_source = source.replace(
+        "step_until(function.exit);",
+        "branch { true => { step_until(function.exit); } false => { step_until(function.exit); } }",
+    );
+    let branched_program = vec![(
+        program[0].0.clone(),
+        "int reuse_name(int n) { if (n < 0) { return n; } else { return n; } }".to_string(),
+    )];
+    let opposite_arms = branched_source
+        .replace("if result == n {", "if n < 0 {")
+        .replace(
+            "    } else {\n    }",
+            "    } else {\n        let k = obtain(exists (k: int32) { k < n });\n        have k < n by known();\n    }",
+        );
+    let claim = "reuse_name.contract";
+    for (source, program, condition, arm_count) in [
+        (source, program, "result == n", 1),
+        (branched_source, branched_program.clone(), "result == n", 1),
+        (opposite_arms, branched_program, "n < 0", 2),
+    ] {
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(
+            expanded.contains(&format!("\n    if {condition} {{")),
+            "{expanded}"
+        );
+        assert_eq!(
+            expanded.matches("\n        let k = obtain(").count(),
+            arm_count,
+            "{expanded}"
+        );
+        assert_eq!(
+            expanded.matches("\n    let k = obtain(").count(),
+            1,
+            "{expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+fn outcome_if_guard_reads_a_preceding_obtain() {
+    let (source, program) = mdtest_sources("mdtests/obtain_in_outcome_if_guard.md");
+    let program = crate::cli::source_refs(&program);
+    let claim = "use_obtain.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    let undecided = source.replace("if k < n {", "if k == 0 {");
+    let error = verify_c_sources(&undecided, &program).unwrap_err().report();
+    assert!(
+        error.contains("does not decide the post-execution `if` condition"),
+        "{error}"
+    );
+}
+
+#[test]
+fn explicit_observation_resource_operands_replay() {
+    for (fixture, claim, operand) in [
+        (
+            "mdtests/observe_named_resource.md",
+            "read_cell.contract",
+            "observe(c);",
+        ),
+        (
+            "mdtests/observe_saved_pointer_memory_range.md",
+            "update_bounds.contract",
+            "observe(at(saved, memory(",
+        ),
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains(operand), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+fn focused_contract_claim_refinements_expand_in_order() {
+    let (source, program) = mdtest_sources("mdtests/focused_post_execution_claim_tactics.md");
+    let program = crate::cli::source_refs(&program);
+    for label in ["refine.contract", "choose_value.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &program, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn algebraic_constructor_matches_expand_without_normalize() {
     for (fixture, claims) in [
         (
@@ -1985,7 +2092,7 @@ fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn bundle_and_project_expansion_check_the_selected_pure_theorem() {
     let source = r#"theorem selected(x: int32) {
-    ensures x == x by { normalize(); }
+    ensures x == x by { known(); }
 }
 theorem unrelated() {
     ensures 0 == 1 by { normalize(); }
@@ -4264,7 +4371,7 @@ theorem first_integer_unfolds(values: int32[]) {
     requires defined(values[0]);
     ensures first_integer(values) == to_integer(values[0]) by {
         unfold(first_integer(values));
-        normalize();
+        known();
     }
 }
 "#;
@@ -4430,14 +4537,14 @@ theorem machine_range_unfolds(n: int32) {
     requires defined(n + 1);
     ensures sum_machine_range(n) == (0..(n + 1)).fold(0, |acc, k| { acc + to_integer(k) }) by {
         unfold(sum_machine_range(n));
-        normalize();
+        known();
     }
 }
 
 theorem integer_range_unfolds(lo: Integer, hi: Integer) {
     ensures sum_integer_range(lo, hi) == (lo..hi).fold(0, |acc, k| { acc + k }) by {
         unfold(sum_integer_range(lo, hi));
-        normalize();
+        known();
     }
 }
 
@@ -4445,7 +4552,7 @@ theorem integer_range_captured_unfolds(lo: Integer, hi: Integer, z: Integer) {
     ensures sum_integer_range_captured(lo, hi, z) ==
         (lo + 1..hi + 1).fold(z, |acc, k| { acc + z + k }) by {
         unfold(sum_integer_range_captured(lo, hi, z));
-        normalize();
+        known();
     }
 }
 "#;
@@ -4491,7 +4598,7 @@ theorem fold_match_unfolds(value: Integer) {
     ensures fold_match(FoldInput::Wrapped(value)) ==
         (0..1).fold(0, |acc, k| { acc + value }) by {
         unfold(fold_match(FoldInput::Wrapped(value)));
-        normalize();
+        known();
     }
 }
 
@@ -4499,7 +4606,7 @@ theorem match_fold_unfolds() {
     ensures match_fold(FoldInput::Empty) ==
         (0..1).fold(0, |acc, k| { acc + to_integer(k) }) by {
         unfold(match_fold(FoldInput::Empty));
-        normalize();
+        known();
     }
 }
 "#;
@@ -5965,6 +6072,38 @@ fn cpp_allocation_rewrites_expand_and_replay() {
 }
 
 #[test]
+fn expansion_replays_explicit_call_requirements_inside_with() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_call_through_a_function_pointer_is_named_by_its_position.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "compute.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(expanded.contains("        step() by {"), "{expanded}");
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn expansion_keeps_the_return_closing_fact_inside_with() {
+    let (source, sources) = mdtest_sources("mdtests/open_closing_fact_inside_block.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "set_last.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let (_, body) = expanded.split_once("void set_last(").unwrap();
+    assert!(
+        body.contains("        have p[0] > 0 or p[0] < -1 by {\n            known();\n        }\n    }\n    known();"),
+        "{expanded}"
+    );
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn expansion_keeps_explicit_return_fold_inside_with() {
     let (source, sources) = mdtest_sources("mdtests/with_accepts_an_already_restored_instance.md");
     let sources = crate::cli::source_refs(&sources);
@@ -6649,7 +6788,7 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
     let click_source = r#"
             theorem int32_reflexive(value: int32) {
                 ensures value == value by {
-                    normalize();
+                    known();
                 }
             }
 
@@ -6715,8 +6854,8 @@ fn selected_post_execution_capture_ignores_nested_certificate_indices() {
                 ensures data[0] == value;
             } by {
                 step_until(function.exit);
-                have value == value by { normalize(); }
-                have result == value by { normalize(); }
+                have value == value by { known(); }
+                have result == value by { known(); }
                 have data[0] == value by solve();
                 solve();
             }
@@ -6753,7 +6892,7 @@ fn post_execution_transport_observes_a_preceding_have() {
             } by {
                 step_until(function.exit);
                 have result == x by {
-                    normalize();
+                    known();
                 }
                 transport(result == x, result == x) using {
                     result == x;
@@ -6782,7 +6921,7 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
             } by {
                 step_until(function.exit);
                 have result == x by {
-                    normalize();
+                    known();
                 }
                 transport(result == x, result == x);
                 known();
@@ -6862,7 +7001,7 @@ fn grouped_post_execution_closers_use_independent_checked_proofs() {
         } by {
             step_until(function.exit);
             known();
-            normalize();
+            known();
         }
     "#;
 
@@ -6887,7 +7026,7 @@ fn post_execution_rewrite_retains_its_checked_proof_step() {
         } by {
             step_until(function.exit);
             rewrite(x, 0);
-            normalize();
+            known();
         }
     "#;
 
@@ -12234,7 +12373,7 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
         } by {
             step_until(function.exit);
             rewrite(result, 9);
-            normalize();
+            known();
         }
     "#;
     let sources = [("apply_write.c", apply_c), ("rewrite_write.c", rewrite_c)];
@@ -12331,7 +12470,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
         } by {
             step_until(function.exit);
             unfold(is_nine(result));
-            normalize();
+            known();
         }
     "#;
     let sources = [("write_first.c", c_source)];
@@ -12498,7 +12637,7 @@ fn linear_open_have_retains_the_selected_theorem_application() {
     let click_source = r#"
         theorem int32_reflexive(value: int32) {
             ensures value == value by {
-                normalize();
+                known();
             }
         }
 
@@ -12809,7 +12948,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
                 false => {
                     step();
                     have value == old(p[0]) or value == 0 by {
-                        have value == 0 by { normalize(); }
+                        have value == 0 by { known(); }
                         known();
                     }
                 }
@@ -13940,7 +14079,7 @@ fn branch_arms_retain_nested_have_proofs() {
     let click_source = r#"
         theorem int32_reflexive(value: int32) {
             ensures value == value by {
-                normalize();
+                known();
             }
         }
 
@@ -14973,6 +15112,23 @@ fn quantified_outcome_solve_keeps_its_binder_on_the_checked_goal() {
     assert!(expanded.contains("instantiate("), "{expanded}");
     verify_c_sources(&expanded, &[("bounded.c", c_source)])
         .expect("the retained binder-aware certificate should check");
+}
+
+#[test]
+fn expanded_finite_postconditions_replay_enumeration() {
+    let (source, sources) = mdtest_sources(
+        "mdtests/an_unfolded_quantifier_with_a_same_named_argument_proves_a_true_claim.md",
+    );
+    let sources = crate::cli::source_refs(&sources);
+    for claim in ["f.ensures_0", "f.ensures_1"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{claim}\n{}", error.report()));
+        assert!(expanded.contains("enumerate();"), "{claim}\n{expanded}");
+        check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}\n{error}\n{expanded}"));
+    }
 }
 
 #[test]
@@ -18249,7 +18405,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     ensures mixed_clause: forall (z: Integer) { x == x and combine(n, z) == combine(n, z) } by { solve(); }
     ensures witnessed: exists (z: Integer) { z == to_integer(x) } by {
         witness(to_integer(x));
-        normalize();
+        known();
     }
 }
 "#;
@@ -18798,7 +18954,7 @@ int spin(int n) {
         invariant i <= n;
 
         initialize by {
-            have n + 0 == n by { normalize(); }
+            have n + 0 == n by { known(); }
             solve();
         }
         maintain by {
@@ -19160,6 +19316,19 @@ fn named_loop_comparisons_expand_and_cold_replay() {
         assert_ne!(source, omitted);
         assert!(verify_c_sources(&omitted, &program).is_err());
     }
+}
+
+#[test]
+fn stored_break_test_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/a_stored_break_test_closes_the_back_edge.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "first_stop.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
@@ -23399,7 +23568,7 @@ fn scoped_conversion_requirements_expand_before_the_have() {
                 have forall (k: int32) { k < j implies to_uint8(to_integer(j)) == to_uint8(to_integer(j)) } by {
                     intro(); intro(); solve();
                 }
-                normalize();
+                known();
             }
         }
     "#;
@@ -23438,7 +23607,7 @@ fn theorem_entry_type_bounds_discharge_without_search() {
         theorem entry_conversion() {
             ensures forall (k: uint8) {
                 to_uint8(to_integer(k)) == to_uint8(to_integer(k))
-            } by { intro(); normalize(); }
+            } by { intro(); known(); }
         }
     "#;
     without_implicit_solve(|| verify_click_theorems(source))
@@ -24152,14 +24321,14 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
                 all {
                     a == 0 => {
                         have a == 0 by {
-                            rewrite(a, b); rewrite(b, 0); normalize();
+                            rewrite(a, b); rewrite(b, 0); known();
                         }
                         known();
                     }
                     (a == 0 implies a + 1 == 1) => {
                         intro();
                         have a == 0 by { known(); }
-                        have a + 1 == 1 by { rewrite(a, 0); normalize(); }
+                        have a + 1 == 1 by { rewrite(a, 0); known(); }
                         known();
                     }
                 }
@@ -25395,7 +25564,7 @@ fn rewritten_concrete_range_fold_expands_and_replays() {
             requires n == 1;
             ensures (0..n).fold(0, |acc, item| { acc }) == 0 by {
                 rewrite(n, 1);
-                normalize();
+                known();
             }
         }
     "#;

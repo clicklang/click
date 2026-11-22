@@ -38,7 +38,7 @@ int32 fill_tail_keeps_first(int32 p[], int32 n) {
             }
             step();
             have at(before_store, separate(statement(2).statement(0).footprint, memory(p[0]))) by {
-                normalize() using { at(before_store, separate(memory(p[i]), memory(p[0]))); };
+                known();
             }
             have p[0] == at(before_store, p[0]) by {
                 preserve(at(before_store, memory(p[0])), statement(2).statement(0));

@@ -642,16 +642,15 @@ and the other tactics that change the path's facts or resources act on the path
 and leave the goal list alone; the implicit closer at the end of the script
 closes the goals still open.
 
-Some tactics leave a claim on its own proof, which later closers continue
-instead of the claim. `choose`, `witness`, `let` and `intro` open the proof of
-the first open proposition claim, and `rewrite` rewrites each open claim on
-its own proof. Before a tactic continues such a proof, the proof takes up the
-path's current state and resources, so a later `fold` or the contract's
-resource transition reaches it. A `have` written after `intro` extends that
-proof. A closer that does not apply to a proof that `intro` opened is read
-against the goal list instead. A closer that does not apply to a proof only
-`choose`, `witness` or `let` opened is an error, since closing the claim
-another way would drop the witness.
+Goal refinements (`witness`, `intro` and `rewrite`) work on
+the same first open claim. It must be a proposition, and the tactic applies to
+its current goal. Close an earlier resource claim with `known()` to reach the
+next claim. When a tactic leaves a claim on its own proof, later tactics
+continue that proof using the path's current state and resources, so a later
+`fold` or the contract's resource transition reaches it. A `have` written after
+`intro` extends that proof. If a closer cannot handle the goal introduced by
+`intro`, it can still close the original claim directly. A closer in a proof
+opened only by `witness` must close the goal with the chosen witness.
 
 A written closer that closes no goal it acts on is refused, `solve` and
 `solve() using` included; only the implicit closer at the end of the script
@@ -1399,16 +1398,25 @@ A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
 definition exposes while their arguments select one arm, rewriting an argument
 by a constructor equation (a supplied premise or a connected fact such as
-`u == Tree::Node(..)`) when that exposes one. A recursion over an integer
-measure is evaluated the same way when its arguments are constants: the
-unfolded `if` arm that a constant guard such as `2 <= 0` selects is searched
-for the next call. It takes eight checked steps, plus as many as the largest
-constant argument of a call it unfolds, at most 1024 in all; each step lowers
-the whole goal again, so a long evaluation can exhaust the tactic budget
-first (about 25 calls), where a bottom-up proof, one `have` per call by
-`unfold` and `solve()`, stays linear
+`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+
+A recursive call whose arguments are constants, such as
+`output_from(lit, 0u64, 13)` that a postcondition names, is evaluated one
+level at a time instead. Each level is the arm of the definition that its
+constant `if` guards select, with the next call's constant arguments
+evaluated; a guard may compare a string literal's byte at a constant index,
+which is a constant since the literal is read-only. `solve` proves one
+`have` for the call's value, and inside it one `have` per level, `call ==
+arm`, by `unfold` and `known()` (or `solve()` for a `Bool` level). Only the
+value joins the proof, so the work grows linearly with the depth, at most
+1024 levels. A call a fact names inside `at(point, ...)`, as a postcondition
+names it at the call's entry, is evaluated at that point, with
+`unfold(at(point, call))`. Expansion writes the `have`s
 (`mdtests/a_recursive_byte_function_evaluates_automatically.md`,
-`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
+`mdtests/a_long_recursion_over_constants_is_evaluated_one_level_at_a_time.md`).
+A bottom-up proof, one `have` per call by `unfold` and `solve()`, states the
+same levels by hand
+(`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
 An argument nothing fixes stays folded
 ([`solve_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_evaluates_a_recursive_function_over_known_constructors.md),
 [`solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
@@ -2852,7 +2860,7 @@ profiling charges its explicit input and guarantees.
 
 ### Unfolding pure functions
 
-**Form:** `unfold(function(args))`
+**Form:** `unfold(function(args))`, or `unfold(at(point, function(args)))`
 
 **Core.** Expose one defining equation for the exact pure-function call at the
 current proof state and refresh the current goal through that one layer.
@@ -2884,6 +2892,12 @@ names are in scope, and:
   equation just added. After that only `known`, `solve`, or `normalize`
   may follow.
 - At a C execution frontier, adds the equation and leaves the frontier.
+- With `at(point, ...)`, adds `at(point, function(args)) == at(point, body)`:
+  the defining equation with the arguments' array contents read at `point`,
+  and rewrites occurrences of `at(point, function(args))`
+  (`mdtests/unfold_at_a_point_opens_a_pure_function_there.md`). `solve`
+  evaluates a call that a fact names at a point, such as a postcondition at
+  the call's entry, with this form.
 - For an `Integer` range-fold body, a decided empty range exposes its initial
   value; a decided nonempty range exposes its append-last-cell equation over
   the same function at the predecessor endpoint. The whole-call and predecessor
@@ -3440,7 +3454,9 @@ and profiling charges one instantiation per value.
 The right side states the exact available proposition, up to its bound names.
 The left side names the outputs in quantifier order. Their types come from
 the existential. Each output and the instantiated body are available in
-subsequent tactics in the same proof block.
+subsequent tactics in the same proof block. After function exit, `obtain` can
+open an available fact while a resource claim is still focused. Its bindings
+remain in scope for later claims in the block.
 
 - The existential may be a requirement, a `have` conclusion, or a leaf
   conjunct of an available fact. It must be available before the tactic runs.
@@ -4104,7 +4120,7 @@ unchanged, and profiling charges one application.
 
 ### Observing resources
 
-**Form:** `observe(resource)`, `observe(p[lo..hi])`, or `observe(at(point, p)[lo..hi])`
+**Form:** `observe(resource)`. A memory operand can be a range or a resource descriptor.
 
 For an explicitly selected memory range, `observe(p[lo..hi])` adds
 `viewable(p[lo..hi])` at the current program state. The exact range must be
@@ -4124,6 +4140,9 @@ evaluated in the surrounding state. `observe(at(point, p)[lo..hi])` establishes
 current `viewable(memory(at(point, p)[lo..hi]))`. `observe(old(p)[lo..hi])` uses
 the entry pointer. Both use the same exact permission lookup as a current range;
 they do not search intervening writes or change the selected resource.
+To take both the pointer and the bounds from one point, write
+`observe(at(point, memory(p[lo..hi])))`. This selects the descriptor at
+`point` and checks its permission in the current state.
 See [`observe_saved_pointer_memory_range.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_range.md)
 and its [missing-permission refusal](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_requires_ownership.md).
 
@@ -4151,6 +4170,12 @@ decided:
   and a viewed child resource, which a further `observe` reads one layer
   down.
 - The resource stays held and folded; repeating `observe` is harmless.
+
+Write `observe(c)` for a named folded instance you own. Its own fields supply the
+body arguments and its immediate memory permissions become read-only views
+supported by the instance. `observe(at(point, c))` selects the saved instance
+and requires it to still be held and folded. Use `unfold` to bind named children
+or prove facts that need their fields.
 
 **Outside it**, with what to write instead:
 
