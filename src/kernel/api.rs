@@ -7797,6 +7797,14 @@ pub fn program_function_contract_refinement_arguments(
 pub fn program_function_contract_refinement_obligations(
     context: &FunctionContractRefinementContext,
 ) -> Option<FunctionContractRefinementObligations> {
+    check_program_function_contract_refinement_obligations(context).ok()
+}
+
+pub(crate) use super::functions::ContractRefinementPreparationError;
+
+pub(crate) fn check_program_function_contract_refinement_obligations(
+    context: &FunctionContractRefinementContext,
+) -> Result<FunctionContractRefinementObligations, ContractRefinementPreparationError> {
     prepare_contract_refinement_obligations(context)
 }
 

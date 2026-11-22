@@ -9767,6 +9767,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
 }
 
 mod contract_refinement;
+pub(crate) use contract_refinement::ContractRefinementPreparationError;
 use contract_refinement::*;
 
 #[cfg(test)]
