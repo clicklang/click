@@ -9219,8 +9219,9 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
 }
 
 /// The value paths of a C-level evaluation, for a specification that reads
-/// them. A path that ended in a runtime error carries no value and is
-/// dropped. When every path did, the first error is recorded on the budget:
+/// them. A path that ended in a runtime error or undefined behavior carries
+/// no value and is dropped. When every path did, the first error, or else the
+/// first undefined behavior, is recorded on the budget:
 /// a proposition with no evaluation path is reported by count, and the count
 /// says nothing about why (a load of the wrong width, a read no resource
 /// permits). Zero paths stays an ordinary answer here, since a requirement
@@ -9242,6 +9243,7 @@ fn spec_execution_value_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> Vec<SpecExpressionPath> {
     let mut first_error = None;
+    let mut first_undefined_behavior = None;
     let mut values = Vec::new();
     for path in paths {
         if let Some(error) = refuted_narrowing_error(&path.obligations) {
@@ -9264,13 +9266,17 @@ fn spec_execution_value_paths_in(
             ExpressionOutcome::RuntimeError(error) => {
                 first_error.get_or_insert(error);
             }
-            ExpressionOutcome::UndefinedBehavior(_) => {}
+            ExpressionOutcome::UndefinedBehavior(behavior) => {
+                first_undefined_behavior.get_or_insert(behavior);
+            }
         }
     }
-    if values.is_empty()
-        && let Some(error) = first_error
-    {
-        budget.dropped_runtime_error.get_or_insert(error);
+    if values.is_empty() {
+        if let Some(error) = first_error {
+            budget.dropped_runtime_error.get_or_insert(error);
+        } else if let Some(behavior) = first_undefined_behavior {
+            budget.dropped_undefined_behavior.get_or_insert(behavior);
+        }
     }
     values
 }

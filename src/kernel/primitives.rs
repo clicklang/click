@@ -8628,6 +8628,12 @@ pub struct ExecutionBudget {
     /// why, and this is the why (a load of the wrong width, a read no
     /// resource permits). Diagnostic only: no evaluation reads it back.
     pub(super) dropped_runtime_error: Option<RuntimeError>,
+    /// The first undefined behavior a specification evaluation dropped while
+    /// every path of some sub-evaluation ended in it and none in a runtime
+    /// error: a C operand whose operation is undefined wherever it is read,
+    /// such as `y / x` read where `x == 0`. Diagnostic only, as
+    /// [`Self::dropped_runtime_error`] is.
+    pub(super) dropped_undefined_behavior: Option<UndefinedBehavior>,
     /// The first constant element range a specification lowering dropped
     /// because it is not a valid 32-bit byte span: reversed, or wider than
     /// `u32::MAX` bytes once scaled. Such a range prunes its own evaluation
