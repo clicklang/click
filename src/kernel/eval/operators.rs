@@ -4081,38 +4081,6 @@ fn pointer_index_from_base(
     }
 }
 
-/// Resolve one recorded equality-class hop before checking signed-add
-/// overflow. The normal simplifier handles direct equalities and recursively
-/// simplifies a term's children, but it deliberately does not search through
-/// a whole equality closure. A returned aggregate can expose a result
-/// variable equal to a short expression whose leaves are direct constants;
-/// checking that one class is enough to recognize the concrete value without
-/// reintroducing an unbounded contextual-lowering search.
-fn simplify_program_int32_add_operand(
-    assumptions: &PureFactContext,
-    term: &MachineTerm,
-) -> MachineTerm {
-    let simplified = assumptions.simplify_bitvector_under_assumptions(term);
-    if simplified.as_const().is_some() {
-        return simplified;
-    }
-    assumptions
-        .recorded_equality_class_view(crate::kernel::MachineOperandView::Legacy(term))
-        .into_iter()
-        .find_map(|member| {
-            let view = member
-                .retained_written_operand()
-                .map(crate::kernel::MachineOperandView::Legacy)
-                .unwrap_or_else(|| member.operand_view());
-            assumptions
-                .simplify_machine_operand_under_assumptions(view, MachineIntegerType::Int32)
-                .operand_view()
-                .word32_constant()
-                .map(MachineTerm::constant)
-        })
-        .unwrap_or(simplified)
-}
-
 /// Splits the paths on the formation guards. The formed value keeps the
 /// operand's type, volatility and subobject bounds. It drops the operand's
 /// `const` pointee qualifier, as formation always has; the write-through-const
@@ -4251,8 +4219,8 @@ pub(in crate::kernel) fn apply_program_int32_add(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::signed_add_overflows(
-        simplify_program_int32_add_operand(assumptions, &left),
-        simplify_program_int32_add_operand(assumptions, &right),
+        assumptions.simplify_bitvector_under_assumptions(&left),
+        assumptions.simplify_bitvector_under_assumptions(&right),
     );
     let decision = crate::instrumentation::measure_operation(
         "kernel",

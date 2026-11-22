@@ -411,3 +411,47 @@ fn unsigned_division_domain_generation_ignores_ambient_facts() {
         assert_eq!(samples[0].1[0].0, samples[0].1[1].0, "{width:?}");
     }
 }
+
+#[test]
+fn signed_addition_does_not_walk_the_operands_equality_class() {
+    let mut samples = Vec::new();
+    for count in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let operand = MachineTerm::Variable(Variable(994_001));
+        let unrelated = MachineTerm::Variable(Variable(994_002));
+        for root in [&operand, &unrelated] {
+            let mut facts = PureFactContext::new().assume_condition(
+                ConditionTerm::signed_less_than(
+                    operand.clone(),
+                    MachineTerm::constant(i32::MAX as u32),
+                ),
+                true,
+            );
+            for index in 0..count {
+                facts = facts.assume_condition(
+                    ConditionTerm::equal(
+                        root.clone(),
+                        MachineTerm::Variable(Variable(994_100 + index)),
+                    ),
+                    true,
+                );
+            }
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::eval::apply_program_int32_add(
+                    operand.clone(),
+                    MachineTerm::constant(1),
+                    vec![].into(),
+                    vec![],
+                    &facts,
+                )
+            });
+            assert_eq!(paths.len(), 1);
+            assert!(matches!(paths[0].outcome, ExpressionOutcome::Value(_)));
+            samples.push(work);
+        }
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
