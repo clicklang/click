@@ -4756,7 +4756,10 @@ pub fn forall_guided_instantiation_candidate_values(
     quantified: &Proposition,
     target: &Proposition,
 ) -> Vec<MachineTerm> {
-    let Proposition::ForAll { var, body, .. } = quantified else {
+    let Proposition::ForAll {
+        var, sort, body, ..
+    } = quantified
+    else {
         return Vec::new();
     };
     match target {
@@ -4769,8 +4772,65 @@ pub fn forall_guided_instantiation_candidate_values(
             .into_iter()
             .collect()
         }
+        Proposition::MemoryReadDefined {
+            pointer,
+            value_type: ProgramType::UInt8,
+            ..
+        } if *sort == Sort::ProgramInteger(MachineIntegerType::UInt64) => {
+            let mut conclusion = body.as_ref();
+            while let Proposition::Implies(_, next) = conclusion {
+                crate::instrumentation::record_deterministic_work(1);
+                conclusion = next;
+            }
+            if let Proposition::MemoryReadDefined {
+                pointer: pattern,
+                value_type: ProgramType::UInt8,
+                ..
+            } = conclusion
+                && let Some(index) = guided_byte_read_index(**var, pattern, pointer)
+            {
+                return vec![index];
+            }
+            Vec::new()
+        }
         _ => Vec::new(),
     }
+}
+
+/// Select the index already named by a byte-read goal. The ordinary
+/// instantiation and closing tactic still check the guards and read point.
+fn guided_byte_read_index(
+    binder: Variable,
+    pattern: &Address,
+    pointer: &Address,
+) -> Option<MachineTerm> {
+    crate::instrumentation::record_deterministic_work(1);
+    let (base_offset, index_offset) = match &pattern.offset {
+        AddressOffset::Add(base, index) => ((**base).clone(), index.as_ref()),
+        index => (AddressOffset::Constant(0), index),
+    };
+    let AddressOffset::Int64Scaled {
+        value,
+        byte_width: 1,
+        unsigned: true,
+    } = index_offset
+    else {
+        return None;
+    };
+    if value.operand_view().variable() != Some(&binder) {
+        return None;
+    }
+    let base = Address {
+        base: pattern.base.clone(),
+        offset: base_offset,
+    };
+    let index = pointer.shared_wide_element_index_from_base(&base, 1)?;
+    let index = index.operand_view();
+    index
+        .variable()
+        .copied()
+        .map(MachineTerm::Variable)
+        .or_else(|| index.uint64_constant().map(MachineTerm::uint64_constant))
 }
 
 /// Chooses a variable identity absent from both the free variables and logical

@@ -10351,6 +10351,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_indexed_forall_instantiation_with_surfaces");
         let goal = search_input.goal()?;
+        let read_defined_goal = matches!(goal, Proposition::MemoryReadDefined { .. });
         let execution_view = matches!(search_input.context.as_ref(), ProofContext::Execution(_))
             .then(|| search_input.premise_fixed_state_view())
             .flatten();
@@ -10503,20 +10504,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     surfaces.push(candidate);
                 }
             }
-            let synthesized = match search_input.context.as_ref() {
-                ProofContext::Pure(_) => None,
-                ProofContext::FixedState(context) => synthesize_surface_proposition(
-                    &quantified,
-                    context.parameter_binding,
-                    context.fixed_state.state,
-                ),
-                ProofContext::Execution(_) => {
-                    let view = execution_view?;
-                    synthesize_surface_proposition(
-                        &quantified,
-                        view.parameter_binding,
-                        view.fixed_state.state,
+            let synthesized = {
+                // A call's definedness fact names its actual return point.
+                // Raise it using that recorded point when the goal is later.
+                let read_view = read_defined_goal
+                    .then(|| search_input.premise_fixed_state_view())
+                    .flatten();
+                let _recorded_points = read_view.as_ref().map(|view| {
+                    super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                        view.fixed_state.recorded_states,
                     )
+                });
+                match search_input.context.as_ref() {
+                    ProofContext::Pure(_) => None,
+                    ProofContext::FixedState(context) => synthesize_surface_proposition(
+                        &quantified,
+                        context.parameter_binding,
+                        context.fixed_state.state,
+                    ),
+                    ProofContext::Execution(_) => {
+                        let view = execution_view?;
+                        synthesize_surface_proposition(
+                            &quantified,
+                            view.parameter_binding,
+                            view.fixed_state.state,
+                        )
+                    }
                 }
             };
             if let Some(synthesized) = synthesized
@@ -10560,6 +10573,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         }
                         _ => None,
                     };
+                    let argument = argument.or_else(|| {
+                        if !read_defined_goal {
+                            return None;
+                        }
+                        let view = search_input.premise_fixed_state_view()?;
+                        super::surface_synthesis::synthesize_surface_machine_expression(
+                            value,
+                            view.parameter_binding,
+                            view.fixed_state.state,
+                        )
+                    });
                     let Some(argument) = argument else {
                         continue;
                     };
@@ -10629,7 +10653,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         argument: argument.clone(),
                     });
                     let conclusion = current.clone();
-                    if &conclusion == goal {
+                    let close_with_known = &conclusion == goal || read_defined_goal;
+                    if close_with_known {
                         tactics.push(ProofTactic::Known);
                     }
                     let mut unfinished = None;
@@ -10646,7 +10671,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let Some(instantiated_proof) = completed.or(unfinished) else {
                         continue;
                     };
-                    if &conclusion == goal {
+                    if close_with_known {
                         if instantiated_proof.is_complete() {
                             return Some(instantiated_proof);
                         }

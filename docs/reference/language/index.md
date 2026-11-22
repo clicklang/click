@@ -1984,7 +1984,10 @@ source of `memcpy`, which carries each byte's initialization across.
 `produces p[a..b]` hands the caller initialized bytes, so the function's proof
 is refused at a return that leaves a byte of it unwritten
 (`mdtests/produces_refuses_memory_the_function_did_not_write.md`), and after
-the call the caller holds them written. An initializer consumes
+the call the caller holds them written. A symbolic byte output also yields
+`defined(dst[i])` at the call's return when `i` is in the produced range
+(`mdtests/solve_proves_a_byte_defined_in_a_symbolic_produced_range.md`).
+An initializer consumes
 `uninitialized(p[a..b])` and produces `p[a..b]`
 (`mdtests/an_initializer_produces_the_memory_it_initialized.md`).
 

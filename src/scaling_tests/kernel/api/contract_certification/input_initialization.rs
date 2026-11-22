@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn symbolic_byte_initialization_publication_ignores_unrelated_locals() {
+    let (mut state, _, _, original) = fixture();
+    let range = MemoryRange::new_wide(
+        original.base().clone(),
+        MachineTerm::uint64_constant(0),
+        MachineTerm::Variable(Variable(918_001)),
+        1,
+    );
+    let mut expected_work = None;
+    for size in [0, 64, 256] {
+        for index in 0..size {
+            state = state.with_local(format!("output_neighbor_{index}"), int32(index));
+        }
+        let (fact, work) = crate::instrumentation::measure_deterministic_work(|| {
+            initialized_scalar_range_fact(&state, &range, ProgramType::UInt8)
+        });
+        assert!(matches!(fact, Proposition::ForAll { .. }));
+        assert_eq!(work, *expected_work.get_or_insert(work));
+    }
+}
+
+#[test]
 fn input_initialization_publication_ignores_range_length_and_unrelated_locals() {
     let mut expected = None;
     for unrelated in [0, 64, 256] {

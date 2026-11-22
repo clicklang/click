@@ -4348,7 +4348,7 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        match initialize_produced_memory(
+        let symbolic_initialized_bytes = match initialize_produced_memory(
             &entry_resource_state,
             &output_resource_state,
             interface,
@@ -4358,7 +4358,7 @@ fn execute_verified_function_applications_with_suspension(
             budget,
             application.evidence.is_none() && application.representation_copy.is_none(),
         )? {
-            Ok(()) => {}
+            Ok(ranges) => ranges,
             Err(error) => {
                 paths.push(FunctionPath::new(
                     FunctionOutcome::RuntimeError(error),
@@ -4367,7 +4367,7 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             }
-        }
+        };
         let authority_release_retires = {
             match authority_release_retires_control(
                 &entry_contract_state,
@@ -4864,6 +4864,18 @@ fn execute_verified_function_applications_with_suspension(
                 obligations,
             ));
             continue;
+        }
+        // A representation copy from possibly unwritten storage preserves
+        // just the initialization its source had.
+        if copy_initialization.is_none() {
+            for range in &symbolic_initialized_bytes {
+                let fact = crate::kernel::api::contract_certification::input_initialization::initialized_scalar_range_fact(
+                    &post_state,
+                    range,
+                    ProgramType::UInt8,
+                );
+                facts.push(ExecutionPureFact::certified(fact));
+            }
         }
         let post_contract_state =
             with_bound_contract_interface_argument_views(&post_state, interface, &argument_values);
@@ -13258,9 +13270,10 @@ fn initialize_produced_memory(
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
     opaque_output: bool,
-) -> ExecutionResult<Result<(), RuntimeError>> {
+) -> ExecutionResult<Result<Vec<MemoryRange>, RuntimeError>> {
     let mut memory = post_state.memory().clone();
     let mut word_outputs = Vec::new();
+    let mut symbolic_initialized_bytes = Vec::new();
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
@@ -13321,9 +13334,16 @@ fn initialize_produced_memory(
             );
             continue;
         }
-        // Initialized bytes of a length known only at the call are not
-        // recorded; a read of them then needs a store or `defined` evidence.
         let Some(byte_span) = byte_span else {
+            if range.element_width() == 1
+                && segment.value_runs().is_none()
+                && crate::kernel::eval::program_expression_pointee_type(
+                    output_resource_state,
+                    &segment.base,
+                ) == Some(ProgramType::UInt8)
+            {
+                symbolic_initialized_bytes.push(range.clone());
+            }
             continue;
         };
         match segment.value_runs() {
@@ -13367,7 +13387,7 @@ fn initialize_produced_memory(
             }
         }
     }
-    Ok(Ok(()))
+    Ok(Ok(symbolic_initialized_bytes))
 }
 
 /// Evaluates the first `count` returned resources of a contract as one
