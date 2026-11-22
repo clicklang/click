@@ -2236,10 +2236,14 @@ not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
 
 For a `viewable(range)` goal, `preserve` accepts a complete footprint from a
-single declaration of fresh local storage without an initializer. Prove
-separation from that footprint and supply the exact entry viewability fact
-for the selected range. The conclusion is a pure live-storage fact for the
-same range at the exit, including for symbolic `uint64` byte ranges.
+fresh uninitialized local declaration, an assignment whose effects touch
+only automatic storage, or a return with only automatic-storage effects,
+including scope cleanup. The latter footprints require unchanged heap
+retirement information. Prove separation from the footprint and supply the
+exact entry viewability fact. The conclusion is a live-storage fact for the
+same range at the exit, including for symbolic `uint64` byte ranges. At the
+published outcome a return can also include one recorded retirement of a
+provably distinct automatic object after the statement's exit snapshot.
 
 For equality goals, use an ordinary `have` to establish the equality, then
 `rewrite` and `known` to carry a proposition across the change. The tactic remains

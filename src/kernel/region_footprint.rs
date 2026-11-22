@@ -21,8 +21,9 @@ pub struct RegionFootprint {
     pub(crate) members: imbl::Vector<Resource>,
     pub(crate) complete: bool,
     pub(crate) resource_bound: Option<Resource>,
-    pub(crate) uninitialized_local_declaration: bool,
+    pub(crate) preserves_separate_viewability: bool,
     is_sequence: bool,
+    ends_with_return: bool,
 }
 impl std::fmt::Debug for RegionFootprint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -58,7 +59,7 @@ impl RegionFootprint {
         after: &ExecutionState,
         effects: &(impl ExecutionFactSource + ?Sized),
     ) -> Arc<Self> {
-        Self::from_transition(source, before, after, effects, false)
+        Self::from_transition(source, before, after, effects, false, true, false)
     }
 
     pub(crate) fn statement_transition(
@@ -86,6 +87,11 @@ impl RegionFootprint {
             after,
             effects,
             uninitialized_local_declaration,
+            matches!(
+                statement,
+                ProgramStatement::Assign { .. } | ProgramStatement::Return(_)
+            ),
+            matches!(statement, ProgramStatement::Return(_)),
         )
     }
 
@@ -95,6 +101,8 @@ impl RegionFootprint {
         after: &ExecutionState,
         effects: &(impl ExecutionFactSource + ?Sized),
         uninitialized_local_declaration: bool,
+        check_automatic_storage: bool,
+        ends_with_return: bool,
     ) -> Arc<Self> {
         let mut members = imbl::Vector::new();
         let mut resource_bound = None;
@@ -199,6 +207,18 @@ impl RegionFootprint {
         if effect_count != 1 || extra_effect || !complete {
             resource_bound = None;
         }
+        // Reuse the recorded effect members to certify an automatic-storage-only
+        // transition. Heap retirement may be absent from a call's projected
+        // writes, so a call summary or a changed retirement index refuses.
+        let preserves_separate_viewability = complete
+            && (uninitialized_local_declaration
+                || (check_automatic_storage
+                    && effect_count == 0
+                    && before.memory().shares_heap_deallocations_with(after.memory())
+                    && members.iter().all(|member| {
+                        crate::instrumentation::record_deterministic_work(1);
+                        matches!(member, Resource::Memory(range) if range.base().base.is_local_block())
+                    })));
         Arc::new(Self {
             resource_bound,
             source,
@@ -211,8 +231,9 @@ impl RegionFootprint {
             after_resources: after.resources().clone(),
             members,
             complete,
-            uninitialized_local_declaration,
+            preserves_separate_viewability,
             is_sequence: false,
+            ends_with_return,
         })
     }
 
@@ -234,9 +255,30 @@ impl RegionFootprint {
             members,
             complete: statement.complete && cleanup.complete,
             resource_bound: None,
-            uninitialized_local_declaration: false,
+            preserves_separate_viewability: statement.preserves_separate_viewability
+                && cleanup.preserves_separate_viewability,
             is_sequence: false,
+            ends_with_return: statement.ends_with_return,
         })
+    }
+
+    /// A return's published outcome can retire a local after the statement
+    /// snapshot. Check that exact retirement edge and object, without walking
+    /// earlier memory states or using an alias search.
+    pub(crate) fn viewability_survives_return_cleanup(
+        &self,
+        outcome: &SymbolicMemory,
+        selected: &Address,
+    ) -> bool {
+        if !self.ends_with_return || !self.preserves_separate_viewability {
+            return false;
+        }
+        let Some(statement_exit) = interned_storage_of(&self.after) else {
+            return false;
+        };
+        let retirement = interned_storage_of(outcome).and_then(|memory| memory.derivation());
+        matches!(retirement.as_deref(), Some(MemoryDerivation::LocalLifetimeEnded { base, block })
+            if base.arena_id() == statement_exit.arena_id() && selected.base.proven_distinct(block))
     }
 
     pub(crate) fn sequence(
@@ -258,8 +300,9 @@ impl RegionFootprint {
             after_resources: after.resources().clone(),
             members,
             complete,
-            uninitialized_local_declaration: false,
+            preserves_separate_viewability: false,
             is_sequence: true,
+            ends_with_return: false,
         })
     }
 }

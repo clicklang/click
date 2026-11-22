@@ -37,5 +37,5 @@ int32* probe(int32* p) {
 ```
 
 ```expect
-fail: preserve viewability requires a complete fresh uninitialized local declaration footprint
+fail: preserve viewability requires a complete automatic-storage-only footprint
 ```

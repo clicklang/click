@@ -11499,6 +11499,97 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         None
     }
 
+    fn try_local_viewability_preservation(
+        search_input: &Proof<'a>,
+        goal: &Proposition,
+        premise_pairs: &[(Proposition, ClickProposition)],
+    ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_local_viewability_preservation");
+        let Proposition::MemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide,
+        } = goal
+        else {
+            return None;
+        };
+        let surface_goal @ ClickProposition::Loadable { segment } = search_input.surface_goal()?
+        else {
+            return None;
+        };
+        if segment.state != ContractSegmentState::Current {
+            return None;
+        }
+        let view = search_input.premise_fixed_state_view()?;
+        let records = view.fixed_state.recorded_states;
+        let mut next_memory = crate::kernel::intern_memory_ref(memory);
+        let mut regions = Vec::new();
+        for (selector, _) in records.recent(24) {
+            let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: region @ CodeRegionRef::Region(_),
+                kind: ProgramPointKind::Exit,
+            }) = selector
+            else {
+                continue;
+            };
+            let Ok(Resource::Footprint(footprint)) = records.footprint(region) else {
+                continue;
+            };
+            let before = crate::kernel::intern_memory_ref(&footprint.before);
+            let reaches_next = crate::kernel::intern_memory_ref(&footprint.after) == next_memory
+                || (regions.is_empty()
+                    && footprint.viewability_survives_return_cleanup(memory, base));
+            if !footprint.preserves_separate_viewability || before == next_memory || !reaches_next {
+                continue;
+            }
+            regions.push(region.clone());
+            let entry = Proposition::MemoryLoadable {
+                memory: footprint.before.clone(),
+                base: base.clone(),
+                bytes: bytes.clone(),
+                wide: *wide,
+            };
+            if !premise_pairs.iter().any(|(premise, _)| premise == &entry) {
+                next_memory = before;
+                continue;
+            }
+
+            // The selected view holds at the oldest endpoint. Replay one
+            // explicitly separated transition at a time towards the goal.
+            let mut current = search_input.clone();
+            let separation_proof =
+                ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(Vec::new())])
+                    .expect("footprint separation uses an ordinary proof step");
+            for (index, region) in regions.iter().enumerate().rev() {
+                let separation = ClickProposition::Separate {
+                    left: ResourceSubject::Footprint(region.clone()),
+                    right: ResourceSubject::Memory(segment.clone()),
+                };
+                current = current
+                    .driver()
+                    .apply_have_step(&separation, &separation_proof)
+                    .ok()?;
+                let step = ProofStep::Preserve(separation);
+                if index == 0 {
+                    return current.driver().apply_step(step).ok();
+                }
+                let at_exit = ClickProposition::At {
+                    selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                        region: region.clone(),
+                        kind: ProgramPointKind::Exit,
+                    }),
+                    proposition: Box::new(surface_goal.clone()),
+                };
+                let proof = ProofCertificate::from_steps(vec![step])
+                    .expect("preserve is an ordinary proof step");
+                current = current.driver().apply_have_step(&at_exit, &proof).ok()?;
+            }
+        }
+        None
+    }
+
     pub(in crate::surface::proof) fn check_typed_atomic_solve_candidate(
         search_input: &Proof<'a>,
         goal: &Proposition,
@@ -11537,6 +11628,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .collect::<Vec<_>>();
             if let Some(proof) =
                 Self::try_ordinary_viewability_restriction_closure(search_input, Some(&selected))
+                    .or_else(|| {
+                        Self::try_local_viewability_preservation(search_input, goal, premise_pairs)
+                    })
             {
                 return Some(proof);
             }
