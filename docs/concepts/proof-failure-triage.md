@@ -3,8 +3,9 @@
 Start with the [CLI outcome](../reference/cli/verify.md#output-and-exit-behavior).
 For a `tactic error`, check the invocation against its documentation. For an
 `unsuccessful search`, identify the goal and supply the intermediate facts
-or arguments that the search did not find. For an `unproved goal`, check
-what remains open after the written steps. For a `contract error`, check
+or arguments that the search did not find. For an `incomplete proof`,
+establish the reported requirement before the proof closes. For a returned
+resource, check what the contract promises and what the return path holds. For a `contract error`, check
 whether the clause satisfies the documented rule under its requirements.
 Correct an invalid clause or report `contract-bug` with evidence that the
 original clause satisfies the rule. For a contract-entry, execution,

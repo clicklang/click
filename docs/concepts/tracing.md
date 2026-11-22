@@ -22,7 +22,7 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `contract error` | Click identified a rule it believes a written contract clause violates. | Check the rule under the contract’s requirements. Correct the clause or report a supported `contract-bug`. |
 | `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
-| `unproved goal` | The proof left a required goal open. | Prove the remaining goal with the premises at the reported point. |
+| `incomplete proof` | The proof ended with a requirement outstanding. | Establish the named requirement before closing, such as a resource promised on return. |
 | `execution prerequisite unmet` | A checked operation needs evidence at its program point. | Record the requirement and follow the procedure below. |
 | `contract entry refused`, `contract exit refused`, or `contract refinement refused` | A contract boundary or refinement check was refused. | Inspect the named clauses and work from the available goal. |
 | `execution refused`, `termination not established`, `invalid divergence declaration`, or `unsupported proof` | Click identified a specific execution, termination, or proof-driver refusal. | Investigate the reported cause. |
@@ -230,8 +230,8 @@ premises; it does not by itself certify that checking is fast.
    link as primitive solely because it is one tactic call.
    The [tactic table](../reference/tactics/index.md) gives each tactic's class,
    and `click docs NAME` prints its forms and documented behavior. A refusal
-   may identify the tactic with `refused by:`; `refused by: nothing` means
-   that the proof ended with the goal open. If a written primitive is refused
+   may identify the tactic with `refused by:`. An `incomplete proof` names
+   the requirement still outstanding when the proof closes. If a written primitive is refused
    within its documented **Accepts** list, stop at `tactic-bug`.
 
    To split a link that a smart tactic proved part of, read its trace: a step

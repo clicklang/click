@@ -174,7 +174,7 @@ Verification reports use these headings:
 | --- | --- |
 | `tactic error` | Click refused a written tactic or an implicit proof step. For example, `step()` found no statement left, or contract closing could not establish permission for a write. |
 | `unsuccessful search` | A proof search ran and could not close a goal, for example a written `solve()` or a statement’s implicit closer. |
-| `unproved goal` | A goal was still open when the script finished. |
+| `incomplete proof` | The proof ended with a requirement outstanding, such as a resource the contract promises to return. |
 | `contract error` | Click identified a rule it believes the written contract violates, such as a potentially overflowing resource endpoint or a proven overlap between owned entry resources or between an owned resource and an input view. |
 | `contract entry refused` | Click could not establish the contract's initial state or resources. The diagnostic describes the setup check that stopped verification. |
 | `execution prerequisite unmet` | An exact execution check needs evidence at the current program point. |

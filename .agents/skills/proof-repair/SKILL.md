@@ -45,8 +45,15 @@ it; shrink them if you can, but a report need not wait for that.
 - `unsuccessful search`: explicit or implicit proof search ran and found no
   proof. Record the goal. If it holds, write an explicit chain of smaller
   links, or supply the missing argument or premises.
-- `unproved goal`: the proof left an obligation open. Continue with the
-  remaining goal and the premises available where the script ended.
+- `incomplete proof`: the proof ended with a requirement still outstanding.
+  Record what the report says the proof must establish and the path where it
+  is required. Add the missing steps before the proof closes. For a return
+  resource, account for the units held on that path and what must go back to
+  the caller. Use each owned unit once. If the resource can be assembled from
+  parts already held, write the corresponding fold. If an allowed execution
+  cannot supply what the contract promises, follow the `false-claim` procedure.
+  If Click demands something the closing rule does not require, follow the
+  `obligation-bug` procedure.
 - `execution prerequisite unmet`: record the exact prerequisite at the
   operation's pre-state and continue with that goal.
 - `contract entry refused`, `contract exit refused`, or `contract refinement
@@ -64,7 +71,8 @@ it; shrink them if you can, but a report need not wait for that.
 
 From the ordinary report, write down:
 
-- the goal `G`, from the `goal:` line;
+- the goal `G`, from the `goal:` line or the named requirement in an
+  `incomplete proof` report;
 - the program point where `G` is required (a C statement requirement is a goal
   at that statement's pre-state);
 - the premises available there.
@@ -79,7 +87,9 @@ line that defines each label the goal uses. Two written forms of one C address
 (`p` and `g + 16 bytes`, or a read at entry and a read in the loop) are often
 the whole story. Otherwise ignore the legend.
 
-No `goal:` line, or a goal you cannot read: the outcome is `unclear-trace`.
+If the report and trace leave the requirement or its program point unclear,
+use `unclear-trace`. A named resource and return path can identify the
+requirement directly.
 
 ## 3. Decide whether `G` is true
 
@@ -96,8 +106,8 @@ introduced `G`.
 
 ## 4. Write the argument as a chain
 
-Write why `G` follows from the premises as intermediate facts, each one a
-`have` at the program point:
+For a proposition, write why `G` follows from the premises as intermediate
+facts, each one a `have` at the program point:
 
 ```text
 have A by { ... }
@@ -132,9 +142,9 @@ the tactic reference supplies logical, execution, resource, and transport rules.
 Count logical rule applications, not tactic calls: a single tactic can hide a
 walk, while an explicit certificate can contain several primitive steps.
 
-A refusal ends with `refused by:` when Click can identify the tactic.
-`refused by: nothing` means the proof ended with the goal open. A failed
-`solve` does not tell you whether the argument is primitive. Split a link that
+A refusal lists `refused by:` when Click can identify the tactic.
+An `incomplete proof` names the requirement to establish before closing.
+A failed `solve` does not tell you whether the argument is primitive. Split a link that
 needs several rules into links justified by those rules. Stop when all the
 premises of a documented primitive are written. If a concrete, justified
 inference has expressible premises and conclusion but no supported primitive,

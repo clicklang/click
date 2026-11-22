@@ -808,7 +808,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let refusal = if body == [ProofTactic::Solve] {
                 crate::surface::ProofRefusal::UnsuccessfulSearch
             } else {
-                crate::surface::ProofRefusal::UnprovedGoal
+                crate::surface::ProofRefusal::IncompleteProof
             };
             return Err(error
                 .with_proof_refusal(refusal)

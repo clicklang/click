@@ -56,7 +56,7 @@ fn report_error(message: String) -> ! {
     if [
         "tactic error",
         "unsuccessful search",
-        "unproved goal",
+        "incomplete proof",
         "contract error",
         "contract entry refused",
         "execution prerequisite unmet",
@@ -2705,8 +2705,62 @@ void probe(struct node *node) {{
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("contract exit refused:\n"), "{error}");
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
         assert!(error.contains("ticket(0)"), "{error}");
+    }
+
+    #[test]
+    fn return_clause_failures_report_incomplete_proofs() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("f.c");
+        let sidecar = directory.path().join("f.click");
+        for (c, contract, reason, detail) in [
+            (
+                "struct node { struct node *child; }; void f(struct node *p) {}",
+                "abstract resource ticket(p: struct node*);\nvoid f(struct node* p) { requires p != 0; produces ticket(p->child); }",
+                "could not evaluate returned resource `ticket(p->child)`",
+                "missing pure fact",
+            ),
+            (
+                "int *first(int *left, int *right) { return left; }",
+                "int32* first(int32* left, int32* right) { views *left; views *right as right_input; produces view(*left) from right_input; ensures result == left; }",
+                "The selected input `views right[0]` does not establish coverage of `views left[0]`",
+                "Requires produces views left[0..1]",
+            ),
+        ] {
+            fs::write(&source, c).unwrap();
+            fs::write(&sidecar, format!("verifying \"f.c\";\n{contract}\n")).unwrap();
+            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(error.starts_with("incomplete proof:\n"), "{error}");
+            assert!(error.contains(reason), "{error}");
+            assert!(error.contains(detail), "{error}");
+        }
+    }
+
+    #[test]
+    fn returned_memory_without_promised_initialization_is_an_incomplete_proof() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("f.c");
+        fs::write(&source, "void init(int *p) {}\n").unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+                void init(int32* p) {
+                    consumes uninitialized(p[0..1]);
+                    produces p[0..1];
+                }
+            "#,
+        )
+        .unwrap();
+        let verify = || entry(["verify".to_string(), sidecar.display().to_string()]);
+        let error = verify().unwrap_err();
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
+        assert!(error.contains("has not initialized every byte"), "{error}");
+        assert!(error.contains("Requires produces p[0]"), "{error}");
+
+        fs::write(&source, "void init(int *p) { *p = 1; }\n").unwrap();
+        verify().expect("the write supplies the promised initialized memory");
     }
 
     #[test]
