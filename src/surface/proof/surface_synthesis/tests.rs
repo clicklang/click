@@ -3524,6 +3524,86 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
 }
 
 #[test]
+fn entry_model_raising_uses_the_binder_that_minted_the_field() {
+    use crate::kernel::{
+        AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, Resource, ResourceContext, ResourceFact,
+        ResourceFieldSchema, ResourceFieldType, ResourceInstance, TypeParameterName,
+        model_fields::{self, ModelFieldOrigin, ModelMint},
+    };
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let identity = crate::kernel::InstanceId::from_variable(Variable(930_011));
+    let model_variable = Variable(930_012);
+    let model = AlgebraicTerm {
+        algebraic_type: TypeParameterName::intern("Tree").algebraic_type(),
+        node: AlgebraicTermNode::Variable(model_variable),
+    };
+    let size = Variable(930_013);
+    let schema = ResourceFieldSchema::new(vec![
+        (
+            "model".into(),
+            ResourceFieldType::Algebraic(model.algebraic_type.clone()),
+        ),
+        (
+            "size".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        ),
+    ])
+    .unwrap();
+    let instance = ResourceInstance::new(
+        identity,
+        "tree".into(),
+        vec![].into(),
+        schema,
+        vec![
+            AlgebraicValue::Algebraic(model.clone()),
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(size))),
+        ]
+        .into(),
+    )
+    .unwrap();
+    let entry = ExecutionState::new().with_resource_context(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own(Resource::Instance(instance))),
+    );
+    let _entry = SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry))));
+    // A different binder registered this identity before the current contract.
+    model_fields::register_instance_spelling(identity, "after");
+    for (field_index, (variable, field)) in [(model_variable, "model"), (size, "size")]
+        .into_iter()
+        .enumerate()
+    {
+        model_fields::register_model_field_variable(
+            variable,
+            ModelFieldOrigin {
+                identity,
+                field: field.into(),
+                field_index,
+                minted_by: ModelMint::ContractEntry { owner: "t".into() },
+            },
+        );
+    }
+    let current = ExecutionState::new();
+    let model = synthesize_surface_algebraic(
+        &model,
+        ParameterBinding::default(),
+        &current,
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    let size = synthesize_scalar_model_field(size, &current).unwrap();
+    for (raised, name) in [(model, "model"), (size, "size")] {
+        let ContractExpression::Old(inner) = raised else {
+            panic!("the entry field must raise through old: {raised:?}");
+        };
+        assert!(
+            matches!(*inner, ContractExpression::ResourceField(ref access)
+                if access.owner == "t" && access.field == name),
+            "{inner:?}"
+        );
+    }
+}
+
+#[test]
 fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_introduced() {
     // A call replaces `o`'s model, so the earlier `o.size` value is held by
     // no current instance; the point after the first call held it.

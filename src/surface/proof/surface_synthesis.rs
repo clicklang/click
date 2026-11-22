@@ -8279,7 +8279,7 @@ fn synthesize_scalar_model_field(
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let origin = crate::kernel::model_fields::registered_model_field_origin(variable)?;
-    let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+    let owner = origin.owner_spelling()?;
     let field_at = |state: &ExecutionState| {
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
@@ -8563,7 +8563,7 @@ fn synthesize_surface_algebraic(
                 return Some(local);
             }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
-            let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+            let owner = origin.owner_spelling()?;
             let field_at = |state: &ExecutionState| {
                 let instance = state.resource_instance_at_path(origin.identity, &[])?;
                 let held = instance.fields().get(origin.field_index)?;
