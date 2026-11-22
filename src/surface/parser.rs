@@ -8305,7 +8305,10 @@ impl Parser {
         }
         if tactic {
             self.expect(Token::RParen)?;
-            if self.peek() == Some(&Token::LBrace) {
+            if self.peek() == Some(&Token::LBrace)
+                && !matches!(self.peek_next(), Some(Token::Ident(name)) if name == "requires")
+                && self.peek_next() != Some(&Token::RBrace)
+            {
                 return Err(self.error(format!(
                     "the binder map is the last argument of a tactic application: write `{callee}(..., {{ binder: instance }})`"
                 )));
@@ -12240,10 +12243,10 @@ impl Parser {
     /// open obligation, or a block of `requires P by ...` entries.
     #[inline(never)]
     fn parse_step_proof(&mut self, step: ProofTactic) -> Result<ProofTactic, ClickError> {
-        let tactic = if matches!(step, ProofTactic::FoldResource(_)) {
-            "fold"
-        } else {
-            "step"
+        let tactic = match &step {
+            ProofTactic::FoldResource(_) => "fold",
+            ProofTactic::UserTactic(application) => application.callee(),
+            _ => "step",
         };
         if self.peek_ident() == Some("by") {
             self.position += 1;

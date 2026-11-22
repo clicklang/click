@@ -360,9 +360,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             driver_proof.with_prepared_call_parameters(probe.as_ref().map_err(Clone::clone)?);
         if recorded.recorded.is_empty() {
             if probe.as_ref().is_ok_and(|candidate| {
-                candidate
-                    .execution()
-                    .is_some_and(|execution| execution.core.has_prepared_fold())
+                candidate.execution().is_some_and(|execution| {
+                    execution.core.has_prepared_fold()
+                        || execution.core.has_prepared_tactic_application()
+                })
             }) {
                 return driver_proof.finish_prepared_step(probe, driver_proof, &[]);
             }
