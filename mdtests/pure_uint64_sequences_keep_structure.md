@@ -4,7 +4,7 @@
 theorem wide_sequence_equality(a: uint64, b: uint64) {
     ensures forall (unused: Integer) {
         [] ++ [a] ++ [b] == [a, b] ++ []
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem wide_literal_membership() {
