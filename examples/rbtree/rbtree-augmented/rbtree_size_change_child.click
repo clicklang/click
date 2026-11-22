@@ -128,9 +128,10 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             match sibling.model {
                 SizedTree::Empty => {
                     unfold(sibling);
-                    have parent->rb_left == 0 by known();
+                    have a->rb_left == 0 by known();
                     have parent->rb_left != old by {
-                        rewrite(parent->rb_left, 0); known();
+                        rewrite(parent, a);
+                        rewrite(a->rb_left, 0); known();
                     }
                     let sibling = fold(sized_at(0), { model: SizedTree::Empty });
                     let tag = fold(change_child_parent_tag(a, above), { color: shade });
