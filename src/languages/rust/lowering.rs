@@ -1156,6 +1156,8 @@ fn lower_function(
                             _ => return None,
                         }
                         id
+                    } else if let Some(&ordinal) = mir.borrowed_scalars.get(&local.name) {
+                        LocalBindingId::temporary(owner.clone(), ordinal)
                     } else {
                         let spelling = mir.spellings.get(&local.name)?;
                         let ordinal = u32::try_from(ordinal).ok()?;

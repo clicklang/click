@@ -538,6 +538,7 @@ mod tests {
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
                 compound_literals: Default::default(),
+                borrowed_scalars: Default::default(),
                 locals: vec![Place {
                     name: "marker".into(),
                     value_type: Type::I32,
@@ -634,6 +635,7 @@ mod tests {
             spellings: Default::default(),
             unnamed_locals: Default::default(),
             compound_literals: Default::default(),
+            borrowed_scalars: Default::default(),
             locals: vec![],
             blocks: vec![
                 MirBlock {
@@ -904,6 +906,7 @@ mod tests {
             spellings: Default::default(),
             unnamed_locals: Default::default(),
             compound_literals: Default::default(),
+            borrowed_scalars: Default::default(),
             locals: vec![],
             blocks: vec![MirBlock {
                 terminator_site: None,

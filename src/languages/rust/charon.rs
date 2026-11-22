@@ -3727,17 +3727,51 @@ pub(super) fn decode_crate(
         let mut coercions = Vec::new();
         let mut literal_initializers = BTreeMap::new();
         let mut ambiguous_literals = BTreeSet::new();
-        let literal_at = |span: a::Span| {
+        let written_range = |span: a::Span| {
             let at = span.data();
             if at.file_id != item_span.file_id || span.generated_from_span().is_some() {
                 return None;
             }
-            let range = (
+            Some((
                 (at.beg.line as usize, at.beg.col as usize),
                 (at.end.line as usize, at.end.col as usize),
-            );
-            written.compound_literals.get(&range).copied()
+            ))
         };
+        let literal_at = |span| {
+            written
+                .compound_literals
+                .get(&written_range(span)?)
+                .copied()
+        };
+        // Find the scalar backing objects before converting storage markers.
+        let mut borrowed_occurrences = BTreeMap::<_, Option<a::LocalId>>::new();
+        if !written.borrows.is_empty() {
+            for statement in b.body.body.iter().flat_map(|block| &block.statements) {
+                if let u::StatementKind::Assign(_, a::Rvalue::Ref { place, .. }) = &statement.kind
+                    && let Some(local) = place.as_local()
+                    && b.names
+                        .get(&local)
+                        .is_some_and(|name| temporaries.contains(name))
+                    && let Some(&ordinal) =
+                        written_range(statement.span).and_then(|range| written.borrows.get(&range))
+                    && b.adapter.ty(&place.ty).is_ok_and(|ty| ty.is_scalar())
+                {
+                    // A span shared by two different objects cannot identify either.
+                    borrowed_occurrences
+                        .entry(ordinal)
+                        .and_modify(|object| {
+                            if *object != Some(local) {
+                                *object = None;
+                            }
+                        })
+                        .or_insert(Some(local));
+                }
+            }
+        }
+        let borrowed_scalars: BTreeMap<_, _> = borrowed_occurrences
+            .into_iter()
+            .filter_map(|(ordinal, local)| Some((local?, ordinal)))
+            .collect();
         for (id, block) in b.body.body.iter_enumerated() {
             if let Some(message) = panic_messages.get(&id) {
                 coercions.push((blocks.len(), Vec::new()));
@@ -3753,17 +3787,25 @@ pub(super) fn decode_crate(
             let mut statements: Vec<S> = Vec::new();
             let mut current_site = None;
             for s in &block.statements {
-                let converted = match b.slice_pair_statement(s)? {
-                    Some(statements) => statements,
-                    None => b
-                        .statement(s)
-                        .map(|s| s.into_iter().collect::<Vec<_>>())
-                        .map_err(|e| {
-                            format!(
-                                "{} in {name}: {e}",
-                                refusal_location(&krate, source, s.span, f.item_meta.span)
-                            )
-                        })?,
+                let converted = if let u::StatementKind::StorageLive(local) = &s.kind
+                    && borrowed_scalars.contains_key(local)
+                {
+                    vec![S::BeginStorage {
+                        local: b.local(*local)?,
+                    }]
+                } else {
+                    match b.slice_pair_statement(s)? {
+                        Some(statements) => statements,
+                        None => b
+                            .statement(s)
+                            .map(|s| s.into_iter().collect::<Vec<_>>())
+                            .map_err(|e| {
+                                format!(
+                                    "{} in {name}: {e}",
+                                    refusal_location(&krate, source, s.span, f.item_meta.span)
+                                )
+                            })?,
+                    }
                 };
                 if converted.is_empty() {
                     continue;
@@ -3885,6 +3927,14 @@ pub(super) fn decode_crate(
             })
             .map(|(ordinal, local)| (local, ordinal))
             .collect();
+        let borrowed_scalars = borrowed_scalars
+            .into_iter()
+            .filter_map(|(local, ordinal)| {
+                let name = b.names.get(&local)?;
+                kept.contains(name.as_str())
+                    .then(|| (name.clone(), ordinal))
+            })
+            .collect();
         functions.push(out::Function {
             sites: written
                 .statements
@@ -3904,6 +3954,7 @@ pub(super) fn decode_crate(
                 spellings,
                 unnamed_locals: temporaries,
                 compound_literals,
+                borrowed_scalars,
                 locals,
                 blocks,
                 return_place,

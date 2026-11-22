@@ -839,6 +839,7 @@ mod tests {
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
                 compound_literals: Default::default(),
+                borrowed_scalars: Default::default(),
                 locals: vec![
                     place("child", reference_type()),
                     place("alias", reference_type()),

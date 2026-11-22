@@ -4815,6 +4815,82 @@ fn front(bytes: &[u8]) -> usize {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: refreshes a Charon capture"]
+fn rust_borrowed_scalar_expressions_use_written_storage_occurrences() {
+    let p = Project::new(
+        "fn read(word: &u32) -> u32 { *word }
+         pub fn borrowed_value(x: u32) -> u32 {
+             let first = read(&(x % 4));
+             let second = read(&(x / 4));
+             first * 10 + second
+         }",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let function = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|function| function.name == "borrowed_value")
+        .unwrap();
+    let mut ordinals: Vec<_> = function
+        .mir
+        .as_ref()
+        .unwrap()
+        .borrowed_scalars
+        .values()
+        .copied()
+        .collect();
+    ordinals.sort_unstable();
+    assert_eq!(ordinals, [0, 1]);
+
+    let sidecar = r#"verifying "borrow.rs";
+fn read(word: &u32) -> u32 { views *word; ensures result == *word; }
+fn borrowed_value(x: u32) -> u32 { requires x == 7u32; ensures result == 31u32; }
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "borrowed_value"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        trace
+            .matches("steps through: declare <temporary storage>")
+            .count(),
+        2,
+        "{trace}"
+    );
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+    assert!(
+        ProgramVerificationSession::new_program_prepared(
+            &sidecar.replace("31u32", "33u32"),
+            &prepared,
+        )
+        .is_err()
+    );
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "borrowed_value.ensures_0",
+            "--in-place",
+        ],
+    );
+    let expanded = fs::read_to_string(&file).unwrap();
+    assert!(
+        !expanded.contains("__rust_mir_") && !expanded.contains(".temporary("),
+        "{expanded}"
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
 fn rust_borrowed_array_literals_use_written_occurrences_and_lifetimes() {
     let p = Project::new(
         "fn read(words: &[u32; 2]) -> u32 { words[0] }
