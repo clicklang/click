@@ -4,7 +4,7 @@
 theorem literal_empty() {
     ensures forall (unused: Integer) {
         (3..3).fold(5, |acc: int32, k: int32| -> int32 { k }) == 5
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem symbolic_empty(n: int32) {
@@ -38,7 +38,7 @@ theorem observed_empty(n: int32, seed: int32) {
 theorem longer_literal_nonempty() {
     ensures forall (unused: Integer) {
         (1..4).fold(5, |acc: int32, k: int32| -> int32 { k }) == 3
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem literal_body() {

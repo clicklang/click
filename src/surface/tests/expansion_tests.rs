@@ -16634,7 +16634,7 @@ fn outcome_solve_materializes_selected_composite_separation_on_the_checked_proof
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
-fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_proof() {
+fn quantified_old_equality_keeps_its_introduced_binder() {
     let c_source = r#"
         int32 shifted_copy(int32 dst[], int32 src[], int32 n) {
             int32 i;
@@ -16680,24 +16680,17 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
     "#;
     let sources = [("shifted_copy.c", c_source)];
 
-    let verified = verify_c_sources(click_source, &sources);
-    verified.expect("the quantified old equality should transport through Proof");
-
     let expanded = expand_function_proof_source(click_source, &sources, "shifted_copy")
-        .expect("the retained quantified transport should expand");
-    // The goal's own entry state would carry the whole quantified fact
-    // in one frame (`quantified_old_transport_expands_to_one_quantified_frame`),
-    // so the proof introduces the binder and its guard itself: the
-    // expansion must then name the introduced `k`.
-    assert!(expanded.contains("intro();"), "{expanded}");
+        .expect("the quantified postcondition should expand");
+    assert!(!expanded.contains("transport("), "{expanded}");
     assert!(
-        expanded.contains(
-            "transport(at(function.entry, src[k] == old(src[k])), src[k] == old(src[k])) using {"
-        ),
+        expanded.contains("at(region(2).exit, src[k])"),
         "{expanded}"
     );
-    verify_c_sources(&expanded, &sources)
-        .expect("the quantified old transport should check independently");
+    without_implicit_solve_for_claim("shifted_copy.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded indexed-read proof should check without implicit solving");
 }
 
 #[test]
@@ -16744,7 +16737,7 @@ fn guarded_definedness_preservation_expands_and_cold_replays() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
-fn quantified_old_transport_expands_to_one_quantified_frame() {
+fn quantified_old_equality_expands_to_bound_indexed_reads() {
     let c_source = r#"
         int32 shifted_copy(int32 dst[], int32 src[], int32 n) {
             int32 i;
@@ -16783,20 +16776,18 @@ fn quantified_old_transport_expands_to_one_quantified_frame() {
     "#;
     let sources = [("shifted_copy.c", c_source)];
 
-    let verified = verify_c_sources(click_source, &sources);
-    verified.expect("the quantified old equality should transport through Proof");
-
     let expanded = expand_function_proof_source(click_source, &sources, "shifted_copy")
-        .expect("the retained quantified transport should expand");
-    // The entry state of the goal is a reflexive fact, and the quantified
-    // frame carries it across the loop's checked write set in one step.
+        .expect("the quantified postcondition should expand");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("intro();"), "{expanded}");
     assert!(
-        expanded.contains("transport(at(function.entry, forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) }), forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) })"),
+        expanded.contains("at(region(2).exit, src[k])"),
         "{expanded}"
     );
-    assert!(!expanded.contains("extract(0 <= k);"), "{expanded}");
-    verify_c_sources(&expanded, &sources)
-        .expect("the quantified old transport should check independently");
+    without_implicit_solve_for_claim("shifted_copy.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded indexed-read proof should check without implicit solving");
 }
 
 #[test]
@@ -25902,6 +25893,27 @@ fn initialized_input_and_preserved_reads_expand_without_legacy_transport() {
         })
         .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
+}
+
+#[test]
+fn post_loop_pointer_read_equality_expands_and_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/proof_interface_pointer_read_congruence_after_loop.md");
+    let sources = crate::cli::source_refs(&sources);
+    let (session, verified) = ProgramVerificationSession::new(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "probe").unwrap();
+    let at = expansion::position_at_offset(
+        &expanded,
+        expanded.find("have parent->next == id->next").unwrap(),
+    );
+    session
+        .verify_at(&expanded, at.line, at.column)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    drop(session);
+    without_implicit_solve_for_claim("probe.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]

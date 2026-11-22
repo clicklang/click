@@ -428,21 +428,37 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
 }
 
 #[test]
-fn opaque_call_word_versions_follow_checked_local_effects() {
-    for ty in [ProgramType::Int32, ProgramType::UInt32] {
-        assert_opaque_call_word_versions(ty);
+fn opaque_integer_call_outputs_follow_checked_local_effects() {
+    for ty in [
+        ProgramType::Int32,
+        ProgramType::UInt32,
+        ProgramType::Int8,
+        ProgramType::UInt8,
+        ProgramType::Int16,
+        ProgramType::UInt16,
+        ProgramType::Int64,
+        ProgramType::UInt64,
+        ProgramType::Int128,
+        ProgramType::UInt128,
+    ] {
+        assert_opaque_integer_call_output(ty);
     }
 }
 
-fn assert_opaque_call_word_versions(ty: ProgramType) {
+fn assert_opaque_integer_call_output(ty: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
     let output = slot();
     let sibling = SymbolicMemory::local_pointer("disjoint");
-    let output_range = MemoryRange::new(output.clone(), 0.into(), 1.into());
+    let width = ty.byte_width();
+    let output_range =
+        MemoryRange::new_with_element_width(output.clone(), 0.into(), 1.into(), width);
     let sibling_range = MemoryRange::new(sibling.clone(), 0.into(), 1.into());
-    let start = ExecutionState::new().with_memory(
-        SymbolicMemory::new()
-            .with_declared_scalar_block(output.base.clone(), 4, ty)
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let start = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_declared_scalar_block(output.base.clone(), width, ty)
             .with_block(sibling.base.clone(), 4),
     );
     let call = |state: &ExecutionState, index, range: &MemoryRange| {
@@ -456,19 +472,47 @@ fn assert_opaque_call_word_versions(ty: ProgramType) {
             ))
     };
     let output_return = |mut state: ExecutionState| {
-        state.set_memory_directly(state.memory().clone().with_initialized_call_word(&output));
+        state.set_memory_directly(
+            state
+                .memory()
+                .clone()
+                .with_initialized_call_output(&output, width),
+        );
         state
     };
     let returned = output_return(call(&start, 38_201, &output_range));
     let select = |state: &ExecutionState| state.program_point().ordinary_typed_version(&output, ty);
-    let version = select(&returned).expect("opaque output has a version");
+    let version = select(&returned).unwrap_or_else(|| panic!("opaque {ty:?} output has a version"));
     assert_eq!(version.read_version_id(), returned.program_point_id());
+    assert_eq!(
+        returned
+            .program_point()
+            .indexed_array_version(&AddressBase::ExternalArgument)
+            .and_then(|version| version.read_version_id()),
+        entry.program_point_id(),
+        "an initialized local call output preserves the caller array version"
+    );
     assert!(version.indexed_integer_store_bits().is_none());
     assert!(returned.memory().known_value(&output).is_none());
+    // The output identifies one integer cell, even when another type uses
+    // the same load-kind carrier.
+    for unrelated_type in [
+        ProgramType::Bool,
+        ProgramType::Int32Pointer,
+        ProgramType::Float64,
+    ] {
+        assert!(
+            returned
+                .program_point()
+                .ordinary_typed_version(&output, unrelated_type)
+                .is_none(),
+            "{ty:?} output cannot name a {unrelated_type:?} read"
+        );
+    }
     assert!(
         returned
             .memory()
-            .has_initialized_bytes_under(&output, 4, &PureFactContext::new())
+            .has_initialized_bytes_under(&output, width, &PureFactContext::new())
     );
 
     let mut samples = Vec::new();

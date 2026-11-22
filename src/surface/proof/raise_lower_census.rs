@@ -432,7 +432,9 @@ mod tests {
         let wrong = source.replacen("}) < 0", "}) > 0", 1);
         let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error
+                .to_string()
+                .contains("`known` requires the current goal as an available semantic fact"),
             "{error}"
         );
     }
@@ -477,7 +479,9 @@ mod tests {
         let wrong = source.replacen("}) == 8", "}) == 9", 1);
         let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error
+                .to_string()
+                .contains("`known` requires the current goal as an available semantic fact"),
             "{error}"
         );
     }
@@ -523,7 +527,9 @@ mod tests {
         let wrong = source.replacen("}) < 9", "}) < 8", 1);
         let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error
+                .to_string()
+                .contains("`known` requires the current goal as an available semantic fact"),
             "{error}"
         );
     }
@@ -569,7 +575,9 @@ mod tests {
         let wrong = source.replacen("}) == Choice::Right", "}) == Choice::Left", 1);
         let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error
+                .to_string()
+                .contains("`known` requires the current goal as an available semantic fact"),
             "{error}"
         );
     }
@@ -647,7 +655,9 @@ mod tests {
         let wrong = source.replacen("0x33800000u32", "0x34000000u32", 1);
         let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error
+                .to_string()
+                .contains("`known` requires the current goal as an available semantic fact"),
             "{error}"
         );
     }
@@ -696,7 +706,9 @@ mod tests {
             let wrong = source.replacen(claim, wrong, 1);
             let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
             assert!(
-                error.to_string().contains("goal did not normalize to true"),
+                error
+                    .to_string()
+                    .contains("`known` requires the current goal as an available semantic fact"),
                 "{error}"
             );
         }
@@ -823,7 +835,9 @@ mod tests {
         let wrong = source.replacen("[a, b] ++ []", "[b, a] ++ []", 1);
         let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error
+                .to_string()
+                .contains("`known` requires the current goal as an available semantic fact"),
             "{error}"
         );
     }
@@ -884,7 +898,9 @@ mod tests {
         let wrong = source.replacen("[a, b] ++ []", "[b, a] ++ []", 1);
         let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error
+                .to_string()
+                .contains("`known` requires the current goal as an available semantic fact"),
             "{error}"
         );
     }

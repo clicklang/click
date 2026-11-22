@@ -1026,7 +1026,14 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
             MachineTerm::PureFunctionApplication { .. }
         ))
     ));
-    assert_eq!(paths[0].obligations.len(), 3);
+    // The ordered range bounds establish finiteness as well as representability.
+    assert_eq!(paths[0].obligations.len(), 2);
+    assert!(
+        paths[0]
+            .obligations
+            .iter()
+            .all(|bound| !bound.is_assumable())
+    );
 }
 
 #[test]
@@ -4661,11 +4668,13 @@ fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
             assert_eq!(explicit.bounds(), pointer.bounds());
         }
     }
-    for (source, target) in [
-        (ProgramType::Int32Pointer, ProgramType::UInt8Pointer),
-        (ProgramType::VoidPointer, ProgramType::UInt8Pointer),
-        (ProgramType::Int8Pointer, ProgramType::VoidPointer),
-        (ProgramType::VoidPointer, ProgramType::VoidPointer),
+    // Converting to a byte pointer from another type forms the byte view of
+    // the allocation (C11 6.3.2.3p7); a conversion to `void *` keeps the value.
+    for (source, target, byte_view) in [
+        (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, true),
+        (ProgramType::VoidPointer, ProgramType::UInt8Pointer, true),
+        (ProgramType::Int8Pointer, ProgramType::VoidPointer, false),
+        (ProgramType::VoidPointer, ProgramType::VoidPointer, false),
     ] {
         let (value, _) = program_evaluate_speprogram_expression_at_state(
             &ExecutionState::new(),
@@ -4682,8 +4691,12 @@ fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
         let ProgramValue::Pointer(explicit) = value else {
             panic!("a pointer cast must yield a pointer")
         };
-        assert!(explicit.bounds_are_known());
-        assert!(explicit.bounds().is_none());
+        if byte_view {
+            assert!(explicit.bounds_are_known());
+            assert!(explicit.bounds().is_none());
+        } else {
+            assert_eq!(explicit.bounds(), pointer.bounds());
+        }
     }
 }
 

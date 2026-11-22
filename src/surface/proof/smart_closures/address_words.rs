@@ -55,6 +55,7 @@ fn cast_word(operand: E) -> E {
             target_type: ProgramType::UInt64,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,

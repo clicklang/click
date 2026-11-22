@@ -36,6 +36,7 @@ fn reference_view(
         target_type,
         integer_mode: IntegerCastMode::PointerCoercion,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile,
         pointee_constant,
         explicit_qualification: false,

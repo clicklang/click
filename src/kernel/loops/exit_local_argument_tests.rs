@@ -137,6 +137,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
                         target_type: ProgramType::UInt64,
                         integer_mode: IntegerCastMode::Standard,
                         pointee_struct: None,
+                        pointee_struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,

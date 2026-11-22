@@ -388,7 +388,13 @@ fn preserve_refuses_other_or_modified_resource() {
         verify_c_sources(&changed_source, &[("resource_frame.c", changed_c)])
     })
     .unwrap_err();
-    assert!(error.report().contains("normalize"), "{}", error.report());
+    assert!(
+        error
+            .report()
+            .contains("premise 0 is not exactly available"),
+        "{}",
+        error.report()
+    );
 }
 
 #[test]

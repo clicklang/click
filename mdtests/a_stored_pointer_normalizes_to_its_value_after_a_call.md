@@ -1,11 +1,9 @@
-# a stored pointer normalizes to its value after a call
+# A stored pointer retains its value after a call
 
-`link` stores `p` into `q->left` and then calls a function that changes
-only `p->tag`. After the call, `normalize()` with an empty `using` list
-proves `q->left == p`: the current read of the link names the same unchanged
-cell as the recorded store, so the pointer equality bridges through the load's
-origin without any listed premise. This catches pointer-offset origin
-bridging that loses a stored pointer value across a framed call.
+`link` stores `p` into `q->left` and then calls a function that changes only
+`p->tag`. After the call, `known()` checks that the current link read has the
+recorded value `p`. The fixture checks that the verifier retains the stored
+pointer across the call.
 
 ```c filename=a_stored_pointer_normalizes_to_its_value_after_a_call.c
 struct node { uint64 tag; struct node *left; };
@@ -25,7 +23,7 @@ void link(struct node *p, struct node *q) {
 } by {
     step();
     step(touch);
-    have q->left == p by { normalize() using { }; }
+    have q->left == p by { known(); }
 }
 ```
 

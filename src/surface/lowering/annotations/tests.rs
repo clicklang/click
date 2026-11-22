@@ -124,6 +124,7 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
         target_type: ProgramType::UInt64,
         integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
