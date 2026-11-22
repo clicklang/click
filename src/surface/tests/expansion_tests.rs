@@ -4368,10 +4368,7 @@ int32 array_fold_append_at_zero(int32 a[]) {
         have 0 < 2147483647 by { solve(); }
         apply(integer_range_fold_append(
             (0..0).fold(0, |acc, k| { acc + to_integer(a[k]) })
-        )) using {
-            0 <= 0;
-            0 < 2147483647;
-        }
+        ));
         solve();
     }
 }"#;
@@ -4749,9 +4746,7 @@ fn integer_range_fold_law_application_positive() {
 theorem machine_fold_empty(start: int32, end: int32) {
     requires end <= start;
     ensures (start..end).fold(0, |acc, k| { acc + to_integer(k) }) == 0 by {
-        apply(integer_range_fold_empty((start..end).fold(0, |acc, k| { acc + to_integer(k) }))) using {
-            end <= start;
-        }
+        apply(integer_range_fold_empty((start..end).fold(0, |acc, k| { acc + to_integer(k) })));
     }
 }
 
@@ -4760,19 +4755,14 @@ theorem machine_fold_append(end: int32) {
     requires end < 2147483647;
     ensures (0..(end + 1)).fold(0, |acc, k| { acc + to_integer(k) }) ==
         (0..end).fold(0, |acc, k| { acc + to_integer(k) }) + to_integer(end) by {
-        apply(integer_range_fold_append((0..end).fold(0, |acc, k| { acc + to_integer(k) }))) using {
-            0 <= end;
-            end < 2147483647;
-        }
+        apply(integer_range_fold_append((0..end).fold(0, |acc, k| { acc + to_integer(k) })));
     }
 }
 
 theorem integer_fold_empty(start: Integer, end: Integer) {
     requires end <= start;
     ensures (start..end).fold(0, |acc, k| { acc + k }) == 0 by {
-        apply(integer_range_fold_empty((start..end).fold(0, |acc, k| { acc + k }))) using {
-            end <= start;
-        }
+        apply(integer_range_fold_empty((start..end).fold(0, |acc, k| { acc + k })));
     }
 }
 
@@ -4780,9 +4770,7 @@ theorem integer_fold_append(start: Integer, end: Integer) {
     requires start <= end;
     ensures (start..(end + 1)).fold(0, |acc, k| { acc + k }) ==
         (start..end).fold(0, |acc, k| { acc + k }) + end by {
-        apply(integer_range_fold_append((start..end).fold(0, |acc, k| { acc + k }))) using {
-            start <= end;
-        }
+        apply(integer_range_fold_append((start..end).fold(0, |acc, k| { acc + k })));
     }
 }
 "#;
@@ -4809,32 +4797,24 @@ fn integer_range_fold_law_application_rejects_missing_guards_or_shape() {
             r#"
 theorem machine_fold_append_missing_guard(end: int32) {
     requires 0 <= end;
-    requires end < 2147483647;
-    ensures (0..(end + 1)).fold(0, |acc, k| { acc + to_integer(k) }) ==
-        (0..end).fold(0, |acc, k| { acc + to_integer(k) }) + to_integer(end) by {
-        apply(integer_range_fold_append((0..end).fold(0, |acc, k| { acc + to_integer(k) }))) using {
-            0 <= end;
-        }
+    ensures end == end by {
+        apply(integer_range_fold_append((0..end).fold(0, |acc, k| { acc + to_integer(k) })));
     }
 }
 "#,
-            "required exact fold guard is unavailable",
+            "has an unproved obligation",
         ),
         (
             r#"
 theorem machine_fold_append_wrong_guard(end: int32) {
     requires end <= 0;
     requires end < 2147483647;
-    ensures (0..(end + 1)).fold(0, |acc, k| { acc + to_integer(k) }) ==
-        (0..end).fold(0, |acc, k| { acc + to_integer(k) }) + to_integer(end) by {
-        apply(integer_range_fold_append((0..end).fold(0, |acc, k| { acc + to_integer(k) }))) using {
-            end <= 0;
-            end < 2147483647;
-        }
+    ensures end == end by {
+        apply(integer_range_fold_append((0..end).fold(0, |acc, k| { acc + to_integer(k) })));
     }
 }
 "#,
-            "required exact fold guard is unavailable",
+            "has an unproved obligation",
         ),
         (
             r#"
@@ -4842,7 +4822,7 @@ theorem machine_fold_argument_missing_definedness(divisor: int32) {
     ensures 0 == 0 by {
         apply(integer_range_fold_append((0..1).fold(0, |acc, k| {
             acc + to_integer(k / divisor)
-        }))) using { }
+        })));
     }
 }
 "#,
@@ -4853,7 +4833,7 @@ theorem machine_fold_argument_missing_definedness(divisor: int32) {
 theorem machine_fold_law_wrong_arity(end: int32) {
     requires end <= 0;
     ensures (0..end).fold(0, |acc, k| { acc + to_integer(k) }) == 0 by {
-        apply(integer_range_fold_empty()) using { end <= 0; }
+        apply(integer_range_fold_empty());
     }
 }
 "#,
@@ -4863,7 +4843,7 @@ theorem machine_fold_law_wrong_arity(end: int32) {
             r#"
 theorem machine_fold_law_non_fold() {
     ensures 0 == 0 by {
-        apply(integer_range_fold_empty(0)) using { }
+        apply(integer_range_fold_empty(0));
     }
 }
 "#,
@@ -4900,10 +4880,7 @@ fn integer_range_fold_law_applies_after_execution() {
                         (0..end).fold(0, |acc, k| { acc + to_integer(k) }) + to_integer(end) by {
                         apply(integer_range_fold_append((0..end).fold(0, |acc, k| {
                             acc + to_integer(k)
-                        }))) using {
-                            0 <= end;
-                            end < 2147483647;
-                        }
+                        })));
                     }
                     solve();
                 }
@@ -11380,17 +11357,14 @@ fn restricted_solve_retains_symbolic_add_definedness_theorem() {
         .expect("symbolic-add definedness solve should expand");
     assert!(
         expanded.contains(
-            "apply(click::integer::int32_nonnegative_add_within_max_is_defined(value, amount)) using"
+            "apply(click::integer::int32_nonnegative_add_within_max_is_defined(value, amount));"
         ),
         "{expanded}"
     );
-    assert!(expanded.contains("amount >= 0;"), "{expanded}");
-    assert!(
-        expanded.contains("to_integer((2147483647 - amount)) >= to_integer(value);"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("have "), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
-    verify_click_theorems(&expanded).expect("expanded symbolic-add definedness proof should check");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("the bare application should reuse the known evaluation evidence");
 }
 
 #[test]
@@ -12462,7 +12436,7 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
             ensures result <= 0 or result > 0;
         } by {
             step_until(function.exit);
-            apply(int32_sign_split(result)) using {}
+            apply(int32_sign_split(result));
             known();
         }
 
@@ -12489,7 +12463,7 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
     assert!(
         retained.iter().any(|tactic| matches!(
             tactic,
-            ProofTactic::ApplyTheoremUsing { application, .. }
+            ProofTactic::ApplyTheorem(application)
                 if application.name == "int32_sign_split"
         )),
         "the retained proofs lost the explicit theorem application: {retained:#?}"
@@ -12518,8 +12492,8 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
     for (corrupted, description) in [
         (
             expanded_apply.replacen(
-                "int32_sign_split(result)) using {",
-                "int32_sign_split(result + 1)) using {",
+                "int32_sign_split(result));",
+                "int32_sign_split(result + 1));",
                 1,
             ),
             "theorem application",
@@ -16721,6 +16695,26 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .expect("the expanded indexed-read proof should check without implicit solving");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the separated-array store and call"]
+fn quantified_read_expands_through_store_and_call_preservation() {
+    let (source, sources) = mdtest_sources(
+        "mdtests/quantified_frame_carries_a_separated_array_past_a_store_and_a_call.md",
+    );
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "walk").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
+    without_implicit_solve_for_claim("walk.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -25461,11 +25455,12 @@ fn solve_discovered_theorem_expands_to_a_bare_application() {
 }
 
 #[test]
-fn argument_obligation_arithmetic_expands_to_bare_applications() {
+fn known_argument_evaluation_expands_without_an_extra_proof() {
     let (source, _) = mdtest_sources("mdtests/pure_apply_argument_obligations.md");
     let claim = "use_argument.ensures_0";
     let expanded = expand_c_claim_source_by_label(&source, &[], claim).unwrap();
-    assert!(expanded.contains("apply(click::integer::"), "{expanded}");
+    assert!(expanded.contains("apply(identity((x + 1)));"), "{expanded}");
+    assert!(!expanded.contains("have "), "{expanded}");
     assert!(!expanded.contains(" using {"), "{expanded}");
     without_implicit_solve_for_claim(claim, || {
         verify_click_theorems(&expanded).map_err(|error| error.report())

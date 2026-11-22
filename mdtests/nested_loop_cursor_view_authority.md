@@ -34,42 +34,26 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   have to_integer(4 * outer) <= to_integer(4 * outer + 4) by { solve() using { 0 <= outer; outer < 2; }; }
   have viewable(bytes[0..8]) by { observe(bytes[0..8]); }
   have contains(memory(bytes[0..8]), memory(bytes[4 * outer..4 * outer + 4])) by {
-   apply(separation::contains_subrange(bytes, 0, 8, 4 * outer, 4 * outer + 4)) using {
-    0 <= to_integer(4 * outer);
-    to_integer(4 * outer) <= to_integer(4 * outer + 4);
-    to_integer(4 * outer + 4) <= 8;
-   };
+   apply(separation::contains_subrange(bytes, 0, 8, 4 * outer, 4 * outer + 4));
   }
   have viewable(bytes[4 * outer..4 * outer + 4]) by {
-   apply(separation::viewable_restrict(memory(bytes[0..8]), memory(bytes[4 * outer..4 * outer + 4]))) using {
-    viewable(bytes[0..8]); contains(memory(bytes[0..8]), memory(bytes[4 * outer..4 * outer + 4]));
-   };
+   apply(separation::viewable_restrict(memory(bytes[0..8]), memory(bytes[4 * outer..4 * outer + 4])));
   }
   have viewable(chunk[0..4]) by {
    rewrite(chunk, bytes + (4 * outer));
    have contains(memory(bytes[4 * outer..4 * outer + 4]), memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)])) by {
-    apply(separation::contains_rebase(bytes, 4 * outer, 4 * outer + 4)) using {
-     0 <= to_integer(4 * outer); to_integer(4 * outer) <= to_integer(4 * outer + 4);
-    };
+    apply(separation::contains_rebase(bytes, 4 * outer, 4 * outer + 4));
    }
    have viewable((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]) by {
-    apply(separation::viewable_restrict(memory(bytes[4 * outer..4 * outer + 4]), memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]))) using {
-     viewable(bytes[4 * outer..4 * outer + 4]);
-     contains(memory(bytes[4 * outer..4 * outer + 4]), memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]));
-    };
+    apply(separation::viewable_restrict(memory(bytes[4 * outer..4 * outer + 4]), memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)])));
    }
    have 0 <= 0 by { known(); }
    have 0 <= 4 by { known(); }
    have to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer)) by { normalize(); }
    have contains(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4])) by {
-    apply(separation::contains_subrange(bytes + (4 * outer), 0, (4 * outer + 4) - (4 * outer), 0, 4)) using {
-     0 <= 0; 0 <= 4; to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer));
-    };
+    apply(separation::contains_subrange(bytes + (4 * outer), 0, (4 * outer + 4) - (4 * outer), 0, 4));
    }
-   apply(separation::viewable_restrict(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4]))) using {
-    viewable((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]);
-    contains(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4]));
-   };
+   apply(separation::viewable_restrict(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4])));
   }
   loop {
    decreases inner;

@@ -32,9 +32,7 @@ int32 write_box(int32 box[1]) {
     owns box[0..1];
     ensures old_head_small: old(box[0]) < 4 by {
         step_until(function.exit);
-        apply(head_is_three_is_small(old(box))) using {
-            old(box[0]) == 3;
-        };
+        apply(head_is_three_is_small(old(box)));
         known();
     }
 }

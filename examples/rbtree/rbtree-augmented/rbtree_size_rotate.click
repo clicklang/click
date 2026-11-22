@@ -48,11 +48,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     have contains(memory(new->size), memory((&new->size)[0..1])) by normalize();
     have contains(memory(old->size), memory((&old->size)[0..1])) by normalize();
     have separate(memory((&old->size)[0..1]), memory((&new->size)[0..1])) by {
-        apply(click::separation::separate_restrict(memory(old->size), memory(new->size), memory((&old->size)[0..1]), memory((&new->size)[0..1]))) using {
-            separate(memory(old->size), memory(new->size));
-            contains(memory(old->size), memory((&old->size)[0..1]));
-            contains(memory(new->size), memory((&new->size)[0..1]));
-        };
+        apply(click::separation::separate_restrict(memory(old->size), memory(new->size), memory((&old->size)[0..1]), memory((&new->size)[0..1])));
     }
     have separate(statement(2).footprint, memory((&old->size)[0..1])) by {
         solve() using { separate(memory((&old->size)[0..1]), memory((&new->size)[0..1])); };
@@ -67,11 +63,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
         apply(click::separation::contains_refl(memory(old->rb.rb_left)));
     }
     have separate(memory(old->rb.rb_left), memory((&new->size)[0..1])) by {
-        apply(click::separation::separate_restrict(memory(old->rb.rb_left), memory(new->size), memory(old->rb.rb_left), memory((&new->size)[0..1]))) using {
-            separate(memory(old->rb.rb_left), memory(new->size));
-            contains(memory(old->rb.rb_left), memory(old->rb.rb_left));
-            contains(memory(new->size), memory((&new->size)[0..1]));
-        };
+        apply(click::separation::separate_restrict(memory(old->rb.rb_left), memory(new->size), memory(old->rb.rb_left), memory((&new->size)[0..1])));
     }
     have separate(statement(2).footprint, memory(old->rb.rb_left)) by {
         solve() using { separate(memory(old->rb.rb_left), memory((&new->size)[0..1])); };
@@ -86,11 +78,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
         apply(click::separation::contains_refl(memory(old->rb.rb_right)));
     }
     have separate(memory(old->rb.rb_right), memory((&new->size)[0..1])) by {
-        apply(click::separation::separate_restrict(memory(old->rb.rb_right), memory(new->size), memory(old->rb.rb_right), memory((&new->size)[0..1]))) using {
-            separate(memory(old->rb.rb_right), memory(new->size));
-            contains(memory(old->rb.rb_right), memory(old->rb.rb_right));
-            contains(memory(new->size), memory((&new->size)[0..1]));
-        };
+        apply(click::separation::separate_restrict(memory(old->rb.rb_right), memory(new->size), memory(old->rb.rb_right), memory((&new->size)[0..1])));
     }
     have separate(statement(2).footprint, memory(old->rb.rb_right)) by {
         solve() using { separate(memory(old->rb.rb_right), memory((&new->size)[0..1])); };

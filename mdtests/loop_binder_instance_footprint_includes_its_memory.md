@@ -98,7 +98,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                     have 0 <= k by solve();
                     have k != at(opened, i) by { solve() using { k < at(opened, i); }; }
                     have at(opened, separate(memory(occupied[i]), memory(occupied[k]))) by {
-                        apply(click::separation::separate_elements(occupied, at(opened, i), k)) using { k != at(opened, i); };
+                        apply(click::separation::separate_elements(occupied, at(opened, i), k));
                     }
                     have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
                         normalize() using { at(opened, separate(memory(occupied[i]), memory(occupied[k]))); };

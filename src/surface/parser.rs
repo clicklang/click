@@ -10701,6 +10701,8 @@ impl Parser {
             let parameter = self.expect_ident("induction parameter")?;
             self.expect(Token::RParen)?;
             self.expect(Token::Semicolon)?;
+            self.names
+                .set_scoped(NameKind::InductionHypothesis, &name, true);
             return Ok(ProofTactic::Induct {
                 parameter,
                 hypothesis: name,
@@ -11753,6 +11755,11 @@ impl Parser {
                 if self.peek_ident() != Some("using") {
                     ProofTactic::ApplyTheorem(application)
                 } else {
+                    if !self.names.contains(NameKind::InductionHypothesis, &application.name) {
+                        return Err(self.error(
+                            "named theorem application takes no `using` list; write `apply(theorem(args))`",
+                        ));
+                    }
                     let premises = self.parse_exact_premises()?;
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ApplyTheoremUsing {
@@ -19385,10 +19392,6 @@ mod tactic_classification_tests {
             "apply(x > 0 implies y > 0) using { x > 0; };",
         ),
         ("apply-theorem", "apply(theorem(x));"),
-        (
-            "apply-theorem-using",
-            "apply(theorem(x)) using { x == 1; };",
-        ),
         ("have", "have x == 1 by { normalize(); }"),
         ("with", "with(reference(p)) { normalize(); }"),
         ("if", "if x == 1 { normalize(); } else { normalize(); }"),
@@ -19474,6 +19477,17 @@ mod tactic_classification_tests {
         }
     }
 
+    #[test]
+    fn named_theorem_application_rejects_an_evidence_list() {
+        let mut parser = Parser::new("apply(lemma(x)) using { x == 1; };").unwrap();
+        let error = parser.parse_proof_tactic().unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("named theorem application takes no `using` list")
+        );
+    }
+
     /// Catches a tactic whose class is stored inconsistently: the registry
     /// (and through `tests/documentation.rs` the reference table), the parsed
     /// tactic's `class()`, and the class of the certificate step it prints as
@@ -19503,6 +19517,11 @@ mod tactic_classification_tests {
                     },
                 )]);
                 parser.tactic_names.insert("name".to_string());
+                if form.id == "apply-induction-using" {
+                    parser
+                        .names
+                        .insert(NameKind::InductionHypothesis, "ih".into());
+                }
                 for callee in ["f", "name"] {
                     parser
                         .callee_resource_binders

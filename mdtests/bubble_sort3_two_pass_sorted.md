@@ -102,7 +102,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         instantiate(forall (__click_q0: int32) { at(region(6).entry, 0) <= at(region(6).entry, __click_q0) and at(region(6).entry, 0) <= at(region(6).entry, __click_q0) and at(region(6).entry, __click_q0) < at(region(6).entry, j) implies at(region(6).entry, p[__click_q0]) <= at(region(6).entry, tmp) }, k);
                         have at(region(4).entry, j) != k by { solve(); }
                         have at(region(4).entry, separate(memory(p[j]), memory(p[k]))) by {
-                            apply(click::separation::separate_elements(p, at(region(4).entry, j), k)) using { at(region(4).entry, j) != k; };
+                            apply(click::separation::separate_elements(p, at(region(4).entry, j), k));
                         }
                         have separate(statement(3).statement(0).statement(1).footprint, memory(p[k])) by {
                             normalize() using { at(region(4).entry, separate(memory(p[j]), memory(p[k]))); };
@@ -112,7 +112,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         }
                         have j != k by { solve(); }
                         have separate(memory(p[j]), memory(p[k])) by {
-                            apply(click::separation::separate_elements(p, j, k)) using { j != k; };
+                            apply(click::separation::separate_elements(p, j, k));
                         }
                         have separate(statement(3).statement(0).statement(2).footprint, memory(p[k])) by {
                             normalize() using { separate(memory(p[j]), memory(p[k])); };
@@ -126,7 +126,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         have to_integer(k) == to_integer(at(region(4).entry, j));
                         have j != k by { solve(); }
                         have separate(memory(p[j]), memory(p[k])) by {
-                            apply(click::separation::separate_elements(p, j, k)) using { j != k; };
+                            apply(click::separation::separate_elements(p, j, k));
                         }
                         have separate(statement(3).statement(0).statement(2).footprint, memory(p[k])) by {
                             normalize() using { separate(memory(p[j]), memory(p[k])); };
@@ -244,7 +244,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 step();
                 have at(before_swap, j) != 2 by { solve(); }
                 have at(before_swap, separate(memory(p[j]), memory(p[2]))) by {
-                    apply(click::separation::separate_elements(p, at(before_swap, j), 2)) using { at(before_swap, j) != 2; };
+                    apply(click::separation::separate_elements(p, at(before_swap, j), 2));
                 }
                 have separate(statement(5).statement(0).statement(1).footprint, memory(p[2])) by {
                     normalize() using { at(before_swap, separate(memory(p[j]), memory(p[2]))); };
@@ -254,7 +254,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 }
                 have j != 2 by { solve(); }
                 have separate(memory(p[j]), memory(p[2])) by {
-                    apply(click::separation::separate_elements(p, j, 2)) using { j != 2; };
+                    apply(click::separation::separate_elements(p, j, 2));
                 }
                 have separate(statement(5).statement(0).statement(2).footprint, memory(p[2])) by {
                     normalize() using { separate(memory(p[j]), memory(p[2])); };
@@ -264,7 +264,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 }
                 have j != 0 by { solve(); }
                 have separate(memory(p[j]), memory(p[0])) by {
-                    apply(click::separation::separate_elements(p, j, 0)) using { j != 0; };
+                    apply(click::separation::separate_elements(p, j, 0));
                 }
                 have separate(statement(5).statement(0).statement(2).footprint, memory(p[0])) by {
                     normalize() using { separate(memory(p[j]), memory(p[0])); };

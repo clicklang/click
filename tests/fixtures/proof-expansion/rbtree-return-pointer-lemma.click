@@ -359,7 +359,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), demoted_checked.model);
                                             known();
                                         }
-                                        apply(sized_parent_is_shape(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), rb_new)) using { defined(1 + rv); };
+                                        apply(sized_parent_is_shape(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), rb_new));
                                         apply(sized_parent_is_shape(promoted_left, rb_new));
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), rb_new) == 1 by {
                                             rewrite(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), rb_new), rb_parent_is(sized_shape(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)), rb_new));
@@ -492,7 +492,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), demoted_checked.model);
                                             known();
                                         }
-                                        apply(sized_parent_is_shape(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), rb_new)) using { defined(1 + lv); };
+                                        apply(sized_parent_is_shape(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), rb_new));
                                         apply(sized_parent_is_shape(promoted_left, rb_new));
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), rb_new) == 1 by {
                                             rewrite(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), rb_new), rb_parent_is(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)), rb_new));
@@ -616,7 +616,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), demoted_checked.model);
                                             known();
                                         }
-                                        apply(sized_parent_is_shape(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), rb_new)) using { defined(1 + lv); defined(1 + lv + rv); };
+                                        apply(sized_parent_is_shape(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), rb_new));
                                         apply(sized_parent_is_shape(promoted_left, rb_new));
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), rb_new) == 1 by {
                                             rewrite(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), rb_new), rb_parent_is(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)), rb_new));

@@ -318,26 +318,17 @@ void arena_write(struct region* region, int32 index, int32 value) {
             known();
         }
         have contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k])) by {
-            apply(click::separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k)) using {
-                0 <= k; k < region->arena->capacity;
-            };
+            apply(click::separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k));
         }
         have contains(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->data[region->start + index])) by {
-            apply(click::separation::contains_element(region->arena->data, 0, region->arena->capacity, region->start + index)) using {
-                0 <= to_integer(region->start + index);
-                to_integer(region->start + index) < to_integer(region->arena->capacity);
-            };
+            apply(click::separation::contains_element(region->arena->data, 0, region->arena->capacity, region->start + index));
         }
         have separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])) by {
             apply(click::separation::separate_restrict(
                 memory(region->arena->occupied[0..region->arena->capacity]),
                 memory(region->arena->data[0..region->arena->capacity]),
                 memory(region->arena->occupied[k]),
-                memory(region->arena->data[region->start + index]))) using {
-                separate(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity]));
-                contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k]));
-                contains(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->data[region->start + index]));
-            };
+                memory(region->arena->data[region->start + index])));
         }
         have separate(statement(2).footprint, memory(region->arena->occupied[k])) by {
             solve() using { separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])); };

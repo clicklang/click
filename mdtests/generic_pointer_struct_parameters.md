@@ -18,31 +18,29 @@ theorem nested<T>(p: T*, lo: int32, hi: int32, a: int32, b: int32) {
     requires a <= b;
     requires b <= hi;
     ensures contains(memory(p[lo..hi]), memory(p[a..b])) by {
-        apply(separation::contains_subrange(p, lo, hi, a, b)) using {
-            lo <= a; a <= b; b <= hi;
-        };
+        apply(separation::contains_subrange(p, lo, hi, a, b));
     }
 }
 theorem padded(p: struct item*) {
     ensures contains(memory(p[0..4]), memory(p[1..3])) by {
-        apply(nested(p, 0, 4, 1, 3)) using {};
+        apply(nested(p, 0, 4, 1, 3));
     }
 }
 void inspect(struct item *p, struct other *q, struct item **pp) {
     ensures true;
 } by {
-    have p == p by { apply(identity(p)) using {}; }
+    have p == p by { apply(identity(p)); }
     have contains(memory(p[0..4]), memory(p[1..3])) by {
-        apply(nested(p, 0, 4, 1, 3)) using {};
+        apply(nested(p, 0, 4, 1, 3));
     }
     have contains(memory(q[0..4]), memory(q[1..3])) by {
-        apply(nested(q, 0, 4, 1, 3)) using {};
+        apply(nested(q, 0, 4, 1, 3));
     }
     have contains(memory(pp[0..4]), memory(pp[1..3])) by {
-        apply(nested(pp, 0, 4, 1, 3)) using {};
+        apply(nested(pp, 0, 4, 1, 3));
     }
     have contains(memory((p as (int32 *))[0..4]), memory((p as (int32 *))[1..3])) by {
-        apply(nested(p as (int32 *), 0, 4, 1, 3)) using {};
+        apply(nested(p as (int32 *), 0, 4, 1, 3));
     }
     step_until(function.exit);
     known();

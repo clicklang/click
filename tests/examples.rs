@@ -2983,7 +2983,7 @@ fn expanded_library_names_resolve_and_audit() {
         // dropping that list could turn a different application into search.
         if fixture == "qualified_library_names.md" {
             assert!(
-                source.contains("apply(click::list::append_left_identity(xs)) using {"),
+                source.contains("apply(click::list::append_left_identity(xs));"),
                 "{source}"
             );
         }

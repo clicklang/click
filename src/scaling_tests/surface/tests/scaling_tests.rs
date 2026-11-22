@@ -9736,9 +9736,7 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             .map(|k| {
                 format!(
                     "            have i >= 0 - {k} by {{\n\
-                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i))) using {{\n\
-                     \x20                   0 - {k} <= 0; 0 <= to_integer(i);\n\
-                     \x20               }};\n            }}\n"
+                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i)));\n            }}\n"
                 )
             })
             .collect::<String>();
@@ -12055,7 +12053,7 @@ int32 probe() {{
     mark after;
     have 0 != 255 by {{ known(); }}
     have separate(memory(g[255]), memory(g[0])) by {{
-        apply(click::separation::separate_elements(g, 255, 0)) using {{ 0 != 255; }};
+        apply(click::separation::separate_elements(g, 255, 0));
     }}
     have separate(statement({calls}).footprint, memory(g[0])) by {{
         normalize() using {{ separate(memory(g[255]), memory(g[0])); }};

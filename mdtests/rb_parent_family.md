@@ -193,9 +193,7 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
     };
     have node->__rb_parent_color != address(node) by {
         if node->__rb_parent_color == address(node) {
-            apply(equal_words_keep_mask(node->__rb_parent_color, address(node), ~3u64)) using {
-                node->__rb_parent_color == address(node);
-            };
+            apply(equal_words_keep_mask(node->__rb_parent_color, address(node), ~3u64));
             have address(parent) == address(node) by {
                 known();
             }

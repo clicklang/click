@@ -56,10 +56,7 @@ theorem apply_cites_the_range_span(v: int32[], lo: int32, n: int32) {
     views v[lo..n];
     requires defined(n - lo);
     ensures 0 <= to_integer(n - lo) by {
-        apply(stated_range_span_is_nonnegative(v, lo, n)) using {
-            viewable(v[lo..n]);
-            defined(n - lo);
-        };
+        apply(stated_range_span_is_nonnegative(v, lo, n));
     }
 }
 ```

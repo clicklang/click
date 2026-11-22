@@ -26,20 +26,9 @@ int32 shifted(const uint8* bytes, const uint8* cursor) {
      }
      have viewable(bytes[2..6]) by {
          have contains(memory(bytes[0..8]), memory(bytes[2..6])) by {
-             apply(click::separation::contains_subrange(bytes, 0, 8, 2, 6)) using {
-                 0 <= 2;
-                 2 <= 6;
-                 6 <= 8;
-             };
+             apply(click::separation::contains_subrange(bytes, 0, 8, 2, 6));
          }
-         apply(click::separation::viewable_restrict(memory(bytes[0..8]), memory(bytes[2..6]))) using {
-             viewable(bytes[0..8]);
-             0 <= 2;
-             2 <= 6;
-             6 <= 8;
-             viewable(bytes[0..8]);
-             contains(memory(bytes[0..8]), memory(bytes[2..6]));
-         };
+         apply(click::separation::viewable_restrict(memory(bytes[0..8]), memory(bytes[2..6])));
      }
      known();
  }

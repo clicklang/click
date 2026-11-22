@@ -19,18 +19,9 @@ theorem narrow_viewable_requirement(v: int32[], lo: int32, hi: int32) {
             solve() using { 0 < hi; };
         }
         have contains(memory(v[lo..hi]), memory(v[lo..hi - 1])) by {
-            apply(click::separation::contains_subrange(v, lo, hi, lo, hi - 1)) using {
-                lo <= lo;
-                defined(hi - 1);
-                to_integer(lo) <= to_integer(hi - 1);
-                to_integer(hi - 1) <= to_integer(hi);
-            };
+            apply(click::separation::contains_subrange(v, lo, hi, lo, hi - 1));
         }
-        apply(click::separation::viewable_restrict(memory(v[lo..hi]), memory(v[lo..hi - 1]))) using {
-            viewable(v[lo..hi]);
-            defined(hi - 1);
-            contains(memory(v[lo..hi]), memory(v[lo..hi - 1]));
-        };
+        apply(click::separation::viewable_restrict(memory(v[lo..hi]), memory(v[lo..hi - 1])));
     }
 }
 ```

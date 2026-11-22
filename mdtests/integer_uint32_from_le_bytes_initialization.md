@@ -42,11 +42,7 @@ uint32 decode() {
     have bytes[3] == 255;
     have defined((&obj)[0]);
     have viewable((&obj)[0..1]);
-    apply(integer::uint32_from_le_bytes(&obj)) using {
-        little_endian();
-        viewable((&obj)[0..1]);
-        defined((&obj)[0]);
-    };
+    apply(integer::uint32_from_le_bytes(&obj));
     have obj == 4293820433u32;
 }
 ```

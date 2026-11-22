@@ -27,26 +27,19 @@ void forward(int32* p, int32 n, int32 m) {
     have n <= m by { solve(); }
     have m <= 16 by { solve(); }
     have separate(memory(p[0..n]), memory(p[n..m])) by {
-        apply(separation::separate_adjacent_ranges(p, 0, n, m)) using { 0 <= n; n <= m; };
+        apply(separation::separate_adjacent_ranges(p, 0, n, m));
     }
     have separate(memory(p[n..m]), memory(p[m..16])) by {
-        apply(separation::separate_adjacent_ranges(p, n, m, 16)) using { n <= m; m <= 16; };
+        apply(separation::separate_adjacent_ranges(p, n, m, 16));
     }
     have separate(memory(p[m..16]), memory(p[n..m])) by {
-        apply(separation::separate_symm(memory(p[n..m]), memory(p[m..16]))) using {
-            separate(memory(p[n..m]), memory(p[m..16]));
-        };
+        apply(separation::separate_symm(memory(p[n..m]), memory(p[m..16])));
     }
     have separate(memory(p[0..n]) * memory(p[m..16]), memory(p[n..m])) by {
-        apply(separation::separate_star(memory(p[0..n]), memory(p[m..16]), memory(p[n..m]))) using {
-            separate(memory(p[0..n]), memory(p[n..m]));
-            separate(memory(p[m..16]), memory(p[n..m]));
-        };
+        apply(separation::separate_star(memory(p[0..n]), memory(p[m..16]), memory(p[n..m])));
     }
     have separate(memory(p[n..m]), memory(p[0..n]) * memory(p[m..16])) by {
-        apply(separation::separate_symm(memory(p[0..n]) * memory(p[m..16]), memory(p[n..m]))) using {
-            separate(memory(p[0..n]) * memory(p[m..16]), memory(p[n..m]));
-        };
+        apply(separation::separate_symm(memory(p[0..n]) * memory(p[m..16]), memory(p[n..m])));
     }
     step();
 }

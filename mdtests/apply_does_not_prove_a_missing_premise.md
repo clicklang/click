@@ -1,8 +1,4 @@
-# `apply using` does not derive an unstated premise
-
-The selected fact `x > 0` implies `x >= 0`, but explicit `apply using`
-requires evidence stating the theorem requirement. Bare pure `apply` instead
-generates a premise obligation for the driver to solve.
+# A theorem application reports a missing premise
 
 ```click
 theorem needs_nonnegative(x: int32) {
@@ -14,15 +10,15 @@ theorem needs_nonnegative(x: int32) {
 }
 
 theorem positive_premise(x: int32) {
-    requires x > 0;
+    requires x < 0;
 
     ensures x >= 0 by {
-        apply(needs_nonnegative(x)) using { x > 0; };
+        apply(needs_nonnegative(x));
         known();
     }
 }
 ```
 
 ```expect
-fail: required exact fact for theorem `needs_nonnegative` is unavailable
+fail: theorem `needs_nonnegative` has an unproved obligation
 ```

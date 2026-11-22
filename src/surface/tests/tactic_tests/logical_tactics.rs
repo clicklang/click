@@ -190,9 +190,7 @@ fn apply_using_checks_only_with_its_explicit_premises() {
                 requires x < 2147483647;
                 ensures to_integer(result) == to_integer(x + 1);
             } by {
-                apply(increment_is_defined(x)) using {
-                    x < 2147483647;
-                }
+                apply(increment_is_defined(x));
                 step();
                 solve();
             }
@@ -201,16 +199,15 @@ fn apply_using_checks_only_with_its_explicit_premises() {
     verify_c_sources(click_source, &[("increment.c", c_source)])
         .expect("explicit theorem premises should check");
 
-    let missing_premise = click_source.replace(
-        "apply(increment_is_defined(x)) using {
-                    x < 2147483647;
-                }",
-        "apply(increment_is_defined(x)) using {}",
+    let (lemma, caller) = click_source.split_once("int32 increment").unwrap();
+    let missing_premise = format!(
+        "{lemma}int32 increment{}",
+        caller.replace("requires x < 2147483647;", ""),
     );
     let error = verify_c_sources(&missing_premise, &[("increment.c", c_source)])
-        .expect_err("apply using must not search ambient facts for an omitted premise");
+        .expect_err("the theorem requirement must be established");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -240,9 +237,7 @@ fn apply_using_uses_ambient_loadability_only_to_lower_explicit_premises() {
             } by {
                 have data[0] == data[0] by solve();
                 step();
-                apply(preserve_equal(data[0], data[0])) using {
-                    data[0] == data[0];
-                }
+                apply(preserve_equal(data[0], data[0]));
                 solve();
             }
         "#;
@@ -2797,9 +2792,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
             requires x < y;
 
             ensures 0 < y by {
-                apply(less_equal_less_than_transitive(0, x, y)) using {
-                    x < y;
-                };
+                apply(less_equal_less_than_transitive(0, x, y));
                 known();
             }
         }
@@ -2808,7 +2801,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a transitivity application missing its non-strict leg must fail");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -2853,9 +2846,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
             requires 2 <= bound;
 
             ensures 2 < bound by {
-                apply(less_than_less_equal_transitive(2, 2, bound)) using {
-                    2 <= bound;
-                };
+                apply(less_than_less_equal_transitive(2, 2, bound));
                 known();
             }
         }
@@ -2864,7 +2855,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a false constant leg must not be rubber-stamped");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -2886,10 +2877,7 @@ fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
             requires value <= bound;
 
             ensures to_integer(value - 1) <= to_integer(bound) by {
-                apply(nonnegative_predecessor_upper_bound(value, bound)) using {
-                    0 <= value;
-                    value <= bound;
-                };
+                apply(nonnegative_predecessor_upper_bound(value, bound));
             }
         }
     "#;
@@ -2965,9 +2953,7 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
             requires value <= bound;
 
             ensures value - 1 <= bound by {
-                apply(nonnegative_predecessor_upper_bound(value, bound)) using {
-                    value <= bound;
-                };
+                apply(nonnegative_predecessor_upper_bound(value, bound));
                 known();
             }
         }
@@ -2976,7 +2962,7 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a predecessor bound application missing its nonnegative leg must fail");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );
@@ -2999,9 +2985,7 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
             requires -1 <= bound;
 
             ensures -1 - 1 <= bound by {
-                apply(nonnegative_predecessor_upper_bound(-1, bound)) using {
-                    -1 <= bound;
-                };
+                apply(nonnegative_predecessor_upper_bound(-1, bound));
                 known();
             }
         }
@@ -3010,7 +2994,7 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a false nonnegative leg must not be rubber-stamped");
     assert!(
-        error.message().contains("required exact fact"),
+        error.message().contains("has an unproved obligation"),
         "{}",
         error.message()
     );

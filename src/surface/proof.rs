@@ -713,7 +713,7 @@ mod certificate_tests {
                 theorem applied(x: int32) {
                     requires x >= 0;
                     ensures x >= 0 by {
-                        apply(required(x)) using { x >= 0; }
+                        apply(required(x));
                     }
                 }
 
@@ -777,7 +777,7 @@ mod certificate_tests {
         );
         assert!(matches!(
             verified[2].proof_tactics().as_deref(),
-            Some([ProofTactic::ApplyTheoremUsing { .. }])
+            Some([ProofTactic::ApplyTheorem(_)])
         ));
         assert!(matches!(
             verified[3].proof_tactics().as_deref(),

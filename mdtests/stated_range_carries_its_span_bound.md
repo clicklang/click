@@ -36,16 +36,12 @@ theorem a_wrapped_range_cannot_supply_it(v: int32[], n: int32) {
             have viewable(v[0..n]);
             known();
         }
-        apply(a_prefix_of_a_stated_range(v, 0, n)) using {
-            0 <= 0;
-            0 < n;
-            n >= 0 and viewable(v[0..n]);
-        };
+        apply(a_prefix_of_a_stated_range(v, 0, n));
         known();
     }
 }
 ```
 
 ```expect
-fail: states a memory range, so applying it needs that range to be a valid 32-bit byte span here
+fail: a memory range is too wide to be a 32-bit byte span
 ```
