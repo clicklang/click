@@ -1828,6 +1828,9 @@ impl ProgramPoint {
         pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
+        if pointer.base.is_static_storage_block() {
+            return self.whole_static_call_output(pointer, kind.byte_width());
+        }
         if !Self::supports_local_call_output(pointer) {
             return None;
         }
@@ -1840,6 +1843,36 @@ impl ProgramPoint {
                 } if kind.reads_word_of(*output)
             )
         })
+    }
+
+    /// A call with one complete static scalar in its checked footprint creates
+    /// that word's next version, even though the caller does not know its bits.
+    fn whole_static_call_output(&self, pointer: &Address, bytes: u32) -> Option<Self> {
+        use crate::kernel::effective_type::CAccessClass;
+
+        let memory = self.memory();
+        if pointer.offset != AddressOffset::Constant(0)
+            || memory.block_size(&pointer.base)?.as_const()? != bytes
+            || !matches!(
+                memory.declared_class(pointer),
+                Some(CAccessClass::Scalar(_))
+            )
+        {
+            return None;
+        }
+        let mut version = self.indexed_block_array_version(&pointer.base)?;
+        let source = &version.path.0.as_ref()?.steps.as_ref()?.step;
+        let MemoryDerivation::CallHavoc { mutable_ranges, .. } = source.as_ref() else {
+            return None;
+        };
+        let [range] = mutable_ranges.as_slice() else {
+            return None;
+        };
+        if range.base().base != pointer.base || super::static_call_range(range)?.0 != (0..bytes) {
+            return None;
+        }
+        version.read = ReadSelection::CallOutput;
+        Some(version)
     }
 
     pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {

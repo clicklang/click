@@ -6244,6 +6244,88 @@ mod tests {
     }
 
     #[test]
+    fn a_checked_c_read_names_the_call_that_wrote_its_static_word() {
+        check_static_call_output_scalar_read(
+            ProgramType::Int32,
+            crate::kernel::effective_type::CScalarClass::Int,
+        );
+    }
+
+    #[test]
+    fn a_checked_c_read_names_the_call_that_wrote_its_static_wide_word() {
+        check_static_call_output_scalar_read(
+            ProgramType::UInt64,
+            crate::kernel::effective_type::CScalarClass::Long,
+        );
+    }
+
+    fn check_static_call_output_scalar_read(
+        ty: ProgramType,
+        class: crate::kernel::effective_type::CScalarClass,
+    ) {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = SymbolicMemory::global_pointer("call_output_static");
+        let start = ExecutionState::new().begin_function_entry_memory();
+        let entry = start.clone().with_function_entry_memory(
+            start.memory().clone().with_classed_scalar_block(
+                cell.base.clone(),
+                ty.byte_width(),
+                ty,
+                Some(crate::kernel::effective_type::CAccessClass::Scalar(class)),
+            ),
+        );
+        let facts = PureFactContext::new();
+        let range = MemoryRange::access(cell.clone(), ty);
+        let output = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_call_memory_havoc(
+                Variable(1_008_445),
+                std::slice::from_ref(&range),
+                &facts,
+                None,
+            ));
+        let next = output.clone().with_memory(
+            output
+                .memory()
+                .clone()
+                .with_block(SymbolicMemory::local_pointer("unrelated").base, 4),
+        );
+        let next = next.with_resource_context(
+            ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(range)),
+        );
+        let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+            ProgramValue::typed_pointer(cell.clone(), ty.pointer_to().expect("scalar pointer")),
+        )));
+        let paths = super::super::evaluate_expression_value_paths(
+            &next,
+            &expression,
+            &facts,
+            &mut ExecutionBudget::new(),
+        )
+        .expect("checked C access");
+        let [path] = paths.as_slice() else {
+            panic!("expected one checked read path");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("expected the call-modified value: {:?}", path.outcome);
+        };
+        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value.native())
+        else {
+            panic!("expected a typed integer read");
+        };
+        assert_eq!(version.read_version_id(), output.program_point_id());
+        assert_eq!(*address, cell);
+        assert_eq!(kind, LoadKind::of_type(ty).expect("scalar load kind"));
+        assert_eq!(
+            next.program_point()
+                .ordinary_typed_version(&cell, ty)
+                .and_then(|point| point.read_version_id()),
+            output.program_point_id(),
+        );
+    }
+
+    #[test]
     fn a_checked_c_read_names_the_call_that_initialized_its_word() {
         check_call_output_scalar_read(ProgramType::Int32);
     }
