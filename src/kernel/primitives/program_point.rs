@@ -1623,7 +1623,7 @@ impl ProgramPoint {
             | ProgramType::Int128
             | ProgramType::UInt128 => self
                 .external_entry_read(pointer, true)
-                .or_else(|| self.entry_read_through_loaded_pointer(pointer)),
+                .or_else(|| self.entry_read_through_loaded_pointer(pointer, value_type)),
             value_type if value_type.is_pointer() => self.external_entry_read(pointer, true),
             ProgramType::Parameter(parameter) if !parameter.is_enum() => {
                 self.external_entry_read(pointer, true)
@@ -1635,14 +1635,23 @@ impl ProgramPoint {
     /// A pointer read at this function's entry cannot designate a local
     /// created later. A suffix already known to affect only local storage
     /// therefore leaves the caller cell it designates at the entry version.
-    fn entry_read_through_loaded_pointer(&self, pointer: &Address) -> Option<Self> {
+    fn entry_read_through_loaded_pointer(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<Self> {
         let loaded = pointer.as_loaded_value()?;
+        let current = self.path.0.as_ref()?;
         if !self.has_certified_read_view() {
             return None;
         }
+        // The existing 64-bit model-pointer reads use the current entry
+        // name. Other widths need the pointer's own recorded entry load.
+        if current.function_entry && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64)
+        {
+            return Some(self.clone().for_exact_read());
+        }
         let entry = self.parameter_read_start(&AddressBase::ExternalArgument);
-        // The pointer itself must name this entry even for a read at entry.
-        // Copied parameter fields and model values can have another source.
         let root = entry.path.0.as_ref()?;
         (root.function_entry
             && entry.has_certified_read_view()
