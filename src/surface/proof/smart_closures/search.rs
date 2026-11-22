@@ -4331,6 +4331,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(rewritten));
         }
+        if !super::selected_arithmetic::machine_equality_bridge_active()
+            && let Some(target) = search_input.surface_goal()
+            && let Some(proof) = Self::try_single_store_read_rewrite(search_input, target)?
+        {
+            return Ok(Some(proof));
+        }
         if let Some(proof) =
             Self::try_selected_load_equality_bridge(search_input, introduced_surfaces)?
         {
@@ -6418,29 +6424,49 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         .map(|proof| proof.filter(Proof::is_complete))
     }
 
-    /// Preserve the read in a masked comparison across the store reaching
-    /// the current frontier, then rewrite the comparison to the entry value.
-    fn try_masked_read_preservation(
+    /// Preserve the selected read across the store reaching the current
+    /// frontier, then rewrite the comparison to the entry value.
+    fn try_single_store_read_rewrite(
         search_input: &Proof<'a>,
         target: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_masked_read_preservation");
+        crate::kernel::search::record_discovery("try_single_store_read_rewrite");
         let ClickProposition::Comparison {
-            left: ContractExpression::BitwiseAnd(read, mask),
+            left,
             operator: ComparisonOperator::Equal,
             right: ContractExpression::IntegerLiteral(_),
         } = target
         else {
             return Ok(None);
         };
-        if !matches!(
-            read.as_ref(),
-            ContractExpression::Field { .. } | ContractExpression::Index(..)
-        ) || !matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
-        {
-            return Ok(None);
-        }
+        let read = match left {
+            read @ ContractExpression::Index(..) => read,
+            ContractExpression::BitwiseAnd(read, mask)
+                if matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
+                    && matches!(
+                        read.as_ref(),
+                        ContractExpression::Field { .. } | ContractExpression::Index(..)
+                    ) =>
+            {
+                read.as_ref()
+            }
+            ContractExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } if matches!(then_branch.as_ref(), ContractExpression::IntegerLiteral(_))
+                && matches!(else_branch.as_ref(), ContractExpression::IntegerLiteral(_))
+                && let ClickProposition::Comparison {
+                    left: read @ ContractExpression::Index(..),
+                    right: ContractExpression::IntegerLiteral(_),
+                    ..
+                } = condition.as_ref() =>
+            {
+                read
+            }
+            _ => return Ok(None),
+        };
         let Some(view) = search_input.execution_proposition_fixed_state_view() else {
             return Ok(None);
         };
@@ -6454,7 +6480,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 &BTreeMap::new(),
             )
         };
-        let kept = if let ContractExpression::Index(base, index) = read.as_ref() {
+        let kept = if let ContractExpression::Index(base, index) = read {
             ResourceSubject::SavedMemory {
                 base: base.as_ref().clone(),
                 start: index.as_ref().clone(),
@@ -6541,14 +6567,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right: kept.clone(),
             };
             let equality = ClickProposition::Comparison {
-                left: read.as_ref().clone(),
+                left: read.clone(),
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::At {
                     selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
                         region: region.clone(),
                         kind: ProgramPointKind::Entry,
                     }),
-                    expression: read.clone(),
+                    expression: Box::new(read.clone()),
                 },
             };
             let have = |proposition, step| ProofStep::Have {
@@ -6558,7 +6584,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ),
             };
             let mut steps = Vec::new();
-            let proof = if matches!(read.as_ref(), ContractExpression::Index(..)) {
+            let proof = if matches!(read, ContractExpression::Index(..)) {
                 let Some(proof) = Self::try_distinct_indexed_store_separation(
                     search_input,
                     written,
@@ -6637,9 +6663,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_state_transport_closure_candidates");
-        if let Some(proof) = Self::try_masked_read_preservation(search_input, surface_goal)? {
-            return Ok(Some(proof));
-        }
         // Introduce the index and its guard before framing this read. Reuse
         // the ordinary indexed equality proof rather than transporting the
         // entire quantified postcondition from function entry.
