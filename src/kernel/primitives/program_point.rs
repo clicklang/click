@@ -1618,9 +1618,10 @@ impl ProgramPoint {
             | ProgramType::UInt16
             | ProgramType::Int32
             | ProgramType::UInt32
+            | ProgramType::Int64
+            | ProgramType::UInt64
             | ProgramType::Int128
-            | ProgramType::UInt128 => self.external_entry_read(pointer, true),
-            ProgramType::Int64 | ProgramType::UInt64 => self
+            | ProgramType::UInt128 => self
                 .external_entry_read(pointer, true)
                 .or_else(|| self.entry_read_through_loaded_pointer(pointer)),
             value_type if value_type.is_pointer() => self.external_entry_read(pointer, true),
@@ -2021,6 +2022,44 @@ mod tests {
             &pointer,
             LoadKind::Int32,
         ));
+    }
+
+    #[test]
+    fn int32_through_an_entry_pointer_keeps_entry_after_a_local_store() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let pointer_slot = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let pointer = Pointer::from_point_read(
+            entry.program_point().for_exact_read(),
+            ProgramType::Int32Pointer,
+            &pointer_slot,
+        );
+        assert!(matches!(
+            pointer.address().base,
+            AddressBase::LoadedPointer(_)
+        ));
+        let declared = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(slot().base, 4));
+        let after_local_store = stored(&declared, 3);
+        let select = |state: &ExecutionState| {
+            state
+                .program_point()
+                .ordinary_typed_version(pointer.address(), ProgramType::Int32)
+                .and_then(|version| version.read_version_id())
+        };
+        assert_eq!(select(&after_local_store), entry.program_point().id());
+
+        let after_external_store = after_local_store.clone().with_memory(
+            after_local_store
+                .memory()
+                .clone()
+                .store(pointer_slot, ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        assert_eq!(select(&after_external_store), None);
     }
 
     #[test]
