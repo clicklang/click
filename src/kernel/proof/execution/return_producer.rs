@@ -71,6 +71,7 @@ pub(super) struct ReturnRewriteProducer {
     added: ExecutionFacts,
     publication: Arc<crate::kernel::PublishedFunctionOutcome>,
     outcome: super::super::OutcomeIdentity,
+    applied_tactics: crate::persistent::PersistentMap<String, ()>,
 }
 
 impl ReturnRewriteProducer {
@@ -263,8 +264,95 @@ impl ExecutionProofCore {
                 seed,
                 publication: publication.clone(),
                 outcome: outcome.identity.clone(),
+                applied_tactics: Default::default(),
             },
         );
+    }
+
+    pub(super) fn has_return_producer(
+        &self,
+        index: usize,
+        outcome: &super::super::OutcomeIdentity,
+    ) -> bool {
+        self.return_producers
+            .get(&index)
+            .is_some_and(|producer| producer.outcome.same_as(outcome))
+    }
+
+    pub(crate) fn retain_return_tactic_dependencies(
+        &self,
+        path: usize,
+        owner: &mut crate::kernel::ContractExecutionOwner,
+    ) {
+        if let Some(producer) = self.return_producers.get(&path) {
+            owner.retain_applied_tactics(producer.applied_tactics.iter().map(|(name, ())| name));
+        }
+    }
+
+    pub(crate) fn finish_prepared_return_tactic_application(
+        &mut self,
+        proved: &Self,
+        proved_facts: &PureFactStore,
+    ) -> Result<PureFactStore, String> {
+        let prepared = Arc::unwrap_or_clone(
+            self.prepared_tactic_application
+                .take()
+                .expect("a prepared return tactic"),
+        );
+        let (path, semantic_facts) = prepared.return_path.expect("a checked return path");
+        let mut producer = proved
+            .return_producers
+            .get(&path)
+            .ok_or("return tactic lost its outcome")?
+            .clone();
+        producer.accept_facts(proved_facts)?;
+        let mut trace = proved
+            .return_resource_rewrites
+            .get(&path)
+            .unwrap_or(&proved.execution_evidence[path])
+            .clone();
+        let before = trace.retained_state()?;
+        let resources = before.resources().clone().with_constructed_exchange(
+            prepared.before_state.resources(),
+            prepared.after_state.resources(),
+        )?;
+        let mut retained = prepared
+            .after_state
+            .clone()
+            .with_resource_context(resources);
+        retained.keep_memory_of(before);
+        retained.locals = before.locals().clone();
+        retained.enclosing_frame_holds_locals = before.enclosing_frame_holds_locals;
+
+        let StatementOutcome::Return { state, .. } = &mut producer.completion else {
+            return Err("an outcome tactic application requires a return".into());
+        };
+        **state = retained.clone();
+        let FunctionOutcome::Return { state, .. } = &mut producer.visible else {
+            return Err("an outcome tactic application requires a visible return".into());
+        };
+        **state = prepared.after_state;
+        let facts = semantic_facts
+            .iter()
+            .fold(proved_facts.clone(), |facts, fact| {
+                producer.retain_fact(fact.clone());
+                facts.with_kernel_checked_fact(fact.clone())
+            });
+        producer.base = facts.clone();
+        producer.applied_tactics.insert(prepared.name.clone(), ());
+        self.return_producers.insert(path, producer);
+
+        let application = CheckedTacticApplication {
+            name: prepared.name,
+            before_state: before.clone(),
+            after_state: retained,
+            return_facts: Some(semantic_facts),
+        };
+        trace.push(CheckedExecutionEvent::TacticApplication(Box::new(
+            application,
+        )));
+        self.return_resource_rewrites.insert(path, trace);
+        Ok(facts)
     }
 
     pub(super) fn retain_return_facts(
