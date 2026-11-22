@@ -3282,7 +3282,19 @@ fn integer_constructor_arm_fields_expand_to_known() {
 #[test]
 fn rewritten_constructor_payload_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/algebraic_match_on_known_constructor.md");
-    for (theorem, result) in [("rewritten", "7"), ("rewritten_symbolic", "value")] {
+    for (theorem, result, wrong_result) in [
+        ("rewritten", "Output::Value(7)", "Output::Value(8)"),
+        (
+            "rewritten_symbolic",
+            "Output::Value(value)",
+            "Output::Value(8)",
+        ),
+        (
+            "rewritten_wide",
+            "WideOutput::Value(value)",
+            "WideOutput::Value(8u64)",
+        ),
+    ] {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
         let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
@@ -3293,10 +3305,7 @@ fn rewritten_constructor_payload_expands_to_known() {
             verify_c_sources(&expanded, &[]).map_err(|error| error.report())
         })
         .unwrap();
-        let wrong = expanded.replace(
-            &format!("== Output::Value({result}) by"),
-            "== Output::Value(8) by",
-        );
+        let wrong = expanded.replace(&format!("== {result} by"), &format!("== {wrong_result} by"));
         assert_ne!(wrong, expanded);
         let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
         assert!(

@@ -5,6 +5,7 @@ use super::*;
 fn selected_constructor_payload_check_scales_with_written_fields() {
     let types = [
         AlgebraicValueType::Program(ProgramType::Int32),
+        AlgebraicValueType::Program(ProgramType::UInt64),
         AlgebraicValueType::Integer,
     ];
     let sizes = [8, 32, 128];
@@ -15,27 +16,24 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
             variant: "Arm".into(),
             fields,
         };
+        let value = |id| {
+            let variable = Variable(id);
+            match ty {
+                AlgebraicValueType::Integer => AlgebraicValue::Integer(IntegerTerm::var(variable)),
+                AlgebraicValueType::Program(program_type) => AlgebraicValue::Program(
+                    MachineIntegerType::from_program_type(*program_type)
+                        .unwrap()
+                        .symbolic_value(variable),
+                ),
+                _ => unreachable!(),
+            }
+        };
         let fields = (0..size)
-            .map(|i| match ty {
-                AlgebraicValueType::Integer => {
-                    AlgebraicValue::Integer(IntegerTerm::var(Variable(992_300 + i as u64)))
-                }
-                _ => AlgebraicValue::Program(int32(MachineTerm::Variable(Variable(
-                    992_300 + i as u64,
-                )))),
-            })
+            .map(|i| value(992_300 + i as u64))
             .collect::<Vec<_>>();
         scrutinee.node = constructor(fields.clone());
         let bindings = (0..size)
-            .map(|i| {
-                let variable = Variable(992_100 + i as u64);
-                match ty {
-                    AlgebraicValueType::Integer => {
-                        AlgebraicValue::Integer(IntegerTerm::var(variable))
-                    }
-                    _ => AlgebraicValue::Program(int32(MachineTerm::Variable(variable))),
-                }
-            })
+            .map(|i| value(992_100 + i as u64))
             .collect::<Vec<_>>();
         let mut expected_fields = fields.into_iter().rev().collect::<Vec<_>>();
         let mut result_fields = bindings.iter().cloned().rev().collect::<Vec<_>>();

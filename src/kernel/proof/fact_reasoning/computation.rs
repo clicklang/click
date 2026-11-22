@@ -929,29 +929,29 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         for (binder, field) in arm.bindings.iter().zip(fields) {
             let (variable, payload) = match (binder, field) {
                 (
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))),
-                    AlgebraicValue::Program(ProgramValue::Int32(int32_constant!(_))),
-                )
-                | (
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })),
+                ) if field.value_type() == AlgebraicValueType::Program(format.program_type()) => {
+                    (variable, field)
+                }
+                (
                     AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
                     AlgebraicValue::Integer(IntegerTerm::Constant(_)),
                 ) => (variable, field),
                 (
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))),
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(source))),
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
+                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(source))),
                 )
                 | (
                     AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
                     AlgebraicValue::Integer(IntegerTerm::Variable(source)),
-                ) => {
-                    let payload = payloads.get(source).copied().unwrap_or(field);
-                    if std::mem::discriminant(payload) != std::mem::discriminant(field) {
-                        return false;
-                    }
-                    (variable, payload)
-                }
+                ) => (variable, payloads.get(source).copied().unwrap_or(field)),
                 _ => return false,
             };
+            let field_type = field.value_type();
+            if binder.value_type() != field_type || payload.value_type() != field_type {
+                return false;
+            }
             bindings.push((*variable, payload));
         }
         for (variable, payload) in bindings.drain(..) {
@@ -978,7 +978,7 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         .zip(expected_fields)
         .all(|(field, expected)| {
             let (variable, captured) = match field {
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable))) => {
+                AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))) => {
                     (variable, None)
                 }
                 AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => (variable, Some(field)),
@@ -989,8 +989,7 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
                 .copied()
                 .or(captured)
                 .is_some_and(|payload| {
-                    std::mem::discriminant(payload) == std::mem::discriminant(field)
-                        && payload == expected
+                    payload.value_type() == field.value_type() && payload == expected
                 })
         })
         && matched.is_well_formed()
