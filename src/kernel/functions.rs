@@ -15606,7 +15606,30 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         &mut budget,
     )
     .ok_or("instance fold/unfold requires a proved body guard case")?;
-    let witness_values = if active && !definition.witnesses.is_empty() {
+    let retained_witnesses = if !unfold && active && !definition.witnesses.is_empty() {
+        match state.resources.instance_consumption(instance.identity) {
+            Some(InstanceConsumption::UnfoldWithWitnesses {
+                instance: opened,
+                values,
+            }) if opened.as_ref() == instance => Some(values.as_ref()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let witness_values = if let Some(values) = retained_witnesses {
+        // The opening picks values, not premises. The fold checks the
+        // instantiated body below at the current memory and resources.
+        for (witness, value) in definition.witnesses().iter().zip(values) {
+            crate::instrumentation::record_deterministic_work(1);
+            evaluation.locals.bind_logical_typed(
+                witness.name(),
+                value.clone(),
+                witness.program_type(),
+            );
+        }
+        Vec::new()
+    } else if active && !definition.witnesses.is_empty() {
         let occurrence = unfold
             .then(|| state.resources.unique_owned_occurrence_for_fact(&folded))
             .flatten()
@@ -16218,7 +16241,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         body_assumptions = body_assumptions.assume_proposition(fact);
     }
     let facts_to_rewrite = selected.map_or(&definition.facts, |arm| &arm.facts);
-    let (body_clauses, retained_conditions) = if active {
+    let (mut body_clauses, retained_conditions) = if active {
         lower_selected_resource_body_clauses(
             &evaluation,
             facts_to_rewrite,
@@ -16302,8 +16325,16 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // Publish instance consumption records only after the complete rewrite is checked. It names
     // the affected identities without retaining or scanning a proof history.
     if unfold {
+        let consumption = if witness_values.is_empty() {
+            InstanceConsumption::Unfold
+        } else {
+            InstanceConsumption::UnfoldWithWitnesses {
+                instance: std::sync::Arc::new(instance.clone()),
+                values: witness_values.clone().into(),
+            }
+        };
         next.resources
-            .record_instance_consumption(instance.identity, Some(InstanceConsumption::Unfold));
+            .record_instance_consumption(instance.identity, Some(consumption));
         for child in &introduced_children {
             next.resources
                 .record_instance_consumption(child.identity, None);
@@ -16355,6 +16386,17 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // existing producer equations, not new public body facts.
     for fact in child_read_definitions {
         fact.retain_pointer_read_definition(entry_assumptions);
+    }
+    if retained_witnesses.is_some() && entry_assumptions.retains_required_obligations() {
+        // A checked refold can use its opening's facts by exact lookup. Only
+        // open clauses need a proof script or a spelling for the witness.
+        body_clauses.retain(|clause| {
+            !entry_assumptions.contains_assumed_exact(&clause.proposition)
+                && !required_obligation_is_exactly_discharged(
+                    entry_assumptions,
+                    &clause.proposition,
+                )
+        });
     }
     Ok(ResourceInstanceRewriteResult {
         body_active: active,

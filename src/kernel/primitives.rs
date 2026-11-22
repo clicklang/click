@@ -11533,7 +11533,8 @@ impl ResourceOccurrenceId {
 /// logarithmic paths in the fact store and affected indexes.
 #[derive(Default)]
 pub struct ResourceContext {
-    /// Diagnostic path state, omitted from semantic equality, hashing and ordering.
+    /// Path metadata for diagnostics and refold witness selection, omitted
+    /// from semantic equality, hashing and ordering.
     /// A shared persistent root keeps clones constant-work and never copies facts.
     instance_consumptions: Option<std::sync::Arc<PersistentMap<InstanceId, InstanceConsumption>>>,
     /// Derived trusted-kernel index. It never supplies ownership evidence.
@@ -11577,7 +11578,7 @@ impl Clone for ResourceContext {
 }
 
 impl ResourceContext {
-    /// Diagnostic metadata only; this never grants ownership or supplies a fact.
+    /// This metadata never grants ownership or supplies a fact.
     pub(crate) fn instance_consumption(
         &self,
         identity: InstanceId,
@@ -11813,6 +11814,10 @@ pub(super) struct ResourceContextStorage {
 #[derive(Clone)]
 pub(crate) enum InstanceConsumption {
     Unfold,
+    UnfoldWithWitnesses {
+        instance: std::sync::Arc<ResourceInstance>,
+        values: std::sync::Arc<[ProgramValue]>,
+    },
     FoldChild {
         parent: InstanceId,
         slot: std::sync::Arc<str>,
