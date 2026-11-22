@@ -13333,11 +13333,10 @@ fn initialize_produced_memory(
                 }
             }
             None if opaque_output
-                && byte_span == ProgramType::Int32.byte_width()
                 && range.element_width() == byte_span
-                && ProgramPoint::supports_local_call_word(&start) =>
+                && ProgramPoint::supports_local_call_output(&start) =>
             {
-                memory = memory.with_initialized_call_word(&start);
+                memory = memory.with_initialized_call_output(&start, byte_span);
             }
             None => memory = memory.with_initialized_object(&start, byte_span),
         }

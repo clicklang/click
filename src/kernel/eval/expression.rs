@@ -3215,17 +3215,19 @@ fn record_call_output_read(
     outcome: &ExpressionOutcome<ExecutionValue>,
     facts: &mut ExecutionFacts,
 ) {
-    if !matches!(lvalue.value_type, ProgramType::Int32 | ProgramType::UInt32)
-        || lvalue.is_volatile()
+    if lvalue.is_volatile()
         || SpecificationAccessScope::is_active()
-        || !ProgramPoint::supports_local_call_word(pointer)
+        || !ProgramPoint::supports_local_call_output(pointer)
     {
         return;
     }
     let ExpressionOutcome::Value(value) = outcome else {
         return;
     };
-    let kind = LoadKind::of_type(lvalue.value_type).expect("call output word");
+    let Some(format) = MachineIntegerType::from_program_type(lvalue.value_type) else {
+        return;
+    };
+    let kind = LoadKind::of_type(lvalue.value_type).expect("integer call output");
     let Some(version) = state
         .program_point()
         .call_output_integer_version(pointer, kind)
@@ -3233,25 +3235,36 @@ fn record_call_output_read(
         return;
     };
     let value = value.native();
-    let (ProgramValue::Int32(bits) | ProgramValue::UInt32(bits)) = value.numeric_value() else {
+    let value = value.numeric_value();
+    if !LoadKind::of_value(value).is_some_and(|value_kind| kind.reads_word_of(value_kind)) {
+        return;
+    }
+    let Some(bits) = crate::kernel::spec::program_value_bitvector_term(value) else {
         return;
     };
     let read = scalar_read_for_exact_cell_at(&version, pointer, kind, kind.byte_width());
-    if bits != &read {
-        facts.push(ExecutionPureFact {
-            logical_read_equation: true,
-            ..ExecutionPureFact::certified(Proposition::condition_is(
-                ConditionTerm::machine_compare(
-                    MachineIntegerType::from_program_type(lvalue.value_type)
-                        .expect("call output word"),
-                    CompareRelation::Equal,
-                    read,
-                    bits.clone(),
-                ),
-                true,
-            ))
-        });
+    if bits == read {
+        return;
     }
+    let comparison = if matches!(
+        format,
+        MachineIntegerType::Int128 | MachineIntegerType::UInt128
+    ) {
+        let Some(comparison) = wide_integer_comparison_condition(
+            ComparisonOperator::Equal,
+            &format.value_from_term(read),
+            value,
+        ) else {
+            return;
+        };
+        comparison
+    } else {
+        ConditionTerm::machine_compare(format, CompareRelation::Equal, read, bits)
+    };
+    facts.push(ExecutionPureFact {
+        logical_read_equation: true,
+        ..ExecutionPureFact::certified(Proposition::condition_is(comparison, true))
+    });
 }
 
 fn read_retained_lvalue_paths_without_ranges(

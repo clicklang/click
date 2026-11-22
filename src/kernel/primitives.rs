@@ -10253,9 +10253,9 @@ pub enum MemoryDerivation {
         base: SharedMemory,
         pointer: Address,
         bytes: u32,
-        /// A checked call output supplies this complete word even when
-        /// there is no known value to put in the cell.
-        call_word: bool,
+        /// The kind of complete integer cell initialized by a checked
+        /// call output whose value is unknown.
+        call_output: Option<LoadKind>,
     },
     /// `base` with some cached cell values forgotten at one program point:
     /// the write path narrows the cell map before storing
