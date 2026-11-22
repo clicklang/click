@@ -8,6 +8,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_indexed_read_preservation(
         search_input: &Proof<'a>,
         point_limit: usize,
+        derive_separation: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_indexed_read_preservation");
@@ -88,14 +89,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 operator: ComparisonOperator::Equal,
                 right: at(ProgramPointKind::Entry),
             };
-            let candidate = (|| {
-                let separated = proof
+            let separated = attempt::candidate_outcome(
+                proof
                     .driver()
-                    .apply_step(have(separation.clone(), ProofStep::Known))?;
-                separated
-                    .driver()
-                    .apply_step(have(equality, ProofStep::Preserve(separation)))
-            })();
+                    .apply_step(have(separation.clone(), ProofStep::Known)),
+            )?;
+            let separated = match separated {
+                Some(separated) => Some(separated),
+                None if derive_separation && footprint.members.len() == 1 => {
+                    Self::try_single_write_indexed_separation(
+                        &proof,
+                        footprint.members.front().expect("one footprint member"),
+                        &kept,
+                        &separation,
+                    )?
+                }
+                None => None,
+            };
+            let Some(separated) = separated else {
+                continue;
+            };
+            let candidate = separated
+                .driver()
+                .apply_step(have(equality, ProofStep::Preserve(separation)));
             if let Some(preserved) = attempt::candidate_outcome(candidate)? {
                 if preserved.focused_discharged() {
                     return Ok(Some(preserved));
@@ -109,6 +125,115 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         Ok(None)
+    }
+
+    /// Restrict a separated range to the indexed read before normalizing a
+    /// single-memory footprint. Only guarded read search needs this fallback.
+    fn try_single_write_indexed_separation(
+        search_input: &Proof<'a>,
+        written: &Resource,
+        kept: &ResourceSubject,
+        footprint_separation: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_single_write_indexed_separation");
+        if !matches!(written, Resource::Memory(_)) {
+            return Ok(None);
+        }
+        let Some(view) = search_input.premise_fixed_state_view() else {
+            return Ok(None);
+        };
+        let Some(written) = super::super::surface_synthesis::synthesize_surface_resource_subject(
+            written,
+            view.parameter_binding,
+            view.fixed_state.state,
+            &std::collections::BTreeMap::new(),
+        ) else {
+            return Ok(None);
+        };
+        let separation = ClickProposition::Separate {
+            left: written,
+            right: kept.clone(),
+        };
+        let Some(goal) =
+            attempt::candidate_outcome(search_input.driver().open_have(separation.clone()))?
+        else {
+            return Ok(None);
+        };
+        let Some(separated) = goal
+            .driver()
+            .try_indexed_separation_restriction(&separation)?
+        else {
+            return Ok(None);
+        };
+        if !separated.is_complete() {
+            return Ok(None);
+        }
+        let proof = separated.join()?;
+        let certificate =
+            ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(vec![separation])])
+                .expect("ordinary footprint normalization");
+        attempt::candidate_outcome(
+            proof
+                .driver()
+                .apply_have_step(footprint_separation, &certificate),
+        )
+    }
+
+    /// Supply containment for separation restriction from the introduced
+    /// bounds or the reflexive containment law.
+    pub(in crate::surface::proof) fn indexed_containment_step(
+        goal: &ClickProposition,
+    ) -> Option<ProofStep> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("indexed_containment_step");
+        let ClickProposition::Contains { parent, child } = goal else {
+            return None;
+        };
+        if parent == child {
+            return Some(ProofStep::ApplyTheorem(TheoremApplication {
+                name: "click::separation::contains_refl".into(),
+                arguments: vec![ContractExpression::Resource(Box::new(parent.clone()))],
+            }));
+        }
+        let ResourceSubject::SavedMemory {
+            base,
+            start: index,
+            end: None,
+        } = child
+        else {
+            return None;
+        };
+        let (lo, hi) = match parent {
+            ResourceSubject::Memory(ContractSegment {
+                surface: ContractSegmentSurface::Range { start, end, .. },
+                ..
+            })
+            | ResourceSubject::SavedMemory {
+                start,
+                end: Some(end),
+                ..
+            } => (start, end),
+            _ => return None,
+        };
+        Some(ProofStep::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: "click::separation::contains_element".into(),
+                arguments: vec![base.clone(), lo.clone(), hi.clone(), index.clone()],
+            },
+            premises: vec![
+                ClickProposition::Comparison {
+                    left: lo.clone(),
+                    operator: ComparisonOperator::LessEqual,
+                    right: index.clone(),
+                },
+                ClickProposition::Comparison {
+                    left: index.clone(),
+                    operator: ComparisonOperator::LessThan,
+                    right: hi.clone(),
+                },
+            ],
+        })
     }
 
     /// Discover already recorded footprint separations only in smart search.
