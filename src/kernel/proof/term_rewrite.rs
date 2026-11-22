@@ -6872,12 +6872,13 @@ impl<'a> TermRewrite<'a> {
                             *kind,
                         )
                     });
-                // An exact read names its written point. An explicit pointer
-                // equality also keeps a store-backed read at its selected point.
+                // Exact reads keep their written point. A pointer equality
+                // can also keep the point of a recorded local store read.
                 // The store receipt applies only to the original address.
-                if (memory.is_exact_read()
-                    || (self.pointer_exact.is_some() && memory.indexed_stored_value().is_some()))
-                    && memory.has_certified_read_view()
+                let local_store_read = self.pointer_exact.is_some()
+                    && pointer.base.is_local_block()
+                    && memory.indexed_stored_value().is_some();
+                if (memory.is_exact_read() || local_store_read) && memory.has_certified_read_view()
                 {
                     return crate::kernel::eval::scalar_read_for_exact_cell_at(
                         &memory.clone().for_exact_read(),
