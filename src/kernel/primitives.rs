@@ -16068,6 +16068,8 @@ pub struct ProofObligation {
     /// Producer metadata: emitted on the false arm of a C assertion.
     /// This tags the existing truthiness obligation, not a new proposition.
     pub(super) assertion_failure: bool,
+    /// Refuting this nonzero-divisor obligation is division by zero.
+    pub(super) unsigned_divisor: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
     /// Diagnostic metadata only. The proposition itself carries both ranges.

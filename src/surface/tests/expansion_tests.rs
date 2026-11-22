@@ -25629,11 +25629,17 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_function_proof_source(&implicit, &sources, "divide").unwrap();
+    let mut expanded = implicit.clone();
+    for function in ["divide", "remainder", "divide_wide", "remainder_wide"] {
+        expanded = expand_function_proof_source(&expanded, &sources, function).unwrap();
+    }
+    assert_eq!(expanded.matches("step() by").count(), 4, "{expanded}");
     crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
-    let missing = implicit.replace("    requires y != 0u32;\n", "");
-    assert_ne!(missing, implicit);
-    assert!(verify_c_sources(&missing, &sources).is_err());
+    for requirement in ["    requires y != 0u32;\n", "    requires y != 0u64;\n"] {
+        let missing = implicit.replace(requirement, "");
+        assert_ne!(missing, implicit);
+        assert!(verify_c_sources(&missing, &sources).is_err());
+    }
 }
 
 #[test]

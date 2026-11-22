@@ -10522,6 +10522,7 @@ impl ProofObligation {
             assumable: true,
             evaluation_domain: false,
             assertion_failure: false,
+            unsigned_divisor: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10539,6 +10540,7 @@ impl ProofObligation {
             assumable: false,
             evaluation_domain: false,
             assertion_failure: false,
+            unsigned_divisor: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10559,6 +10561,75 @@ impl ProofObligation {
 
     pub(crate) fn is_assertion_failure(&self) -> bool {
         self.assertion_failure
+    }
+
+    pub(in crate::kernel) fn nonzero_unsigned_divisor(zero_divisor: ConditionTerm) -> Self {
+        let mut obligation =
+            Self::verification_condition(Proposition::condition_is(zero_divisor, false))
+                .with_context("unsigned division requires a nonzero divisor");
+        obligation.unsigned_divisor = true;
+        obligation
+    }
+
+    /// Use the retained comparison as the key for the same indexed and
+    /// intrinsic checks as other execution conditions. An open comparison
+    /// stays available to the proof driver as a verification condition.
+    pub(crate) fn has_known_zero_divisor(&self, facts: &PureFactContext) -> bool {
+        if !self.unsigned_divisor {
+            return false;
+        }
+        let Some((condition, required)) = self.proposition.condition_native() else {
+            return false;
+        };
+        if let Some(truth) = PureFactContext::decide_intrinsically(condition)
+            .or_else(|| facts.known_condition_value(condition))
+        {
+            return truth != *required;
+        }
+        // An unsigned divisor is also zero if its written upper bound is
+        // strictly below one. Ask only for the two equivalent endpoint keys.
+        let ConditionTerm::Compare {
+            format,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
+        else {
+            return false;
+        };
+        let (width, zero, one) = match format {
+            MachineIntegerType::Int32 | MachineIntegerType::UInt32 => (
+                MachineIntegerType::UInt32,
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
+            ),
+            MachineIntegerType::Int64 | MachineIntegerType::UInt64 => (
+                MachineIntegerType::UInt64,
+                MachineTerm::uint64_constant(0),
+                MachineTerm::uint64_constant(1),
+            ),
+            _ => return false,
+        };
+        let divisor = if **right == zero {
+            left
+        } else if **left == zero {
+            right
+        } else {
+            return false;
+        };
+        [
+            (CompareRelation::LessEqual, zero),
+            (CompareRelation::LessThan, one),
+        ]
+        .into_iter()
+        .any(|(relation, endpoint)| {
+            facts.known_condition_value(&ConditionTerm::machine_compare(
+                width,
+                relation,
+                (**divisor).clone(),
+                endpoint,
+            )) == Some(true)
+        })
     }
 
     pub(in crate::kernel) fn with_statement_entry_required(mut self, required: bool) -> Self {
@@ -10672,6 +10743,7 @@ impl ProofObligation {
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
+            unsigned_divisor: self.unsigned_divisor,
             statement_entry_required: self.statement_entry_required,
             live_view_write: self.live_view_write,
             call_requirement_site: None,

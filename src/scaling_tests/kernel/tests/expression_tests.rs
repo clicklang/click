@@ -353,38 +353,61 @@ fn rust_bool_values_do_not_split_paths() {
 
 #[test]
 fn unsigned_division_domain_generation_ignores_ambient_facts() {
-    let mut samples = Vec::new();
-    for count in [4_u64, 16, 64, 256] {
-        let _session = crate::kernel::VerificationSession::enter();
-        let assumptions = (0..count).fold(PureFactContext::new(), |facts, index| {
-            facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(993_000 + index)),
-                    MachineTerm::constant(index as u32),
-                ),
-                true,
-            )
-        });
-        let mut runs = Vec::new();
-        for _ in 0..3 {
-            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::eval::apply_program_divide(
-                    ProgramValue::UInt32(MachineTerm::Variable(Variable(992_001))),
-                    ProgramValue::UInt32(MachineTerm::Variable(Variable(992_002))),
-                    vec![].into(),
-                    vec![],
-                    &assumptions,
+    for width in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let assumptions = (0..count).fold(PureFactContext::new(), |facts, index| {
+                facts.assume_condition(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(993_000 + index)),
+                        MachineTerm::constant(index as u32),
+                    ),
+                    true,
                 )
             });
-            assert_eq!(paths.len(), 1);
-            assert_eq!(paths[0].obligations.len(), 1);
-            runs.push(work);
+            let (dividend, divisor) = (Variable(992_001), Variable(992_002));
+            let zero = match width {
+                MachineIntegerType::UInt32 => MachineTerm::constant(0),
+                MachineIntegerType::UInt64 => MachineTerm::uint64_constant(0),
+                _ => unreachable!(),
+            };
+            let known_zero = assumptions.clone().assume_condition(
+                ConditionTerm::machine_compare(
+                    width,
+                    CompareRelation::Equal,
+                    MachineTerm::Variable(divisor),
+                    zero,
+                ),
+                true,
+            );
+            let mut runs = Vec::new();
+            for (assumptions, expected_zero) in [(&assumptions, false), (&known_zero, true)] {
+                let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    crate::kernel::eval::apply_program_divide(
+                        width.symbolic_value(dividend),
+                        width.symbolic_value(divisor),
+                        vec![].into(),
+                        vec![],
+                        assumptions,
+                    )
+                });
+                assert_eq!(paths.len(), 1);
+                assert!(matches!(paths[0].outcome, ExpressionOutcome::Value(_)));
+                assert_eq!(paths[0].obligations.len(), 1);
+                let (known_zero, checked_work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        paths[0].obligations[0].has_known_zero_divisor(assumptions)
+                    });
+                assert_eq!(known_zero, expected_zero);
+                runs.push((work, checked_work));
+            }
+            samples.push((count, runs));
         }
-        samples.push((count, runs));
+        assert!(
+            samples.iter().all(|(_, work)| *work == samples[0].1),
+            "{width:?}: {samples:?}"
+        );
+        assert_eq!(samples[0].1[0].0, samples[0].1[1].0, "{width:?}");
     }
-    eprintln!("unsigned division domain generation: {samples:?}");
-    assert!(
-        samples.iter().all(|(_, work)| *work == samples[0].1),
-        "{samples:?}"
-    );
 }

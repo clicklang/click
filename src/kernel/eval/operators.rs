@@ -914,22 +914,22 @@ impl WideArithmetic {
                     WideArithmetic::Subtract => MachineTerm::uint64_subtract,
                     WideArithmetic::Multiply => MachineTerm::uint64_multiply,
                     WideArithmetic::Divide => {
-                        return apply_program_uint64_division_like(
+                        return apply_program_unsigned_division_like(
+                            ScalarWidth::UInt64,
                             left,
                             right,
                             facts,
                             obligations,
-                            assumptions,
                             MachineTerm::uint64_divide,
                         );
                     }
                     WideArithmetic::Remainder => {
-                        return apply_program_uint64_division_like(
+                        return apply_program_unsigned_division_like(
+                            ScalarWidth::UInt64,
                             left,
                             right,
                             facts,
                             obligations,
-                            assumptions,
                             MachineTerm::uint64_remainder,
                         );
                     }
@@ -1520,7 +1520,8 @@ pub(in crate::kernel) fn apply_program_divide(
         return Vec::new();
     };
     if matches!(width, ScalarWidth::UInt32) {
-        apply_program_uint32_division_like(
+        apply_program_unsigned_division_like(
+            ScalarWidth::UInt32,
             left,
             right,
             facts,
@@ -1573,7 +1574,8 @@ pub(in crate::kernel) fn apply_program_remainder(
         return Vec::new();
     };
     if matches!(width, ScalarWidth::UInt32) {
-        apply_program_uint32_division_like(
+        apply_program_unsigned_division_like(
+            ScalarWidth::UInt32,
             left,
             right,
             facts,
@@ -4548,34 +4550,10 @@ fn apply_program_int64_division_nonzero(
     )
 }
 
-fn apply_program_uint64_division_like(
-    left: MachineTerm,
-    right: MachineTerm,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-    assumptions: &PureFactContext,
-    result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<ExpressionPath> {
-    let zero = ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0));
-    split_on_undefined_behavior(
-        zero,
-        UndefinedBehavior::DivisionByZero,
-        facts,
-        obligations,
-        assumptions,
-        |facts, obligations| {
-            vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(ProgramValue::UInt64(result(left, right))),
-                facts,
-                obligations,
-            }]
-        },
-    )
-}
-
 /// One conditional successor with C's divisor domain left for the driver.
 /// Even an already known domain is retained; this operation has no fact context.
-fn apply_program_uint32_division_like(
+fn apply_program_unsigned_division_like(
+    width: ScalarWidth,
     left: MachineTerm,
     right: MachineTerm,
     facts: ExecutionFacts,
@@ -4584,18 +4562,16 @@ fn apply_program_uint32_division_like(
 ) -> Vec<ExpressionPath> {
     #[cfg(test)]
     let _fast = crate::kernel::search::FastOperationScope::enter("unsigned division domain");
-    let zero = ConditionTerm::machine_compare(
-        MachineIntegerType::UInt32,
-        CompareRelation::Equal,
-        right.clone(),
-        MachineTerm::constant(0),
-    );
-    obligations.push(
-        ProofObligation::verification_condition(Proposition::condition_is(zero, false))
-            .with_context("unsigned division requires a nonzero divisor"),
-    );
+    let (zero, wrap): (_, fn(MachineTerm) -> ProgramValue) = match width {
+        ScalarWidth::UInt32 => (MachineTerm::constant(0), uint32),
+        ScalarWidth::UInt64 => (MachineTerm::uint64_constant(0), ProgramValue::UInt64),
+        _ => unreachable!("unsigned division width"),
+    };
+    let zero_divisor =
+        ConditionTerm::machine_compare(width.format(), CompareRelation::Equal, right.clone(), zero);
+    obligations.push(ProofObligation::nonzero_unsigned_divisor(zero_divisor));
     vec![ExpressionPath {
-        outcome: ExpressionOutcome::Value(uint32(result(left, right))),
+        outcome: ExpressionOutcome::Value(wrap(result(left, right))),
         facts,
         obligations,
     }]

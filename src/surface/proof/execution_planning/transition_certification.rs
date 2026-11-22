@@ -38,6 +38,21 @@ fn missing_prerequisite_error(
     }
 }
 
+fn reject_known_zero_divisor(
+    obligation: &ProofObligation,
+    facts: &PureFactContext,
+    context_label: &str,
+) -> Result<(), ClickError> {
+    if obligation.has_known_zero_divisor(facts) {
+        return Err(ClickError::new(format!(
+            "{context_label} produced undefined behavior: division by zero{}",
+            crate::surface::diagnostics::describe_execution_statement_site()
+        ))
+        .with_proof_refusal(crate::surface::ProofRefusal::Execution));
+    }
+    Ok(())
+}
+
 /// A live-view write can use the named goal, its symmetric form, or an exact
 /// indexed byte-span witness. Nearby separations are premises for the proof
 /// of the requirement, never candidates for execution to try.
@@ -314,6 +329,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 path_facts.push(proposition);
             }
             for obligation in path.obligations() {
+                reject_known_zero_divisor(obligation, successor_facts.assumptions(), context_label)?;
                 if !crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(successor_facts.assumptions(), obligation.proposition()) {
                     return Err(missing_condition_prerequisite_error(
                         context_label,
@@ -424,6 +440,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                 None => successor_facts.context(),
             };
             for obligation in path.obligations() {
+                reject_known_zero_divisor(obligation, &prerequisite_assumptions, context_label)?;
                 match prerequisite_policy {
                     StatementPrerequisitePolicy::Exact => {
                         if exact_fact_is_available(obligation.proposition(), pure_facts)
@@ -783,6 +800,7 @@ fn certified_transitions_from_execution(
                 } else {
                     &prerequisite_assumptions
                 };
+                reject_known_zero_divisor(obligation, prerequisite_assumptions, context_label)?;
                 let proposition = obligation.proposition();
                 let live_view_write = obligation.live_view_write_overlap();
                 // The call can ask for a different descriptor for the same

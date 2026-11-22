@@ -16,5 +16,5 @@ uint32 invalid(uint32 x) {
 ```
 
 ```expect
-fail: unsigned division requires a nonzero divisor
+fail: undefined behavior: division by zero
 ```
