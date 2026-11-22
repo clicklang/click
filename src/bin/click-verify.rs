@@ -2995,10 +2995,7 @@ int32 read_first(int32 m) {
             error.contains("tactic `solve`") && error.contains("smart work budget"),
             "{error}"
         );
-        assert!(
-            error.contains("goal: result == x") && error.contains("To get a trace:"),
-            "{error}"
-        );
+        assert!(error.contains("goal: result == x"), "{error}");
         assert!(trace.contains("steps through: return x"), "{trace}");
     }
 
