@@ -1088,8 +1088,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 1,
                             ),
@@ -1138,8 +1139,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 1,
                             ),
@@ -1152,8 +1154,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 2,
                             ),
@@ -1166,8 +1169,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 2,
                             ),
@@ -1180,8 +1184,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 4,
                             ),
@@ -1196,8 +1201,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Address {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                            MachineTerm::Variable(Variable::produced(
+                                crate::kernel::Producer::PointerArgument,
+                                index as u64,
                             )),
                             1,
                         ),
@@ -1209,8 +1215,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 4,
                             ),
@@ -1223,8 +1230,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 8,
                             ),
@@ -1237,8 +1245,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 16,
                             ),
@@ -1251,8 +1260,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 8,
                             ),
@@ -1265,8 +1275,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 16,
                             ),
@@ -1279,8 +1290,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 4,
                             ),
@@ -1293,8 +1305,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 8,
                             ),
@@ -1312,8 +1325,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 i64::from(element_width),
                             ),
@@ -1342,8 +1356,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Address {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable(
-                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                MachineTerm::Variable(Variable::produced(
+                                    crate::kernel::Producer::PointerArgument,
+                                    index as u64,
                                 )),
                                 i64::from(element_width),
                             ),
@@ -1359,8 +1374,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Address {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                            MachineTerm::Variable(Variable::produced(
+                                crate::kernel::Producer::PointerArgument,
+                                index as u64,
                             )),
                             8,
                         ),

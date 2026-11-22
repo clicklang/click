@@ -1671,6 +1671,13 @@ stays within its own range:
 | `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
 
+Producers moved off these ranges mint their variables with
+`Variable::produced(Producer::…, n)`, numbering from zero by their own rule:
+termination-check parameters and `let` witnesses, pure-theorem pointer
+arguments, and resource `match` Integer binders. A produced variable equals no
+variable of another producer or origin, whatever its number, so these need no
+range or ceiling. The remaining ranges move the same way.
+
 An execution allocates in its range (`KERNEL_VARIABLE_BASE` up to
 `KERNEL_VARIABLE_CEILING`) from its budget's counter and must not hand out a
 number its inputs already name. It reserves the variables of the state, the
