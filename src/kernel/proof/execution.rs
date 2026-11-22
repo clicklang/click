@@ -10117,14 +10117,13 @@ impl ExecutionProofCore {
     /// Constructor elimination at any frontier this proof has reached: a
     /// function entry, a loop body, or a point after checked C steps.
     ///
-    /// The witnesses are fresh against everything the region can name. Its
-    /// entry state (and, at a function entry, the entry theorem) is reserved
-    /// once by [`Self::initial_match_reserved_variables`]; every variable the
-    /// kernel has issued since lies in
-    /// `KERNEL_VARIABLE_BASE .. issued_kernel_variable_bound()`, so the probe
-    /// is one range test rather than a rescan of the current state. The
+    /// The witnesses are algebraic binders, numbered from `first_binder`,
+    /// and fresh against everything the region can name. Its entry state
+    /// (and, at a function entry, the entry theorem) is reserved once by
+    /// [`Self::initial_match_reserved_variables`]; the kernel never issues an
+    /// algebraic binder, so nothing issued since needs a probe. The
     /// environment, the scrutinee, and the persistent fact index are queried
-    /// per candidate as before.
+    /// per candidate.
     pub(crate) fn algebraic_case_partition(
         &self,
         facts: &PureFactStore,
@@ -10132,17 +10131,13 @@ impl ExecutionProofCore {
         environment: &crate::kernel::ExecutionEnvironment,
         definitions: &[crate::kernel::CompositeResourceDefinition],
         matched_resource_field: Option<&crate::kernel::ResourceFieldProjection>,
-        first_variable: u64,
-        stride: u64,
+        first_binder: u64,
     ) -> Option<(
         Arc<CheckedProofCasePartition>,
         Vec<Vec<(Variable, crate::kernel::Sort)>>,
         u64,
     )> {
         use crate::kernel::Term;
-        if stride == 0 {
-            return None;
-        }
         // D7 in reverse, at the frontier the cases are taken from. A path
         // fact that refutes an arm's own fact says the folded instance's
         // model is not that constructor, and the body of a loop learns that
@@ -10153,35 +10148,31 @@ impl ExecutionProofCore {
         let facts =
             &self.model_arm_refutations_for(facts, value, definitions, matched_resource_field);
         let reserved = self.initial_match_reserved_variables();
-        // The identities this execution has issued are exactly
-        // `KERNEL_VARIABLE_BASE .. issued_kernel_variable_bound()`.
-        // `next_kernel_variable` is execution-relative, so comparing a
-        // candidate's absolute id against it directly was comparing an
-        // identity with an offset: the probe read as `candidate >= issued`
-        // but `issued` was a few dozen, and every candidate cleared it.
-        let issued = ExecutionBudget::KERNEL_VARIABLE_BASE..self.issued_kernel_variable_bound();
         let environment_variables =
             crate::kernel::reasoning::execution_environment_variable_index(environment);
         let value_variables = crate::kernel::proposition_variables(&Proposition::Equal(
             Term::Algebraic(value.clone().into()),
             Term::Algebraic(value.clone().into()),
         ));
-        let mut next = first_variable;
+        let mut next = first_binder;
         let mut overflow = false;
         let equations =
             crate::kernel::api::algebraic_constructor_case_equations(value, &mut || {
                 loop {
-                    let candidate = Variable(next);
+                    // Case binders are algebraic binders, an origin no
+                    // execution issues, so only binders the region already
+                    // names can collide.
+                    let candidate =
+                        Variable::produced(crate::kernel::Producer::AlgebraicBinder, next);
                     #[cfg(test)]
                     MATCH_FRESHNESS_PROBES.with(|count| count.set(count.get() + 1));
-                    if let Some(successor) = next.checked_add(stride) {
+                    if let Some(successor) = next.checked_add(1) {
                         next = successor;
                     } else {
                         overflow = true;
                         return candidate;
                     }
-                    if !issued.contains(&candidate.0)
-                        && !reserved.contains(&candidate)
+                    if !reserved.contains(&candidate)
                         && !environment_variables.contains(&candidate)
                         && !value_variables.contains(&candidate)
                         && !facts.reserves_variable(candidate)

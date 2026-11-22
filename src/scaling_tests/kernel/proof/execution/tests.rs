@@ -130,7 +130,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
         }
         let ((partition, fields, _), work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                core.algebraic_case_partition(&facts, &value, &env, &[], None, 4_000_000, 65_536)
+                core.algebraic_case_partition(&facts, &value, &env, &[], None, 0)
                     .unwrap()
             });
         let witness = Address::symbolic(fields[0][0].0);
@@ -145,15 +145,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
         assert!(other.assumptions().is_inconsistent());
         assert!(!facts.available(&transported));
         let (unrelated, _, _) = core
-            .algebraic_case_partition(
-                &PureFactStore::default(),
-                &value,
-                &env,
-                &[],
-                None,
-                4_000_000,
-                65_536,
-            )
+            .algebraic_case_partition(&PureFactStore::default(), &value, &env, &[], None, 0)
             .unwrap();
         assert!(!unrelated.facts_for_case(0).unwrap().available(&transported));
         samples.push(work);
@@ -171,7 +163,10 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
         AlgebraicValueType, AlgebraicVariantType, Term,
     };
     let (core, mut payload) = constructor_partition_fixture(2);
-    payload.node = AlgebraicTermNode::Variable(Variable(4_065_536));
+    payload.node = AlgebraicTermNode::Variable(Variable::produced(
+        crate::kernel::Producer::AlgebraicBinder,
+        1,
+    ));
     let inner_key = AlgebraicValueType::Algebraic {
         name: "Cases".into(),
         arguments: vec![],
@@ -182,7 +177,10 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
     }]
     .into();
     let mut sibling = payload.clone();
-    sibling.node = AlgebraicTermNode::Variable(Variable(4_131_072));
+    sibling.node = AlgebraicTermNode::Variable(Variable::produced(
+        crate::kernel::Producer::AlgebraicBinder,
+        2,
+    ));
     let value = AlgebraicTerm {
         algebraic_type: AlgebraicType {
             rigid: false,
@@ -232,23 +230,15 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
         );
         let ((partition, witnesses, _), work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                core.algebraic_case_partition(
-                    &facts,
-                    &value,
-                    &environment,
-                    &[],
-                    None,
-                    4_000_000,
-                    65_536,
-                )
-                .unwrap()
+                core.algebraic_case_partition(&facts, &value, &environment, &[], None, 0)
+                    .unwrap()
             });
         // Reusing the spelling must not reuse existential witness identities.
         assert!(
             witnesses
                 .iter()
                 .flatten()
-                .all(|(variable, _)| variable.0 > 4_131_072)
+                .all(|(variable, _)| variable.algebraic_binder_index() > Some(2))
         );
         let spelled = Proposition::Equal(
             Term::Algebraic(value.clone().into()),
@@ -1398,8 +1388,7 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
                 &crate::kernel::ExecutionEnvironment::new(),
                 &[],
                 None,
-                4_000_000,
-                65_536,
+                0,
             )
             .unwrap();
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {

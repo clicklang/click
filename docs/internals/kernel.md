@@ -1667,14 +1667,16 @@ stays within its own range:
 | --- | --- |
 | `1_000_000 .. 2_000_000` | the execution's fresh-identity counter |
 | `2_000_000 .. 4_000_000` | the surface's quantifier variables while a body is lowered, before it is closed; lowering refuses at the ceiling |
-| `4_000_000 .. 4_000_000_000`, stepping by `65_536` | the surface's algebraic binders; lowering refuses at the ceiling |
 | `4_000_000_000 .. 8_000_000_000` | symbolic address bases |
 | `1 << 40 .. 1 << 41` | load variables (`LOAD_VARIABLE_BASE`) |
 
 Producers moved off these ranges mint their variables with
 `Variable::produced(Producer::…, n)`, numbering from zero by their own rule:
 termination-check parameters and `let` witnesses, pure-theorem pointer
-arguments, and resource `match` Integer binders. A produced variable equals no
+arguments, resource `match` Integer binders, and Surface algebraic binders
+(`Producer::AlgebraicBinder`, numbered by binder index, which is also how a
+proof `match`'s constructor-field witnesses raise back to Surface;
+`Variable::algebraic_binder_index` reads it back). A produced variable equals no
 variable of another producer or origin, whatever its number, so these need no
 range or ceiling. The remaining ranges move the same way.
 

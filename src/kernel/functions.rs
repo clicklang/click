@@ -15342,7 +15342,7 @@ pub(crate) fn arm_algebraic_payload_spelling<'a>(
     let AlgebraicTermNode::Variable(variable) = payload.node else {
         return None;
     };
-    (variable.0 >= 4_000_000 && (variable.0 - 4_000_000).is_multiple_of(65_536)).then_some(payload)
+    variable.algebraic_binder_index().map(|_| payload)
 }
 
 /// Reference type checking uses only the declaration and immutable reference

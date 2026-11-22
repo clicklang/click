@@ -283,6 +283,10 @@ pub(crate) enum Producer {
     /// An Integer binder of a resource `match` arm, numbered once for a
     /// function's whole resource environment.
     ResourceIntegerBinding,
+    /// A Surface algebraic binder, by its binder index: a written algebraic
+    /// quantifier or `let`, or a constructor field a proof `match` splits on.
+    /// The index is how the binder raises back to Surface.
+    AlgebraicBinder,
 }
 
 impl std::fmt::Debug for Variable {
@@ -379,6 +383,12 @@ impl Variable {
             number: (number,),
             origin: VariableOrigin::Produced(producer),
         }
+    }
+
+    /// The Surface binder index of an algebraic binder variable.
+    pub(crate) fn algebraic_binder_index(&self) -> Option<u64> {
+        (self.origin == VariableOrigin::Produced(Producer::AlgebraicBinder))
+            .then_some(self.number.0)
     }
 
     /// The `number`th universal-introduction or choice witness.

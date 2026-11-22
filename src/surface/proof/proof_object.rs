@@ -586,7 +586,7 @@ impl Default for ProofLocals {
             surface_facts: SurfacePropositionMap::default(),
             checked_lowerings: SurfacePropositionMap::default(),
             termination_diagnostics: Default::default(),
-            next_choice_variable: 3_000_000,
+            next_choice_variable: 0,
             retained_match_algebraic: PersistentBinderMap::default(),
             retained_match_integers: PersistentBinderMap::default(),
             induction_active: false,
