@@ -4712,6 +4712,12 @@ contract owns. There is no separate effect clause: `owns` permits stores and
 reads, `views` permits reads, and a store outside the owned memory fails at
 the store.
 
+For an ordinary call whose checked owned inputs bound all its writes, `step`
+can use separation between that resource bound and the live-view footprint.
+This also works when the input is a folded recursive resource and the call
+cannot name every byte it might write
+(`mdtests/recursive_call_keeps_a_separated_live_view.md`).
+
 Contract segment expressions are evaluated at function entry, so a shifted
 segment such as `owns (owner->data + owner->len)[0..2]` continues to denote the
 old two-cell tail after `owner->len` changes. Footprint matching uses proven
