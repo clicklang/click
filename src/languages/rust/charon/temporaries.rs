@@ -2589,7 +2589,7 @@ fn call_destination(terminator: &T) -> Option<&String> {
     }
 }
 
-/// Keep a scalar or enum call result as a call step when its sole reader is
+/// Keep a scalar, enum, or boxed pointer as a call step when its sole reader is
 /// in a single-entry continuation. The call stays where it ran. An unread
 /// scalar temporary can discard the result entirely.
 pub(super) fn call_steps(
@@ -2736,7 +2736,8 @@ pub(super) fn call_steps(
         let Some(&(1, reader)) = reads.get(&destination) else {
             continue;
         };
-        if !(ty.is_scalar() || matches!(ty, Type::Enum { .. }))
+        let boxed = matches!(ty, Type::Box { .. });
+        if !(ty.is_scalar() || matches!(ty, Type::Enum { .. }) || boxed)
             || target == index
             || predecessors.get(target) != Some(&1)
         {
@@ -2744,12 +2745,14 @@ pub(super) fn call_steps(
         }
         // In `[f(), g()]` the first result is read after the second call.
         // Each edge in this continuation must be forward and single-entry.
+        // Box results are retained only to the immediate continuation.
         if reader != target
-            && !(index < target
-                && target < reader
-                && predecessors.get(reader) == Some(&1)
-                && matches!(blocks[target].terminator,
-                    T::Call { target, through_pointer: false, .. } if target == reader))
+            && (boxed
+                || !(index < target
+                    && target < reader
+                    && predecessors.get(reader) == Some(&1)
+                    && matches!(blocks[target].terminator,
+                    T::Call { target, through_pointer: false, .. } if target == reader)))
         {
             continue;
         }
