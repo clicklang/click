@@ -1631,9 +1631,8 @@ pub(super) enum PostExecutionTactic {
     /// context that admits it.
     Leaf(ProofTactic),
     Both(ProofTactic),
-    /// `fold(resource) by { ... }` or with `requires` entries: the fold and
-    /// the proofs of the body facts its fast path leaves open.
-    FoldProved(ProofTactic),
+    /// A fold or user tactic application with written obligation proofs.
+    ResourceStepProved(ProofTactic),
     CloseOpen {
         resource: ResourceClause,
         restoration: OpenResourceRestoration,
@@ -2059,7 +2058,7 @@ pub(super) fn post_execution_tactic_timing(
             (tactic_name(tactic), "smart")
         }
         PostExecutionTactic::Leaf(tactic) => (tactic_name(tactic), "simple"),
-        PostExecutionTactic::FoldProved(_) => ("fold", "control"),
+        PostExecutionTactic::ResourceStepProved(tactic) => (tactic_name(tactic), "control"),
         PostExecutionTactic::CloseOpen { .. } => ("with", "control"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),

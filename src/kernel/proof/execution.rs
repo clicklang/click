@@ -188,6 +188,12 @@ impl ExecutionEvidence {
                             .map(|presentation| Arc::new(presentation.rewrite.after_state.clone()))
                     });
             }
+            CheckedExecutionEvent::TacticApplication(application) => {
+                if let Some(effect) = &application.return_effect {
+                    self.retained = Some(Arc::new(application.after_state.clone()));
+                    self.presented = Some(effect.presented.clone());
+                }
+            }
             _ => {}
         }
         self.events.push(event);
@@ -422,6 +428,7 @@ struct PreparedTacticApplication {
     name: String,
     before_state: ExecutionState,
     after_state: ExecutionState,
+    return_path: Option<(usize, Vec<Proposition>)>,
 }
 
 /// A tactic application admitted to the execution trace after its obligations
@@ -431,6 +438,13 @@ pub(crate) struct CheckedTacticApplication {
     name: String,
     before_state: ExecutionState,
     after_state: ExecutionState,
+    return_effect: Option<ReturnTacticEffect>,
+}
+
+#[derive(Clone)]
+struct ReturnTacticEffect {
+    presented: Arc<ExecutionState>,
+    facts: Vec<Proposition>,
 }
 
 impl CheckedTacticApplication {
@@ -7710,10 +7724,21 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                     return Err("population member rewrite must precede function exit");
                 }
             }
-            CheckedExecutionEvent::TacticApplication(_) => {
+            CheckedExecutionEvent::TacticApplication(application) => {
                 fallthrough = None;
-                if completed.is_some() {
-                    return Err("a tactic application must precede function exit");
+                if let Some(effect) = &application.return_effect {
+                    let Some((StatementOutcome::Return { state, .. }, executed_under)) =
+                        &mut completed
+                    else {
+                        return Err("an outcome tactic application requires a returned state");
+                    };
+                    **state = application.after_state.clone();
+                    for fact in &effect.facts {
+                        *executed_under =
+                            std::mem::take(executed_under).assume_proposition(fact.clone());
+                    }
+                } else if completed.is_some() {
+                    return Err("a frontier tactic application must precede function exit");
                 }
             }
             CheckedExecutionEvent::ReturnProposition(retained) => {
@@ -10678,14 +10703,27 @@ impl ExecutionProofCore {
         name: &str,
         arguments: &[crate::kernel::ProgramValue],
         environment: &crate::kernel::ExecutionEnvironment,
+        outcome: Option<(usize, &super::OutcomeProofCore)>,
     ) -> Result<(ExecutionState, PureFactStore, Vec<ProofObligation>), String> {
         if let Some(opened) = &self.descent {
             opened.accept_environment(environment)?;
         }
-        if self.evidence_completed {
-            return Err("a tactic must be applied before execution reaches function exit".into());
+        if let Some((path, outcome)) = outcome {
+            if !self.evidence_completed
+                || outcome.is_exceptional
+                || !self.has_return_producer(path, &outcome.identity)
+            {
+                return Err("a tactic application requires the selected checked return".into());
+            }
+        } else if self.evidence_completed {
+            return Err(
+                "a frontier tactic must be applied before execution reaches function exit".into(),
+            );
         }
-        let before_state = self.reached_state().clone();
+        let before_state = outcome.map_or_else(
+            || self.reached_state().clone(),
+            |(_, outcome)| (*outcome.state).clone(),
+        );
         let transition = crate::kernel::functions::prepare_verified_tactic_rule(
             &before_state,
             name,
@@ -10699,6 +10737,16 @@ impl ExecutionProofCore {
             name: name.to_string(),
             before_state,
             after_state: transition.state.clone(),
+            return_path: outcome.map(|(path, _)| {
+                (
+                    path,
+                    transition
+                        .facts
+                        .iter()
+                        .map(|fact| fact.proposition().clone())
+                        .collect(),
+                )
+            }),
         };
         // Before any evidence, the core holds the caller-side state and the
         // trace holds entry-bound states, as for a resource rewrite here.
@@ -10730,6 +10778,12 @@ impl ExecutionProofCore {
         self.prepared_tactic_application.is_some()
     }
 
+    pub(crate) fn has_prepared_return_tactic_application(&self) -> bool {
+        self.prepared_tactic_application
+            .as_ref()
+            .is_some_and(|application| application.return_path.is_some())
+    }
+
     /// Publish the retained transition once the driver has proved its
     /// obligations against the unchanged pre-state.
     pub(crate) fn finish_prepared_tactic_application(&mut self) {
@@ -10737,15 +10791,18 @@ impl ExecutionProofCore {
             name,
             before_state,
             after_state,
+            return_path,
         } = Arc::unwrap_or_clone(
             self.prepared_tactic_application
                 .take()
                 .expect("completion consumes a prepared tactic application"),
         );
+        assert!(return_path.is_none());
         let application = CheckedTacticApplication {
             name,
             before_state,
             after_state,
+            return_effect: None,
         };
         if self.evidence_state.is_some() {
             self.evidence_state = Some(application.after_state.clone());
@@ -12209,6 +12266,9 @@ impl ExecutionProofCore {
                 .iter()
                 .rposition(|event| {
                     !matches!(
+                        *event,
+                        CheckedExecutionEvent::TacticApplication(application) if application.return_effect.is_some()
+                    ) && !matches!(
                         *event,
                         CheckedExecutionEvent::ReturnProposition(_)
                             | CheckedExecutionEvent::ResourceRewrite(_)

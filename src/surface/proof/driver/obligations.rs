@@ -154,7 +154,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         ) -> Result<Proof<'a>, ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
-        if !matches!(step, ProofStep::FoldResource(_)) {
+        if !matches!(step, ProofStep::FoldResource(_) | ProofStep::UserTactic(_)) {
             driver_proof.require_execution_frontier("a step's obligation proofs")?;
         }
         let this = if matches!(step, ProofStep::FoldResource(_)) {

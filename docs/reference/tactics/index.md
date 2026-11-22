@@ -3987,8 +3987,8 @@ guards are false. Proofs should avoid relying on this behavior.
 **Form:** `name(args, { binder: instance })`
 
 **Specialized.** Write it to apply a `tactic` the project declares, such as a
-resource reshaping lemma. Apply the user-defined tactic `name` at the current
-execution frontier, before the function exits: bind each of its supplied
+resource reshaping lemma. Apply the user-defined tactic `name` at a running
+frontier or on a finished return outcome. Bind each of its supplied
 resource binders to an instance the proof holds and prove its `requires` at the
 call site. The application consumes its inputs, binds its outputs under the
 names of a `let { binder: name }` pattern, and adds its `ensures`.
@@ -3996,18 +3996,19 @@ names of a `let { binder: name }` pattern, and adds its `ensures`.
 No C runs and memory is unchanged, so every fact about a cell survives.
 
 Argument evaluation and instantiated contract requirements are ordinary proof
-obligations at the caller's frontier. Argument obligations come first. Use
+obligations at the selected state before the tactic changes its resources.
+Argument obligations come first. Use
 `by { ... }` for one obligation or `{ requires P by ...; }` to name obligations.
 Omitted proofs use implicit `solve()`, and expansion retains the proofs before
 the tactic's resource effects are applied.
 See [the checked call examples](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_requires_obligations.md).
 
-**Accepts**, at the execution frontier of a C function or `tactic` proof
-before exit, an application of a `tactic` declared earlier in the module (or
+**Accepts** an application of a `tactic` declared earlier in the module (or
 the tactic itself, for recursion), when:
 
-- There is one argument per parameter: any C-valued expression over the
-  frontier (`n + 1`, constants), and the literal `0` at a pointer parameter.
+- There is one argument per parameter. Use a C-valued expression over the
+  current state, including `result` at a return outcome, or the literal `0`
+  at a pointer parameter.
 - The map names every instance binder the tactic's `consumes`, `owns`, or
   `views` clauses declare, each mapped to an instance of the binder's
   resource that the proof holds. The map is left out only when the tactic
@@ -4026,18 +4027,17 @@ It consumes the mapped consumed instances, adds the produced ones under the
 
 - An instance an earlier step consumed, including an earlier application:
   it is gone; bind the instance that step produced.
-- Inside `have ... by { ... }`, or after the function exit: apply it at the
-  frontier before the `have` or before execution reaches the exit.
+- Inside `have ... by { ... }`: apply it in the surrounding function proof.
 
 **Failure, checking, and tools:**
 
 A missing requirement is refused by name, as are a map entry naming an unknown
-binder or an instance of the wrong resource, and an application after function
-exit. Click applies the tactic's certified contract once. Expansion retains
+binder, an instance of the wrong resource, or a thrown outcome. Click applies
+the tactic's certified contract once. Expansion retains
 the call and its obligation proofs, and profiling charges the checked
 application and its proof steps.
 
-**Checked examples:** [`user_tactic_reshapes_owned_resources.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_reshapes_owned_resources.md), [`user_tactic_application_owes_its_requirements.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_application_owes_its_requirements.md), [`user_tactic_binder_map_checks_the_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_binder_map_checks_the_resource.md), [`user_tactic_consumes_its_inputs.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_consumes_its_inputs.md), [`user_tactic_after_exit_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_after_exit_is_refused.md), [`user_tactic_accepts_null_pointer_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_accepts_null_pointer_arguments.md), [`user_tactic_recursion_converts_a_list.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_recursion_converts_a_list.md)
+**Checked examples:** [`user_tactic_reshapes_owned_resources.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_reshapes_owned_resources.md), [`user_tactic_application_owes_its_requirements.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_application_owes_its_requirements.md), [`user_tactic_binder_map_checks_the_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_binder_map_checks_the_resource.md), [`user_tactic_consumes_its_inputs.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_consumes_its_inputs.md), [`user_tactic_at_return.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_at_return.md), [`user_tactic_accepts_null_pointer_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_accepts_null_pointer_arguments.md), [`user_tactic_recursion_converts_a_list.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_recursion_converts_a_list.md)
 
 ### Observing resources
 

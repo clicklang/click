@@ -194,8 +194,10 @@ impl<'a> Proof<'a> {
         supplied: Option<&mut BTreeSet<crate::kernel::ResourceBinder>>,
     ) -> Result<bool, ClickError> {
         let identity = self
-            .execution()
-            .and_then(|execution| binding.resolve_identity(&execution.core.state))
+            .focused_outcome_data()
+            .map(|outcome| &*outcome.core.state)
+            .or_else(|| self.execution().map(|execution| &*execution.core.state))
+            .and_then(|state| binding.resolve_identity(state))
             .ok_or_else(|| {
                 self.step_error(format!(
                     "{map} requires a held resource `{}`",
@@ -1034,7 +1036,16 @@ impl<'a> Proof<'a> {
                 "a tactic is applied in a C function or tactic proof in this release",
             ));
         };
-        self.require_execution_frontier("a tactic application")?;
+        let outcome = match self.focused_obligation() {
+            Some(Obligation::FunctionOutcome(goal)) if !goal.data.core.is_exceptional => Some(goal),
+            Some(Obligation::FunctionOutcome(_)) => {
+                return Err(self.step_error("a tactic application requires a return outcome"));
+            }
+            _ => {
+                self.require_execution_frontier("a tactic application")?;
+                None
+            }
+        };
         let callee = application.callee();
         let mut execution = self
             .execution()
@@ -1078,7 +1089,8 @@ impl<'a> Proof<'a> {
             .function_environment
             .clone()
             .with_selected_call_binders(callee, parameters.len(), bindings);
-        let before = &*execution.core.state;
+        let before = outcome.map_or(&*execution.core.state, |goal| &*goal.data.core.state);
+        let result = outcome.map(|goal| goal.data.core.result.native());
         let pre_state = context.old_reference_state(&execution.core.frontier, before);
         let values = parameter_values(context.parameter_binding())?;
         let array_refs = array_refs_for_parameters(
@@ -1110,6 +1122,7 @@ impl<'a> Proof<'a> {
                     .with_parameters(context.parameter_binding()),
                 pre_state,
                 before,
+                result.as_deref(),
                 &execution.presentation.recorded_states,
                 context.spec_definitions,
             )
@@ -1142,6 +1155,7 @@ impl<'a> Proof<'a> {
                 callee,
                 &arguments,
                 &environment,
+                outcome.map(|goal| (goal.path_index, &goal.data.core)),
             )
             .map_err(|message| self.step_error(message))?;
         for obligation in obligations {
@@ -1166,12 +1180,33 @@ impl<'a> Proof<'a> {
                 .with_unresolved_requirement(&obligation);
             crate::surface::proof::execution_planning::refuse_or_record_open_obligation(error)?;
         }
-        execution.core.state = state.into();
         let added_facts = facts.introduced_since(self.facts()).unwrap_or_default();
-        let state = self
-            .state
-            .publish_checked_frontier_transition(facts, execution, added_facts.clone(), added_facts)
-            .map_err(|error| self.execution_update_error("a tactic application", error))?;
+        let state = if let Some(outcome) = outcome {
+            let mut updated = outcome.clone();
+            Arc::make_mut(&mut updated.data).core.state = state.into();
+            self.publish_checked_transition(CheckedFocusedTransition {
+                locals: self.state().locals().clone(),
+                branch: Some(OpenBranch::function_outcome(
+                    updated,
+                    BranchState {
+                        facts,
+                        execution: Some(Arc::new(execution)),
+                    },
+                )),
+                checked_facts: added_facts.clone(),
+                added_facts,
+            })?
+        } else {
+            execution.core.state = state.into();
+            self.state
+                .publish_checked_frontier_transition(
+                    facts,
+                    execution,
+                    added_facts.clone(),
+                    added_facts,
+                )
+                .map_err(|error| self.execution_update_error("a tactic application", error))?
+        };
         Ok(Self {
             site: self.site.clone(),
             context: self.context.clone(),
@@ -1387,7 +1422,13 @@ impl<'a> Proof<'a> {
             .execution()
             .expect("prepared statement has a successor")
             .clone();
-        let facts = if execution.core.has_prepared_return_fold() {
+        let prepared_return_tactic = execution.core.has_prepared_return_tactic_application();
+        let facts = if prepared_return_tactic {
+            execution
+                .core
+                .finish_prepared_return_tactic_application(&proven.core, proved.facts())
+                .map_err(|error| self.step_error(error))?
+        } else if execution.core.has_prepared_return_fold() {
             execution
                 .core
                 .finish_prepared_return_fold(&proven.core, proved.facts())
@@ -1427,7 +1468,7 @@ impl<'a> Proof<'a> {
                 .retained_have_facts
                 .push(fact);
         }
-        if prepared_fold {
+        if prepared_fold || prepared_return_tactic {
             candidate.state = candidate
                 .state
                 .publish_checked_focused_transition(
