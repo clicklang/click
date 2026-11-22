@@ -1,6 +1,6 @@
 # A known list position still closes through unfolding
 
-```click
+```click quick-solve
 function adjacent(xs: List<int32>, first: int32, second: int32) -> int32
     decreases xs
 {

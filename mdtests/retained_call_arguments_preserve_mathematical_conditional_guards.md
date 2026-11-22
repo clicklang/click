@@ -1,6 +1,6 @@
 # Retained call arguments preserve mathematical conditional guards
 
-```click
+```click quick-solve
 import click::c::stdio;
 
 theorem retained_guard(v: uint64, width: uint64, k: uint64) {

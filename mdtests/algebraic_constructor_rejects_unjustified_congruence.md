@@ -3,7 +3,7 @@
 The checked congruence rule cannot fabricate equality between unrelated
 constructor fields.
 
-```click
+```click quick-solve
 spec enum Maybe<T> {
     None,
     Some(T),

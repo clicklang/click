@@ -38,6 +38,8 @@ pub struct TacticEvent {
 pub struct TacticWorkSample {
     pub tactic: TacticEvent,
     pub work: usize,
+    /// Deterministic work between tactic entry and exit, including nested work.
+    pub inclusive_work: usize,
     pub failed: bool,
 }
 
@@ -194,6 +196,7 @@ struct ActiveTactic {
     event: TacticEvent,
     started_at: TacticInstant,
     work_used: usize,
+    work_sample_start: Option<(usize, usize)>,
     work_limit: Option<usize>,
     work_exhausted: bool,
     /// Deterministic work by named operation span, populated only while
@@ -277,7 +280,7 @@ thread_local! {
     static PENDING_LIMIT: RefCell<Option<PendingLimit>> = const { RefCell::new(None) };
     /// Budget-calibration sinks: each ended tactic's charged work, without
     /// the cost of collecting every verification event.
-    static TACTIC_WORK_SINKS: RefCell<Vec<Vec<TacticWorkSample>>> = const { RefCell::new(Vec::new()) };
+    static TACTIC_WORK_SINKS: RefCell<Vec<TacticWorkSink>> = const { RefCell::new(Vec::new()) };
     /// Deterministic work consumed by nested measurements. Every unit that
     /// charges a tactic budget also lands here; unlike tactic work, this
     /// includes certification and driver phases outside any tactic, so
@@ -1380,23 +1383,66 @@ pub fn exceeded_verification_limit_context() -> Option<String> {
 /// (`CLICK_DISABLE_TACTIC_BUDGETS`) so no cost is clipped, and read the work
 /// every tactic would have charged. Operation spans are not measured.
 pub fn collect_tactic_work<R>(operation: impl FnOnce() -> R) -> (R, Vec<TacticWorkSample>) {
-    TACTIC_WORK_SINKS.with(|sinks| sinks.borrow_mut().push(Vec::new()));
+    struct WorkSinkGuard;
+
+    impl Drop for WorkSinkGuard {
+        fn drop(&mut self) {
+            TACTIC_WORK_SINKS.with(|sinks| sinks.borrow_mut().pop());
+        }
+    }
+
+    let counter = WorkCounterGuard::enter();
+    let counter_index = WORK_COUNTERS.with(|counters| counters.borrow().len() - 1);
+    TACTIC_WORK_SINKS.with(|sinks| {
+        sinks.borrow_mut().push(TacticWorkSink {
+            counter_index,
+            samples: Vec::new(),
+        });
+    });
+    let sink_guard = WorkSinkGuard;
     let result = operation();
     let samples = TACTIC_WORK_SINKS.with(|sinks| {
-        sinks
-            .borrow_mut()
-            .pop()
-            .expect("tactic work sink should remain installed")
+        std::mem::take(
+            &mut sinks
+                .borrow_mut()
+                .last_mut()
+                .expect("tactic work sink should remain installed")
+                .samples,
+        )
     });
+    drop(sink_guard);
+    drop(counter);
     (result, samples)
 }
 
-fn record_tactic_work_sample(tactic: &TacticEvent, work: usize, failed: bool) {
+struct TacticWorkSink {
+    counter_index: usize,
+    samples: Vec<TacticWorkSample>,
+}
+
+fn tactic_work_sample_start() -> Option<(usize, usize)> {
     TACTIC_WORK_SINKS.with(|sinks| {
-        if let Some(sink) = sinks.borrow_mut().last_mut() {
-            sink.push(TacticWorkSample {
-                tactic: tactic.clone(),
-                work,
+        let index = sinks.borrow().last()?.counter_index;
+        Some((
+            index,
+            WORK_COUNTERS.with(|counters| counters.borrow()[index]),
+        ))
+    })
+}
+
+fn record_tactic_work_sample(active: &ActiveTactic, failed: bool) {
+    let Some((counter_index, start)) = active.work_sample_start else {
+        return;
+    };
+    TACTIC_WORK_SINKS.with(|sinks| {
+        if let Some(sink) = sinks.borrow_mut().last_mut()
+            && sink.counter_index == counter_index
+        {
+            let end = WORK_COUNTERS.with(|counters| counters.borrow()[counter_index]);
+            sink.samples.push(TacticWorkSample {
+                tactic: active.event.clone(),
+                work: active.work_used,
+                inclusive_work: end - start,
                 failed,
             });
         }
@@ -1622,6 +1668,7 @@ pub fn emit(mut event: VerificationEvent) {
                     event: tactic.clone(),
                     started_at: TacticInstant::now(),
                     work_used: 0,
+                    work_sample_start: tactic_work_sample_start(),
                     work_limit,
                     work_exhausted: false,
                     named_work: std::collections::BTreeMap::new(),
@@ -1643,7 +1690,7 @@ pub fn emit(mut event: VerificationEvent) {
                     let finished = active.remove(index);
                     *elapsed = now.duration_since(finished.started_at);
                     *work = finished.work_used;
-                    record_tactic_work_sample(&finished.event, finished.work_used, false);
+                    record_tactic_work_sample(&finished, false);
                 }
             });
         }
@@ -1655,7 +1702,7 @@ pub fn emit(mut event: VerificationEvent) {
                     .rposition(|candidate| &candidate.event == tactic)
                 {
                     let failed = active.remove(index);
-                    record_tactic_work_sample(&failed.event, failed.work_used, true);
+                    record_tactic_work_sample(&failed, true);
                 }
             });
         }
@@ -1913,6 +1960,7 @@ mod tests {
                 vec![TacticWorkSample {
                     tactic: tactic.clone(),
                     work: 11,
+                    inclusive_work: 11,
                     failed: true,
                 }]
             );
@@ -1925,6 +1973,26 @@ mod tests {
                 }
             )));
         }
+    }
+
+    #[test]
+    fn tactic_work_samples_include_nested_work_on_each_tactic() {
+        let solve = tactic("smart", 0);
+        let check = tactic("simple", 1);
+        let (_, samples) = collect_tactic_work(|| {
+            record_deterministic_work(100);
+            emit(VerificationEvent::TacticStarted(solve.clone()));
+            record_deterministic_work(2);
+            emit(VerificationEvent::TacticStarted(check.clone()));
+            record_deterministic_work(5);
+            emit(VerificationEvent::TacticFailed(check));
+            record_deterministic_work(3);
+            emit(VerificationEvent::TacticFailed(solve));
+            record_deterministic_work(100);
+        });
+        assert_eq!(samples.len(), 2);
+        assert_eq!((samples[0].work, samples[0].inclusive_work), (5, 5));
+        assert_eq!((samples[1].work, samples[1].inclusive_work), (5, 10));
     }
 
     #[test]

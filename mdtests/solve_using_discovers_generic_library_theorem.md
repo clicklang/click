@@ -2,7 +2,7 @@
 
 Both discovered and explicit applications accept an Integer element type.
 
-```click
+```click quick-solve
 import click::list;
 
 theorem lengths(xs: List<Integer>, ys: List<Integer>) {

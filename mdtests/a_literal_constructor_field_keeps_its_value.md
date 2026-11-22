@@ -4,7 +4,7 @@ A literal constructor argument is a value of its field's type, so
 `Seq<int64>::Cons(3, ...)` is not `same(2)`, and the claim that it is
 remains refused.
 
-```click
+```click quick-solve
 spec enum Seq<T> {
     Nil,
     Cons(T, Seq<T>),

@@ -8,7 +8,7 @@ before its arguments, so the body is a `Seq<int64>`. Before, inference
 fixed `Seq<int32>` from `x` and the body was refused, and the explicit
 `Seq<int64>::Cons(x, ...)` type-checked but lowered to no path.
 
-```click
+```click quick-solve
 spec enum Seq<T> {
     Nil,
     Cons(T, Seq<T>),

@@ -5,7 +5,7 @@ universal is vacuously true and checking zero instances is exactly its
 evidence. This is the positive twin of
 `mdtests/empty_finite_forall_hull_does_not_discharge_unquantified_leaf.md`.
 
-```click
+```click quick-solve
 theorem q(x: int32) {
     requires x > 0;
     ensures forall (k: int32) {

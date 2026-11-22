@@ -4,7 +4,7 @@ This catches an equality that neither elimination alone nor a direct pair
 of the listed premises proves. Each direction needs the substitution and
 its own bound; both must be checked before concluding the equality.
 
-```click
+```click quick-solve
 theorem equality_through_two_bounds(a: Integer, d: Integer) {
     requires a == d;
     requires d <= 2;

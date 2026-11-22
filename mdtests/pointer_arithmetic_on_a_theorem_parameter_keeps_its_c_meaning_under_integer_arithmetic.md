@@ -6,7 +6,7 @@ parameter is such an operand, like a C function's: `base + offset` is pointer
 arithmetic, so the comparison keeps its C meaning. The theorem is the one in the
 owned-string example.
 
-```click
+```click quick-solve
 
 theorem pointer_add_zero_equals(
     base: int32*,

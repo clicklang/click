@@ -2,7 +2,7 @@
 
 `x < n` and `n <= 4` give `x <= 3`, not `x <= 2`.
 
-```click
+```click quick-solve
 theorem too_tight(x: int32, n: int32) {
     requires x < n;
     requires n <= 4;
