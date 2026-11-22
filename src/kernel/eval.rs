@@ -67,8 +67,6 @@ pub(in crate::kernel) use memory_loads::abstract_value_source;
 pub(crate) use memory_loads::canonical_cell_load;
 pub(crate) use memory_loads::canonical_condition;
 pub(crate) use memory_loads::canonical_condition_fact;
-#[cfg(test)]
-pub(crate) use memory_loads::canonical_read_census;
 pub(in crate::kernel) use memory_loads::canonical_scalar_read;
 pub(crate) use memory_loads::canonical_term;
 pub(crate) use memory_loads::canonicalized_offset_index_term;
