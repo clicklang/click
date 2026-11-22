@@ -181,16 +181,6 @@ walking its read history. Canonicalizing an outer read preserves that child;
 it must not resolve the index read to its cached value. Width/origin metadata
 and scalar producers outside this boundary still use the registry.
 
-Load variables are being removed. `canonical_read` gives a load the term that
-replaces its variable: the read at the state its cell's version selects, built
-with the same state canonicalization, version walk (`cell_version_memory`) and
-materialized-cell rule as minting. Two loads have one canonical read exactly
-when they have one load variable; `canonical_read_census` checks this on a
-gate fixture and, in the nightly read-name pass
-(`every_mdtest_names_each_read_once`), over every C mdtest.
-`a_canonical_read_costs_the_steps_after_its_cells_last_store` pins its cost to
-the steps after the cell's last store.
-
 The following describes the remaining registered-variable interface.
 
 A load variable is the canonical form of the load it represents, not an

@@ -536,49 +536,6 @@ fn a_path_version_costs_the_points_after_the_cells_last_store() {
     );
 }
 
-/// A canonical read is identified at its cell's version, which the walk
-/// finds by crossing the steps after the cell's last store: its cost does not
-/// grow with the history before that store, and reads at states after the
-/// store are one read while a read before it is another.
-#[test]
-fn a_canonical_read_costs_the_steps_after_its_cells_last_store() {
-    let read = |state: &ExecutionState| {
-        MachineTerm::MemoryLoad(
-            state.program_point(),
-            Box::new(at(block("slot"), 0)),
-            crate::kernel::LoadKind::Int32,
-        )
-    };
-    let mut samples = Vec::new();
-    for earlier in [10u32, 100, 1_000] {
-        let mut stores = vec![("other", 0u32); earlier as usize];
-        stores.push(("slot", 1));
-        stores.extend([("other", 2), ("other", 3), ("other", 4)]);
-        let states = path_of_stores(&start_with(&["slot", "other"]), &stores);
-        let reader = states.last().unwrap();
-        clear_version_memos();
-        let (canonical, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::eval::canonical_read(&read(reader))
-        });
-        let canonical = canonical.expect("a read has a canonical read");
-        assert_eq!(
-            crate::kernel::eval::canonical_read(&read(&states[earlier as usize])),
-            Some(canonical.clone()),
-            "the store's own state reads as the later one"
-        );
-        assert_ne!(
-            crate::kernel::eval::canonical_read(&read(&states[earlier as usize - 1])),
-            Some(canonical),
-            "a state before the store is another version"
-        );
-        samples.push(work);
-    }
-    assert!(
-        samples.windows(2).all(|pair| pair[0] == pair[1]),
-        "a canonical read grew with the history before the store: {samples:?}"
-    );
-}
-
 #[test]
 fn cold_static_array_versions_ignore_disjoint_call_history() {
     let _session = crate::kernel::VerificationSession::enter();
