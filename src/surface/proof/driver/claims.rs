@@ -579,15 +579,18 @@ fn outcome_paths_bind_obtain(choices: &[Vec<SurfacePathChoice>]) -> bool {
 
 fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimRef<'_>) -> String {
     let label = function_claim_label(function_block, claim);
-    let statement = match claim.clause().ensure() {
+    format!("{label}: {}", diagnostic_claim_statement(claim))
+}
+
+fn diagnostic_claim_statement(claim: &FunctionClaimRef<'_>) -> String {
+    match claim.clause().ensure() {
         Ensure::Resource(resource) => {
             crate::surface::validation::describe_resource_clause(resource)
         }
         Ensure::Proposition(proposition) => {
             crate::surface::diagnostics::describe_click_proposition(proposition)
         }
-    };
-    format!("{label}: {statement}")
+    }
 }
 
 /// The terminal diagnostic when all checked drivers declined.
@@ -2894,7 +2897,10 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 let mut scope = match direct_proof.driver().open_have(scope_surface_goal) {
                     Ok(scope) => scope,
                     Err(error) => {
-                        check_verification_deadline()?;
+                        if let Err(stop) = check_verification_deadline() {
+                            return Err(direct_proof.attach_step_diagnostic(stop)
+                                .with_unlowered_goal(describe_click_proposition(surface_goal)));
+                        }
                         if !require_explicit_closers {
                             selected = false;
                             break;
@@ -2963,11 +2969,13 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 });
                 let selected_scope = match selected_scope {
                     Ok(selected) => selected,
-                    Err(error) => return Err(error.with_check_observations(checks)
+                    Err(error) => return Err(scope.body().attach_step_diagnostic(error)
+                        .with_check_observations(checks)
                         .with_search_failures(search.finish())),
                 };
                 let Some(scope) = selected_scope else {
-                    check_verification_deadline()?;
+                    check_verification_deadline()
+                        .map_err(|error| scope.body().attach_step_diagnostic(error))?;
                     if !require_explicit_closers {
                         selected = false;
                         break;
@@ -5391,7 +5399,23 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut path_surface_post_tactics,
                                     &mut path_grouped_surface_closers,
                                     &mut path_deferred_capture_tactics,
-                                )?;
+                                )
+                                .map_err(|mut error| {
+                                    if error.verification_stopped()
+                                        && error.proof_claim_label().is_none()
+                                        && let Some(root) = &outcome_proof
+                                    {
+                                        if let Ok(Some(index)) =
+                                            main_goal_claim(&outcome_proof, &closures)
+                                        {
+                                            error = error.with_unlowered_goal(
+                                                diagnostic_claim_statement(&claims[index]),
+                                            );
+                                        }
+                                        error = root.attach_step_diagnostic(error);
+                                    }
+                                    error
+                                })?;
                                 if matches!(post_tactic, PostExecutionTactic::ImplicitSolve)
                                     && !super::proof_object::implicit_solve_disabled()
                                 {

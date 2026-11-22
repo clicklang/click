@@ -8817,6 +8817,8 @@ struct ReportDetail {
     /// `goal:` line when no unresolved requirement carries it. Diagnostics
     /// only: no planner reads it.
     goal: Option<Proposition>,
+    /// A written goal whose lowering had not completed when search stopped.
+    written_goal: Option<String>,
     /// Whether a write and a live view concretely overlap, when reporting a write prerequisite.
     live_view_write_overlap: Option<bool>,
     /// The labels a refusal that prints its own legend numbered it with, so
@@ -11181,6 +11183,14 @@ impl ClickError {
                 ));
             }
         }
+        if !context.iter().any(|line| line.starts_with("goal: "))
+            && let Some(goal) = self
+                .report_detail
+                .as_ref()
+                .and_then(|detail| detail.written_goal.as_deref())
+        {
+            context.push(format!("goal: {goal}"));
+        }
         (report, context)
     }
 
@@ -11587,6 +11597,12 @@ impl ClickError {
     pub(in crate::surface) fn with_reported_goal(mut self, goal: Proposition) -> Self {
         std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).goal = Some(goal);
         self.rendered = std::sync::OnceLock::new();
+        self
+    }
+
+    pub(in crate::surface) fn with_unlowered_goal(mut self, goal: String) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).written_goal =
+            Some(goal);
         self
     }
 
