@@ -44,9 +44,32 @@ provenances may or may not be the same allocation.
 ### Types and qualifiers belong to accesses, not values
 
 A pointer's type, `const` and `volatile` are properties of the expression or
-access that uses it, not of the value. `(char *)p` is the same pointer value as
-`p`. Click's identity includes them today (`Pointer::identity`); this model
-removes them. Effective types (`design/effective-types.md`) stay with the
+access that uses it, not of the value. `(int *)p` and `(void *)p` are the
+same pointer value as `p`. Click's identity includes them today
+(`Pointer::identity`); this model removes them.
+
+One conversion has a meaning of its own in C: converting to a character
+pointer forms a view of the object's bytes (C11 6.3.2.3p7). In C provenance
+that view's array object is the allocation's bytes, TS 6010's granularity,
+not the member the operand was formed from. So `(char *)&s->f` keeps the
+address and allocation but widens the array object. The conversion forms the
+view whether written or implicit, and from any non-character type, including
+`void *`. A conversion between character types keeps the existing view. GNU
+C defines arithmetic on `void *` as character arithmetic, so it forms the same
+view; Linux's `container_of` relies on it. Whether a conversion forms the view
+depends on the operand's static type, which every conversion has, so the rule
+needs no type on the value (`design/pointer-subobject-bounds.md`, D4 as
+revised).
+
+A second conversion has a meaning of its own: a pointer to a structure's
+initial member, converted to a pointer to the structure, points to the
+structure (C11 6.7.2.1p15). When the operand's array object is a member
+starting at its address and narrower than the struct, the result's array
+object is the struct. Whether a struct is there is the effective-type
+question each access asks (C11 6.5p7). The kernel cannot yet tell an initial
+member from any other member that starts its own array object, because C
+provenance does not record the enclosing struct; recording it belongs with
+step 3's array object. Effective types (`design/effective-types.md`) stay with the
 allocation, which provenance names.
 
 ### Equality

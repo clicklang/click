@@ -4300,8 +4300,11 @@ fn validate_pointer_cast_operands(
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
                 if *target_type == ProgramType::UInt8Pointer && pointee_struct.is_none() {
+                    // A `void *` operand converts to the byte view as the C
+                    // conversion does (C11 6.3.2.3p7).
                     let actual = infer_program_expression_type(operand, variables);
                     if actual.is_some()
+                        && actual != Some(InterfaceType::VoidPointer)
                         && !actual.is_some_and(|ty| {
                             ty.to_kernel_type().pointee_type().is_some_and(|element| {
                                 !element.is_pointer() && element.byte_width() > 0
@@ -4314,9 +4317,17 @@ fn validate_pointer_cast_operands(
                     }
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
+                // A `void *` operand recovers the object; a character
+                // pointer operand recovers it from the byte view that
+                // converting to a character pointer formed (C11 6.3.2.3p7).
                 match infer_program_expression_type(operand, variables) {
                     None | Some(InterfaceType::VoidPointer) => {}
                     Some(actual) if actual.to_kernel_type() == *target_type => {}
+                    Some(actual)
+                        if matches!(
+                            actual.to_kernel_type(),
+                            ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+                        ) => {}
                     Some(actual) => {
                         return Err(ClickError::new(format!(
                             "pointer cast in {context} expects a `void *` operand, got `{actual:?}`"

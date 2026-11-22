@@ -87,7 +87,11 @@ and equality of widened byte views do not supply the original domain.
 
 Access matching checks the requested bytes or clause range against the cached
 selected domain and checks the supplier's object identity. A broader holding
-can supply those bytes, including when adjacent holdings were coalesced.
+can supply those bytes, including when adjacent holdings were coalesced. When
+the required pointer's domain is opaque and has no cached selection, coverage
+evidence for that domain that contains the requested bytes, or both clause
+endpoints, bounds the access instead; the holding must still have the same
+provenance and supply the bytes.
 Both clause endpoints are checked in their original 32-bit or native-width
 coordinates. The supplier must separately cover the access and provide the
 required permission, initialization, and liveness.

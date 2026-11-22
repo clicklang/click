@@ -321,6 +321,7 @@ fn struct_owners(
                 target_type: ProgramType::Int32Pointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: Some(struct_name.clone()),
+                pointee_struct_size: Some(layout.size_bytes()),
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -484,6 +485,7 @@ fn synthesize_struct_loadable_segment(
             target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -1816,6 +1818,7 @@ fn synthesize_zero_based_loadable_segment(
         target_type: element_pointer_type,
         integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
@@ -4186,27 +4189,33 @@ fn raise_constructor_pointer(
         .or_else(|| synthesize_loaded_pointer_value(pointer, parameter_binding, state))
         .map(|expression| {
             // Constructors implicitly retag object pointers
-            // without widening their views. An explicit cast
-            // is needed only for a checked root view; adding
-            // it to a saved narrow view would change the value.
+            // without widening their views. A checked root view
+            // is the byte view a character conversion forms
+            // (C11 6.3.2.3p7), retagged to `void *`; adding it to
+            // a saved narrow view would change the value.
             if pointer.program_type() == ProgramType::VoidPointer
                 && pointer.bounds_are_known()
                 && pointer.bounds().is_none()
             {
-                ContractExpression::CUnary {
+                let cast = |operand: ContractExpression, target_type| ContractExpression::CUnary {
                     lowered: ProgramExpression::Cast {
                         expression: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
                             pointer.clone(),
                         ))),
-                        target_type: ProgramType::VoidPointer,
+                        target_type,
                         integer_mode: crate::kernel::IntegerCastMode::Standard,
                         pointee_struct: None,
+                        pointee_struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,
                     },
-                    operand: Box::new(expression),
-                }
+                    operand: Box::new(operand),
+                };
+                cast(
+                    cast(expression, ProgramType::UInt8Pointer),
+                    ProgramType::VoidPointer,
+                )
             } else {
                 expression
             }
@@ -4742,6 +4751,7 @@ fn raise_kernel_term_dispatch(
                             crate::kernel::IntegerCastMode::CConversion
                         },
                         pointee_struct: None,
+                        pointee_struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,
@@ -4794,6 +4804,7 @@ fn synthesize_observation_operand(
                 target_type: format,
                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -5920,6 +5931,7 @@ fn synthesize_surface_bitvector(
                     target_type: destination.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -6031,6 +6043,7 @@ fn synthesize_surface_bitvector(
                     target_type: ProgramType::UInt64,
                     integer_mode: crate::kernel::IntegerCastMode::Standard,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -6319,6 +6332,7 @@ fn synthesize_surface_bitvector(
                         target_type: ProgramType::UInt8Pointer,
                         integer_mode: crate::kernel::IntegerCastMode::Standard,
                         pointee_struct: None,
+                        pointee_struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,
@@ -6447,6 +6461,7 @@ fn synthesize_surface_bitvector(
                     },
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -6465,6 +6480,7 @@ fn synthesize_surface_bitvector(
                 target_type: ProgramType::UInt32,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -6817,6 +6833,7 @@ fn synthesize_parameter_field_indexed_int32_load(
             target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -8483,6 +8500,7 @@ fn raise_float_read_place(
                 target_type: ProgramType::VoidPointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -8494,6 +8512,7 @@ fn raise_float_read_place(
             },
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,

@@ -561,6 +561,7 @@ pub(in crate::kernel) fn apply_program_add(
                     obligations,
                 }];
             };
+            let pointer = gnu_void_arithmetic_operand(pointer);
             let offset = canonicalized_offset_index_term(offset, &mut facts);
             pointer_offset_by_elements_paths(
                 state,
@@ -588,6 +589,7 @@ pub(in crate::kernel) fn apply_program_add(
                     obligations,
                 }];
             };
+            let pointer = gnu_void_arithmetic_operand(pointer);
             let offset = canonicalized_offset_index_term(offset, &mut facts);
             pointer_offset_by_elements_paths(
                 state,
@@ -1850,6 +1852,19 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
     }
 }
 
+/// GNU C defines arithmetic on `void *` as arithmetic on a character
+/// pointer, so its operand is the byte view that converting to a character
+/// pointer forms (C11 6.3.2.3p7): the allocation's bytes, not the member the
+/// pointer was formed from. Linux's `container_of` steps back from a member
+/// this way.
+fn gnu_void_arithmetic_operand(pointer: Pointer) -> Pointer {
+    if pointer.program_type() == ProgramType::VoidPointer {
+        pointer.with_root_bounds()
+    } else {
+        pointer
+    }
+}
+
 pub(super) fn pointer_value_step_width(
     pointer: &Pointer,
     expression_width: Option<u32>,
@@ -2663,6 +2678,7 @@ pub(in crate::kernel) fn apply_program_subtract(
             ) else {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             };
+            let pointer = gnu_void_arithmetic_operand(pointer);
             pointer_offset_by_elements_paths(
                 state,
                 pointer,
@@ -2685,6 +2701,7 @@ pub(in crate::kernel) fn apply_program_subtract(
             ) else {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             };
+            let pointer = gnu_void_arithmetic_operand(pointer);
             let (offset, unsigned) = match right {
                 ProgramValue::UInt32(value) => (MachineTerm::uint64_from_32(value), true),
                 ProgramValue::Int64(value) => (value, false),

@@ -3964,6 +3964,11 @@ pub enum ProgramExpression {
         /// contract cast prints back as `(struct name *)` and so the parser
         /// resolves `->field` through the cast result.
         pointee_struct: Option<String>,
+        /// `sizeof` the struct `pointee_struct` names, when the cast's
+        /// producer has its layout. A pointer to a struct's initial member,
+        /// converted to the struct's type, points to the struct (C11
+        /// 6.7.2.1p15), so the result's array object is that struct's bytes.
+        pointee_struct_size: Option<u32>,
         /// Whether the cast result points at a volatile pointer-valued cell.
         /// This carries the C qualifier in `T * volatile *` into a following
         /// dereference without confusing it with volatile `T` storage.
