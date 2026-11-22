@@ -222,7 +222,6 @@ impl Flow {
                 T::Goto { target }
                 | T::Drop { target, .. }
                 | T::Call { target, .. }
-                | T::BoxNew { target, .. }
                 | T::BoxFree { target, .. } => *target < exit && exit_tails[*target],
                 _ => false,
             };

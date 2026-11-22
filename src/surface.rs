@@ -1779,6 +1779,9 @@ pub struct FunctionBlock {
     /// parameters: a call supplies them from the instance a clause selects
     /// or the call map names, and the body is proved for every value.
     witness_count: usize,
+    /// The block's `allocates(result, n)`: the returned allocation is one
+    /// the call creates, a block no earlier pointer reaches.
+    allocates_result: bool,
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -9565,6 +9568,11 @@ impl ContractDefinition {
 }
 
 impl FunctionBlock {
+    /// Whether the block states `allocates(result, n)`.
+    pub(in crate::surface) fn allocates_result(&self) -> bool {
+        self.allocates_result
+    }
+
     /// Where the parser read this block's clauses.
     pub(in crate::surface) fn parsed_body(&self) -> &parser::DeclarationBody {
         &self.body

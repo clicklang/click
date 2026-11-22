@@ -8170,6 +8170,37 @@ allocation limit is smaller and aborts rather than returns.
 
 **Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies [`design/charon-trial/vec-values/vecs.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/vec-values/vecs.rs) in `charon_vec_values_read_as_the_library_vec`, and refuses each claim mutated false and an index not shown in bounds.
 
+### `Box<T>`
+
+```click
+fn Box::new<T>(x: T) -> Box<T> {
+    allocates(result, sizeof(T));
+    produces *result;
+    ensures result != 0;
+    ensures aligned(result, alignof(T));
+    ensures *result == x;
+}
+fn Box::drop<T>(b: Box<T>) {
+    consumes allocation(b, sizeof(T));
+    consumes uninitialized(*b);
+}
+```
+
+**Meaning:** A box owns its allocation, `sizeof(T)` bytes, and the value in
+it. `Box::new(x)` moves `x` into an allocation the call creates
+([fresh allocations](../language/c.md#fresh-allocations)); allocation
+failure aborts, so it returns only a non-null box. `Box::drop(b)` is
+`<Box<T> as Drop>::drop`, which the compiler calls after the contents'
+drop glue or after they were moved out, and frees the allocation; it needs
+the box's storage, initialized or not, and no alignment. The importer calls
+these for `Box::new` and for each box's drop, at the boxed struct
+(`Box::new<boxed::Cell>`), symbolic layouts included
+([Boxes](../rust.md#boxes)).
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies [`design/charon-trial/boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/boxes/boxed.rs) in `charon_boxes_allocate_read_write_and_free_their_struct`, [`design/charon-trial/recursive-drop`](https://github.com/clicklang/click/blob/master/design/charon-trial/recursive-drop/list.rs) in `charon_recursive_drop_frees_every_node`, and [`design/charon-trial/generic-stack`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-stack/stack.rs) in `charon_generic_stack_verifies_once_for_every_type`.
+
 ### `slice::swap<T>`
 
 ```click

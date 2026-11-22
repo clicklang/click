@@ -2571,6 +2571,34 @@ A signed 64-bit (`long`) count is refused; it is stated through its
 `size_t` conversion
 (`mdtests/a_signed_64_bit_allocation_byte_count_is_refused.md`).
 
+### Fresh allocations
+
+`produces allocation(result, n)` hands the caller an allocation without
+saying where it came from: an arena's `take(p)` may return the pointer it was
+given. `allocates(result, n)` says the allocation is new, as `malloc`'s is.
+It is `produces allocation(result, n)` of a block the call creates, which no
+pointer that existed before the call reaches. Its bytes are whatever the
+contract's other clauses say; `allocates` says nothing about them. Its
+result is never null. A call's result then takes a heap identity distinct
+from every other block, so it differs from any pointer the caller held,
+owned or not, and no earlier store, local or parameter reaches it:
+
+<!-- verified-example: mdtests/an_allocates_result_is_no_pointer_the_caller_held.md -->
+```click
+extern int32* fresh_int() {
+    allocates(result, 4);
+    produces *result;
+    ensures result != 0;
+}
+```
+
+With `produces allocation` instead, the same caller's `p != held` is not
+proved (`mdtests/a_produced_allocation_may_be_a_pointer_the_caller_held.md`).
+`allocates` names `result` and appears at most once; an allocator that
+may fail returns its result through a branch and uses `produces allocation`.
+A contract that claims `allocates` for a pointer it may return twice is a
+false contract, as a false `ensures` is.
+
 ## Undefined behavior
 
 Signed overflow is C undefined behavior. Signed division and remainder also

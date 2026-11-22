@@ -951,8 +951,9 @@ fn lower_function(
         }
         if let Type::Record { name } = &p.value_type {
             // A generic function's instance takes the record as the
-            // generic function, whose MIR is checked, does.
-            if f.mir.is_none() && f.instance_of.is_none() {
+            // generic function, whose MIR is checked, does; a library
+            // function takes it as its contract says.
+            if f.mir.is_none() && f.instance_of.is_none() && f.core_method.is_none() {
                 return Err("owned record parameters require compiler MIR".into());
             }
             let layout = layouts.get(name).ok_or("missing parameter record layout")?;

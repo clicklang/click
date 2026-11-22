@@ -175,6 +175,15 @@ impl LayoutSize {
             Self::Of(layout) => layout.size_term(),
         }
     }
+
+    /// What an access of the whole object reaches: its bytes, or for a
+    /// symbolic layout an object of the layout's value type.
+    pub fn extent(self) -> AccessExtent {
+        match self {
+            Self::Bytes(bytes) => AccessExtent::Bytes(bytes),
+            Self::Of(layout) => AccessExtent::Object(layout.value_type()),
+        }
+    }
 }
 
 /// One field of a symbolic layout: its name, the type a cell of it holds
