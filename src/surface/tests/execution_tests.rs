@@ -2458,10 +2458,40 @@ fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {
     assert!(duplicates.is_empty(), "{duplicates:?}");
 }
 
+/// A canonical read gives each load the identity its load variable gives
+/// it: two loads have one read exactly when they have one variable. The
+/// fixture names reads across a loop alias and a call, where the version
+/// walk and materialized cells decide a load's identity.
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_14")]
+fn canonical_reads_agree_with_load_variables_across_a_call_and_a_loop() {
+    let mdtest = crate::cli::parse_mdtest(
+        std::path::Path::new("a_retained_pointer_field_fact_transports_through_a_loop_alias.md"),
+        include_str!(
+            "../../../mdtests/a_retained_pointer_field_fact_transports_through_a_loop_alias.md"
+        ),
+    )
+    .unwrap();
+    let click = mdtest.click_source.as_deref().unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let census = crate::kernel::canonical_read_census::capture(|| {
+        verify_c_sources(click, &sources).unwrap();
+    });
+    assert!(census.loads > 0);
+    assert!(census.reports.is_empty(), "{:#?}", census.reports);
+}
+
 /// One read, one name, over the whole mdtest corpus: every C mdtest is
 /// verified under [`crate::kernel::duplicate_read_names::capture`], and no
 /// read may be named twice for a version the assumption-free load equality
-/// proves the same. Nightly: it verifies the corpus once more, serially.
+/// proves the same. The same pass runs
+/// [`crate::kernel::canonical_read_census::capture`]: two loads have one
+/// canonical read exactly when they have one load variable. Nightly: it
+/// verifies the corpus once more, serially.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies every C mdtest again under the read-name audit"]
@@ -2474,6 +2504,7 @@ fn every_mdtest_names_each_read_once() {
         .collect::<Vec<_>>();
     paths.sort();
     let mut duplicates = Vec::new();
+    let mut disagreements = Vec::new();
     for path in paths {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let Ok(mdtest) = crate::cli::read_mdtest(&path) else {
@@ -2495,18 +2526,26 @@ fn every_mdtest_names_each_read_once() {
         let project = crate::cli::read_mdtest_project_if_needed(&path, click, &inputs)
             .ok()
             .flatten();
-        let reports = crate::kernel::duplicate_read_names::capture(|| {
-            let _ = match &project {
-                Some(project) => crate::surface::verify_c_project(project, &sources).map(|_| ()),
-                None => verify_c_sources(click, &sources).map(|_| ()),
-            };
+        let mut reports = Vec::new();
+        let census = crate::kernel::canonical_read_census::capture(|| {
+            reports = crate::kernel::duplicate_read_names::capture(|| {
+                let _ = match &project {
+                    Some(project) => {
+                        crate::surface::verify_c_project(project, &sources).map(|_| ())
+                    }
+                    None => verify_c_sources(click, &sources).map(|_| ()),
+                };
+            });
         });
-        if reports.is_empty() {
-            continue;
+        if !reports.is_empty() {
+            duplicates.push(format!("{name}: {reports:?}"));
         }
-        duplicates.push(format!("{name}: {reports:?}"));
+        if !census.reports.is_empty() {
+            disagreements.push(format!("{name}: {:?}", census.reports));
+        }
     }
     assert!(duplicates.is_empty(), "{duplicates:#?}");
+    assert!(disagreements.is_empty(), "{disagreements:#?}");
 }
 
 #[cfg(feature = "fast-gate")]
@@ -2600,6 +2639,7 @@ test_batches! {
     execution_batch_14: [
         solve_keeps_valid_integer_offset_function_goals,
         a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name,
+        canonical_reads_agree_with_load_variables_across_a_call_and_a_loop,
     ],
 }
 

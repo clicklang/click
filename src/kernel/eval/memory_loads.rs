@@ -5175,22 +5175,191 @@ pub(crate) fn load_variable_for_cell_with_origin(
     origin: &SharedMemory,
 ) -> Variable {
     let bytes = bytes.max(kind.byte_width());
-    // Derive the variable from the cell's version when one is recorded:
-    // states that differ only by effects provably disjoint from this
-    // cell then share the variable, so bookkeeping drift and unrelated
-    // stores do not mint new identities for one load.
-    let version = crate::kernel::resource_tracker::last_same_version_point(
+    let version = cell_version_memory(memory, pointer, kind, bytes);
+    let memory = version.as_ref().unwrap_or(memory);
+    #[cfg(test)]
+    duplicate_read_names::observe(memory, pointer, kind);
+    mint_load_variable_identity(memory, pointer, kind, origin, bytes)
+}
+
+/// The state a `kind` load of `pointer`, `bytes` wide, in `memory` is
+/// identified at: the cell's version, when one is recorded. States that
+/// differ only by effects provably disjoint from this cell then give one
+/// state, so bookkeeping drift and unrelated stores do not give one load
+/// two identities. `None` when no version is recorded: the load is
+/// identified at `memory` itself.
+fn cell_version_memory(
+    memory: &SharedMemory,
+    pointer: &Address,
+    kind: LoadKind,
+    bytes: u32,
+) -> Option<SharedMemory> {
+    let bytes = bytes.max(kind.byte_width());
+    crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Cell {
             pointer,
             bytes: bytes.into(),
         },
         &crate::kernel::resource_tracker::ProgramPoint::at(memory),
     )
-    .map(|point| point.shared_memory().clone());
-    let memory = version.as_ref().unwrap_or(memory);
-    #[cfg(test)]
-    duplicate_read_names::observe(memory, pointer, kind);
-    mint_load_variable_identity(memory, pointer, kind, origin, bytes)
+    .map(|point| point.shared_memory().clone())
+}
+
+/// The canonical read of the load `bits`: the read at the state its cell's
+/// version selects. It is the term that replaces a load variable
+/// (`docs/internals/canonicalization.md`, "Transitional load variables and
+/// shared reads"): two loads have one canonical read exactly when
+/// [`load_variable_for_term`] gives them one variable, by the same state
+/// canonicalization, version walk and materialized-cell rule.
+/// [`canonical_read_census`] checks that agreement.
+///
+/// While load variables remain, a materialized cell holds the variable of
+/// its own read, so that case reads the variable's registered read.
+pub(crate) fn canonical_read(bits: &MachineTerm) -> Option<MachineTerm> {
+    let MachineTerm::MemoryLoad(origin, raw_pointer, raw_kind) = bits else {
+        return None;
+    };
+    let registered_read = |variable: &Variable| {
+        let (memory, pointer) = registered_load_for_variable(variable)?;
+        let kind = registered_load_kind_for_variable(variable)?;
+        Some(MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer),
+            kind,
+        ))
+    };
+    let read_at_version = |memory: &SharedMemory, pointer: &Address, kind: LoadKind, bytes| {
+        let version = cell_version_memory(memory, pointer, kind, bytes);
+        MachineTerm::MemoryLoad(
+            ProgramPoint::at(version.as_ref().unwrap_or(memory)),
+            Box::new(pointer.clone()),
+            kind,
+        )
+    };
+    let canonical = crate::kernel::memory_history::canonicalize_atomic_loads(bits);
+    if let MachineTerm::MemoryLoad(memory, pointer, kind) = &canonical {
+        if let Some(MachineTerm::Variable(held)) = memory
+            .memory()
+            .known_value(pointer)
+            .and_then(|value| crate::kernel::spec::program_value_bitvector_term(&value))
+            && is_load_variable(&held)
+            && registered_load_for_variable(&held).is_some_and(|(_, at)| at == **pointer)
+            && registered_load_kind_for_variable(&held) == Some(*kind)
+        {
+            return registered_read(&held);
+        }
+        let bytes = recorded_load_access_width(origin.shared_memory(), pointer)
+            .or_else(|| recorded_load_access_width(memory.shared_memory(), pointer))
+            .or_else(|| {
+                existing_read_access_width(origin.shared_memory(), pointer, *kind).max(
+                    existing_read_access_width(memory.shared_memory(), pointer, *kind),
+                )
+            })
+            .unwrap_or_else(|| kind.unrecorded_access_byte_width());
+        return Some(read_at_version(
+            memory.shared_memory(),
+            pointer,
+            *kind,
+            bytes,
+        ));
+    }
+    if let MachineTerm::Variable(variable) = &canonical
+        && registered_load_kind_for_variable(variable) == Some(*raw_kind)
+    {
+        return registered_read(variable);
+    }
+    let memory = origin.shared_memory();
+    Some(read_at_version(
+        memory,
+        raw_pointer,
+        *raw_kind,
+        load_term_access_width(memory, raw_pointer, *raw_kind),
+    ))
+}
+
+/// A test-only check that [`canonical_read`] gives each load the identity
+/// its load variable gives it: while [`canonical_read_census::capture`]
+/// runs, each load named by [`load_variable_for_term`] is also given its
+/// canonical read, and a variable with two reads, or a read with two
+/// variables, is reported.
+#[cfg(test)]
+pub(crate) mod canonical_read_census {
+    use super::*;
+
+    #[derive(Default)]
+    struct Census {
+        reads: std::collections::HashMap<Variable, MachineTerm>,
+        variables: std::collections::HashMap<MachineTerm, Variable>,
+        reports: Vec<String>,
+        observing: bool,
+    }
+
+    /// What a census saw: the loads it named and the disagreements.
+    pub(crate) struct CensusResult {
+        pub(crate) loads: usize,
+        pub(crate) reports: Vec<String>,
+    }
+
+    thread_local! {
+        static CENSUS: std::cell::RefCell<Option<Census>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Runs `run` and returns the loads it named and one line per
+    /// disagreement.
+    pub(crate) fn capture(run: impl FnOnce()) -> CensusResult {
+        CENSUS.with(|census| census.replace(Some(Census::default())));
+        run();
+        let census = CENSUS.with(|census| census.take()).unwrap_or_default();
+        CensusResult {
+            loads: census.reads.len(),
+            reports: census.reports,
+        }
+    }
+
+    pub(super) fn observe(load: &MachineTerm, variable: Variable) {
+        let active = CENSUS.with(|census| {
+            let mut census = census.borrow_mut();
+            match census.as_mut() {
+                Some(census) if !census.observing => {
+                    census.observing = true;
+                    true
+                }
+                _ => false,
+            }
+        });
+        if !active {
+            return;
+        }
+        // Computing the read can name further loads; they are not observed.
+        let read = canonical_read(load);
+        CENSUS.with(|census| {
+            let mut census = census.borrow_mut();
+            let Some(census) = census.as_mut() else {
+                return;
+            };
+            census.observing = false;
+            let Some(read) = read else {
+                census.reports.push(format!("no canonical read: {load:?}"));
+                return;
+            };
+            if let Some(earlier) = census.reads.get(&variable)
+                && *earlier != read
+            {
+                census.reports.push(format!(
+                    "{variable:?} has two reads: {earlier:?} and {read:?}"
+                ));
+            }
+            if let Some(earlier) = census.variables.get(&read)
+                && *earlier != variable
+            {
+                census.reports.push(format!(
+                    "{read:?} has two variables: {earlier:?} and {variable:?}"
+                ));
+            }
+            census.reads.entry(variable).or_insert_with(|| read.clone());
+            census.variables.entry(read).or_insert(variable);
+        });
+    }
 }
 
 /// A test-only audit of one read, one name (`docs/internals/raise-lower-principle.md`):
@@ -5522,6 +5691,8 @@ pub(crate) fn load_variable_for_term(bits: &MachineTerm) -> Option<(Variable, Ma
     }
     crate::instrumentation::record_deterministic_work(1);
     let (variable, _) = load_variable_for_term_uncached(bits)?;
+    #[cfg(test)]
+    canonical_read_census::observe(bits, variable);
     // Naming may cross a cache-only state or project away unrelated cells.
     // Its defining equation must retain the exact structural read registered
     // under this name, rather than a second representation of that read.
