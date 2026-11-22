@@ -2067,70 +2067,27 @@ pub(super) fn post_execution_tactic_timing(
     }
 }
 
-/// The execution data that lowering and fixed-state proofs read: the frontier,
-/// the recorded states, the surface spellings, the effect
-/// facts, and the state `old(...)` resolves to. Owners build it from
-/// wherever they keep those fields, so consumers do not depend on the
+/// The execution data that lowering and fixed-state proofs read: the
+/// frontier, the recorded states and the surface spellings. Owners build it
+/// from wherever they keep those fields, so consumers do not depend on the
 /// check bag's layout.
 #[derive(Clone, Copy)]
 pub(super) struct ExecutionView<'a> {
     pub(super) frontier: &'a ExecutionFrontier,
     pub(super) recorded_states: &'a RecordedStates,
     pub(super) surface_propositions: &'a SurfacePropositionMap,
-    pub(super) effect_facts: &'a ExecutionFacts,
-    function_entry_state: Option<&'a ExecutionState>,
-    /// Lexical names available where this certificate is emitted. They are
-    /// presentation hints, never proof authority.
-    pub(super) proof_bindings: Option<&'a PersistentBinderMap<ContractExpression>>,
-}
-
-impl<'a> ExecutionView<'a> {
-    /// The state the current region started from, or the current state
-    /// when no region is open.
-    pub(super) fn execution_start_state<'s>(
-        &self,
-        current_state: &'s ExecutionState,
-    ) -> &'s ExecutionState
-    where
-        'a: 's,
-    {
-        self.frontier
-            .execution_start_state
-            .as_ref()
-            .unwrap_or(current_state)
-    }
-
-    /// The state that `old(...)` and `at(function.entry, ...)` resolve to when
-    /// a contract clause is lowered here.
-    pub(super) fn old_reference_state<'s>(
-        &self,
-        current_state: &'s ExecutionState,
-    ) -> &'s ExecutionState
-    where
-        'a: 's,
-    {
-        match self.function_entry_state {
-            Some(entry_state) => entry_state,
-            None => self.execution_start_state(current_state),
-        }
-    }
 }
 
 impl<'a> ExecutionView<'a> {
     pub(super) fn new(
         frontier: &'a ExecutionFrontier,
-        effect_facts: &'a ExecutionFacts,
         recorded_states: &'a RecordedStates,
         surface_propositions: &'a SurfacePropositionMap,
-        function_entry_state: Option<&'a ExecutionState>,
     ) -> Self {
         ExecutionView {
             frontier,
             recorded_states,
             surface_propositions,
-            effect_facts,
-            function_entry_state,
-            proof_bindings: None,
         }
     }
 }

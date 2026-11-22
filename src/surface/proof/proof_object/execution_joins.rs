@@ -94,7 +94,7 @@ impl<'a> Proof<'a> {
         }
         let Ok((_, current_state, ProgramStatement::If { condition, .. }, _)) =
             next_top_level_statement_from_frontier_position(
-                execution.view(context),
+                execution.view(),
                 &execution.core.state,
                 context.function,
                 context.arguments,
@@ -187,7 +187,7 @@ impl<'a> Proof<'a> {
         };
         let (execution_start_state, current_state, statement, remaining) =
             next_top_level_statement_from_frontier_position(
-                execution.view(context),
+                execution.view(),
                 &execution.core.state,
                 context.function,
                 context.arguments,
@@ -672,7 +672,7 @@ impl<'a> Proof<'a> {
             unreachable!("execution branch retained a non-execution context")
         };
         let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
-            parent_execution.view(context),
+            parent_execution.view(),
             &parent_execution.core.state,
             context.function,
             context.arguments,
@@ -1528,7 +1528,7 @@ impl<'a> Proof<'a> {
             (condition.proposition().clone(), [false, false], false)
         } else {
             let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
-                parent_execution.view(context),
+                parent_execution.view(),
                 &parent_execution.core.state,
                 context.function,
                 context.arguments,
@@ -2782,7 +2782,7 @@ impl<'a> Proof<'a> {
             CheckedExecutionSplit::Branch(split) => {
                 let (_, current_state, statement, _) =
                     next_top_level_statement_from_frontier_position(
-                        record.parent_execution.view(context),
+                        record.parent_execution.view(),
                         &record.parent_execution.core.state,
                         context.function,
                         context.arguments,
@@ -3313,7 +3313,7 @@ impl<'a> Proof<'a> {
             unreachable!("execution branch retained a non-execution context")
         };
         let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
-            record.parent_execution.view(context),
+            record.parent_execution.view(),
             &record.parent_execution.core.state,
             context.function,
             context.arguments,
@@ -3427,7 +3427,7 @@ impl<'a> Proof<'a> {
         }
         let Ok((_, current_state, statement, remaining)) =
             next_top_level_statement_from_frontier_position(
-                execution.view(context),
+                execution.view(),
                 &execution.core.state,
                 context.function,
                 context.arguments,

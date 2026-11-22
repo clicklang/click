@@ -95,9 +95,7 @@ pub(super) struct TheoremApplicationContext<'a> {
 /// ambient fact becomes evidence for anything else.
 ///
 /// Every checker that turns a `using` list into evidence (`apply using` in
-/// pure and fixed-state proofs, `transport using`) calls this one rule, and
-/// smart theorem selection proposes a range premise only when
-/// [`missing_theorem_span_guard`] finds nothing this rule would leave out.
+/// pure and fixed-state proofs, `transport using`) calls this one rule.
 pub(super) fn cite_range_span_guards(
     premise: &Proposition,
     evidence: &mut Vec<Proposition>,
@@ -108,27 +106,6 @@ pub(super) fn cite_range_span_guards(
             evidence.push(guard);
         }
     }
-}
-
-/// The first span guard a theorem requirement owes that an application
-/// citing the requirement cannot supply.
-///
-/// This is the search-side mirror of the check in
-/// `instantiate_theorem_application_with_assumptions`: that check asks for
-/// each count-form guard among the evidence, and [`cite_range_span_guards`]
-/// puts it there exactly when it is available. A selector that lists the
-/// range requirement therefore owes nothing more when this returns `None`,
-/// and would be refused by the checker when it returns a guard.
-pub(super) fn missing_theorem_span_guard(
-    requirement: &Proposition,
-    available: impl Fn(&Proposition) -> bool,
-) -> Option<Proposition> {
-    crate::kernel::stated_loadable_span_guards(requirement)
-        .into_iter()
-        .find(|guard| {
-            !available(guard)
-                && !matches!(normalize_proposition(guard), NormalizedProposition::True)
-        })
 }
 
 /// Instantiates one theorem from explicit evidence and an indexed lowering
@@ -517,14 +494,6 @@ pub(super) fn describe_unavailable_theorem_requirement_spelled(
         requirement_index + 1,
         crate::surface::diagnostics::describe_click_proposition(requirement),
         instantiation
-    )
-}
-
-/// Advise how to state the requirement a premise search could not supply.
-pub(super) fn requirement_search_miss(fact: &str) -> String {
-    format!(
-        "\n  this is a search miss: no available fact states the requirement; if it holds, state it first with `have {} by {{ ... }}`",
-        fact.trim_matches('`')
     )
 }
 

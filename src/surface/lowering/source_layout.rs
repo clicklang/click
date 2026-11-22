@@ -2228,40 +2228,6 @@ pub(in crate::surface) fn contract_segment_referenced_names(
     names
 }
 
-pub(in crate::surface) fn collect_resource_subject_referenced_names(
-    resource: &ResourceSubject,
-    names: &mut BTreeSet<String>,
-) {
-    match resource {
-        ResourceSubject::At { resource, .. } => {
-            collect_resource_subject_referenced_names(resource, names)
-        }
-        ResourceSubject::Emp => (),
-        ResourceSubject::Star(left, right) => {
-            collect_resource_subject_referenced_names(left, names);
-            collect_resource_subject_referenced_names(right, names);
-        }
-        ResourceSubject::Footprint(_) => {}
-        ResourceSubject::Parameter { name, .. } | ResourceSubject::Instance { name, .. } => {
-            names.insert(name.clone());
-        }
-        ResourceSubject::Captured { .. } => {}
-        ResourceSubject::Memory(segment) => {
-            names.extend(contract_segment_referenced_names(segment))
-        }
-        ResourceSubject::SavedMemory { base, start, end } => {
-            for argument in [base, start].into_iter().chain(end.iter()) {
-                collect_contract_expression_referenced_names(argument, names);
-            }
-        }
-        ResourceSubject::Declared { arguments, .. } => {
-            for argument in arguments {
-                collect_contract_expression_referenced_names(argument, names);
-            }
-        }
-    }
-}
-
 pub(in crate::surface) fn collect_program_expression_referenced_names(
     expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
