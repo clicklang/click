@@ -11100,7 +11100,10 @@ fn generated_load_binding_matches_proposition(
             };
             retained_state == &MemoryStateIdentity::of(memory.memory())
                 && address.as_ref() == pointer
-                && matches!(load, MachineTerm::MemoryLoad(_, _, expected) if *expected == kind)
+                && matches!(load, MachineTerm::MemoryLoad(expected_point, _, expected)
+                    if *expected == kind
+                        && ((expected_point.read_version_id().is_none() && memory.read_version_id().is_none())
+                            || expected_point == &memory))
         }
         _ => false,
     }

@@ -2768,8 +2768,8 @@ struct RegisteredLoad {
     /// keeps them with the entry they describe; origins and widths do not
     /// change the value. None records an unmigrated native address payload.
     terms: std::collections::HashMap<MachineIntegerType, Option<crate::kernel::KernelTerm>>,
-    /// The canonical state, address and kind: the load itself.
-    memory: SharedMemory,
+    /// The version point, address and kind: the load itself.
+    point: ProgramPoint,
     pointer: Address,
     kind: LoadKind,
     /// Observation ownership is independent of this compatibility name.
@@ -2784,7 +2784,7 @@ thread_local! {
         imbl::HashMap<(u64, Address), (SharedMemory, Address)>,
     > = std::cell::RefCell::new(imbl::HashMap::new());
     static WIDE_LOAD_OBSERVATIONS: std::cell::RefCell<
-        imbl::HashMap<(u64, Variable), (SharedMemory, Address)>,
+        imbl::HashMap<(u64, Variable), (ProgramPoint, Address)>,
     > = std::cell::RefCell::new(imbl::HashMap::new());
     /// Separate pointer-valued load names. The defining key is one canonical
     /// state and address at the fixed eight-byte pointer interpretation;
@@ -2864,7 +2864,7 @@ pub(crate) fn clear_load_canonicalization_caches() {
 #[derive(Clone)]
 pub(crate) struct LoadRegistryState {
     pointer_observations: imbl::HashMap<(u64, Address), (SharedMemory, Address)>,
-    wide_observations: imbl::HashMap<(u64, Variable), (SharedMemory, Address)>,
+    wide_observations: imbl::HashMap<(u64, Variable), (ProgramPoint, Address)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     read_observations: read_observations::State,
     pointers:
@@ -3487,7 +3487,7 @@ pub(crate) fn registered_load_for_variable(variable: &Variable) -> Option<(Share
         registry
             .borrow()
             .get(variable)
-            .map(|load| (load.memory.clone(), load.pointer.clone()))
+            .map(|load| (load.point.shared_memory().clone(), load.pointer.clone()))
     })
 }
 
@@ -3497,7 +3497,7 @@ pub(crate) fn registered_load_term_for_variable(variable: &Variable) -> Option<M
     LOAD_VARIABLE_REGISTRY.with(|registry| {
         registry.borrow().get(variable).map(|load| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(&load.memory),
+                load.point.clone(),
                 Box::new(load.pointer.clone()),
                 load.kind,
             )
@@ -3522,7 +3522,7 @@ pub(crate) fn registered_scalar_read_term(
                 read.address.as_ref().map(|address| {
                     crate::kernel::KernelTerm::shared_scalar_read_descriptor(
                         format,
-                        &ProgramPoint::at(&read.memory),
+                        &read.point,
                         address,
                         read.kind,
                     )
@@ -3970,12 +3970,13 @@ pub(crate) fn registered_load_origin_for_variable(
 /// [`registered_load_origin_for_variable`] as the load term it names there:
 /// the same read, kind included, at the live origin.
 pub(crate) fn registered_load_origin_term_for_variable(variable: &Variable) -> Option<MachineTerm> {
-    let (origin, pointer) = registered_load_origin_for_variable(variable)?;
-    let kind = registered_load_kind_for_variable(variable)?;
+    let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
+        &MachineTerm::Variable(*variable),
+    ))?;
     Some(MachineTerm::MemoryLoad(
-        ProgramPoint::at(&origin),
-        Box::new(pointer),
-        kind,
+        read.origin?,
+        Box::new(read.pointer),
+        read.kind,
     ))
 }
 
@@ -5297,9 +5298,25 @@ fn mint_load_variable_identity(
     origin: &SharedMemory,
     bytes: u32,
 ) -> Variable {
+    mint_load_variable_at(
+        &ProgramPoint::at(memory),
+        pointer,
+        kind,
+        &ProgramPoint::at(origin),
+        bytes,
+    )
+}
+
+fn mint_load_variable_at(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+    origin: &ProgramPoint,
+    bytes: u32,
+) -> Variable {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    memory.hash(&mut hasher);
+    point.hash(&mut hasher);
     pointer.hash(&mut hasher);
     let hash = hasher.finish();
     let range = load_variable_range();
@@ -5320,12 +5337,12 @@ fn mint_load_variable_identity(
             let variable = Variable(LOAD_VARIABLE_BASE + slot);
             match registry.get_mut(&variable) {
                 Some(RegisteredLoad {
-                    memory: known_memory,
+                    point: known_point,
                     pointer: known_pointer,
                     kind: known_kind,
                     observation,
                     ..
-                }) if known_memory == memory && known_pointer == pointer && *known_kind == kind => {
+                }) if known_point == point && known_pointer == pointer && *known_kind == kind => {
                     read_observations::refresh(*observation, origin, bytes);
                     return variable;
                 }
@@ -5347,12 +5364,13 @@ fn mint_load_variable_identity(
                         RegisteredLoad {
                             address: crate::kernel::KernelTerm::scalar_read_address(pointer),
                             terms: Default::default(),
-                            memory: memory.clone(),
+                            point: point.clone(),
                             pointer: pointer.clone(),
                             kind,
                             observation: {
-                                let id =
-                                    read_observations::record(memory, pointer, kind, origin, bytes);
+                                let id = read_observations::record_at(
+                                    point, pointer, kind, origin, bytes,
+                                );
                                 read_observations::select(id);
                                 id
                             },
@@ -5377,22 +5395,24 @@ fn record_wide_load_observation(term: &MachineTerm, variable: Variable) {
     }
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     crate::instrumentation::record_deterministic_work(1);
+    let point = if has_selected_read_point(memory) {
+        memory.clone()
+    } else {
+        ProgramPoint::at(memory.shared_memory())
+    };
     WIDE_LOAD_OBSERVATIONS.with(|registry| {
         let mut registry = registry.borrow_mut();
         let key = (epoch, variable);
         if registry
             .get(&key)
-            .is_some_and(|(known_memory, known_pointer)| {
-                known_memory == memory.shared_memory() && known_pointer == pointer.as_ref()
+            .is_some_and(|(known_point, known_pointer)| {
+                *known_point == point && known_pointer == pointer.as_ref()
             })
         {
             return;
         }
         crate::instrumentation::record_deterministic_work(1);
-        registry.insert(
-            key,
-            (memory.shared_memory().clone(), pointer.as_ref().clone()),
-        );
+        registry.insert(key, (point, pointer.as_ref().clone()));
     });
 }
 
@@ -5431,12 +5451,8 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
         registry
             .borrow()
             .get(&(epoch, *variable))
-            .map(|(memory, pointer)| {
-                MachineTerm::MemoryLoad(
-                    ProgramPoint::at(memory),
-                    Box::new(pointer.clone()),
-                    LoadKind::Bits64,
-                )
+            .map(|(point, pointer)| {
+                MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
             })
     })
 }
@@ -5553,7 +5569,19 @@ pub(crate) fn load_variable_for_term(bits: &MachineTerm) -> Option<(Variable, Ma
     Some(computed)
 }
 
+fn has_selected_read_point(point: &ProgramPoint) -> bool {
+    point.read_version_id().is_some() && point.has_certified_read_view()
+}
+
 fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, MachineTerm)> {
+    if let MachineTerm::MemoryLoad(point, pointer, kind) = bits
+        && has_selected_read_point(point)
+    {
+        let bytes =
+            observed_scalar_read_width(point, pointer, *kind).unwrap_or_else(|| kind.byte_width());
+        let variable = mint_load_variable_at(point, pointer, *kind, point, bytes);
+        return Some((variable, bits.clone()));
+    }
     let canonical = crate::kernel::memory_history::canonicalize_atomic_loads(bits);
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = &canonical {
         let MachineTerm::MemoryLoad(origin, _, _) = bits else {
@@ -5695,14 +5723,17 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
             },
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::Variable(variable)),
-            // The registered variable is the structural read term used by
-            // logical lowering. Keep the raw descriptor in the producer
-            // binding below, not as a second term form in a citable fact.
-            right: Box::new(canonical_form_of_load(
-                memory.shared_memory().clone(),
-                pointer.as_ref().clone(),
-                *kind,
-            )),
+            // Cite the same read as logical lowering. A selected point already
+            // supplies the read's name.
+            right: Box::new(if has_selected_read_point(memory) {
+                load.clone()
+            } else {
+                canonical_form_of_load(
+                    memory.shared_memory().clone(),
+                    pointer.as_ref().clone(),
+                    *kind,
+                )
+            }),
         },
         true,
     );
@@ -7404,6 +7435,39 @@ mod tests {
             panic!("the decided aliasing load should have one path");
         };
         assert_eq!(aliasing_path.outcome, ExpressionOutcome::Value(int32(2)));
+    }
+
+    #[test]
+    fn load_variable_names_keep_distinct_points_with_equal_memory() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = SymbolicMemory::new();
+        let address = Address::symbolic(Variable(89_007));
+        for kind in [LoadKind::Int32, LoadKind::Bits64] {
+            let read = || {
+                MachineTerm::MemoryLoad(
+                    ProgramPoint::starting_at(&memory).for_exact_read(),
+                    Box::new(address.clone()),
+                    kind,
+                )
+            };
+            let first = read();
+            let second = read();
+            let (first_name, first_definition) =
+                load_variable_for_term(&first).expect("first read");
+            let (second_name, second_definition) =
+                load_variable_for_term(&second).expect("second read");
+            assert_ne!(first_name, second_name);
+            assert_eq!(first_definition, first);
+            assert_eq!(second_definition, second);
+            assert_eq!(
+                registered_load_origin_term_for_variable(&first_name),
+                Some(first.clone())
+            );
+            if kind == LoadKind::Bits64 {
+                assert_eq!(latest_wide_load_observation(&first_name), Some(first));
+                assert_eq!(latest_wide_load_observation(&second_name), Some(second));
+            }
+        }
     }
 
     #[test]
