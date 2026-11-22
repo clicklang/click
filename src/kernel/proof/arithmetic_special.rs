@@ -1149,6 +1149,8 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
             })
     };
     if signed_quotient_bridge_requirement(goal).is_some_and(|guard| selected(&[guard]))
+        || (premises.len() == 2
+            && shift_count_mask_requirements(goal).is_some_and(|required| selected(&required)))
         || [false, true].into_iter().any(|swap| {
             signed_product_guard_requirements(goal, swap)
                 .is_some_and(|required| selected(&required))
@@ -2641,6 +2643,116 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
                 (Some(left), Some(right)) if left != right
             )
     }
+}
+
+/// Match the low-bit mask used by the signed shift domain.
+fn shift_count_mask(
+    width: MachineIntegerType,
+    masked: crate::kernel::MachineOperandView<'_>,
+) -> Option<crate::kernel::MachineOperandView<'_>> {
+    let (format, MachineBinaryOp::BitwiseAnd, [left, right]) = masked.binary()? else {
+        return None;
+    };
+    if format != width {
+        return None;
+    }
+    let mask = u64::from(width.format().bits() - 1);
+    [(left, right), (right, left)]
+        .into_iter()
+        .find_map(|(count, literal)| {
+            (width.constant_from_term(&literal.literal()?)?.to_integer() == mask.into())
+                .then_some(count)
+        })
+}
+
+/// In-range counts already fit the low-bit mask. The checker takes the
+/// lower and upper bounds as two explicit premises.
+pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<[Proposition; 2]> {
+    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::machine_integer::comparison::{
+        condition_for_operand_views, structural_boolean_comparison_view,
+    };
+    let Proposition::ConditionIs(condition, true) = goal else {
+        return None;
+    };
+    let comparison = structural_boolean_comparison_view(condition.operand_view())?;
+    let width @ (MachineIntegerType::Int32 | MachineIntegerType::Int64) = comparison.format else {
+        return None;
+    };
+    if comparison.relation != CompareRelation::Equal || comparison.negated {
+        return None;
+    }
+    let [left, right] = comparison
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
+    for (masked, plain) in [(left, right), (right, left)] {
+        let Some(count) = shift_count_mask(width, masked) else {
+            continue;
+        };
+        if count.try_retain(width)? != plain.try_retain(width)? {
+            continue;
+        }
+        let literal = |value: u32| match width {
+            MachineIntegerType::Int32 => MachineTerm::constant(value),
+            _ => MachineTerm::int64_constant(i64::from(value)),
+        };
+        return Some(
+            [
+                (CompareRelation::GreaterEqual, 0),
+                (CompareRelation::LessThan, width.format().bits()),
+            ]
+            .map(|(relation, endpoint)| {
+                Proposition::condition_is(
+                    condition_for_operand_views(
+                        width,
+                        relation,
+                        [count, View::Legacy(&literal(endpoint))],
+                    ),
+                    true,
+                )
+            }),
+        );
+    }
+    None
+}
+
+/// The equality that lets a proof rewrite a signed left-shift bound to
+/// the original count. This is a view of the goal, with no fact queries.
+pub(crate) fn signed_shift_bound_mask_identity(goal: &Proposition) -> Option<Proposition> {
+    use crate::kernel::machine_integer::comparison::{
+        condition_for_operand_views, structural_boolean_comparison_view,
+    };
+    let Proposition::ConditionIs(condition, true) = goal else {
+        return None;
+    };
+    let comparison = structural_boolean_comparison_view(condition.operand_view())?;
+    let width @ (MachineIntegerType::Int32 | MachineIntegerType::Int64) = comparison.format else {
+        return None;
+    };
+    let bound = match (comparison.relation, comparison.negated) {
+        (CompareRelation::LessEqual, false) => &comparison.operands[1],
+        (CompareRelation::GreaterEqual, false) => &comparison.operands[0],
+        _ => return None,
+    };
+    let (format, MachineBinaryOp::ShiftRight, [maximum, masked]) = bound.operand_view().binary()?
+    else {
+        return None;
+    };
+    let signed_max = match width {
+        MachineIntegerType::Int32 => i64::from(i32::MAX),
+        _ => i64::MAX,
+    };
+    if format != width
+        || width.constant_from_term(&maximum.literal()?)?.to_integer() != signed_max.into()
+    {
+        return None;
+    }
+    let count = shift_count_mask(width, masked)?;
+    Some(Proposition::condition_is(
+        condition_for_operand_views(width, CompareRelation::Equal, [masked, count]),
+        true,
+    ))
 }
 
 /// Observe a signed native quotient with a positive divisor. Positivity

@@ -41,6 +41,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             definition,
             &arguments.native_values(),
             parameters,
+            context.constants.function_entry_state.as_ref(),
             state,
         )?;
         let lowered = lower_resource_clause_at_state(&clause, parameters, state).ok()?;
@@ -68,6 +69,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let state = &execution.core.state;
         let parameter_binding = context.parameter_binding();
         let assumptions = search_input.facts().assumptions();
+        // A held instance's arguments may be values only the function's
+        // entry holds, spelled `old(...)`: they lower at the entry state.
+        let entry = context
+            .constants
+            .function_entry_state
+            .as_ref()
+            .unwrap_or(state);
+        let lower = |clause: &ResourceClause| {
+            crate::surface::lowering::lower_resource_clause_at_current_locals_with_entry_and_assumptions(
+                clause,
+                parameter_binding,
+                entry,
+                state,
+                None,
+                assumptions,
+            )
+        };
         let mut opening = None;
         for held in state.resources().composite_facts() {
             let ResourceFact::Own(Resource::Composite { name, arguments }, _) = held else {
@@ -81,43 +99,81 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if definition.is_authorized() {
                 continue;
             }
-            let Some(body) = definition.composite_body() else {
+            if definition.composite_body().is_none() {
                 continue;
-            };
+            }
             let Some(clause) = held_composite_resource_clause(
                 definition,
                 &(arguments).native_values(),
                 parameter_binding,
+                context.constants.function_entry_state.as_ref(),
                 state,
             ) else {
                 continue;
             };
             // The spelling is admitted only when it names the held resource.
-            if !lower_resource_clause_at_state(&clause, parameter_binding, state)
-                .is_ok_and(|lowered| lowered.resource() == held.resource())
-            {
+            if !lower(&clause).is_ok_and(|lowered| lowered.resource() == held.resource()) {
                 continue;
             }
-            let Ok(substitutions) = resource_argument_substitutions(
-                definition,
-                &clause,
-                context.claim_label,
-                context.tactic_index,
-            ) else {
+            // The body holds `missing`, or holds a resource whose own body
+            // does: a box inside an option of one, opened one layer per
+            // retry.
+            let body_facts = |definition: &ResourceDefinition,
+                              clause: &ResourceClause|
+             -> Option<Vec<ResourceFact>> {
+                let body = definition.composite_body()?;
+                let substitutions = resource_argument_substitutions(
+                    definition,
+                    clause,
+                    context.claim_label,
+                    context.tactic_index,
+                )
+                .ok()?;
+                Some(
+                    body.contains()
+                        .iter()
+                        .filter_map(|contained| {
+                            let contained =
+                                instantiate_resource_clause(contained, &substitutions).ok()?;
+                            lower(&contained).ok()
+                        })
+                        .collect(),
+                )
+            };
+            let holds = |facts: &[ResourceFact]| {
+                crate::kernel::ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_facts(facts.to_vec())
+                    .satisfies_fact(missing, assumptions)
+            };
+            let Some(outer) = body_facts(definition, &clause) else {
                 continue;
             };
-            let body_facts = body
-                .contains()
-                .iter()
-                .filter_map(|contained| {
-                    let contained = instantiate_resource_clause(contained, &substitutions).ok()?;
-                    lower_resource_clause_at_state(&contained, parameter_binding, state).ok()
+            // A resource the body holds whose pointer argument is the
+            // missing memory's base: the box inside an option of one. This
+            // only proposes the outer opening; the retried operation decides.
+            // The missing memory's base, or the allocation token's pointer.
+            let missing_base = missing
+                .memory_range()
+                .map(|range| range.base().base.clone())
+                .or_else(|| missing.allocation().map(|(base, _)| base.base.clone()));
+            let inner_holds = || {
+                outer.iter().any(|inner| {
+                    let ResourceFact::Own(Resource::Composite { arguments, .. }, _) = inner else {
+                        return false;
+                    };
+                    arguments.native_values().iter().any(|argument| {
+                        matches!(argument, AlgebraicValue::Program(ProgramValue::Pointer(pointer))
+                            if Some(&pointer.address().base) == missing_base.as_ref())
+                    })
                 })
-                .collect::<Vec<_>>();
-            if !crate::kernel::ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_facts(body_facts)
-                .satisfies_fact(missing, assumptions)
-            {
+            };
+            // The held resource's own pointer argument is the missing
+            // memory's base: a box whose contents are read.
+            let direct = (*arguments).native_values().iter().any(|argument| {
+                matches!(argument, AlgebraicValue::Program(ProgramValue::Pointer(pointer))
+                    if Some(&pointer.address().base) == missing_base.as_ref())
+            });
+            if !holds(&outer) && !direct && !inner_holds() {
                 continue;
             }
             if opening.is_some() {
@@ -128,11 +184,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(clause) = opening else {
             return Ok(None);
         };
-        crate::surface::proof::attempt::candidate_outcome(
-            search_input
-                .driver()
-                .apply_step(ProofStep::UnfoldResource(clause)),
-        )
+        let applied = search_input
+            .driver()
+            .apply_step(ProofStep::UnfoldResource(clause));
+        crate::surface::proof::attempt::candidate_outcome(applied)
     }
 }
 
@@ -142,6 +197,7 @@ fn held_composite_resource_clause(
     definition: &ResourceDefinition,
     arguments: &[AlgebraicValue],
     parameter_binding: ParameterBinding<'_>,
+    entry: Option<&ExecutionState>,
     state: &ExecutionState,
 ) -> Option<ResourceClause> {
     if arguments.len() != definition.parameters().len() {
@@ -151,9 +207,10 @@ fn held_composite_resource_clause(
         .iter()
         .map(|argument| match argument {
             AlgebraicValue::Program(value) => {
-                crate::surface::proof::surface_synthesis::synthesize_surface_value(
+                crate::surface::proof::surface_synthesis::synthesize_surface_value_at_entry_and_post(
                     value,
                     parameter_binding,
+                    entry,
                     state,
                 )
             }

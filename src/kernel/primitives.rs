@@ -260,6 +260,10 @@ enum VariableOrigin {
     /// A specification fold's accumulator or item, one per written binder
     /// name and role, numbered in allocation order.
     SpecFoldBinder,
+    /// A free variable `intro` or a logical choice introduced, standing for
+    /// an arbitrary value. Numbered from the witnesses its proof state
+    /// already reserves.
+    Witness,
 }
 
 impl std::fmt::Debug for Variable {
@@ -275,6 +279,7 @@ impl std::fmt::Debug for Variable {
             VariableOrigin::MatchBinder => {
                 formatter.debug_tuple("MatchBinder").field(&self.0).finish()
             }
+            VariableOrigin::Witness => formatter.debug_tuple("Witness").field(&self.0).finish(),
             VariableOrigin::SpecFoldBinder => formatter
                 .debug_tuple("SpecFoldBinder")
                 .field(&self.0)
@@ -343,6 +348,19 @@ impl Variable {
     /// Whether this is a specification fold's binder.
     pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
         self.origin == VariableOrigin::SpecFoldBinder
+    }
+
+    /// The `number`th universal-introduction or choice witness.
+    pub(in crate::kernel) const fn witness(number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::Witness,
+        }
+    }
+
+    /// Whether this is a universal-introduction or choice witness.
+    pub(in crate::kernel) fn is_witness(&self) -> bool {
+        self.origin == VariableOrigin::Witness
     }
 
     /// Whether this is a match arm's binder.
@@ -8145,11 +8163,11 @@ pub struct VerifiedLoopRule {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum UndefinedBehavior {
     SignedOverflow,
-    /// The signed overflow of an `int32` division or remainder, which
-    /// happens at exactly one operand pair, `INT_MIN / -1`. Kept apart from
+    /// The signed overflow of a division or remainder, which happens
+    /// when the minimum value of the format is divided by -1. Kept apart from
     /// [`Self::SignedOverflow`] so the refusal names the pair the facts
     /// leave open instead of a bare `signed overflow`.
-    SignedDivisionOverflow,
+    SignedDivisionOverflow(MachineIntegerType),
     PointerArithmetic,
     DivisionByZero,
     FloatToIntegerOutOfRange,
@@ -8201,10 +8219,14 @@ impl UndefinedBehavior {
     pub fn description(&self) -> String {
         match self {
             Self::SignedOverflow => "signed overflow".to_string(),
-            Self::SignedDivisionOverflow => {
+            Self::SignedDivisionOverflow(MachineIntegerType::Int32) => {
                 "signed overflow (INT_MIN / -1 is the one int32 division or remainder that overflows)"
                     .to_string()
             }
+            Self::SignedDivisionOverflow(format) => format!(
+                "signed overflow (the minimum signed {}-bit value divided by -1 overflows division and remainder)",
+                format.format().bits(),
+            ),
             Self::PointerArithmetic => "pointer arithmetic left the pointed-to object".to_string(),
             Self::SubobjectAccess { .. } => {
                 "access outside the subobject the pointer designates".to_string()
@@ -16835,13 +16857,13 @@ pub struct CallParameters(pub(crate) std::sync::Arc<ExecutionState>);
 impl CallParameters {
     /// The parameter binding of `interface`'s by-value aggregate parameters
     /// in `entry`, the state the call evaluates its contract in; `None` when
-    /// it has none. The state keeps `entry`'s memory and binds exactly
-    /// those parameters, so nothing else is named through it.
+    /// it has none. Keep the same read versions and bind only those
+    /// parameters, so nothing else is named through the snapshot.
     pub(super) fn of(
         entry: &ExecutionState,
         interface: &FunctionContractInterface,
     ) -> Option<Self> {
-        let mut bound = ExecutionState::new().with_memory(entry.memory().clone());
+        let mut bound = ExecutionState::at_state(entry);
         let mut any = false;
         for parameter in interface.parameters() {
             let Some(layout) = parameter.aggregate_layout() else {

@@ -1386,7 +1386,10 @@ uint32 count_live(struct cell* node) {
         step_until(function.exit);
         solve();
     } else {
-        unfold(tagged(node));
+        let { next: child } = unfold(tagged(node));
+        step_until(statement(2).entry);
+        fold(tagged(node));
+        observe(tagged(node));
     }
 }
 "#;
@@ -1402,7 +1405,7 @@ uint32 count_live(struct cell* node) {
     let expanded = expand_claim_with_source(&click_path, &original, "count_live.contract")
         .expect("the arm's implicit tail should expand");
     assert!(
-        expanded.contains("if at(region(5).entry, (node->word & 1))"),
+        expanded.contains("if at(region(6).entry, (node->word & 1))"),
         "the undecided C guard should expand to an anchored proof `if`: {expanded}"
     );
     let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
@@ -1807,7 +1810,7 @@ fn resource_proof_expansions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [
         ("mdtests/resource_witness_unfold_fold.md", 3),
-        ("mdtests/rb_parent_family.md", 12),
+        ("mdtests/rb_parent_family.md", 15),
         ("mdtests/population_count_states_its_transition.md", 2),
     ] {
         let path = root.join(relative);

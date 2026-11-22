@@ -182,11 +182,16 @@ fn reserve_fact_variables(
 }
 
 /// `reserved` with every variable of `pending` added.
+/// `highest_witness` is raised to the highest witness added.
 fn commit_reserved_variables(
     mut reserved: PersistentSet<Variable>,
     pending: BTreeSet<Variable>,
+    highest_witness: &mut Option<u64>,
 ) -> PersistentSet<Variable> {
     for variable in pending {
+        if variable.is_witness() {
+            *highest_witness = (*highest_witness).max(Some(variable.0));
+        }
         if !reserved.contains(&variable) {
             reserved = reserved.with_value(variable);
         }
@@ -203,6 +208,9 @@ fn commit_reserved_variables(
 pub(crate) struct PureFactStore {
     ordered: PersistentSequence<Arc<Proposition>>,
     reserved_variables: PersistentSet<Variable>,
+    /// The highest witness `reserved_variables` holds, maintained as
+    /// variables are reserved so a new witness is found without a scan.
+    highest_reserved_witness: Option<u64>,
     /// The interned states whose every variable `reserved_variables`
     /// holds, so a fact naming one again, or naming a state derived from
     /// one, reserves only what differs (`proposition_variables_reserving`).
@@ -699,6 +707,8 @@ impl PureFactStore {
         let reserved_variables = reservations.map_or_else(PersistentSet::default, |base| {
             base.reserved_variables.clone()
         });
+        let mut highest_reserved_witness =
+            reservations.and_then(|base| base.highest_reserved_witness);
         let mut reserved_states = reservations.map_or_else(
             crate::kernel::reasoning::variable_collection::ReservedStates::default,
             |base| base.reserved_states.clone(),
@@ -808,10 +818,15 @@ impl PureFactStore {
             implicit_transport_assumptions =
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
-        let reserved_variables = commit_reserved_variables(reserved_variables, pending_variables);
+        let reserved_variables = commit_reserved_variables(
+            reserved_variables,
+            pending_variables,
+            &mut highest_reserved_witness,
+        );
         let mut result = Self {
             ordered,
             reserved_variables,
+            highest_reserved_witness,
             reserved_states,
             statement_batches: None,
             top_level_exact,
@@ -850,6 +865,9 @@ impl PureFactStore {
         variables: impl IntoIterator<Item = Variable>,
     ) -> Self {
         for variable in variables {
+            if variable.is_witness() {
+                self.highest_reserved_witness = self.highest_reserved_witness.max(Some(variable.0));
+            }
             self.reserved_variables = self.reserved_variables.with_value(variable);
         }
         self
@@ -1099,11 +1117,16 @@ impl PureFactStore {
             &mut pending_variables,
             &mut reserved_states,
         );
-        let reserved_variables =
-            commit_reserved_variables(self.reserved_variables.clone(), pending_variables);
+        let mut highest_reserved_witness = self.highest_reserved_witness;
+        let reserved_variables = commit_reserved_variables(
+            self.reserved_variables.clone(),
+            pending_variables,
+            &mut highest_reserved_witness,
+        );
         Self {
             ordered,
             reserved_variables,
+            highest_reserved_witness,
             reserved_states,
             statement_batches: self.statement_batches.clone(),
             top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
@@ -1133,8 +1156,8 @@ impl PureFactStore {
         }
     }
 
-    /// A free logical-witness identity, from the range
-    /// [`ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE`] reserves for them.
+    /// A free logical-witness identity, of the witness origin no other
+    /// producer mints.
     ///
     /// Scanning up from `Variable(0)` for an identity no *fact* mentions was
     /// the earlier rule, and it is wrong twice over. The facts are not the
@@ -1142,27 +1165,31 @@ impl PureFactStore {
     /// program variables, a symbolic store, a memory state and a resource
     /// context, and `Variable(0)` is a C identity by the reserved-range
     /// registry, so the first candidate that rule tried was a live program
-    /// variable of the function being proved. Taking the identity from a range
-    /// nothing else mints makes freshness structural: an identity outside the
-    /// range belongs to some other producer and is never chosen, and inside it
-    /// this picks one strictly above every witness already visible here.
+    /// variable of the function being proved. Taking the identity from an
+    /// origin nothing else mints makes freshness structural: an identity of
+    /// another origin belongs to some other producer and is never chosen, and
+    /// among witnesses this picks one strictly above every witness already
+    /// visible here.
     ///
-    /// Work is proportional to the witnesses in scope, not to the fact set:
-    /// the reserved set is ordered, so the highest witness is one backward
-    /// walk over that range's tail.
+    /// Work does not grow with the fact set: the store keeps its highest
+    /// reserved witness as variables are reserved, and only `body_variables`,
+    /// which the caller collected, is read.
     pub(super) fn fresh_universal_witness(
         &self,
         body_variables: &std::collections::BTreeSet<Variable>,
     ) -> Option<Variable> {
-        let base = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE;
-        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING;
-        let reserved_high = highest_universal_witness(self.reserved_variables.iter().copied());
-        let body_high = highest_universal_witness(body_variables.iter().copied());
+        let reserved_high = self.highest_reserved_witness;
+        let body_high = body_variables
+            .iter()
+            .filter(|variable| variable.is_witness())
+            .map(|variable| variable.0)
+            .max();
         let next = match reserved_high.into_iter().chain(body_high).max() {
             Some(highest) => highest.checked_add(1)?,
-            None => base,
+            None => 0,
         };
-        (next < ceiling).then_some(Variable(next))
+        (next < crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT)
+            .then_some(Variable::witness(next))
     }
 
     /// The witness `intro` opens a universal over `binder` with, and the body
@@ -2492,26 +2519,6 @@ fn substituted_range_span(
         Some(width) => binary_node!(Int32, Multiply, Box::new(count), Box::new(width)),
         None => count,
     })
-}
-
-/// The largest universal-introduction witness identity in an ascending set of
-/// variables, or `None` when the set holds none.
-///
-/// The set is ordered, so this walks back from the top and stops at the first
-/// identity below the witness range. Identities above the range would be some
-/// other producer's, and the registry mints none, so they are skipped rather
-/// than treated as the end of the walk.
-fn highest_universal_witness(variables: impl DoubleEndedIterator<Item = Variable>) -> Option<u64> {
-    variables
-        .rev()
-        .skip_while(|variable| {
-            variable.0 >= crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING
-        })
-        .take_while(|variable| {
-            crate::kernel::ExecutionBudget::is_universal_witness_variable(*variable)
-        })
-        .map(|variable| variable.0)
-        .next()
 }
 
 fn index_state_fact(

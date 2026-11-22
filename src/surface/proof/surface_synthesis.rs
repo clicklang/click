@@ -631,6 +631,20 @@ pub(in crate::surface) fn synthesize_surface_proposition_at_entry_and_post(
     synthesize_surface_proposition(proposition, parameter_binding, post)
 }
 
+/// [`synthesize_surface_value`] at `state`, spelling a value only the
+/// function's entry holds as `old(...)`.
+pub(in crate::surface) fn synthesize_surface_value_at_entry_and_post(
+    value: &ProgramValue,
+    parameter_binding: ParameterBinding<'_>,
+    entry: Option<&ExecutionState>,
+    state: &ExecutionState,
+) -> Option<ContractExpression> {
+    let _entry = entry.map(|entry| {
+        SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry.clone()))))
+    });
+    synthesize_surface_value(value, parameter_binding, state)
+}
+
 /// [`synthesize_surface_proposition_at_entry_and_post`] with names for
 /// bound variables.
 pub(in crate::surface) fn synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
@@ -8094,6 +8108,26 @@ fn synthesize_surface_pointer_expression(
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
     if let Some(read) = pointer.as_loaded_value()
+        && let Some((base, value_type)) = synthesize_copied_parameter_pointer(&read)
+    {
+        if read.displacement == AddressOffset::Constant(0) {
+            return Some(base);
+        }
+        let origin = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        let width = value_type.pointee_type()?.byte_width();
+        let index = synthesis_element_index(pointer, &origin, width)?;
+        let index = pointer_indices::raise(
+            index.operand_view(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
+    }
+    if let Some(read) = pointer.as_loaded_value()
         && let Some(value_type) = read.value_type
     {
         let base = synthesize_point_read(
@@ -8228,6 +8262,56 @@ fn synthesize_surface_pointer_expression(
         .or_else(|| {
             synthesize_recorded_pointer_expression(pointer, parameter_binding, bound_variables)
         })
+}
+
+/// A pointer read from the call's private parameter object is named by
+/// that call and field. Its defining memory selects the parameter scope.
+fn synthesize_copied_parameter_pointer(
+    read: &crate::kernel::LoadedPointerView,
+) -> Option<(ContractExpression, ProgramType)> {
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let points = slot.borrow();
+        let (selector, state) = points
+            .as_ref()?
+            .point_reading_memory(&read.defining_memory)?;
+        let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region,
+            kind: ProgramPointKind::Parameters,
+        }) = selector
+        else {
+            return None;
+        };
+        let object = Address {
+            base: read.defining_address.base.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        let name = state.locals().name_for_slot(&object)?;
+        let layout = state.locals().aggregate_layout(name)?;
+        let field = layout.fields().iter().find(|field| {
+            let field_type = field.program_type();
+            field_type.is_pointer()
+                && read.value_type.is_none_or(|ty| ty == field_type)
+                && object.offset_by_layout(field.offset()) == read.defining_address
+        })?;
+        let value_type = field.program_type();
+        let base = ContractExpression::RegionParameter {
+            region: region.clone(),
+            name: name.named()?.to_owned(),
+        };
+        Some((
+            ContractExpression::Field {
+                pointee_struct: None,
+                base: Box::new(base),
+                field: field.name().to_owned(),
+                lowered: typed_load_expression(
+                    owner_field_pointer(&ProgramExpression::Variable(name.clone()), field.offset()),
+                    value_type,
+                ),
+                offset_bytes: field.offset(),
+            },
+            value_type,
+        ))
+    })
 }
 
 /// `at(point, e)` for a pointer no nearer state names, at a recorded point

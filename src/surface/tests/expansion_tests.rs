@@ -3256,6 +3256,41 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
 }
 
 #[test]
+fn integer_constructor_arm_fields_expand_to_known() {
+    let (source, _) = mdtest_sources("mdtests/algebraic_integer_match_bindings.md");
+    for (theorem, result, wrong_result) in [
+        (
+            "swaps",
+            "swap(p) == Pair::Pair(b, a)",
+            "swap(p) == Pair::Pair(a, b)",
+        ),
+        (
+            "captures",
+            "capture(b, ambient) == Pair::Pair(payload, ambient)",
+            "capture(b, ambient) == Pair::Pair(payload, payload)",
+        ),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
+        let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
+        let proof = proof.split("\ntheorem ").next().unwrap();
+        assert!(proof.contains("known();"), "{expanded}");
+        assert!(!proof.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+        let wrong = expanded.replace(result, wrong_result);
+        assert_ne!(wrong, expanded);
+        let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
+        assert!(
+            error.contains("`known` requires the current goal"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn rewritten_constructor_payload_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/algebraic_match_on_known_constructor.md");
     let label = "rewritten.ensures_0";
@@ -5994,6 +6029,15 @@ fn branch_interface_service_solve_expands_and_rechecks() {
             )
         },
     );
+
+    let claim = "service_step.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("rewrite(owner->phase, at("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -16876,22 +16920,49 @@ fn quantified_read_expands_through_store_and_call_preservation() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: expand and replay the masked array read"]
-fn masked_indexed_read_expands_through_distinct_store_preservation() {
-    let (source, sources) = mdtest_sources("mdtests/an_if_form_fact_survives_a_disjoint_store.md");
+#[ignore = "nightly: expand and replay the terminator proof"]
+fn indexed_terminator_expands_through_ordered_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/memory_predicate_explicit_frame.md");
     let sources = crate::cli::source_refs(&sources);
-    let claim = "mark_odd.contract";
+    let claim = "set_before_terminator.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(
         expanded.contains("separation::separate_elements("),
         "{expanded}"
     );
-    assert!(expanded.contains("preserve(memory(a[m])"), "{expanded}");
+    assert!(
+        expanded.contains("preserve(memory(data[length])"),
+        "{expanded}"
+    );
     without_implicit_solve_for_claim(claim, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the conditional and masked array reads"]
+fn indexed_reads_in_expressions_expand_through_distinct_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/an_if_form_fact_survives_a_disjoint_store.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in ["mark_one.contract", "mark_odd.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains("separation::separate_elements("),
+            "{claim}: {expanded}"
+        );
+        assert!(
+            expanded.contains("preserve(memory(a[m])"),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
 }
 
 #[test]

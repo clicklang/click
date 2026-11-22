@@ -223,25 +223,51 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             right: kept.clone(),
         };
-        let distinct = ClickProposition::Comparison {
-            left: read_index.clone(),
-            operator: ComparisonOperator::NotEqual,
-            right: write_index.clone(),
+        let compare = |left: &ContractExpression, operator, right: &ContractExpression| {
+            ClickProposition::Comparison {
+                left: left.clone(),
+                operator,
+                right: right.clone(),
+            }
         };
+        let distinct = compare(read_index, ComparisonOperator::NotEqual, &write_index);
         let separate_elements = ProofCertificate::from_steps(vec![ProofStep::ApplyTheoremUsing {
             application: TheoremApplication {
                 name: "click::separation::separate_elements".into(),
-                arguments: vec![base.clone(), write_index, read_index.clone()],
+                arguments: vec![base.clone(), write_index.clone(), read_index.clone()],
             },
-            premises: vec![distinct],
+            premises: vec![distinct.clone()],
         }])
         .expect("ordinary indexed separation");
-        let Some(proof) = attempt::candidate_outcome(
+        let separated = attempt::candidate_outcome(
             search_input
                 .driver()
                 .apply_have_step(&separation, &separate_elements),
-        )?
-        else {
+        )?;
+        let proof = match separated {
+            Some(proof) => Some(proof),
+            None => {
+                let strict_orders = [
+                    compare(&write_index, ComparisonOperator::LessThan, read_index),
+                    compare(read_index, ComparisonOperator::LessThan, &write_index),
+                ];
+                let Some(proof) = Self::try_index_disequality_from_order(
+                    search_input,
+                    &distinct,
+                    compare(&write_index, ComparisonOperator::Equal, read_index),
+                    strict_orders,
+                )?
+                else {
+                    return Ok(None);
+                };
+                attempt::candidate_outcome(
+                    proof
+                        .driver()
+                        .apply_have_step(&separation, &separate_elements),
+                )?
+            }
+        };
+        let Some(proof) = proof else {
             return Ok(None);
         };
         let certificate = ProofCertificate::from_steps(vec![ProofStep::Known])
@@ -253,9 +279,47 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
+    /// A strict comparison refutes equality of the two selected indices.
+    fn try_index_disequality_from_order(
+        search_input: &Proof<'a>,
+        distinct: &ClickProposition,
+        equality: ClickProposition,
+        orders: [ClickProposition; 2],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_index_disequality_from_order");
+        let known =
+            ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary order lookup");
+        let refute_order =
+            ProofCertificate::from_steps(vec![ProofStep::Rewrite(equality), ProofStep::Normalize])
+                .expect("ordinary refutation of an irreflexive order");
+        for order in orders {
+            let Some(proof) =
+                attempt::candidate_outcome(search_input.driver().apply_have_step(&order, &known))?
+            else {
+                continue;
+            };
+            let proof_steps = ProofCertificate::from_steps(vec![
+                ProofStep::Intro,
+                ProofStep::Have {
+                    proposition: ClickProposition::Not(Box::new(order.clone())),
+                    proof: Box::new(refute_order.clone()),
+                },
+                ProofStep::Contradiction(order),
+            ])
+            .expect("ordinary index disequality");
+            if let Some(proof) =
+                attempt::candidate_outcome(proof.driver().apply_have_step(distinct, &proof_steps))?
+            {
+                return Ok(Some(proof));
+            }
+        }
+        Ok(None)
+    }
+
     /// Restrict a separated range to the selected read before checking a
     /// footprint with one memory member.
-    fn try_single_memory_write_separation(
+    pub(in crate::surface::proof) fn try_single_memory_write_separation(
         search_input: &Proof<'a>,
         written: &Resource,
         kept: &ResourceSubject,
