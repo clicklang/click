@@ -5629,8 +5629,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                     | native_constant!(_, _) => results.push(term.clone()),
                     MachineTerm::IntegerAddress(_, _) => results.push(term.clone()),
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                        // A selected read already carries the point that names its cell.
-                        if memory.read_version_id().is_some() {
+                        if memory.is_entry_read() {
                             results.push(term.clone());
                             continue;
                         }
@@ -5642,6 +5641,11 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                                     cell_integer_for_read(memory.memory(), pointer, kind, term)
                                 });
                         let Some(mut value) = resolved else {
+                            // A symbolic read with a selected point already has its version.
+                            if memory.read_version_id().is_some() {
+                                results.push(term.clone());
+                                continue;
+                            }
                             // Name the cell by its version before restricting
                             // the state: the restriction is a fresh intern
                             // with no derivation, so a version walk over it
@@ -5703,6 +5707,10 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                             if let Some(next) = resolved {
                                 value = next;
                                 continue;
+                            }
+                            if next_memory.read_version_id().is_some() {
+                                results.push(value);
+                                break;
                             }
                             let version = cell_version_point(
                                 next_memory.shared_memory(),
