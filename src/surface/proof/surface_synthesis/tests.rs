@@ -10147,6 +10147,29 @@ fn nested_operand_definedness_round_trips() {
                     crate::surface::printing::source_click_proposition(&raised),
                 ));
             }
+            // The printed spelling is what a user or an expansion writes:
+            // parsed back as a requirement, it lowers to the same fact.
+            let printed = crate::surface::printing::source_click_proposition(&raised);
+            let reparsed = match parser::parse(&format!(
+                "void probe(int32 a, int32 b, int32 c) {{ requires {printed}; ensures true; }}"
+            )) {
+                Ok(file) => match file.function_blocks()[0].requires()[0].clone() {
+                    Requirement::Proposition(proposition) => proposition,
+                    other => panic!("`{printed}` parses as a proposition: {other:?}"),
+                },
+                Err(error) => {
+                    failures.push(format!(
+                        "{polarity}{name}: `{printed}` does not parse: {error}"
+                    ));
+                    continue;
+                }
+            };
+            let relowered = relower_written_proposition(&reparsed, &state);
+            if relowered.as_ref() != Ok(&expected) {
+                failures.push(format!(
+                    "{polarity}{name}:\n  printed:  {printed}\n  lowered:  {relowered:?}\n  expected: {expected:?}",
+                ));
+            }
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
