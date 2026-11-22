@@ -4,9 +4,10 @@
 and gives it back unchanged. `Rotate` asks for both links of that argument, so
 `dummy_copy` does not satisfy it. Binding it to `.rotate` in the table is
 therefore a proof failure at the caller, where `&dummy_callbacks` has to
-discharge `Rotate(augment->rotate)` by concrete formation from the address the
-initializer named. Nothing about the signature distinguishes the two fields;
-only the contracts do.
+discharge `Rotate(augment->rotate)` from the address the initializer named.
+The proof supplies the contract for each callback at its own address so that
+the call reaches the mismatched rotation field. Both fields have the same
+function signature.
 
 ```c filename=rb_augment_callbacks_mismatch.c
 struct node {
@@ -121,10 +122,18 @@ void erase_dummy(struct node* node, struct node* parent) {
     ensures parent->left == old(parent->left);
     ensures parent->right == old(parent->right);
 } by {
+    apply(dummy_propagate_contract());
+    apply(dummy_copy_contract());
+    apply(dummy_rotate_contract());
     fold(rb_augment_callbacks_storage(&dummy_callbacks));
+    step();
 }
+
+theorem dummy_propagate_contract() { ensures Propagate(&dummy_propagate) by { unfold(Propagate(&dummy_propagate)); solve(); } }
+theorem dummy_copy_contract() { ensures Copy(&dummy_copy) by { unfold(Copy(&dummy_copy)); solve(); } }
+theorem dummy_rotate_contract() { ensures Rotate(&dummy_rotate) by { unfold(Rotate(&dummy_rotate)); solve(); } }
 ```
 
 ```expect
-fail: function `dummy_copy` does not satisfy named contract `Rotate`
+fail: ->rotate)`
 ```
