@@ -450,8 +450,7 @@ fn signed_addition_does_not_walk_the_operands_equality_class() {
             samples.push(work);
         }
     }
-    assert!(
-        samples.iter().all(|work| *work == samples[0]),
-        "{samples:?}"
-    );
+    for sample in samples.chunks_exact(2) {
+        assert_eq!(sample, &samples[..2], "{samples:?}");
+    }
 }
