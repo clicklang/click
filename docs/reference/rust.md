@@ -1049,9 +1049,9 @@ A precondition such as `x % 2u8 == 0u8` therefore proves the corresponding
 branch or `assert!` guard without an explicit proof. The nonzero-divisor
 obligation still applies
 ([`design/charon-trial/narrow-remainder`](https://github.com/clicklang/click/blob/master/design/charon-trial/narrow-remainder/widths.click)).
-A narrow signed quotient or remainder is bounded only for a nonnegative
-dividend and positive divisor; with negative operands its range is not yet
-provable
+For `i8` and `i16`, the nonzero divisor and narrow overflow exclusion
+also establish that the promoted result fits the original type. Contracts
+can use the normal Rust domain for either sign of the operands
 ([`design/charon-trial/signed-arithmetic`](https://github.com/clicklang/click/blob/master/design/charon-trial/signed-arithmetic/signed.click)).
 A core `From` between
 integers converts when every source value is a target value. Integer `as`

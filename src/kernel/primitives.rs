@@ -4018,7 +4018,9 @@ pub enum IntegerCastMode {
     /// target's type as written, and its value is that operator's native
     /// node at the target's format, `(a op b) mod 2^N`, with no promotion
     /// and no conversion. Only the Rust front end writes it; Rust's
-    /// overflow panics are separate checked assertions.
+    /// overflow panics for these operators are separate checked assertions.
+    /// Signed narrow `/ %` retain the promoted operation's converted term
+    /// and emit their own narrow overflow prerequisite.
     NarrowArithmetic,
     /// The conversion lowering inserts from a pure function's body to its
     /// declared result type: C's conversion, as `CConversion`, at whose

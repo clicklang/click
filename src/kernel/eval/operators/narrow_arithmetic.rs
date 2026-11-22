@@ -87,3 +87,62 @@ pub(in crate::kernel) fn native_narrow_not(
         narrow_operand(format, value)?,
     )))
 }
+
+/// Rust retains the promoted operation's term. The narrow MIN/-1 exclusion
+/// both enforces the panic check and certifies the exact result conversion
+/// on the normal path of the promoted operation. Neither result can exceed
+/// the dividend's magnitude. A quotient can negate the minimum at divisor
+/// -1, the only way to exceed the positive endpoint.
+pub(in crate::kernel) fn apply_rust_narrow_signed_division(
+    format: MachineIntegerType,
+    op: MachineBinaryOp,
+    left: ProgramValue,
+    right: ProgramValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<ExpressionPath> {
+    use crate::kernel::machine_integer::conversion;
+    let (Some(left), Some(right)) = (
+        narrow_operand(format, &left),
+        narrow_operand(format, &right),
+    ) else {
+        return vec![program_type_mismatch_expression_path(facts, obligations)];
+    };
+    let safe = Proposition::signed_division_exclusion(format, &left, &right);
+    let widen = |operand| conversion::convert_term(format, MachineIntegerType::Int32, operand);
+    let (left, right) = (widen(left), widen(right));
+    let (mut paths, label) = match op {
+        MachineBinaryOp::Divide => (
+            apply_program_int32_divide(left, right, facts, obligations, assumptions),
+            "Rust div panic check",
+        ),
+        MachineBinaryOp::Remainder => (
+            apply_program_int32_remainder(left, right, facts, obligations, assumptions),
+            "Rust rem panic check",
+        ),
+        _ => unreachable!("narrow signed division operator"),
+    };
+    for path in &mut paths {
+        let ExpressionOutcome::Value(source @ ProgramValue::Int32(term)) = &path.outcome else {
+            continue;
+        };
+        path.obligations.push(
+            ProofObligation::verification_condition(safe.clone())
+                .with_statement_entry_required(true)
+                .with_context(label),
+        );
+        let result = format.value_from_term(conversion::convert_term(
+            MachineIntegerType::Int32,
+            format,
+            term.clone(),
+        ));
+        path.facts.extend(
+            super::super::expression::checked_narrowing_identity(source, &result)
+                .into_iter()
+                .map(ExecutionPureFact::certified),
+        );
+        path.outcome = ExpressionOutcome::Value(result);
+    }
+    paths
+}
