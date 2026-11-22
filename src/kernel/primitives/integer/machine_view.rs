@@ -752,11 +752,14 @@ impl<'a> MachineOperandView<'a> {
     /// Retain the written carrier at one fixed interpretation for indexed
     /// matching. This changes no node and reads no proof facts.
     pub(crate) fn retain(self, ty: MachineIntegerType) -> SharedMachineIntegerTerm {
+        self.try_retain(ty).expect("shared operand fragment")
+    }
+
+    pub(crate) fn try_retain(self, ty: MachineIntegerType) -> Option<SharedMachineIntegerTerm> {
         match self {
-            Self::Legacy(value) => SharedMachineIntegerTerm::intern(ty, value.clone()),
+            Self::Legacy(value) => Some(SharedMachineIntegerTerm::intern(ty, value.clone())),
             Self::Shared(term) => {
                 SharedMachineIntegerTerm::from_shared(ty, term.with_machine_observation_type(ty))
-                    .expect("shared operand fragment")
             }
         }
     }
