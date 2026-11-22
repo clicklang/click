@@ -1812,6 +1812,7 @@ impl CppExport {
                 &function.declaration_id,
                 &functions,
                 &records,
+                self.exception_behavior,
                 &mut visiting,
                 &mut visited,
             )?;
@@ -1827,6 +1828,7 @@ impl CppExport {
                 &destructor.declaration_id,
                 &functions,
                 &records,
+                self.exception_behavior,
                 &mut visiting,
                 &mut visited,
             )?;
@@ -1849,6 +1851,7 @@ impl CppExport {
                         &overridden.declaration_id,
                         &functions,
                         &records,
+                        self.exception_behavior,
                         &mut visiting,
                         &mut visited,
                     )?;
@@ -5877,6 +5880,7 @@ fn validate_reachable_calls(
     declaration_id: &str,
     functions: &BTreeMap<String, &CppFunction>,
     records: &RecordIndex<'_>,
+    exception_behavior: CppExceptionBehavior,
     visiting: &mut Vec<String>,
     visited: &mut BTreeMap<String, (usize, bool)>,
 ) -> Result<(usize, bool), String> {
@@ -5916,7 +5920,14 @@ fn validate_reachable_calls(
     let mut addresses = Vec::new();
     collect_local_function_addresses(&function.body, &mut addresses);
     for address in addresses {
-        validate_function_address(address, functions, records, visiting, visited)?;
+        validate_function_address(
+            address,
+            functions,
+            records,
+            exception_behavior,
+            visiting,
+            visited,
+        )?;
     }
     let mut calls = Vec::new();
     collect_calls(&function.body, &mut calls);
@@ -5968,7 +5979,14 @@ fn validate_reachable_calls(
         };
         callee.span.validate(&function.span.file)?;
         for address in function_addresses(arguments) {
-            validate_function_address(address, functions, records, visiting, visited)?;
+            validate_function_address(
+                address,
+                functions,
+                records,
+                exception_behavior,
+                visiting,
+                visited,
+            )?;
         }
         if callee.through_pointer {
             validate_pointer_call(&places, function, &call, records)?;
@@ -5993,9 +6011,14 @@ fn validate_reachable_calls(
                 ..
             } => {
                 if arguments.iter().any(CppCallArgument::is_record_temporary) {
-                    if !target.declared_noexcept {
+                    // These arguments have already passed trivial-record validation.
+                    // The opaque ios_failure profile propagates out of the frame,
+                    // where callable completion retires its automatic storage.
+                    if !target.declared_noexcept
+                        && exception_behavior != CppExceptionBehavior::IosFailure
+                    {
                         return Err(
-                            "C++ record temporary calls require a nonthrowing callee".into()
+                            "C++ record temporary calls require a nonthrowing callee or the ios_failure propagation profile".into()
                         );
                     }
                     if arguments
@@ -6217,6 +6240,7 @@ fn validate_reachable_calls(
             &callee.declaration_id,
             functions,
             records,
+            exception_behavior,
             visiting,
             visited,
         )?;
@@ -6243,6 +6267,7 @@ fn validate_reachable_calls(
             &overrider.declaration_id,
             functions,
             records,
+            exception_behavior,
             visiting,
             visited,
         )?;
@@ -7958,6 +7983,7 @@ fn validate_function_address(
     address: &CppExpression,
     functions: &BTreeMap<String, &CppFunction>,
     records: &RecordIndex<'_>,
+    exception_behavior: CppExceptionBehavior,
     visiting: &mut Vec<String>,
     visited: &mut BTreeMap<String, (usize, bool)>,
 ) -> Result<(), String> {
@@ -8036,6 +8062,7 @@ fn validate_function_address(
             &reference.declaration_id,
             functions,
             records,
+            exception_behavior,
             visiting,
             visited,
         )?;
@@ -8798,6 +8825,7 @@ mod tests {
                     ("inner".into(), inner),
                 ]),
                 &RecordIndex::default(),
+                CppExceptionBehavior::NormalOnly,
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
             )
@@ -8886,6 +8914,7 @@ mod tests {
                         ("inner".into(), inner),
                     ]),
                     &RecordIndex::default(),
+                    CppExceptionBehavior::NormalOnly,
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
                 )
@@ -8977,6 +9006,7 @@ mod tests {
                 "caller",
                 &BTreeMap::from([("caller".into(), caller), ("callee".into(), callee)]),
                 &RecordIndex::default(),
+                CppExceptionBehavior::NormalOnly,
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
             )
@@ -9692,6 +9722,7 @@ mod tests {
                 "root",
                 &functions,
                 &RecordIndex::default(),
+                CppExceptionBehavior::NormalOnly,
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
             )
