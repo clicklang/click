@@ -1240,9 +1240,8 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
 fn recursive_child_kernel_restores_children_through_parent_handles() {
     let (instance, definition, state) = recursive_child_fixture();
     let assumptions = PureFactContext::new();
-    let opened = rewrite_resource_instance(&state, &instance, &definition, &assumptions, true)
-        .unwrap()
-        .state;
+    let (opened, _) =
+        rewrite_resource_instance(&state, &instance, &definition, &assumptions, true).unwrap();
     assert!(
         opened
             .resource_instance_at_path(instance.identity(), &["left".into()])
@@ -1251,7 +1250,7 @@ fn recursive_child_kernel_restores_children_through_parent_handles() {
     assert!(
         rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
             .unwrap()
-            .state
+            .0
             .owned_resource_instance(instance.identity())
             .is_some()
     );
@@ -1285,7 +1284,7 @@ fn recursive_child_kernel_restores_children_through_parent_handles() {
     assert!(
         rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
             .unwrap()
-            .state
+            .0
             .owned_resource_instance(instance.identity())
             .is_some()
     );
