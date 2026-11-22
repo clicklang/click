@@ -1923,7 +1923,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_application_cache: HashMap<(u64, u64, bool, bool), AddressBase>,
     pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), AddressBase>,
     scope_renaming_max: u64,
-    integer_body_summaries: HashMap<u64, crate::kernel::prelude::IntegerScopeSummary>,
+    integer_body_summaries: crate::kernel::prelude::RetainedIntegerScopeSummaries,
     integer_variables: Option<IntegerVariableRewrite<'a>>,
     integer_replacement_variables: Option<BTreeSet<Variable>>,
     bitvector_replacement_variables: Option<BTreeSet<Variable>>,
@@ -2220,7 +2220,7 @@ impl<'a> TermRewrite<'a> {
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
-            integer_body_summaries: HashMap::new(),
+            integer_body_summaries: Default::default(),
             integer_replacement_variables: None,
             bitvector_replacement_variables: None,
             integer_replacement_variable_max: None,
@@ -2323,7 +2323,7 @@ impl<'a> TermRewrite<'a> {
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
-            integer_body_summaries: HashMap::new(),
+            integer_body_summaries: Default::default(),
             integer_replacement_variables: (!defer_capture)
                 .then_some(integer_replacement_variables),
             bitvector_replacement_variables: (!defer_capture)
@@ -2499,7 +2499,7 @@ impl<'a> TermRewrite<'a> {
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
-            integer_body_summaries: HashMap::new(),
+            integer_body_summaries: Default::default(),
             integer_replacement_variables: None,
             bitvector_replacement_variables: None,
             integer_replacement_variable_max: None,
@@ -2643,7 +2643,7 @@ impl<'a> TermRewrite<'a> {
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
-            integer_body_summaries: HashMap::new(),
+            integer_body_summaries: Default::default(),
             integer_replacement_variables: None,
             bitvector_replacement_variables: None,
             integer_replacement_variable_max: None,
@@ -2740,7 +2740,7 @@ impl<'a> TermRewrite<'a> {
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
-            integer_body_summaries: HashMap::new(),
+            integer_body_summaries: Default::default(),
             integer_replacement_variables: Some(integer_replacement_variables),
             bitvector_replacement_variables: Some(bitvector_replacement_variables),
             integer_replacement_variable_max,
@@ -2957,7 +2957,7 @@ impl<'a> TermRewrite<'a> {
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
-            integer_body_summaries: HashMap::new(),
+            integer_body_summaries: Default::default(),
             integer_replacement_variables: None,
             bitvector_replacement_variables: None,
             integer_replacement_variable_max: None,
@@ -3129,22 +3129,13 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    fn body_variable_max(&mut self, body: &SharedIntegerTerm) -> u64 {
-        let body_id = body.id();
-        if !self.integer_body_summaries.contains_key(&body_id) {
-            let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
-            crate::kernel::prelude::collect_integer_scope_summaries(
-                body,
-                &mut self.integer_body_summaries,
-            );
-            if crate::instrumentation::checked_collection_exhausted() {
-                self.integer_work_exhausted = true;
-                return 0;
-            }
+    fn body_variable_max(&mut self, body: &KernelTerm) -> Option<u64> {
+        let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
+        let maximum = self.integer_body_summaries.maximum(body);
+        if crate::instrumentation::checked_collection_exhausted() {
+            self.integer_work_exhausted = true;
         }
-        self.integer_body_summaries
-            .get(&body_id)
-            .map_or(0, |summary| summary.max)
+        maximum
     }
 
     fn remove_fold_scope_mapping(
@@ -4705,10 +4696,7 @@ impl<'a> TermRewrite<'a> {
         }
 
         let body_variable_max = if accumulator_capture || item_capture {
-            // The existing capture summary accounts for every native and
-            // opaque binder family. Request it only when a binder must move.
-            let native = self.fold_integer_bridge.integer(body).ok()?;
-            self.body_variable_max(&native)
+            self.body_variable_max(body)?
         } else {
             0
         };
@@ -8761,6 +8749,13 @@ mod tests {
         };
         let source_term = MachineTerm::Variable(source);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
+        let body = KernelTermImport::default().integer(&match &fold {
+            IntegerTerm::RangeFold { body, .. } => body.clone(),
+            _ => unreachable!(),
+        });
+        let exports = KernelTermExport::integer_export_count();
+        assert_eq!(rewrite.body_variable_max(&body), Some(nested_item.0));
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
         let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
         };
@@ -8772,7 +8767,7 @@ mod tests {
         else {
             unreachable!()
         };
-        assert_ne!(*fresh_accumulator, accumulator);
+        assert!(fresh_accumulator.0 > nested_item.0);
         let IntegerTerm::Add(_, nested_and_machine) = body.as_ref() else {
             panic!("missing nested Integer fold")
         };

@@ -70,3 +70,62 @@ fn common_fold_rewrite_scales_with_shared_children_without_machine_exports() {
         }
     }
 }
+
+#[test]
+fn integer_fold_capture_summary_scales_without_integer_exports() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = Variable(91_000);
+        let accumulator = Variable(91_001);
+        let item = Variable(91_002);
+        let mut body = KernelTerm::variable(KernelType::Integer, source);
+        for index in 0..size {
+            let term =
+                KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![body.clone(), body])
+                    .unwrap();
+            body = KernelTerm::integer_operation(
+                KernelIntegerOperator::Add,
+                vec![
+                    term,
+                    KernelTerm::variable(KernelType::Integer, Variable(92_000 + index)),
+                ],
+            )
+            .unwrap();
+        }
+        let zero = KernelTerm::integer_literal(0.into());
+        let fold = KernelFold::new(
+            KernelFoldIndex::Integer,
+            accumulator,
+            item,
+            [zero.clone(), zero.clone(), zero, body],
+        )
+        .unwrap();
+
+        let samples = [0, 16, 64, 256].map(|unrelated| {
+            let replacement = IntegerTerm::Variable(accumulator);
+            let renamings = BTreeMap::new();
+            let mut rewrite =
+                TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
+            for index in 0..unrelated {
+                let other = KernelTerm::variable(KernelType::Integer, Variable(95_000 + index));
+                assert_eq!(rewrite.body_variable_max(&other), Some(95_000 + index));
+            }
+            let exports = KernelTermExport::integer_export_count();
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| rewrite.retained_fold(&fold));
+            let result = result.unwrap();
+            assert!(result.accumulator.0 > 92_000 + size - 1);
+            assert_eq!(result.item, item);
+            assert_eq!(KernelTermExport::integer_export_count(), exports);
+            work
+        });
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        assert!(
+            samples[0] <= 160 * size as usize + 400,
+            "size={size}, work={samples:?}"
+        );
+    }
+}
