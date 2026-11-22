@@ -16399,7 +16399,7 @@ fn anchored_arithmetic_have_blocks(source: &str) -> Vec<std::ops::Range<usize>> 
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_62")]
-fn outcome_solve_transports_loadability_on_the_checked_proof() {
+fn outcome_solve_preserves_viewability_after_a_call() {
     let summarize_c = r#"
         int32 summarize(int32* p) {
             return 0;
@@ -16435,15 +16435,21 @@ fn outcome_solve_transports_loadability_on_the_checked_proof() {
     let sources = [("summarize.c", summarize_c), ("use_summary.c", use_c)];
 
     let verified = verify_c_sources(click_source, &sources);
-    verified.expect("the call-preserved viewability should transport through Proof");
+    verified.expect("the call-preserved viewability should verify");
 
     let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
-        .expect("the retained viewability transport should expand");
-    assert!(expanded.contains("transport"), "{expanded}");
+        .expect("call-preserved viewability should expand");
+    for region in [0, 2, 3] {
+        assert!(
+            expanded.contains(&format!("preserve(memory(p[0..1]), region({region}));")),
+            "{expanded}"
+        );
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve_for_claim("use_summary.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
-    .expect("the retained viewability transport should check without implicit solve");
+    .expect("the expanded viewability proof should check without implicit solve");
 }
 
 #[test]
@@ -25109,7 +25115,7 @@ test_batches! {
         proof_change_scope_requires_explicit_proofs_and_preserves_surroundings,
     ],
     expansion_batch_62: [
-        outcome_solve_transports_loadability_on_the_checked_proof,
+        outcome_solve_preserves_viewability_after_a_call,
         outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof,
         source_expander_lowers_smart_solve_after_unfold_inside_have,
     ],

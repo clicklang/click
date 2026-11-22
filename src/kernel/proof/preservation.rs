@@ -26,8 +26,8 @@ pub(crate) fn apply(
     if !separation_available {
         return Err("preserve separation is not exactly available".into());
     }
-    let derived = if matches!(result, Proposition::MemoryLoadable { .. }) {
-        let (before, after) = preserve_viewability(separation)?;
+    let derived = if let Proposition::MemoryLoadable { memory, .. } = result {
+        let (before, after) = preserve_viewability(separation, memory)?;
         if !available(&before) {
             return Err("preserve requires viewability at the footprint entry".into());
         }
@@ -63,7 +63,10 @@ pub(crate) fn apply(
     Ok(())
 }
 
-fn preserve_viewability(separation: &Proposition) -> Result<(Proposition, Proposition), String> {
+fn preserve_viewability(
+    separation: &Proposition,
+    goal_memory: &SymbolicMemory,
+) -> Result<(Proposition, Proposition), String> {
     let Proposition::ResourceSeparate { left, right } = separation else {
         return Err("preserve viewability requires footprint separation".into());
     };
@@ -72,15 +75,19 @@ fn preserve_viewability(separation: &Proposition) -> Result<(Proposition, Propos
         | (Resource::Memory(range), Resource::Footprint(fp)) => (fp, range),
         _ => return Err("preserve viewability requires a separated memory range".into()),
     };
-    if !footprint.complete || !footprint.uninitialized_local_declaration {
+    if !footprint.preserves_separate_viewability {
         return Err(
-            "preserve viewability requires a complete fresh uninitialized local declaration footprint"
-                .into(),
+            "preserve viewability requires a complete automatic-storage-only footprint".into(),
         );
     }
+    let after = if footprint.viewability_survives_return_cleanup(goal_memory, range.base()) {
+        goal_memory
+    } else {
+        &footprint.after
+    };
     Ok((
         range.loadable_fact(&footprint.before),
-        range.loadable_fact(&footprint.after),
+        range.loadable_fact(after),
     ))
 }
 
@@ -416,6 +423,35 @@ fn integer_equality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn return_preservation_refuses_a_view_of_the_retired_local() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new()
+            .with_local("selected", int32(5))
+            .with_memory(SymbolicMemory::new().with_block("local:selected", 4));
+        let local = state.locals().slot("selected").unwrap().clone();
+        let range = MemoryRange::new(local.clone(), 0u32.into(), 4u32.into());
+        let footprint = crate::kernel::RegionFootprint::statement_transition(
+            "return".into(),
+            &crate::kernel::program_return(ProgramExpression::Value(int32(0))),
+            &state,
+            &state,
+            &ExecutionFacts::new(),
+        );
+        let separation = Proposition::ResourceSeparate {
+            left: Box::new(Resource::Footprint(footprint)),
+            right: Box::new(Resource::Memory(range.clone())),
+        };
+        let entry_view = range.loadable_fact(state.memory());
+        let goal = range.loadable_fact(&state.memory().without_local_block(&local.base));
+        assert_eq!(
+            apply(&separation, None, &goal, |fact| {
+                fact == &separation || fact == &entry_view
+            }),
+            Err("preserve's constructed result does not match the goal".into())
+        );
+    }
 
     #[derive(Clone)]
     pub(super) struct Preservation {
