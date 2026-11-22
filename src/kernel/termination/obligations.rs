@@ -239,7 +239,8 @@ impl TerminationObligations {
                                     name,
                                     expression,
                                     addressed.get_or_init(|| address_taken_locals(loop_body)),
-                                )?;
+                                )
+                                .map_err(|error| error.with_invalid_measure(name))?;
                             }
                         }
                     }

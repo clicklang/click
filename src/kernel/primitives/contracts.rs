@@ -4441,6 +4441,16 @@ impl VerifiedLoopRule {
 }
 
 impl TerminationError {
+    pub(crate) fn kind(&self) -> TerminationErrorKind {
+        self.kind
+    }
+
+    pub(in crate::kernel) fn with_invalid_measure(mut self, function: &str) -> Self {
+        self.kind = TerminationErrorKind::InvalidMeasure;
+        self.function = Some(function.to_owned());
+        self
+    }
+
     pub fn message(&self) -> &str {
         &self.message
     }

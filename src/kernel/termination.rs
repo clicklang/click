@@ -53,7 +53,7 @@ fn error(message: impl Into<String>) -> TerminationError {
     TerminationError {
         message: message.into(),
         function: None,
-        superfluous_recursive_measure: false,
+        kind: TerminationErrorKind::Internal,
     }
 }
 

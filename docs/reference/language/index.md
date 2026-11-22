@@ -811,8 +811,13 @@ proof of descent under that measure. A finite chain through nested callbacks
 should then verify, while self-application would still owe descent. See
 `mdtests/termination_callback_self_application_rejected.md`.
 
-An unranked loop or callee without a termination proof is reported with its
-name and the options of adding a `decreases` clause or declaring `diverges`.
+An unranked loop or callee without a termination proof is an `incomplete
+proof`. Click names the loop or follows the call to the missing proof.
+Failure of `solve()` to prove a supplied measure's nonnegativity or descent
+is `unsuccessful search`. A function-level `decreases` clause requires a
+recursive edge to rank. A function that promises to return also needs return
+evidence for its calls. A call authorized by a contract that permits divergence
+conflicts with that promise and reports a `contract error`.
 The kernel records termination evidence separately from `VerifiedFunctionRule`,
 so an ordinary `ensures` is still exactly a statement
 about return states.
