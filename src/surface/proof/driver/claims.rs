@@ -142,6 +142,7 @@ fn prove_next_contract_closing_goal<'a>(
     let input = input.as_ref().expect("prepared closing input");
     let proved = root.prove_contract_closing_goal(kind, execution, &input.path, &input.specification)
         .map_err(|error| match mode {
+            _ if error.kind() == ClickErrorKind::Internal => error,
             ClosingProofMode::Explicit => error.with_context(format!("this tactic could not prove the {} obligation while closing the contract", kind.description())),
             ClosingProofMode::Implicit => error.with_context(format!("the implicit solver could not prove the {} obligation while closing the contract; write an explicit proof or establish the required facts and resources before closing", kind.description())),
         })?;
