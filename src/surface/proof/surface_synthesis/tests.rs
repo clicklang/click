@@ -5671,7 +5671,6 @@ fn float_bit_literals_round_trip_exact_native_values() {
         0xffc12345,
     ] {
         values.push(ProgramValue::Float32(MachineTerm::constant(bits)));
-        values.push(ProgramValue::Float32(MachineTerm::uint32_constant(bits)));
     }
     for bits in [
         0,
@@ -5704,6 +5703,18 @@ fn float_bit_literals_round_trip_exact_native_values() {
             let file =
                 parser::parse(&format!("{prefix} function probe() -> {ty} {{ {text} }}")).unwrap();
             let expression = file.click_function_definitions()[0].body().unwrap();
+            if let ProgramValue::Float32(_) = &value {
+                let bits = text.strip_suffix(')').unwrap();
+                let suffixed = parser::parse(&format!(
+                    "{prefix} function probe() -> {ty} {{ {bits}u32) }}"
+                ))
+                .unwrap();
+                assert_eq!(
+                    suffixed.click_function_definitions()[0].body(),
+                    Some(expression),
+                    "{text}, rust={rust}"
+                );
+            }
             let spec = crate::surface::lowering::elaborate_fixed_state_expression(
                 expression,
                 BTreeMap::new(),
@@ -5767,7 +5778,7 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
         ProgramValue::Float32(MachineTerm::Variable(Variable(999804))),
         ProgramValue::Float64(MachineTerm::Variable(Variable(999805))),
         ProgramValue::Float32(MachineTerm::constant(0x80000000)),
-        ProgramValue::Float32(MachineTerm::uint32_constant(0x7f800123)),
+        ProgramValue::Float32(MachineTerm::constant(0x7f800123)),
         ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
         ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff8000000000123)),
     ];
@@ -7059,7 +7070,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
         crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
             operator: crate::kernel::ComparisonOperator::LessThan,
             left: Box::new(variable.clone()),
-            right: Box::new(MachineTerm::uint32_constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         });
     let source = MachineTerm::ClickFunctionApplication {
         name: "mixed_sink".into(),

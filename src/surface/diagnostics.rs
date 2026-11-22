@@ -5782,13 +5782,9 @@ pub(in crate::surface) fn exact_float_literal_spelling(value: &ProgramValue) -> 
     use crate::kernel::MachineIntegerType;
     match value {
         ProgramValue::Float32(MachineTerm::Constant {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             bits,
         }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x})")),
-        ProgramValue::Float32(MachineTerm::Constant {
-            format: MachineIntegerType::UInt32,
-            bits,
-        }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x}u32)")),
         ProgramValue::Float64(MachineTerm::Constant {
             format: MachineIntegerType::UInt64,
             bits,
