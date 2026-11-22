@@ -3405,7 +3405,7 @@ impl<'a> Proof<'a> {
             }
             ProofContext::Execution(context) => {
                 let execution = self.execution()?;
-                let execution_view = execution.view(context);
+                let execution_view = execution.view();
                 let _recorded_points =
                     super::surface_synthesis::SynthesisRecordedPointsScope::enter(
                         execution_view.recorded_states,
@@ -3561,7 +3561,7 @@ impl<'a> Proof<'a> {
         let Some(execution) = self.execution() else {
             return Ok(None);
         };
-        let execution_view = execution.view(context);
+        let execution_view = execution.view();
         let _recorded_points = super::surface_synthesis::SynthesisRecordedPointsScope::enter(
             execution_view.recorded_states,
         );
@@ -3812,14 +3812,10 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
 
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
     let mut steps = vec![ProofStep::Known];
-    // These goals still rely on checked constructor reduction or byte-span
-    // containment. Keep their existing certificate until each has a closer.
+    // Keep the existing certificate for retained constructor reduction.
     if matches!(
         goal,
-        Some(
-            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-                | Proposition::ResourceContains { .. }
-        )
+        Some(Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_)))
     ) {
         steps.push(ProofStep::Normalize);
     }
@@ -4422,7 +4418,7 @@ fn source_backed_call_requirement_surface(
         // moved to a different frontier, and keeps source arguments authoritative
         // rather than reconstructing them from a reduced state.
         let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
-            execution.view(context),
+            execution.view(),
             &execution.core.state,
             context.function,
             context.arguments,

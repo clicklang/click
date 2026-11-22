@@ -1,13 +1,12 @@
-# A loop body stops at the implicit tail's split limit
+# A branching loop stops at the deterministic work limit
 
-With no written `maintain` proof, the loop closer splits at each C `if` of the
-body, as a function's implicit tail does, so eleven sequential branches give
-it 2,047 splits. Past 1,024 it stops and names the explicit join. The
-ordinary `implicit_tail_budget_errors_check_boundaries_without_exploring_paths`
-unit test checks the exact step and split boundaries directly, without
-constructing exponentially many function paths.
+With no written `maintain` proof, successive C branches multiply the paths the
+loop closer checks. This fixture reaches the deterministic work limit while
+checking the loop. The unit test
+`implicit_tail_budget_errors_check_boundaries_without_exploring_paths`
+checks the exact step and split boundaries directly.
 
-```c filename=a_loop_body_stops_at_the_split_limit.c
+```c filename=a_branching_loop_stops_at_the_work_limit.c
 int32 f(int32 n, int32 a0, int32 a1, int32 a2, int32 a3, int32 a4, int32 a5, int32 a6, int32 a7, int32 a8, int32 a9, int32 a10) {
     int32 i;
     int32 x;
@@ -32,7 +31,7 @@ int32 f(int32 n, int32 a0, int32 a1, int32 a2, int32 a3, int32 a4, int32 a5, int
 ```
 
 ```click
-verifying "a_loop_body_stops_at_the_split_limit.c";
+verifying "a_branching_loop_stops_at_the_work_limit.c";
 
 int32 f(int32 n, int32 a0, int32 a1, int32 a2, int32 a3, int32 a4, int32 a5, int32 a6, int32 a7, int32 a8, int32 a9, int32 a10) {
     requires 0 <= n;
@@ -52,5 +51,5 @@ int32 f(int32 n, int32 a0, int32 a1, int32 a2, int32 a3, int32 a4, int32 a5, int
 ```
 
 ```expect
-fail: split at more than 1024 C branches
+fail: verification budget exhausted inside tactic `loop` in `f.contract` exhausted its deterministic smart work budget
 ```

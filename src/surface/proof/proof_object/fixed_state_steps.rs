@@ -1145,10 +1145,10 @@ impl<'a> Proof<'a> {
         };
         let chosen_fact = match &chosen {
             crate::kernel::integer_c_value!(value) => {
-                substitute_int32_variable_in_proposition(&body, var, value.clone())
+                substitute_int32_variable_in_proposition(&body, *var, value.clone())
             }
             ProgramValue::Pointer(pointer) => {
-                crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
+                crate::kernel::substitute_pointer_value_in_proposition(&body, *var, pointer)
                     .map_err(|error| self.step_error(&error))?
             }
             _ => unreachable!("unsupported choice sort above"),
@@ -1631,7 +1631,7 @@ impl<'a> Proof<'a> {
             node: crate::kernel::AlgebraicTermNode::Variable(chosen_variable),
         };
         let fact = crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-            &body, var, &chosen,
+            &body, *var, &chosen,
         );
         let mut locals = self.state().locals().clone();
         locals.set_values(locals.values.with_inserted(
@@ -1754,7 +1754,7 @@ impl<'a> Proof<'a> {
             }
             let proposition =
                 crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-                    body, *var, &value,
+                    body, **var, &value,
                 );
             let surface_goal = match self.surface_goal() {
                 Some(ClickProposition::Exists { name, body, .. }) => {
@@ -1998,7 +1998,7 @@ impl<'a> Proof<'a> {
         };
         let value = self.capture_pure_integer_witness(witness.value())?;
         let proposition =
-            crate::kernel::substitute_integer_variable_in_pure_proposition(&body, var, &value)
+            crate::kernel::substitute_integer_variable_in_pure_proposition(&body, *var, &value)
                 .map_err(|error| {
                     self.step_error(format!("could not apply Integer witness: {error}"))
                 })?;
@@ -2047,7 +2047,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("algebraic witness has the wrong datatype"));
         }
         let proposition = crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-            &body, var, &value,
+            &body, *var, &value,
         );
         let surface_goal = match self.surface_goal() {
             Some(ClickProposition::Exists { name, body, .. }) => {

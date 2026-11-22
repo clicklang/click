@@ -84,15 +84,12 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                     },
                     true,
                 );
-                context = context.assume_proposition(Proposition::ForAll {
-                    var: Variable(785_000 + i),
-                    sort: crate::kernel::Sort::ProgramInt32,
-                    name: crate::kernel::BinderName::written("other"),
-                    body: Box::new(Proposition::Implies(
-                        Box::new(condition.clone()),
-                        Box::new(condition),
-                    )),
-                });
+                context = context.assume_proposition(crate::kernel::quantifiers::test_forall(
+                    crate::kernel::BinderName::written("other"),
+                    Variable(785_000 + i),
+                    crate::kernel::Sort::ProgramInt32,
+                    Proposition::Implies(Box::new(condition.clone()), Box::new(condition)),
+                ));
             }
         }
         // The context lazily keys facts admitted since its last query. Charge
@@ -106,20 +103,22 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
         );
         let obligations = (0..requirements)
             .map(|i| {
-                crate::kernel::ProofObligation::verification_condition(Proposition::ForAll {
-                    var: Variable(790_000 + i),
-                    sort: crate::kernel::Sort::ProgramInt32,
-                    name: crate::kernel::BinderName::written("k"),
-                    body: Box::new(Proposition::condition_is(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left: Box::new(MachineTerm::Variable(Variable(790_000 + i))),
-                            right: Box::new(255u32.into()),
-                        },
-                        true,
-                    )),
-                })
+                crate::kernel::ProofObligation::verification_condition(
+                    crate::kernel::quantifiers::test_forall(
+                        crate::kernel::BinderName::written("k"),
+                        Variable(790_000 + i),
+                        crate::kernel::Sort::ProgramInt32,
+                        Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessThan,
+                                left: Box::new(MachineTerm::Variable(Variable(790_000 + i))),
+                                right: Box::new(255u32.into()),
+                            },
+                            true,
+                        ),
+                    ),
+                )
             })
             .collect::<Vec<_>>();
         let ((result, probe), work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -17,6 +17,7 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | --- | --- | --- |
 | `syntax error` | The sidecar does not parse. | Fix the source at the reported line. |
 | `type error` | The sidecar parses but does not elaborate. | Fix the named declaration. |
+| `unsupported` | Click detected a documented limitation. | Use a supported route that preserves the claim, or request support for the original case. |
 | `internal error` | Click detected its own failure. | Stop at [`internal-error`](#outcomes) and capture the command, version, output, and inputs. |
 | `limit error` | A configured work limit stopped verification. | Record the limit and the operation that reached it. |
 | `contract error` | Click identified a rule it believes a written contract clause violates. | Check the rule under the contract’s requirements. Correct the clause or report a supported `contract-bug`. |

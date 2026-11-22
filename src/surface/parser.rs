@@ -699,9 +699,7 @@ pub(super) fn parse_file_items_for_module(
             .declared_resource_fields
             .insert(definition.name().to_string(), definition.fields().to_vec());
         if let Some(body) = definition.composite_body() {
-            parser
-                .declared_resource_child_slots
-                .insert(definition.name().to_string(), body.child_slot_resources());
+            parser.record_resource_outputs(definition.name(), body);
         }
     }
     for definition in imported_algebraic_types {
@@ -1038,6 +1036,7 @@ struct Parser {
     /// `fold` may leave out a slot whose child is the in-scope resource of
     /// the same name.
     declared_resource_child_slots: BTreeMap<String, BTreeMap<String, Option<String>>>,
+    declared_resource_witnesses: BTreeMap<String, BTreeSet<String>>,
     /// The language of the `verifying` sources. Rust admits a Rust
     /// signature (`fn name(a: T) -> T`).
     language: SourceLanguage,
@@ -2170,6 +2169,7 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             declared_resource_child_slots: BTreeMap::new(),
+            declared_resource_witnesses: BTreeMap::new(),
             language,
             plain_char: None,
             int64_t_rank: LongRank::Long,
@@ -4002,8 +4002,7 @@ impl Parser {
         if let Some(body) = &composite_body {
             self.declared_resource_fields
                 .insert(name.clone(), body.fields.clone());
-            self.declared_resource_child_slots
-                .insert(name.clone(), body.child_slot_resources());
+            self.record_resource_outputs(&name, body);
         }
         self.names.struct_params = previous_struct_params;
         self.names
@@ -10545,6 +10544,18 @@ impl Parser {
         }
     }
 
+    fn record_resource_outputs(&mut self, family: &str, body: &CompositeResourceBody) {
+        self.declared_resource_child_slots
+            .insert(family.to_owned(), body.child_slot_resources());
+        self.declared_resource_witnesses.insert(
+            family.to_owned(),
+            body.witnesses()
+                .iter()
+                .map(|witness| witness.name().to_owned())
+                .collect(),
+        );
+    }
+
     /// Binds the names of an unfold or fold pattern over `parent`, whose
     /// resource is `family` when the instance recorded one other than its
     /// clause's.
@@ -10814,52 +10825,9 @@ impl Parser {
             self.expect(Token::LParen)?;
             let target = self.parse_owned_resource_target()?;
             let target = self.hidden_binder(&target).unwrap_or(target);
-            // A declared resource's unfold names the `let ... where`
-            // witnesses its opened body binds.
-            if matches!(target, ResourceClause::Declared { .. }) {
-                self.expect(Token::RParen)?;
-                self.expect(Token::Semicolon)?;
-                let mut seen = BTreeSet::new();
-                for (slot, name) in &bindings {
-                    if !seen.insert(name.clone()) {
-                        return Err(self.error(format!(
-                            "unfold witness name `{name}` is bound twice; the names in `let {{ ... }} = unfold(...)` must differ"
-                        )));
-                    }
-                    let _ = slot;
-                    self.bind_proof_name(name, false)?;
-                    self.names.insert(NameKind::ProofBinder, name.clone());
-                }
-                return Ok(ProofTactic::UnfoldWitnesses {
-                    resource: target,
-                    names: bindings,
-                });
-            }
-            let ResourceClause::Named {
-                mut binding,
-                resource,
-            } = target
-            else {
-                return Err(self.error("resource unfold outputs require a named resource"));
-            };
             self.expect(Token::RParen)?;
-            // A child an earlier unfold introduced keeps its parent's clause
-            // as its target, since the parser cannot instantiate the slot's
-            // arguments; the resource it recorded is the slot's.
-            let family = self
-                .names
-                .resource_bindings
-                .get(&binding.name)
-                .map(|(_, family)| family.clone());
-            binding.child_bindings = Some(
-                self.bind_resource_child_names(&resource, family.as_deref(), bindings, true)?
-                    .into(),
-            );
             self.expect(Token::Semicolon)?;
-            return Ok(ProofTactic::UnfoldResource(ResourceClause::Named {
-                binding,
-                resource,
-            }));
+            return self.bind_unfold_outputs(target, bindings);
         }
         let CallOutputPattern::Single(name) = output else {
             return Err(self.error(
@@ -10869,6 +10837,59 @@ impl Parser {
         self.expect_ident_spelling("fold")?;
         self.expect(Token::LParen)?;
         self.parse_fold_construction(Some(name))
+    }
+
+    #[inline(never)]
+    fn bind_unfold_outputs(
+        &mut self,
+        mut target: ResourceClause,
+        bindings: Vec<(String, String)>,
+    ) -> Result<ProofTactic, ClickError> {
+        let mut labels = BTreeSet::new();
+        let mut names = BTreeSet::new();
+        for (label, name) in &bindings {
+            if !labels.insert(label) || !names.insert(name) {
+                return Err(
+                    self.error("duplicate label or binding name in `unfold` output pattern")
+                );
+            }
+        }
+        let witnesses = match &mut target {
+            ResourceClause::Named { binding, resource } => {
+                // A child keeps its parent's clause as a placeholder until
+                // its actual resource arguments are known.
+                let family = self
+                    .names
+                    .resource_bindings
+                    .get(&binding.name)
+                    .map(|(_, family)| family.clone());
+                let declared_witnesses = family
+                    .as_ref()
+                    .and_then(|family| self.declared_resource_witnesses.get(family));
+                let (witnesses, members): (Vec<_>, Vec<_>) =
+                    bindings.into_iter().partition(|(label, _)| {
+                        declared_witnesses.is_some_and(|names| names.contains(label))
+                    });
+                binding.child_bindings = Some(
+                    self.bind_resource_child_names(resource, family.as_deref(), members, true)?
+                        .into(),
+                );
+                if witnesses.is_empty() {
+                    return Ok(ProofTactic::UnfoldResource(target));
+                }
+                witnesses
+            }
+            ResourceClause::Declared { .. } => bindings,
+            _ => return Err(self.error("resource unfold outputs require a declared resource")),
+        };
+        for (_, name) in &witnesses {
+            self.bind_proof_name(name, false)?;
+            self.names.insert(NameKind::ProofBinder, name.clone());
+        }
+        Ok(ProofTactic::UnfoldWitnesses {
+            resource: target,
+            names: witnesses,
+        })
     }
 
     /// `fold(resource, { field: value, slot: child })` after its opening

@@ -241,11 +241,11 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
                 true,
             )),
         );
-        let source = Proposition::ForAll {
-            name: Default::default(),
+        let source = crate::kernel::quantifiers::test_forall(
+            Default::default(),
             var,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
+            Sort::ProgramInt32,
+            Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::MemoryReadDefined {
                     at: None,
@@ -253,8 +253,8 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
                     pointer: Address::symbolic(Variable(9_200_101)).offset_by_elements(index, 4),
                     value_type: ProgramType::Int32,
                 }),
-            )),
-        };
+            ),
+        );
         let context = PureFactContext::new();
         let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
             let mut facts = Vec::new();

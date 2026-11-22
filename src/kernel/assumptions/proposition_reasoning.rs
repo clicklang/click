@@ -680,14 +680,14 @@ impl PureFactContext {
                         }
                         let Some(renamed) =
                             crate::kernel::api::substitute_quantified_body_capture_free(
-                                fact_body, *fact_var, *var, sort,
+                                fact_body, **fact_var, **var, sort,
                             )
                         else {
                             return false;
                         };
                         renamed == **body
                             || crate::kernel::api::propositions_alpha_equivalent_under_binders(
-                                sort, *fact_var, fact_body, *var, body,
+                                sort, **fact_var, fact_body, **var, body,
                             )
                             || self.propositions_equal_modulo_proven_terms(&renamed, body)
                     })
@@ -696,7 +696,7 @@ impl PureFactContext {
                 var, sort, body, ..
             } => {
                 self.prop_facts.contains(proposition)
-                    || self.proves_exists_from_facts(*var, sort, body)
+                    || self.proves_exists_from_facts(**var, sort, body)
             }
             _ => self.prop_facts.contains(proposition),
         }
@@ -778,11 +778,10 @@ impl PureFactContext {
         }
         // An alpha-equal existential shares the goal's identity key, so it
         // is in that key's bucket of the stated-proposition index.
-        let goal = Proposition::Exists {
-            name: String::new(),
-            var,
-            sort: sort.clone(),
-            body: Box::new(body.clone()),
+        let Some(goal) =
+            crate::kernel::quantifiers::exists_over(String::new(), var, sort.clone(), body)
+        else {
+            return false;
         };
         let alpha = self.stated_identity_bucket(&goal).any(|fact| {
             let Proposition::Exists {
@@ -798,10 +797,10 @@ impl PureFactContext {
             // fact's body cannot reach an occurrence the goal leaves free,
             // and a witness for the fact says nothing about that variable.
             fact_sort == sort
-                && (*fact_var == var
-                    || !crate::kernel::api::proposition_variables(body).contains(fact_var))
+                && (**fact_var == var
+                    || !crate::kernel::api::proposition_variables(body).contains(&**fact_var))
                 && crate::kernel::api::substitute_quantified_body_capture_free(
-                    fact_body, *fact_var, var, sort,
+                    fact_body, **fact_var, var, sort,
                 )
                 .is_some_and(|renamed| {
                     crate::kernel::api::propositions_alpha_equivalent(&renamed, body)
@@ -929,13 +928,13 @@ impl PureFactContext {
             };
             let candidates = match target_condition {
                 Some((condition, _)) => {
-                    Self::guided_forall_condition_candidates(*var, body, condition.native_compat())
+                    Self::guided_forall_condition_candidates(**var, body, condition.native_compat())
                 }
                 None => BTreeSet::new(),
             };
             for argument in candidates {
                 let mut conclusion =
-                    substitute_bitvector_variable_in_proposition(body, *var, &argument);
+                    substitute_bitvector_variable_in_proposition(body, **var, &argument);
                 let mut guards = Vec::new();
                 while let Proposition::Implies(guard, body) = conclusion {
                     conjuncts(&guard, &mut guards);
@@ -2155,7 +2154,7 @@ impl SelectedFacts<'_> {
                     context.assume_proposition(premise.clone())
                 });
             let mut conclusion =
-                substitute_bitvector_variable_in_proposition(body, *var, &selected.argument);
+                substitute_bitvector_variable_in_proposition(body, **var, &selected.argument);
             while let Proposition::Implies(guard, body) = conclusion {
                 let mut conjuncts = Vec::new();
                 collect_proposition_conjuncts(&guard, &mut conjuncts);
@@ -3570,13 +3569,15 @@ impl PureFactContext {
                     true,
                 ),
             ] {
-                let query = Self::universal_equality_query(
-                    *var,
+                let Some(query) = Self::universal_equality_query(
+                    **var,
                     antecedent,
                     selected.as_ref().clone(),
                     other.as_ref().clone(),
                     truth,
-                );
+                ) else {
+                    continue;
+                };
                 if let Some(key) = crate::kernel::proof::proposition_identity_key(&query)
                     && !self.universal_equality_sources.contains_key(&key)
                 {
@@ -3594,12 +3595,12 @@ impl PureFactContext {
         left: MachineTerm,
         right: MachineTerm,
         truth: bool,
-    ) -> Proposition {
-        Proposition::ForAll {
-            name: Default::default(),
+    ) -> Option<Proposition> {
+        crate::kernel::quantifiers::forall_over(
+            Default::default(),
             var,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Implies(
+            Sort::ProgramInt32,
+            &Proposition::Implies(
                 Box::new(antecedent),
                 Box::new(Proposition::condition_is(
                     ConditionTerm::Compare {
@@ -3610,8 +3611,8 @@ impl PureFactContext {
                     },
                     truth,
                 )),
-            )),
-        }
+            ),
+        )
     }
 
     /// Select an explicit whole-range equality by its written bounds and
@@ -3637,8 +3638,11 @@ impl PureFactContext {
                 false,
             ),
         ] {
-            let query =
-                Self::universal_equality_query(var, antecedent, cell.clone(), right.clone(), truth);
+            let Some(query) =
+                Self::universal_equality_query(var, antecedent, cell.clone(), right.clone(), truth)
+            else {
+                continue;
+            };
             let Some(key) = crate::kernel::proof::proposition_identity_key(&query) else {
                 continue;
             };
@@ -3664,7 +3668,7 @@ impl PureFactContext {
             if check_antecedent
                 && !self.proves_without_prop_facts(&substitute_bitvector_variable_in_proposition(
                     source_antecedent,
-                    *source_var,
+                    **source_var,
                     &MachineTerm::Variable(var),
                 ))
             {
@@ -3678,7 +3682,7 @@ impl PureFactContext {
             record_implicit_consulted_premises(self, source);
             let value = if *reversed { left } else { right };
             return Some((
-                substitute_bitvector_variable(value, *source_var, &MachineTerm::Variable(var)),
+                substitute_bitvector_variable(value, **source_var, &MachineTerm::Variable(var)),
                 *truth,
             ));
         }
@@ -3693,9 +3697,9 @@ impl PureFactContext {
         let Proposition::ForAll { var, body, .. } = proposition else {
             return Vec::new();
         };
-        Self::guided_forall_condition_candidates(*var, body, condition)
+        Self::guided_forall_condition_candidates(**var, body, condition)
             .into_iter()
-            .map(|candidate| substitute_bitvector_variable_in_proposition(body, *var, &candidate))
+            .map(|candidate| substitute_bitvector_variable_in_proposition(body, **var, &candidate))
             .collect()
     }
 

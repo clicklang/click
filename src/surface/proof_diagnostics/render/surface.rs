@@ -585,7 +585,7 @@ impl Printer<'_> {
                 name,
             } => {
                 let sort = self.sort(sort);
-                let name = self.written_binder(*var, name.as_str());
+                let name = self.written_binder(**var, name.as_str());
                 let body = self.proposition(body, depth);
                 self.bound.pop();
                 Some(atom(format!(
@@ -601,9 +601,9 @@ impl Printer<'_> {
             } => {
                 let sort = self.sort(sort);
                 let binder = if name.is_empty() {
-                    self.binder(*var)
+                    self.binder(**var)
                 } else {
-                    self.bound.push((*var, name.clone()));
+                    self.bound.push((**var, name.clone()));
                     name.clone()
                 };
                 let body = self.proposition(body, depth);

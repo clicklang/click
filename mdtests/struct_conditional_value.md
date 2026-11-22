@@ -94,6 +94,9 @@ int32 sum_packet(struct packet packet) {
 
 int32 struct_conditional_value() {
     ensures result == 289;
+} by {
+    step_until(statement(11).entry);
+    have returned_value == 13;
 }
 ```
 

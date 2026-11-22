@@ -139,18 +139,18 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
             );
         }
         let operand = SharedMachineIntegerTerm::from_shared(format, term).unwrap();
-        let proposition = Proposition::ForAll {
-            var: Variable(98123),
-            name: crate::kernel::BinderName::written("i"),
-            sort: Sort::ProgramInteger(format),
-            body: Box::new(Proposition::condition_is(
+        let proposition = crate::kernel::quantifiers::test_forall(
+            crate::kernel::BinderName::written("i"),
+            Variable(98123),
+            Sort::ProgramInteger(format),
+            Proposition::condition_is(
                 ConditionTerm::IntegerLessThan(
                     IntegerTerm::Machine(operand.clone()).into(),
                     IntegerTerm::Constant(BigInt::from(100)).into(),
                 ),
                 true,
-            )),
-        };
+            ),
+        );
         let (key, work) = crate::instrumentation::measure_deterministic_work(|| {
             proposition_identity_key(&proposition)
         });

@@ -25,5 +25,5 @@ int32 float_to_integer_out_of_range_rejected() {
 ```
 
 ```expect
-fail: type mismatch
+fail: undefined behavior: float-to-integer conversion is out of range
 ```

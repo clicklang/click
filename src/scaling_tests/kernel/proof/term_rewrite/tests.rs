@@ -1084,15 +1084,15 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     let signed = AddressOffset::scaled_int64_node(index.clone(), 4, false);
     let mut rewrite = TermRewrite::for_conditions(&conditions);
     assert_eq!(rewrite.offset(&signed), signed);
-    let binder = Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(989_100),
-        sort: Sort::ProgramInteger(MachineIntegerType::UInt64),
-        body: Box::new(Proposition::condition_is(
+    let binder = crate::kernel::quantifiers::test_forall(
+        Default::default(),
+        Variable(989_100),
+        Sort::ProgramInteger(MachineIntegerType::UInt64),
+        Proposition::condition_is(
             ConditionTerm::address_offset_equal(native.clone(), narrow.clone()),
             true,
-        )),
-    };
+        ),
+    );
     assert_eq!(rewrite.proposition(&binder), binder);
     assert!(rewrite.refusal().is_none());
     let goal = Proposition::condition_is(

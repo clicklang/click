@@ -7,9 +7,9 @@ arm on through the increment to the back edge, and closes the invariants on
 each path with what that arm established. Each arm sets `x` to 0 or 1, so
 `0 <= x and x <= 1` closes on both.
 
-Splitting multiplies paths at sequential `if`s, under the implicit tail's
-split limit
-([`a_loop_body_stops_at_the_split_limit.md`](a_loop_body_stops_at_the_split_limit.md));
+Splitting multiplies paths at sequential `if`s and can exhaust the loop's
+deterministic work budget
+([`a_branching_loop_stops_at_the_work_limit.md`](a_branching_loop_stops_at_the_work_limit.md)).
 `branch ensuring { ... }` joins an `if` explicitly
 ([`a_written_branch_interface_carries_what_an_invariant_needs.md`](a_written_branch_interface_carries_what_an_invariant_needs.md)).
 

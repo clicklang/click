@@ -1,6 +1,20 @@
 use super::*;
 
 #[test]
+fn mixed_unfold_outputs_survive_expansion_replay() {
+    let (source, program) = mdtest_sources("mdtests/unfold_binds_witness_and_child.md");
+    let program = crate::cli::source_refs(&program);
+    for claim in ["by_name.contract", "by_call.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn outcome_if_keeps_its_obtain_scopes_in_expansion() {
     let (source, program) = mdtest_sources("mdtests/obtain_outcome_binding_is_local_to_its_arm.md");
     let branched_source = source.replace(
@@ -3204,6 +3218,22 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
         .collect::<Vec<_>>()
         .join("\n");
     (click_source, mdtest.c_sources.clone())
+}
+
+#[test]
+fn constant_byte_containment_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/byte_containment_preserves_physical_width.md");
+    let label = "last_byte.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap();
+    let outside = expanded.replace("[7..8]", "[7..9]");
+    assert_ne!(outside, expanded);
+    assert!(verify_c_sources(&outside, &[]).is_err());
 }
 
 #[test]
@@ -16754,6 +16784,7 @@ fn pruned_indexed_read_expands_through_distinct_store_preservation() {
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
         let expanded = expand_function_proof_source(&source, &sources, function).unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
         assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
         assert!(
             expanded.contains("separation::separate_elements("),
@@ -16782,6 +16813,7 @@ fn quantified_read_expands_through_store_and_call_preservation() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_function_proof_source(&source, &sources, "walk").unwrap();
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert_eq!(expanded.matches("preserve(").count(), 2, "{expanded}");
     without_implicit_solve_for_claim("walk.contract", || {
@@ -16802,6 +16834,7 @@ fn masked_64_bit_field_expands_through_explicit_store_preservation() {
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
         let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
         assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
         assert!(expanded.contains("preserve("), "{fixture}: {expanded}");
         without_implicit_solve_for_claim("caller.contract", || {
@@ -25748,11 +25781,17 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_function_proof_source(&implicit, &sources, "divide").unwrap();
+    let mut expanded = implicit.clone();
+    for function in ["divide", "remainder", "divide_wide", "remainder_wide"] {
+        expanded = expand_function_proof_source(&expanded, &sources, function).unwrap();
+    }
+    assert_eq!(expanded.matches("step() by").count(), 4, "{expanded}");
     crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
-    let missing = implicit.replace("    requires y != 0u32;\n", "");
-    assert_ne!(missing, implicit);
-    assert!(verify_c_sources(&missing, &sources).is_err());
+    for requirement in ["    requires y != 0u32;\n", "    requires y != 0u64;\n"] {
+        let missing = implicit.replace(requirement, "");
+        assert_ne!(missing, implicit);
+        assert!(verify_c_sources(&missing, &sources).is_err());
+    }
 }
 
 #[test]

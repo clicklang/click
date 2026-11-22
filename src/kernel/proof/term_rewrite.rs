@@ -2012,6 +2012,11 @@ impl Drop for TermRewrite<'_> {
 impl<'a> TermRewrite<'a> {
     /// Whether the value this walker returned is a placeholder. Every caller
     /// that can reach a refusing scope must ask before using the result.
+    /// Whether the rewrite replaced anything it was given to replace.
+    pub(crate) fn replaced_anything(&self) -> bool {
+        self.changed
+    }
+
     pub(crate) fn refusal(&self) -> Option<RewriteRefusal> {
         self.refusal_observed.set(true);
         self.refusal_status()
@@ -2088,11 +2093,14 @@ impl<'a> TermRewrite<'a> {
     }
 
     fn preserves_algebraic_matches(&self) -> bool {
-        self.algebraic.is_some() || self.integer_exact.is_some() || self.integer_variables.is_some()
+        self.algebraic.is_some()
+            || self.integer_exact.is_some()
+            || self.integer_variables.is_some()
+            || MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get)
     }
 
     fn preserves_closed_value_conditional(&self, guard: &ConditionTerm) -> bool {
-        self.integer_variables.is_some()
+        (self.integer_variables.is_some() || MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get))
             && crate::kernel::proof::fact_reasoning::literal_value_if_guard(guard).is_some()
     }
 
@@ -2806,13 +2814,6 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    /// Allocate a fresh Integer binder from the walker's shared allocator.
-    /// The caller translates `None` into its checked substitution error after
-    /// inspecting `integer_work_exhausted`.
-    pub(crate) fn fresh_integer_substitution_variable(&mut self) -> Option<Variable> {
-        self.fresh_variable()
-    }
-
     /// Install an Integer binder mapping for a pure-proposition scope.  The
     /// map is carrier-specific, so a program-value binder with the same numeric ID cannot
     /// affect this scope.  Scope IDs invalidate the DAG cache whenever the
@@ -3425,7 +3426,7 @@ impl<'a> TermRewrite<'a> {
             }
             match proposition {
                 Proposition::ForAll { var, body, .. } | Proposition::Exists { var, body, .. } => {
-                    self.reserved_variables.insert(*var);
+                    self.reserved_variables.insert(**var);
                     pending.push(body);
                 }
                 Proposition::And(left, right)
@@ -3499,10 +3500,11 @@ impl<'a> TermRewrite<'a> {
 
     fn scoped_quantifier(
         &mut self,
-        variable: Variable,
+        binder: QuantifierBinder,
         sort: &Sort,
         body: &Proposition,
-    ) -> (Variable, Proposition) {
+    ) -> (QuantifierBinder, Proposition) {
+        let variable = *binder;
         let carrier = match sort {
             Sort::Integer => Some(BindingCarrier::Integer),
             Sort::Algebraic(_) => Some(BindingCarrier::Algebraic),
@@ -3515,27 +3517,24 @@ impl<'a> TermRewrite<'a> {
             | Sort::Condition => Some(BindingCarrier::Program),
         };
         let Some(carrier) = carrier else {
-            return (variable, self.scoped_proposition(body));
+            return (binder, self.scoped_proposition(body));
         };
-        let capture = self
-            .replacement_carriers
-            .as_ref()
-            .is_some_and(|replacement| replacement.contains(carrier, variable));
-        let mapped = if capture {
-            let Some(fresh) = self.fresh_variable() else {
-                return (variable, exhausted_proposition());
-            };
-            fresh
-        } else {
-            variable
-        };
+        // A replacement mentions only taller quantifiers' variables, so it
+        // never captures this binder, which is kept.
+        debug_assert!(
+            !self
+                .replacement_carriers
+                .as_ref()
+                .is_some_and(|replacement| replacement.contains(carrier, variable)),
+            "a replacement mentions the quantifier it is substituted under"
+        );
         let scope_id = self.scope_id;
         let shadowed = self.integer_shadowed;
         let mut changes = Vec::new();
-        self.push_binding_mapping(carrier, variable, mapped, &mut changes);
+        self.push_binding_mapping(carrier, variable, variable, &mut changes);
         let body = self.scoped_proposition(body);
         self.restore_scope(&changes, scope_id, shadowed);
-        (mapped, body)
+        (binder, body)
     }
 
     pub(crate) fn proposition(&mut self, proposition: &Proposition) -> Proposition {
@@ -4321,7 +4320,10 @@ impl<'a> TermRewrite<'a> {
     }
 
     fn integer_shared(&mut self, shared: &SharedIntegerTerm) -> IntegerTerm {
-        self.integer_shared_with_match_retention(shared, false)
+        self.integer_shared_with_match_retention(
+            shared,
+            MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get),
+        )
     }
 
     fn integer_shared_with_match_retention(
@@ -6565,7 +6567,7 @@ impl<'a> TermRewrite<'a> {
     }
 
     pub(crate) fn bits(&mut self, v: &MachineTerm) -> MachineTerm {
-        self.bits_with_match_reduction(v, true)
+        self.bits_with_match_reduction(v, !MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get))
     }
 
     fn bits_with_match_reduction(&mut self, v: &MachineTerm, reduce_match: bool) -> MachineTerm {
@@ -9427,6 +9429,30 @@ mod pointer_integer_rewrite_tests {
     }
 }
 
+thread_local! {
+    /// Set while a rename runs: renaming a variable leaves a `match` on a
+    /// known constructor as it was written instead of reducing it.
+    static MATCH_REDUCTION_SUSPENDED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether a rename is running: a rewrite rebuilds changed nodes as they are
+/// written, without folding or reducing them.
+pub(crate) fn renaming() -> bool {
+    MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get)
+}
+
+/// Runs `operation` with match reduction suspended, as a rename does.
+pub(crate) fn without_match_reduction<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            MATCH_REDUCTION_SUSPENDED.with(|flag| flag.set(self.0));
+        }
+    }
+    let _restore = Restore(MATCH_REDUCTION_SUSPENDED.with(|flag| flag.replace(true)));
+    operation()
+}
+
 #[cfg(test)]
 mod comparison_read_batch_tests {
     use super::*;
@@ -9528,18 +9554,18 @@ mod comparison_read_batch_tests {
 
         let source = Variable(401_010);
         let binder = Variable(401_011);
-        let input = Proposition::ForAll {
-            name: BinderName::written("k"),
-            var: binder,
-            sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::Predicate {
+        let input = crate::kernel::quantifiers::test_forall(
+            BinderName::written("k"),
+            binder,
+            Sort::ProgramInt32,
+            Proposition::Predicate {
                 name: "pair".into(),
                 arguments: vec![
                     Term::Bitvector32(MachineTerm::Variable(source).into()),
                     Term::Bitvector32(MachineTerm::Variable(binder).into()),
                 ],
-            }),
-        };
+            },
+        );
         let actual = TermRewrite::comparison_read_batch(
             &input,
             [(MachineTerm::Variable(source), MachineTerm::Variable(binder))],
@@ -9548,26 +9574,26 @@ mod comparison_read_batch_tests {
         let Proposition::ForAll { var, body, .. } = actual else {
             panic!("quantifier")
         };
-        assert_ne!(var, binder);
+        assert_ne!(*var, binder);
         assert_eq!(
             *body,
             Proposition::Predicate {
                 name: "pair".into(),
                 arguments: vec![
                     Term::Bitvector32(MachineTerm::Variable(binder).into()),
-                    Term::Bitvector32(MachineTerm::Variable(var).into())
+                    Term::Bitvector32(MachineTerm::Variable(*var).into())
                 ],
             }
         );
         // A descriptor depending on the bound address is not a global read
         // occurrence to replace using an outer selected substitution.
         let scoped_read = read(binder.0);
-        let scoped = Proposition::ForAll {
-            name: BinderName::written("address"),
-            var: binder,
-            sort: Sort::ProgramInt32,
-            body: Box::new(atom(scoped_read.clone())),
-        };
+        let scoped = crate::kernel::quantifiers::test_forall(
+            BinderName::written("address"),
+            binder,
+            Sort::ProgramInt32,
+            atom(scoped_read.clone()),
+        );
         assert_eq!(
             TermRewrite::comparison_read_batch(&scoped, [(scoped_read, MachineTerm::constant(9)),]),
             Some(scoped)
@@ -9580,12 +9606,12 @@ mod comparison_read_batch_tests {
             LoadKind::Int32,
             4,
         ));
-        let scoped_named = Proposition::ForAll {
-            name: BinderName::written("address"),
-            var: binder,
-            sort: Sort::ProgramInt32,
-            body: Box::new(atom(scoped_name.clone())),
-        };
+        let scoped_named = crate::kernel::quantifiers::test_forall(
+            BinderName::written("address"),
+            binder,
+            Sort::ProgramInt32,
+            atom(scoped_name.clone()),
+        );
         for source in [scoped_name, read(binder.0)] {
             assert_eq!(
                 TermRewrite::comparison_read_batch(
@@ -9605,18 +9631,18 @@ mod comparison_read_batch_tests {
                 4,
             ));
         for body_read in [read(binder.0), named_address_read.clone()] {
-            let input = Proposition::ForAll {
-                name: BinderName::written("integer_k"),
-                var: binder,
-                sort: Sort::Integer,
-                body: Box::new(atom(body_read)),
-            };
-            let expected = Proposition::ForAll {
-                name: BinderName::written("integer_k"),
-                var: binder,
-                sort: Sort::Integer,
-                body: Box::new(atom(MachineTerm::constant(9))),
-            };
+            let input = crate::kernel::quantifiers::test_forall(
+                BinderName::written("integer_k"),
+                binder,
+                Sort::Integer,
+                atom(body_read),
+            );
+            let expected = crate::kernel::quantifiers::test_forall(
+                BinderName::written("integer_k"),
+                binder,
+                Sort::Integer,
+                atom(MachineTerm::constant(9)),
+            );
             for source in [read(binder.0), named_address_read.clone()] {
                 assert_eq!(
                     TermRewrite::comparison_read_batch(
@@ -9628,12 +9654,12 @@ mod comparison_read_batch_tests {
             }
         }
 
-        let shadowed = Proposition::Exists {
-            name: "read".into(),
-            var: source,
-            sort: Sort::ProgramInt32,
-            body: Box::new(atom(MachineTerm::Variable(source))),
-        };
+        let shadowed = crate::kernel::quantifiers::test_exists(
+            "read".into(),
+            source,
+            Sort::ProgramInt32,
+            atom(MachineTerm::Variable(source)),
+        );
         assert_eq!(
             TermRewrite::comparison_read_batch(
                 &shadowed,

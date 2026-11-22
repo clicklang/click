@@ -139,7 +139,7 @@ fn integer_existential_scopes_definedness_with_its_witness() {
     else {
         panic!("the lowered proposition must retain its Integer existential");
     };
-    assert_eq!(*var, witness);
+    assert!(var.is_bound());
     let overflow = Proposition::signed_arithmetic_domain(
         MachineIntegerType::Int32,
         crate::kernel::MachineBinaryOp::Add,
@@ -155,7 +155,7 @@ fn integer_existential_scopes_definedness_with_its_witness() {
             body,
             &Proposition::condition_is(
                 ConditionTerm::IntegerEqual(
-                    IntegerTerm::var(witness).into(),
+                    IntegerTerm::var(**var).into(),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
                         binary_node!(
@@ -275,7 +275,8 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         &index,
         shared_id,
         shared_id,
-    );
+    )
+    .unwrap();
     let Proposition::ForAll {
         var: accumulator,
         sort: Sort::Integer,
@@ -285,14 +286,14 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     else {
         panic!("an Integer address must retain its Integer binder");
     };
-    assert_eq!(accumulator, shared_id);
+    assert!(accumulator.is_bound());
     assert!(matches!(
         item_body.as_ref(),
         Proposition::ForAll {
             var,
             sort: Sort::ProgramInt32,
             ..
-        } if *var == shared_id
+        } if var.is_bound()
     ));
 
     let c_address_requirement = Proposition::MemoryLoadable {
@@ -305,7 +306,8 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         wide: false,
     };
     let wrapped =
-        integer_range_fold_body_obligation(c_address_requirement, &index, shared_id, shared_id);
+        integer_range_fold_body_obligation(c_address_requirement, &index, shared_id, shared_id)
+            .unwrap();
     let Proposition::ForAll {
         var,
         sort: Sort::ProgramInt32,
@@ -314,7 +316,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     else {
         panic!("a C item with the same numeric id must not bind an Integer");
     };
-    assert_eq!(var, shared_id);
+    assert!(var.is_bound());
 }
 
 #[test]
@@ -351,14 +353,15 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
     }
     .into();
-    let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
+    let wrapped =
+        integer_range_fold_body_obligation(requirement, &index, accumulator, item).unwrap();
     assert!(matches!(
         wrapped,
         Proposition::ForAll {
             var,
             sort: Sort::Integer,
             ..
-        } if var == accumulator
+        } if var.is_bound()
     ));
 
     let direct_requirement = Proposition::MemoryLoadable {
@@ -371,14 +374,14 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         wide: false,
     };
     let direct_wrapped =
-        integer_range_fold_body_obligation(direct_requirement, &index, accumulator, item);
+        integer_range_fold_body_obligation(direct_requirement, &index, accumulator, item).unwrap();
     assert!(matches!(
         direct_wrapped,
         Proposition::ForAll {
             var,
             sort: Sort::Integer,
             ..
-        } if var == accumulator
+        } if var.is_bound()
     ));
 }
 
@@ -426,14 +429,15 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
     }
     .into();
-    let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
+    let wrapped =
+        integer_range_fold_body_obligation(requirement, &index, accumulator, item).unwrap();
     assert!(matches!(
         wrapped,
         Proposition::ForAll {
             var,
             sort: Sort::Integer,
             ..
-        } if var == accumulator
+        } if var.is_bound()
     ));
 }
 
@@ -884,7 +888,7 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     assert!(checked[0].obligations.iter().any(|obligation| {
         matches!(obligation.proposition(), Proposition::ForAll {
                 var, sort: Sort::ProgramInt32, body,
-.. } if *var == item && matches!(body.as_ref(), Proposition::Implies(_, _)))
+.. } if var.is_bound() && matches!(body.as_ref(), Proposition::Implies(_, _)))
     }));
 }
 

@@ -5191,12 +5191,12 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
                         ConditionTerm::equal(k_bits, MachineTerm::constant(1)),
                         true,
                     )),
-                    Box::new(Proposition::ForAll {
-                        name: Default::default(),
-                        var: k,
-                        sort: Sort::ProgramInt32,
-                        body: Box::new(body),
-                    }),
+                    Box::new(crate::kernel::quantifiers::test_forall(
+                        Default::default(),
+                        k,
+                        Sort::ProgramInt32,
+                        body,
+                    )),
                 )),
             )),
         )),
@@ -5292,12 +5292,12 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
                     ConditionTerm::equal(k_bits, i_bits),
                     true,
                 )),
-                Box::new(Proposition::ForAll {
-                    name: Default::default(),
-                    var: k,
-                    sort: Sort::ProgramInt32,
-                    body: Box::new(body),
-                }),
+                Box::new(crate::kernel::quantifiers::test_forall(
+                    Default::default(),
+                    k,
+                    Sort::ProgramInt32,
+                    body,
+                )),
             )),
         )),
     );
@@ -6263,12 +6263,12 @@ mod stated_range_guard_derivation {
     fn a_quantified_or_guarded_range_carries_nothing() {
         let bound = Variable(9_200_003);
         let body = int32_range_loadable(MachineTerm::Variable(bound));
-        let quantified = Proposition::ForAll {
-            name: Default::default(),
-            var: bound,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body.clone()),
-        };
+        let quantified = crate::kernel::quantifiers::test_forall(
+            Default::default(),
+            bound,
+            Sort::ProgramInt32,
+            body.clone(),
+        );
         assert!(
             crate::kernel::stated_loadable_span_guards(&quantified).is_empty(),
             "a quantified range states no scope-level bound"
@@ -8286,17 +8286,19 @@ fn state_equality_ignores_unrelated_propositions() {
 /// and existentials of other sorts.
 #[test]
 fn existential_obligation_ignores_unrelated_facts() {
-    let existential = |var: u64, sort: Sort| Proposition::Exists {
-        name: "witness".into(),
-        var: Variable(var),
-        sort,
-        body: Box::new(Proposition::condition_is(
-            ConditionTerm::signed_less_than(
-                MachineTerm::Variable(Variable(var)),
-                MachineTerm::constant(9),
+    let existential = |var: u64, sort: Sort| {
+        crate::kernel::quantifiers::test_exists(
+            "witness".into(),
+            Variable(var),
+            sort,
+            Proposition::condition_is(
+                ConditionTerm::signed_less_than(
+                    MachineTerm::Variable(Variable(var)),
+                    MachineTerm::constant(9),
+                ),
+                true,
             ),
-            true,
-        )),
+        )
     };
     let obligation = existential(97_001, Sort::ProgramInt32);
     let work = [16_u64, 64, 256]

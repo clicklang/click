@@ -79,6 +79,9 @@ int32 run() {
     have beta_file::values[0] < 1000;
     have beta_file::values[1] > -1000;
     have beta_file::values[1] < 1000;
+    step_until(statement(2).entry);
+    have first == 4;
+    have second == 31;
 }
 ```
 

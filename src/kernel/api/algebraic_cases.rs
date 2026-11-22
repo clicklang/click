@@ -18,15 +18,17 @@ pub fn algebraic_constructor_cases(value: &AlgebraicTerm) -> Option<Theorem> {
         .into_iter()
         .map(|(mut equation, binders)| {
             for (variable, sort) in binders.into_iter().rev() {
-                equation = Proposition::Exists {
-                    name: format!("case_field_{}", variable.0),
-                    var: variable,
+                equation = crate::kernel::quantifiers::close_exists(
+                    format!("case_field_{}", variable.0),
+                    variable,
                     sort,
-                    body: Box::new(equation),
-                };
+                    &equation,
+                )?;
             }
-            equation
+            Some(equation)
         })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
         .rev();
     let last = alternatives.next()?;
     Some(Theorem::new(alternatives.fold(last, |right, left| {
@@ -213,8 +215,8 @@ mod tests {
                 panic!("field witness")
             };
             assert_eq!(sort, &expected);
-            assert_ne!(*var, Variable(0));
-            assert!(binders.insert(*var));
+            assert!(var.is_bound());
+            assert!(binders.insert(**var));
             ordered_binders.push(*var);
             body = inner.as_ref();
         }
@@ -237,23 +239,23 @@ mod tests {
             &[
                 AlgebraicValue::Program(symbolic_call_result(
                     ProgramType::Int32Pointer,
-                    ordered_binders[0]
+                    *ordered_binders[0]
                 )),
                 AlgebraicValue::Program(symbolic_call_result(
                     ProgramType::Int32,
-                    ordered_binders[1]
+                    *ordered_binders[1]
                 )),
                 AlgebraicValue::Algebraic(AlgebraicTerm {
                     algebraic_type: AlgebraicType::parameter("T".into()),
-                    node: AlgebraicTermNode::Variable(ordered_binders[2])
+                    node: AlgebraicTermNode::Variable(*ordered_binders[2])
                 }),
                 AlgebraicValue::Algebraic(AlgebraicTerm {
                     algebraic_type: value.algebraic_type.clone(),
-                    node: AlgebraicTermNode::Variable(ordered_binders[3])
+                    node: AlgebraicTermNode::Variable(*ordered_binders[3])
                 }),
                 AlgebraicValue::Algebraic(AlgebraicTerm {
                     algebraic_type: value.algebraic_type.clone(),
-                    node: AlgebraicTermNode::Variable(ordered_binders[4])
+                    node: AlgebraicTermNode::Variable(*ordered_binders[4])
                 }),
             ]
         );
@@ -339,7 +341,7 @@ mod tests {
         let Proposition::Exists { var, body, .. } = some.as_ref() else {
             panic!("bound payload")
         };
-        assert_eq!(*var, Variable(6));
+        assert!(var.is_bound());
         let Proposition::Equal(Term::Algebraic(original), _) = body.as_ref() else {
             panic!("equation")
         };

@@ -270,9 +270,10 @@ each arm runs on as its own path to the back edge, a `break`, a `continue` or
 a `return`, where it closes the invariants with everything it established
 (`mdtests/an_automatically_closed_loop_splits_at_its_c_branches.md`,
 `mdtests/an_automatically_closed_loop_closes_each_branch_arm.md`). Sequential
-`if`s multiply its paths; it shares the implicit tail's step budget and its
-limit of 1,024 splits, past which it stops and names the explicit join
-(`mdtests/a_loop_body_stops_at_the_split_limit.md`). `branch ensuring { ...
+`if`s multiply its paths. The loop closer shares the implicit tail's step
+budget and limit of 1,024 splits, and it can also reach its deterministic
+work limit while checking those paths
+(`mdtests/a_branching_loop_stops_at_the_work_limit.md`). `branch ensuring { ...
 }` joins an `if`'s arms and states what both establish, so the rest of the
 body is checked once
 (`mdtests/a_written_branch_interface_carries_what_an_invariant_needs.md`).

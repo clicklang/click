@@ -101,11 +101,13 @@ fn scoped_join_matches_a_stated_fact_with_a_restatement() {
 
 #[test]
 fn scoped_join_ignores_the_names_of_quantified_witnesses() {
-    let quantified = |name: &str, variable: u64| Proposition::Exists {
-        name: name.to_owned(),
-        var: Variable(variable),
-        sort: Sort::ProgramInt32,
-        body: Box::new(fact(variable, 7)),
+    let quantified = |name: &str, variable: u64| {
+        crate::kernel::quantifiers::test_exists(
+            name.to_owned(),
+            Variable(variable),
+            Sort::ProgramInt32,
+            fact(variable, 7),
+        )
     };
     let first = quantified("first", 10);
     let second = quantified("second", 20);

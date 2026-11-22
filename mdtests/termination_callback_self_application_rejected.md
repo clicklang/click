@@ -48,5 +48,5 @@ int32 spin(int32 x) {
 ```
 
 ```expect
-fail: could not certify termination for `spin`: it takes the address of `spin`, and a function reached through a function pointer must return without calling through one
+fail: `spin` takes the address of `spin`, and `spin` can call through a function pointer
 ```

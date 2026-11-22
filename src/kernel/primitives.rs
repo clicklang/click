@@ -218,10 +218,41 @@ pub struct Variable {
     origin: VariableOrigin,
 }
 
+/// A quantifier's bound variable. Only closing a body over a free variable
+/// makes one, so a bound occurrence is never a free variable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct QuantifierBinder(Variable);
+
+impl QuantifierBinder {
+    /// The binder of a quantifier of height `height`. Only closing calls this.
+    pub(in crate::kernel) const fn of_height(height: u64) -> Self {
+        Self(Variable::bound(height))
+    }
+
+    pub(crate) fn height(&self) -> u64 {
+        self.0.number.0
+    }
+}
+
+impl std::ops::Deref for QuantifierBinder {
+    type Target = Variable;
+
+    fn deref(&self) -> &Variable {
+        &self.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 enum VariableOrigin {
     Ordinary,
     KernelFresh,
+    /// A quantifier's bound variable, numbered by the quantifier's height:
+    /// one more than the tallest quantifier in its body. Only closing a body
+    /// makes one; no producer of free variables can.
+    Bound,
+    /// A free variable a quantifier was opened at where no proof state
+    /// reserves identities, numbered per verification session.
+    Opening,
 }
 
 impl std::fmt::Debug for Variable {
@@ -232,6 +263,8 @@ impl std::fmt::Debug for Variable {
                 .debug_tuple("FreshVariable")
                 .field(&self.0)
                 .finish(),
+            VariableOrigin::Bound => formatter.debug_tuple("Bound").field(&self.0).finish(),
+            VariableOrigin::Opening => formatter.debug_tuple("Opening").field(&self.0).finish(),
         }
     }
 }
@@ -256,6 +289,27 @@ impl std::ops::Deref for Variable {
 }
 
 impl Variable {
+    /// The bound variable of a quantifier of height `height`.
+    pub(in crate::kernel) const fn bound(height: u64) -> Self {
+        Self {
+            number: (height,),
+            origin: VariableOrigin::Bound,
+        }
+    }
+
+    /// The `number`th variable a session opened a quantifier at.
+    pub(in crate::kernel) const fn opening(number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::Opening,
+        }
+    }
+
+    /// Whether this is a quantifier's bound variable.
+    pub(crate) fn is_bound(&self) -> bool {
+        self.origin == VariableOrigin::Bound
+    }
+
     /// Mint a free symbolic identity. This stream is process-wide so nested
     /// and forked checks cannot reuse an identity; the private origin
     /// separates it from every existing numeric producer. New kernel rules
@@ -8062,6 +8116,7 @@ pub enum UndefinedBehavior {
     SignedDivisionOverflow,
     PointerArithmetic,
     DivisionByZero,
+    FloatToIntegerOutOfRange,
     InvalidShift,
     InvalidMemory,
     UninitializedRead,
@@ -8119,6 +8174,9 @@ impl UndefinedBehavior {
                 "access outside the subobject the pointer designates".to_string()
             }
             Self::DivisionByZero => "division by zero".to_string(),
+            Self::FloatToIntegerOutOfRange => {
+                "float-to-integer conversion is out of range after truncation or the value is non-finite".to_string()
+            }
             Self::InvalidShift => "invalid shift".to_string(),
             Self::InvalidMemory => "invalid memory access".to_string(),
             Self::UninitializedRead => "read of uninitialized storage".to_string(),
@@ -8435,6 +8493,8 @@ pub enum ExecutionLimit {
     /// The right side of an `or` has no value wherever its left side is
     /// false, the only case in which it is read.
     DisjunctionRightUndefined,
+    /// Renaming a quantifier's variable to its bound form ran out of work.
+    QuantifierDoesNotClose,
 }
 
 /// The stopping point as [`ExecutionLimit::describe`] names it.
@@ -8499,6 +8559,9 @@ impl ExecutionLimit {
             }
             Self::DisjunctionRightUndefined => {
                 "an `or` whose right side is undefined wherever its left side is false".to_string()
+            }
+            Self::QuantifierDoesNotClose => {
+                "a quantifier whose body could not be renamed to its bound variable".to_string()
             }
             Self::ResourceFieldInstanceUnavailable => {
                 "a model field of a resource instance this state does not hold".to_string()
@@ -14494,7 +14557,7 @@ pub enum Proposition {
     Not(Box<Proposition>),
     Implies(Box<Proposition>, Box<Proposition>),
     ForAll {
-        var: Variable,
+        var: QuantifierBinder,
         sort: Sort,
         body: Box<Proposition>,
         /// The binder's written name, for printing only.
@@ -14502,7 +14565,7 @@ pub enum Proposition {
     },
     Exists {
         name: String,
-        var: Variable,
+        var: QuantifierBinder,
         sort: Sort,
         body: Box<Proposition>,
     },
@@ -14798,13 +14861,13 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
         BuildNot,
         BuildImplies,
         BuildForAll {
-            var: Variable,
+            var: QuantifierBinder,
             sort: Sort,
             name: BinderName,
         },
         BuildExists {
             name: String,
-            var: Variable,
+            var: QuantifierBinder,
             sort: Sort,
         },
     }
@@ -15398,7 +15461,12 @@ pub(crate) enum PropositionDerivationRule {
         body: Box<PropositionDerivation>,
     },
     ImpliesFalseAntecedent(Box<PropositionDerivation>),
-    ForAllBody(Box<PropositionDerivation>),
+    /// A universal from its body opened at `witness`, a free variable that
+    /// no premise the proof cites mentions.
+    ForAllBody {
+        witness: Variable,
+        proof: Box<PropositionDerivation>,
+    },
     /// Prove an existential by selecting the bound variable from an exact
     /// existential fact and checking the target body under that witness's
     /// conjuncts.
@@ -16056,6 +16124,10 @@ pub struct ProofObligation {
     /// Producer metadata: emitted on the false arm of a C assertion.
     /// This tags the existing truthiness obligation, not a new proposition.
     pub(super) assertion_failure: bool,
+    /// Refuting this nonzero-divisor obligation is division by zero.
+    pub(super) unsigned_divisor: bool,
+    /// An ordered range bound for an executed float-to-integer conversion.
+    pub(super) float_to_integer_bound: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
     /// Diagnostic metadata only. The proposition itself carries both ranges.

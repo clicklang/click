@@ -801,15 +801,20 @@ trusted. Calls that form a directed acyclic graph are ranked by the planner's
 call-graph heights, which are never written in source. A call through a
 function pointer returns when every function whose address the project takes
 returns without calling through a function pointer itself, directly or in
-anything it calls: a comparator, a visitor, or an augment callback qualifies,
-and a function that hands itself to the helper that calls it does not. Where
-that does not hold the refusal is reported at the place the address is taken;
-see `mdtests/termination_callback_self_application_rejected.md`. A callback
-that itself takes callbacks needs a measure on its named contract, which is
-not supported yet. The refusal names the unranked loop or the callee
-responsible, and offers the two repairs: a `decreases` clause, or the
-`diverges` marker. The kernel records termination evidence separately from
-`VerifiedFunctionRule`, so an ordinary `ensures` is still exactly a statement
+anything it calls. A comparator, visitor, or augment callback can meet that
+rule. Click reports `unsupported` at the address-taking declaration when a
+callback can reach an indirect call.
+
+To support nested callbacks, a named callback contract would carry a
+termination measure. An indirect call that can close a cycle would owe a
+proof of descent under that measure. A finite chain through nested callbacks
+should then verify, while self-application would still owe descent. See
+`mdtests/termination_callback_self_application_rejected.md`.
+
+An unranked loop or callee without a termination proof is reported with its
+name and the options of adding a `decreases` clause or declaring `diverges`.
+The kernel records termination evidence separately from `VerifiedFunctionRule`,
+so an ordinary `ensures` is still exactly a statement
 about return states.
 
 ### Functions that may not return
