@@ -27,14 +27,11 @@ impl<'a> Origins<'a, Address, MachineTerm> {
 impl<'a> Origins<'a, SharedAddress, KernelTerm> {
     pub(super) fn shared(value: &'a SharedPointer) -> Self {
         let p = value.node();
-        let q = p.qualifiers.as_ref();
         Self {
             provenance: &p.provenance,
-            opaque: p.bounds_owner.as_ref(),
-            bounds: q
-                .and_then(|q| q.bounds.as_ref())
-                .map(|e| (&e.start, &e.width)),
-            known: q.is_some_and(|q| q.bounds_known),
+            opaque: p.array.owner(),
+            bounds: p.array.bounds().map(|e| (&e.start, &e.width)),
+            known: p.array.is_known(),
         }
     }
 }
@@ -239,16 +236,7 @@ mod tests {
                     .extend(shared.addresses().cloned().zip(native.pointers().cloned()));
                 if let Some(e) = native.bounds() {
                     result.widths.insert(
-                        shared
-                            .node()
-                            .qualifiers
-                            .as_ref()
-                            .unwrap()
-                            .bounds
-                            .as_ref()
-                            .unwrap()
-                            .width
-                            .clone(),
+                        shared.node().array.bounds().unwrap().width.clone(),
                         e.width.clone(),
                     );
                 }

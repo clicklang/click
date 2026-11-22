@@ -676,18 +676,18 @@ fn write_program_lvalue_paths_for_initialization(
     let lvalue_access_provenance = lvalue.provenance.as_deref().map(|root| {
         (
             root,
-            if lvalue.bounds_known {
-                None
-            } else {
-                lvalue.bounds_owner.as_deref()
+            match &lvalue.array {
+                Some(crate::kernel::primitives::ArrayObject::Opaque(owner)) => owner.as_deref(),
+                _ => None,
             },
         )
     });
-    let lvalue_bounds = lvalue.bounds.clone();
-    let lvalue_bounds_owner = lvalue.bounds_owner.clone();
+    let lvalue_opaque_named = !lvalue.bounds_known() && lvalue.bounds_owner().is_some();
+    let lvalue_bounds = lvalue.bounds().cloned();
+    let lvalue_bounds_owner = lvalue.bounds_owner().cloned();
     let lvalue_domain_source = crate::kernel::assumptions::PointerDomainSource::Retained {
-        bounds: lvalue_bounds.as_deref(),
-        known: lvalue.bounds_known,
+        bounds: lvalue_bounds.as_ref(),
+        known: lvalue.bounds_known(),
         opaque: lvalue_bounds_owner.as_deref(),
     };
     let lvalue_value_type = lvalue.value_type;
@@ -739,7 +739,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let Some(pointer) = state.locals.slot(&name)
                 && lvalue.provenance.as_deref().is_some_and(|origin| {
                     !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
-                        || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
+                        || lvalue_opaque_named
                 })
                 && state
                     .resources()
@@ -926,7 +926,7 @@ fn write_program_lvalue_paths_for_initialization(
             let is_external = is_external_memory_pointer(&pointer)
                 || lvalue.provenance.as_deref().is_some_and(|origin| {
                     !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
-                        || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
+                        || lvalue_opaque_named
                 });
             // A value of an abstract type is written whole: its object.
             let abstract_object = matches!(value.program_type(),
@@ -995,7 +995,13 @@ fn write_program_lvalue_paths_for_initialization(
             // Ownership was established above. Borrow separation is a proof
             // obligation for the driver, not an alias search during the store.
             let mut write_range = MemoryRange::access(source_pointer, value.program_type())
-                .with_bounds_owner(lvalue.bounds_owner.clone(), lvalue.bounds_known)
+                .with_bounds_owner(
+                    lvalue
+                        .array
+                        .as_ref()
+                        .and_then(|array| array.owner().cloned()),
+                    lvalue.array.as_ref().is_some_and(|array| array.is_known()),
+                )
                 .with_typed_carrier();
             if let Some(provenance) = &lvalue.provenance {
                 write_range = write_range.with_provenance(provenance.clone());

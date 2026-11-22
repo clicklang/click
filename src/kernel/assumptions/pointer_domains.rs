@@ -45,8 +45,8 @@ impl<'a> From<&'a LValue> for PointerDomainSource<'a> {
     fn from(value: &'a LValue) -> Self {
         Self::Retained {
             bounds: value.bounds(),
-            known: value.bounds_known,
-            opaque: value.bounds_owner.as_deref(),
+            known: value.bounds_known(),
+            opaque: value.bounds_owner().map(|owner| &**owner),
         }
     }
 }

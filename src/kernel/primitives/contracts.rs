@@ -2457,7 +2457,7 @@ impl MemoryRange {
     pub(crate) fn spatial_key(&self) -> Self {
         let carrier = Pointer::new(self.base.clone(), ProgramType::VoidPointer);
         Self {
-            bounds_owner: carrier.bounds_owner.clone(),
+            bounds_owner: carrier.array_object().owner().cloned(),
             carrier_bounds_known: carrier.bounds_are_known(),
             provenance: std::sync::Arc::new(self.base.object_identity()),
             typed_carrier: false,
@@ -2512,7 +2512,7 @@ impl MemoryRange {
         assert!(element_width > 0, "memory element width must be positive");
         let carrier = Pointer::new(base.clone(), ProgramType::VoidPointer);
         Self {
-            bounds_owner: carrier.bounds_owner.clone(),
+            bounds_owner: carrier.array_object().owner().cloned(),
             carrier_bounds_known: carrier.bounds_are_known(),
             provenance: std::sync::Arc::new(base.object_identity()),
             typed_carrier: false,
@@ -2622,20 +2622,19 @@ impl MemoryRange {
         Pointer {
             address: self.base.clone(),
             provenance: self.provenance.clone(),
-            bounds_owner: self.bounds_owner.clone(),
+            array: ArrayObject::from_parts(
+                self.carrier_bounds_known,
+                None,
+                self.bounds_owner.clone(),
+            ),
             program_type: ProgramType::VoidPointer,
-            qualifiers: self.carrier_bounds_known.then(|| {
-                std::sync::Arc::new(PointerQualifiers {
-                    bounds_known: true,
-                    ..Default::default()
-                })
-            }),
+            qualifiers: None,
         }
     }
 
     pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &Pointer) -> Self {
         self.provenance = value.provenance.clone();
-        self.bounds_owner = value.bounds_owner.clone();
+        self.bounds_owner = value.array_object().owner().cloned();
         self.carrier_bounds_known = value.bounds_are_known();
         self.typed_carrier = true;
         self

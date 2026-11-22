@@ -94,7 +94,8 @@ pub(crate) use kernel_term::{
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub(crate) use kernel_term::{
-    KernelAddressOffset, KernelMatchArm, SharedAddress, SharedAddressOffset, SharedPointer,
+    KernelAddressOffset, KernelArrayObject, KernelMatchArm, SharedAddress, SharedAddressOffset,
+    SharedPointer,
 };
 pub use kernel_term::{
     KernelFloatType, KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm,
@@ -2534,34 +2535,142 @@ pub(super) struct ObjectTypePremise {
     pub(super) scope: u64,
 }
 
-/// A C pointer value carries both its raw address and the type through which
-/// the address is being viewed.  `Address` remains the untyped address
-/// identity used by memory, aliasing, and provenance; pointer casts retag the
-/// value without changing that identity.
-///
-/// Whether the pointee is `const` is carried beside the value and is not part
-/// of its identity: equality, ordering and hashing ignore it. It is a property
-/// of the access path, which the write-through-`const` and implicit-discard
-/// checks read from the value or from the static type of the lvalue, and two
-/// values that differ only in it designate the same object. A fact about a
-/// pointer therefore matches the pointer however its type is qualified.
+/// A pointer value: an address and its provenance (`design/pointer-model.md`).
+/// C provenance is the allocation the pointer was derived from plus the array
+/// object within it (C11 6.5.6p8-9). The term's type is carried beside the
+/// value and is not part of its identity: equality, ordering and hashing
+/// ignore it, as they ignore the declared object class and type evidence.
 #[derive(Clone, Debug)]
 pub struct Pointer {
     address: Address,
-    /// The object designated when this value entered. Address aliases never
-    /// replace this component; only value transport or substitution maps it.
+    /// The allocation designated when this value entered. Address aliases
+    /// never replace this component; only value transport or substitution
+    /// maps it.
     provenance: Arc<Address>,
-    /// The opaque containing bounds retained through narrowing. A byte/void
-    /// view clears it, so that wider view cannot authorize the original input.
-    bounds_owner: Option<Arc<Address>>,
+    /// The array object within the allocation: C provenance's second part.
+    array: ArrayObject,
     program_type: ProgramType,
     qualifiers: Option<Arc<PointerQualifiers>>,
 }
 
+/// The C array object a pointer was derived from (C11 6.5.6p8-9): the part of
+/// its C provenance below the allocation. Arithmetic, one-past pointers,
+/// subtraction and accesses are bounded by it, not by the allocation.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::kernel) enum ArrayObject {
+    /// The complete object the provenance names: a local, a global, a heap
+    /// block, a temporary, or a function.
+    Allocation,
+    /// An array object whose creation the kernel did not see, as for a
+    /// parameter or a loaded pointer. It is named by where the pointer came
+    /// from, and coverage facts about that name give its extent. A view that
+    /// may not use the name's coverage has no name.
+    Opaque(Option<Arc<Address>>),
+    /// A member subobject of the allocation.
+    Member(Arc<MemberArray>),
+}
+
+/// A member subobject (`design/pointer-subobject-bounds.md`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::kernel) struct MemberArray {
+    /// The member's bytes. A memory range's carrier has none of its own: the
+    /// range's bytes are its bounds.
+    pub(in crate::kernel) bounds: Option<SubobjectBounds>,
+    /// The opaque array object the member was selected from, whose coverage
+    /// justified the selection.
+    pub(in crate::kernel) within: Option<Arc<Address>>,
+}
+
+impl ArrayObject {
+    /// The array object with these bounds and opaque name, as the three
+    /// separate fields spelled it: `known` is false only for an opaque array
+    /// object, which has no bounds of its own.
+    pub(in crate::kernel) fn from_parts(
+        known: bool,
+        bounds: Option<SubobjectBounds>,
+        owner: Option<Arc<Address>>,
+    ) -> Self {
+        if !known {
+            debug_assert!(bounds.is_none(), "an opaque array object has no bounds");
+            return Self::Opaque(owner);
+        }
+        match (bounds, owner) {
+            (None, None) => Self::Allocation,
+            (bounds, within) => Self::Member(Arc::new(MemberArray { bounds, within })),
+        }
+    }
+
+    pub(in crate::kernel) fn is_known(&self) -> bool {
+        !matches!(self, Self::Opaque(_))
+    }
+
+    pub(in crate::kernel) fn bounds(&self) -> Option<&SubobjectBounds> {
+        match self {
+            Self::Member(member) => member.bounds.as_ref(),
+            Self::Allocation | Self::Opaque(_) => None,
+        }
+    }
+
+    /// The opaque array object this one is or was selected from.
+    pub(in crate::kernel) fn owner(&self) -> Option<&Arc<Address>> {
+        match self {
+            Self::Allocation => None,
+            Self::Opaque(owner) => owner.as_ref(),
+            Self::Member(member) => member.within.as_ref(),
+        }
+    }
+
+    fn with_bounds(&self, bounds: Option<SubobjectBounds>) -> Self {
+        if bounds.is_none() && self.bounds().is_none() {
+            return self.clone();
+        }
+        Self::from_parts(true, bounds, self.owner().cloned())
+    }
+
+    fn with_owner(&self, owner: Option<Arc<Address>>) -> Self {
+        Self::from_parts(self.is_known(), self.bounds().cloned(), owner)
+    }
+
+    fn map(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
+        match self {
+            Self::Allocation => Self::Allocation,
+            Self::Opaque(owner) => Self::Opaque(owner.as_deref().map(|o| Arc::new(map(o)))),
+            Self::Member(member) => Self::Member(Arc::new(MemberArray {
+                bounds: member.bounds.as_ref().map(|bounds| SubobjectBounds {
+                    start: map(&bounds.start),
+                    width: bounds.width.clone(),
+                }),
+                within: member.within.as_deref().map(|o| Arc::new(map(o))),
+            })),
+        }
+    }
+
+    fn try_map(&self, mut map: impl FnMut(&Address) -> Option<Address>) -> Option<Self> {
+        Some(match self {
+            Self::Allocation => Self::Allocation,
+            Self::Opaque(owner) => Self::Opaque(match owner {
+                Some(owner) => Some(Arc::new(map(owner)?)),
+                None => None,
+            }),
+            Self::Member(member) => Self::Member(Arc::new(MemberArray {
+                bounds: match &member.bounds {
+                    Some(bounds) => Some(SubobjectBounds {
+                        start: map(&bounds.start)?,
+                        width: bounds.width.clone(),
+                    }),
+                    None => None,
+                },
+                within: match &member.within {
+                    Some(owner) => Some(Arc::new(map(owner)?)),
+                    None => None,
+                },
+            })),
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct PointerQualifiers {
-    bounds: Option<SubobjectBounds>,
-    bounds_known: bool,
     /// The class of the object the pointer was formed to designate, from the
     /// declaration that produced it (`design/effective-types.md`). It is not
     /// part of the value's identity, and it survives casts, `void *`,
@@ -2748,16 +2857,15 @@ impl Pointer {
             pointer.object_identity()
         };
         Self {
-            bounds_owner: (!known_root).then(|| Arc::new(root.clone())),
+            array: if known_root {
+                ArrayObject::Allocation
+            } else {
+                ArrayObject::Opaque(Some(Arc::new(root.clone())))
+            },
             provenance: Arc::new(root),
             address: pointer,
             program_type,
-            qualifiers: known_root.then(|| {
-                Arc::new(PointerQualifiers {
-                    bounds_known: true,
-                    ..Default::default()
-                })
-            }),
+            qualifiers: None,
         }
     }
 
@@ -2775,16 +2883,14 @@ impl Pointer {
         {
             return value;
         }
-        value.qualifiers = None;
         // Cache observations retain their unchanged-byte source directly.
         // This lookup crosses no writes: preservation across program states
         // needs explicit evidence, not a search for an older cell version.
         crate::instrumentation::record_deterministic_work(1);
         let source = memory.unchanged_bytes_source();
         let origin = Arc::new(Address::loaded_value(&source, cell));
-        value
-            .with_bounds_owner(Some(origin.clone()))
-            .with_provenance(origin)
+        value.array = ArrayObject::Opaque(Some(origin.clone()));
+        value.with_provenance(origin)
     }
 
     /// A point-named complete read uses the same identity for its address,
@@ -2812,9 +2918,9 @@ impl Pointer {
             return value;
         }
         let origin = Arc::new(address);
+        let mut value = value.with_provenance(origin.clone());
+        value.array = ArrayObject::Opaque(Some(origin));
         value
-            .with_bounds_owner(Some(origin.clone()))
-            .with_provenance(origin)
     }
 
     /// The read that introduced this complete pointer's opaque domain when
@@ -2841,12 +2947,22 @@ impl Pointer {
         &self.provenance
     }
 
-    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Address> {
-        self.bounds_owner.as_deref()
+    /// The array object within the allocation.
+    pub(in crate::kernel) fn array_object(&self) -> &ArrayObject {
+        &self.array
     }
 
-    pub(in crate::kernel) fn with_bounds_owner(mut self, bounds: Option<Arc<Address>>) -> Self {
-        self.bounds_owner = bounds;
+    pub(in crate::kernel) fn with_array_object(mut self, array: ArrayObject) -> Self {
+        self.array = array;
+        self
+    }
+
+    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Address> {
+        self.array.owner().map(|owner| &**owner)
+    }
+
+    pub(in crate::kernel) fn with_bounds_owner(mut self, owner: Option<Arc<Address>>) -> Self {
+        self.array = self.array.with_owner(owner);
         self
     }
 
@@ -2912,11 +3028,8 @@ impl Pointer {
 
     pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
         Self {
-            address: self.address,
-            provenance: self.provenance,
-            bounds_owner: self.bounds_owner,
             program_type,
-            qualifiers: self.qualifiers,
+            ..self
         }
     }
 
@@ -2935,18 +3048,16 @@ impl Pointer {
     }
 
     pub(crate) fn bounds(&self) -> Option<&SubobjectBounds> {
-        self.qualifiers.as_ref()?.bounds.as_ref()
+        self.array.bounds()
     }
 
     pub(crate) fn bounds_are_known(&self) -> bool {
-        self.qualifiers.as_ref().is_some_and(|q| q.bounds_known)
+        self.array.is_known()
     }
 
+    /// The complete allocation as the array object: a byte view's.
     pub(in crate::kernel) fn with_root_bounds(mut self) -> Self {
-        self.bounds_owner = None;
-        let qualifiers = Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default));
-        qualifiers.bounds = None;
-        qualifiers.bounds_known = true;
+        self.array = ArrayObject::Allocation;
         self
     }
 
@@ -3009,12 +3120,7 @@ impl Pointer {
     }
 
     pub(crate) fn with_bounds(mut self, bounds: Option<SubobjectBounds>) -> Self {
-        if bounds.is_some() {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).bounds_known = true;
-        }
-        if bounds.is_some() || self.bounds().is_some() {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).bounds = bounds;
-        }
+        self.array = self.array.with_bounds(bounds);
         self
     }
 
@@ -3028,13 +3134,7 @@ impl Pointer {
         if provenance != *self.provenance {
             result.provenance = Arc::new(provenance);
         }
-        result.bounds_owner = self.bounds_owner().map(|origin| Arc::new(map(origin)));
-        if let Some(bounds) = self.bounds() {
-            result = result.with_bounds(Some(SubobjectBounds {
-                start: map(&bounds.start),
-                width: bounds.width.clone(),
-            }));
-        }
+        result.array = self.array.map(map);
         result
     }
 
@@ -3044,31 +3144,22 @@ impl Pointer {
     ) -> Option<Self> {
         let pointer = map(&self.address)?;
         let provenance = map(&self.provenance)?;
-        let bounds_owner = match self.bounds_owner() {
-            Some(origin) => Some(Arc::new(map(origin)?)),
-            None => None,
-        };
-        let bounds = match self.bounds() {
-            Some(bounds) => Some(SubobjectBounds {
-                start: map(&bounds.start)?,
-                width: bounds.width.clone(),
-            }),
-            None => None,
-        };
+        let array = self.array.try_map(map)?;
         Some(
             self.clone()
                 .with_address(pointer)
                 .with_provenance(Arc::new(provenance))
-                .with_bounds(bounds)
-                .with_bounds_owner(bounds_owner),
+                .with_array_object(array),
         )
     }
 
     /// Re-spell physical addresses without changing the value's origin.
     pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Address) -> Address) -> Self {
-        self.map_pointers(map)
+        let mapped = self.map_pointers(map);
+        let array = mapped.array.with_owner(self.array.owner().cloned());
+        mapped
             .with_provenance(self.provenance.clone())
-            .with_bounds_owner(self.bounds_owner.clone())
+            .with_array_object(array)
     }
 
     /// Every address the value mentions, for variable collection.
@@ -3997,12 +4088,11 @@ pub struct LValue {
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
-    /// The subobject bounds of the pointer this memory lvalue was reached
-    /// through. The access is checked against it, and `&lvalue` keeps it.
-    pub(super) bounds_known: bool,
-    pub(super) bounds_owner: Option<Arc<Address>>,
-    pub(super) bounds: Option<Arc<SubobjectBounds>>,
+    /// The provenance of the pointer this memory lvalue was reached through:
+    /// its allocation and array object. The access is checked against it,
+    /// and `&lvalue` keeps it.
     pub(super) provenance: Option<Arc<Address>>,
+    pub(super) array: Option<ArrayObject>,
     /// The class of the lvalue's type, which the access uses, when the
     /// frontend supplied one.
     pub(super) access_class: Option<crate::kernel::effective_type::CAccessClass>,
