@@ -52,7 +52,14 @@ fn split_on_undefined_behavior(
     assumptions: &PureFactContext,
     defined: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> Vec<ExpressionPath> {
-    match decide_with_facts(assumptions, &facts, &undefined) {
+    // Decide the same condition that branch admission will record, which
+    // reads a negated guard as the underlying condition at opposite polarity.
+    let decision = if let Some(condition) = undefined.bool_negation_operand() {
+        decide_with_facts(assumptions, &facts, condition).map(|value| !value)
+    } else {
+        decide_with_facts(assumptions, &facts, &undefined)
+    };
+    match decision {
         Some(true) => vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(behavior),
             facts,
