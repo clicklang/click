@@ -302,14 +302,6 @@ fn private_pointer_copy_retains_qualifier_ownership_and_borrow_refusals() {
             .as_deref(),
         Some(&value)
     );
-    let discard_const = program_assign(
-        "p",
-        ProgramExpression::Value(value.clone().with_pointer_pointee_constant(true)),
-    );
-    assert!(matches!(
-        execute(&state, &discard_const)[0].outcome,
-        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
-    ));
     let unowned = state.clone().with_resource_context(ResourceContext::new());
     assert!(matches!(
         execute(&unowned, &copy)[0].outcome,

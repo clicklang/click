@@ -1253,13 +1253,10 @@ pub(super) fn evaluate_native_expression_paths(
                     .expect("static scalar array element has a pointer type")
             };
             vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(
-                    ProgramValue::typed_pointer_with_pointee_constant(
-                        SymbolicMemory::global_pointer(name),
-                        pointer_type,
-                        metadata.constant,
-                    ),
-                ),
+                outcome: ExpressionOutcome::Value(ProgramValue::typed_pointer(
+                    SymbolicMemory::global_pointer(name),
+                    pointer_type,
+                )),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }]
@@ -1272,14 +1269,9 @@ pub(super) fn evaluate_native_expression_paths(
                 .slot(name)
                 .expect("array binding must carry a stack slot")
                 .clone();
-            let pointee_constant = match state.locals.binding(name) {
-                Some(LocalBinding::ArrayObject { constant, .. })
-                | Some(LocalBinding::AggregateObject { constant, .. }) => *constant,
-                _ => false,
-            };
             vec![ExpressionPath {
                 outcome: if state.memory.has_block(&pointer.base) {
-                    ExpressionOutcome::Value(ProgramValue::typed_pointer_with_pointee_constant(
+                    ExpressionOutcome::Value(ProgramValue::typed_pointer(
                         pointer,
                         if state.locals.is_aggregate_object(name) {
                             ProgramType::UInt8Pointer
@@ -1290,7 +1282,6 @@ pub(super) fn evaluate_native_expression_paths(
                                 .and_then(ProgramType::pointer_to)
                                 .unwrap_or(ProgramType::Int32Pointer)
                         },
-                        pointee_constant,
                     ))
                 } else {
                     ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(name.to_string()))
@@ -1347,7 +1338,7 @@ pub(super) fn evaluate_native_expression_paths(
             // The pointee's volatility belongs to an access through the
             // result, which carries it from its own lvalue type.
             pointee_volatile: _,
-            pointee_constant,
+            pointee_constant: _,
             explicit_qualification,
         } => evaluate_program_cast_paths(
             state,
@@ -1355,7 +1346,6 @@ pub(super) fn evaluate_native_expression_paths(
             *target_type,
             *integer_mode,
             *pointee_struct_size,
-            *pointee_constant,
             *explicit_qualification,
             assumptions,
             budget,
@@ -1934,7 +1924,6 @@ fn evaluate_program_cast_paths(
     target_type: ProgramType,
     integer_mode: IntegerCastMode,
     pointee_struct_size: Option<u32>,
-    pointee_constant: bool,
     explicit_qualification: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -2231,15 +2220,7 @@ fn evaluate_program_cast_paths(
                         // destination's qualification. Any other cast keeps
                         // a const source view. Neither affects whether the
                         // storage itself may be written.
-                        let pointee_constant = pointee_constant
-                            || (!explicit_qualification
-                                && matches!(
-                                    &value,
-                                    ProgramValue::Pointer(pointer) if pointer.pointee_constant()
-                                ));
-                        ExpressionOutcome::Value(
-                            value.with_pointer_pointee_constant(pointee_constant),
-                        )
+                        ExpressionOutcome::Value(value)
                     }
                     Err(RuntimeError::TypeMismatch) if float_to_integer => {
                         ExpressionOutcome::UndefinedBehavior(
@@ -2950,7 +2931,6 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                                 value_type,
                                 false,
                             )
-                            .with_constant(pointer.pointee_constant())
                             .with_bounds_of(&pointer)
                             .with_access_class(CAccessClass::of_kernel_type(value_type)),
                         ),
@@ -2999,7 +2979,6 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                                 *value_type,
                                 *volatile,
                             )
-                            .with_constant(pointer.pointee_constant())
                             .with_pointee_constant(*pointee_constant)
                             .with_bounds_of(&pointer)
                             .with_access_class(access_class.clone()),
@@ -3045,7 +3024,6 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                                 value_type,
                                 false,
                             )
-                            .with_constant(pointer.pointee_constant())
                             .with_bounds_of(&pointer)
                             .with_access_class(CAccessClass::of_kernel_type(value_type)),
                         ),
@@ -3403,9 +3381,7 @@ fn read_retained_lvalue_paths_without_ranges(
                                 value.clone().into_value()
                             } else {
                                 let native = value.native();
-                                let native = native
-                                    .into_owned()
-                                    .with_pointer_pointee_constant(lvalue.pointee_is_constant());
+                                let native = native.into_owned();
                                 if native.program_type().is_pointer() {
                                     value.retain_checked_pointer(native)
                                 } else {
@@ -3863,7 +3839,6 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                         Some(pointer_type) => {
                             let facts = lvalue_path.facts;
                             let mut address = Pointer::new(pointer, pointer_type)
-                                .with_pointee_constant(lvalue.is_constant())
                                 .with_bounds(lvalue.bounds().cloned());
                             if lvalue.bounds_known && lvalue.bounds().is_none() {
                                 address = address.with_root_bounds();

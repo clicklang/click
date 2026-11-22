@@ -1553,11 +1553,7 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     let mut state = ExecutionState::new();
     state.locals.set_typed_with_all_qualifiers(
         "int32_p",
-        ProgramValue::typed_pointer_with_pointee_constant(
-            address.clone(),
-            ProgramType::Int32Pointer,
-            true,
-        ),
+        ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
         ProgramType::Int32Pointer,
         false,
         false,
@@ -1588,20 +1584,13 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
         unreachable!();
     };
     assert_eq!(value.address(), &address);
-    assert!(
-        value.pointee_constant(),
-        "a byte view must retain source const qualification"
-    );
     let (spec_value, _) = program_evaluate_speprogram_expression_at_state(
         &state,
         &SpecExpression::Cast(
-            Box::new(SpecExpression::Value(
-                ProgramValue::typed_pointer_with_pointee_constant(
-                    address.clone(),
-                    ProgramType::Int32Pointer,
-                    true,
-                ),
-            )),
+            Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
+                address.clone(),
+                ProgramType::Int32Pointer,
+            ))),
             ProgramType::UInt8Pointer,
         ),
         None,
@@ -1612,7 +1601,6 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
         panic!("byte-view spec cast must yield a pointer");
     };
     assert_eq!(spec_pointer.address(), &address);
-    assert!(spec_pointer.pointee_constant());
 
     let equality = crate::kernel::program_expression::equal(
         crate::kernel::program_expression::variable("int32_p"),

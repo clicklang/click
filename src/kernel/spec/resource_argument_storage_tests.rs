@@ -63,13 +63,10 @@ fn resource_argument_arrays_keep_native_identity_order_hash_and_debug() {
             0x8000000000000000,
         ))),
         AlgebraicValue::Integer(IntegerTerm::Variable(Variable(10993603))),
-        AlgebraicValue::Program(
-            ProgramValue::typed_pointer(
-                Address::symbolic(Variable(10993604)),
-                ProgramType::Int32Pointer,
-            )
-            .with_pointer_pointee_constant(true),
-        ),
+        AlgebraicValue::Program(ProgramValue::typed_pointer(
+            Address::symbolic(Variable(10993604)),
+            ProgramType::Int32Pointer,
+        )),
     ];
     fn hash(value: &impl Hash) -> u64 {
         let mut h = std::collections::hash_map::DefaultHasher::new();

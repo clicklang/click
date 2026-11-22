@@ -2491,7 +2491,6 @@ pub struct Pointer {
 
 #[derive(Clone, Debug, Default)]
 struct PointerQualifiers {
-    constant: bool,
     bounds: Option<SubobjectBounds>,
     bounds_known: bool,
     /// The class of the object the pointer was formed to designate, from the
@@ -2508,7 +2507,6 @@ struct PointerQualifiers {
 #[derive(PartialEq, Eq)]
 pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
     program_type: ProgramType,
-    constant: bool,
     bounds_known: bool,
     declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
     evidence: Option<&'a ObjectTypeEvidence>,
@@ -2834,7 +2832,6 @@ impl Pointer {
     pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
         RetainedPointerMetadata {
             program_type: self.program_type,
-            constant: self.pointee_constant(),
             bounds_known: self.bounds_are_known(),
             declared_class: self
                 .qualifiers
@@ -2842,10 +2839,6 @@ impl Pointer {
                 .and_then(|q| q.object_class.as_ref()),
             evidence: self.object_origin_evidence(),
         }
-    }
-
-    pub(crate) fn pointee_constant(&self) -> bool {
-        self.qualifiers.as_ref().is_some_and(|q| q.constant)
     }
 
     pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
@@ -2856,14 +2849,6 @@ impl Pointer {
             program_type,
             qualifiers: self.qualifiers,
         }
-    }
-
-    pub(crate) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
-        if self.pointee_constant() != pointee_constant {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).constant =
-                pointee_constant;
-        }
-        self
     }
 
     /// Respells the address as a proven-equal alias. The bounds keep their

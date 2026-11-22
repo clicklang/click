@@ -626,7 +626,13 @@ mod conditional_tests {
             IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "retained_if_arm".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-                    pointer.clone().with_pointee_constant(constant),
+                    pointer
+                        .clone()
+                        .with_declared_object_class(constant.then(|| {
+                            crate::kernel::effective_type::CAccessClass::Scalar(
+                                crate::kernel::effective_type::CScalarClass::Int,
+                            )
+                        })),
                 ))],
             ))
         });

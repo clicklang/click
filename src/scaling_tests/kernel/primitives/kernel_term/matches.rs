@@ -96,8 +96,7 @@ fn numeric_match_opaque_scrutinee_identity_keeps_exact_roots_and_shared_bodies()
                 Pointer::new(
                     Address::symbolic(Variable(991984)),
                     ProgramType::Int32Pointer,
-                )
-                .with_pointee_constant(true),
+                ),
             ))],
         };
         let make = || {

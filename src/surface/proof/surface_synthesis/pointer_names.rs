@@ -229,10 +229,14 @@ mod tests {
             Address::symbolic(Variable(1015000)),
             ProgramType::Int32Pointer,
         );
-        let qualified = plain.clone().with_pointee_constant(true);
+        let qualified = plain.clone().with_declared_object_class(Some(
+            crate::kernel::effective_type::CAccessClass::Scalar(
+                crate::kernel::effective_type::CScalarClass::Int,
+            ),
+        ));
         assert_eq!(
             plain, qualified,
-            "logical equality intentionally ignores const"
+            "logical equality intentionally ignores the declared class"
         );
         check_names(vec![("a_plain", plain), ("z_const", qualified)]);
     }
@@ -283,7 +287,14 @@ mod tests {
         assert!(crate::kernel::KernelTerm::retained_pointer_read(&pointer).is_some());
         check_names(vec![
             ("read", pointer.clone()),
-            ("const_read", pointer.with_pointee_constant(true)),
+            (
+                "const_read",
+                pointer.with_declared_object_class(Some(
+                    crate::kernel::effective_type::CAccessClass::Scalar(
+                        crate::kernel::effective_type::CScalarClass::Int,
+                    ),
+                )),
+            ),
         ]);
     }
 

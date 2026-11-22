@@ -51,7 +51,7 @@ mod tests {
             Address::symbolic(Variable(999450)),
             ProgramType::Int32Pointer,
         );
-        let roots = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
+        let roots = [pointer.clone(), pointer].map(|pointer| {
             let application = SharedPureApplication::intern(
                 "cast_bool_identity".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(pointer))],

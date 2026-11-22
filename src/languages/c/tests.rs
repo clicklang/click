@@ -1548,7 +1548,6 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
         global_pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
-    assert!(global_pointer.pointee_constant());
 
     let private_target = &function.globals()["private_target"];
     let private_alias = kernel
@@ -1568,7 +1567,6 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
         private_pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
-    assert!(!private_pointer.pointee_constant());
 
     let static_local = kernel
         .static_variables()
@@ -1584,7 +1582,6 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
         static_pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
     );
-    assert!(static_pointer.pointee_constant());
 }
 
 #[test]

@@ -135,8 +135,7 @@ fn sequence_native_identity_order_hash_and_debug_are_unchanged() {
         ProgramValue::typed_pointer(
             Address::symbolic(Variable(10993403)),
             ProgramType::Int32Pointer,
-        )
-        .with_pointer_pointee_constant(true),
+        ),
     ];
     fn hash(value: &impl Hash) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();

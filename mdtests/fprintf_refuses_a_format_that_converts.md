@@ -24,5 +24,5 @@ int32 report(FILE* file, int32 value) {
 ```
 
 ```expect
-fail:unproved obligation: `click::c::stdio::literal_format(("fprintf_refuses_a_format_that_converts.c"::report.string_literal(0) as (const uint8 *)), 0u64, 2) == true`
+fail:unproved obligation: `click::c::stdio::literal_format(("fprintf_refuses_a_format_that_converts.c"::report.string_literal(0) as (uint8 *)), 0u64, 2) == true`
 ```

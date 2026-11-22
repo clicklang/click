@@ -4095,9 +4095,7 @@ fn apply_pointer_formation_guards(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let mut normal = vec![ExpressionPath {
-        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(
-            pointer.with_pointee_constant(false),
-        )),
+        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(pointer)),
         facts,
         obligations,
     }];

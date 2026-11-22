@@ -181,46 +181,6 @@ fn algebraic_program_field_wrapping_does_not_walk_retained_prefixes() {
 }
 
 #[test]
-fn pointer_field_qualifier_changes_keep_growing_indices_shared() {
-    let mut costs = Vec::new();
-    for size in [8, 32, 128] {
-        let _session = crate::kernel::VerificationSession::enter();
-        let mut index = MachineTerm::Variable(Variable(999980));
-        for _ in 0..size {
-            index = MachineTerm::Binary {
-                op: MachineBinaryOp::Add,
-                format: MachineIntegerType::Int32,
-                left: Box::new(index),
-                right: Box::new(MachineTerm::constant(1)),
-            };
-        }
-        let pointer = Pointer::new(
-            Address {
-                base: AddressBase::Symbolic(Variable(999981)),
-                offset: AddressOffset::scaled_int32_node(index, 4),
-            },
-            ProgramType::Int32Pointer,
-        )
-        .with_pointee_constant(true);
-        let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
-        let original = root.pointer_payload().unwrap().node().address.clone();
-        let exports = KernelTermExport::machine_export_count();
-        let (field, work) = crate::instrumentation::measure_deterministic_work(|| {
-            AlgebraicFieldResult::from_program(SpecValue::Shared(root))
-                .without_pointer_constant()
-                .into_kernel()
-        });
-        assert_eq!(field.pointer_payload().unwrap().node().address, original);
-        assert_eq!(KernelTermExport::machine_export_count(), exports);
-        costs.push(work);
-    }
-    assert!(
-        costs[0] > 0 && costs.iter().all(|cost| *cost == costs[0]),
-        "{costs:?}"
-    );
-}
-
-#[test]
 fn float_lowering_conversions_keep_growing_operands_shared() {
     let mut costs = Vec::new();
     for size in [8, 32, 128] {

@@ -30,7 +30,7 @@ fn common_algebraic_equality_visits_shared_constructor_pairs_once() {
             Address::symbolic(Variable(999674)),
             ProgramType::Int32Pointer,
         );
-        let mut roots = [pointer.clone(), pointer.with_pointee_constant(true)].map(|pointer| {
+        let mut roots = [pointer.clone(), pointer].map(|pointer| {
             KernelTermImport::default().algebraic(&AlgebraicTerm {
                 algebraic_type: ty.clone(),
                 node: AlgebraicTermNode::Constructor {

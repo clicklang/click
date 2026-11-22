@@ -3881,10 +3881,7 @@ impl ConditionTerm {
             // Whether two pointers are equal does not depend on the `const`
             // of the expressions that named them, and one proposition must
             // be one term however its operands were read.
-            Self::PointerEqual(
-                Box::new(left.with_pointee_constant(false)),
-                Box::new(right.with_pointee_constant(false)),
-            )
+            Self::PointerEqual(Box::new(left), Box::new(right))
         }
     }
 
@@ -4583,14 +4580,6 @@ impl ProgramValue {
         Self::Pointer(Pointer::new(pointer, program_type))
     }
 
-    pub(crate) fn typed_pointer_with_pointee_constant(
-        pointer: Address,
-        program_type: ProgramType,
-        pointee_constant: bool,
-    ) -> Self {
-        Self::Pointer(Pointer::new(pointer, program_type).with_pointee_constant(pointee_constant))
-    }
-
     pub(crate) fn retag_pointer(self, program_type: ProgramType) -> Self {
         match self {
             Self::Pointer(pointer) => Self::Pointer(pointer.with_type(program_type)),
@@ -4643,15 +4632,6 @@ impl ProgramValue {
     ) -> Self {
         match self {
             Self::Pointer(pointer) => Self::Pointer(pointer.with_declared_object_class(class)),
-            value => value,
-        }
-    }
-
-    pub(crate) fn with_pointer_pointee_constant(self, pointee_constant: bool) -> Self {
-        match self {
-            Self::Pointer(pointer) => {
-                Self::Pointer(pointer.with_pointee_constant(pointee_constant))
-            }
             value => value,
         }
     }
