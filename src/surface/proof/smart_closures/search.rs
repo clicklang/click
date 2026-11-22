@@ -6647,6 +6647,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if left_pointer != right_pointer || left_kind != right_kind || left_memory == right_memory {
             return Ok(None);
         }
+        if matches!(
+            left_kind,
+            crate::kernel::LoadKind::Int32 | crate::kernel::LoadKind::UInt32
+        ) && let Some(proof) =
+            Self::try_anchored_field_preservation(search_input, surface_goal, &left_pointer)?
+            && proof.is_complete()
+        {
+            return Ok(Some(proof));
+        }
         let Some(view) = search_input.premise_fixed_state_view() else {
             return Ok(None);
         };
