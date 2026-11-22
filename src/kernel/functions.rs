@@ -16528,7 +16528,7 @@ pub(super) fn expand_composite_resource_fact(
 pub(crate) fn checked_composite_projection_evidence(
     viewed: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
     // Projection checks the selected head alone. Checked construction attaches
@@ -16539,13 +16539,8 @@ pub(crate) fn checked_composite_projection_evidence(
         .ok()?;
     #[cfg(test)]
     head.observe_composite_context();
-    let (_, children, _) = expand_composite_resource_fact_with_children(
-        &head,
-        viewed,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    )?;
+    let (_, children, _) =
+        expand_composite_resource_fact_with_children(&head, viewed, definitions, at, assumptions)?;
     CompositeProjectionEvidence::from_checked_expansion(viewed.clone(), children)
 }
 
