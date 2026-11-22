@@ -691,3 +691,47 @@ fn generic_entry_cells_and_compact_runs_keep_the_same_version_across_local_store
             .is_none()
     );
 }
+
+#[test]
+fn a_static_scalar_entry_version_ignores_disjoint_writes_in_its_block() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = SymbolicMemory::global_pointer("static_read");
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let entry = entry
+        .clone()
+        .with_function_entry_memory(entry.memory().clone().with_block(cell.base.clone(), 4100));
+    let store = |state: &ExecutionState, address, bits| {
+        state.clone().with_memory(
+            state
+                .memory()
+                .clone()
+                .store(address, ProgramValue::Int32(MachineTerm::constant(bits))),
+        )
+    };
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = entry.clone();
+        for index in 1..=count {
+            state = store(&state, cell.offset_by_bytes(4 * index), index);
+        }
+        let point = state.program_point();
+        let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+            point.unwritten_static_scalar_version(&cell, ProgramType::Int32)
+        });
+        assert_eq!(
+            version.and_then(|point| point.read_version_id()),
+            entry.program_point_id(),
+        );
+        assert!(
+            store(&state, cell.clone(), 0)
+                .program_point()
+                .unwritten_static_scalar_version(&cell, ProgramType::Int32)
+                .is_none()
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+}

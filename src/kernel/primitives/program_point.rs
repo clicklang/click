@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use crate::kernel::MachineIntegerType;
-use crate::persistent::PersistentMap;
+use crate::persistent::{PersistentMap, PersistentSet};
 
 use super::{
     Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, MemoryRange,
@@ -285,6 +285,16 @@ struct ReadVersionPoint {
     memory: SharedMemory,
 }
 
+impl ReadVersionPoint {
+    fn read(&self, read: ReadSelection) -> Option<ProgramPoint> {
+        Some(ProgramPoint {
+            memory: self.memory.clone(),
+            path: PathLink(Some(self.point.upgrade()?), self.view.clone()),
+            read,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ArrayBlockVersions {
     /// A fresh lineage after an unclassified effect prevents a join from
@@ -295,11 +305,16 @@ struct ArrayBlockVersions {
 }
 
 #[derive(Clone, Debug)]
-struct ArrayBlockWrite(Weak<PointNode>);
+struct ArrayBlockWrite {
+    point: Weak<PointNode>,
+    /// Bytes written since the entry anchor. None means this block had an
+    /// effect without a fixed scalar footprint, or diverging branch versions.
+    static_bytes: Option<PersistentSet<i64>>,
+}
 
 impl PartialEq for ArrayBlockWrite {
     fn eq(&self, other: &Self) -> bool {
-        Weak::ptr_eq(&self.0, &other.0)
+        Weak::ptr_eq(&self.point, &other.point)
     }
 }
 
@@ -342,9 +357,13 @@ impl ArrayBlockVersions {
                 if block.is_static_storage_block()
                     || (left.is_some() && right.is_some() && result.writes.get(block).is_some())
                 {
-                    result
-                        .writes
-                        .insert(block.clone(), ArrayBlockWrite(joined.clone()));
+                    result.writes.insert(
+                        block.clone(),
+                        ArrayBlockWrite {
+                            point: joined.clone(),
+                            static_bytes: None,
+                        },
+                    );
                 } else {
                     // An automatic or heap object must exist on every
                     // arm. Its entry cannot stand for another lifetime.
@@ -414,8 +433,26 @@ impl ArrayBlockVersions {
         }
         let mut record_object = |block: &AddressBase| {
             if indexed_array_object(block) {
-                self.writes
-                    .insert(block.clone(), ArrayBlockWrite(point.clone()));
+                let static_bytes = self.static_entry.as_ref().and_then(|_| {
+                    let (pointer, extent) = step.single_write_extent()?;
+                    let span = super::static_cell_byte_span(pointer, extent.bytes()?)?;
+                    let mut written = match self.writes.get(block) {
+                        Some(prior) => prior.static_bytes.clone()?,
+                        None => PersistentSet::default(),
+                    };
+                    for byte in span {
+                        crate::instrumentation::record_deterministic_work(1);
+                        written = written.with_value(byte);
+                    }
+                    Some(written)
+                });
+                self.writes.insert(
+                    block.clone(),
+                    ArrayBlockWrite {
+                        point: point.clone(),
+                        static_bytes,
+                    },
+                );
                 true
             } else {
                 matches!(block, AddressBase::Temporary(_))
@@ -1184,6 +1221,7 @@ enum ReadSelection {
     Exact,
     Entry,
     CallOutput,
+    IndexedCell,
     IndexedWrite(Arc<MemoryDerivation>),
 }
 
@@ -1509,8 +1547,8 @@ impl ProgramPoint {
             return Some(self.clone().for_exact_read());
         }
         let versions = current.array_block_versions.as_ref()?;
-        if let Some(ArrayBlockWrite(version)) = versions.writes.get(block) {
-            let version = version.upgrade()?;
+        if let Some(write) = versions.writes.get(block) {
+            let version = write.point.upgrade()?;
             return Some(Self {
                 memory: version.memory.clone(),
                 path: PathLink(Some(version), IndexedView::Recorded),
@@ -1520,12 +1558,7 @@ impl ProgramPoint {
         if !block.is_static_storage_block() {
             return None;
         }
-        let entry = versions.static_entry.as_ref()?;
-        Some(Self {
-            memory: entry.memory.clone(),
-            path: PathLink(Some(entry.point.upgrade()?), entry.view.clone()),
-            read: ReadSelection::Exact,
-        })
+        versions.static_entry.as_ref()?.read(ReadSelection::Exact)
     }
 
     /// A scalar supplied by the caller can have a version even when no
@@ -1668,18 +1701,83 @@ impl ProgramPoint {
             && MachineIntegerType::from_program_type(value_type).is_some()
     }
 
-    /// The entry version of a static integer cell whose whole object remains
-    /// unchanged in the recorded block index.
+    /// The entry version of a static integer cell for which the recorded
+    /// path has no writes to any byte it reads.
     pub(in crate::kernel) fn unwritten_static_scalar_version(
         &self,
         pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
-        if !Self::supports_static_entry_version(pointer, value_type) {
+        if !Self::supports_static_entry_version(pointer, value_type)
+            || !self.has_certified_read_view()
+        {
             return None;
         }
-        let version = self.indexed_array_version(&pointer.base)?;
-        version.path.0.as_ref()?.function_entry.then_some(version)
+        let current = self.path.0.as_ref()?;
+        if current.function_entry {
+            let mut entry = self.clone();
+            entry.read = ReadSelection::IndexedCell;
+            return Some(entry);
+        }
+        let versions = current.array_block_versions.as_ref()?;
+        if let Some(write) = versions.writes.get(&pointer.base) {
+            let written = write.static_bytes.as_ref()?;
+            let mut span = super::static_cell_byte_span(pointer, value_type.byte_width())?;
+            if span.any(|byte| {
+                crate::instrumentation::record_deterministic_work(1);
+                written.contains(&byte)
+            }) {
+                return None;
+            }
+        }
+        versions
+            .static_entry
+            .as_ref()?
+            .read(ReadSelection::IndexedCell)
+    }
+
+    /// Connect an entry read already established by the legacy path resolver
+    /// to the recorded entry on this execution path. The resolved view can
+    /// be the entry itself or the recorded input of the last block write.
+    /// The view only certifies the choice; the entry point identifies the read.
+    pub(in crate::kernel) fn static_entry_matching_resolved_read(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+        resolved: &SharedMemory,
+    ) -> Option<Self> {
+        if !self.has_certified_read_view() {
+            return None;
+        }
+        let entry = self
+            .path
+            .0
+            .as_ref()?
+            .array_block_versions
+            .as_ref()?
+            .static_entry
+            .as_ref()?;
+        if entry.memory.arena_id() == resolved.arena_id() {
+            return entry.read(ReadSelection::IndexedCell);
+        }
+        let latest = self.indexed_array_version(&pointer.base)?;
+        let transition = latest.path.0.as_ref()?;
+        let [before] = transition.predecessors.as_ref() else {
+            return None;
+        };
+        let steps = transition.steps.as_ref()?;
+        if !steps.contiguous
+            || steps.first_base.arena_id() != resolved.arena_id()
+            || !before.matches_indexed_view(&steps.first_base)
+        {
+            return None;
+        }
+        Self {
+            memory: steps.first_base.clone(),
+            path: before.clone(),
+            read: ReadSelection::Legacy,
+        }
+        .unwritten_static_scalar_version(pointer, value_type)
     }
 
     pub(crate) fn ordinary_typed_version(

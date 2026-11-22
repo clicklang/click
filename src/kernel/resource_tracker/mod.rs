@@ -1384,21 +1384,20 @@ pub(crate) fn static_cell_unwritten_since_entry_on_path(
     pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<SharedMemory> {
+) -> Option<(SharedMemory, SharedMemory)> {
     if !pointer.base.is_static_storage_block() {
         return None;
     }
-    match cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)? {
-        cell_source::MemoryDagCell::Unwritten { node, .. }
-            if node != *at
-                && node.known_value(pointer).is_none()
-                && cell_last_same_version(&node, pointer, bytes.into())
-                    .is_some_and(|version| version.reason == StopReason::HistoryEnds) =>
-        {
-            Some(node)
-        }
-        _ => None,
+    let cell_source::MemoryDagCell::Unwritten { node, .. } =
+        cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)?
+    else {
+        return None;
+    };
+    if node == *at || node.known_value(pointer).is_some() {
+        return None;
     }
+    let root = cell_last_same_version(&node, pointer, bytes.into())?;
+    (root.reason == StopReason::HistoryEnds).then_some((node, root.memory))
 }
 
 thread_local! {

@@ -101,8 +101,10 @@ point. An effect that can write the local retires that version.
 
 An integer read of static storage uses the function-entry version when the
 whole-object index shows that the object is unchanged. This includes reads
-of array elements at symbolic indices. A write to the object ends that
-whole-object version.
+of array elements at symbolic indices. For fixed-offset reads, the index
+also retains the entry version across disjoint fixed-width writes to the
+same object. An effect with an unknown byte footprint invalidates that
+byte-level entry information for the affected object.
 
 A declared little-endian `uint32` can be read as four complete indexed byte
 reads. Each byte uses its own version. Click spells it with the bitwise OR
