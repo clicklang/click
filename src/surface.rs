@@ -8998,7 +8998,6 @@ pub enum ProofRefusal {
     IncompleteProof,
     Contract,
     ContractEntry,
-    ExecutionPrerequisite,
     Execution,
     Termination,
     DivergenceDeclaration,
@@ -9013,7 +9012,6 @@ impl ProofRefusal {
             Self::IncompleteProof => "incomplete proof",
             Self::Contract => "contract error",
             Self::ContractEntry => "contract entry refused",
-            Self::ExecutionPrerequisite => "execution prerequisite unmet",
             Self::Execution => "execution refused",
             Self::Termination => "termination not established",
             Self::DivergenceDeclaration => "invalid divergence declaration",
@@ -11325,13 +11323,13 @@ impl ClickError {
     pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {
         // Preserve the innermost operation's classification through wrappers.
         if self.proof_refusal.is_none()
-            || matches!(
-                self.proof_refusal,
-                Some(ProofRefusal::Execution | ProofRefusal::ExecutionPrerequisite)
-            ) && matches!(
-                refusal,
-                ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
-            )
+            || matches!(self.proof_refusal, Some(ProofRefusal::Execution))
+                && matches!(
+                    refusal,
+                    ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
+                )
+            || self.proof_refusal == Some(ProofRefusal::Tactic)
+                && refusal == ProofRefusal::ImplicitStatementSearch
         {
             self.proof_refusal = Some(refusal);
         }
@@ -11628,6 +11626,14 @@ impl ClickError {
             assertion_condition: None,
             surface: None,
         }));
+        self
+    }
+
+    /// Keep the operation's source diagnostic for an inexpressible goal.
+    /// The report cannot offer that kernel requirement as a writable goal.
+    pub(in crate::surface) fn without_unresolved_requirement(mut self) -> Self {
+        self.unresolved_requirement = None;
+        self.rendered = std::sync::OnceLock::new();
         self
     }
 

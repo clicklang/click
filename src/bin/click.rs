@@ -59,7 +59,6 @@ fn report_error(message: String) -> ! {
         "incomplete proof",
         "contract error",
         "contract entry refused",
-        "execution prerequisite unmet",
         "execution refused",
         "termination not established",
         "invalid divergence declaration",
@@ -347,7 +346,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+                "internal error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
             )),
             "{error}"
         );
@@ -356,14 +355,30 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
+                "internal error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
+            "{error}"
+        );
+        assert!(
+            error.contains("Click could not express this prerequisite as a proof goal"),
             "{error}"
         );
         for kernel_spelling in ["can-store(", "state#", "local:items", "value A"] {
             assert!(!error.contains(kernel_spelling), "{error}");
         }
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn branch_safety_obligation_runs_implicit_solve() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/branch_refuses_an_undecided_condition_prerequisite.md");
+        let error = entry(["verify".to_string(), fixture.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("unsuccessful search:\n"), "{error}");
+        assert!(
+            error.contains("goal: d > float64_from_bits(0xc1e0000000200000u64)"),
+            "{error}"
+        );
     }
 
     /// A refused C step names the file, line, and column of the statement it

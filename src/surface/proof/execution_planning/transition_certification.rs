@@ -29,13 +29,9 @@ fn missing_prerequisite_error(
     message: impl Into<String>,
     obligation: &ProofObligation,
 ) -> ClickError {
-    let error = ClickError::new(message)
-        .with_proof_refusal(crate::surface::ProofRefusal::ExecutionPrerequisite);
-    if obligation.is_assumable() {
-        error
-    } else {
-        error.with_unresolved_requirement(obligation)
-    }
+    ClickError::new(message)
+        .with_proof_refusal(crate::surface::ProofRefusal::Tactic)
+        .with_unresolved_requirement(obligation)
 }
 
 /// A live-view write can use the named goal, its symmetric form, or an exact
@@ -433,7 +429,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                             )
                         {
                         } else {
-                            return Err(missing_condition_prerequisite_error(context_label, obligation, state));
+                            return Err(missing_condition_prerequisite_error(context_label, obligation, state)
+                                .with_kind(crate::surface::ClickErrorKind::Internal));
                         }
                     }
                     StatementPrerequisitePolicy::Retained | StatementPrerequisitePolicy::Fast => {
@@ -862,7 +859,7 @@ fn certified_transitions_from_execution(
                             ),
                                 ),
                                 obligation,
-                            ));
+                            ).with_kind(crate::surface::ClickErrorKind::Internal));
                         }
                     }
                     StatementPrerequisitePolicy::Retained | StatementPrerequisitePolicy::Fast => {

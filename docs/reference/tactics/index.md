@@ -758,6 +758,11 @@ one case proves does not survive that rejoin, so it cannot be exported
 
 **Failure, checking, and tools:**
 
+Evaluating the C condition can require evidence, such as the bounds for a
+numeric cast. An ordinary implicit `solve()` proves each open requirement
+before the split. Expansion writes each such proof as a `have` before
+`branch`, which is also how to supply the proof explicitly.
+
 A non-`if` frontier, overshot arm, unproved interface item, or nondeterministic
 join fails. Click follows the written arms and interface; expansion recurses
 into smart descendants, and profiling classifies those descendants. Exported

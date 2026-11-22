@@ -4651,7 +4651,7 @@ fn try_advance_checked_execution_branch<'a>(
     }
     let at_branch = proof.with_execution_tactic_index(tactic_index)?;
     let checkpoint = at_branch.checkpoint();
-    let (split, record) = at_branch.split_focused_execution_branch()?;
+    let (split, record) = at_branch.driver().split_branch_with_prerequisite_proofs()?;
     let has_sole_feasible_arm = record.sole_feasible_arm().is_some();
     let arms = driven!(advance_checked_branch_arms(
         split,
@@ -5342,6 +5342,8 @@ fn advance_checked_open_scope<'a>(
         );
     }
     let InternalProofNode::Branch {
+        index,
+        source_index,
         ensuring,
         then_branch,
         else_branch,
@@ -5351,7 +5353,21 @@ fn advance_checked_open_scope<'a>(
     else {
         return decline();
     };
-    let (split, record) = scope.split_execution_branch()?;
+    let mut scope = scope.with_execution_tactic_index(*index)?;
+    let checkpoint = scope.checkpoint();
+    let mut attempted = BTreeSet::new();
+    let (split, record) = loop {
+        match scope.split_execution_branch() {
+            Ok(split) => break split,
+            Err(error) => {
+                let body = scope
+                    .body()
+                    .driver()
+                    .prove_branch_prerequisite(error, &mut attempted)?;
+                scope = scope.join_nested_result(body)?;
+            }
+        }
+    };
     let arms = driven!(advance_checked_branch_arms(
         split,
         &record,
@@ -5368,6 +5384,17 @@ fn advance_checked_open_scope<'a>(
     let scope =
         scope.join_execution_split(&arms.advanced, &record, arms.empty, arms.join_interface)?;
     scope.note_trace_join_continuation_arm(arms.continuation_arm);
+    if let Some(site) = proof_site
+        && capture_selects_source(expansion_capture.as_deref(), site, *source_index)
+    {
+        let certificate = scope.certificate_since(&checkpoint)?;
+        record_proof_site_tactic_expansion(
+            expansion_capture.as_deref_mut(),
+            site,
+            *source_index,
+            &certificate.to_proof_tactics(),
+        );
+    }
     advance_checked_open_scope(
         scope,
         if arms.consumed_continuation {

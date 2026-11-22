@@ -5,15 +5,40 @@ use crate::surface::proof::driver::ProofDriver;
 /// The first requirement the implicit closer could not prepare or prove.
 pub(in crate::surface::proof) struct MissedObligation {
     index: usize,
-    searched: bool,
+    reason: ObligationMiss,
+}
+
+enum ObligationMiss {
+    SearchDisabled,
+    CannotRaise,
+    CannotOpen(ClickError),
+    SearchExhausted,
 }
 
 impl MissedObligation {
     fn classify(&self, error: ClickError) -> ClickError {
-        if self.searched {
-            error.with_proof_refusal(crate::surface::ProofRefusal::ImplicitStatementSearch)
-        } else {
-            error
+        use crate::surface::{ClickErrorKind, ProofRefusal};
+        match &self.reason {
+            ObligationMiss::SearchDisabled => error,
+            ObligationMiss::CannotRaise => error
+                .without_unresolved_requirement()
+                .with_rewritten_place(|message| {
+                    Some(format!(
+                        "{message}\nClick could not express this prerequisite as a proof goal"
+                    ))
+                })
+                .with_kind(ClickErrorKind::Internal),
+            ObligationMiss::CannotOpen(cause) => error
+                .with_rewritten_place(|message| {
+                    Some(format!(
+                        "{message}\nClick could not open the prerequisite proof: {}",
+                        cause.message()
+                    ))
+                })
+                .with_kind(ClickErrorKind::Internal),
+            ObligationMiss::SearchExhausted => {
+                error.with_proof_refusal(ProofRefusal::ImplicitStatementSearch)
+            }
         }
     }
 }
@@ -268,7 +293,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     let result = if implicit_solve_disabled() {
                         Err(MissedObligation {
                             index: 0,
-                            searched: false,
+                            reason: ObligationMiss::SearchDisabled,
                         })
                     } else {
                         current
@@ -307,6 +332,51 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // Both written and unwritten obligation slots have been discharged.
         let stepped = driver_proof.finish_prepared_step(probe, &current, &recorded_requirements)?;
         Ok(driver_proof.step_proved_successor(stepped, step, proof))
+    }
+
+    pub(in crate::surface::proof) fn split_branch_with_prerequisite_proofs(
+        &self,
+    ) -> Result<(Proof<'a>, ExecutionSplit<'a>), ClickError> {
+        let mut proof = self.proof.clone();
+        let mut attempted = BTreeSet::new();
+        loop {
+            match proof.split_focused_execution_branch() {
+                Ok(split) => return Ok(split),
+                Err(error) => {
+                    proof = proof
+                        .driver()
+                        .prove_branch_prerequisite(error, &mut attempted)?
+                }
+            }
+        }
+    }
+
+    /// Prove one refused C condition prerequisite at the branch's pre-state.
+    /// The caller only retries the split after the checked `have` is joined.
+    pub(in crate::surface::proof) fn prove_branch_prerequisite(
+        &self,
+        error: ClickError,
+        attempted: &mut BTreeSet<Proposition>,
+    ) -> Result<Proof<'a>, ClickError> {
+        use crate::surface::ClickErrorKind;
+        if implicit_solve_disabled() || error.kind() != ClickErrorKind::Proof {
+            return Err(error);
+        }
+        let Some(requirement) = error.unresolved_requirement() else {
+            return Err(error);
+        };
+        if !attempted.insert(requirement.proposition.clone()) {
+            return Err(error
+                .with_context("Click refused a branch prerequisite after its proof completed")
+                .with_kind(ClickErrorKind::Internal));
+        }
+        check_verification_deadline()?;
+        match self
+            .prove_obligations_by_solve_or_name_the_first_missed(&ProofStep::Step, &[requirement])?
+        {
+            Ok((proof, _)) => Ok(proof),
+            Err(missed) => Err(missed.classify(error)),
+        }
     }
 
     /// A bare step: generate obligations, then run ordinary implicit `solve`
@@ -471,22 +541,26 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let Some(spelling) = current.requirement_surface(requirement, step)? else {
                 return Ok(Err(MissedObligation {
                     index,
-                    searched: false,
+                    reason: ObligationMiss::CannotRaise,
                 }));
             };
             let surface = spelling.surface.clone();
             current.debug_assert_spelling_relowers(requirement, &surface);
             let checkpoint = current.checkpoint();
-            let Ok(have) = current.driver().open_have(surface.clone()) else {
-                return Ok(Err(MissedObligation {
-                    index,
-                    searched: false,
-                }));
+            let have = match current.driver().open_have(surface.clone()) {
+                Ok(have) => have,
+                Err(cause) if cause.kind() == crate::surface::ClickErrorKind::Proof => {
+                    return Ok(Err(MissedObligation {
+                        index,
+                        reason: ObligationMiss::CannotOpen(cause),
+                    }));
+                }
+                Err(cause) => return Err(cause),
             };
             let Some(closed) = have.driver().try_solve_closure()? else {
                 return Ok(Err(MissedObligation {
                     index,
-                    searched: true,
+                    reason: ObligationMiss::SearchExhausted,
                 }));
             };
             current = closed.join()?;

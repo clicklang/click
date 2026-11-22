@@ -177,7 +177,6 @@ Verification reports use these headings:
 | `incomplete proof` | The proof ended with a requirement outstanding, such as a resource the contract promises to return. |
 | `contract error` | Click identified a rule it believes the written contract violates, such as a potentially overflowing resource endpoint or a proven overlap between owned entry resources or between an owned resource and an input view. |
 | `contract entry refused` | Click could not establish the contract's initial state or resources. The diagnostic describes the setup check that stopped verification. |
-| `execution prerequisite unmet` | An exact execution check needs evidence at the current program point. |
 | `execution refused` | The modeled operation could not proceed on this path, for example an uninitialized read. |
 | `termination not established` | A ranking, call, or callback termination check was refused. |
 | `invalid divergence declaration` | The declared divergence conflicts with checked termination evidence. |

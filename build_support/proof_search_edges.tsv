@@ -68,7 +68,7 @@ src/surface/proof/driver/claims.rs	driver	::focus_claim_goal	driver	1
 src/surface/proof/driver/claims.rs	driver	::fold_produced_resources	driver	1
 src/surface/proof/driver/claims.rs	driver	::prepare_produced_tokens	driver	1
 src/surface/proof/driver/claims.rs	driver	::apply_claim_step	driver	1
-src/surface/proof/driver/execution.rs	driver	::advance_checked_open_scope	driver	2
+src/surface/proof/driver/execution.rs	driver	::advance_checked_open_scope	driver	3
 src/surface/proof/driver/execution.rs	driver	::advance_focused_execution_region_with_branch_continuation	driver	4
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	driver	7
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_to_exit	1
@@ -89,6 +89,7 @@ src/surface/proof/driver/execution.rs	driver	::preservation_smart_step	try_smart
 src/surface/proof/driver/execution.rs	driver	::solve_nested_have	driver	3
 src/surface/proof/driver/execution.rs	driver	::solve_nested_have	try_solve_closure	2
 src/surface/proof/driver/execution.rs	driver	::try_check_structural_function_proof_inner	driver	4
+src/surface/proof/driver/execution.rs	driver	::try_advance_checked_execution_branch	driver	1
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_branch_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_if_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_steps_within	driver	2
@@ -105,6 +106,7 @@ src/surface/proof/driver/obligations.rs	driver	ProofDriver::prove_cases_disjunct
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::prove_cases_disjunction	try_solve_closure	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::prove_obligations_by_solve_or_name_the_first_missed	driver	2
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::prove_obligations_by_solve_or_name_the_first_missed	try_solve_closure	1
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::split_branch_with_prerequisite_proofs	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::with_proved_lowering_requirements	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::plan_bare_statement_step	driver	3
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::plan_bare_statement_step	retain_statement_order_bounds	1
@@ -199,7 +201,7 @@ src/surface/proof/proof_object.rs	presentation	Proof::spelled_goal	available_sur
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::execute_enum_match_group	execute_enum_match_group	1
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::execute_enum_match_group	try_focused_execute_to_exit_within	1
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::execute_enum_match_to_exit	execute_enum_match_group	1
-src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	driver	2
+src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	driver	3
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	execute_enum_match_to_exit	1
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	try_smart_statement_step	1
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport	apply_planned_fact_transport_inner	1

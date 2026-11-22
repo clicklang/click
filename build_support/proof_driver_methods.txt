@@ -32,6 +32,7 @@ open_have_with_presentation
 open_source_have
 plan_invariant_bundle_member_closure
 prepare_loop_invariant_bundle
+prove_branch_prerequisite
 prove_cases_disjunction
 prove_obligations_by_solve_or_name_the_first_missed
 run_addressed_linear_script
@@ -39,6 +40,7 @@ run_conjunct_proofs
 run_case_arms
 run_pure_match_group
 spell_applied_conclusions
+split_branch_with_prerequisite_proofs
 try_addressed_linear_script
 try_arithmetic_fact_closure
 try_authoritative_linear_script

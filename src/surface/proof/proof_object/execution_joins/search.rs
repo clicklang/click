@@ -273,7 +273,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .map(|split| split.map(|(proof, record)| (proof, record, true)))
             } else if proof.is_at_execution_branch()? && !proof.is_at_enum_match_test()? {
                 proof
-                    .split_focused_execution_branch()
+                    .driver()
+                    .split_branch_with_prerequisite_proofs()
                     .map(|(proof, record)| Some((proof, record, false)))
             } else {
                 match proof.driver().apply_step(ProofStep::Step) {
