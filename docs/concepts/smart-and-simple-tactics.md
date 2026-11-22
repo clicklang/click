@@ -31,7 +31,9 @@ work expands into simple tactics:
   arithmetic over them before a final indexed one-theorem search; a miss
   adds arithmetic's reason. Theorem discovery infers arguments from a
   structurally matching conclusion and checks prerequisites against only the
-  listed facts. It expands to ordinary `apply(...) using { ... }`.
+  listed facts. Expansion writes an ordinary `apply(...)` when its
+  prerequisites can replay directly, and writes selected evidence for
+  applications that still need it.
   A failed discovery reports a bounded sample from candidates already examined:
   a missing listed prerequisite (instantiated with the inferred arguments), an
   argument the goal does not determine (use explicit `apply`), no conclusion
@@ -39,7 +41,7 @@ work expands into simple tactics:
   structural miss does not mean that no theorem could prove the goal; discovery
   does not invent witnesses or chain applications. Successful search discards
   failed alternatives' explanations.
-  Integer composition expands to ordinary `have`, `apply(...) using`, and
+  Integer composition expands to ordinary `have`, theorem applications, and
   explicit normalization steps. Signed intervals, definedness, and specialized
   arithmetic likewise expand to ordinary proof steps.
 - The *implicit tail* ends every proof script, including the empty script of
@@ -48,8 +50,10 @@ work expands into simple tactics:
   every open goal on every path with the implicit closer: direct closure, then
   `solve`'s search, and on a returned path that holds the body of a resource
   the contract `produces`, a fold of that resource. It has no syntax of its
-  own. The same closer proves a requirement that a bare `step()` or `fold`
-  left open, and is reported as `implicit closer` there.
+  own. The same closer proves a requirement that a bare `step()`, `fold`, or
+  `apply(theorem(args))` left open, and is reported as `implicit closer`
+  there. An expanded theorem application keeps any needed antecedent proof
+  in a preceding `have` and checks the resulting facts directly.
 - At a loop back edge, the closure of the invariant bundle runs `solve()` on
   each member and expands to one `have <member> by { ... }` per member not
   already a fact.
@@ -70,12 +74,13 @@ with the argument written is simple:
 
 | Elided form (smart) | Written form (simple) | What the search fills |
 |---|---|---|
-| `apply(theorem(args))` | `apply(theorem(args)) using { P; ... }` | the theorem's premises |
+| `apply(fact)` | `apply(fact) using { P; ... }` | the implication's antecedents |
 | `apply(ih(m))` | `apply(ih(m)) using { P; ... }` | the hypothesis's premises |
 | `transport(P, Q)` | `transport(P, Q) using { R; ... }` | the frame evidence |
 
-The search behind an elided argument only looks facts up: it does not run
-`solve` or the implicit closer on a missing premise. When it finds nothing, the refusal is a
+Bare implication application uses the ordinary implicit closer for its
+antecedents. The searches for induction premises and frame evidence look
+facts up. When a lookup finds nothing, the refusal is a
 **search miss**: it says "this is a search miss", names the fact it did not
 find, and tells you to write it (with `have P by { ... }` first, or in the
 `using` form). A search miss is never a Click bug; only the written form's

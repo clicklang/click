@@ -214,9 +214,19 @@ fn tactic_entries() -> Vec<TacticEntry> {
 }
 
 /// The class of a written tactic, when its text selects one form class:
-/// `apply(t(x))` is smart and `apply(t(x)) using { ... }` simple.
+/// A bare `apply` distinguishes the theorem and fact forms by its operand.
 pub fn written_tactic_class(written: &str) -> Option<(String, TacticClass)> {
     let name = tactic_identifier(written)?;
+    if name == "apply"
+        && let Some(theorem) = crate::surface::written_apply_is_theorem(written)
+    {
+        let class = if theorem {
+            TacticClass::Simple
+        } else {
+            TacticClass::Smart
+        };
+        return Some((name.to_owned(), class));
+    }
     let entries = tactic_entries();
     let entry = entries.iter().find(|entry| entry.name == name)?;
     let written_has = |marker: &str| written.contains(marker);
@@ -238,8 +248,8 @@ pub fn written_tactic_class(written: &str) -> Option<(String, TacticClass)> {
 }
 
 /// Whether a written tactic is a smart form that elides an argument a
-/// simple form of the same tactic takes written: `apply(t(x))` beside
-/// `apply(t(x)) using { ... }`, or `transport(P, Q)` beside its `using`
+/// simple form of the same tactic takes written: `apply(fact)` beside
+/// `apply(fact) using { ... }`, or `transport(P, Q)` beside its `using`
 /// form. Its refusal is a search miss ([`SEARCH_MISS_MEANING`]).
 pub fn written_tactic_elides_argument(written: &str) -> bool {
     let Some((name, TacticClass::Smart)) = written_tactic_class(written) else {
@@ -511,7 +521,7 @@ mod tests {
         assert!(normalize.contains("### Normalization with selected premises"));
         let apply = lookup("apply").unwrap();
         assert!(
-            apply.contains("- `apply(theorem(args))`: smart;"),
+            apply.contains("- `apply(theorem(args))`: simple;"),
             "{apply}"
         );
         assert!(apply.contains("- `apply(theorem(args)) using { P; ... }`: simple;"));
@@ -564,7 +574,7 @@ mod tests {
         let class = |written| written_tactic_class(written).map(|(_, class)| class);
         assert_eq!(class("normalize();"), Some(TacticClass::Simple));
         assert_eq!(class("solve();"), Some(TacticClass::Smart));
-        assert_eq!(class("apply(t(x));"), Some(TacticClass::Smart));
+        assert_eq!(class("apply(t(x));"), Some(TacticClass::Simple));
         assert_eq!(
             class("apply(t(x)) using { a == b; };"),
             Some(TacticClass::Simple)
@@ -580,7 +590,8 @@ mod tests {
 
     #[test]
     fn an_elided_form_has_the_search_miss_meaning() {
-        assert!(written_tactic_elides_argument("apply(t(x));"));
+        assert!(!written_tactic_elides_argument("apply(t(x));"));
+        assert!(written_tactic_elides_argument("apply(fact);"));
         assert!(written_tactic_elides_argument("transport(p, q);"));
         assert!(!written_tactic_elides_argument(
             "apply(t(x)) using { a == b; };"
@@ -593,7 +604,7 @@ mod tests {
         let apply = lookup("apply").unwrap();
         assert!(
             apply.contains(&format!(
-                "- `apply(theorem(args))`: smart; {SEARCH_MISS_MEANING}, as `apply(theorem(args)) using {{ P; ... }}` does."
+                "- `apply(fact)`: smart; {SEARCH_MISS_MEANING}, as `apply(fact) using {{ P; ... }}` does."
             )),
             "{apply}"
         );

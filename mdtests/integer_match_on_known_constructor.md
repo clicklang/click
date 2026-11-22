@@ -10,7 +10,7 @@ theorem machine_written() {
             MachinePacket::Empty => to_integer(0),
             MachinePacket::Full(n) => to_integer(n) + 1,
         }) == 8
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem machine_rewritten(p: MachinePacket) {

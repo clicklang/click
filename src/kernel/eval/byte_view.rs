@@ -292,32 +292,31 @@ pub(in crate::kernel) fn containing_integer_cell(
         });
     }
     let lowest = offset.checked_sub(WIDEST_INTEGER_CELL_BYTES - 1)?;
-    let start = Address {
-        base: pointer.base.clone(),
-        offset: AddressOffset::Constant(lowest),
-    };
-    // Constant offsets order before every other offset form and among
-    // themselves by value, so this range is exactly the cells of this block
-    // at constant offsets `lowest .. offset`: at most seven entries.
-    for (cell_pointer, value) in memory.cells.range(start..pointer.clone()).rev() {
+    // There are at most seven possible starts. Exact lookups use the
+    // concrete and run indexes without materializing the logical cell map.
+    for cell_offset in (lowest..offset).rev() {
+        let cell_pointer = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(cell_offset),
+        };
         crate::instrumentation::record_deterministic_work(1);
-        let AddressOffset::Constant(cell_offset) = cell_pointer.offset else {
+        let Some(value) = memory.cells.get(&cell_pointer) else {
             continue;
         };
-        let reach = match integer_cell_width(value) {
-            Some(width) => i64::from(width),
-            None => i64::from(crate::kernel::reasoning::cell_access_byte_width(value)),
-        };
-        if cell_offset + reach <= offset {
+        let width = integer_cell_width(&value);
+        let reach =
+            width.unwrap_or_else(|| crate::kernel::reasoning::cell_access_byte_width(&value));
+        let byte = (offset - cell_offset) as u32;
+        if reach <= byte {
             continue;
         }
         // The nearest overlapping cell decides. A cell without a byte view
         // refuses the access rather than letting a farther cell answer.
-        integer_cell_width(value)?;
+        width?;
         return Some(ContainingIntegerCell {
-            pointer: cell_pointer.clone(),
-            value: value.clone(),
-            byte: u32::try_from(offset - cell_offset).ok()?,
+            pointer: cell_pointer,
+            value,
+            byte,
         });
     }
     None

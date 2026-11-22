@@ -3416,19 +3416,15 @@ impl OpenedContractEntry {
             propositions.push(byte_order);
             source_origins.push(None);
         }
+        // Contract facts and `function.entry` must name the same observation
+        // point, including when binding by-value parameters allocated storage.
+        let entry_state = contract.argument_state().clone();
         let cases = Arc::new(crate::kernel::prepare_function_contract_entry_cases(
             contract,
             environment.byte_order_fact(),
         ));
         let mut facts = PureFactStore::from_ordered(&propositions);
         facts.prepare_entry_resources(caller_state.resources());
-        let entry_state =
-            crate::kernel::program_function_entry_state(caller_state, function, arguments)
-                .ok_or_else(|| {
-                    RuntimeError::ContractEntryInvariant(
-                        "could not bind the function entry arguments".into(),
-                    )
-                })?;
         let entry = CheckedFunctionEntry::construct(
             caller_state,
             function,

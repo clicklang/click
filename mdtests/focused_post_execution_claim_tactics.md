@@ -18,7 +18,7 @@ int32 refine(int32 x, int32 y) {
     rewrite(y, x);
     all {
         result == x => { known(); }
-        k == k => { normalize(); }
+        k == k => { known(); }
     }
     rewrite(y, x);
     known();

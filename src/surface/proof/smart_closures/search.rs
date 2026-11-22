@@ -361,7 +361,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             surface_signed_integer_literal(target),
         ];
         Ok(Some(proof.driver().apply_step(
-            ProofStep::ApplyTheoremUsing {
+            ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
                     name: format!(
                         "click::integer::product_{}_bound",
@@ -2149,6 +2149,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             target_type: machine.ty().program_type(),
                             integer_mode: crate::kernel::IntegerCastMode::CConversion,
                             pointee_struct: None,
+                            pointee_struct_size: None,
                             pointee_volatile: false,
                             pointee_constant: false,
                             explicit_qualification: false,
@@ -3695,21 +3696,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }) {
             return Self::apply_normalization_closure(search_input, Some(Vec::new())).map(Some);
         }
-        let pointer_congruence_fallback = match Self::try_goal_conditional_normalization(
-            search_input,
-        ) {
-            Some(proof)
-                if matches!(&search_input.goal(), Some(condition_source_0 @ Proposition::ConditionIs(
-                            _,
-                            true
-                        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..) | ConditionTerm::PointerEqual(..), _))))
-                    && proof.ends_in_empty_normalize_using() =>
-            {
-                Some(proof)
-            }
-            Some(proof) => return Ok(Some(proof)),
-            None => None,
-        };
+        let pointer_congruence_fallback =
+            match Self::try_goal_conditional_normalization(search_input) {
+                Some(proof) if proof.ends_in_empty_normalize_using() => {
+                    let (left, right) =
+                        match search_input.goal().and_then(Proposition::condition_native) {
+                            Some((ConditionTerm::AddressEqual(left, right), true)) => {
+                                (left.as_ref(), right.as_ref())
+                            }
+                            Some((ConditionTerm::PointerEqual(left, right), true)) => {
+                                (left.address(), right.address())
+                            }
+                            _ => return Ok(Some(proof)),
+                        };
+                    // This check proves the two reads as written. Rewriting a
+                    // base can synthesize a different exact read for which the
+                    // replayed `known` has no fact.
+                    if left.as_loaded_value().is_some() && right.as_loaded_value().is_some() {
+                        return Ok(Some(proof));
+                    }
+                    Some(proof)
+                }
+                Some(proof) => return Ok(Some(proof)),
+                None => None,
+            };
         // Close an indexed equality rewrite before deriving a longer
         // arithmetic proof of the same fact. Connected chains still wait
         // until selected arithmetic has had the goal.
@@ -6173,6 +6183,36 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_state_transport_closure_candidates");
+        // Introduce the index and its guard before framing this read. Reuse
+        // the ordinary indexed equality proof rather than transporting the
+        // entire quantified postcondition from function entry.
+        if search_input.focused_outcome_data().is_some()
+            && let ClickProposition::ForAll { body, .. } = surface_goal
+            && let ClickProposition::Implies(_, consequent) = body.as_ref()
+            && let ClickProposition::Comparison {
+                left: read @ ContractExpression::Index(..),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::Old(entry_read),
+            } = consequent.as_ref()
+            && read == entry_read.as_ref()
+            && let Some(introduced) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Intro)
+                    .and_then(|proof| proof.driver().apply_step(ProofStep::Intro)),
+            )?
+        {
+            if introduced.is_complete() {
+                return Ok(Some(introduced));
+            }
+            if let Some(goal) = introduced.surface_goal()
+                && let Some(source) = old_reflexive_transport_source(goal)
+                && let Some(proof) =
+                    Self::try_history_indexed_equalities(&introduced, &source, goal)?
+            {
+                return Ok(Some(proof));
+            }
+        }
         if let Some(proof) = crate::kernel::search::ProofSearch::try_cell_frame_transport_closure(
             search_input,
             surface_goal,
@@ -6898,7 +6938,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let resource_arg = |r: &crate::surface::ResourceSubject| {
                     ContractExpression::Resource(Box::new(r.clone()))
                 };
-                proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                     application: TheoremApplication {
                         name: "click::separation::separate_restrict".into(),
                         arguments: vec![
@@ -6966,7 +7006,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             proof = closed.join()?;
             if reversed {
-                proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                     application: TheoremApplication {
                         name: "click::separation::separate_symm".into(),
                         arguments: vec![resource_arg(other), resource_arg(child)],
@@ -6976,7 +7016,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             premises.push(separate(child, other));
         }
-        proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+        proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: "click::separation::separate_star".into(),
                 arguments: vec![resource_arg(a), resource_arg(b), resource_arg(other)],
@@ -6984,7 +7024,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             premises,
         })?;
         if reversed {
-            proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+            proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
                     name: "click::separation::separate_symm".into(),
                     arguments: vec![resource_arg(right), resource_arg(left)],
@@ -9418,6 +9458,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 target_type: ProgramType::UInt32,
                                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                                 pointee_struct: None,
+                                pointee_struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,
@@ -9430,7 +9471,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator: ComparisonOperator::LessThan,
                             right: difference.clone(),
                         };
-                        let proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                        let proof = proof.driver().apply_step(ProofStep::ApplyPlannedTheorem {
                                 application: TheoremApplication {
                                     name: "click::integer::uint32_less_than_implies_positive_difference"
                                         .to_string(),
@@ -10726,7 +10767,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         return None;
                     }
                 };
-                let step = ProofStep::ApplyTheoremUsing {
+                let step = ProofStep::ApplyPlannedTheorem {
                     application,
                     premises: surfaces.to_vec(),
                 };
@@ -11499,6 +11540,97 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         None
     }
 
+    fn try_local_viewability_preservation(
+        search_input: &Proof<'a>,
+        goal: &Proposition,
+        premise_pairs: &[(Proposition, ClickProposition)],
+    ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_local_viewability_preservation");
+        let Proposition::MemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide,
+        } = goal
+        else {
+            return None;
+        };
+        let surface_goal @ ClickProposition::Loadable { segment } = search_input.surface_goal()?
+        else {
+            return None;
+        };
+        if segment.state != ContractSegmentState::Current {
+            return None;
+        }
+        let view = search_input.premise_fixed_state_view()?;
+        let records = view.fixed_state.recorded_states;
+        let mut next_memory = crate::kernel::intern_memory_ref(memory);
+        let mut regions = Vec::new();
+        for (selector, _) in records.recent(24) {
+            let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: region @ CodeRegionRef::Region(_),
+                kind: ProgramPointKind::Exit,
+            }) = selector
+            else {
+                continue;
+            };
+            let Ok(Resource::Footprint(footprint)) = records.footprint(region) else {
+                continue;
+            };
+            let before = crate::kernel::intern_memory_ref(&footprint.before);
+            let reaches_next = crate::kernel::intern_memory_ref(&footprint.after) == next_memory
+                || (regions.is_empty()
+                    && footprint.viewability_survives_return_cleanup(memory, base));
+            if !footprint.preserves_separate_viewability || before == next_memory || !reaches_next {
+                continue;
+            }
+            regions.push(region.clone());
+            let entry = Proposition::MemoryLoadable {
+                memory: footprint.before.clone(),
+                base: base.clone(),
+                bytes: bytes.clone(),
+                wide: *wide,
+            };
+            if !premise_pairs.iter().any(|(premise, _)| premise == &entry) {
+                next_memory = before;
+                continue;
+            }
+
+            // The selected view holds at the oldest endpoint. Replay one
+            // explicitly separated transition at a time towards the goal.
+            let mut current = search_input.clone();
+            let separation_proof =
+                ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(Vec::new())])
+                    .expect("footprint separation uses an ordinary proof step");
+            for (index, region) in regions.iter().enumerate().rev() {
+                let separation = ClickProposition::Separate {
+                    left: ResourceSubject::Footprint(region.clone()),
+                    right: ResourceSubject::Memory(segment.clone()),
+                };
+                current = current
+                    .driver()
+                    .apply_have_step(&separation, &separation_proof)
+                    .ok()?;
+                let step = ProofStep::Preserve(separation);
+                if index == 0 {
+                    return current.driver().apply_step(step).ok();
+                }
+                let at_exit = ClickProposition::At {
+                    selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                        region: region.clone(),
+                        kind: ProgramPointKind::Exit,
+                    }),
+                    proposition: Box::new(surface_goal.clone()),
+                };
+                let proof = ProofCertificate::from_steps(vec![step])
+                    .expect("preserve is an ordinary proof step");
+                current = current.driver().apply_have_step(&at_exit, &proof).ok()?;
+            }
+        }
+        None
+    }
+
     pub(in crate::surface::proof) fn check_typed_atomic_solve_candidate(
         search_input: &Proof<'a>,
         goal: &Proposition,
@@ -11537,6 +11669,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .collect::<Vec<_>>();
             if let Some(proof) =
                 Self::try_ordinary_viewability_restriction_closure(search_input, Some(&selected))
+                    .or_else(|| {
+                        Self::try_local_viewability_preservation(search_input, goal, premise_pairs)
+                    })
             {
                 return Some(proof);
             }

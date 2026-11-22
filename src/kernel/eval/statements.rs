@@ -1231,7 +1231,7 @@ fn write_program_lvalue_paths_for_initialization(
             let mut facts = facts;
             let mut store_fact = ExecutionPureFact::certified_store(
                 before_memory,
-                state.memory.clone(),
+                state.program_point(),
                 written_pointer.clone(),
                 written_value.clone(),
                 authorized_range,
@@ -6650,7 +6650,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     if overlap == crate::kernel::reasoning::memory_resolution::AccessByteOverlap::Separate {
         return;
     }
-    refresh_scalar_local_binding(state, name, slot, program_type, assumptions);
+    refresh_scalar_local_binding(state, name, slot, program_type, assumptions, false);
 }
 
 /// Reconcile one address-backed scalar after a checked call effect. SymbolicMemory
@@ -6666,7 +6666,7 @@ pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     let Some(program_type) = state.locals.scalar_object_type(&name) else {
         return;
     };
-    refresh_scalar_local_binding(state, name, slot.clone(), program_type, assumptions);
+    refresh_scalar_local_binding(state, name, slot.clone(), program_type, assumptions, true);
 }
 
 fn refresh_scalar_local_binding(
@@ -6675,6 +6675,7 @@ fn refresh_scalar_local_binding(
     slot: Address,
     program_type: ProgramType,
     assumptions: &PureFactContext,
+    after_call: bool,
 ) {
     // A store through a pointer to the other signedness of the object's
     // width wrote the same bits; the local reads them in its own type.
@@ -6682,19 +6683,6 @@ fn refresh_scalar_local_binding(
         .memory
         .known_value(&slot)
         .and_then(|value| program_type.read_cell(&value));
-    let refreshed = if current.is_some() {
-        current
-    } else if state.locals.is_uninitialized_object(&name)
-        && !state
-            .memory
-            .has_initialized_bytes_under(&slot, program_type.byte_width(), assumptions)
-    {
-        // A byte write cannot turn a partially initialized scalar binding
-        // into an unconstrained typed value. Allocation is not initialization.
-        None
-    } else {
-        crate::kernel::eval::symbolic_load_value(&state.memory, &slot, program_type)
-    };
     let (object_volatile, object_pointee_volatile, object_pointee_constant) =
         match state.locals.binding(&name) {
             Some(LocalBinding::Object {
@@ -6711,6 +6699,29 @@ fn refresh_scalar_local_binding(
             }) => (*volatile, *pointee_volatile, *pointee_constant),
             _ => (false, false, false),
         };
+    let refreshed = if current.is_some() {
+        current
+    } else if state.locals.is_uninitialized_object(&name)
+        && !state
+            .memory
+            .has_initialized_bytes_under(&slot, program_type.byte_width(), assumptions)
+    {
+        // A byte write cannot turn a partially initialized scalar binding
+        // into an unconstrained typed value. Allocation is not initialization.
+        None
+    } else if after_call
+        && !object_volatile
+        && let Some(format) = MachineIntegerType::from_program_type(program_type)
+        && let Some(kind) = LoadKind::of_type(program_type)
+        && let Some(version) = state
+            .program_point()
+            .call_output_integer_version(&slot, kind)
+    {
+        let read = scalar_read_for_exact_cell_at(&version, &slot, kind, kind.byte_width());
+        Some(format.value_from_term(read))
+    } else {
+        crate::kernel::eval::symbolic_load_value(&state.memory, &slot, program_type)
+    };
     match refreshed {
         Some(refreshed) => state.locals.set_typed_with_all_qualifiers(
             name,

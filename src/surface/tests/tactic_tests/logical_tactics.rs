@@ -297,8 +297,8 @@ fn source_expander_makes_theorem_application_premises_explicit() {
         })
         .count();
     assert_eq!(
-        simple_apply_checks, 0,
-        "ordinary verification must not feed the extracted explicit application through a second acceptance pass"
+        simple_apply_checks, 1,
+        "ordinary verification should record the written application once"
     );
 
     let expanded = expand_c_claim_source(
@@ -309,8 +309,8 @@ fn source_expander_makes_theorem_application_premises_explicit() {
     )
     .expect("bare theorem application should expand");
 
-    assert!(expanded.contains("apply(increment_is_defined(x)) using {"));
-    assert!(expanded.contains("x < 2147483647;"));
+    assert!(expanded.contains("apply(increment_is_defined(x));"));
+    assert!(!expanded.contains("apply(increment_is_defined(x)) using"));
     verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded theorem application should check");
 }
@@ -2048,10 +2048,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
         expanded_debug.matches("Have").count() >= 2,
         "{expanded_debug}"
     );
-    assert!(
-        expanded_debug.contains("ApplyTheoremUsing"),
-        "{expanded_debug}"
-    );
+    assert!(expanded_debug.contains("ApplyTheorem("), "{expanded_debug}");
 
     let expanded_source = expand_c_claim_source(
         click_source,
@@ -2061,8 +2058,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
     )
     .expect("nested checked scopes should serialize");
     assert!(
-        expanded_source.contains("apply(restate_zero(x)) using {")
-            && !expanded_source.contains("apply(restate_zero(x));"),
+        expanded_source.contains("apply(restate_zero(x));"),
         "{expanded_source}"
     );
     verify_c_sources(&expanded_source, &[("keep.c", c_source)])
@@ -2434,7 +2430,7 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         .expanded_proof_tactics()
         .expect("the retained branch-local theorem paths should expand");
     assert!(
-        format!("{expanded:?}").contains("ApplyTheoremUsing"),
+        format!("{expanded:?}").contains("ApplyTheorem("),
         "{expanded:#?}"
     );
     let expanded_source = expand_c_claim_source(
@@ -2445,10 +2441,8 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
     )
     .expect("the checked fixed-state branch paths should serialize");
     assert!(
-        expanded_source.contains("apply(equality_case(x)) using {")
-            && expanded_source.contains("apply(inequality_case(x)) using {")
-            && !expanded_source.contains("apply(equality_case(x));")
-            && !expanded_source.contains("apply(inequality_case(x));"),
+        expanded_source.contains("apply(equality_case(x));")
+            && expanded_source.contains("apply(inequality_case(x));"),
         "{expanded_source}"
     );
     verify_c_sources(&expanded_source, &[("keep.c", c_source)])

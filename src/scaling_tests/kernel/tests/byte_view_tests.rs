@@ -111,3 +111,34 @@ fn declared_word_read_representation_ignores_unrelated_memory() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn containing_cell_lookup_keeps_compact_runs_compact() {
+    let value = ProgramValue::UInt64(MachineTerm::uint64_constant(0x0102_0304_0506_0708));
+    let absent = Address {
+        base: AddressBase::from("global:other"),
+        offset: AddressOffset::Constant(0),
+    };
+    let samples = [4, 16, 64, 256].map(|count| {
+        let memory = SymbolicMemory::new()
+            .with_constant_run(word(0), ProgramType::UInt64, count, value.clone())
+            .expect("fresh memory holds a compact word run");
+        let ((hit, miss), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                containing_integer_cell(&memory, &word(7), Some(ByteOrder::Little)),
+                containing_integer_cell(&memory, &absent, Some(ByteOrder::Little)),
+            )
+        });
+        assert_eq!(
+            hit,
+            Some(ContainingIntegerCell {
+                pointer: word(0),
+                value: value.clone(),
+                byte: 7,
+            })
+        );
+        assert_eq!(miss, None);
+        work
+    });
+    assert_eq!(samples, [samples[0]; 4]);
+}

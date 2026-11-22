@@ -1816,6 +1816,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::RuntimeError::IndeterminatePointeeType => {
             "pointer operation has no known pointee type".to_string()
         }
+        crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets => {
+            "Click does not yet support pointer subtraction with these offsets".to_string()
+        }
         crate::kernel::RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")
         }
@@ -4113,10 +4116,12 @@ fn describe_model_field_version_stop(
                 ),
                 // The entry model is the old version, never the replacement,
                 // so it is not a cause; `replacing_change` skips it.
-                Some(crate::kernel::model_fields::ModelMint::ContractEntry) | None => format!(
-                    "the two states store different models for `{owner}`, and no step here says \
+                Some(crate::kernel::model_fields::ModelMint::ContractEntry { .. }) | None => {
+                    format!(
+                        "the two states store different models for `{owner}`, and no step here says \
                      which replaced which. State {promise} wherever the model is replaced."
-                ),
+                    )
+                }
             };
             format!("`{field}` may have changed since {since}: {cause}")
         }
@@ -5777,13 +5782,9 @@ pub(in crate::surface) fn exact_float_literal_spelling(value: &ProgramValue) -> 
     use crate::kernel::MachineIntegerType;
     match value {
         ProgramValue::Float32(MachineTerm::Constant {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             bits,
         }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x})")),
-        ProgramValue::Float32(MachineTerm::Constant {
-            format: MachineIntegerType::UInt32,
-            bits,
-        }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x}u32)")),
         ProgramValue::Float64(MachineTerm::Constant {
             format: MachineIntegerType::UInt64,
             bits,
@@ -7318,6 +7319,7 @@ fn describe_untyped_array_field_read(
             target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: *volatile,
             pointee_constant: *pointee_constant,
             explicit_qualification: true,

@@ -3964,6 +3964,11 @@ pub enum ProgramExpression {
         /// contract cast prints back as `(struct name *)` and so the parser
         /// resolves `->field` through the cast result.
         pointee_struct: Option<String>,
+        /// `sizeof` the struct `pointee_struct` names, when the cast's
+        /// producer has its layout. A pointer to a struct's initial member,
+        /// converted to the struct's type, points to the struct (C11
+        /// 6.7.2.1p15), so the result's array object is that struct's bytes.
+        pointee_struct_size: Option<u32>,
         /// Whether the cast result points at a volatile pointer-valued cell.
         /// This carries the C qualifier in `T * volatile *` into a following
         /// dereference without confusing it with volatile `T` storage.
@@ -8221,6 +8226,7 @@ pub enum RuntimeError {
     /// whose fields do not fit its variant. The message says which.
     EnumVariant(String),
     IndeterminatePointeeType,
+    UnsupportedPointerSubtractionOffsets,
     WrongArity {
         expected: usize,
         actual: usize,
@@ -10247,9 +10253,9 @@ pub enum MemoryDerivation {
         base: SharedMemory,
         pointer: Address,
         bytes: u32,
-        /// A checked call output supplies this complete word even when
-        /// there is no known value to put in the cell.
-        call_word: bool,
+        /// The kind of complete integer cell initialized by a checked
+        /// call output whose value is unknown.
+        call_output: Option<LoadKind>,
     },
     /// `base` with some cached cell values forgotten at one program point:
     /// the write path narrows the cell map before storing

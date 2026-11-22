@@ -536,6 +536,7 @@ fn promoted_division_expression(ty: MachineIntegerType, remainder: bool) -> Prog
         target_type: ProgramType::Int128,
         integer_mode: IntegerCastMode::CConversion,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,

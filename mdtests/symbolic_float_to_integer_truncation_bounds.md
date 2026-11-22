@@ -34,9 +34,9 @@ int32 to_signed(double x) {
 
 int16 to_short(float x) {
     requires isfinite(x);
-    requires x > float32_from_bits(0xc7000100);
+    requires x > float32_from_bits(0xc7000100u32);
     requires x < float32_from_bits(0xc7000000);
-    requires x < float32_from_bits(0x47000000);
+    requires x < float32_from_bits(0x47000000u32);
     ensures true;
 }
 

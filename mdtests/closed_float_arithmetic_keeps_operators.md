@@ -5,7 +5,7 @@ theorem round_once_per_operation() {
     ensures forall (unused: Integer) {
         ((float32_from_bits(0x3f800000u32) + float32_from_bits(0x33800000u32)) as float)
             == float32_from_bits(0x3f800000u32)
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
     ensures forall (unused: Integer) {
         ((float64_from_bits(0x3ff0000000000000u64) - float64_from_bits(0x3ff0000000000000u64)) as double)
             == float64_from_bits(0u64)

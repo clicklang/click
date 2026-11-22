@@ -504,6 +504,17 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
     true
 }
 
+/// Distinguish the operand that selects a theorem from a written fact
+/// when classifying a standalone `apply` spelling for diagnostics.
+pub(crate) fn written_apply_is_theorem(source: &str) -> Option<bool> {
+    let mut parser = Parser::new(source).ok()?;
+    match parser.parse_proof_tactic().ok()? {
+        ProofTactic::ApplyTheorem(_) => Some(true),
+        ProofTactic::ApplyFact(_) => Some(false),
+        _ => None,
+    }
+}
+
 /// Parses file items under the default target, for tests.
 #[cfg(test)]
 pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
@@ -3684,6 +3695,7 @@ impl Parser {
                 target_type,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -14937,6 +14949,27 @@ impl Parser {
     /// A struct-pointer cast applies to one `void *` parameter of the block
     /// under contract, and a block casts a parameter to one struct only, so
     /// synthesized proof text reads the parameter with a single layout.
+    /// `sizeof` a struct-pointer cast's target when the cast converts from
+    /// `void *` or a byte pointer, so a pointer to the struct's initial member
+    /// points to the struct (C11 6.7.2.1p15). A cast from the struct's own
+    /// pointer type is a retype, not a conversion.
+    fn converted_struct_size(&self, operand: &ProgramExpression, struct_name: &str) -> Option<u32> {
+        let source = crate::surface::validation::infer_program_expression_type(
+            operand,
+            &self.names.program_parameter_types,
+        )?;
+        matches!(
+            source.to_kernel_type(),
+            ProgramType::VoidPointer | ProgramType::UInt8Pointer | ProgramType::Int8Pointer
+        )
+        .then(|| {
+            self.struct_layouts
+                .get(struct_name)
+                .map(|layout| layout.size_bytes())
+        })
+        .flatten()
+    }
+
     fn record_parameter_struct_cast(
         &mut self,
         operand: &ProgramExpression,
@@ -14953,12 +14986,15 @@ impl Parser {
         ) {
             return Ok(());
         }
-        // An explicit conversion through void retains its target layout on
-        // the expression. It does not assign a layout to the source parameter.
+        // An explicit conversion through void or a character pointer retains
+        // its target layout on the expression. It does not assign a layout to
+        // the source parameter.
         if matches!(
             operand,
             ProgramExpression::Cast {
-                target_type: ProgramType::VoidPointer,
+                target_type: ProgramType::VoidPointer
+                    | ProgramType::UInt8Pointer
+                    | ProgramType::Int8Pointer,
                 ..
             }
         ) {
@@ -15127,12 +15163,14 @@ impl Parser {
         if !integer_source {
             self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
         }
+        let pointee_struct_size = self.converted_struct_size(&operand, &cast.struct_name);
         Ok(crate::surface::lowering::contract_c_unary(
             source_operand,
             ProgramExpression::Cast {
                 expression: Box::new(operand),
                 target_type: ProgramType::Int32Pointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
+                pointee_struct_size,
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
                 pointee_constant: cast.pointee_constant,
@@ -15189,11 +15227,6 @@ impl Parser {
                 "contract expression",
             )?;
         }
-        let recover_byte_view = target_type == ProgramType::UInt8Pointer
-            && crate::surface::validation::infer_program_expression_type(
-                &expression,
-                &self.names.program_parameter_types,
-            ) == Some(InterfaceType::VoidPointer);
         Ok(ContractExpression::CUnary {
             operand: Box::new(operand),
             lowered: ProgramExpression::Cast {
@@ -15201,16 +15234,16 @@ impl Parser {
                 target_type,
                 // This cast was written in the contract. Pointer targets
                 // use the specification cast rule, not the C conversion
-                // marker also used for inserted pointer coercions. A byte
-                // view recovered from void retains that pointer's bounds.
-                integer_mode: if recover_byte_view {
-                    crate::kernel::IntegerCastMode::PointerCoercion
-                } else if target_type.is_pointer() {
+                // marker also used for inserted pointer coercions, so a
+                // byte pointer cast from `void *` forms the byte view as
+                // the C conversion does (C11 6.3.2.3p7).
+                integer_mode: if target_type.is_pointer() {
                     crate::kernel::IntegerCastMode::Standard
                 } else {
                     crate::kernel::IntegerCastMode::CConversion
                 },
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile,
                 pointee_constant,
                 explicit_qualification: false,
@@ -16955,6 +16988,7 @@ impl Parser {
                 target_type: ProgramType::UInt64,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
+                pointee_struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,
@@ -18081,6 +18115,7 @@ impl Parser {
                         expression: Box::new(operand),
                         interface_type: InterfaceType::VoidPointer,
                         struct_name: None,
+                        struct_size: None,
                         pointee_volatile: false,
                         pointee_constant: false,
                         explicit_qualification: false,
@@ -18092,9 +18127,14 @@ impl Parser {
                     self.record_parameter_struct_cast(
                         &operand.to_kernel_expression(), &cast.struct_name,
                     )?;
+                    let struct_size = self.converted_struct_size(
+                        &operand.to_kernel_expression(),
+                        &cast.struct_name,
+                    );
                     return Ok(CExpression::Cast {
                         expression: Box::new(operand),
                         interface_type: InterfaceType::Int32Pointer,
+                        struct_size,
                         struct_name: Some(cast.struct_name),
                         pointee_volatile: false,
                         pointee_constant: cast.pointee_constant,
@@ -18922,6 +18962,7 @@ fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickPropo
                     target_type: ProgramType::UInt64,
                     integer_mode: crate::kernel::IntegerCastMode::Standard,
                     pointee_struct: None,
+                    pointee_struct_size: None,
                     pointee_volatile: false,
                     pointee_constant: false,
                     explicit_qualification: false,
@@ -19185,6 +19226,7 @@ fn struct_byte_stride(index: ProgramExpression, width: u32) -> ProgramExpression
             target_type: crate::kernel::ProgramType::Int64,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
@@ -19201,6 +19243,7 @@ fn struct_byte_base(base: ProgramExpression) -> ProgramExpression {
         target_type: crate::kernel::ProgramType::UInt8Pointer,
         integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
+        pointee_struct_size: None,
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
@@ -19489,6 +19532,28 @@ mod tactic_classification_tests {
                     failures.push(format!("{}: `{written}` does not parse: {error}", form.id));
                     continue;
                 }
+            };
+            // An induction binding is resolved after parsing the enclosing
+            // proof, so standalone call syntax initially parses as a theorem.
+            let tactic = match (form.id, tactic) {
+                ("apply-induction", ProofTactic::ApplyTheorem(application)) => {
+                    ProofTactic::ApplyInduction {
+                        hypothesis: application.name,
+                        arguments: application.arguments,
+                    }
+                }
+                (
+                    "apply-induction-using",
+                    ProofTactic::ApplyTheoremUsing {
+                        application,
+                        premises,
+                    },
+                ) => ProofTactic::ApplyInductionUsing {
+                    hypothesis: application.name,
+                    arguments: application.arguments,
+                    premises,
+                },
+                (_, tactic) => tactic,
             };
             let class = tactic.class();
             classes.insert(form.id, class);

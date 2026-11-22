@@ -174,6 +174,10 @@ impl ProofStepSite {
         }
     }
 
+    pub(super) fn is_generated(&self) -> bool {
+        self.generated
+    }
+
     /// Whether the innermost block already addresses source tactic `index`.
     pub(super) fn addresses_source_tactic(&self, index: usize) -> bool {
         self.position == Some(ProofStepPosition::SourceTactic(index))

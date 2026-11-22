@@ -30,7 +30,7 @@ theorem prepend_write(bytes: List<uint8>, status: int32, history: List<WriteAtte
     ensures write_requests(List::Cons(WriteAttempt::Attempt(bytes, status), history))
         == List::Cons(bytes, write_requests(history)) by {
         unfold(write_requests(List::Cons(WriteAttempt::Attempt(bytes, status), history)));
-        normalize();
+        known();
     }
 }
 

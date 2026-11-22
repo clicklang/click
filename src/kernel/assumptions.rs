@@ -10889,13 +10889,15 @@ impl ExecutionPureFact {
 
     pub(super) fn certified_store(
         before: SymbolicMemory,
-        after: SymbolicMemory,
+        after: crate::kernel::ProgramPoint,
         pointer: Address,
         value: ProgramValue,
         authorized_range: Option<MemoryRange>,
     ) -> Self {
-        let value_equation = super::memory_history::store_value_equation(&after, &pointer, &value)
-            .map(std::sync::Arc::new);
+        let value_equation =
+            super::memory_history::store_value_equation_at(&after, &pointer, &value)
+                .map(std::sync::Arc::new);
+        let after = after.memory().clone();
         Self {
             proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
                 before: before.clone(),

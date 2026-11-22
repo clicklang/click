@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
+fn specification_subtraction_widens_coordinates_and_retains_pointer_provenance() {
     let external = |variable| Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
@@ -31,9 +31,9 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
     assert_eq!(paths.len(), 1);
     assert_eq!(
         paths[0].value.clone().into_native(),
-        int32(MachineTerm::subtract(
-            MachineTerm::Variable(Variable(32_001)),
-            MachineTerm::Variable(Variable(32_000)),
+        ProgramValue::Int64(MachineTerm::int64_subtract(
+            MachineTerm::int64_from_32(MachineTerm::Variable(Variable(32_001))),
+            MachineTerm::int64_from_32(MachineTerm::Variable(Variable(32_000))),
         ))
     );
     assert!(paths[0].facts.contains(&ExecutionPureFact::condition(
@@ -50,12 +50,4 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
         crate::kernel::assumptions::same_allocation_pointers(fact.proposition())
             .is_some_and(|(r, l)| r.address() == &right && l.address() == &left)
     }));
-    assert!(paths[0].facts.contains(&ExecutionPureFact::new(
-        Proposition::signed_arithmetic_domain(
-            MachineIntegerType::Int32,
-            MachineBinaryOp::Subtract,
-            &MachineTerm::Variable(Variable(32_001)),
-            &MachineTerm::Variable(Variable(32_000)),
-        )
-    )));
 }

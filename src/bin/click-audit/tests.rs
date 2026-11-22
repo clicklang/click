@@ -1958,7 +1958,7 @@ fn a_claims_rewrites_are_verified_in_one_run() {
     // Exercise loop, branch, and 64-bit-index claims without inventorying the
     // unrelated corpus. These are the same cases the corpus scan selected.
     let sources = [
-        "a_byte_field_of_a_struct_array_element_in_a_loop_is_bounded_by_its_index.md",
+        "statement_regions_reach_a_loop_body.md",
         "a_condition_reaching_one_value_along_two_paths_splits_into_them.md",
         "a_frame_holds_across_a_write_at_a_64_bit_index.md",
     ]

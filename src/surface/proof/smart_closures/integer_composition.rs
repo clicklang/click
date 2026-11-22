@@ -118,7 +118,7 @@ fn application(
     arguments: Vec<ContractExpression>,
     premises: Vec<ClickProposition>,
 ) -> ProofStep {
-    ProofStep::ApplyTheoremUsing {
+    ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: format!("click::integer::{name}"),
             arguments,
@@ -768,7 +768,7 @@ fn with_argument_domains(step: ProofStep, domains: &[ClickProposition]) -> Proof
                 .map(|step| with_argument_domains(step, domains))
                 .collect(),
         ),
-        ProofStep::ApplyTheoremUsing {
+        ProofStep::ApplyPlannedTheorem {
             application,
             mut premises,
         } => {
@@ -779,7 +779,7 @@ fn with_argument_domains(step: ProofStep, domains: &[ClickProposition]) -> Proof
                     .cloned()
                     .collect::<Vec<_>>(),
             );
-            ProofStep::ApplyTheoremUsing {
+            ProofStep::ApplyPlannedTheorem {
                 application,
                 premises,
             }

@@ -1028,6 +1028,7 @@ fn qualified_scalar_read(
             target_type: value_type,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
+            pointee_struct_size: None,
             pointee_volatile: true,
             pointee_constant,
             explicit_qualification: false,

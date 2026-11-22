@@ -2745,13 +2745,14 @@ fn pointer_relational_comparison_orders_same_block_elements() {
 
 #[test]
 fn pointer_subtraction_returns_same_block_element_distance() {
+    let distance = i64::from(i32::MAX) + 2;
     let start = Address {
         base: "array".into(),
         offset: AddressOffset::Constant(0),
     };
     let end = Address {
         base: "array".into(),
-        offset: AddressOffset::Constant(8),
+        offset: AddressOffset::Constant(distance * 4),
     };
     let state = ExecutionState::new()
         .with_local("start", ProgramValue::pointer(start))
@@ -2769,7 +2770,9 @@ fn pointer_subtraction_returns_same_block_element_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value((int32(2)).into()),
+            outcome: ExpressionOutcome::Value(
+                ProgramValue::Int64(MachineTerm::int64_constant(distance)).into(),
+            ),
         }
     );
 }
@@ -2808,7 +2811,9 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value((int32(3)).into()),
+            outcome: ExpressionOutcome::Value(
+                ProgramValue::Int64(MachineTerm::int64_constant(3)).into(),
+            ),
         }
     );
 }
@@ -4656,11 +4661,13 @@ fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
             assert_eq!(explicit.bounds(), pointer.bounds());
         }
     }
-    for (source, target) in [
-        (ProgramType::Int32Pointer, ProgramType::UInt8Pointer),
-        (ProgramType::VoidPointer, ProgramType::UInt8Pointer),
-        (ProgramType::Int8Pointer, ProgramType::VoidPointer),
-        (ProgramType::VoidPointer, ProgramType::VoidPointer),
+    // Converting to a byte pointer from another type forms the byte view of
+    // the allocation (C11 6.3.2.3p7); a conversion to `void *` keeps the value.
+    for (source, target, byte_view) in [
+        (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, true),
+        (ProgramType::VoidPointer, ProgramType::UInt8Pointer, true),
+        (ProgramType::Int8Pointer, ProgramType::VoidPointer, false),
+        (ProgramType::VoidPointer, ProgramType::VoidPointer, false),
     ] {
         let (value, _) = program_evaluate_speprogram_expression_at_state(
             &ExecutionState::new(),
@@ -4677,8 +4684,12 @@ fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
         let ProgramValue::Pointer(explicit) = value else {
             panic!("a pointer cast must yield a pointer")
         };
-        assert!(explicit.bounds_are_known());
-        assert!(explicit.bounds().is_none());
+        if byte_view {
+            assert!(explicit.bounds_are_known());
+            assert!(explicit.bounds().is_none());
+        } else {
+            assert_eq!(explicit.bounds(), pointer.bounds());
+        }
     }
 }
 
