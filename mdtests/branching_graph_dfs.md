@@ -265,7 +265,10 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         instantiate(forall (k: int32) {
             0 <= k and k < n and at(after_mark, visited[k]) != 0 implies visited[k] != 0
         }, cur);
-        known();
+        have 0 <= cur and cur < n and at(after_mark, visited[cur]) != 0 by { known(); }
+        apply(0 <= cur and cur < n and at(after_mark, visited[cur]) != 0 implies visited[cur] != 0) using {
+            0 <= cur and cur < n and at(after_mark, visited[cur]) != 0;
+        };
     }
 
     have forall (k: int32) {
@@ -405,7 +408,10 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         instantiate(forall (k: int32) {
             0 <= k and k < n and at(before_right, visited[k]) != 0 implies visited[k] != 0
         }, cur);
-        known();
+        have 0 <= cur and cur < n and at(before_right, visited[cur]) != 0 by { known(); }
+        apply(0 <= cur and cur < n and at(before_right, visited[cur]) != 0 implies visited[cur] != 0) using {
+            0 <= cur and cur < n and at(before_right, visited[cur]) != 0;
+        };
     }
 
     have forall (k: int32) {
