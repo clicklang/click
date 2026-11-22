@@ -70,6 +70,89 @@ fn unindexed_boolean_loads_use_their_certified_observation_point() {
 }
 
 #[test]
+fn caller_callback_reads_keep_the_entry_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let ty = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
+        ProgramType::Int32,
+        &[ProgramType::Int32],
+    ));
+    let entry = ExecutionState::new()
+        .begin_function_entry_memory()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::access(address.clone(), ty)),
+        ));
+    let local = crate::kernel::SymbolicMemory::local_pointer("unrelated");
+    let state = entry
+        .clone()
+        .with_memory(entry.memory().clone().with_block(local.base.clone(), 2));
+    assert_ne!(entry.program_point_id(), state.observation_point_id());
+    let pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
+    let check = |read: &ProgramValue| {
+        let ProgramValue::Pointer(pointer) = read else {
+            panic!("expected a complete callback read");
+        };
+        let load = pointer.address().as_loaded_value().expect("callback read");
+        assert_eq!(load.point.read_version_id(), entry.program_point_id());
+        assert_eq!(load.defining_address, address);
+        assert_eq!(load.value_type, Some(ty));
+    };
+    let assumptions = PureFactContext::new();
+    let logical = SpecExpression::MemoryLoad {
+        point: SpecPoint::Current,
+        pointer: Box::new(SpecExpression::Value(pointer.clone())),
+        value_type: ty,
+        exact: false,
+    };
+    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        SpecScope::unbound(&state, None),
+        &logical,
+        &assumptions,
+        &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+    )
+    .unwrap();
+    let [path] = paths.as_slice() else {
+        panic!("one logical callback read");
+    };
+    check(&path.value.clone().into_native());
+
+    let program = ProgramExpression::TypedLoad {
+        pointer: Box::new(ProgramExpression::Value(pointer)),
+        value_type: ty,
+        volatile: false,
+        pointee_constant: false,
+        access_class: None,
+        source: Default::default(),
+    };
+    let paths = crate::kernel::eval::evaluate_expression_value_paths(
+        &state,
+        &program,
+        &assumptions,
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    let [path] = paths.as_slice() else {
+        panic!("one checked callback read");
+    };
+    let ExpressionOutcome::Value(value) = &path.outcome else {
+        panic!(
+            "the caller supplies a readable callback: {:?}",
+            path.outcome
+        );
+    };
+    check(value.native().as_ref());
+
+    check(&crate::kernel::eval::canonical_cell_value(
+        &state.program_point(),
+        &address,
+        ty,
+    ));
+}
+
+#[test]
 fn caller_int16_reads_keep_the_entry_point() {
     assert_caller_integer_reads_keep_the_entry_point(&[ProgramType::Int16, ProgramType::UInt16]);
 }

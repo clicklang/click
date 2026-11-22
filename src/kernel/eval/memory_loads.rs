@@ -4262,13 +4262,13 @@ pub(crate) fn canonical_cell_value(
     crate::kernel::cell_run_value(value_type, canonical_cell_load(source, pointer, value_type))
 }
 
-/// Name a complete object pointer cell from its typed store or entry point.
+/// Name a complete pointer cell from its typed store or entry point.
 pub(crate) fn point_named_pointer_cell_read(
     source: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<Pointer> {
-    if !value_type.is_object_pointer() {
+    if !value_type.is_pointer() {
         return None;
     }
     let version = source.ordinary_typed_version(pointer, value_type)?;
