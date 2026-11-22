@@ -869,7 +869,12 @@ fn replacing_change(left: &Version, right: &Version) -> Change {
     let replaced = [mint(left), mint(right)]
         .into_iter()
         .flatten()
-        .find(|mint| *mint != crate::kernel::model_fields::ModelMint::ContractEntry);
+        .find(|mint| {
+            !matches!(
+                mint,
+                crate::kernel::model_fields::ModelMint::ContractEntry { .. }
+            )
+        });
     Change::ModelReplaced { by: replaced }
 }
 

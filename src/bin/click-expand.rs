@@ -1040,7 +1040,7 @@ int32 bad(int32 x) {
         let markdown = fs::read_to_string(&path).unwrap();
         let have_line = markdown
             .lines()
-            .position(|line| line == "        have st.live == 1 by {")
+            .position(|line| line == "            have st.live == 1 by {")
             .expect("fixture should contain the nested smart have")
             + 1;
         let solve = markdown.lines().nth(have_line).unwrap();
@@ -1060,12 +1060,28 @@ int32 bad(int32 x) {
 
         let from_solve = run_at(have_line + 1, solve.find("solve").unwrap() + 1)
             .expect("the nested solve should select its smart have");
-        let from_have = run_at(have_line, 9).expect("the have keyword should select it");
+        let from_have = run_at(have_line, 13).expect("the have keyword should select it");
 
         assert_eq!(from_solve, from_have);
-        assert!(from_solve.contains("normalize() using {"), "{from_solve}");
+        // The selected have's `solve() using` becomes an explicit closer.
         assert!(
-            !from_solve.contains("solve() using {\n                    to_integer(st.live) == to_integer(at(m, st.live) + got)"),
+            from_solve
+                .lines()
+                .zip(from_solve.lines().skip(1))
+                .any(|(have, body)| have.trim() == "have st.live == 1 by {"
+                    && body.trim() == "known();"),
+            "{from_solve}"
+        );
+        // The written `solve() using` is replaced, at whatever indentation.
+        assert!(
+            !from_solve
+                .lines()
+                .zip(from_solve.lines().skip(1))
+                .any(|(solve, premise)| {
+                    solve.trim() == "solve() using {"
+                        && premise.trim()
+                            == "to_integer(st.live) == to_integer(at(m, st.live) + got);"
+                }),
             "{from_solve}"
         );
     }
@@ -1210,14 +1226,38 @@ int32 bad(int32 x) {
     #[ignore = "nightly: 1.1s in the parallel gate"]
     fn a_line_in_a_call_outcome_arm_selects_its_smart_tactic() {
         let path = mdtest_path("cpp_single_guard_throw_step.md");
-        assert_eq!(markdown_line(&path, 81).trim(), "solve();");
+        assert_eq!(
+            markdown_line(&path, 81).trim(),
+            "step_until(function.exit);"
+        );
         let expanded = run_location(&path, "81").unwrap();
         let tail = expanded
-            .split_once("        threw => {\n")
+            .split_once("        threw(error) => {\n")
             .expect("the threw arm is kept")
             .1;
+        // The arm keeps its written `have`, and the selected `step_until`
+        // becomes the explicit steps to the exit.
+        let arm = tail
+            .lines()
+            .map(str::trim)
+            .take_while(|line| !line.is_empty() && *line != "outcomes {")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arm[..6],
+            [
+                "have error == 7 by known();",
+                "step() by {",
+                "known();",
+                "}",
+                "step();",
+                "step();",
+            ],
+            "{expanded}"
+        );
         assert!(
-            tail.starts_with("            step();\n            step_until(function.exit);\n            solve();\n"),
+            !arm.iter()
+                .take(8)
+                .any(|line| line.starts_with("step_until(")),
             "{expanded}"
         );
     }

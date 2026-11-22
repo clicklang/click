@@ -36,10 +36,10 @@ struct sized_node* identity(struct rb_node* p) {
 ```click
 verifying "copy.c";
 void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
-    views (rb_old as (void *) as (struct sized_node *))->size;
-    owns (rb_new as (void *) as (struct sized_node *))->size;
-    ensures (rb_new as (void *) as (struct sized_node *))->size == old((rb_old as (void *) as (struct sized_node *))->size);
-    ensures (rb_old as (void *) as (struct sized_node *))->size == old((rb_old as (void *) as (struct sized_node *))->size);
+    views (rb_old as (uint8 *) as (struct sized_node *))->size;
+    owns (rb_new as (uint8 *) as (struct sized_node *))->size;
+    ensures (rb_new as (uint8 *) as (struct sized_node *))->size == old((rb_old as (uint8 *) as (struct sized_node *))->size);
+    ensures (rb_old as (uint8 *) as (struct sized_node *))->size == old((rb_old as (uint8 *) as (struct sized_node *))->size);
 } by {
     step_until(statement(2).entry);
     have contains(memory(new->size), memory((&new->size)[0..1])) by { normalize(); }
@@ -49,7 +49,7 @@ void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
     }
 }
 struct sized_node* identity(struct rb_node* p) {
-    ensures address(result) == address(p as (void *) as (struct sized_node *));
+    ensures address(result) == address(p as (uint8 *) as (struct sized_node *));
 }
 ```
 

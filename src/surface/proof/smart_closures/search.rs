@@ -2149,6 +2149,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             target_type: machine.ty().program_type(),
                             integer_mode: crate::kernel::IntegerCastMode::CConversion,
                             pointee_struct: None,
+                            pointee_struct_size: None,
                             pointee_volatile: false,
                             pointee_constant: false,
                             explicit_qualification: false,
@@ -3695,21 +3696,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }) {
             return Self::apply_normalization_closure(search_input, Some(Vec::new())).map(Some);
         }
-        let pointer_congruence_fallback = match Self::try_goal_conditional_normalization(
-            search_input,
-        ) {
-            Some(proof)
-                if matches!(&search_input.goal(), Some(condition_source_0 @ Proposition::ConditionIs(
-                            _,
-                            true
-                        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..) | ConditionTerm::PointerEqual(..), _))))
-                    && proof.ends_in_empty_normalize_using() =>
-            {
-                Some(proof)
-            }
-            Some(proof) => return Ok(Some(proof)),
-            None => None,
-        };
+        let pointer_congruence_fallback =
+            match Self::try_goal_conditional_normalization(search_input) {
+                Some(proof) if proof.ends_in_empty_normalize_using() => {
+                    let (left, right) =
+                        match search_input.goal().and_then(Proposition::condition_native) {
+                            Some((ConditionTerm::AddressEqual(left, right), true)) => {
+                                (left.as_ref(), right.as_ref())
+                            }
+                            Some((ConditionTerm::PointerEqual(left, right), true)) => {
+                                (left.address(), right.address())
+                            }
+                            _ => return Ok(Some(proof)),
+                        };
+                    // This check proves the two reads as written. Rewriting a
+                    // base can synthesize a different exact read for which the
+                    // replayed `known` has no fact.
+                    if left.as_loaded_value().is_some() && right.as_loaded_value().is_some() {
+                        return Ok(Some(proof));
+                    }
+                    Some(proof)
+                }
+                Some(proof) => return Ok(Some(proof)),
+                None => None,
+            };
         // Close an indexed equality rewrite before deriving a longer
         // arithmetic proof of the same fact. Connected chains still wait
         // until selected arithmetic has had the goal.
@@ -6173,6 +6183,36 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_state_transport_closure_candidates");
+        // Introduce the index and its guard before framing this read. Reuse
+        // the ordinary indexed equality proof rather than transporting the
+        // entire quantified postcondition from function entry.
+        if search_input.focused_outcome_data().is_some()
+            && let ClickProposition::ForAll { body, .. } = surface_goal
+            && let ClickProposition::Implies(_, consequent) = body.as_ref()
+            && let ClickProposition::Comparison {
+                left: read @ ContractExpression::Index(..),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::Old(entry_read),
+            } = consequent.as_ref()
+            && read == entry_read.as_ref()
+            && let Some(introduced) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Intro)
+                    .and_then(|proof| proof.driver().apply_step(ProofStep::Intro)),
+            )?
+        {
+            if introduced.is_complete() {
+                return Ok(Some(introduced));
+            }
+            if let Some(goal) = introduced.surface_goal()
+                && let Some(source) = old_reflexive_transport_source(goal)
+                && let Some(proof) =
+                    Self::try_history_indexed_equalities(&introduced, &source, goal)?
+            {
+                return Ok(Some(proof));
+            }
+        }
         if let Some(proof) = crate::kernel::search::ProofSearch::try_cell_frame_transport_closure(
             search_input,
             surface_goal,
@@ -9418,6 +9458,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 target_type: ProgramType::UInt32,
                                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                                 pointee_struct: None,
+                                pointee_struct_size: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
                                 explicit_qualification: false,

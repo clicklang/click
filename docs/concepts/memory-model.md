@@ -156,12 +156,20 @@ subobject bounds, beside its numeric address. `address(p)` observes only that
 address. Whole local, store/reload and aggregate copies retain a representation;
 ordinary arithmetic, changes of integer format and partial overwrites discard
 it. A lossless cast back preserves the selected bounds, including when the
-target is `void*` or a character pointer. It does not apply the widening rule
-for a direct pointer-to-pointer byte/void cast. Casts between character-pointer
-types and compiler-inserted pointer conversions retain the existing view,
-including its bounds. An explicit conversion from a non-character pointer to
-a character pointer, or any explicit cast to `void*`, selects the enclosing
-object's view.
+target is `void*` or a character pointer. It does not apply the byte-view rule
+for a direct pointer-to-pointer conversion. Converting a pointer from a
+non-character type, including `void *`, to a character pointer, written or
+implicit, forms the byte view of its allocation (C11 6.3.2.3p7, at TS 6010's
+allocation granularity), so the result is not bounded by the member it was
+formed from. GNU C arithmetic on `void *` is character arithmetic and forms the
+same view; Linux's `container_of` steps back from a member that way. A
+pointer to a struct's initial member, converted to a pointer to the struct,
+points to the struct (C11 6.7.2.1p15): when the operand's bounds are a member
+starting at its address and narrower than the struct, the result's bounds are
+the struct's `sizeof` bytes there. Every other pointer conversion keeps the
+value and its bounds, including an opaque pointer's: conversions between
+character-pointer types, and conversions to `void *` or another object pointer
+type.
 
 C pointer comparisons state only integer address equality. Equal addresses do
 not make equal pointer values or transfer bounds: one object's one-past address

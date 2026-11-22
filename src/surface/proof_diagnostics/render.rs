@@ -759,7 +759,7 @@ impl MemoryStateLabels {
         if held != term {
             return None;
         }
-        let owner = model_fields::registered_instance_spelling(origin.identity)?;
+        let owner = origin.owner_spelling()?;
         Some(format!("{owner}.{}", origin.field))
     }
 

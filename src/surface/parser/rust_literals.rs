@@ -292,6 +292,7 @@ impl IntegerLiteral {
                 },
                 expression: Box::new(CExpression::Int32Literal(constant_u32(bits))),
                 struct_name: None,
+                struct_size: None,
                 pointee_volatile: false,
                 pointee_constant: false,
                 explicit_qualification: false,

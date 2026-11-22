@@ -8051,30 +8051,38 @@ impl SymbolicMemory {
     /// field guaranteed initialized by a checked construction summary. The
     /// cells describe values; this record outlives forgetting those values.
     pub(in crate::kernel) fn with_initialized_object(self, pointer: &Address, bytes: u32) -> Self {
-        self.record_object_initialization(pointer, bytes, false)
+        self.record_object_initialization(pointer, bytes, None)
     }
 
-    /// The checked call has returned four initialized bytes in one local
-    /// cell. Retain its output even if the earlier call initialized it too.
-    pub(in crate::kernel) fn with_initialized_call_word(self, pointer: &Address) -> Self {
-        let width = ProgramType::Int32.byte_width();
-        let call_word = self.blocks.get(&pointer.base).is_some_and(|block| {
-            matches!(
-                block.declared_scalar_type,
-                Some(ProgramType::Int32 | ProgramType::UInt32)
-            ) && block.size().as_const() == Some(width)
-        }) && self.cells.explicitly_stored_value(pointer).is_none()
-            && self.cells.exact_run_slot_type(pointer) == Ok(None);
-        self.record_object_initialization(pointer, width, call_word)
+    /// The checked call initialized a whole local, with an unknown value.
+    /// Retain the effect even if an earlier call initialized the same bytes.
+    pub(in crate::kernel) fn with_initialized_call_output(
+        self,
+        pointer: &Address,
+        bytes: u32,
+    ) -> Self {
+        let kind = self
+            .blocks
+            .get(&pointer.base)
+            .filter(|block| block.size().as_const() == Some(bytes))
+            .and_then(|block| block.declared_scalar_type)
+            .filter(|&ty| MachineIntegerType::from_program_type(ty).is_some())
+            .and_then(LoadKind::of_type)
+            .filter(|kind| {
+                kind.byte_width() == bytes
+                    && self.cells.explicitly_stored_value(pointer).is_none()
+                    && self.cells.exact_run_slot_type(pointer) == Ok(None)
+            });
+        self.record_object_initialization(pointer, bytes, kind)
     }
 
     fn record_object_initialization(
         mut self,
         pointer: &Address,
         bytes: u32,
-        call_word: bool,
+        call_output: Option<LoadKind>,
     ) -> Self {
-        if call_word || !self.heap.initialized.covers(pointer, bytes) {
+        if call_output.is_some() || !self.heap.initialized.covers(pointer, bytes) {
             let base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
@@ -8085,7 +8093,7 @@ impl SymbolicMemory {
                     base,
                     pointer: pointer.clone(),
                     bytes,
-                    call_word,
+                    call_output,
                 },
             );
         }

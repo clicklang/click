@@ -11,6 +11,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
+use crate::kernel::MachineIntegerType;
 use crate::persistent::PersistentMap;
 
 use super::{
@@ -104,11 +105,13 @@ impl StepLog {
                 indexed_local(block) || matches!(block, AddressBase::Temporary(_))
             }
             MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
-            // The write, if any, is recorded by the producer separately.
-            // The return clause only supplies initialization evidence.
-            MemoryDerivation::ObjectInitializationRecorded {
-                call_word: false, ..
-            } => true,
+            // Pending and resolved fresh allocations leave existing objects alone.
+            MemoryDerivation::HeapAllocationPending { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. }
+            | MemoryDerivation::HeapAllocated { .. } => true,
+            // The call's write effect is recorded separately. The return
+            // clause supplies initialization evidence for the typed cell.
+            MemoryDerivation::ObjectInitializationRecorded { .. } => true,
             MemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(ranges),
                 ..
@@ -974,7 +977,7 @@ fn record_point_read_effect(
         | MemoryDerivation::RepresentationWrite { pointer, .. }
         | MemoryDerivation::ObjectInitializationRecorded {
             pointer,
-            call_word: true,
+            call_output: Some(_),
             ..
         } if read_bucket(&pointer.base).is_some() => {
             let bucket = read_bucket(&pointer.base).expect("indexed write bucket");
@@ -987,18 +990,14 @@ fn record_point_read_effect(
             {
                 index.blocks.remove(bucket);
             }
-            let call_word = matches!(
-                step.as_ref(),
-                MemoryDerivation::ObjectInitializationRecorded {
-                    call_word: true,
-                    ..
-                }
-            );
-            let width = if call_word {
-                i64::from(ProgramType::Int32.byte_width())
-            } else {
-                i64::from(step.single_write().expect("single checked write").1)
+            let output_width = match step.as_ref() {
+                MemoryDerivation::ObjectInitializationRecorded { bytes, .. } => Some(*bytes),
+                _ => None,
             };
+            let width = i64::from(
+                output_width
+                    .unwrap_or_else(|| step.single_write().expect("single checked write").1),
+            );
             let Some((anchor, start)) = read_displacement(&pointer.offset) else {
                 index.blocks.remove(bucket);
                 return;
@@ -1023,7 +1022,7 @@ fn record_point_read_effect(
                 });
             clear_overlapping_cells(&mut block.cells, start, end);
             if record_writes
-                && (call_word
+                && (output_width.is_some()
                     || integer_store_bits(step).is_some()
                     || matches!(step.as_ref(), MemoryDerivation::Store { value, .. }
                         if matches!(value.native(), ProgramValue::Bool(_) | ProgramValue::Pointer(_))
@@ -1660,13 +1659,13 @@ impl ProgramPoint {
     ) -> Option<Self> {
         self.indexed_typed_version(pointer, value_type)
             .or_else(|| {
-                LoadKind::of_type(value_type)
-                    .and_then(|kind| self.call_output_integer_version(pointer, kind))
+                MachineIntegerType::from_program_type(value_type)?;
+                self.call_output_integer_version(pointer, LoadKind::of_type(value_type)?)
             })
             .or_else(|| self.entry_cell_version(pointer, value_type))
     }
 
-    pub(in crate::kernel) fn supports_local_call_word(pointer: &Address) -> bool {
+    pub(in crate::kernel) fn supports_local_call_output(pointer: &Address) -> bool {
         indexed_local(&pointer.base) && pointer.offset == AddressOffset::Constant(0)
     }
 
@@ -1675,16 +1674,16 @@ impl ProgramPoint {
         pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
-        if !kind.is_word32() || !Self::supports_local_call_word(pointer) {
+        if !Self::supports_local_call_output(pointer) {
             return None;
         }
         self.indexed_version(pointer, kind.byte_width(), |effect| {
             matches!(
                 effect,
                 MemoryDerivation::ObjectInitializationRecorded {
-                    call_word: true,
+                    call_output: Some(output),
                     ..
-                }
+                } if kind.reads_word_of(*output)
             )
         })
     }
@@ -1769,7 +1768,7 @@ impl ProgramPoint {
             read: if matches!(
                 write.source.as_ref(),
                 MemoryDerivation::ObjectInitializationRecorded {
-                    call_word: true,
+                    call_output: Some(_),
                     ..
                 }
             ) {
@@ -2022,6 +2021,50 @@ mod tests {
             &pointer,
             LoadKind::Int32,
         ));
+    }
+
+    #[test]
+    fn caller_read_versions_survive_both_outcomes_of_fresh_allocation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let caller_cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let loaded = Pointer::from_point_read(
+            entry.program_point().for_exact_read(),
+            ProgramType::UInt64Pointer,
+            &caller_cell.offset_by_bytes(8),
+        );
+        let allocation = Address::symbolic(Variable(38_132));
+        let pending =
+            entry
+                .clone()
+                .with_memory(entry.memory().clone().with_pending_heap_allocation(
+                    allocation.clone(),
+                    AllocationSize::int32(16),
+                    false,
+                ));
+        let assert_entry = |state: &ExecutionState| {
+            for pointer in [&caller_cell, loaded.address()] {
+                let version = state
+                    .program_point()
+                    .entry_cell_version(pointer, ProgramType::UInt64);
+                assert_eq!(
+                    version.as_ref().and_then(ProgramPoint::read_version_id),
+                    entry.program_point().id(),
+                );
+            }
+        };
+        assert_entry(&pending);
+        for succeeds in [false, true] {
+            let (memory, _, _) = pending
+                .memory()
+                .clone()
+                .resolve_pending_heap_allocation(&allocation, succeeds)
+                .expect("resolve the pending allocation");
+            assert_entry(&pending.clone().with_memory(memory));
+        }
     }
 
     #[test]

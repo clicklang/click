@@ -223,8 +223,10 @@ parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 and a pointer to a struct. Native pointer targets may add `const`, `volatile`,
 or both before the pointee type, such as `p as (const uint8 *)`; struct pointer
 targets support `const`. An unqualified byte view inherits its source's const
-qualification. In a contract, casting a `void *` to an unsigned byte pointer
-keeps the bounds carried by the void pointer. Qualifying a pointer grants no
+qualification. Casting a pointer from a non-character type, including
+`void *`, to a byte pointer forms the byte view of its allocation, as the C
+conversion does; casting to `void *` or between byte pointer types keeps the
+pointer's bounds. Qualifying a pointer grants no
 memory access permission. A Rust source's sidecar
 also writes Rust's scalar names, `x as u32`.
 
@@ -3856,7 +3858,11 @@ value or provenance, and the C body's own conversion reaches the same object.
 The direct `argument as (struct T *)` form accepts a `void*` C parameter and
 records one target struct per parameter for proof synthesis. Contracts may
 also write `pointer as (void *) as (struct T *)` for a current object-pointer expression,
-including a typed struct pointer, field, or resource parameter. This explicit
+including a typed struct pointer, field, or resource parameter. A pointer to
+a struct's initial member converted this way points to the struct (C11
+6.7.2.1p15), so its bounds are the struct's. `pointer as (uint8 *) as (struct T
+*)` converts from the byte view of the pointer's allocation, as C code that
+steps back from a member with `container_of` does. This explicit
 form retains the target layout on the expression and does not assign a layout
 to the source parameter. Integer and function-pointer operands are rejected.
 Source const qualifications survive the conversion; field reads and writes

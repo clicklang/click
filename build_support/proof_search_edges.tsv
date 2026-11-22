@@ -852,3 +852,5 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_load
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_load_equality_bridge	try_fixed_state_fact_transport	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	try_local_viewability_preservation	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_local_viewability_preservation	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_history_indexed_equalities	1
