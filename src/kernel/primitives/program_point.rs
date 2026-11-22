@@ -1716,7 +1716,6 @@ impl ProgramPoint {
         let indexed_algebraic = matches!(value_type, ProgramType::Parameter(ty)
             if indexed_local(&pointer.base)
                 && matches!(pointer.offset, AddressOffset::Constant(_))
-                && !ty.is_enum()
                 && !ty.has_abstract_size());
         if value_type == ProgramType::Bool || value_type.is_pointer() || indexed_algebraic {
             return self.indexed_version(pointer, value_type.byte_width(), |store| {
