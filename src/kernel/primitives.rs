@@ -16849,13 +16849,13 @@ pub struct CallParameters(pub(crate) std::sync::Arc<ExecutionState>);
 impl CallParameters {
     /// The parameter binding of `interface`'s by-value aggregate parameters
     /// in `entry`, the state the call evaluates its contract in; `None` when
-    /// it has none. The state keeps `entry`'s memory and binds exactly
-    /// those parameters, so nothing else is named through it.
+    /// it has none. Keep the same read versions and bind only those
+    /// parameters, so nothing else is named through the snapshot.
     pub(super) fn of(
         entry: &ExecutionState,
         interface: &FunctionContractInterface,
     ) -> Option<Self> {
-        let mut bound = ExecutionState::new().with_memory(entry.memory().clone());
+        let mut bound = ExecutionState::at_state(entry);
         let mut any = false;
         for parameter in interface.parameters() {
             let Some(layout) = parameter.aggregate_layout() else {
