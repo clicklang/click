@@ -706,12 +706,12 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/c/builtins.interface.click"),
     ),
     (
-        "library/c/string.interface.click",
-        include_str!("../library/c/string.interface.click"),
-    ),
-    (
         "library/integer.click",
         include_str!("../library/integer.click"),
+    ),
+    (
+        "library/c/string.interface.click",
+        include_str!("../library/c/string.interface.click"),
     ),
     (
         "library/c/stdarg.click",

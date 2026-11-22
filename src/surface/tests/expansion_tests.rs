@@ -3193,6 +3193,19 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
 }
 
 #[test]
+fn cited_narrow_conditional_bounds_expand_without_normalize() {
+    let (source, _) = mdtest_sources("mdtests/a_narrow_comparison_follows_from_a_cited_bound.md");
+    for claim in ["else_arm.ensures_0", "strict.ensures_0"] {
+        let expanded = expand_c_claim_source_by_label(&source, &[], claim).unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies conditional bounds and two fold proofs"]
 fn both_arms_prove_a_conditional_bound_without_normalize() {
