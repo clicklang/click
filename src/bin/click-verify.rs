@@ -1967,7 +1967,7 @@ mod tests {
             } by {
                 let { result: r } = step(child);
                 have r < 1 by {
-                    apply(negative(r)) using { 0 <= r; }
+                    apply(negative(r));
                 }
                 step();
                 solve();

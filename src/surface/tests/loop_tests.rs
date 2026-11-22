@@ -777,9 +777,7 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
                 have to_integer($index) != to_integer($index + 1) by {
                     normalize() using { j == 0; };
                 }
-                apply(separation::separate_elements(p, $index, $index + 1)) using {
-                    to_integer($index) != to_integer($index + 1);
-                };
+                apply(separation::separate_elements(p, $index, $index + 1));
                 have separate(statement(3).footprint, memory(p[$index])) by {
                     normalize() using { separate(memory(p[$index]), memory(p[$index + 1])); };
                 }
@@ -831,9 +829,9 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
         }
         have to_integer(j + 1) != 2 by { rewrite(to_integer(j + 1), 1); normalize(); }
         have to_integer(j + 1) != 0 by { rewrite(to_integer(j + 1), 1); normalize(); }
-        apply(click::separation::separate_elements(p, j, 2)) using { to_integer(j) != 2; };
-        apply(click::separation::separate_elements(p, j + 1, 2)) using { to_integer(j + 1) != 2; };
-        apply(click::separation::separate_elements(p, j + 1, 0)) using { to_integer(j + 1) != 0; };
+        apply(click::separation::separate_elements(p, j, 2));
+        apply(click::separation::separate_elements(p, j + 1, 2));
+        apply(click::separation::separate_elements(p, j + 1, 0));
         have separate(statement(3).statement(0).statement(1).footprint, memory(p[2])) by {
             normalize() using { separate(memory(p[j]), memory(p[2])); };
         }

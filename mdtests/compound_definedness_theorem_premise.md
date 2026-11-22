@@ -30,10 +30,10 @@ int32 probe(int32 a, int32 b, int32 c) {
     ensures result == 0;
 } by {
     have to_integer(a + b + c) == to_integer(a + b) + to_integer(c) by {
-        apply(add_observation(a + b, c)) using { defined(a + b + c); };
+        apply(add_observation(a + b, c));
         known();
     }
-    apply(bridge(a, b, c)) using { defined(a + b); defined(a + b + c); };
+    apply(bridge(a, b, c));
 }
 ```
 

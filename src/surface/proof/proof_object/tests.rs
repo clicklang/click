@@ -6113,9 +6113,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
                 ensures result <= upper;
             } by {
                 step_until(function.exit);
-                apply(less_than_implies_less_equal(result, upper)) using {
-                    result < upper;
-                }
+                apply(less_than_implies_less_equal(result, upper));
                 solve();
             }
         "#,

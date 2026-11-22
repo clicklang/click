@@ -39,10 +39,7 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
     }
     have contains(memory(visited[cur..cur + 1]), memory((visited + cur)[0..1])) by { normalize(); }
     have contains(memory(visited[0..n]), memory((visited + cur)[0..1])) by {
-        apply(separation::contains_trans(memory(visited[0..n]), memory(visited[cur..cur + 1]), memory((visited + cur)[0..1]))) using {
-            contains(memory(visited[0..n]), memory(visited[cur..cur + 1]));
-            contains(memory(visited[cur..cur + 1]), memory((visited + cur)[0..1]));
-        };
+        apply(separation::contains_trans(memory(visited[0..n]), memory(visited[cur..cur + 1]), memory((visited + cur)[0..1])));
     }
     step();
     observe(bounded(left, n));

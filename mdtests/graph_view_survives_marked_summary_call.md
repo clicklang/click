@@ -32,20 +32,14 @@ void caller(int32 *left, int32 *visited, int32 n) {
         intro(); intro();
         have 0 <= k; have k < n;
         have contains(memory(left[0..n]), memory(left[k])) by {
-            apply(separation::contains_element(left, 0, n, k)) using { 0 <= k; k < n; };
+            apply(separation::contains_element(left, 0, n, k));
         }
         have contains(memory(visited[0..n]), statement(0).footprint) by { known(); }
         have separate(memory(visited[0..n]), memory(left[0..n])) by {
-            apply(separation::separate_symm(memory(left[0..n]), memory(visited[0..n]))) using {
-                separate(memory(left[0..n]), memory(visited[0..n]));
-            };
+            apply(separation::separate_symm(memory(left[0..n]), memory(visited[0..n])));
         }
         have separate(statement(0).footprint, memory(left[k])) by {
-            apply(separation::separate_restrict(memory(visited[0..n]), memory(left[0..n]), statement(0).footprint, memory(left[k]))) using {
-                separate(memory(visited[0..n]), memory(left[0..n]));
-                contains(memory(visited[0..n]), statement(0).footprint);
-                contains(memory(left[0..n]), memory(left[k]));
-            };
+            apply(separation::separate_restrict(memory(visited[0..n]), memory(left[0..n]), statement(0).footprint, memory(left[k])));
         }
         have left[k] == old(left[k]) by {
             preserve(memory(left[k]), statement(0));

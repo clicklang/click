@@ -13,22 +13,14 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, lo: int3
         have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < hi; }; }
         have ((i + 1) as int32) <= hi by { solve() using { 0 <= i; i < hi; }; }
         have contains(memory(p[lo..hi]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, lo, hi, i, i + 1)) using {
-                defined(i + 1); lo <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= hi;
-            };
+            apply(separation::contains_subrange(p, lo, hi, i, i + 1));
         }
         have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[lo..hi]), kept, memory(p[i..i + 1]))) using {
-                defined(i + 1); separate(whole, memory(p[lo..hi])); contains(whole, kept);
-                contains(memory(p[lo..hi]), memory(p[i..i + 1]));
-            };
+            apply(separation::separate_restrict(whole, memory(p[lo..hi]), kept, memory(p[i..i + 1])));
         }
-        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)) using {}; }
+        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
-            defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
-            contains(memory(p[i..i + 1]), memory(p[i]));
-        };
+        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
     }
 }
 
@@ -94,50 +86,26 @@ void *fill_range(void *argument) {
             have job->begin <= index;
             have contains(memory(*job), memory(job->output)) by { normalize(); }
             have separate(memory(job->output[index]), memory(job->output)) by {
-                apply(selected_array_cell(memory(*job), memory(job->output), job->output, job->begin, job->end, index)) using {
-                    separate(memory(*job), memory(job->output[job->begin..job->end]));
-                    contains(memory(*job), memory(job->output));
-                    0 <= job->begin; job->begin <= index; index < job->end;
-                };
-                apply(separation::separate_symm(memory(job->output), memory(job->output[index]))) using {
-                    separate(memory(job->output), memory(job->output[index]));
-                };
+                apply(selected_array_cell(memory(*job), memory(job->output), job->output, job->begin, job->end, index));
+                apply(separation::separate_symm(memory(job->output), memory(job->output[index])));
             }
             have contains(memory(*job), memory(job->begin)) by { normalize(); }
             have separate(memory(job->output[index]), memory(job->begin)) by {
-                apply(selected_array_cell(memory(*job), memory(job->begin), job->output, job->begin, job->end, index)) using {
-                    separate(memory(*job), memory(job->output[job->begin..job->end]));
-                    contains(memory(*job), memory(job->begin));
-                    0 <= job->begin; job->begin <= index; index < job->end;
-                };
-                apply(separation::separate_symm(memory(job->begin), memory(job->output[index]))) using {
-                    separate(memory(job->begin), memory(job->output[index]));
-                };
+                apply(selected_array_cell(memory(*job), memory(job->begin), job->output, job->begin, job->end, index));
+                apply(separation::separate_symm(memory(job->begin), memory(job->output[index])));
             }
             have contains(memory(*job), memory(job->end)) by { normalize(); }
             have separate(memory(job->output[index]), memory(job->end)) by {
-                apply(selected_array_cell(memory(*job), memory(job->end), job->output, job->begin, job->end, index)) using {
-                    separate(memory(*job), memory(job->output[job->begin..job->end]));
-                    contains(memory(*job), memory(job->end));
-                    0 <= job->begin; job->begin <= index; index < job->end;
-                };
-                apply(separation::separate_symm(memory(job->end), memory(job->output[index]))) using {
-                    separate(memory(job->end), memory(job->output[index]));
-                };
+                apply(selected_array_cell(memory(*job), memory(job->end), job->output, job->begin, job->end, index));
+                apply(separation::separate_symm(memory(job->end), memory(job->output[index])));
             }
             have contains(memory(*job), memory(job->value)) by { normalize(); }
             have separate(memory(job->output[index]), memory(job->value)) by {
-                apply(selected_array_cell(memory(*job), memory(job->value), job->output, job->begin, job->end, index)) using {
-                    separate(memory(*job), memory(job->output[job->begin..job->end]));
-                    contains(memory(*job), memory(job->value));
-                    0 <= job->begin; job->begin <= index; index < job->end;
-                };
-                apply(separation::separate_symm(memory(job->value), memory(job->output[index]))) using {
-                    separate(memory(job->value), memory(job->output[index]));
-                };
+                apply(selected_array_cell(memory(*job), memory(job->value), job->output, job->begin, job->end, index));
+                apply(separation::separate_symm(memory(job->value), memory(job->output[index])));
             }
             have contains(memory(job->output[job->begin..job->end]), memory(job->output[index])) by {
-                apply(separation::contains_element(job->output, job->begin, job->end, index)) using { job->begin <= index; index < job->end; };
+                apply(separation::contains_element(job->output, job->begin, job->end, index));
             }
             have separate(memory(job->output[index]), memory(*job)) by { solve(); }
             mark iteration;
@@ -170,17 +138,13 @@ void *fill_range(void *argument) {
                     // The write at index preserves the earlier cell at k.
                     have k != index;
                     have at(iteration, separate(memory(job->output[index]), memory(job->output[k]))) by {
-                        apply(separation::separate_elements(at(iteration, job->output), at(iteration, index), k)) using { at(iteration, index) != k; };
+                        apply(separation::separate_elements(at(iteration, job->output), at(iteration, index), k));
                     }
                     have contains(at(iteration, memory(job->output[k])), at(iteration, memory((&job->output[k])[0..1]))) by { normalize(); }
                     have contains(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[index]))) by { transport(at(function.entry, contains(at(iteration, memory(load<int32*>(job)[index])), at(iteration, memory(load<int32*>(job)[index])))), contains(at(iteration, memory(load<int32*>(job)[index])), at(iteration, memory(load<int32*>(job)[index])))) using {
                         }; }
                     have separate(at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1]))) by {
-                        apply(separation::separate_restrict(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[k])), at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1])))) using {
-                            contains(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[index])));
-                            at(iteration, separate(memory(job->output[index]), memory(job->output[k])));
-                            contains(at(iteration, memory(job->output[k])), at(iteration, memory((&job->output[k])[0..1])));
-                        };
+                        apply(separation::separate_restrict(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[k])), at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1]))));
                     }
                     have separate(loop(0).statement(0).footprint, at(iteration, memory((&job->output[k])[0..1]))) by {
                         known();

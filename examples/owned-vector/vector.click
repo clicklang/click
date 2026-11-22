@@ -11,22 +11,14 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
         have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
         have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
         have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, 0, len, i, i + 1)) using {
-                defined(i + 1); 0 <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= len;
-            };
+            apply(separation::contains_subrange(p, 0, len, i, i + 1));
         }
         have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
-                defined(i + 1); separate(whole, memory(p[0..len])); contains(whole, kept);
-                contains(memory(p[0..len]), memory(p[i..i + 1]));
-            };
+            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1])));
         }
-        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)) using {}; }
+        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
-            defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
-            contains(memory(p[i..i + 1]), memory(p[i]));
-        };
+        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
     }
 }
 
@@ -119,17 +111,11 @@ int32 vector_copy(
     step();
     step();
     have contains(memory(dst[0..dst_capacity]), memory(dst[0..length])) by {
-        apply(separation::contains_subrange(dst, 0, dst_capacity, 0, length)) using {
-            0 <= 0; 0 <= length; length <= dst_capacity;
-        };
+        apply(separation::contains_subrange(dst, 0, dst_capacity, 0, length));
     }
-    have contains(memory(src[0..src_capacity]), memory(src[0..src_capacity])) by { apply(click::separation::contains_refl(memory(src[0..src_capacity]))) using {}; }
+    have contains(memory(src[0..src_capacity]), memory(src[0..src_capacity])) by { apply(click::separation::contains_refl(memory(src[0..src_capacity]))); }
     have separate(memory(dst[0..length]), memory(src[0..src_capacity])) by {
-        apply(separation::separate_restrict(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]), memory(dst[0..length]), memory(src[0..src_capacity]))) using {
-            separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
-            contains(memory(dst[0..dst_capacity]), memory(dst[0..length]));
-            contains(memory(src[0..src_capacity]), memory(src[0..src_capacity]));
-        };
+        apply(separation::separate_restrict(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]), memory(dst[0..length]), memory(src[0..src_capacity])));
     }
     loop {
         decreases length - i;
@@ -155,7 +141,7 @@ int32 vector_copy(
         maintain by {
             have i < dst_capacity by { solve(); }
             have contains(memory(dst[0..dst_capacity]), memory(dst[i])) by {
-                apply(separation::contains_element(dst, 0, dst_capacity, i)) using { 0 <= i; i < dst_capacity; };
+                apply(separation::contains_element(dst, 0, dst_capacity, i));
             }
             have separate(memory(dst[i]), memory(src[0..src_capacity])) by { solve(); }
             step();
@@ -167,16 +153,12 @@ int32 vector_copy(
                 instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k);
                 have at(region(3).entry, src[k]) == src[k] by {
                     have k < src_capacity by { solve() using { k < length; length <= src_capacity; }; }
-                    have contains(memory(dst[i]), memory(dst[i])) by { apply(click::separation::contains_refl(memory(dst[i]))) using {}; }
+                    have contains(memory(dst[i]), memory(dst[i])) by { apply(click::separation::contains_refl(memory(dst[i]))); }
                     have contains(memory(src[0..src_capacity]), memory(src[k])) by {
-                        apply(separation::contains_element(src, 0, src_capacity, k)) using { 0 <= k; k < src_capacity; };
+                        apply(separation::contains_element(src, 0, src_capacity, k));
                     }
                     have separate(memory(dst[i]), memory(src[k])) by {
-                        apply(separation::separate_restrict(memory(dst[i]), memory(src[0..src_capacity]), memory(dst[i]), memory(src[k]))) using {
-                            separate(memory(dst[i]), memory(src[0..src_capacity]));
-                            contains(memory(dst[i]), memory(dst[i]));
-                            contains(memory(src[0..src_capacity]), memory(src[k]));
-                        };
+                        apply(separation::separate_restrict(memory(dst[i]), memory(src[0..src_capacity]), memory(dst[i]), memory(src[k])));
                     }
                     have separate(loop(0).statement(0).footprint, memory(src[k])) by {
                         solve() using { separate(memory(dst[i]), memory(src[k])); };
@@ -216,7 +198,7 @@ int32 vector_copy(
                     have 0 <= k and k < i;
                     instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
                     have at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))) by {
-                        apply(separation::separate_elements(dst, k, at(region(3).entry, i))) using { k != at(region(3).entry, i); };
+                        apply(separation::separate_elements(dst, k, at(region(3).entry, i)));
                     }
                     have separate(loop(0).statement(0).footprint, memory(dst[k])) by {
                         solve() using { at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))); };
@@ -383,28 +365,22 @@ int32 vector_grow(struct vector* owner) {
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
-            have at(region(14).entry, 0) <= at(region(14).entry, k) and at(region(14).entry, k) < at(region(14).entry, owner->len);
-            instantiate(forall (__click_q0: int32) { at(region(14).entry, 0) <= at(region(14).entry, __click_q0) and at(region(14).entry, __click_q0) < at(region(14).entry, owner->len) implies at(region(14).entry, new_data[__click_q0]) == at(region(14).entry, old_data[__click_q0]) }, k);
+            have at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len);
+            instantiate(forall (__click_q0: int32) { at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, __click_q0) and at(statement(10).call(vector_copy, 0).entry, __click_q0) < at(statement(10).call(vector_copy, 0).entry, owner->len) implies at(statement(10).call(vector_copy, 0).exit, new_data[__click_q0]) == at(statement(10).call(vector_copy, 0).entry, old_data[__click_q0]) }, k);
             have &owner->data[k] == at(region(14).entry, &new_data[k]) by {
                 known();
             }
             have separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
-            have at(region(14).entry, old_data[k]) == old(owner->data[k]) by { known(); }
+            have at(statement(10).call(vector_copy, 0).entry, old_data[k]) == old(owner->data[k]) by { known(); }
             have k < new_capacity by { solve(); }
             have separate(memory(*owner), memory(new_data[0..new_capacity])) by { solve(); }
             have contains(memory(*owner), memory(owner->data)) by { normalize(); }
             have contains(memory(*owner), memory(owner->cap)) by { normalize(); }
             have separate(memory(owner->data), memory(new_data[k])) by {
-                apply(selected_array_cell(memory(*owner), memory(owner->data), new_data, new_capacity, k)) using {
-                    separate(memory(*owner), memory(new_data[0..new_capacity]));
-                    contains(memory(*owner), memory(owner->data)); 0 <= k; k < new_capacity;
-                };
+                apply(selected_array_cell(memory(*owner), memory(owner->data), new_data, new_capacity, k));
             }
             have separate(memory(owner->cap), memory(new_data[k])) by {
-                apply(selected_array_cell(memory(*owner), memory(owner->cap), new_data, new_capacity, k)) using {
-                    separate(memory(*owner), memory(new_data[0..new_capacity]));
-                    contains(memory(*owner), memory(owner->cap)); 0 <= k; k < new_capacity;
-                };
+                apply(selected_array_cell(memory(*owner), memory(owner->cap), new_data, new_capacity, k));
             }
             // Keep the copied cell across the two field writes and old-buffer release.
             have separate(statement(11).footprint, memory(new_data[k])) by {
@@ -426,8 +402,15 @@ int32 vector_grow(struct vector* owner) {
                 preserve(memory(new_data[k]), statement(13));
             }
             have owner->data == new_data by { known(); }
-            have new_data[k] == at(region(14).entry, new_data[k]) by { known(); }
-            have new_data[k] == old(owner->data[k]) by { known(); }
+            have new_data[k] == at(statement(10).call(vector_copy, 0).exit, new_data[k]) by { known(); }
+            have at(statement(10).call(vector_copy, 0).exit, new_data[k]) == at(statement(10).call(vector_copy, 0).entry, old_data[k]) by {
+                apply(at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len) implies at(statement(10).call(vector_copy, 0).exit, new_data[k]) == at(statement(10).call(vector_copy, 0).entry, old_data[k])) using { at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len); };
+            }
+            have new_data[k] == old(owner->data[k]) by {
+                rewrite(new_data[k], at(statement(10).call(vector_copy, 0).exit, new_data[k]));
+                rewrite(old(owner->data[k]), at(statement(10).call(vector_copy, 0).entry, old_data[k]));
+                known();
+            }
             have &owner->data[k] == &new_data[k] by {
                 known();
             }
@@ -544,7 +527,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             contradiction(k < old(owner->len));
         }
         have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
-            apply(click::separation::separate_elements(old(owner->data), old(owner->len), k)) using { old(owner->len) != k; };
+            apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));
         }
         have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
             solve() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
@@ -558,14 +541,10 @@ int32 vector_push(struct vector* owner, int32 value) {
         }
         have contains(memory(*owner), memory(owner->len)) by { normalize(); }
         have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
-            apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k)) using { 0 <= k; k < old(owner->cap); };
+            apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k));
         }
         have separate(memory(owner->len), memory(old(owner->data)[k])) by {
-            apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k]))) using {
-                separate(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]));
-                contains(memory(*owner), memory(owner->len));
-                contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k]));
-            };
+            apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k])));
         }
         have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
             solve() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
@@ -1049,18 +1028,11 @@ int32 vector_fill(struct vector* owner, int32 value) {
             have contains(memory(*owner), memory(owner->data)) by { normalize(); }
             have separate(memory(owner->data), memory(owner->data[i])) by {
                 apply(selected_array_cell(memory(*owner), memory(owner->data),
-                    owner->data, owner->cap, i)) using {
-                    separate(memory(*owner), memory(owner->data[0..owner->cap]));
-                    contains(memory(*owner), memory(owner->data));
-                    0 <= i; i < owner->cap;
-                };
+                    owner->data, owner->cap, i));
             }
             have contains(memory(*owner), memory(owner->len)) by { normalize(); }
             have separate(memory(owner->len), memory(owner->data[i])) by {
-                apply(selected_array_cell(memory(*owner), memory(owner->len), owner->data, owner->cap, i)) using {
-                    separate(memory(*owner), memory(owner->data[0..owner->cap]));
-                    contains(memory(*owner), memory(owner->len)); 0 <= i; i < owner->cap;
-                };
+                apply(selected_array_cell(memory(*owner), memory(owner->len), owner->data, owner->cap, i));
             }
             step();
             have separate(loop(0).statement(0).footprint, memory(owner->data)) by {
@@ -1181,10 +1153,7 @@ int32 vector_pipeline(
     observe(nonempty_vector(owner));
     step();
     step();
-    apply(int32_equality_transitive(observed, owner->data[0], replacement)) using {
-        observed == owner->data[0];
-        owner->data[0] == replacement;
-    };
+    apply(int32_equality_transitive(observed, owner->data[0], replacement));
     step();
     step();
     step();

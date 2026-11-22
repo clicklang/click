@@ -156,6 +156,7 @@ impl LocalBitFields {
             value,
             value_type: Some(ty),
             lvalue_class: self.scalar_class(ty),
+            volatile: false,
             pointee_constant: self.read_only,
             site: CSite::NONE,
         }
@@ -206,6 +207,7 @@ impl LocalBitFields {
             lvalue_class: Some(crate::kernel::effective_type::CAccessClass::BitFieldByte(
                 mask,
             )),
+            volatile: false,
             pointee_constant: self.read_only,
             site: CSite::NONE,
         })

@@ -343,10 +343,10 @@ theorem zlib_packed_integer_seed(word: uint64, a: Integer, b: Integer) {
   apply(integer::to_uint64_round_trip(a)); apply(integer::to_uint64_round_trip(b));
   have to_integer(to_uint64(a)) <= to_integer(65520u64) by solve() using { to_integer(to_uint64(a)) == a; a <= 65520; };
   have to_integer(to_uint64(b)) <= to_integer(65520u64) by solve() using { to_integer(to_uint64(b)) == b; b <= 65520; };
-  apply(zlib_canonical_pack(to_uint64(a), to_uint64(b))) using { to_uint64(a) <= 65520u64; to_uint64(b) <= 65520u64; a >= 0; a <= 18446744073709551615; b >= 0; b <= 18446744073709551615; };
+  apply(zlib_canonical_pack(to_uint64(a), to_uint64(b)));
   have to_uint64(a) <= 65535u64;
   have to_uint64(b) <= 65535u64;
-  apply(integer::uint64_pack_uint16_to_integer(to_uint64(a), to_uint64(b))) using { to_uint64(a) <= 65535u64; to_uint64(b) <= 65535u64; a >= 0; a <= 18446744073709551615; b >= 0; b <= 18446744073709551615; };
+  apply(integer::uint64_pack_uint16_to_integer(to_uint64(a), to_uint64(b)));
   have to_integer(word) == to_integer((to_uint64(a) | (to_uint64(b) << 16))) by {
    solve() using {
     to_integer(word) == a + 65536 * b;

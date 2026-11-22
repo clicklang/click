@@ -2202,6 +2202,12 @@ the C call, not from the proof application. The retired forms
 `contract Name(handle: R(...)) for T(...)`, `step(Name())`, and
 `step(Name(instance))` are refused with their replacements.
 
+An explicit refinement theorem checks the resource and write clauses before
+running the proof of the contracts' pure conditions. The target contract must
+supply the resources the source requires and cover the writes the source permits.
+The resources the source returns, together with any resources it leaves
+untouched, must supply the resources the target promises to return.
+
 A named contract can also take values that are fixed where it is attached to
 a function, declared in its body as `let name: type;`, with a scalar type and
 no initializer. In declaration order these are its value parameters. They are

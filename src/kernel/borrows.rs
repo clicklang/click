@@ -6566,10 +6566,28 @@ impl BorrowLedger {
         {
             return None;
         }
-        Some(super::Proposition::ResourceSeparate {
-            left: Box::new(Resource::Memory(range.clone())),
+        Some(Self::separation_requirement(
+            Resource::Memory(range.clone()),
+            footprint,
+        ))
+    }
+
+    /// A certified resource bound covers the write, even when the verifier
+    /// cannot express that write as a finite set of byte ranges.
+    pub(super) fn resource_access_requirement(
+        &self,
+        bound: &Resource,
+    ) -> Option<super::Proposition> {
+        let footprint = self.storage.data.active_footprint.resource();
+        (!matches!(footprint, Resource::Emp))
+            .then(|| Self::separation_requirement(bound.clone(), footprint))
+    }
+
+    fn separation_requirement(bound: Resource, footprint: Resource) -> super::Proposition {
+        super::Proposition::ResourceSeparate {
+            left: Box::new(bound),
             right: Box::new(footprint),
-        })
+        }
     }
 
     /// Name the protected range when the retained footprint is a single range.

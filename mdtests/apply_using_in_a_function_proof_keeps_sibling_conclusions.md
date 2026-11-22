@@ -1,9 +1,4 @@
-# apply using in a function proof keeps every conclusion
-
-The `have` body below applies `two_bounds`, whose first guarantee is the
-`have` goal itself, and then cites its second guarantee `x <= 10` as the
-listed premise of another application. The explicit application adds both
-guarantees whichever one the goal happens to be.
+# A theorem application in a function proof keeps every conclusion
 
 ```c filename=ident.c
 int32 ident(int32 x) {
@@ -34,8 +29,8 @@ int32 ident(int32 x) {
 
     ensures result >= 0 by {
         have x >= 0 by {
-            apply(two_bounds(x)) using { small(x); };
-            apply(needs_upper(x)) using { x <= 10; };
+            apply(two_bounds(x));
+            apply(needs_upper(x));
             known();
         }
     }

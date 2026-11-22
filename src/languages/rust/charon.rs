@@ -3973,6 +3973,7 @@ pub(super) fn decode_crate(
             &temporaries,
             &constant_initializers,
         );
+        temporaries::fold_callback_copies(&mut locals, &mut blocks, &temporaries, &parameter_types);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);

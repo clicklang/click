@@ -166,20 +166,16 @@ theorem means exactly the same thing.
 `owns`, `consumes` and `produces` remain refused in a theorem, because a
 theorem has nothing to take and nothing to hand back.
 
-A `using` list holds propositions, so a `views` premise is named there by its
-fact form:
+A theorem application reads a `views` premise as a `viewable` fact in scope.
 
 <!-- verified-example: mdtests/c_proof_applies_a_views_theorem.md -->
 ```click
-apply(element_of_a_viewed_range(a, 0, 3, 1)) using {
-    viewable(a[0..3]);
-};
+apply(element_of_a_viewed_range(a, 0, 3, 1));
 ```
 
-Listing the range cites both of its halves. The application owes the span
-half beside the range, and each of its conditions joins the evidence wherever
-it is an available fact, as it is beside a stated range, so the list does not
-restate `0 <= n - lo` and `n - lo <= 1073741823`. An induction hypothesis's
+The application owes the range and its span conditions. A stated range
+supplies both `0 <= n - lo` and `n - lo <= 1073741823`.
+An induction hypothesis's
 range premise is cited the same way
 (`mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md`). A
 range the proof narrowed to carries no such facts, so its halves are refused

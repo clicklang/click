@@ -3584,38 +3584,57 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        // Each successfully lowered span bounds the bytes it can affect.
-        // For an undecided guard, the whole span is still a safe bound.
-        // An unnamed projection provides no span a caller can separate.
+        // An unnamed byte projection can still have a checked resource
+        // bound. Separate that bound from the entire retained borrow frame.
         let caller_borrows = caller_state.borrow_ledger();
-        if let Some(ledger) = caller_borrows.filter(|ledger| ledger.has_active_memory_borrows())
+        let first_write_ordinal = interface.contract_requires().len();
+        let mut write_requirements = if let Some(ledger) =
+            caller_borrows.filter(|ledger| ledger.has_active_memory_borrows())
             && transfer
                 .memory_effects
                 .iter()
                 .any(MemoryRange::is_unnamed_footprint)
         {
-            paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::UnboundedWriteWithLiveView {
-                    callee: name.to_owned(),
-                    effect_source: transfer.unbounded_write_source.take(),
-                    protected: ledger.single_protected_range().map(Box::new),
-                }),
-                facts,
-                obligations,
-            ));
-            continue;
-        }
-        let mut write_requirements = verified_call_borrow_requirements(
-            caller_borrows,
-            &transfer.memory_effects,
-            call_site,
-            interface.contract_requires().len(),
-            if suspended.is_some() {
-                CallBorrowEffect::WorkerWrite
-            } else {
-                CallBorrowEffect::CallWrite
-            },
-        );
+            let Some(requirement) = transfer
+                .resource_effect_bound
+                .as_ref()
+                .filter(|_| {
+                    suspended.is_none()
+                        && interface.aggregate_return_mode() != AggregateReturnMode::Construction
+                        && interface.construction_parameter().is_none()
+                })
+                .and_then(|bound| ledger.resource_access_requirement(bound))
+            else {
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::UnboundedWriteWithLiveView {
+                        callee: name.to_owned(),
+                        effect_source: transfer.unbounded_write_source.take(),
+                        protected: ledger.single_protected_range().map(Box::new),
+                    }),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            };
+            vec![call_borrow_requirement(
+                requirement,
+                &Arc::new(call_site()),
+                first_write_ordinal,
+                CallBorrowEffect::CallWrite,
+            )]
+        } else {
+            verified_call_borrow_requirements(
+                caller_borrows,
+                &transfer.memory_effects,
+                call_site,
+                first_write_ordinal,
+                if suspended.is_some() {
+                    CallBorrowEffect::WorkerWrite
+                } else {
+                    CallBorrowEffect::CallWrite
+                },
+            )
+        };
         // A checked mutex-use call may execute runtime lock/unlock operations.
         // Their representation writes are authorized by the selected use
         // transfer, not by the contract's ordinary mutable footprint. Keep
@@ -5434,6 +5453,19 @@ fn verified_call_borrow_requirements(
         return Vec::new();
     }
     let site = Arc::new(call_site());
+    requirements
+        .map(|(index, requirement)| {
+            call_borrow_requirement(requirement, &site, first_ordinal + index, effect)
+        })
+        .collect()
+}
+
+fn call_borrow_requirement(
+    requirement: Proposition,
+    site: &Arc<CallRequirementSite>,
+    ordinal: usize,
+    effect: CallBorrowEffect,
+) -> ProofObligation {
     let context = match effect {
         CallBorrowEffect::CallWrite => "verified call write separation",
         CallBorrowEffect::WorkerWrite => "suspended worker write separation",
@@ -5441,26 +5473,22 @@ fn verified_call_borrow_requirements(
         CallBorrowEffect::CallRetirement => "verified call allocation retirement separation",
         CallBorrowEffect::WorkerRetirement => "suspended worker allocation retirement separation",
     };
-    requirements
-        .map(|(index, requirement)| {
-            let obligation = ProofObligation::verification_condition(requirement);
-            let obligation = match effect {
-                CallBorrowEffect::CallWrite
-                | CallBorrowEffect::WorkerWrite
-                | CallBorrowEffect::MutexWrite => obligation.with_live_view_write(),
-                CallBorrowEffect::CallRetirement | CallBorrowEffect::WorkerRetirement => obligation,
-            };
-            obligation
-                .with_call_requirement_site(Arc::new(CallRequirementSource::new(
-                    site.clone(),
-                    first_ordinal + index,
-                    None,
-                    false,
-                    None,
-                )))
-                .with_context(context)
-        })
-        .collect()
+    let obligation = ProofObligation::verification_condition(requirement);
+    let obligation = match effect {
+        CallBorrowEffect::CallWrite
+        | CallBorrowEffect::WorkerWrite
+        | CallBorrowEffect::MutexWrite => obligation.with_live_view_write(),
+        CallBorrowEffect::CallRetirement | CallBorrowEffect::WorkerRetirement => obligation,
+    };
+    obligation
+        .with_call_requirement_site(Arc::new(CallRequirementSource::new(
+            site.clone(),
+            ordinal,
+            None,
+            false,
+            None,
+        )))
+        .with_context(context)
 }
 
 fn refresh_call_written_locals(
@@ -9739,6 +9767,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
 }
 
 mod contract_refinement;
+pub(crate) use contract_refinement::ContractRefinementPreparationError;
 use contract_refinement::*;
 
 #[cfg(test)]

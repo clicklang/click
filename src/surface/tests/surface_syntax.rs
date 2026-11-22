@@ -1604,20 +1604,17 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
             if application.name == "equality_symmetric"
     ));
 
-    let explicit = source.replace(
-        "apply(equality_symmetric(first, second));",
-        "apply(equality_symmetric(first, second)) using { first == second; }",
-    );
-    let explicit_result = verify_click_theorems(&explicit);
-    explicit_result.expect("exported explicit steps should verify independently");
-
-    let corrupted = source.replace(
-        "apply(equality_symmetric(first, second));",
-        "apply(equality_symmetric(first, second)) using {}",
+    let (lemma, caller) = source.split_once("theorem use_equality_symmetric").unwrap();
+    let corrupted = format!(
+        "{lemma}theorem use_equality_symmetric{}",
+        caller.replacen("requires first == second;", "", 1),
     );
     let error = verify_click_theorems(&corrupted)
-        .expect_err("an independently supplied certificate cannot omit its premise");
-    assert!(error.message().contains("required exact fact"), "{error:?}");
+        .expect_err("a theorem application requires its instantiated premise");
+    assert!(
+        error.message().contains("has an unproved obligation"),
+        "{error:?}"
+    );
 }
 
 #[test]

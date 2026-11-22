@@ -738,6 +738,9 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
     })?;
     if preparing {
         for guard in &captured.1 {
+            if ProofObligation::evaluation_requirement_is_established(assumptions, guard) {
+                continue;
+            }
             crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
                 ClickError::new("Integer theorem argument has an evaluation obligation")
                     .with_unresolved_requirement(&ProofObligation::verification_condition(

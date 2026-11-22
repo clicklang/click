@@ -1,5 +1,5 @@
 use super::diagnostics::{
-    aligned_sugar, describe_code_region_ref, describe_contract_expression,
+    NullLiteralSourceScope, aligned_sugar, describe_code_region_ref, describe_contract_expression,
     describe_contract_segment, describe_program_expression, describe_program_point_selector,
     describe_resource_subject, object_at_address, program_point_aligned_sugar,
 };
@@ -58,6 +58,7 @@ fn source_contract_application(name: &str, arguments: &[ContractExpression]) -> 
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
+    let _null_literals = NullLiteralSourceScope::enter();
     print_proposition(proposition, PropositionSpelling::Source)
 }
 
@@ -655,6 +656,7 @@ pub fn format_proof_tactics(tactics: &[ProofTactic]) -> Result<String, Certifica
 }
 
 pub(super) fn format_partial_tactic_sequence(tactics: &[ProofTactic]) -> String {
+    let _null_literals = NullLiteralSourceScope::enter();
     let mut output = String::new();
     write_tactics(&mut output, tactics, 0);
     output.pop();
@@ -662,15 +664,13 @@ pub(super) fn format_partial_tactic_sequence(tactics: &[ProofTactic]) -> String 
 }
 
 pub fn format_proof_certificate(certificate: &ProofCertificate) -> String {
-    let mut output = String::from("by {\n");
-    write_tactics(&mut output, &certificate.to_proof_tactics(), 1);
-    output.push('}');
-    output
+    format_proof_block(&certificate.to_proof_tactics())
 }
 
 /// A whole proof block holding `tactics`, as [`format_proof_certificate`]
 /// writes a certificate's.
 pub(in crate::surface) fn format_proof_block(tactics: &[ProofTactic]) -> String {
+    let _null_literals = NullLiteralSourceScope::enter();
     let mut output = String::from("by {\n");
     write_tactics(&mut output, tactics, 1);
     output.push('}');
@@ -953,26 +953,12 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_premise_list(output, premises, indent + 1);
             line(output, &prefix, "};");
         }
-        ProofTactic::ApplyTheorem(application) => line(
+        ProofTactic::ApplyTheorem(application)
+        | ProofTactic::ApplyTheoremUsing { application, .. } => line(
             output,
             &prefix,
             &format!("apply({});", format_theorem_application(application)),
         ),
-        ProofTactic::ApplyTheoremUsing {
-            application,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "apply({}) using {{",
-                    format_theorem_application(application)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
         ProofTactic::Have(have) => {
             output.push_str(&prefix);
             output.push_str("have ");
@@ -1704,6 +1690,51 @@ mod tests {
             PropositionSpelling::Refusal,
         ] {
             assert_eq!(print_proposition(&proposition, mode), "-9i64 <= 100i64");
+        }
+    }
+
+    #[test]
+    fn nested_null_pointer_constants_reparse_in_generated_propositions() {
+        let parsed = parser::parse(
+            "void f(int32* p) { requires aligned(p, 8); requires address(p) == 0u64; ensures true; }",
+        )
+        .unwrap();
+        let mut requirements = parsed.function_blocks()[0].requires().to_vec();
+        for (requirement, expected_source) in requirements.iter_mut().zip([
+            "aligned((0u64 as (int32 *)), 8)",
+            "address((0u64 as (int32 *))) == 0u64",
+        ]) {
+            let Requirement::Proposition(proposition) = requirement else {
+                panic!("expected a proposition");
+            };
+            let ClickProposition::Comparison { left, .. } = proposition else {
+                panic!("expected an address comparison");
+            };
+            let address = match left {
+                ContractExpression::BitwiseAnd(address, _) => address.as_mut(),
+                address => address,
+            };
+            let ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                expression, ..
+            }) = address
+            else {
+                panic!("expected a pointer-to-address cast");
+            };
+            **expression = ProgramExpression::Value(ProgramValue::typed_pointer(
+                Address::null(),
+                ProgramType::Int32Pointer,
+            ));
+
+            let source = source_click_proposition(proposition);
+            assert_eq!(source, expected_source);
+            assert!(authored_click_proposition(proposition).contains("NULL"));
+            let sidecar = format!(
+                r#"verifying "null.c"; void f() {{
+                    ensures {source};
+                }} by {{ step_until(function.exit); solve(); }}"#
+            );
+            verify_c_sources(&sidecar, &[("null.c", "void f(void) {}")])
+                .expect("the generated proposition should prove a fact about the null address");
         }
     }
 

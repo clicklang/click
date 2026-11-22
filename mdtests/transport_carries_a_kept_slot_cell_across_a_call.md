@@ -91,21 +91,13 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     step(put, { r: b });
     have contains(memory(*pool) * at(m1, b), statement(1).footprint) by { known(); }
     apply(separation::contains_refl(memory(first->at)));
-    apply(separation::separate_restrict(memory(*pool) * at(m1, b), memory(first->at), statement(1).footprint, memory(first->at))) using {
-        at(m1, separate(memory(*pool) * b, memory(first->at)));
-        contains(memory(*pool) * at(m1, b), statement(1).footprint);
-        contains(memory(first->at), memory(first->at));
-    };
+    apply(separation::separate_restrict(memory(*pool) * at(m1, b), memory(first->at), statement(1).footprint, memory(first->at)));
     have first->at == at(m1, first->at) by {
         preserve(memory(first->at), statement(1));
     }
     have pool->data == at(m1, pool->data);
     apply(separation::contains_refl(memory(at(m1, pool->data + first_at)[0])));
-    apply(separation::separate_restrict(memory(*pool) * at(m1, b), memory(at(m1, pool->data + first_at)[0]), statement(1).footprint, memory(at(m1, pool->data + first_at)[0]))) using {
-        at(m1, separate(memory(*pool) * b, memory(*(pool->data + first_at))));
-        contains(memory(*pool) * at(m1, b), statement(1).footprint);
-        contains(memory(at(m1, pool->data + first_at)[0]), memory(at(m1, pool->data + first_at)[0]));
-    };
+    apply(separation::separate_restrict(memory(*pool) * at(m1, b), memory(at(m1, pool->data + first_at)[0]), statement(1).footprint, memory(at(m1, pool->data + first_at)[0])));
     have (let saved: int32* = at(m1, pool->data + first_at); saved[0]) == at(m1, pool->data[first_at]) by {
         preserve(memory(at(m1, pool->data + first_at)[0]), statement(1));
     }

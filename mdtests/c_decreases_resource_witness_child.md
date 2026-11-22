@@ -59,12 +59,8 @@ uint32 count_nodes(struct node* node) {
         mark before_call;
         step();
         have contains(marked_list(child), statement(1).region(1).footprint) by { known(); }
-        apply(separation::contains_refl(memory(node->word))) using {};
-        apply(separation::separate_restrict(marked_list(child), memory(node->word), statement(1).region(1).footprint, memory(node->word))) using {
-            separate(marked_list(child), memory(node->word));
-            contains(marked_list(child), statement(1).region(1).footprint);
-            contains(memory(node->word), memory(node->word));
-        };
+        apply(separation::contains_refl(memory(node->word)));
+        apply(separation::separate_restrict(marked_list(child), memory(node->word), statement(1).region(1).footprint, memory(node->word)));
         have *((&node->word) as (int32 **)) == at(before_call, *((&node->word) as (int32 **))) by {
             preserve(memory(node->word), statement(1).region(1));
         }

@@ -33,30 +33,18 @@ int32 setup(struct s* p, int32 d[], int32 n) {
 } by {
     observe(src(d, n));
     have separate(memory(*p), memory(d[0..n])) by { solve(); }
-    have contains(memory(d[0..n]), memory(d[0..n])) by { apply(click::separation::contains_refl(memory(d[0..n]))) using {}; }
+    have contains(memory(d[0..n]), memory(d[0..n])) by { apply(click::separation::contains_refl(memory(d[0..n]))); }
     have contains(memory(*p), memory(p->a)) by { normalize(); }
     have contains(memory(*p), memory(p->b)) by { normalize(); }
     have contains(memory(*p), memory(p->d)) by { normalize(); }
     have separate(memory(p->a), memory(d[0..n])) by {
-        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->a), memory(d[0..n]))) using {
-            separate(memory(*p), memory(d[0..n]));
-            contains(memory(*p), memory(p->a));
-            contains(memory(d[0..n]), memory(d[0..n]));
-        };
+        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->a), memory(d[0..n])));
     }
     have separate(memory(p->b), memory(d[0..n])) by {
-        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->b), memory(d[0..n]))) using {
-            separate(memory(*p), memory(d[0..n]));
-            contains(memory(*p), memory(p->b));
-            contains(memory(d[0..n]), memory(d[0..n]));
-        };
+        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->b), memory(d[0..n])));
     }
     have separate(memory(p->d), memory(d[0..n])) by {
-        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->d), memory(d[0..n]))) using {
-            separate(memory(*p), memory(d[0..n]));
-            contains(memory(*p), memory(p->d));
-            contains(memory(d[0..n]), memory(d[0..n]));
-        };
+        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->d), memory(d[0..n])));
     }
     step_until(function.exit);
     fold(box(p));

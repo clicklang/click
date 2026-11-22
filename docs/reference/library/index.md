@@ -747,7 +747,7 @@ theorem step_le_lt(a: Integer, b: Integer) {
         } else {
             have b <= a by { known(); }
             have a + 1 + b <= b + a by {
-                apply(integer::add_le(a + 1, b, b, a)) using { a + 1 <= b; b <= a; };
+                apply(integer::add_le(a + 1, b, b, a));
             }
             contradiction(a + 1 + b <= b + a);
         }
@@ -771,7 +771,7 @@ theorem le_ne_lt(a: Integer, b: Integer) {
         } else {
             have b <= a by { known(); }
             have a == b by {
-                apply(integer::le_antisymmetric(a, b)) using { a <= b; b <= a; };
+                apply(integer::le_antisymmetric(a, b));
             }
             contradiction(a == b);
         }
@@ -825,11 +825,11 @@ theorem le_difference(a:Integer,b:Integer,value:Integer) {
  requires value==a-b;
  ensures value<=0 by {
   have a + -b <= b + -b by {
-   apply(click::integer::add_le(a,b,-b,-b)) using {a<=b;-b<=-b;};
+   apply(click::integer::add_le(a,b,-b,-b));
   }
   have value == a + -b by { rewrite(value,a-b); known(); }
   have 0 == b + -b by known();
-  apply(click::integer::le_substitute(a + -b,b + -b,value,0)) using {a + -b <= b + -b; value==a + -b;0==b + -b;};
+  apply(click::integer::le_substitute(a + -b,b + -b,value,0));
  }
 }
 ```
@@ -846,11 +846,11 @@ theorem difference_le(a:Integer,b:Integer,value:Integer) {
  requires value==a-b;
  ensures a<=b by {
   have value + b <= 0 + b by {
-   apply(click::integer::add_le(value,0,b,b)) using {value<=0;b<=b;};
+   apply(click::integer::add_le(value,0,b,b));
   }
   have a == value + b by { rewrite(value,a-b); known(); }
   have b == 0 + b by known();
-  apply(click::integer::le_substitute(value+b,0+b,a,b)) using {value+b<=0+b;a==value+b;b==0+b;};
+  apply(click::integer::le_substitute(value+b,0+b,a,b));
  }
 }
 ```
@@ -965,7 +965,7 @@ theorem uint32_add_to_integer(left: uint32, right: uint32) {
         have 0 <= to_integer(left) by known();
         have 0 <= to_integer(right) by known();
         have 0 + 0 <= (to_integer(left) + to_integer(right)) by {
-            apply(integer::add_le(0, to_integer(left), 0, to_integer(right))) using { 0 <= to_integer(left); 0 <= to_integer(right); };
+            apply(integer::add_le(0, to_integer(left), 0, to_integer(right)));
         }
         have 0 <= (to_integer(left) + to_integer(right)) by known();
         known();
@@ -987,23 +987,23 @@ theorem uint32_subtract_to_integer(left: uint32, right: uint32) {
         have 0 <= to_integer(right) by known();
         have to_integer(left) <= 4294967295 by known();
         have to_integer(right) + -to_integer(right) <= (to_integer(left) + -to_integer(right)) by {
-            apply(integer::add_le(to_integer(right), to_integer(left), -to_integer(right), -to_integer(right))) using { to_integer(right) <= to_integer(left); -to_integer(right) <= -to_integer(right); };
+            apply(integer::add_le(to_integer(right), to_integer(left), -to_integer(right), -to_integer(right)));
         }
         have 0 == to_integer(right) + -to_integer(right) by known();
         have (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)) by known();
         have 0 <= (to_integer(left) - to_integer(right)) by {
-            apply(integer::le_substitute(to_integer(right) + -to_integer(right), (to_integer(left) + -to_integer(right)), 0, (to_integer(left) - to_integer(right)))) using { to_integer(right) + -to_integer(right) <= (to_integer(left) + -to_integer(right)); 0 == to_integer(right) + -to_integer(right); (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)); };
+            apply(integer::le_substitute(to_integer(right) + -to_integer(right), (to_integer(left) + -to_integer(right)), 0, (to_integer(left) - to_integer(right))));
         }
         have -to_integer(right) <= 0 by {
-            apply(integer::negate_order(0, to_integer(right))) using { 0 <= to_integer(right); };
+            apply(integer::negate_order(0, to_integer(right)));
             known();
         }
         have (to_integer(left) + -to_integer(right)) <= 4294967295 + 0 by {
-            apply(integer::add_le(to_integer(left), 4294967295, -to_integer(right), 0)) using { to_integer(left) <= 4294967295; -to_integer(right) <= 0; };
+            apply(integer::add_le(to_integer(left), 4294967295, -to_integer(right), 0));
         }
         have to_integer(4294967295u64) == 4294967295 + 0 by known();
         have (to_integer(left) - to_integer(right)) <= 4294967295 by {
-            apply(integer::le_substitute((to_integer(left) + -to_integer(right)), 4294967295 + 0, (to_integer(left) - to_integer(right)), 4294967295)) using { (to_integer(left) + -to_integer(right)) <= 4294967295 + 0; (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)); to_integer(4294967295u64) == 4294967295 + 0; };
+            apply(integer::le_substitute((to_integer(left) + -to_integer(right)), 4294967295 + 0, (to_integer(left) - to_integer(right)), 4294967295));
         }
         known();
     }
@@ -1051,7 +1051,7 @@ theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
         have 0 <= to_integer(left) by known();
         have 0 <= to_integer(right) by known();
         have 0 * to_integer(right) <= (to_integer(left) * to_integer(right)) by {
-            apply(integer::multiply_order_nonnegative(0, to_integer(left), to_integer(right))) using { 0 <= to_integer(left); 0 <= to_integer(right); };
+            apply(integer::multiply_order_nonnegative(0, to_integer(left), to_integer(right)));
         }
         have 0 <= (to_integer(left) * to_integer(right)) by known();
         if right == 0u32 {
@@ -1061,7 +1061,7 @@ theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
                 known();
             }
             have (to_integer(left) * to_integer(right)) <= 4294967295 by {
-                apply(integer::le_substitute(0, 4294967295, (to_integer(left) * to_integer(right)), 4294967295)) using { 0 <= 4294967295; (to_integer(left) * to_integer(right)) == 0; 4294967295 == 4294967295; };
+                apply(integer::le_substitute(0, 4294967295, (to_integer(left) * to_integer(right)), 4294967295));
             }
             known();
         } else {
@@ -1073,30 +1073,30 @@ theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
                 }
             }
             have to_integer(4294967295u32 / right) == truncating_quotient(4294967295, to_integer(right)) by {
-                apply(integer::uint32_divide_to_integer(4294967295u32, right)) using { to_integer(right) != 0; };
+                apply(integer::uint32_divide_to_integer(4294967295u32, right));
             }
             have to_integer(left) <= truncating_quotient(4294967295, to_integer(right)) by {
                 rewrite(truncating_quotient(4294967295, to_integer(right)), to_integer(4294967295u32 / right));
                 known();
             }
             have 4294967295 == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)) by {
-                apply(integer::truncation_identity(4294967295, to_integer(right))) using { to_integer(right) != 0; };
+                apply(integer::truncation_identity(4294967295, to_integer(right)));
             }
             have 0 <= truncating_remainder(4294967295, to_integer(right)) by {
-                apply(integer::nonnegative_dividend_remainder(4294967295, to_integer(right))) using { to_integer(right) != 0; 0 <= 4294967295; };
+                apply(integer::nonnegative_dividend_remainder(4294967295, to_integer(right)));
             }
             have (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0 <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)) by {
-                apply(integer::add_le((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 0, truncating_remainder(4294967295, to_integer(right)))) using { (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)); 0 <= truncating_remainder(4294967295, to_integer(right)); to_integer(right) != 0; };
+                apply(integer::add_le((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 0, truncating_remainder(4294967295, to_integer(right))));
             }
             have (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0 by known();
             have (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) <= 4294967295 by {
-                apply(integer::le_substitute((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0, (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 4294967295)) using { (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0 <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)); (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0; 4294967295 == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)); to_integer(right) != 0; };
+                apply(integer::le_substitute((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0, (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 4294967295));
             }
             have (to_integer(left) * to_integer(right)) <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) by {
-                apply(integer::multiply_order_nonnegative(to_integer(left), truncating_quotient(4294967295, to_integer(right)), to_integer(right))) using { to_integer(left) <= truncating_quotient(4294967295, to_integer(right)); 0 <= to_integer(right); to_integer(right) != 0; };
+                apply(integer::multiply_order_nonnegative(to_integer(left), truncating_quotient(4294967295, to_integer(right)), to_integer(right)));
             }
             have (to_integer(left) * to_integer(right)) <= 4294967295 by {
-                apply(integer::le_transitive((to_integer(left) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 4294967295)) using { (to_integer(left) * to_integer(right)) <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)); (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) <= 4294967295; to_integer(right) != 0; };
+                apply(integer::le_transitive((to_integer(left) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 4294967295));
             }
             known();
         }
@@ -1118,22 +1118,12 @@ theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
             have to_integer(right) != 0 by known();
             have 0 <= to_integer(right) by known();
             have 0 < to_integer(right) by {
-                apply(integer::le_ne_lt(0, to_integer(right))) using {
-                    0 <= to_integer(right);
-                    0 != to_integer(right);
-                };
+                apply(integer::le_ne_lt(0, to_integer(right)));
             }
-            apply(integer::lt_step_le(0, to_integer(right))) using { 0 < to_integer(right); };
+            apply(integer::lt_step_le(0, to_integer(right)));
             have 1 <= to_integer(right) by known();
-            apply(integer::positive_divisor_quotient_lower(4294967295, to_integer(right), to_integer(left))) using {
-                to_integer(right) != 0;
-                1 <= to_integer(right);
-                to_integer(left) * to_integer(right) <= 4294967295;
-            };
-            apply(integer::uint32_divide_to_integer(4294967295u32, right)) using {
-                right != 0u32;
-                to_integer(right) != 0;
-            };
+            apply(integer::positive_divisor_quotient_lower(4294967295, to_integer(right), to_integer(left)));
+            apply(integer::uint32_divide_to_integer(4294967295u32, right));
             have to_integer(left) <= to_integer(4294967295u32 / right) by {
                 rewrite(to_integer(4294967295u32 / right), truncating_quotient(4294967295, to_integer(right)));
                 known();
@@ -1161,7 +1151,7 @@ theorem uint64_add_to_integer(left: uint64, right: uint64) {
         have 0 <= to_integer(left) by known();
         have 0 <= to_integer(right) by known();
         have 0 + 0 <= (to_integer(left) + to_integer(right)) by {
-            apply(integer::add_le(0, to_integer(left), 0, to_integer(right))) using { 0 <= to_integer(left); 0 <= to_integer(right); };
+            apply(integer::add_le(0, to_integer(left), 0, to_integer(right)));
         }
         have 0 <= (to_integer(left) + to_integer(right)) by known();
         known();
@@ -1184,29 +1174,18 @@ theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
         have -2147483648 <= to_integer(value) by known();
         have to_integer(value) <= to_integer(value) + 1 by known();
         have -2147483648 <= to_integer(value) + 1 by {
-            apply(integer::le_transitive(-2147483648, to_integer(value), to_integer(value) + 1)) using {
-                -2147483648 <= to_integer(value);
-                to_integer(value) <= to_integer(value) + 1;
-            };
+            apply(integer::le_transitive(-2147483648, to_integer(value), to_integer(value) + 1));
         }
         have to_integer(value) + 1 <= to_integer(upper) by {
-            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                to_integer(value) < to_integer(upper);
-            };
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper)));
         }
         have to_integer(upper) <= 2147483647 by known();
         have to_integer(value) + 1 <= 2147483647 by {
-            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 2147483647)) using {
-                to_integer(value) + 1 <= to_integer(upper);
-                to_integer(upper) <= 2147483647;
-            };
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 2147483647));
         }
         have defined(value + 1) by known();
-        apply(integer::int32_add_to_integer(value, 1)) using { defined(value + 1); };
-        apply(integer::le_transitive(to_integer(lower), to_integer(value), to_integer(value) + 1)) using {
-            to_integer(lower) <= to_integer(value);
-            to_integer(value) <= to_integer(value) + 1;
-        };
+        apply(integer::int32_add_to_integer(value, 1));
+        apply(integer::le_transitive(to_integer(lower), to_integer(value), to_integer(value) + 1));
         known();
     }
 }
@@ -1228,25 +1207,17 @@ theorem int32_increment_upper_bound(value: int32, upper: int32) {
         have -2147483648 <= to_integer(value) by known();
         have to_integer(value) <= to_integer(value) + 1 by known();
         have -2147483648 <= to_integer(value) + 1 by {
-            apply(integer::le_transitive(-2147483648, to_integer(value), to_integer(value) + 1)) using {
-                -2147483648 <= to_integer(value);
-                to_integer(value) <= to_integer(value) + 1;
-            };
+            apply(integer::le_transitive(-2147483648, to_integer(value), to_integer(value) + 1));
         }
         have to_integer(value) + 1 <= to_integer(upper) by {
-            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                to_integer(value) < to_integer(upper);
-            };
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper)));
         }
         have to_integer(upper) <= 2147483647 by known();
         have to_integer(value) + 1 <= 2147483647 by {
-            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 2147483647)) using {
-                to_integer(value) + 1 <= to_integer(upper);
-                to_integer(upper) <= 2147483647;
-            };
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 2147483647));
         }
         have defined(value + 1) by known();
-        apply(integer::int32_add_to_integer(value, 1)) using { defined(value + 1); };
+        apply(integer::int32_add_to_integer(value, 1));
         known();
     }
 }
@@ -1268,25 +1239,17 @@ theorem int32_increment_strictly_increases(value: int32, upper: int32) {
         have -2147483648 <= to_integer(value) by known();
         have to_integer(value) <= to_integer(value) + 1 by known();
         have -2147483648 <= to_integer(value) + 1 by {
-            apply(integer::le_transitive(-2147483648, to_integer(value), to_integer(value) + 1)) using {
-                -2147483648 <= to_integer(value);
-                to_integer(value) <= to_integer(value) + 1;
-            };
+            apply(integer::le_transitive(-2147483648, to_integer(value), to_integer(value) + 1));
         }
         have to_integer(value) + 1 <= to_integer(upper) by {
-            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                to_integer(value) < to_integer(upper);
-            };
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper)));
         }
         have to_integer(upper) <= 2147483647 by known();
         have to_integer(value) + 1 <= 2147483647 by {
-            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 2147483647)) using {
-                to_integer(value) + 1 <= to_integer(upper);
-                to_integer(upper) <= 2147483647;
-            };
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 2147483647));
         }
         have defined(value + 1) by known();
-        apply(integer::int32_add_to_integer(value, 1)) using { defined(value + 1); };
+        apply(integer::int32_add_to_integer(value, 1));
         have to_integer(value) < to_integer(value) + 1 by known();
         known();
     }
@@ -1309,15 +1272,10 @@ theorem int32_increment_below_max_is_defined(value: int32) {
         have -2147483648 <= to_integer(value) by known();
         have to_integer(value) <= to_integer(value) + 1 by known();
         have -2147483648 <= to_integer(value) + 1 by {
-            apply(integer::le_transitive(-2147483648, to_integer(value), to_integer(value) + 1)) using {
-                -2147483648 <= to_integer(value);
-                to_integer(value) <= to_integer(value) + 1;
-            };
+            apply(integer::le_transitive(-2147483648, to_integer(value), to_integer(value) + 1));
         }
         have to_integer(value) + 1 <= 2147483647 by {
-            apply(integer::lt_step_le(to_integer(value), 2147483647)) using {
-                to_integer(value) < 2147483647;
-            };
+            apply(integer::lt_step_le(to_integer(value), 2147483647));
         }
         known();
     }
@@ -1338,22 +1296,15 @@ theorem uint64_increment_upper_bound(value: uint64, upper: uint64) {
     ensures to_integer(value + 1u64) <= to_integer(upper) by {
         have to_integer(value) < to_integer(upper) by known();
         have (to_integer(value) + 1) <= to_integer(upper) by {
-            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                to_integer(value) < to_integer(upper);
-            };
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper)));
         }
         have to_integer(upper) <= 18446744073709551615 by known();
         have (to_integer(value) + 1) <= 18446744073709551615 by {
-            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 18446744073709551615)) using {
-                to_integer(value) + 1 <= to_integer(upper);
-                to_integer(upper) <= 18446744073709551615;
-            };
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 18446744073709551615));
         }
         have (to_integer(value) + to_integer(1u64)) <= 18446744073709551615 by known();
         have to_integer(value + 1u64) == (to_integer(value) + 1) by {
-            apply(integer::uint64_add_to_integer(value, 1u64)) using {
-                to_integer(value) + to_integer(1u64) <= 18446744073709551615;
-            };
+            apply(integer::uint64_add_to_integer(value, 1u64));
             known();
         }
         rewrite(to_integer(value + 1u64), to_integer(value) + 1);
@@ -1376,7 +1327,7 @@ theorem uint64_multiply_to_integer(left: uint64, right: uint64) {
         have 0 <= to_integer(left) by known();
         have 0 <= to_integer(right) by known();
         have 0 * to_integer(right) <= (to_integer(left) * to_integer(right)) by {
-            apply(integer::multiply_order_nonnegative(0, to_integer(left), to_integer(right))) using { 0 <= to_integer(left); 0 <= to_integer(right); };
+            apply(integer::multiply_order_nonnegative(0, to_integer(left), to_integer(right)));
         }
         have 0 <= (to_integer(left) * to_integer(right)) by known();
         known();
@@ -1398,21 +1349,11 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
         have to_integer(y) != 0;
         have 0 <= to_integer(y);
         have 0 <= to_integer(18446744073709551615u64) by known();
-        apply(integer::uint64_divide_to_integer(18446744073709551615u64, y)) using {
-            y != 0u64;
-            to_integer(y) != 0;
-        };
+        apply(integer::uint64_divide_to_integer(18446744073709551615u64, y));
         have to_integer(x) <= to_integer(18446744073709551615u64 / y);
-        apply(integer::multiply_order_nonnegative(to_integer(x), to_integer(18446744073709551615u64 / y), to_integer(y))) using {
-            to_integer(x) <= to_integer(18446744073709551615u64 / y);
-            0 <= to_integer(y);
-            y != 0u64;
-        };
-        apply(integer::truncation_identity(to_integer(18446744073709551615u64), to_integer(y))) using { to_integer(y) != 0; };
-        apply(integer::nonnegative_dividend_remainder(to_integer(18446744073709551615u64), to_integer(y))) using {
-            to_integer(y) != 0;
-            0 <= to_integer(18446744073709551615u64);
-        };
+        apply(integer::multiply_order_nonnegative(to_integer(x), to_integer(18446744073709551615u64 / y), to_integer(y)));
+        apply(integer::truncation_identity(to_integer(18446744073709551615u64), to_integer(y)));
+        apply(integer::nonnegative_dividend_remainder(to_integer(18446744073709551615u64), to_integer(y)));
         have to_integer(18446744073709551615u64 / y) * to_integer(y) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y) by {
             rewrite(to_integer(18446744073709551615u64 / y), truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)));
             known();
@@ -1443,23 +1384,23 @@ theorem uint64_subtract_to_integer(left: uint64, right: uint64) {
         have 0 <= to_integer(right) by known();
         have to_integer(left) <= 18446744073709551615 by known();
         have to_integer(right) + -to_integer(right) <= (to_integer(left) + -to_integer(right)) by {
-            apply(integer::add_le(to_integer(right), to_integer(left), -to_integer(right), -to_integer(right))) using { to_integer(right) <= to_integer(left); -to_integer(right) <= -to_integer(right); };
+            apply(integer::add_le(to_integer(right), to_integer(left), -to_integer(right), -to_integer(right)));
         }
         have 0 == to_integer(right) + -to_integer(right) by known();
         have (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)) by known();
         have 0 <= (to_integer(left) - to_integer(right)) by {
-            apply(integer::le_substitute(to_integer(right) + -to_integer(right), (to_integer(left) + -to_integer(right)), 0, (to_integer(left) - to_integer(right)))) using { to_integer(right) + -to_integer(right) <= (to_integer(left) + -to_integer(right)); 0 == to_integer(right) + -to_integer(right); (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)); };
+            apply(integer::le_substitute(to_integer(right) + -to_integer(right), (to_integer(left) + -to_integer(right)), 0, (to_integer(left) - to_integer(right))));
         }
         have -to_integer(right) <= 0 by {
-            apply(integer::negate_order(0, to_integer(right))) using { 0 <= to_integer(right); };
+            apply(integer::negate_order(0, to_integer(right)));
             known();
         }
         have (to_integer(left) + -to_integer(right)) <= 18446744073709551615 + 0 by {
-            apply(integer::add_le(to_integer(left), 18446744073709551615, -to_integer(right), 0)) using { to_integer(left) <= 18446744073709551615; -to_integer(right) <= 0; };
+            apply(integer::add_le(to_integer(left), 18446744073709551615, -to_integer(right), 0));
         }
         have to_integer(18446744073709551615u64) == 18446744073709551615 + 0 by known();
         have (to_integer(left) - to_integer(right)) <= 18446744073709551615 by {
-            apply(integer::le_substitute((to_integer(left) + -to_integer(right)), 18446744073709551615 + 0, (to_integer(left) - to_integer(right)), 18446744073709551615)) using { (to_integer(left) + -to_integer(right)) <= 18446744073709551615 + 0; (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)); to_integer(18446744073709551615u64) == 18446744073709551615 + 0; };
+            apply(integer::le_substitute((to_integer(left) + -to_integer(right)), 18446744073709551615 + 0, (to_integer(left) - to_integer(right)), 18446744073709551615));
         }
         known();
     }
@@ -1672,28 +1613,24 @@ theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
         have to_integer(divisor) != 0 by known();
         have 0 <= to_integer(divisor) by known();
         have 0 < to_integer(divisor) by {
-            apply(integer::le_ne_lt(0, to_integer(divisor))) using { 0 <= to_integer(divisor); 0 != to_integer(divisor); };
+            apply(integer::le_ne_lt(0, to_integer(divisor)));
         }
-        apply(integer::uint32_remainder_to_integer(value, divisor)) using { divisor != 0u32; to_integer(divisor) != 0; };
-        apply(integer::positive_divisor_remainder_upper(to_integer(value), to_integer(divisor))) using { to_integer(divisor) != 0; 0 < to_integer(divisor); };
+        apply(integer::uint32_remainder_to_integer(value, divisor));
+        apply(integer::positive_divisor_remainder_upper(to_integer(value), to_integer(divisor)));
         have truncating_remainder(to_integer(value), to_integer(divisor)) + 1 <= (to_integer(divisor) - 1) + 1 by {
-            apply(integer::add_le(truncating_remainder(to_integer(value), to_integer(divisor)), to_integer(divisor) - 1, 1, 1)) using { truncating_remainder(to_integer(value), to_integer(divisor)) <= to_integer(divisor) - 1; 1 <= 1; to_integer(divisor) != 0; };
+            apply(integer::add_le(truncating_remainder(to_integer(value), to_integer(divisor)), to_integer(divisor) - 1, 1, 1));
         }
         have truncating_remainder(to_integer(value), to_integer(divisor)) + 1 <= to_integer(divisor) by {
             have to_integer(divisor) == (to_integer(divisor) - 1) + 1 by known();
-            apply(integer::le_substitute(truncating_remainder(to_integer(value), to_integer(divisor)) + 1, (to_integer(divisor) - 1) + 1, truncating_remainder(to_integer(value), to_integer(divisor)) + 1, to_integer(divisor))) using {
-                truncating_remainder(to_integer(value), to_integer(divisor)) + 1 <= (to_integer(divisor) - 1) + 1; truncating_remainder(to_integer(value), to_integer(divisor)) + 1 == truncating_remainder(to_integer(value), to_integer(divisor)) + 1; to_integer(divisor) == (to_integer(divisor) - 1) + 1; to_integer(divisor) != 0;
-            };
+            apply(integer::le_substitute(truncating_remainder(to_integer(value), to_integer(divisor)) + 1, (to_integer(divisor) - 1) + 1, truncating_remainder(to_integer(value), to_integer(divisor)) + 1, to_integer(divisor)));
         }
         have to_integer(value % divisor) + 1 == truncating_remainder(to_integer(value), to_integer(divisor)) + 1 by {
-            apply(integer::equal_add(to_integer(value % divisor), truncating_remainder(to_integer(value), to_integer(divisor)), 1, 1)) using { to_integer(value % divisor) == truncating_remainder(to_integer(value), to_integer(divisor)); 1 == 1; divisor != 0u32; to_integer(divisor) != 0; };
+            apply(integer::equal_add(to_integer(value % divisor), truncating_remainder(to_integer(value), to_integer(divisor)), 1, 1));
         }
         have to_integer(value % divisor) + 1 <= to_integer(divisor) by {
-            apply(integer::le_substitute(truncating_remainder(to_integer(value), to_integer(divisor)) + 1, to_integer(divisor), to_integer(value % divisor) + 1, to_integer(divisor))) using {
-                truncating_remainder(to_integer(value), to_integer(divisor)) + 1 <= to_integer(divisor); to_integer(value % divisor) + 1 == truncating_remainder(to_integer(value), to_integer(divisor)) + 1; to_integer(divisor) == to_integer(divisor); divisor != 0u32; to_integer(divisor) != 0;
-            };
+            apply(integer::le_substitute(truncating_remainder(to_integer(value), to_integer(divisor)) + 1, to_integer(divisor), to_integer(value % divisor) + 1, to_integer(divisor)));
         }
-        apply(integer::step_le_lt(to_integer(value % divisor), to_integer(divisor))) using { to_integer(value % divisor) + 1 <= to_integer(divisor); divisor != 0u32; to_integer(divisor) != 0; };
+        apply(integer::step_le_lt(to_integer(value % divisor), to_integer(divisor)));
     }
 }
 ```
@@ -1708,11 +1645,11 @@ The unsigned remainder is below its divisor for any dividend. The nonzero diviso
 theorem uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by {
         have 0u32 <= value;
-        apply(integer::uint32_less_equal_to_integer(0u32, value)) using { 0u32 <= value; };
+        apply(integer::uint32_less_equal_to_integer(0u32, value));
     }
     ensures to_integer(value) <= 4294967295 by {
         have value <= 4294967295u32;
-        apply(integer::uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; };
+        apply(integer::uint32_less_equal_to_integer(value, 4294967295u32));
     }
 }
 ```
@@ -1860,10 +1797,7 @@ theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int
 
     ensures left == right by {
         have to_integer(right) <= to_integer(left) by known();
-        apply(integer::le_antisymmetric(to_integer(left), to_integer(right))) using {
-            to_integer(left) <= to_integer(right);
-            to_integer(right) <= to_integer(left);
-        };
+        apply(integer::le_antisymmetric(to_integer(left), to_integer(right)));
         known();
     }
 }
@@ -1884,10 +1818,7 @@ theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int
 
     ensures left < right by {
         have to_integer(left) != to_integer(right) by known();
-        apply(integer::le_ne_lt(to_integer(left), to_integer(right))) using {
-            to_integer(left) <= to_integer(right);
-            to_integer(left) != to_integer(right);
-        };
+        apply(integer::le_ne_lt(to_integer(left), to_integer(right)));
         known();
     }
 }
@@ -2342,28 +2273,28 @@ theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) 
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
-            apply(integer::truncation_identity(n, d)) using { d != 0; };
+            apply(integer::truncation_identity(n, d));
         }
         have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have truncating_remainder(n, d) <= (d - 1) by {
-            apply(integer::positive_divisor_remainder_upper(n, d)) using { d != 0; 0 < d; };
+            apply(integer::positive_divisor_remainder_upper(n, d));
         }
         have -(d - 1) <= -(truncating_remainder(n, d)) by {
-            apply(integer::negate_order(truncating_remainder(n, d), (d - 1))) using { truncating_remainder(n, d) <= (d - 1); d != 0; };
+            apply(integer::negate_order(truncating_remainder(n, d), (d - 1)));
         }
         have (bound * d) + -(d - 1) <= n + -(truncating_remainder(n, d)) by {
-            apply(integer::add_le((bound * d), n, -(d - 1), -(truncating_remainder(n, d)))) using { (bound * d) <= n; -(d - 1) <= -(truncating_remainder(n, d)); d != 0; };
+            apply(integer::add_le((bound * d), n, -(d - 1), -(truncating_remainder(n, d))));
         }
         have (bound * d) - (d - 1) <= (truncating_quotient(n, d) * d) by {
             have (bound * d) - (d - 1) == (bound * d) + -(d - 1) by {
@@ -2372,13 +2303,13 @@ theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) 
             have (truncating_quotient(n, d) * d) == n + -(truncating_remainder(n, d)) by {
                 known();
             }
-            apply(integer::le_substitute((bound * d) + -(d - 1), n + -(truncating_remainder(n, d)), (bound * d) - (d - 1), (truncating_quotient(n, d) * d))) using { (bound * d) + -(d - 1) <= n + -(truncating_remainder(n, d)); (bound * d) - (d - 1) == (bound * d) + -(d - 1); (truncating_quotient(n, d) * d) == n + -(truncating_remainder(n, d)); d != 0; };
+            apply(integer::le_substitute((bound * d) + -(d - 1), n + -(truncating_remainder(n, d)), (bound * d) - (d - 1), (truncating_quotient(n, d) * d)));
         }
         have -(truncating_quotient(n, d) * d) <= -((bound * d) - (d - 1)) by {
-            apply(integer::negate_order((bound * d) - (d - 1), (truncating_quotient(n, d) * d))) using { (bound * d) - (d - 1) <= (truncating_quotient(n, d) * d); d != 0; };
+            apply(integer::negate_order((bound * d) - (d - 1), (truncating_quotient(n, d) * d)));
         }
         have -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d) by {
-            apply(integer::negate_multiply(truncating_quotient(n, d), d)) using { d != 0; };
+            apply(integer::negate_multiply(truncating_quotient(n, d), d));
         }
         have -bound * d == -(bound * d) by {
             apply(integer::negate_multiply(bound, d));
@@ -2392,22 +2323,22 @@ theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) 
                 rewrite(-bound * d, -(bound * d));
                 known();
             }
-            apply(integer::le_substitute(-(truncating_quotient(n, d) * d), -((bound * d) - (d - 1)), -(truncating_quotient(n, d)) * d, -bound * d + (d - 1))) using { -(truncating_quotient(n, d) * d) <= -((bound * d) - (d - 1)); -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d); -bound * d + (d - 1) == -((bound * d) - (d - 1)); d != 0; };
+            apply(integer::le_substitute(-(truncating_quotient(n, d) * d), -((bound * d) - (d - 1)), -(truncating_quotient(n, d)) * d, -bound * d + (d - 1)));
         }
         have 0 < d by {
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have (d - 1) < d by {
             known();
         }
         have -(truncating_quotient(n, d)) <= -bound by {
-            apply(integer::round_down_le(-(truncating_quotient(n, d)), -bound, d, (d - 1))) using { 0 < d; (d - 1) < d; -(truncating_quotient(n, d)) * d <= -bound * d + (d - 1); d != 0; };
+            apply(integer::round_down_le(-(truncating_quotient(n, d)), -bound, d, (d - 1)));
         }
         have -(-bound) <= -(-(truncating_quotient(n, d))) by {
-            apply(integer::negate_order(-(truncating_quotient(n, d)), -bound)) using { -(truncating_quotient(n, d)) <= -bound; d != 0; };
+            apply(integer::negate_order(-(truncating_quotient(n, d)), -bound));
         }
         have bound == -(-bound) by {
             known();
@@ -2415,7 +2346,7 @@ theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) 
         have truncating_quotient(n, d) == -(-(truncating_quotient(n, d))) by {
             known();
         }
-        apply(integer::le_substitute(-(-bound), -(-(truncating_quotient(n, d))), bound, truncating_quotient(n, d))) using { -(-bound) <= -(-(truncating_quotient(n, d))); bound == -(-bound); truncating_quotient(n, d) == -(-(truncating_quotient(n, d))); d != 0; };
+        apply(integer::le_substitute(-(-bound), -(-(truncating_quotient(n, d))), bound, truncating_quotient(n, d)));
     }
 }
 ```
@@ -2433,26 +2364,26 @@ theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) 
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
-            apply(integer::truncation_identity(n, d)) using { d != 0; };
+            apply(integer::truncation_identity(n, d));
         }
         have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have 1 - d <= truncating_remainder(n, d) by {
-            apply(integer::positive_divisor_remainder_lower(n, d)) using { d != 0; 0 < d; };
+            apply(integer::positive_divisor_remainder_lower(n, d));
         }
         have -(truncating_remainder(n, d)) <= (d - 1) by {
             have -(truncating_remainder(n, d)) <= -(1 - d) by {
-                apply(integer::negate_order(1 - d, truncating_remainder(n, d))) using { 1 - d <= truncating_remainder(n, d); d != 0; };
+                apply(integer::negate_order(1 - d, truncating_remainder(n, d)));
             }
             have -(truncating_remainder(n, d)) == -(truncating_remainder(n, d)) by {
                 known();
@@ -2460,10 +2391,10 @@ theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) 
             have (d - 1) == -(1 - d) by {
                 known();
             }
-            apply(integer::le_substitute(-(truncating_remainder(n, d)), -(1 - d), -(truncating_remainder(n, d)), (d - 1))) using { -(truncating_remainder(n, d)) <= -(1 - d); -(truncating_remainder(n, d)) == -(truncating_remainder(n, d)); (d - 1) == -(1 - d); d != 0; };
+            apply(integer::le_substitute(-(truncating_remainder(n, d)), -(1 - d), -(truncating_remainder(n, d)), (d - 1)));
         }
         have n + -(truncating_remainder(n, d)) <= (bound * d) + (d - 1) by {
-            apply(integer::add_le(n, (bound * d), -(truncating_remainder(n, d)), (d - 1))) using { n <= (bound * d); -(truncating_remainder(n, d)) <= (d - 1); d != 0; };
+            apply(integer::add_le(n, (bound * d), -(truncating_remainder(n, d)), (d - 1)));
         }
         have (truncating_quotient(n, d) * d) <= (bound * d) + (d - 1) by {
             have (truncating_quotient(n, d) * d) == n + -(truncating_remainder(n, d)) by {
@@ -2472,18 +2403,18 @@ theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) 
             have (bound * d) + (d - 1) == (bound * d) + (d - 1) by {
                 known();
             }
-            apply(integer::le_substitute(n + -(truncating_remainder(n, d)), (bound * d) + (d - 1), (truncating_quotient(n, d) * d), (bound * d) + (d - 1))) using { n + -(truncating_remainder(n, d)) <= (bound * d) + (d - 1); (truncating_quotient(n, d) * d) == n + -(truncating_remainder(n, d)); (bound * d) + (d - 1) == (bound * d) + (d - 1); d != 0; };
+            apply(integer::le_substitute(n + -(truncating_remainder(n, d)), (bound * d) + (d - 1), (truncating_quotient(n, d) * d), (bound * d) + (d - 1)));
         }
         have 0 < d by {
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have (d - 1) < d by {
             known();
         }
-        apply(integer::round_down_le(truncating_quotient(n, d), bound, d, (d - 1))) using { 0 < d; (d - 1) < d; (truncating_quotient(n, d) * d) <= (bound * d) + (d - 1); d != 0; };
+        apply(integer::round_down_le(truncating_quotient(n, d), bound, d, (d - 1)));
     }
 }
 ```
@@ -2643,9 +2574,7 @@ theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
     ensures b * factor <= a * factor by {
         have 0 <= -factor by {
             have factor + -factor <= 0 + -factor by {
-                apply(integer::add_le(factor, 0, -factor, -factor)) using {
-                    factor <= 0; -factor <= -factor;
-                };
+                apply(integer::add_le(factor, 0, -factor, -factor));
             }
             have 0 == factor + -factor by { known(); }
             have -factor == 0 + -factor by { known(); }
@@ -2654,14 +2583,10 @@ theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
             known();
         }
         have a * -factor <= b * -factor by {
-            apply(integer::multiply_order_nonnegative(a, b, -factor)) using {
-                a <= b; 0 <= -factor;
-            };
+            apply(integer::multiply_order_nonnegative(a, b, -factor));
         }
         have -(b * -factor) <= -(a * -factor) by {
-            apply(integer::negate_order(a * -factor, b * -factor)) using {
-                a * -factor <= b * -factor;
-            };
+            apply(integer::negate_order(a * -factor, b * -factor));
         }
         have b * -factor == -(b * factor) by { apply(integer::multiply_negate(b, factor)); }
         have a * -factor == -(a * factor) by { apply(integer::multiply_negate(a, factor)); }
@@ -2699,9 +2624,7 @@ theorem negate_order(a: Integer, b: Integer) {
     requires a <= b;
     ensures -b <= -a by {
         have a + (-a + -b) <= b + (-a + -b) by {
-            apply(integer::add_le(a, b, -a + -b, -a + -b)) using {
-                a <= b; -a + -b <= -a + -b;
-            };
+            apply(integer::add_le(a, b, -a + -b, -a + -b));
         }
         have -b == a + (-a + -b) by { known(); }
         have -a == b + (-a + -b) by { known(); }
@@ -2720,12 +2643,10 @@ theorem le_transitive(a: Integer, b: Integer, c: Integer) {
     requires b <= c;
     ensures a <= c by {
         have a + b <= b + c by {
-            apply(integer::add_le(a, b, b, c)) using { a <= b; b <= c; };
+            apply(integer::add_le(a, b, b, c));
         }
         have (a + b) + -b <= (b + c) + -b by {
-            apply(integer::add_le(a + b, b + c, -b, -b)) using {
-                a + b <= b + c; -b <= -b;
-            };
+            apply(integer::add_le(a + b, b + c, -b, -b));
         }
         have a == (a + b) + -b by { known(); }
         have c == (b + c) + -b by { known(); }
@@ -2752,69 +2673,69 @@ theorem product_lower_bound(x: Integer, y: Integer, lo_x: Integer, hi_x: Integer
         have x * y == y * x by { apply(integer::multiply_commutative(x, y)); }
         if 0 <= x {
             have lo_y * x <= y * x by {
-                apply(integer::multiply_order_nonnegative(lo_y, y, x)) using { lo_y <= y; 0 <= x; };
+                apply(integer::multiply_order_nonnegative(lo_y, y, x));
             }
             if 0 <= lo_y {
                 have lo_x * lo_y <= x * lo_y by {
-                    apply(integer::multiply_order_nonnegative(lo_x, x, lo_y)) using { lo_x <= x; 0 <= lo_y; };
+                    apply(integer::multiply_order_nonnegative(lo_x, x, lo_y));
                 }
                 have x * lo_y == lo_y * x by { apply(integer::multiply_commutative(x, lo_y)); }
                 have bound <= lo_y * x by {
                     rewrite(lo_y * x, x * lo_y);
-                    apply(integer::le_transitive(bound, lo_x * lo_y, x * lo_y)) using { bound <= lo_x * lo_y; lo_x * lo_y <= x * lo_y; };
+                    apply(integer::le_transitive(bound, lo_x * lo_y, x * lo_y));
                 }
                 rewrite(x * y, y * x);
-                apply(integer::le_transitive(bound, lo_y * x, y * x)) using { bound <= lo_y * x; lo_y * x <= y * x; };
+                apply(integer::le_transitive(bound, lo_y * x, y * x));
             } else {
                 have lo_y < 0 by { known(); }
                 have lo_y <= 0 by {
-                    apply(integer::lt_le(lo_y, 0)) using { lo_y < 0; };
+                    apply(integer::lt_le(lo_y, 0));
                 }
                 have hi_x * lo_y <= x * lo_y by {
-                    apply(integer::multiply_order_nonpositive(x, hi_x, lo_y)) using { x <= hi_x; lo_y <= 0; };
+                    apply(integer::multiply_order_nonpositive(x, hi_x, lo_y));
                 }
                 have x * lo_y == lo_y * x by { apply(integer::multiply_commutative(x, lo_y)); }
                 have bound <= lo_y * x by {
                     rewrite(lo_y * x, x * lo_y);
-                    apply(integer::le_transitive(bound, hi_x * lo_y, x * lo_y)) using { bound <= hi_x * lo_y; hi_x * lo_y <= x * lo_y; };
+                    apply(integer::le_transitive(bound, hi_x * lo_y, x * lo_y));
                 }
                 rewrite(x * y, y * x);
-                apply(integer::le_transitive(bound, lo_y * x, y * x)) using { bound <= lo_y * x; lo_y * x <= y * x; };
+                apply(integer::le_transitive(bound, lo_y * x, y * x));
             }
         } else {
             have x < 0 by { known(); }
                 have x <= 0 by {
-                    apply(integer::lt_le(x, 0)) using { x < 0; };
+                    apply(integer::lt_le(x, 0));
                 }
             have hi_y * x <= y * x by {
-                apply(integer::multiply_order_nonpositive(y, hi_y, x)) using { y <= hi_y; x <= 0; };
+                apply(integer::multiply_order_nonpositive(y, hi_y, x));
             }
             if 0 <= hi_y {
                 have lo_x * hi_y <= x * hi_y by {
-                    apply(integer::multiply_order_nonnegative(lo_x, x, hi_y)) using { lo_x <= x; 0 <= hi_y; };
+                    apply(integer::multiply_order_nonnegative(lo_x, x, hi_y));
                 }
                 have x * hi_y == hi_y * x by { apply(integer::multiply_commutative(x, hi_y)); }
                 have bound <= hi_y * x by {
                     rewrite(hi_y * x, x * hi_y);
-                    apply(integer::le_transitive(bound, lo_x * hi_y, x * hi_y)) using { bound <= lo_x * hi_y; lo_x * hi_y <= x * hi_y; };
+                    apply(integer::le_transitive(bound, lo_x * hi_y, x * hi_y));
                 }
                 rewrite(x * y, y * x);
-                apply(integer::le_transitive(bound, hi_y * x, y * x)) using { bound <= hi_y * x; hi_y * x <= y * x; };
+                apply(integer::le_transitive(bound, hi_y * x, y * x));
             } else {
                 have hi_y < 0 by { known(); }
                 have hi_y <= 0 by {
-                    apply(integer::lt_le(hi_y, 0)) using { hi_y < 0; };
+                    apply(integer::lt_le(hi_y, 0));
                 }
                 have hi_x * hi_y <= x * hi_y by {
-                    apply(integer::multiply_order_nonpositive(x, hi_x, hi_y)) using { x <= hi_x; hi_y <= 0; };
+                    apply(integer::multiply_order_nonpositive(x, hi_x, hi_y));
                 }
                 have x * hi_y == hi_y * x by { apply(integer::multiply_commutative(x, hi_y)); }
                 have bound <= hi_y * x by {
                     rewrite(hi_y * x, x * hi_y);
-                    apply(integer::le_transitive(bound, hi_x * hi_y, x * hi_y)) using { bound <= hi_x * hi_y; hi_x * hi_y <= x * hi_y; };
+                    apply(integer::le_transitive(bound, hi_x * hi_y, x * hi_y));
                 }
                 rewrite(x * y, y * x);
-                apply(integer::le_transitive(bound, hi_y * x, y * x)) using { bound <= hi_y * x; hi_y * x <= y * x; };
+                apply(integer::le_transitive(bound, hi_y * x, y * x));
             }
         }
     }
@@ -2837,69 +2758,69 @@ theorem product_upper_bound(x: Integer, y: Integer, lo_x: Integer, hi_x: Integer
         have x * y == y * x by { apply(integer::multiply_commutative(x, y)); }
         if 0 <= x {
             have y * x <= hi_y * x by {
-                apply(integer::multiply_order_nonnegative(y, hi_y, x)) using { y <= hi_y; 0 <= x; };
+                apply(integer::multiply_order_nonnegative(y, hi_y, x));
             }
             if 0 <= hi_y {
                 have x * hi_y <= hi_x * hi_y by {
-                    apply(integer::multiply_order_nonnegative(x, hi_x, hi_y)) using { x <= hi_x; 0 <= hi_y; };
+                    apply(integer::multiply_order_nonnegative(x, hi_x, hi_y));
                 }
                 have x * hi_y == hi_y * x by { apply(integer::multiply_commutative(x, hi_y)); }
                 have hi_y * x <= bound by {
                     rewrite(hi_y * x, x * hi_y);
-                    apply(integer::le_transitive(x * hi_y, hi_x * hi_y, bound)) using { x * hi_y <= hi_x * hi_y; hi_x * hi_y <= bound; };
+                    apply(integer::le_transitive(x * hi_y, hi_x * hi_y, bound));
                 }
                 rewrite(x * y, y * x);
-                apply(integer::le_transitive(y * x, hi_y * x, bound)) using { y * x <= hi_y * x; hi_y * x <= bound; };
+                apply(integer::le_transitive(y * x, hi_y * x, bound));
             } else {
                 have hi_y < 0 by { known(); }
                 have hi_y <= 0 by {
-                    apply(integer::lt_le(hi_y, 0)) using { hi_y < 0; };
+                    apply(integer::lt_le(hi_y, 0));
                 }
                 have x * hi_y <= lo_x * hi_y by {
-                    apply(integer::multiply_order_nonpositive(lo_x, x, hi_y)) using { lo_x <= x; hi_y <= 0; };
+                    apply(integer::multiply_order_nonpositive(lo_x, x, hi_y));
                 }
                 have x * hi_y == hi_y * x by { apply(integer::multiply_commutative(x, hi_y)); }
                 have hi_y * x <= bound by {
                     rewrite(hi_y * x, x * hi_y);
-                    apply(integer::le_transitive(x * hi_y, lo_x * hi_y, bound)) using { x * hi_y <= lo_x * hi_y; lo_x * hi_y <= bound; };
+                    apply(integer::le_transitive(x * hi_y, lo_x * hi_y, bound));
                 }
                 rewrite(x * y, y * x);
-                apply(integer::le_transitive(y * x, hi_y * x, bound)) using { y * x <= hi_y * x; hi_y * x <= bound; };
+                apply(integer::le_transitive(y * x, hi_y * x, bound));
             }
         } else {
             have x < 0 by { known(); }
                 have x <= 0 by {
-                    apply(integer::lt_le(x, 0)) using { x < 0; };
+                    apply(integer::lt_le(x, 0));
                 }
             have y * x <= lo_y * x by {
-                apply(integer::multiply_order_nonpositive(lo_y, y, x)) using { lo_y <= y; x <= 0; };
+                apply(integer::multiply_order_nonpositive(lo_y, y, x));
             }
             if 0 <= lo_y {
                 have x * lo_y <= hi_x * lo_y by {
-                    apply(integer::multiply_order_nonnegative(x, hi_x, lo_y)) using { x <= hi_x; 0 <= lo_y; };
+                    apply(integer::multiply_order_nonnegative(x, hi_x, lo_y));
                 }
                 have x * lo_y == lo_y * x by { apply(integer::multiply_commutative(x, lo_y)); }
                 have lo_y * x <= bound by {
                     rewrite(lo_y * x, x * lo_y);
-                    apply(integer::le_transitive(x * lo_y, hi_x * lo_y, bound)) using { x * lo_y <= hi_x * lo_y; hi_x * lo_y <= bound; };
+                    apply(integer::le_transitive(x * lo_y, hi_x * lo_y, bound));
                 }
                 rewrite(x * y, y * x);
-                apply(integer::le_transitive(y * x, lo_y * x, bound)) using { y * x <= lo_y * x; lo_y * x <= bound; };
+                apply(integer::le_transitive(y * x, lo_y * x, bound));
             } else {
                 have lo_y < 0 by { known(); }
                 have lo_y <= 0 by {
-                    apply(integer::lt_le(lo_y, 0)) using { lo_y < 0; };
+                    apply(integer::lt_le(lo_y, 0));
                 }
                 have x * lo_y <= lo_x * lo_y by {
-                    apply(integer::multiply_order_nonpositive(lo_x, x, lo_y)) using { lo_x <= x; lo_y <= 0; };
+                    apply(integer::multiply_order_nonpositive(lo_x, x, lo_y));
                 }
                 have x * lo_y == lo_y * x by { apply(integer::multiply_commutative(x, lo_y)); }
                 have lo_y * x <= bound by {
                     rewrite(lo_y * x, x * lo_y);
-                    apply(integer::le_transitive(x * lo_y, lo_x * lo_y, bound)) using { x * lo_y <= lo_x * lo_y; lo_x * lo_y <= bound; };
+                    apply(integer::le_transitive(x * lo_y, lo_x * lo_y, bound));
                 }
                 rewrite(x * y, y * x);
-                apply(integer::le_transitive(y * x, lo_y * x, bound)) using { y * x <= lo_y * x; lo_y * x <= bound; };
+                apply(integer::le_transitive(y * x, lo_y * x, bound));
             }
         }
     }
@@ -2913,7 +2834,7 @@ theorem int32_positive_is_nonnegative(value: int32) {
     requires 0 < value;
 
     ensures 0 <= value by {
-        apply(integer::lt_le(0, to_integer(value))) using { 0 < to_integer(value); };
+        apply(integer::lt_le(0, to_integer(value)));
         known();
     }
 }
@@ -2931,7 +2852,7 @@ theorem int32_positive_is_nonnegative(value: int32) {
 theorem add_right_order(a: Integer, b: Integer, c: Integer) {
     requires a <= b;
     ensures a + c <= b + c by {
-        apply(integer::add_le(a, b, c, c)) using { a <= b; c <= c; };
+        apply(integer::add_le(a, b, c, c));
     }
 }
 ```
@@ -2942,9 +2863,7 @@ theorem add_right_order(a: Integer, b: Integer, c: Integer) {
 theorem int32_less_than_implies_less_equal(first: int32, last: int32) {
     requires first < last;
     ensures first <= last by {
-        apply(integer::lt_le(to_integer(first), to_integer(last))) using {
-            to_integer(first) < to_integer(last);
-        };
+        apply(integer::lt_le(to_integer(first), to_integer(last)));
         known();
     }
 }
@@ -2958,19 +2877,12 @@ theorem int32_less_than_less_equal_transitive(first: int32, middle: int32, last:
     requires middle <= last;
     ensures first < last by {
         have to_integer(first) + 1 <= to_integer(middle) by {
-            apply(integer::lt_step_le(to_integer(first), to_integer(middle))) using {
-                to_integer(first) < to_integer(middle);
-            };
+            apply(integer::lt_step_le(to_integer(first), to_integer(middle)));
         }
         have to_integer(first) + 1 <= to_integer(last) by {
-            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle), to_integer(last))) using {
-                to_integer(first) + 1 <= to_integer(middle);
-                to_integer(middle) <= to_integer(last);
-            };
+            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle), to_integer(last)));
         }
-        apply(integer::step_le_lt(to_integer(first), to_integer(last))) using {
-            to_integer(first) + 1 <= to_integer(last);
-        };
+        apply(integer::step_le_lt(to_integer(first), to_integer(last)));
         known();
     }
 }
@@ -2985,24 +2897,15 @@ theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last:
 
     ensures first < last by {
         have (to_integer(first) + 1) <= (to_integer(middle) + 1) by {
-            apply(integer::add_right_order(to_integer(first), to_integer(middle), 1)) using {
-                to_integer(first) <= to_integer(middle);
-            };
+            apply(integer::add_right_order(to_integer(first), to_integer(middle), 1));
         }
         have (to_integer(middle) + 1) <= to_integer(last) by {
-            apply(integer::lt_step_le(to_integer(middle), to_integer(last))) using {
-                to_integer(middle) < to_integer(last);
-            };
+            apply(integer::lt_step_le(to_integer(middle), to_integer(last)));
         }
         have (to_integer(first) + 1) <= to_integer(last) by {
-            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle) + 1, to_integer(last))) using {
-                (to_integer(first) + 1) <= (to_integer(middle) + 1);
-                (to_integer(middle) + 1) <= to_integer(last);
-            };
+            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle) + 1, to_integer(last)));
         }
-        apply(integer::step_le_lt(to_integer(first), to_integer(last))) using {
-            (to_integer(first) + 1) <= to_integer(last);
-        };
+        apply(integer::step_le_lt(to_integer(first), to_integer(last)));
         known();
     }
 }
@@ -3022,10 +2925,7 @@ theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
     requires middle <= last;
 
     ensures first <= last by {
-        apply(integer::le_transitive(to_integer(first), to_integer(middle), to_integer(last))) using {
-            to_integer(first) <= to_integer(middle);
-            to_integer(middle) <= to_integer(last);
-        };
+        apply(integer::le_transitive(to_integer(first), to_integer(middle), to_integer(last)));
         known();
     }
 }
@@ -3046,19 +2946,12 @@ theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, la
 
     ensures first < last by {
         have (to_integer(first) + 1) <= to_integer(middle) by {
-            apply(integer::lt_step_le(to_integer(first), to_integer(middle))) using {
-                to_integer(first) < to_integer(middle);
-            };
+            apply(integer::lt_step_le(to_integer(first), to_integer(middle)));
         }
         have (to_integer(first) + 1) <= to_integer(last) by {
-            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle), to_integer(last))) using {
-                (to_integer(first) + 1) <= to_integer(middle);
-                to_integer(middle) <= to_integer(last);
-            };
+            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle), to_integer(last)));
         }
-        apply(integer::step_le_lt(to_integer(first), to_integer(last))) using {
-            (to_integer(first) + 1) <= to_integer(last);
-        };
+        apply(integer::step_le_lt(to_integer(first), to_integer(last)));
         known();
     }
 }
@@ -3076,10 +2969,7 @@ theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64
     requires middle <= last;
 
     ensures first <= last by {
-        apply(integer::le_transitive(to_integer(first), to_integer(middle), to_integer(last))) using {
-            to_integer(first) <= to_integer(middle);
-            to_integer(middle) <= to_integer(last);
-        };
+        apply(integer::le_transitive(to_integer(first), to_integer(middle), to_integer(last)));
         known();
     }
 }
@@ -3096,7 +2986,7 @@ theorem subtract_right_order(a: Integer, b: Integer, c: Integer) {
     requires a <= b;
     ensures a - c <= b - c by {
         have a + -c <= b + -c by {
-            apply(integer::add_right_order(a, b, -c)) using { a <= b; };
+            apply(integer::add_right_order(a, b, -c));
         }
         have a - c == a + -c by {
             known();
@@ -3104,7 +2994,7 @@ theorem subtract_right_order(a: Integer, b: Integer, c: Integer) {
         have b - c == b + -c by {
             known();
         }
-        apply(integer::le_substitute(a + -c, b + -c, a - c, b - c)) using { a + -c <= b + -c; a - c == a + -c; b - c == b + -c; };
+        apply(integer::le_substitute(a + -c, b + -c, a - c, b - c));
     }
 }
 ```
@@ -3116,10 +3006,10 @@ theorem lt_le_predecessor(a: Integer, b: Integer) {
     requires a < b;
     ensures a <= b - 1 by {
         have a + 1 <= b by {
-            apply(integer::lt_step_le(a, b)) using { a < b; };
+            apply(integer::lt_step_le(a, b));
         }
         have (a + 1) - 1 <= b - 1 by {
-            apply(integer::subtract_right_order(a + 1, b, 1)) using { a + 1 <= b; };
+            apply(integer::subtract_right_order(a + 1, b, 1));
         }
         have a == (a + 1) - 1 by { known(); }
         rewrite(a, (a + 1) - 1);
@@ -3135,10 +3025,10 @@ theorem subtract_left_order(a: Integer, b: Integer, c: Integer) {
     requires a <= b;
     ensures c - b <= c - a by {
         have -b <= -a by {
-            apply(integer::negate_order(a, b)) using { a <= b; };
+            apply(integer::negate_order(a, b));
         }
         have -b + c <= -a + c by {
-            apply(integer::add_right_order(-b, -a, c)) using { -b <= -a; };
+            apply(integer::add_right_order(-b, -a, c));
         }
         have c - b == -b + c by {
             known();
@@ -3146,7 +3036,7 @@ theorem subtract_left_order(a: Integer, b: Integer, c: Integer) {
         have c - a == -a + c by {
             known();
         }
-        apply(integer::le_substitute(-b + c, -a + c, c - b, c - a)) using { -b + c <= -a + c; c - b == -b + c; c - a == -a + c; };
+        apply(integer::le_substitute(-b + c, -a + c, c - b, c - a));
     }
 }
 ```
@@ -3159,26 +3049,18 @@ theorem int32_positive_predecessor_is_nonnegative(value: int32) {
 
     ensures 0 <= to_integer(value - 1) by {
         have 0 <= to_integer(value) - 1 by {
-            apply(integer::lt_le_predecessor(0, to_integer(value))) using {
-                0 < to_integer(value);
-            };
+            apply(integer::lt_le_predecessor(0, to_integer(value)));
         }
         have -2147483648 <= to_integer(value) - 1 by {
-            apply(integer::le_transitive(-2147483648, 0, to_integer(value) - 1)) using {
-                -2147483648 <= 0;
-                0 <= to_integer(value) - 1;
-            };
+            apply(integer::le_transitive(-2147483648, 0, to_integer(value) - 1));
         }
         have to_integer(value) - 1 <= to_integer(value) by known();
         have to_integer(value) <= 2147483647 by known();
         have to_integer(value) - 1 <= 2147483647 by {
-            apply(integer::le_transitive(to_integer(value) - 1, to_integer(value), 2147483647)) using {
-                to_integer(value) - 1 <= to_integer(value);
-                to_integer(value) <= 2147483647;
-            };
+            apply(integer::le_transitive(to_integer(value) - 1, to_integer(value), 2147483647));
         }
         have defined(value - 1) by known();
-        apply(integer::int32_subtract_to_integer(value, 1)) using { defined(value - 1); };
+        apply(integer::int32_subtract_to_integer(value, 1));
         known();
     }
 }
@@ -3198,26 +3080,18 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
 
     ensures to_integer(value - 1) < to_integer(value) by {
         have 0 <= to_integer(value) - 1 by {
-            apply(integer::lt_le_predecessor(0, to_integer(value))) using {
-                0 < to_integer(value);
-            };
+            apply(integer::lt_le_predecessor(0, to_integer(value)));
         }
         have -2147483648 <= to_integer(value) - 1 by {
-            apply(integer::le_transitive(-2147483648, 0, to_integer(value) - 1)) using {
-                -2147483648 <= 0;
-                0 <= to_integer(value) - 1;
-            };
+            apply(integer::le_transitive(-2147483648, 0, to_integer(value) - 1));
         }
         have to_integer(value) - 1 <= to_integer(value) by known();
         have to_integer(value) <= 2147483647 by known();
         have to_integer(value) - 1 <= 2147483647 by {
-            apply(integer::le_transitive(to_integer(value) - 1, to_integer(value), 2147483647)) using {
-                to_integer(value) - 1 <= to_integer(value);
-                to_integer(value) <= 2147483647;
-            };
+            apply(integer::le_transitive(to_integer(value) - 1, to_integer(value), 2147483647));
         }
         have defined(value - 1) by known();
-        apply(integer::int32_subtract_to_integer(value, 1)) using { defined(value - 1); };
+        apply(integer::int32_subtract_to_integer(value, 1));
         have to_integer(value) - 1 < to_integer(value) by known();
         known();
     }
@@ -3239,30 +3113,19 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
 
     ensures to_integer(value - 1) <= to_integer(bound) by {
         have 0 - 1 <= to_integer(value) - 1 by {
-            apply(integer::subtract_right_order(0, to_integer(value), 1)) using {
-                0 <= to_integer(value);
-            };
+            apply(integer::subtract_right_order(0, to_integer(value), 1));
         }
         have -2147483648 <= to_integer(value) - 1 by {
-            apply(integer::le_transitive(-2147483648, 0 - 1, to_integer(value) - 1)) using {
-                -2147483648 <= 0 - 1;
-                0 - 1 <= to_integer(value) - 1;
-            };
+            apply(integer::le_transitive(-2147483648, 0 - 1, to_integer(value) - 1));
         }
         have to_integer(value) - 1 <= to_integer(value) by known();
         have to_integer(value) <= 2147483647 by known();
         have to_integer(value) - 1 <= 2147483647 by {
-            apply(integer::le_transitive(to_integer(value) - 1, to_integer(value), 2147483647)) using {
-                to_integer(value) - 1 <= to_integer(value);
-                to_integer(value) <= 2147483647;
-            };
+            apply(integer::le_transitive(to_integer(value) - 1, to_integer(value), 2147483647));
         }
         have defined(value - 1) by known();
-        apply(integer::int32_subtract_to_integer(value, 1)) using { defined(value - 1); };
-        apply(integer::le_transitive(to_integer(value) - 1, to_integer(value), to_integer(bound))) using {
-            to_integer(value) - 1 <= to_integer(value);
-            to_integer(value) <= to_integer(bound);
-        };
+        apply(integer::int32_subtract_to_integer(value, 1));
+        apply(integer::le_transitive(to_integer(value) - 1, to_integer(value), to_integer(bound)));
         known();
     }
 }
@@ -3283,9 +3146,7 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
 
     ensures defined(value - amount) by {
         have to_integer(amount) - to_integer(amount) <= to_integer(value) - to_integer(amount) by {
-            apply(integer::subtract_right_order(to_integer(amount), to_integer(value), to_integer(amount))) using {
-                to_integer(amount) <= to_integer(value);
-            };
+            apply(integer::subtract_right_order(to_integer(amount), to_integer(value), to_integer(amount)));
         }
         have 0 <= to_integer(value) - to_integer(amount) by {
             have 0 == to_integer(amount) - to_integer(amount) by known();
@@ -3293,15 +3154,10 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
             known();
         }
         have -2147483648 <= to_integer(value) - to_integer(amount) by {
-            apply(integer::le_transitive(-2147483648, 0, to_integer(value) - to_integer(amount))) using {
-                -2147483648 <= 0;
-                0 <= to_integer(value) - to_integer(amount);
-            };
+            apply(integer::le_transitive(-2147483648, 0, to_integer(value) - to_integer(amount)));
         }
         have to_integer(value) - to_integer(amount) <= to_integer(value) - 0 by {
-            apply(integer::subtract_left_order(0, to_integer(amount), to_integer(value))) using {
-                0 <= to_integer(amount);
-            };
+            apply(integer::subtract_left_order(0, to_integer(amount), to_integer(value)));
         }
         have to_integer(value) - 0 <= 2147483647 by {
             have to_integer(value) - 0 == to_integer(value) by known();
@@ -3309,10 +3165,7 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
             known();
         }
         have to_integer(value) - to_integer(amount) <= 2147483647 by {
-            apply(integer::le_transitive(to_integer(value) - to_integer(amount), to_integer(value) - 0, 2147483647)) using {
-                to_integer(value) - to_integer(amount) <= to_integer(value) - 0;
-                to_integer(value) - 0 <= 2147483647;
-            };
+            apply(integer::le_transitive(to_integer(value) - to_integer(amount), to_integer(value) - 0, 2147483647));
         }
         known();
     }
@@ -3336,22 +3189,15 @@ theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32)
         have to_integer(amount) <= 2147483647 by known();
         have amount <= 2147483647 by known();
         have defined(2147483647 - amount) by {
-            apply(integer::int32_nonnegative_subtract_within_value_is_defined(2147483647, amount)) using {
-                0 <= amount;
-                amount <= 2147483647;
-            };
+            apply(integer::int32_nonnegative_subtract_within_value_is_defined(2147483647, amount));
         }
-        apply(integer::int32_subtract_to_integer(2147483647, amount)) using {
-            defined(2147483647 - amount);
-        };
+        apply(integer::int32_subtract_to_integer(2147483647, amount));
         have to_integer(value) <= 2147483647 - to_integer(amount) by {
             rewrite(2147483647 - to_integer(amount), to_integer(2147483647 - amount));
             known();
         }
         have to_integer(value) + to_integer(amount) <= (2147483647 - to_integer(amount)) + to_integer(amount) by {
-            apply(integer::add_right_order(to_integer(value), 2147483647 - to_integer(amount), to_integer(amount))) using {
-                to_integer(value) <= 2147483647 - to_integer(amount);
-            };
+            apply(integer::add_right_order(to_integer(value), 2147483647 - to_integer(amount), to_integer(amount)));
         }
         have to_integer(value) + to_integer(amount) <= 2147483647 by {
             have 2147483647 == (2147483647 - to_integer(amount)) + to_integer(amount) by known();
@@ -3360,10 +3206,7 @@ theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32)
         }
         have -2147483648 <= to_integer(value) by known();
         have -2147483648 + 0 <= to_integer(value) + to_integer(amount) by {
-            apply(integer::add_le(-2147483648, to_integer(value), 0, to_integer(amount))) using {
-                -2147483648 <= to_integer(value);
-                0 <= to_integer(amount);
-            };
+            apply(integer::add_le(-2147483648, to_integer(value), 0, to_integer(amount)));
         }
         have -2147483648 <= to_integer(value) + to_integer(amount) by {
             have -2147483648 == -2147483648 + 0 by known();
@@ -3389,10 +3232,10 @@ theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
 
     ensures to_integer(value - 1u32) < to_integer(value) by {
         have to_integer(0u32) < to_integer(value) by known();
-        apply(integer::lt_step_le(0, to_integer(value))) using { 0 < to_integer(value); };
+        apply(integer::lt_step_le(0, to_integer(value)));
         have to_integer(1u32) <= to_integer(value) by known();
         have 1u32 <= value by known();
-        apply(integer::uint32_subtract_to_integer(value, 1u32)) using { 1u32 <= value; };
+        apply(integer::uint32_subtract_to_integer(value, 1u32));
         have to_integer(value) - 1 < to_integer(value) by known();
         rewrite(to_integer(value - 1u32), to_integer(value) - to_integer(1u32));
         known();
@@ -3414,21 +3257,14 @@ theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
 
     ensures to_integer(value + 1u32) <= to_integer(upper) by {
         have to_integer(value) + 1 <= to_integer(upper) by {
-            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                to_integer(value) < to_integer(upper);
-            };
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper)));
         }
         have to_integer(upper) <= 4294967295 by known();
         have to_integer(value) + 1 <= 4294967295 by {
-            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 4294967295)) using {
-                to_integer(value) + 1 <= to_integer(upper);
-                to_integer(upper) <= 4294967295;
-            };
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 4294967295));
         }
         have to_integer(value) + to_integer(1u32) <= 4294967295 by known();
-        apply(integer::uint32_add_to_integer(value, 1u32)) using {
-            to_integer(value) + to_integer(1u32) <= 4294967295;
-        };
+        apply(integer::uint32_add_to_integer(value, 1u32));
         rewrite(to_integer(value + 1u32), to_integer(value) + to_integer(1u32));
         known();
     }
@@ -3449,30 +3285,22 @@ theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint3
 
     ensures 0 < to_integer(upper - value) by {
         have to_integer(value) + 1 <= to_integer(upper) by {
-            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                to_integer(value) < to_integer(upper);
-            };
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper)));
         }
         have (to_integer(value) + 1) - to_integer(value) <= to_integer(upper) - to_integer(value) by {
-            apply(integer::subtract_right_order(to_integer(value) + 1, to_integer(upper), to_integer(value))) using {
-                to_integer(value) + 1 <= to_integer(upper);
-            };
+            apply(integer::subtract_right_order(to_integer(value) + 1, to_integer(upper), to_integer(value)));
         }
         have 0 + 1 <= to_integer(upper) - to_integer(value) by {
             have 0 + 1 == (to_integer(value) + 1) - to_integer(value) by known();
             rewrite(0 + 1, (to_integer(value) + 1) - to_integer(value));
             known();
         }
-        apply(integer::step_le_lt(0, to_integer(upper) - to_integer(value))) using {
-            0 + 1 <= to_integer(upper) - to_integer(value);
-        };
+        apply(integer::step_le_lt(0, to_integer(upper) - to_integer(value)));
         have to_integer(value) <= to_integer(upper) by {
-            apply(integer::lt_le(to_integer(value), to_integer(upper))) using {
-                to_integer(value) < to_integer(upper);
-            };
+            apply(integer::lt_le(to_integer(value), to_integer(upper)));
         }
         have value <= upper by known();
-        apply(integer::uint32_subtract_to_integer(upper, value)) using { value <= upper; };
+        apply(integer::uint32_subtract_to_integer(upper, value));
         rewrite(to_integer(upper - value), to_integer(upper) - to_integer(value));
         known();
     }
@@ -3493,15 +3321,12 @@ theorem subtract_le(a: Integer, b: Integer, c: Integer, d: Integer) {
     requires d <= c;
     ensures a - c <= b - d by {
         have a - c <= b - c by {
-            apply(integer::subtract_right_order(a, b, c)) using { a <= b; };
+            apply(integer::subtract_right_order(a, b, c));
         }
         have b - c <= b - d by {
-            apply(integer::subtract_left_order(d, c, b)) using { d <= c; };
+            apply(integer::subtract_left_order(d, c, b));
         }
-        apply(integer::le_transitive(a - c, b - c, b - d)) using {
-            a - c <= b - c;
-            b - c <= b - d;
-        };
+        apply(integer::le_transitive(a - c, b - c, b - d));
     }
 }
 ```
@@ -3561,7 +3386,7 @@ theorem sum_difference(a: Integer, b: Integer, c: Integer) {
     requires a == b + c;
     ensures a + -c == b by {
         have a + -c == (b + c) + -c by {
-            apply(integer::equal_add(a, b + c, -c, -c)) using { a == b + c; -c == -c; };
+            apply(integer::equal_add(a, b + c, -c, -c));
         }
         have b == (b + c) + -c by {
             known();
@@ -3572,7 +3397,7 @@ theorem sum_difference(a: Integer, b: Integer, c: Integer) {
     ensures -b == -a + c by {
         have a + -c == b by {
             have a + -c == (b + c) + -c by {
-                apply(integer::equal_add(a, b + c, -c, -c)) using { a == b + c; -c == -c; };
+                apply(integer::equal_add(a, b + c, -c, -c));
             }
             have b == (b + c) + -c by {
                 known();
@@ -3581,7 +3406,7 @@ theorem sum_difference(a: Integer, b: Integer, c: Integer) {
             known();
         }
         have -(a + -c) == -b by {
-            apply(integer::equal_negate(a + -c, b)) using { a + -c == b; };
+            apply(integer::equal_negate(a + -c, b));
         }
         have -a + c == -(a + -c) by {
             known();
@@ -3602,22 +3427,22 @@ theorem positive_divisor_quotient_upper_rounded(n: Integer, d: Integer, bound: I
     requires n <= (bound * d) + (d - 1);
     ensures truncating_quotient(n, d) <= bound by {
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
-            apply(integer::truncation_identity(n, d)) using { d != 0; };
+            apply(integer::truncation_identity(n, d));
         }
         have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have 0 <= truncating_remainder(n, d) by {
-            apply(integer::nonnegative_dividend_remainder(n, d)) using { d != 0; 0 <= n; };
+            apply(integer::nonnegative_dividend_remainder(n, d));
         }
         have 0 + (truncating_quotient(n, d) * d) <= truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
-            apply(integer::add_le(0, truncating_remainder(n, d), (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d))) using { 0 <= truncating_remainder(n, d); (truncating_quotient(n, d) * d) <= (truncating_quotient(n, d) * d); d != 0; };
+            apply(integer::add_le(0, truncating_remainder(n, d), (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d)));
         }
         have (truncating_quotient(n, d) * d) <= n by {
             have (truncating_quotient(n, d) * d) == 0 + (truncating_quotient(n, d) * d) by {
@@ -3626,21 +3451,21 @@ theorem positive_divisor_quotient_upper_rounded(n: Integer, d: Integer, bound: I
             have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
                 known();
             }
-            apply(integer::le_substitute(0 + (truncating_quotient(n, d) * d), truncating_remainder(n, d) + (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d), n)) using { 0 + (truncating_quotient(n, d) * d) <= truncating_remainder(n, d) + (truncating_quotient(n, d) * d); (truncating_quotient(n, d) * d) == 0 + (truncating_quotient(n, d) * d); n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d); d != 0; };
+            apply(integer::le_substitute(0 + (truncating_quotient(n, d) * d), truncating_remainder(n, d) + (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d), n));
         }
         have (truncating_quotient(n, d) * d) <= (bound * d) + (d - 1) by {
-            apply(integer::le_transitive((truncating_quotient(n, d) * d), n, (bound * d) + (d - 1))) using { (truncating_quotient(n, d) * d) <= n; n <= (bound * d) + (d - 1); d != 0; };
+            apply(integer::le_transitive((truncating_quotient(n, d) * d), n, (bound * d) + (d - 1)));
         }
         have 0 < d by {
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have (d - 1) < d by {
             known();
         }
-        apply(integer::round_down_le(truncating_quotient(n, d), bound, d, (d - 1))) using { 0 < d; (d - 1) < d; (truncating_quotient(n, d) * d) <= (bound * d) + (d - 1); d != 0; };
+        apply(integer::round_down_le(truncating_quotient(n, d), bound, d, (d - 1)));
     }
 }
 ```
@@ -3655,22 +3480,22 @@ theorem positive_divisor_quotient_lower_rounded(n: Integer, d: Integer, bound: I
     requires (bound * d) - (d - 1) <= n;
     ensures bound <= truncating_quotient(n, d) by {
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
-            apply(integer::truncation_identity(n, d)) using { d != 0; };
+            apply(integer::truncation_identity(n, d));
         }
         have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have truncating_remainder(n, d) <= 0 by {
-            apply(integer::nonpositive_dividend_remainder(n, d)) using { d != 0; n <= 0; };
+            apply(integer::nonpositive_dividend_remainder(n, d));
         }
         have truncating_remainder(n, d) + (truncating_quotient(n, d) * d) <= 0 + (truncating_quotient(n, d) * d) by {
-            apply(integer::add_le(truncating_remainder(n, d), 0, (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d))) using { truncating_remainder(n, d) <= 0; (truncating_quotient(n, d) * d) <= (truncating_quotient(n, d) * d); d != 0; };
+            apply(integer::add_le(truncating_remainder(n, d), 0, (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d)));
         }
         have n <= (truncating_quotient(n, d) * d) by {
             have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
@@ -3679,16 +3504,16 @@ theorem positive_divisor_quotient_lower_rounded(n: Integer, d: Integer, bound: I
             have (truncating_quotient(n, d) * d) == 0 + (truncating_quotient(n, d) * d) by {
                 known();
             }
-            apply(integer::le_substitute(truncating_remainder(n, d) + (truncating_quotient(n, d) * d), 0 + (truncating_quotient(n, d) * d), n, (truncating_quotient(n, d) * d))) using { truncating_remainder(n, d) + (truncating_quotient(n, d) * d) <= 0 + (truncating_quotient(n, d) * d); n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d); (truncating_quotient(n, d) * d) == 0 + (truncating_quotient(n, d) * d); d != 0; };
+            apply(integer::le_substitute(truncating_remainder(n, d) + (truncating_quotient(n, d) * d), 0 + (truncating_quotient(n, d) * d), n, (truncating_quotient(n, d) * d)));
         }
         have (bound * d) - (d - 1) <= (truncating_quotient(n, d) * d) by {
-            apply(integer::le_transitive((bound * d) - (d - 1), n, (truncating_quotient(n, d) * d))) using { (bound * d) - (d - 1) <= n; n <= (truncating_quotient(n, d) * d); d != 0; };
+            apply(integer::le_transitive((bound * d) - (d - 1), n, (truncating_quotient(n, d) * d)));
         }
         have -(truncating_quotient(n, d) * d) <= -((bound * d) - (d - 1)) by {
-            apply(integer::negate_order((bound * d) - (d - 1), (truncating_quotient(n, d) * d))) using { (bound * d) - (d - 1) <= (truncating_quotient(n, d) * d); d != 0; };
+            apply(integer::negate_order((bound * d) - (d - 1), (truncating_quotient(n, d) * d)));
         }
         have -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d) by {
-            apply(integer::negate_multiply(truncating_quotient(n, d), d)) using { d != 0; };
+            apply(integer::negate_multiply(truncating_quotient(n, d), d));
         }
         have -bound * d == -(bound * d) by {
             apply(integer::negate_multiply(bound, d));
@@ -3702,22 +3527,22 @@ theorem positive_divisor_quotient_lower_rounded(n: Integer, d: Integer, bound: I
                 rewrite(-bound * d, -(bound * d));
                 known();
             }
-            apply(integer::le_substitute(-(truncating_quotient(n, d) * d), -((bound * d) - (d - 1)), -(truncating_quotient(n, d)) * d, -bound * d + (d - 1))) using { -(truncating_quotient(n, d) * d) <= -((bound * d) - (d - 1)); -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d); -bound * d + (d - 1) == -((bound * d) - (d - 1)); d != 0; };
+            apply(integer::le_substitute(-(truncating_quotient(n, d) * d), -((bound * d) - (d - 1)), -(truncating_quotient(n, d)) * d, -bound * d + (d - 1)));
         }
         have 0 < d by {
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have (d - 1) < d by {
             known();
         }
         have -(truncating_quotient(n, d)) <= -bound by {
-            apply(integer::round_down_le(-(truncating_quotient(n, d)), -bound, d, (d - 1))) using { 0 < d; (d - 1) < d; -(truncating_quotient(n, d)) * d <= -bound * d + (d - 1); d != 0; };
+            apply(integer::round_down_le(-(truncating_quotient(n, d)), -bound, d, (d - 1)));
         }
         have -(-bound) <= -(-(truncating_quotient(n, d))) by {
-            apply(integer::negate_order(-(truncating_quotient(n, d)), -bound)) using { -(truncating_quotient(n, d)) <= -bound; d != 0; };
+            apply(integer::negate_order(-(truncating_quotient(n, d)), -bound));
         }
         have bound == -(-bound) by {
             known();
@@ -3725,7 +3550,7 @@ theorem positive_divisor_quotient_lower_rounded(n: Integer, d: Integer, bound: I
         have truncating_quotient(n, d) == -(-(truncating_quotient(n, d))) by {
             known();
         }
-        apply(integer::le_substitute(-(-bound), -(-(truncating_quotient(n, d))), bound, truncating_quotient(n, d))) using { -(-bound) <= -(-(truncating_quotient(n, d))); bound == -(-bound); truncating_quotient(n, d) == -(-(truncating_quotient(n, d))); d != 0; };
+        apply(integer::le_substitute(-(-bound), -(-(truncating_quotient(n, d))), bound, truncating_quotient(n, d)));
     }
 }
 ```
@@ -3742,22 +3567,22 @@ theorem nonnegative_dividend_remainder_upper(n: Integer, d: Integer) {
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have 0 <= d by {
-            apply(integer::lt_le(0, d)) using { 0 < d; };
+            apply(integer::lt_le(0, d));
         }
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
-            apply(integer::truncation_identity(n, d)) using { d != 0; };
+            apply(integer::truncation_identity(n, d));
         }
         have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have 0 * d == 0 by {
             known();
@@ -3767,17 +3592,17 @@ theorem nonnegative_dividend_remainder_upper(n: Integer, d: Integer) {
             known();
         }
         have 0 <= truncating_quotient(n, d) by {
-            apply(integer::positive_divisor_quotient_lower(n, d, 0)) using { d != 0; 1 <= d; 0 * d <= n; };
+            apply(integer::positive_divisor_quotient_lower(n, d, 0));
         }
         have 0 * d <= (truncating_quotient(n, d) * d) by {
-            apply(integer::multiply_order_nonnegative(0, truncating_quotient(n, d), d)) using { 0 <= truncating_quotient(n, d); 0 <= d; d != 0; };
+            apply(integer::multiply_order_nonnegative(0, truncating_quotient(n, d), d));
         }
         have 0 <= (truncating_quotient(n, d) * d) by {
             rewrite(0, 0 * d);
             known();
         }
         have 0 + truncating_remainder(n, d) <= (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
-            apply(integer::add_le(0, (truncating_quotient(n, d) * d), truncating_remainder(n, d), truncating_remainder(n, d))) using { 0 <= (truncating_quotient(n, d) * d); truncating_remainder(n, d) <= truncating_remainder(n, d); d != 0; };
+            apply(integer::add_le(0, (truncating_quotient(n, d) * d), truncating_remainder(n, d), truncating_remainder(n, d)));
         }
         have truncating_remainder(n, d) == 0 + truncating_remainder(n, d) by {
             known();
@@ -3785,7 +3610,7 @@ theorem nonnegative_dividend_remainder_upper(n: Integer, d: Integer) {
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
             known();
         }
-        apply(integer::le_substitute(0 + truncating_remainder(n, d), (truncating_quotient(n, d) * d) + truncating_remainder(n, d), truncating_remainder(n, d), n)) using { 0 + truncating_remainder(n, d) <= (truncating_quotient(n, d) * d) + truncating_remainder(n, d); truncating_remainder(n, d) == 0 + truncating_remainder(n, d); n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        apply(integer::le_substitute(0 + truncating_remainder(n, d), (truncating_quotient(n, d) * d) + truncating_remainder(n, d), truncating_remainder(n, d), n));
     }
 }
 ```
@@ -3802,22 +3627,22 @@ theorem nonpositive_dividend_remainder_lower(n: Integer, d: Integer) {
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have 0 <= d by {
-            apply(integer::lt_le(0, d)) using { 0 < d; };
+            apply(integer::lt_le(0, d));
         }
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
-            apply(integer::truncation_identity(n, d)) using { d != 0; };
+            apply(integer::truncation_identity(n, d));
         }
         have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
-            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
-            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d)));
         }
         have 0 * d == 0 by {
             known();
@@ -3827,17 +3652,17 @@ theorem nonpositive_dividend_remainder_lower(n: Integer, d: Integer) {
             known();
         }
         have truncating_quotient(n, d) <= 0 by {
-            apply(integer::positive_divisor_quotient_upper(n, d, 0)) using { d != 0; 1 <= d; n <= 0 * d; };
+            apply(integer::positive_divisor_quotient_upper(n, d, 0));
         }
         have (truncating_quotient(n, d) * d) <= 0 * d by {
-            apply(integer::multiply_order_nonnegative(truncating_quotient(n, d), 0, d)) using { truncating_quotient(n, d) <= 0; 0 <= d; d != 0; };
+            apply(integer::multiply_order_nonnegative(truncating_quotient(n, d), 0, d));
         }
         have (truncating_quotient(n, d) * d) <= 0 by {
             rewrite(0, 0 * d);
             known();
         }
         have (truncating_quotient(n, d) * d) + truncating_remainder(n, d) <= 0 + truncating_remainder(n, d) by {
-            apply(integer::add_le((truncating_quotient(n, d) * d), 0, truncating_remainder(n, d), truncating_remainder(n, d))) using { (truncating_quotient(n, d) * d) <= 0; truncating_remainder(n, d) <= truncating_remainder(n, d); d != 0; };
+            apply(integer::add_le((truncating_quotient(n, d) * d), 0, truncating_remainder(n, d), truncating_remainder(n, d)));
         }
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
             known();
@@ -3845,7 +3670,7 @@ theorem nonpositive_dividend_remainder_lower(n: Integer, d: Integer) {
         have truncating_remainder(n, d) == 0 + truncating_remainder(n, d) by {
             known();
         }
-        apply(integer::le_substitute((truncating_quotient(n, d) * d) + truncating_remainder(n, d), 0 + truncating_remainder(n, d), n, truncating_remainder(n, d))) using { (truncating_quotient(n, d) * d) + truncating_remainder(n, d) <= 0 + truncating_remainder(n, d); n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); truncating_remainder(n, d) == 0 + truncating_remainder(n, d); d != 0; };
+        apply(integer::le_substitute((truncating_quotient(n, d) * d) + truncating_remainder(n, d), 0 + truncating_remainder(n, d), n, truncating_remainder(n, d)));
     }
 }
 ```
@@ -3863,7 +3688,7 @@ theorem quotient_upper_interval_nonnegative(n: Integer, d: Integer, numerator_bo
     ensures truncating_quotient(n, d) <= bound by {
         have bound * endpoint <= bound * d by {
             have endpoint * bound <= d * bound by {
-                apply(integer::multiply_order_nonnegative(endpoint, d, bound)) using { endpoint <= d; 0 <= bound; };
+                apply(integer::multiply_order_nonnegative(endpoint, d, bound));
             }
             have bound * endpoint == endpoint * bound by {
                 apply(integer::multiply_commutative(bound, endpoint));
@@ -3879,19 +3704,19 @@ theorem quotient_upper_interval_nonnegative(n: Integer, d: Integer, numerator_bo
                 rewrite(bound * d, d * bound);
                 known();
             }
-            apply(integer::le_substitute(endpoint * bound, d * bound, bound * endpoint, bound * d)) using { endpoint * bound <= d * bound; bound * endpoint == endpoint * bound; bound * d == d * bound; };
+            apply(integer::le_substitute(endpoint * bound, d * bound, bound * endpoint, bound * d));
         }
         have endpoint - 1 <= d - 1 by {
-            apply(integer::subtract_right_order(endpoint, d, 1)) using { endpoint <= d; };
+            apply(integer::subtract_right_order(endpoint, d, 1));
         }
         have bound * endpoint + (endpoint - 1) <= bound * d + (d - 1) by {
-            apply(integer::add_le(bound * endpoint, bound * d, endpoint - 1, d - 1)) using { bound * endpoint <= bound * d; endpoint - 1 <= d - 1; };
+            apply(integer::add_le(bound * endpoint, bound * d, endpoint - 1, d - 1));
         }
         have numerator_bound <= bound * d + (d - 1) by {
-            apply(integer::le_transitive(numerator_bound, bound * endpoint + (endpoint - 1), bound * d + (d - 1))) using { numerator_bound <= bound * endpoint + (endpoint - 1); bound * endpoint + (endpoint - 1) <= bound * d + (d - 1); };
+            apply(integer::le_transitive(numerator_bound, bound * endpoint + (endpoint - 1), bound * d + (d - 1)));
         }
         have n <= bound * d + (d - 1) by {
-            apply(integer::le_transitive(n, numerator_bound, bound * d + (d - 1))) using { n <= numerator_bound; numerator_bound <= bound * d + (d - 1); };
+            apply(integer::le_transitive(n, numerator_bound, bound * d + (d - 1)));
         }
         if n <= 0 {
             have 0 * d == 0 by {
@@ -3902,17 +3727,17 @@ theorem quotient_upper_interval_nonnegative(n: Integer, d: Integer, numerator_bo
                 known();
             }
             have truncating_quotient(n, d) <= 0 by {
-                apply(integer::positive_divisor_quotient_upper(n, d, 0)) using { d != 0; 1 <= d; n <= 0 * d; };
+                apply(integer::positive_divisor_quotient_upper(n, d, 0));
             }
-            apply(integer::le_transitive(truncating_quotient(n, d), 0, bound)) using { truncating_quotient(n, d) <= 0; 0 <= bound; d != 0; };
+            apply(integer::le_transitive(truncating_quotient(n, d), 0, bound));
         } else {
             have 0 < n by {
                 known();
             }
             have 0 <= n by {
-                apply(integer::lt_le(0, n)) using { 0 < n; };
+                apply(integer::lt_le(0, n));
             }
-            apply(integer::positive_divisor_quotient_upper_rounded(n, d, bound)) using { d != 0; 1 <= d; 0 <= n; n <= bound * d + (d - 1); };
+            apply(integer::positive_divisor_quotient_upper_rounded(n, d, bound));
         }
     }
 }
@@ -3931,7 +3756,7 @@ theorem quotient_lower_interval_nonpositive(n: Integer, d: Integer, numerator_bo
     ensures bound <= truncating_quotient(n, d) by {
         have bound * d <= bound * endpoint by {
             have d * bound <= endpoint * bound by {
-                apply(integer::multiply_order_nonpositive(endpoint, d, bound)) using { endpoint <= d; bound <= 0; };
+                apply(integer::multiply_order_nonpositive(endpoint, d, bound));
             }
             have bound * d == d * bound by {
                 apply(integer::multiply_commutative(bound, d));
@@ -3947,16 +3772,16 @@ theorem quotient_lower_interval_nonpositive(n: Integer, d: Integer, numerator_bo
                 rewrite(bound * endpoint, endpoint * bound);
                 known();
             }
-            apply(integer::le_substitute(d * bound, endpoint * bound, bound * d, bound * endpoint)) using { d * bound <= endpoint * bound; bound * d == d * bound; bound * endpoint == endpoint * bound; };
+            apply(integer::le_substitute(d * bound, endpoint * bound, bound * d, bound * endpoint));
         }
         have endpoint - 1 <= d - 1 by {
-            apply(integer::subtract_right_order(endpoint, d, 1)) using { endpoint <= d; };
+            apply(integer::subtract_right_order(endpoint, d, 1));
         }
         have -(d - 1) <= -(endpoint - 1) by {
-            apply(integer::negate_order(endpoint - 1, d - 1)) using { endpoint - 1 <= d - 1; };
+            apply(integer::negate_order(endpoint - 1, d - 1));
         }
         have bound * d + -(d - 1) <= bound * endpoint + -(endpoint - 1) by {
-            apply(integer::add_le(bound * d, bound * endpoint, -(d - 1), -(endpoint - 1))) using { bound * d <= bound * endpoint; -(d - 1) <= -(endpoint - 1); };
+            apply(integer::add_le(bound * d, bound * endpoint, -(d - 1), -(endpoint - 1)));
         }
         have bound * d - (d - 1) <= bound * endpoint - (endpoint - 1) by {
             have bound * d - (d - 1) == bound * d + -(d - 1) by {
@@ -3965,13 +3790,13 @@ theorem quotient_lower_interval_nonpositive(n: Integer, d: Integer, numerator_bo
             have bound * endpoint - (endpoint - 1) == bound * endpoint + -(endpoint - 1) by {
                 known();
             }
-            apply(integer::le_substitute(bound * d + -(d - 1), bound * endpoint + -(endpoint - 1), bound * d - (d - 1), bound * endpoint - (endpoint - 1))) using { bound * d + -(d - 1) <= bound * endpoint + -(endpoint - 1); bound * d - (d - 1) == bound * d + -(d - 1); bound * endpoint - (endpoint - 1) == bound * endpoint + -(endpoint - 1); };
+            apply(integer::le_substitute(bound * d + -(d - 1), bound * endpoint + -(endpoint - 1), bound * d - (d - 1), bound * endpoint - (endpoint - 1)));
         }
         have bound * d - (d - 1) <= numerator_bound by {
-            apply(integer::le_transitive(bound * d - (d - 1), bound * endpoint - (endpoint - 1), numerator_bound)) using { bound * d - (d - 1) <= bound * endpoint - (endpoint - 1); bound * endpoint - (endpoint - 1) <= numerator_bound; };
+            apply(integer::le_transitive(bound * d - (d - 1), bound * endpoint - (endpoint - 1), numerator_bound));
         }
         have bound * d - (d - 1) <= n by {
-            apply(integer::le_transitive(bound * d - (d - 1), numerator_bound, n)) using { bound * d - (d - 1) <= numerator_bound; numerator_bound <= n; };
+            apply(integer::le_transitive(bound * d - (d - 1), numerator_bound, n));
         }
         if 0 <= n {
             have 0 * d == 0 by {
@@ -3982,17 +3807,17 @@ theorem quotient_lower_interval_nonpositive(n: Integer, d: Integer, numerator_bo
                 known();
             }
             have 0 <= truncating_quotient(n, d) by {
-                apply(integer::positive_divisor_quotient_lower(n, d, 0)) using { d != 0; 1 <= d; 0 * d <= n; };
+                apply(integer::positive_divisor_quotient_lower(n, d, 0));
             }
-            apply(integer::le_transitive(bound, 0, truncating_quotient(n, d))) using { bound <= 0; 0 <= truncating_quotient(n, d); d != 0; };
+            apply(integer::le_transitive(bound, 0, truncating_quotient(n, d)));
         } else {
             have n < 0 by {
                 known();
             }
             have n <= 0 by {
-                apply(integer::lt_le(n, 0)) using { n < 0; };
+                apply(integer::lt_le(n, 0));
             }
-            apply(integer::positive_divisor_quotient_lower_rounded(n, d, bound)) using { d != 0; 1 <= d; n <= 0; bound * d - (d - 1) <= n; };
+            apply(integer::positive_divisor_quotient_lower_rounded(n, d, bound));
         }
     }
 }
@@ -4011,7 +3836,7 @@ theorem quotient_upper_interval_negative(n: Integer, d: Integer, numerator_bound
     ensures truncating_quotient(n, d) <= bound by {
         have bound * endpoint <= bound * d by {
             have endpoint * bound <= d * bound by {
-                apply(integer::multiply_order_nonpositive(d, endpoint, bound)) using { d <= endpoint; bound <= 0; };
+                apply(integer::multiply_order_nonpositive(d, endpoint, bound));
             }
             have bound * endpoint == endpoint * bound by {
                 apply(integer::multiply_commutative(bound, endpoint));
@@ -4027,15 +3852,15 @@ theorem quotient_upper_interval_negative(n: Integer, d: Integer, numerator_bound
                 rewrite(bound * d, d * bound);
                 known();
             }
-            apply(integer::le_substitute(endpoint * bound, d * bound, bound * endpoint, bound * d)) using { endpoint * bound <= d * bound; bound * endpoint == endpoint * bound; bound * d == d * bound; };
+            apply(integer::le_substitute(endpoint * bound, d * bound, bound * endpoint, bound * d));
         }
         have n <= bound * endpoint by {
-            apply(integer::le_transitive(n, numerator_bound, bound * endpoint)) using { n <= numerator_bound; numerator_bound <= bound * endpoint; };
+            apply(integer::le_transitive(n, numerator_bound, bound * endpoint));
         }
         have n <= bound * d by {
-            apply(integer::le_transitive(n, bound * endpoint, bound * d)) using { n <= bound * endpoint; bound * endpoint <= bound * d; };
+            apply(integer::le_transitive(n, bound * endpoint, bound * d));
         }
-        apply(integer::positive_divisor_quotient_upper(n, d, bound)) using { d != 0; 1 <= d; n <= bound * d; };
+        apply(integer::positive_divisor_quotient_upper(n, d, bound));
     }
 }
 ```
@@ -4053,7 +3878,7 @@ theorem quotient_lower_interval_positive(n: Integer, d: Integer, numerator_bound
     ensures bound <= truncating_quotient(n, d) by {
         have bound * d <= bound * endpoint by {
             have d * bound <= endpoint * bound by {
-                apply(integer::multiply_order_nonnegative(d, endpoint, bound)) using { d <= endpoint; 0 <= bound; };
+                apply(integer::multiply_order_nonnegative(d, endpoint, bound));
             }
             have bound * d == d * bound by {
                 apply(integer::multiply_commutative(bound, d));
@@ -4069,15 +3894,15 @@ theorem quotient_lower_interval_positive(n: Integer, d: Integer, numerator_bound
                 rewrite(bound * endpoint, endpoint * bound);
                 known();
             }
-            apply(integer::le_substitute(d * bound, endpoint * bound, bound * d, bound * endpoint)) using { d * bound <= endpoint * bound; bound * d == d * bound; bound * endpoint == endpoint * bound; };
+            apply(integer::le_substitute(d * bound, endpoint * bound, bound * d, bound * endpoint));
         }
         have bound * d <= numerator_bound by {
-            apply(integer::le_transitive(bound * d, bound * endpoint, numerator_bound)) using { bound * d <= bound * endpoint; bound * endpoint <= numerator_bound; };
+            apply(integer::le_transitive(bound * d, bound * endpoint, numerator_bound));
         }
         have bound * d <= n by {
-            apply(integer::le_transitive(bound * d, numerator_bound, n)) using { bound * d <= numerator_bound; numerator_bound <= n; };
+            apply(integer::le_transitive(bound * d, numerator_bound, n));
         }
-        apply(integer::positive_divisor_quotient_lower(n, d, bound)) using { d != 0; 1 <= d; bound * d <= n; };
+        apply(integer::positive_divisor_quotient_lower(n, d, bound));
     }
 }
 ```
@@ -4094,23 +3919,23 @@ theorem remainder_lower_from_dividend(n: Integer, d: Integer, numerator_bound: I
     ensures bound <= truncating_remainder(n, d) by {
         if n <= 0 {
             have n <= truncating_remainder(n, d) by {
-                apply(integer::nonpositive_dividend_remainder_lower(n, d)) using { d != 0; 1 <= d; n <= 0; };
+                apply(integer::nonpositive_dividend_remainder_lower(n, d));
             }
             have bound <= n by {
-                apply(integer::le_transitive(bound, numerator_bound, n)) using { bound <= numerator_bound; numerator_bound <= n; };
+                apply(integer::le_transitive(bound, numerator_bound, n));
             }
-            apply(integer::le_transitive(bound, n, truncating_remainder(n, d))) using { bound <= n; n <= truncating_remainder(n, d); d != 0; };
+            apply(integer::le_transitive(bound, n, truncating_remainder(n, d)));
         } else {
             have 0 < n by {
                 known();
             }
             have 0 <= n by {
-                apply(integer::lt_le(0, n)) using { 0 < n; };
+                apply(integer::lt_le(0, n));
             }
             have 0 <= truncating_remainder(n, d) by {
-                apply(integer::nonnegative_dividend_remainder(n, d)) using { d != 0; 0 <= n; };
+                apply(integer::nonnegative_dividend_remainder(n, d));
             }
-            apply(integer::le_transitive(bound, 0, truncating_remainder(n, d))) using { bound <= 0; 0 <= truncating_remainder(n, d); d != 0; };
+            apply(integer::le_transitive(bound, 0, truncating_remainder(n, d)));
         }
     }
 }
@@ -4129,18 +3954,18 @@ theorem remainder_lower_from_divisor(n: Integer, d: Integer, endpoint: Integer, 
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have 1 - d <= truncating_remainder(n, d) by {
-            apply(integer::positive_divisor_remainder_lower(n, d)) using { d != 0; 0 < d; };
+            apply(integer::positive_divisor_remainder_lower(n, d));
         }
         have 1 - endpoint <= 1 - d by {
-            apply(integer::subtract_left_order(d, endpoint, 1)) using { d <= endpoint; };
+            apply(integer::subtract_left_order(d, endpoint, 1));
         }
         have bound <= 1 - d by {
-            apply(integer::le_transitive(bound, 1 - endpoint, 1 - d)) using { bound <= 1 - endpoint; 1 - endpoint <= 1 - d; };
+            apply(integer::le_transitive(bound, 1 - endpoint, 1 - d));
         }
-        apply(integer::le_transitive(bound, 1 - d, truncating_remainder(n, d))) using { bound <= 1 - d; 1 - d <= truncating_remainder(n, d); d != 0; };
+        apply(integer::le_transitive(bound, 1 - d, truncating_remainder(n, d)));
     }
 }
 ```
@@ -4157,23 +3982,23 @@ theorem remainder_upper_from_dividend(n: Integer, d: Integer, numerator_bound: I
     ensures truncating_remainder(n, d) <= bound by {
         if 0 <= n {
             have truncating_remainder(n, d) <= n by {
-                apply(integer::nonnegative_dividend_remainder_upper(n, d)) using { d != 0; 1 <= d; 0 <= n; };
+                apply(integer::nonnegative_dividend_remainder_upper(n, d));
             }
             have n <= bound by {
-                apply(integer::le_transitive(n, numerator_bound, bound)) using { n <= numerator_bound; numerator_bound <= bound; };
+                apply(integer::le_transitive(n, numerator_bound, bound));
             }
-            apply(integer::le_transitive(truncating_remainder(n, d), n, bound)) using { truncating_remainder(n, d) <= n; n <= bound; d != 0; };
+            apply(integer::le_transitive(truncating_remainder(n, d), n, bound));
         } else {
             have n < 0 by {
                 known();
             }
             have n <= 0 by {
-                apply(integer::lt_le(n, 0)) using { n < 0; };
+                apply(integer::lt_le(n, 0));
             }
             have truncating_remainder(n, d) <= 0 by {
-                apply(integer::nonpositive_dividend_remainder(n, d)) using { d != 0; n <= 0; };
+                apply(integer::nonpositive_dividend_remainder(n, d));
             }
-            apply(integer::le_transitive(truncating_remainder(n, d), 0, bound)) using { truncating_remainder(n, d) <= 0; 0 <= bound; d != 0; };
+            apply(integer::le_transitive(truncating_remainder(n, d), 0, bound));
         }
     }
 }
@@ -4192,18 +4017,18 @@ theorem remainder_upper_from_divisor(n: Integer, d: Integer, endpoint: Integer, 
             have 0 + 1 <= d by {
                 known();
             }
-            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+            apply(integer::step_le_lt(0, d));
         }
         have truncating_remainder(n, d) <= d - 1 by {
-            apply(integer::positive_divisor_remainder_upper(n, d)) using { d != 0; 0 < d; };
+            apply(integer::positive_divisor_remainder_upper(n, d));
         }
         have d - 1 <= endpoint - 1 by {
-            apply(integer::subtract_right_order(d, endpoint, 1)) using { d <= endpoint; };
+            apply(integer::subtract_right_order(d, endpoint, 1));
         }
         have truncating_remainder(n, d) <= endpoint - 1 by {
-            apply(integer::le_transitive(truncating_remainder(n, d), d - 1, endpoint - 1)) using { truncating_remainder(n, d) <= d - 1; d - 1 <= endpoint - 1; d != 0; };
+            apply(integer::le_transitive(truncating_remainder(n, d), d - 1, endpoint - 1));
         }
-        apply(integer::le_transitive(truncating_remainder(n, d), endpoint - 1, bound)) using { truncating_remainder(n, d) <= endpoint - 1; endpoint - 1 <= bound; d != 0; };
+        apply(integer::le_transitive(truncating_remainder(n, d), endpoint - 1, bound));
     }
 }
 ```
@@ -4235,16 +4060,16 @@ theorem small_remainder_interval(n: Integer, d: Integer, lo_n: Integer, hi_n: In
             known();
         }
         have 0 <= truncating_quotient(n, d) by {
-            apply(integer::quotient_lower_interval_nonpositive(n, d, lo_n, endpoint, 0)) using { d != 0; 1 <= d; 0 <= 0; endpoint <= d; lo_n <= n; 0 * endpoint - (endpoint - 1) <= lo_n; };
+            apply(integer::quotient_lower_interval_nonpositive(n, d, lo_n, endpoint, 0));
         }
         have truncating_quotient(n, d) <= 0 by {
-            apply(integer::quotient_upper_interval_nonnegative(n, d, hi_n, endpoint, 0)) using { d != 0; 1 <= d; 0 <= 0; endpoint <= d; n <= hi_n; hi_n <= 0 * endpoint + (endpoint - 1); };
+            apply(integer::quotient_upper_interval_nonnegative(n, d, hi_n, endpoint, 0));
         }
         have truncating_quotient(n, d) == 0 by {
-            apply(integer::le_antisymmetric(truncating_quotient(n, d), 0)) using { truncating_quotient(n, d) <= 0; 0 <= truncating_quotient(n, d); d != 0; };
+            apply(integer::le_antisymmetric(truncating_quotient(n, d), 0));
         }
         have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
-            apply(integer::truncation_identity(n, d)) using { d != 0; };
+            apply(integer::truncation_identity(n, d));
         }
         have truncating_remainder(n, d) == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
             rewrite(truncating_quotient(n, d), 0);
@@ -4253,7 +4078,7 @@ theorem small_remainder_interval(n: Integer, d: Integer, lo_n: Integer, hi_n: In
         have (truncating_quotient(n, d) * d) + truncating_remainder(n, d) == n by {
             known();
         }
-        apply(integer::equal_substitute((truncating_quotient(n, d) * d) + truncating_remainder(n, d), n, truncating_remainder(n, d), n)) using { (truncating_quotient(n, d) * d) + truncating_remainder(n, d) == n; truncating_remainder(n, d) == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); n == n; d != 0; };
+        apply(integer::equal_substitute((truncating_quotient(n, d) * d) + truncating_remainder(n, d), n, truncating_remainder(n, d), n));
     }
 }
 ```
@@ -4267,7 +4092,7 @@ theorem nonzero_from_one(d: Integer) {
     ensures d != 0 by {
         if d == 0 {
             have one <= 0 by {
-                apply(integer::le_substitute(one, d, one, 0)) using { one <= d; one == one; 0 == d; };
+                apply(integer::le_substitute(one, d, one, 0));
             }
             contradiction(one <= 0);
         } else { known(); }
@@ -4284,7 +4109,7 @@ theorem nonzero_from_negative_one(d: Integer) {
     ensures d != 0 by {
         if d == 0 {
             have zero <= -1 by {
-                apply(integer::le_substitute(d, -1, zero, -1)) using { d <= -1; zero == d; -1 == -1; };
+                apply(integer::le_substitute(d, -1, zero, -1));
             }
             contradiction(zero <= -1);
         } else { known(); }
@@ -4324,10 +4149,10 @@ theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lo
     requires amount <= size;
     ensures lower * size <= value * amount by {
         have lower * amount <= value * amount by {
-            apply(integer::multiply_order_nonnegative(lower, value, amount)) using { lower <= value; 0 <= amount; };
+            apply(integer::multiply_order_nonnegative(lower, value, amount));
         }
         have size * lower <= amount * lower by {
-            apply(integer::multiply_order_nonpositive(amount, size, lower)) using { amount <= size; lower <= 0; };
+            apply(integer::multiply_order_nonpositive(amount, size, lower));
         }
         have lower * size == size * lower by { apply(integer::multiply_commutative(lower, size)); }
         have lower * amount == amount * lower by { apply(integer::multiply_commutative(lower, amount)); }
@@ -4336,16 +4161,14 @@ theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lo
             rewrite(lower * amount, amount * lower);
             known();
         }
-        apply(integer::le_transitive(lower * size, lower * amount, value * amount)) using {
-            lower * size <= lower * amount; lower * amount <= value * amount;
-        };
+        apply(integer::le_transitive(lower * size, lower * amount, value * amount));
     }
     ensures value * amount <= upper * size by {
         have value * amount <= upper * amount by {
-            apply(integer::multiply_order_nonnegative(value, upper, amount)) using { value <= upper; 0 <= amount; };
+            apply(integer::multiply_order_nonnegative(value, upper, amount));
         }
         have amount * upper <= size * upper by {
-            apply(integer::multiply_order_nonnegative(amount, size, upper)) using { amount <= size; 0 <= upper; };
+            apply(integer::multiply_order_nonnegative(amount, size, upper));
         }
         have upper * amount == amount * upper by { apply(integer::multiply_commutative(upper, amount)); }
         have upper * size == size * upper by { apply(integer::multiply_commutative(upper, size)); }
@@ -4354,9 +4177,7 @@ theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lo
             rewrite(upper * size, size * upper);
             known();
         }
-        apply(integer::le_transitive(value * amount, upper * amount, upper * size)) using {
-            value * amount <= upper * amount; upper * amount <= upper * size;
-        };
+        apply(integer::le_transitive(value * amount, upper * amount, upper * size));
     }
 }
 ```
@@ -6032,10 +5853,7 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= stdio::decimal_digit(v, k) by {
         if k < stdio::decimal_length(v) {
             apply(stdio::decimal_digit_power_nonzero(v, k));
-            apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k)) using {
-                stdio::decimal_length(v) == stdio::decimal_length(v);
-                k < stdio::decimal_length(v);
-            };
+            apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k));
             rewrite(stdio::decimal_digit(v, k), (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8);
             solve();
         } else {
@@ -8732,10 +8550,10 @@ theorem lt_le(a: Integer, b: Integer) {
     requires a < b;
     ensures a <= b by {
         have a + 1 <= b by {
-            apply(integer::lt_step_le(a, b)) using { a < b; };
+            apply(integer::lt_step_le(a, b));
         }
         have a <= a + 1 by { known(); }
-        apply(integer::le_transitive(a, a + 1, b)) using { a <= a + 1; a + 1 <= b; };
+        apply(integer::le_transitive(a, a + 1, b));
     }
 }
 ```
@@ -8800,33 +8618,25 @@ theorem nonnegative_quotient_from_remainder(n: Integer, d: Integer, q: Integer, 
     requires n == q * d + r;
     ensures truncating_quotient(n, d) == q by {
         have q * d + 0 <= q * d + r by {
-            apply(integer::add_le(q * d, q * d, 0, r)) using { q * d <= q * d; 0 <= r; };
+            apply(integer::add_le(q * d, q * d, 0, r));
         }
         have q * d == q * d + 0 by known();
         have q * d <= n by {
-            apply(integer::le_substitute(q * d + 0, q * d + r, q * d, n)) using {
-                q * d + 0 <= q * d + r; q * d == q * d + 0; n == q * d + r;
-            };
+            apply(integer::le_substitute(q * d + 0, q * d + r, q * d, n));
         }
         have q <= truncating_quotient(n, d) by {
-            apply(integer::positive_divisor_quotient_lower(n, d, q)) using { d != 0; 1 <= d; q * d <= n; };
+            apply(integer::positive_divisor_quotient_lower(n, d, q));
         }
         have q * d + r <= q * d + (d - 1) by {
-            apply(integer::add_le(q * d, q * d, r, d - 1)) using { q * d <= q * d; r <= d - 1; };
+            apply(integer::add_le(q * d, q * d, r, d - 1));
         }
         have n <= q * d + (d - 1) by {
-            apply(integer::le_substitute(q * d + r, q * d + (d - 1), n, q * d + (d - 1))) using {
-                q * d + r <= q * d + (d - 1); n == q * d + r; q * d + (d - 1) == q * d + (d - 1);
-            };
+            apply(integer::le_substitute(q * d + r, q * d + (d - 1), n, q * d + (d - 1)));
         }
         have truncating_quotient(n, d) <= q by {
-            apply(integer::positive_divisor_quotient_upper_rounded(n, d, q)) using {
-                d != 0; 1 <= d; 0 <= n; n <= q * d + (d - 1);
-            };
+            apply(integer::positive_divisor_quotient_upper_rounded(n, d, q));
         }
-        apply(integer::le_antisymmetric(truncating_quotient(n, d), q)) using {
-            truncating_quotient(n, d) <= q; q <= truncating_quotient(n, d); d != 0;
-        };
+        apply(integer::le_antisymmetric(truncating_quotient(n, d), q));
     }
 }
 ```
@@ -8840,39 +8650,26 @@ theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divis
         if divisor != 0u32 {
             have 0 <= to_integer(value) by known();
             have to_integer(value) + 1 <= to_integer(divisor) by {
-                apply(integer::lt_step_le(to_integer(value), to_integer(divisor))) using {
-                    to_integer(value) < to_integer(divisor);
-                };
+                apply(integer::lt_step_le(to_integer(value), to_integer(divisor)));
             }
             have 0 + 1 <= to_integer(divisor) by {
                 have 0 + 1 <= to_integer(value) + 1 by {
-                    apply(integer::add_right_order(0, to_integer(value), 1)) using { 0 <= to_integer(value); };
+                    apply(integer::add_right_order(0, to_integer(value), 1));
                 }
-                apply(integer::le_transitive(0 + 1, to_integer(value) + 1, to_integer(divisor))) using {
-                    0 + 1 <= to_integer(value) + 1;
-                    to_integer(value) + 1 <= to_integer(divisor);
-                };
+                apply(integer::le_transitive(0 + 1, to_integer(value) + 1, to_integer(divisor)));
             }
             have 1 <= to_integer(divisor) by known();
             have 0 < to_integer(divisor) by {
-                apply(integer::step_le_lt(0, to_integer(divisor))) using { 0 + 1 <= to_integer(divisor); };
+                apply(integer::step_le_lt(0, to_integer(divisor)));
             }
             have to_integer(divisor) != 0 by known();
             have to_integer(value) <= to_integer(divisor) - 1 by {
-                apply(integer::lt_le_predecessor(to_integer(value), to_integer(divisor))) using {
-                    to_integer(value) < to_integer(divisor);
-                };
+                apply(integer::lt_le_predecessor(to_integer(value), to_integer(divisor)));
             }
             have to_integer(value) == 0 * to_integer(divisor) + to_integer(value) by known();
-            apply(integer::nonnegative_quotient_from_remainder(to_integer(value), to_integer(divisor), 0, to_integer(value))) using {
-                to_integer(divisor) != 0;
-                1 <= to_integer(divisor);
-                0 <= to_integer(value);
-                to_integer(value) <= to_integer(divisor) - 1;
-                to_integer(value) == 0 * to_integer(divisor) + to_integer(value);
-            };
-            apply(integer::truncation_identity(to_integer(value), to_integer(divisor))) using { to_integer(divisor) != 0; };
-            apply(integer::uint32_remainder_to_integer(value, divisor)) using { divisor != 0u32; to_integer(divisor) != 0; };
+            apply(integer::nonnegative_quotient_from_remainder(to_integer(value), to_integer(divisor), 0, to_integer(value)));
+            apply(integer::truncation_identity(to_integer(value), to_integer(divisor)));
+            apply(integer::uint32_remainder_to_integer(value, divisor));
             have to_integer(value) == truncating_remainder(to_integer(value), to_integer(divisor)) by {
                 have truncating_remainder(to_integer(value), to_integer(divisor)) == 0 * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor)) by known();
                 rewrite(truncating_remainder(to_integer(value), to_integer(divisor)), 0 * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor)));
@@ -8914,37 +8711,35 @@ theorem nonnegative_quotient_shift(x: Integer, d: Integer, k: Integer) {
     requires 0 <= x;
     requires 0 <= k;
     ensures truncating_quotient(x + d * k, d) == truncating_quotient(x, d) + k by {
-        have 0 <= d by { apply(integer::le_transitive(0, 1, d)) using { 0 <= 1; 1 <= d; }; }
+        have 0 <= d by { apply(integer::le_transitive(0, 1, d)); }
         have 0 * d <= k * d by {
-            apply(integer::multiply_order_nonnegative(0, k, d)) using { 0 <= k; 0 <= d; };
+            apply(integer::multiply_order_nonnegative(0, k, d));
         }
         have 0 * d == 0 by known();
         have d * k == k * d by { apply(integer::multiply_commutative(d, k)); }
         have 0 <= d * k by {
-            apply(integer::le_substitute(0 * d, k * d, 0, d * k)) using { 0 * d <= k * d; 0 == 0 * d; d * k == k * d; };
+            apply(integer::le_substitute(0 * d, k * d, 0, d * k));
         }
         have 0 + 0 <= x + d * k by {
-            apply(integer::add_le(0, x, 0, d * k)) using { 0 <= x; 0 <= d * k; };
+            apply(integer::add_le(0, x, 0, d * k));
         }
         have 0 + 0 == 0 by known();
         have 0 <= x + d * k by known();
         have x == truncating_quotient(x, d) * d + truncating_remainder(x, d) by {
-            apply(integer::truncation_identity(x, d)) using { d != 0; };
+            apply(integer::truncation_identity(x, d));
         }
         have 0 <= truncating_remainder(x, d) by {
-            apply(integer::nonnegative_dividend_remainder(x, d)) using { d != 0; 0 <= x; };
+            apply(integer::nonnegative_dividend_remainder(x, d));
         }
-        have 0 < d by { apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; }; }
+        have 0 < d by { apply(integer::step_le_lt(0, d)); }
         have truncating_remainder(x, d) <= d - 1 by {
-            apply(integer::positive_divisor_remainder_upper(x, d)) using { d != 0; 0 < d; };
+            apply(integer::positive_divisor_remainder_upper(x, d));
         }
         have x + d * k == (truncating_quotient(x, d) * d + truncating_remainder(x, d)) + d * k by {
-            apply(integer::equal_add(x, truncating_quotient(x, d) * d + truncating_remainder(x, d), d * k, d * k)) using {
-                x == truncating_quotient(x, d) * d + truncating_remainder(x, d); d * k == d * k; d != 0;
-            };
+            apply(integer::equal_add(x, truncating_quotient(x, d) * d + truncating_remainder(x, d), d * k, d * k));
         }
         have (truncating_quotient(x, d) + k) * d == truncating_quotient(x, d) * d + k * d by {
-            apply(integer::multiply_add(truncating_quotient(x, d), k, d)) using { d != 0; };
+            apply(integer::multiply_add(truncating_quotient(x, d), k, d));
         }
         have (truncating_quotient(x, d) * d + truncating_remainder(x, d)) + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d) by {
             rewrite((truncating_quotient(x, d) + k) * d, truncating_quotient(x, d) * d + k * d);
@@ -8952,11 +8747,7 @@ theorem nonnegative_quotient_shift(x: Integer, d: Integer, k: Integer) {
             known();
         }
         have x + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d) by known();
-        apply(integer::nonnegative_quotient_from_remainder(x + d * k, d, truncating_quotient(x, d) + k, truncating_remainder(x, d))) using {
-            d != 0; 1 <= d; 0 <= x + d * k;
-            0 <= truncating_remainder(x, d); truncating_remainder(x, d) <= d - 1;
-            x + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d);
-        };
+        apply(integer::nonnegative_quotient_from_remainder(x + d * k, d, truncating_quotient(x, d) + k, truncating_remainder(x, d)));
     }
 }
 ```
@@ -9126,8 +8917,8 @@ theorem uint64_mask_subset(base: uint64, large: uint64, small: uint64) {
     requires (base & large) == 0u64;
     requires (large & small) == small;
     ensures (base & small) == 0u64 by {
-        apply(integer::uint64_and_associate(base, large, small)) using {};
-        apply(integer::uint64_and_commute(0u64, small)) using {};
+        apply(integer::uint64_and_associate(base, large, small));
+        apply(integer::uint64_and_commute(0u64, small));
         rewrite(small, large & small);
         rewrite(base & (large & small), (base & large) & small);
         rewrite(base & large, 0u64);
@@ -9144,16 +8935,16 @@ theorem uint64_or_masked(base: uint64, tag: uint64, mask: uint64) {
     requires (base & mask) == 0u64;
     ensures (base | (tag & mask)) == ((base + (tag & mask)) as uint64) by {
         have (base & (tag & mask)) == 0u64 by {
-            apply(integer::uint64_and_commute(tag, mask)) using {};
-            apply(integer::uint64_and_associate(base, mask, tag)) using {};
-            apply(integer::uint64_and_commute(0u64, tag)) using {};
+            apply(integer::uint64_and_commute(tag, mask));
+            apply(integer::uint64_and_associate(base, mask, tag));
+            apply(integer::uint64_and_commute(0u64, tag));
             rewrite(tag & mask, mask & tag);
             rewrite(base & (mask & tag), (base & mask) & tag);
             rewrite(base & mask, 0u64);
             rewrite(0u64 & tag, tag & 0u64);
             known();
         }
-        apply(integer::uint64_or_disjoint(base, tag & mask)) using { (base & (tag & mask)) == 0u64; };
+        apply(integer::uint64_or_disjoint(base, tag & mask));
     }
 }
 ```
@@ -9373,23 +9164,17 @@ theorem nonnegative_remainder_from_reconstruction(n: Integer, d: Integer, q: Int
     requires r <= d - 1;
     requires n == q * d + r;
     ensures truncating_remainder(n, d) == r by {
-        apply(integer::nonnegative_quotient_from_remainder(n, d, q, r)) using {
-            d != 0; 1 <= d; 0 <= n; 0 <= r; r <= d - 1; n == q * d + r;
-        };
-        apply(integer::truncation_identity(n, d)) using { d != 0; };
+        apply(integer::nonnegative_quotient_from_remainder(n, d, q, r));
+        apply(integer::truncation_identity(n, d));
         have n == q * d + truncating_remainder(n, d) by known();
         have n == truncating_remainder(n, d) + q * d by {
-            apply(integer::sum_commute(n, q * d, truncating_remainder(n, d))) using {
-                n == q * d + truncating_remainder(n, d); d != 0;
-            };
+            apply(integer::sum_commute(n, q * d, truncating_remainder(n, d)));
         }
         have n == r + q * d by {
-            apply(integer::sum_commute(n, q * d, r)) using { n == q * d + r; };
+            apply(integer::sum_commute(n, q * d, r));
         }
-        apply(integer::sum_difference(n, truncating_remainder(n, d), q * d)) using {
-            n == truncating_remainder(n, d) + q * d; d != 0;
-        };
-        apply(integer::sum_difference(n, r, q * d)) using { n == r + q * d; };
+        apply(integer::sum_difference(n, truncating_remainder(n, d), q * d));
+        apply(integer::sum_difference(n, r, q * d));
         known();
     }
 }
@@ -9417,17 +9202,13 @@ axiom uint8_pointer_translate_int32(p: uint8*, q: uint8*, a: int32, b: int32, c:
 theorem uint8_pointer_add_associate_int32(p: uint8*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::uint8_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::uint8_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -9456,17 +9237,13 @@ axiom uint8_pointer_translate_uint64(p: uint8*, q: uint8*, a: uint64, b: uint64,
 theorem uint8_pointer_add_associate_uint64(p: uint8*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::uint8_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::uint8_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -9495,17 +9272,13 @@ axiom int8_pointer_translate_int32(p: int8*, q: int8*, a: int32, b: int32, c: in
 theorem int8_pointer_add_associate_int32(p: int8*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::int8_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::int8_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -9534,17 +9307,13 @@ axiom int8_pointer_translate_uint64(p: int8*, q: int8*, a: uint64, b: uint64, c:
 theorem int8_pointer_add_associate_uint64(p: int8*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::int8_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::int8_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -9573,17 +9342,13 @@ axiom uint16_pointer_translate_int32(p: uint16*, q: uint16*, a: int32, b: int32,
 theorem uint16_pointer_add_associate_int32(p: uint16*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::uint16_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::uint16_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -9612,17 +9377,13 @@ axiom uint16_pointer_translate_uint64(p: uint16*, q: uint16*, a: uint64, b: uint
 theorem uint16_pointer_add_associate_uint64(p: uint16*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::uint16_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::uint16_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -9651,17 +9412,13 @@ axiom int16_pointer_translate_int32(p: int16*, q: int16*, a: int32, b: int32, c:
 theorem int16_pointer_add_associate_int32(p: int16*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::int16_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::int16_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -9690,17 +9447,13 @@ axiom int16_pointer_translate_uint64(p: int16*, q: int16*, a: uint64, b: uint64,
 theorem int16_pointer_add_associate_uint64(p: int16*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::int16_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::int16_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -9729,17 +9482,13 @@ axiom uint32_pointer_translate_int32(p: uint32*, q: uint32*, a: int32, b: int32,
 theorem uint32_pointer_add_associate_int32(p: uint32*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::uint32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::uint32_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -9768,17 +9517,13 @@ axiom uint32_pointer_translate_uint64(p: uint32*, q: uint32*, a: uint64, b: uint
 theorem uint32_pointer_add_associate_uint64(p: uint32*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::uint32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::uint32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -9807,17 +9552,13 @@ axiom int32_pointer_translate_int32(p: int32*, q: int32*, a: int32, b: int32, c:
 theorem int32_pointer_add_associate_int32(p: int32*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::int32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::int32_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -9846,17 +9587,13 @@ axiom int32_pointer_translate_uint64(p: int32*, q: int32*, a: uint64, b: uint64,
 theorem int32_pointer_add_associate_uint64(p: int32*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::int32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::int32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -9885,17 +9622,13 @@ axiom uint64_pointer_translate_int32(p: uint64*, q: uint64*, a: int32, b: int32,
 theorem uint64_pointer_add_associate_int32(p: uint64*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::uint64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::uint64_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -9924,17 +9657,13 @@ axiom uint64_pointer_translate_uint64(p: uint64*, q: uint64*, a: uint64, b: uint
 theorem uint64_pointer_add_associate_uint64(p: uint64*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::uint64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::uint64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -9963,17 +9692,13 @@ axiom int64_pointer_translate_int32(p: int64*, q: int64*, a: int32, b: int32, c:
 theorem int64_pointer_add_associate_int32(p: int64*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::int64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::int64_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -10002,17 +9727,13 @@ axiom int64_pointer_translate_uint64(p: int64*, q: int64*, a: uint64, b: uint64,
 theorem int64_pointer_add_associate_uint64(p: int64*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::int64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::int64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -10041,17 +9762,13 @@ axiom float32_pointer_translate_int32(p: float*, q: float*, a: int32, b: int32, 
 theorem float32_pointer_add_associate_int32(p: float*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::float32_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::float32_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -10080,17 +9797,13 @@ axiom float32_pointer_translate_uint64(p: float*, q: float*, a: uint64, b: uint6
 theorem float32_pointer_add_associate_uint64(p: float*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::float32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::float32_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```
@@ -10119,17 +9832,13 @@ axiom float64_pointer_translate_int32(p: double*, q: double*, a: int32, b: int32
 theorem float64_pointer_add_associate_int32(p: double*, i: int32, j: int32) {
     requires defined(i + j);
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::int32_add_to_integer(i, j)) using { defined(i + j); };
+        apply(integer::int32_add_to_integer(i, j));
         have (p + i) + 0 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::float64_pointer_translate_int32(p + i, p, 0, i, j, i + j)) using {
-            (p + i) + 0 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            defined(i + j);
-        };
+        apply(integer::float64_pointer_translate_int32(p + i, p, 0, i, j, i + j));
     }
 }
 ```
@@ -10158,17 +9867,13 @@ axiom float64_pointer_translate_uint64(p: double*, q: double*, a: uint64, b: uin
 theorem float64_pointer_add_associate_uint64(p: double*, i: uint64, j: uint64) {
     requires to_integer(i) + to_integer(j) <= 18446744073709551615;
     ensures (p + i) + j == p + (i + j) by {
-        apply(integer::uint64_add_to_integer(i, j)) using { to_integer(i) + to_integer(j) <= 18446744073709551615; };
+        apply(integer::uint64_add_to_integer(i, j));
         have (p + i) + 0u64 == p + i by known();
         have to_integer(j) - 0 == to_integer(i + j) - to_integer(i) by {
             rewrite(to_integer(i + j), to_integer(i) + to_integer(j));
             known();
         }
-        apply(integer::float64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j)) using {
-            (p + i) + 0u64 == p + i;
-            to_integer(j) - 0 == to_integer(i + j) - to_integer(i);
-            to_integer(i) + to_integer(j) <= 18446744073709551615;
-        };
+        apply(integer::float64_pointer_translate_uint64(p + i, p, 0u64, i, j, i + j));
     }
 }
 ```

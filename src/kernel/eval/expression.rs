@@ -3625,7 +3625,13 @@ fn read_retained_lvalue_paths_without_ranges(
                         ))
                     && pointer.base == AddressBase::ExternalArgument
                     && can_name_read;
+                let may_use_loaded_entry_version = has_read_resource
+                    && can_name_read
+                    && matches!(pointer.base, AddressBase::LoadedPointer(_))
+                    && crate::kernel::MachineIntegerType::from_program_type(lvalue.value_type)
+                        .is_some();
                 let origin = (uses_entry_version
+                    || may_use_loaded_entry_version
                     || (can_name_read
                         && (lvalue.value_type == ProgramType::Bool
                             || crate::kernel::KernelFloatType::from_program_type(

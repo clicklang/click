@@ -149,7 +149,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 known();
             }
             have separate(memory(occupied[i]), memory(occupied[k])) by {
-                apply(click::separation::separate_elements(occupied, i, k)) using { k != i; };
+                apply(click::separation::separate_elements(occupied, i, k));
             }
             have separate(statement(3).footprint, memory(occupied[k])) by {
                 normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
@@ -191,7 +191,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         }
         have i != k;
         have separate(memory(occupied[i]), memory(occupied[k])) by {
-            apply(click::separation::separate_elements(occupied, i, k)) using { i != k; };
+            apply(click::separation::separate_elements(occupied, i, k));
         }
         have separate(statement(3).footprint, memory(occupied[k])) by {
             normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };

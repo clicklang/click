@@ -1486,6 +1486,7 @@ fn borrow_access_requirement_is_retained_and_branch_local() {
         let owned = memory(0, 8, true);
         let query = memory(16, 20, false);
         let query = query.memory_range().unwrap();
+        let recursive = ResourceFact::own_composite("list".into(), vec![]);
         let empty = ledger.clone();
         let mut last = None;
         for _ in 0..count {
@@ -1496,6 +1497,22 @@ fn borrow_access_requirement_is_retained_and_branch_local() {
         let (requirement, work) = crate::instrumentation::measure_deterministic_work(|| {
             ledger.memory_access_requirement(query).unwrap()
         });
+        let (resource_requirement, resource_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                ledger
+                    .resource_access_requirement(recursive.resource())
+                    .unwrap()
+            });
+        let crate::kernel::Proposition::ResourceSeparate { right, .. } = &requirement else {
+            panic!("a write requires separation from the live borrow footprint");
+        };
+        assert_eq!(
+            resource_requirement,
+            crate::kernel::Proposition::ResourceSeparate {
+                left: Box::new(recursive.resource().clone()),
+                right: right.clone(),
+            }
+        );
         let last = last.unwrap();
         let (child, close_work) = crate::instrumentation::measure_deterministic_work(|| {
             ledger
@@ -1508,12 +1525,13 @@ fn borrow_access_requirement_is_retained_and_branch_local() {
         );
         assert_eq!(ledger.memory_access_requirement(query), Some(requirement));
         assert_eq!(empty.memory_access_requirement(query), None);
-        samples.push((count, work, close_work));
+        samples.push((count, work, resource_work, close_work));
     }
-    eprintln!("retained borrow requirements (borrows, construction, close): {samples:?}");
+    eprintln!("retained borrow requirements (borrows, range, resource, close): {samples:?}");
     for sample in &samples {
         assert_eq!(sample.1, samples[0].1);
-        assert!(sample.2 <= samples[0].2 + 32);
+        assert_eq!(sample.2, samples[0].2);
+        assert!(sample.3 <= samples[0].3 + 32);
     }
 }
 

@@ -8925,10 +8925,10 @@ pub(in crate::surface) fn program_contract_failure(
         ProgramContractFailure::UnfinishedBody(name) => {
             let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
             ClickError::new(format!(
-                "contract proof for `{name}` still owes its body obligations"
+                "termination checking started before Click recorded a completed body proof for `{name}`"
             ))
             .at_declaration(name)
-            .with_proof_refusal(ProofRefusal::ContractExit)
+            .with_kind(ClickErrorKind::Internal)
         }
         ProgramContractFailure::Analysis(error) => {
             let located = ClickError::new(format!("could not certify C termination: {error}"))

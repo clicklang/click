@@ -156,17 +156,7 @@ theorem unmarked_point_update(
                 have to_integer(hi - 1) <= to_integer(j) by {
                     solve() using { 0 <= lo; lo < hi; to_integer(j) == to_integer(hi - 1); };
                 }
-                apply(unmarked_frame(a, b, lo, n, j, hi - 1)) using {
-                    0 <= hi;
-                    0 <= lo;
-                    0 <= to_integer(hi - 1);
-                    to_integer(hi - 1) <= to_integer(j);
-                    j <= n;
-                    n <= 1073741823;
-                    viewable(a[lo..n]);
-                    viewable(b[lo..n]);
-                    forall (k: int32) { lo <= k and k < j implies a[k] == b[k] };
-                };
+                apply(unmarked_frame(a, b, lo, n, j, hi - 1));
                 have a[hi - 1] == 0 by { solve() using { a[j] == 0; to_integer(j) == to_integer(hi - 1); }; }
                 have b[hi - 1] != 0 by { solve() using { b[j] != 0; to_integer(j) == to_integer(hi - 1); }; }
                 unfold(unmarked(a, lo, hi));
@@ -196,11 +186,7 @@ theorem unmarked_point_update(
                 known();
             } else {
                 have to_integer(j) < to_integer(hi - 1) by {
-                    apply(integer::int32_less_equal_and_not_equal_implies_less_than(j, hi - 1)) using {
-                        0 <= hi;
-                        to_integer(j) <= to_integer(hi - 1);
-                        to_integer(j) != to_integer(hi - 1);
-                    };
+                    apply(integer::int32_less_equal_and_not_equal_implies_less_than(j, hi - 1));
                     known();
                 }
                 apply(ih(hi - 1)) using {

@@ -61,8 +61,6 @@ fn report_error(message: String) -> ! {
         "contract entry refused",
         "execution prerequisite unmet",
         "execution refused",
-        "contract exit refused",
-        "contract refinement refused",
         "termination not established",
         "invalid divergence declaration",
         "unsupported proof",
@@ -2707,6 +2705,73 @@ void probe(struct node *node) {{
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(error.starts_with("incomplete proof:\n"), "{error}");
         assert!(error.contains("ticket(0)"), "{error}");
+    }
+
+    #[test]
+    fn contract_refinement_reports_the_reason_it_cannot_verify() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (fixture, heading, reason) in [
+            (
+                "c_named_contract_refinement_rejects_extra_effect.md",
+                "contract error",
+                "the target contract does not supply the resources required by the source contract",
+            ),
+            (
+                "c_named_contract_refinement_rejects_insufficient_quantity.md",
+                "contract error",
+                "the target contract does not supply the resources required by the source contract",
+            ),
+            (
+                "c_named_contract_refinement_rejects_unreturned_quantity.md",
+                "contract error",
+                "the source contract does not return the resources promised by the target contract",
+            ),
+            (
+                "c_named_function_contract_refinement_theorem_requires_unfold.md",
+                "tactic error",
+                "requires explicit `unfold(contract(callback))` applications",
+            ),
+            (
+                "c_named_function_contract_refinement_rejects_missing_rewrite.md",
+                "tactic error",
+                "`all` requires a conjunction goal",
+            ),
+            (
+                "c_named_function_contract_refinement_theorem_rejects_false_claim.md",
+                "unsuccessful search",
+                "result > 0",
+            ),
+        ] {
+            let path = fixtures.join(fixture);
+            let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+            assert!(
+                error.starts_with(&format!("{heading}:\n")),
+                "{fixture}: {error}"
+            );
+            assert!(error.contains(reason), "{fixture}: {error}");
+        }
+    }
+
+    #[test]
+    fn contract_refinement_without_a_proof_is_incomplete() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(directory.path().join("f.c"), "int f(void) { return 0; }").unwrap();
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+contract int32 Zero() { ensures result == 0; }
+int32 f() { ensures result == 0; }
+theorem implements_zero() { ensures Zero(&f); }
+"#,
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("incomplete proof:\n"), "{error}");
+        assert!(
+            error.contains("requires an explicit contract-refinement proof"),
+            "{error}"
+        );
     }
 
     #[test]

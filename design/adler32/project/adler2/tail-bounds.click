@@ -42,7 +42,7 @@ theorem adler_tail_a_next(k: Integer, a: Integer, byte: Integer) {
  requires a <= adler_tail_a_ceiling(k);
  requires byte <= 255;
  ensures a + byte <= 328365 by {
-  apply(adler_tail_ceiling_before_next(k)) using { k <= 2; };
+  apply(adler_tail_ceiling_before_next(k));
   solve() using { a <= adler_tail_a_ceiling(k); adler_tail_a_ceiling(k) <= 328110; byte <= 255; };
  }
  ensures a + byte <= adler_tail_a_ceiling(k + 1) by {
@@ -57,12 +57,12 @@ theorem adler_tail_b_next(k: Integer, a: Integer, b: Integer, byte: Integer) {
  requires b <= adler_tail_b_ceiling(k);
  requires byte <= 255;
  ensures b + a + byte <= 2492061 by {
-  apply(adler_tail_ceiling_before_next(k)) using { k <= 2; };
-  apply(adler_tail_a_next(k, a, byte)) using { k <= 2; a <= adler_tail_a_ceiling(k); byte <= 255; };
+  apply(adler_tail_ceiling_before_next(k));
+  apply(adler_tail_a_next(k, a, byte));
   solve() using { b <= adler_tail_b_ceiling(k); adler_tail_b_ceiling(k) <= 2163696; a + byte <= 328365; };
  }
  ensures b + a + byte <= adler_tail_b_ceiling(k + 1) by {
-  apply(adler_tail_a_next(k, a, byte)) using { k <= 2; a <= adler_tail_a_ceiling(k); byte <= 255; };
+  apply(adler_tail_a_next(k, a, byte));
   apply(adler_tail_ceiling_increments(k));
   rewrite(adler_tail_b_ceiling(k + 1), adler_tail_b_ceiling(k) + 328365);
   solve() using { b <= adler_tail_b_ceiling(k); a + byte <= 328365; };
@@ -75,23 +75,23 @@ theorem adler_tail_iterator_step(total: int32, remaining: int32, a: Integer, b: 
  requires b <= adler_tail_b_ceiling(adler_tail_consumed(total, remaining));
  requires byte <= 255;
  ensures a + byte <= 4294967295 by {
-  apply(adler_tail_index_before_next(total, remaining)) using { 1 <= remaining; total <= 3; };
-  apply(adler_tail_a_next(adler_tail_consumed(total, remaining), a, byte)) using { adler_tail_consumed(total, remaining) <= 2; a <= adler_tail_a_ceiling(adler_tail_consumed(total, remaining)); byte <= 255; };
+  apply(adler_tail_index_before_next(total, remaining));
+  apply(adler_tail_a_next(adler_tail_consumed(total, remaining), a, byte));
   solve() using { a + byte <= 328365; };
  }
  ensures b + a + byte <= 4294967295 by {
-  apply(adler_tail_index_before_next(total, remaining)) using { 1 <= remaining; total <= 3; };
-  apply(adler_tail_b_next(adler_tail_consumed(total, remaining), a, b, byte)) using { adler_tail_consumed(total, remaining) <= 2; a <= adler_tail_a_ceiling(adler_tail_consumed(total, remaining)); b <= adler_tail_b_ceiling(adler_tail_consumed(total, remaining)); byte <= 255; };
+  apply(adler_tail_index_before_next(total, remaining));
+  apply(adler_tail_b_next(adler_tail_consumed(total, remaining), a, b, byte));
   solve() using { b + a + byte <= 2492061; };
  }
  ensures a + byte <= adler_tail_a_ceiling(adler_tail_consumed(total, remaining) + 1) by {
-  apply(adler_tail_index_before_next(total, remaining)) using { 1 <= remaining; total <= 3; };
-  apply(adler_tail_a_next(adler_tail_consumed(total, remaining), a, byte)) using { adler_tail_consumed(total, remaining) <= 2; a <= adler_tail_a_ceiling(adler_tail_consumed(total, remaining)); byte <= 255; };
+  apply(adler_tail_index_before_next(total, remaining));
+  apply(adler_tail_a_next(adler_tail_consumed(total, remaining), a, byte));
   known();
  }
  ensures b + a + byte <= adler_tail_b_ceiling(adler_tail_consumed(total, remaining) + 1) by {
-  apply(adler_tail_index_before_next(total, remaining)) using { 1 <= remaining; total <= 3; };
-  apply(adler_tail_b_next(adler_tail_consumed(total, remaining), a, b, byte)) using { adler_tail_consumed(total, remaining) <= 2; a <= adler_tail_a_ceiling(adler_tail_consumed(total, remaining)); b <= adler_tail_b_ceiling(adler_tail_consumed(total, remaining)); byte <= 255; };
+  apply(adler_tail_index_before_next(total, remaining));
+  apply(adler_tail_b_next(adler_tail_consumed(total, remaining), a, b, byte));
   known();
  }
 }

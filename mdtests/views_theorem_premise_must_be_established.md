@@ -35,13 +35,11 @@ int32 ignore(int32 a[]) {
     ensures result == 0;
 } by {
     step();
-    apply(element_of_a_viewed_range(a, 0, 3, 1)) using {
-        viewable(a[0..2]);
-    };
+    apply(element_of_a_viewed_range(a, 0, 3, 1));
     solve();
 }
 ```
 
 ```expect
-fail: required exact fact for theorem `element_of_a_viewed_range` is unavailable: requirement 1 `viewable(v[lo..hi])` with v = a, lo = 0, hi = 3 instantiates to
+fail: has an unproved obligation: `viewable(a[0..3])`
 ```
