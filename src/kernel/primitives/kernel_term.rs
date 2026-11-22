@@ -1680,6 +1680,11 @@ mod scaling_tests {
 pub(crate) struct KernelTermExport {
     values: HashMap<KernelTerm, PureFunctionArgument>,
 }
+#[cfg(test)]
+thread_local! {
+    static INTEGER_EXPORT_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl KernelTermExport {
     pub(crate) fn argument(
         &mut self,
@@ -1843,7 +1848,14 @@ impl KernelTermExport {
         self.values.insert(term.clone(), value.clone());
         Ok(value)
     }
+    #[cfg(test)]
+    pub(crate) fn integer_export_count() -> usize {
+        INTEGER_EXPORT_COUNT.with(std::cell::Cell::get)
+    }
+
     pub(crate) fn integer(&mut self, term: &KernelTerm) -> Result<SharedIntegerTerm, &'static str> {
+        #[cfg(test)]
+        INTEGER_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         match self.argument(term)? {
             PureFunctionArgument::Integer(value) => Ok(value),
             _ => Err("expected Integer kernel term"),

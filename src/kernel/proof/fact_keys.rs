@@ -102,8 +102,8 @@ pub(crate) enum MemoryErasedFloatConditionKey {
     },
 }
 
-#[allow(dead_code)]
 mod fold_keys;
+pub(super) use fold_keys::alpha_equivalent as retained_folds_alpha_equivalent;
 mod match_keys;
 mod memory_operands;
 mod pointer_keys;
