@@ -1389,6 +1389,9 @@ pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> Str
     else {
         unreachable!("fold, unfold, and observe use declared resources")
     };
+    // A resource instance at Rust types, as the sidecar writes it.
+    let name = crate::languages::rust::names::resource_instance_display(name)
+        .unwrap_or_else(|| name.clone());
     format!(
         "{name}({})",
         arguments

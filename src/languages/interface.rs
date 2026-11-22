@@ -316,6 +316,17 @@ pub struct RecordField {
     /// The field's width; 0 for a value of an abstract type, whose extent is
     /// `sizeof(T)` ([`RecordField::extent`]).
     pub(super) byte_width: u32,
+    /// A Rust box field, `Box<R>`, or an option of one, `Option<Box<R>>`,
+    /// stored as the box's address: what its type resource is.
+    pub(super) boxed: Option<BoxedField>,
+}
+
+/// A Rust field holding a box of the struct `record`, as its address, or an
+/// option of one, null for `None`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoxedField {
+    pub optional: bool,
+    pub record: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1126,6 +1137,7 @@ impl RecordLayout {
                 array_shape: None,
                 offset,
                 byte_width: extent.bytes().unwrap_or(0),
+                boxed: None,
             };
             if named_fields.insert(field.clone(), record_field).is_some() {
                 return Err(format!("duplicate symbolic struct field `{field}`"));
@@ -1233,6 +1245,7 @@ impl RecordLayout {
                 byte_width: crate::kernel::AccessExtent::of_type(interface_type.to_kernel_type())
                     .bytes()
                     .unwrap_or(0),
+                boxed: None,
             };
             if layout.fields.insert(field.clone(), record_field).is_some() {
                 return Err(format!("duplicate symbolic struct field `{field}`"));
@@ -1358,6 +1371,7 @@ impl RecordLayout {
                         },
                         offset: offset_bytes.into(),
                         byte_width,
+                        boxed: None,
                     },
                 )
                 .is_some()
@@ -1423,6 +1437,15 @@ impl RecordLayout {
             )
         });
         fields
+    }
+
+    /// The layout with Rust field `field` marked as holding a box, or an
+    /// option of one ([`RecordField::boxed`]).
+    pub(crate) fn with_boxed_field(mut self, field: &str, boxed: BoxedField) -> Self {
+        if let Some(record_field) = self.fields.get_mut(field) {
+            record_field.boxed = Some(boxed);
+        }
+        self
     }
 
     /// Whether the record declares bit fields, which share storage units.
@@ -1550,6 +1573,11 @@ impl RecordLayout {
 }
 
 impl RecordField {
+    /// The box this Rust field holds, or the option of one.
+    pub fn boxed(&self) -> Option<&BoxedField> {
+        self.boxed.as_ref()
+    }
+
     pub fn is_long_double(&self) -> bool {
         self.long_double
     }

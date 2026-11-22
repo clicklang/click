@@ -1114,6 +1114,10 @@ pub(in crate::surface) fn prove_claims_by_implicit_tail(
 ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let mut tactics = vec![ProofTactic::SmartExecute];
     if !claims.is_empty() {
+        if let Some(split) = entry_type_resource_split(function_block, claims, resource_environment)
+        {
+            tactics = vec![split];
+        }
         tactics.push(ProofTactic::ImplicitSolve);
     }
 
@@ -1132,6 +1136,88 @@ pub(in crate::surface) fn prove_claims_by_implicit_tail(
         ProofTacticSource::GeneratedBy { source_index: 0 },
     )?;
     Ok(verified.theorems)
+}
+
+/// The implicit tail's split at entry on a conditional resource the function
+/// takes, when a claim reads the entry state: `if c { unfold(R(x)); ... }
+/// else { unfold(R(x)); }`, each arm executing to the exit.
+///
+/// A resource whose body is `if c { owns S(..); }`, as an option of a box's
+/// type resource is, holds its contents only on one side of `c`. A claim
+/// that reads those contents at entry, `old(self.slot.value)`, needs them
+/// related to the reads the program makes after it has stored to the place,
+/// and the facts that relate them are the ones the unfolded body gives at
+/// entry. Splitting there is one case analysis on the resource's own
+/// condition, written out by expansion; the closer folds at the exit.
+fn entry_type_resource_split(
+    function_block: &FunctionBlock,
+    claims: &[FunctionClaimRef<'_>],
+    resource_environment: &ResourceEnvironment,
+) -> Option<ProofTactic> {
+    let reads_entry = claims.iter().any(|claim| match claim.clause().ensure() {
+        Ensure::Proposition(proposition) => proposition_contains_old_expression(proposition),
+        Ensure::Resource(_) => false,
+    });
+    if !reads_entry {
+        return None;
+    }
+    function_block.requires().iter().find_map(|requirement| {
+        let Requirement::Resource(
+            resource @ ResourceClause::Declared {
+                kind: ResourceKind::Composite,
+                name,
+                arguments,
+                ..
+            },
+        ) = requirement
+        else {
+            return None;
+        };
+        let definition = resource_environment.get(name)?;
+        let body = definition.composite_body()?;
+        let condition = body.condition()?;
+        let [inner @ ResourceClause::Declared { .. }] = body.contains() else {
+            return None;
+        };
+        if definition.parameters().len() != arguments.len() {
+            return None;
+        }
+        let substitutions = definition
+            .parameters()
+            .iter()
+            .zip(arguments)
+            .map(|(parameter, argument)| (parameter.name.as_str(), argument.clone()))
+            .collect::<BTreeMap<&str, ContractExpression>>();
+        let condition =
+            crate::surface::lowering::substitute_click_proposition(condition, &substitutions)
+                .ok()?;
+        let inner = crate::surface::verification::substitute_resource_clause_for_summary(
+            inner,
+            &substitutions,
+        )
+        .ok()?;
+        let mut outer = resource.clone();
+        if let ResourceClause::Declared { access, .. } = &mut outer {
+            *access = ResourceAccessMode::Own;
+        }
+        let mut inner = inner;
+        if let ResourceClause::Declared { access, .. } = &mut inner {
+            *access = ResourceAccessMode::Own;
+        }
+        Some(ProofTactic::If(ProofIf {
+            condition,
+            ensuring: None,
+            then_tactics: vec![
+                ProofTactic::UnfoldResource(outer.clone()),
+                ProofTactic::UnfoldResource(inner),
+                ProofTactic::SmartExecute,
+            ],
+            else_tactics: vec![
+                ProofTactic::UnfoldResource(outer),
+                ProofTactic::SmartExecute,
+            ],
+        }))
+    })
 }
 
 /// A written script followed by the implicit tail every script ends with: a

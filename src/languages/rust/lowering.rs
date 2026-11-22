@@ -840,6 +840,24 @@ pub(crate) fn lower_with_identity(
                 &BTreeMap::new(),
             )?
         };
+        // A box field, or an option of one, holds its type resource.
+        let mut layout = layout;
+        for f in &record.fields {
+            let (optional, pointee) = match &f.value_type {
+                Type::Box { pointee } => (false, pointee),
+                Type::OptionBox { pointee } => (true, pointee),
+                _ => continue,
+            };
+            if let Type::Record { name } = pointee.as_ref() {
+                layout = layout.with_boxed_field(
+                    &f.name,
+                    crate::languages::interface::BoxedField {
+                        optional,
+                        record: name.clone(),
+                    },
+                );
+            }
+        }
         for f in &record.fields {
             if fields
                 .insert(
