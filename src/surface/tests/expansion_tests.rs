@@ -3315,6 +3315,11 @@ fn rewritten_constructor_payload_expands_to_known() {
             "WideOutput::Value(value)",
             "WideOutput::Value(8u64)",
         ),
+        (
+            "rewritten_tag",
+            "TaggedOutput::Value(value, 7u64)",
+            "TaggedOutput::Value(value, 8u64)",
+        ),
     ] {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
