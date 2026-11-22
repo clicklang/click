@@ -105,6 +105,10 @@ impl StepLog {
                 indexed_local(block) || matches!(block, AddressBase::Temporary(_))
             }
             MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
+            // Pending and resolved fresh allocations leave existing objects alone.
+            MemoryDerivation::HeapAllocationPending { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. }
+            | MemoryDerivation::HeapAllocated { .. } => true,
             // The call's write effect is recorded separately. The return
             // clause supplies initialization evidence for the typed cell.
             MemoryDerivation::ObjectInitializationRecorded { .. } => true,
@@ -2017,6 +2021,50 @@ mod tests {
             &pointer,
             LoadKind::Int32,
         ));
+    }
+
+    #[test]
+    fn caller_read_versions_survive_both_outcomes_of_fresh_allocation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let caller_cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let loaded = Pointer::from_point_read(
+            entry.program_point().for_exact_read(),
+            ProgramType::UInt64Pointer,
+            &caller_cell.offset_by_bytes(8),
+        );
+        let allocation = Address::symbolic(Variable(38_132));
+        let pending =
+            entry
+                .clone()
+                .with_memory(entry.memory().clone().with_pending_heap_allocation(
+                    allocation.clone(),
+                    AllocationSize::int32(16),
+                    false,
+                ));
+        let assert_entry = |state: &ExecutionState| {
+            for pointer in [&caller_cell, loaded.address()] {
+                let version = state
+                    .program_point()
+                    .entry_cell_version(pointer, ProgramType::UInt64);
+                assert_eq!(
+                    version.as_ref().and_then(ProgramPoint::read_version_id),
+                    entry.program_point().id(),
+                );
+            }
+        };
+        assert_entry(&pending);
+        for succeeds in [false, true] {
+            let (memory, _, _) = pending
+                .memory()
+                .clone()
+                .resolve_pending_heap_allocation(&allocation, succeeds)
+                .expect("resolve the pending allocation");
+            assert_entry(&pending.clone().with_memory(memory));
+        }
     }
 
     #[test]
