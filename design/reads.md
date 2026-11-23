@@ -1,0 +1,179 @@
+# Reads: one term for a value read from memory
+
+Status: draft for review. Nothing here is implemented.
+
+This design sits between two others. `design/point-named-reads.md` decides
+*which version* a read names: one selector, `read_name`, over the cell store,
+the point indexes and the legacy walk. `design/pointer-model.md` decides what a
+pointer *value* is: an address and a provenance, with the type on the term.
+This design decides what a read *term* is, so that both have one thing to
+name.
+
+## Problem
+
+A value read from memory is spelled four ways in the kernel today:
+
+1. **`MachineTerm::MemoryLoad(point, address, LoadKind)`**, for integer reads.
+   A real term: equality compares the point's read key, the address and the
+   kind.
+2. **`AddressBase::LoadedPointer(PointerLoadId)`**, for pointer reads. The id
+   indexes a side table, `POINTER_LOAD_REGISTRY`, holding `(point, cell,
+   value type)`. The read's meaning is outside the term, and its type is in its
+   key, so reading one cell through `int *` and through `char *` gives two
+   pointer values. That contradicts the pointer model, where the type belongs
+   to the term and not to the value.
+3. **Load variables**: reserved `Variable`s registered in `LOAD_VARIABLE_REGISTRY`
+   with a defining equation, used for some integer reads and, as
+   `FunctionSymbolic(var)`, for function-pointer reads. Another session is
+   removing them.
+4. **`Address::loaded_value(memory, cell)`**, a pointer read named by the
+   memory state's unchanged-bytes source, and `named_pointer_read`, which maps
+   a raw 64-bit `MemoryLoad` to a `LoadedPointer`.
+
+The pointer read's side-table type does three jobs at once:
+
+- **Identity**: it is hashed into `PointerLoadId`.
+- **Store lookup**: `indexed_typed_version` matches only a store whose value
+  has that exact type, so a store at another pointer type answers nothing.
+- **Raising**: `LoadedPointerView::value_type` tells the raiser how to spell a
+  nested read.
+
+Changing one job changes all three, so each pointer step so far has had to
+decide read identity from the pointer layer.
+
+## The rule
+
+> A read's identity is what determines its value: the version point, the cell,
+> and, for an integer read, the format it is read at. Nothing else.
+
+- **The cell** is the address and the width in bytes. A 4-byte read and an
+  8-byte read at one address read different bytes, so they are different
+  reads.
+- **An integer read's format** (width and signedness, `LoadKind`) is part of
+  it, because the format changes the value: the `int8` and `uint8` reads of
+  one byte are -1 and 255. They stay two terms related by the 8-bit sign cast,
+  as `MachineTerm::memory_read` already states (maintainer direction,
+  2026-10-30). This design keeps that direction; it does not need to change.
+- **A pointer read's type** is not part of it, because the type does not
+  change the value. One version point and one 8-byte cell are one pointer
+  value, whatever pointer type reads it. The type belongs to the `Pointer`
+  term that uses the read.
+- **Exactness** (`exact(place)`) is part of the version point. An exact read
+  is named by its reading point (`design/exact-reads.md`), so it is part of
+  the identity only through that point. `PointerLoadId` hashes `is_exact_read`
+  separately today; that goes.
+
+This is the pointer model's rule, "types belong to terms, not values", applied
+to reads. It explains why integers and pointers differ: an integer's format is
+part of its value, a pointer's type is not.
+
+## The terms
+
+- **Integer reads** stay `MachineTerm::MemoryLoad(point, address, kind)`, built
+  only by `MachineTerm::read_named` and `MachineTerm::memory_read`
+  (`design/point-named-reads.md`, P0).
+- **Pointer reads** become a structural address base,
+  `AddressBase::Read(PointerRead { point, cell })`. The cell is 8 bytes, so it
+  has no width. It is interned, like the other shared children, so equality
+  and hashing stay cheap. It replaces `LoadedPointer(PointerLoadId)` and the
+  registry. A pointer read's value is the `Pointer` whose address is
+  `Read(..) + 0` and whose provenance is opaque, named by the same read
+  (`Pointer::from_point_read`, unchanged in meaning).
+- **Function-pointer reads** are pointer reads. Load variables are removed by
+  the session already doing it; this design asks only that their pointer users
+  move to `AddressBase::Read`.
+- **`Address::loaded_value(memory, cell)`** is a memory-named read
+  (`ReadKey::Memory`). It goes when the legacy walk does
+  (`point-named-reads.md`, plan step 4). Until then it builds the same
+  `AddressBase::Read` with a legacy point.
+
+## Store lookup
+
+A read's value comes from the store that set its version (read-over-write).
+
+- A pointer read is answered by the latest store to its 8-byte cell at its
+  version, if that store wrote a pointer of any type. The stored value keeps
+  its own provenance; the reading term keeps its own type.
+- An integer read is answered by a store of the same cell and format, as
+  today. A store of another format answers through the sign cast, as R-mem
+  already does.
+- A partial or overlapping store ends the version and answers nothing, as
+  today.
+
+So `indexed_typed_version` matches a pointer read on "a pointer store to this
+cell", not on equal types. That is in the program-point layer's selector
+path (`read_version` → `ordinary_typed_version`); its owner agreed to the
+change.
+
+## Raising
+
+A read raises from its derivation (`design/pointer-model.md`, "Raising is by
+derivation"): `n->next`, `p[i]`, `at(point, place)`, `exact(place)`, or
+`load<T>(address)` when nothing names the place.
+
+- **An integer read** raises at its format, which its term carries.
+- **A pointer read used as a value** raises at the type of the `Pointer` term
+  that holds it.
+- **A pointer read nested in an address**, as the inner read of
+  `n->next->next`, has no term of its own to carry a type. It raises through
+  its place: the field declaration (`n->next`), the static slot's declaration,
+  or the parameter's declared type, which the raiser already uses. Because the
+  type does not change the value, any of these names the same read; it is
+  never a guess between different reads.
+- **When no place names it**, it raises as `load<T *>(address)` at the type of
+  the cell's effective-type object class, if the cell has one. Whether every
+  such cell has one is open question 1.
+
+## Migration
+
+The order respects `point-named-reads.md`, which owns version selection.
+
+1. **P0 there**: one integer read constructor, with a ratchet. No change here.
+2. **Pointer reads by version point, not type.** Drop the value type from
+   `PointerLoadId`'s key and registry. Match pointer stores on "any pointer"
+   in `indexed_typed_version`. The raiser takes the type from the
+   occurrence or the place. This is the smallest change that makes the rule
+   hold, and it can land before step 3.
+3. **`AddressBase::Read`.** Replace `LoadedPointer(PointerLoadId)` and the
+   registry with the structural, interned base. Every user of
+   `registered_pointer_load_point` reads the base instead.
+4. **Load variables**, by the session removing them: function-pointer reads
+   move to `AddressBase::Read`.
+5. **`loaded_value`** goes with the legacy walk.
+
+Each step is one PR, measured with the gate harnesses, the raise-lower audit,
+and `click audit legacy-walk`.
+
+## Design check
+
+```text
+Design check
+- Part: Memory and checking (fast). No search is added.
+- Why this part: every read is named and compared here.
+- Fast: step 2 hashes one field fewer. The store lookup reads the same point
+  index cell, keyed by the read's address, with a weaker match. Step 3
+  replaces an id and side-table lookup with an interned base: equality and
+  hashing stay O(1). Scaling: the existing read-identity and point-index
+  scaling tests, plus one that grows the number of differently typed reads
+  of one cell and checks that they intern to one base.
+- Fact-stable: lowering reads no facts to name a read; the type moves from
+  the read to the term that lowering already builds.
+- Failure: a nested pointer read that no place names and whose cell has no
+  effective type does not raise; the raise-lower audit reports it.
+```
+
+## Open questions
+
+1. **Effective type of an unnamed cell.** A nested pointer read that no field,
+   static slot or parameter names raises at its cell's effective-type object
+   class. Does every such cell have one, and does a spec `load<T *>` at
+   another pointer type pass effective-type checking? If not, those reads
+   have no spelling, and that gap is the defect to fix.
+2. **Interning cost.** `AddressBase::Read` holds a `ProgramPoint` and an
+   `Address`. It must be interned so that addresses stay cheap to compare;
+   confirm with the scaling tests before step 3.
+3. **Exactness in identity.** Integer read equality already compares only
+   `read_key()`, so an `Exact` and an `IndexedCell` selection of one point are
+   one term. Pointer reads should match. Confirm that no pointer consumer asks
+   `is_exact_read()` of a registered read for anything but selecting its
+   version.
