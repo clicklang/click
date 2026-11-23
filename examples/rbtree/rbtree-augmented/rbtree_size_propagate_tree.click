@@ -205,7 +205,10 @@ contract void PropagateTree(struct rb_node* rb, struct rb_node* stop) {
 theorem sized_propagate_has_tree_contract()
     executes sized_propagate(struct rb_node* rb, struct rb_node* stop) {
     ensures PropagateTree(&sized_propagate) as { walk: walk, whole: whole } by {
-        let { whole: whole } = step(sized_propagate, { walk: walk });
+        let { whole: whole } = step(sized_propagate, { walk: walk }) {
+            requires sized_walk_pending(walk.model) == 1 or rb == stop by { known(); };
+            requires rb_subtree_size(sized_shape(sized_walk_tree(walk.model))) <= 2147483647 by { known(); };
+        };
         solve();
     }
 }
