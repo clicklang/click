@@ -3675,6 +3675,62 @@ fn two_constructor_match_results_expand_to_known() {
 }
 
 #[test]
+fn constructor_matches_with_bound_guards_expand_to_known() {
+    assert_constructor_case_expansions(
+        "mdtests/algebraic_match_bound_guards.md",
+        &[
+            ("selected_tag", "Switch::Hold(true)", "Switch::Hold(false)"),
+            (
+                "selected_true_literal",
+                "Switch::Hold(true)",
+                "Switch::Hold(false)",
+            ),
+            (
+                "selected_false_literal",
+                "Switch::Hold(false)",
+                "Switch::Hold(true)",
+            ),
+            (
+                "selected_number",
+                "NumberInput::Hold(true, a)",
+                "NumberInput::Hold(false, a)",
+            ),
+            (
+                "selected_capture",
+                "BoxInput::Hold(true, b)",
+                "BoxInput::Hold(false, b)",
+            ),
+            (
+                "selected_flag",
+                "FlagInput::Hold(false, a)",
+                "FlagInput::Hold(true, a)",
+            ),
+            (
+                "selected_word",
+                "WordInput::Hold(true, a)",
+                "WordInput::Hold(false, a)",
+            ),
+            (
+                "selected_nested_match",
+                "BoxInput::Hold(true, Box::Value(a))",
+                "BoxInput::Hold(false, Box::Value(a))",
+            ),
+            (
+                "selected_second_guard",
+                "DoubleInput::Hold(true, false)",
+                "DoubleInput::Hold(true, true)",
+            ),
+            (
+                "selected_both_sides",
+                "NumberInput::Hold(true, 7)",
+                "NumberInput::Hold(false, 7)",
+            ),
+        ],
+        str::to_owned,
+    );
+}
+
+#[test]
 fn constant_byte_containment_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/byte_containment_preserves_physical_width.md");
     let label = "last_byte.ensures_0";
