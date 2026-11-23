@@ -10678,7 +10678,15 @@ impl ProofObligation {
         if !self.float_to_integer_bound {
             return None;
         }
-        let (condition, true) = self.proposition.condition_native()? else {
+        let mut goal = &self.proposition;
+        while let Proposition::Implies(guard, bound) = goal {
+            crate::instrumentation::record_deterministic_work(1);
+            if !facts.contains_assumed_exact(guard) {
+                return None;
+            }
+            goal = bound;
+        }
+        let (condition, true) = goal.condition_native()? else {
             return None;
         };
         if let Some(truth) = facts.known_condition_value(condition) {

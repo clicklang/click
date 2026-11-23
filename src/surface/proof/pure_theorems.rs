@@ -34,6 +34,7 @@ pub(in crate::surface) fn theorem_requirement_propositions(
                 ClickError::new(crate::surface::validation::theorem_resource_clause_refusal(
                     theorem.name(),
                 ))
+                .with_proof_refusal(ProofRefusal::Contract)
             })
         })
         .collect()
@@ -614,7 +615,9 @@ fn prepare_pure_induction_setup(
     {
         return Err(ClickError::new(
             "structural induction declarations must name the same theorem parameter and hypothesis",
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Tactic)
+        .with_failed_tactic("induct"));
     }
     if !theorem.parameters().iter().any(|candidate| {
         candidate.name() == parameter
@@ -626,7 +629,9 @@ fn prepare_pure_induction_setup(
     }) {
         return Err(ClickError::new(format!(
             "`induct({parameter})` requires an int32 or uint64 theorem parameter with that name"
-        )));
+        ))
+        .with_proof_refusal(ProofRefusal::Tactic)
+        .with_failed_tactic("induct"));
     }
     let surface_requires = theorem_requirement_propositions(theorem)?;
 
@@ -713,21 +718,26 @@ pub(super) fn pure_theorem_context(
     let mut requires = Vec::with_capacity(surface_requires.len());
     let mut requirement_assumptions = PureFactContext::new();
     for proposition in &surface_requires {
-        let (lowered, _) = lower_pure_theorem_proposition_recording_introductions(
-            theorem.name(),
+        let state = ExecutionState::at_point(&point);
+        let (lowered, _, _) = lower_stated_proposition(
             proposition,
-            &requirement_assumptions,
+            &PureFactContext::new(),
             ContractEnvironment::new(&values, &array_refs),
-            &BTreeMap::new(),
-            &integer_values,
-            &point,
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
             spec_definitions,
+            FixedStateLoweringOptions {
+                integer_values: Some(&integer_values),
+                obligation_assumptions: Some(&requirement_assumptions),
+                ..Default::default()
+            },
         )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "theorem `{}` setup failed: could not lower requirement: {message}",
-                theorem.name()
-            ))
+        .map_err(|reason| {
+            let diagnostic = ClickError::new(format!(
+                "theorem `{}` setup failed: could not lower requirement: pure theorem `{}`: {reason}",
+                theorem.name(),
+                theorem.name(),
+            )).at_declaration(theorem.name());
+            theorem_statement_error(diagnostic, reason)
         })?;
         // Guard evidence is available to later requirements, while every
         // principal remains in the exported implication's premise list.
@@ -806,6 +816,34 @@ pub(super) fn pure_theorem_context(
     })
 }
 
+fn theorem_statement_error(
+    diagnostic: ClickError,
+    refusal: StatedPropositionRefusal,
+) -> ClickError {
+    use crate::kernel::ExecutionLimit;
+    match refusal {
+        StatedPropositionRefusal::Elaboration(_) | StatedPropositionRefusal::Evaluation(_) => {
+            diagnostic.with_proof_refusal(ProofRefusal::Contract)
+        }
+        StatedPropositionRefusal::Stopped(
+            ExecutionLimit::GuardedConjunctionTooLong
+            | ExecutionLimit::SymbolicPointerConditional
+            | ExecutionLimit::UnsupportedPureFunctionResult(_),
+            _,
+        ) => diagnostic.with_kind(ClickErrorKind::Unsupported),
+        StatedPropositionRefusal::Stopped(
+            ExecutionLimit::BoolArithmetic
+            | ExecutionLimit::BoolComparedWithInteger
+            | ExecutionLimit::BoolOrdered
+            | ExecutionLimit::MixedBoolArms,
+            _,
+        ) => diagnostic.with_proof_refusal(ProofRefusal::Contract),
+        StatedPropositionRefusal::Stopped(..) | StatedPropositionRefusal::Lowering(_) => {
+            diagnostic.with_kind(ClickErrorKind::Internal)
+        }
+    }
+}
+
 /// Lowers imported or otherwise unselected theorem statements into scoped
 /// certification assumptions. Proof bodies are intentionally ignored.
 pub(in crate::surface) fn assumed_theorem_certification_authorities(
@@ -836,21 +874,27 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                 continue;
             };
             let lowering_assumptions = assumptions_from_propositions(&context.requires);
-            let (conclusion, _) = lower_pure_theorem_proposition_recording_introductions(
-                theorem.name(),
+            let state = ExecutionState::at_point(&context.point);
+            let (conclusion, _, _) = lower_stated_proposition(
                 surface_goal,
-                &lowering_assumptions,
+                &PureFactContext::new(),
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                &BTreeMap::new(),
-                &context.integer_values,
-                &context.point,
+                FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                 spec_definitions,
+                FixedStateLoweringOptions {
+                    integer_values: Some(&context.integer_values),
+                    obligation_assumptions: Some(&lowering_assumptions),
+                    ..Default::default()
+                },
             )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower assumed theorem `{}` conclusion: {message}",
-                    theorem.name()
+            .map_err(|reason| {
+                let diagnostic = ClickError::new(format!(
+                    "could not lower assumed theorem `{}` conclusion: pure theorem `{}`: {reason}",
+                    theorem.name(),
+                    theorem.name(),
                 ))
+                .at_declaration(theorem.name());
+                theorem_statement_error(diagnostic, reason)
             })?;
             let Some(authority) = assume_universally_quantified_pure_implication(
                 context.requires.clone(),
@@ -1300,7 +1344,8 @@ fn verify_theorem_ensure(
     let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
         return Err(ClickError::new(
             crate::surface::validation::theorem_resource_conclusion_refusal(theorem.name()),
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Contract));
     };
     if let Some(verified) = verify_contract_refinement_theorem(
         theorem,
@@ -1318,7 +1363,7 @@ fn verify_theorem_ensure(
     let lowering_assumptions = assumptions_from_propositions(&context.requires);
     let state = ExecutionState::at_point(&context.point);
     let (goal, goal_introductions, _, obligations) =
-        lower_fixed_state_proposition_retaining_requirements(
+        lower_stated_proposition_retaining_requirements(
             surface_goal,
             &PureFactContext::new(),
             ContractEnvironment::new(&context.values, &context.array_refs),
@@ -1330,11 +1375,12 @@ fn verify_theorem_ensure(
                 ..Default::default()
             },
         )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` failed: could not lower conclusion: pure theorem `{}`: {message}",
+        .map_err(|reason| {
+            let diagnostic = ClickError::new(format!(
+                "`{claim_label}` failed: could not lower conclusion: pure theorem `{}`: {reason}",
                 theorem.name()
-            ))
+            ));
+            theorem_statement_error(diagnostic, reason)
         })?;
     // This probe checks only retained requirements, not a proof operation.
     // No unchecked successor or theorem authority is produced here.
@@ -1354,7 +1400,8 @@ fn verify_theorem_ensure(
             )
         });
 
-    entry_check.map_err(ClickError::new)?;
+    entry_check
+        .map_err(|message| ClickError::new(message).with_proof_refusal(ProofRefusal::Contract))?;
 
     if theorem.is_axiom() {
         // A Click library axiom is trusted: it states what the library's

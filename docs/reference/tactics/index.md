@@ -1700,8 +1700,11 @@ A constructor passed into a pattern binder can contain literals, variables,
 and nested constructors. The check reads those variables in the scope where
 the constructor was written. It follows nested matches on written constructors
 or constructors held by earlier pattern binders. A selected arm can return
-a bound or captured algebraic value directly. Machine fields retain their
-exact width and signedness.
+a bound or captured algebraic value directly. An equality can compare
+the selected results of two matches, with each side using its own bindings.
+Within a selected arm, a literal guard or a Boolean pattern binder holding a
+literal can select an `if` branch. Machine fields retain their exact width and
+signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
@@ -1905,8 +1908,17 @@ goal needs at least one strict link. Replay checks the listed links directly.
 A true `float` or `double` comparison against a literal can cite one stronger
 bound. Exact widening from `float` to `double` widens the endpoint and preserves
 the direction. Unary float negation negates the endpoint and reverses the
-direction. Equal endpoints require a strict premise for a strict goal. A
-negated comparison can hold for NaN and cannot supply an ordered bound.
+direction. Multiplication by a finite nonzero literal scales and rounds the
+endpoint at the same width. A negative factor reverses the bound. The scaled
+endpoint gives a non-strict bound because distinct inputs can round to the same
+result. An unscaled or exact bound with an equal endpoint requires a strict
+premise for a strict goal. A negated comparison can hold for NaN and cannot
+supply an ordered bound.
+
+For an unsigned left shift of one, citing the count bound proves the result
+is nonzero. For example, `normalize() using { d < 32u32; }` proves
+`(1u32 << d) != 0u32`. This also discharges the divisor obligation for
+C division and remainder.
 
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
@@ -2765,6 +2777,11 @@ instantiation performs no premise search or guard discharge.
 **Outside it:** a universal not yet established must be proved first with
 `have`. A value of another carrier needs a conversion. The former `using`
 list is rejected; write ordinary guard proofs instead.
+The loop preservation checker currently supports instantiation inside
+`have proposition by { ... }`. Supporting a standalone instantiation in
+`maintain` requires the checker to carry the added fact between execution
+steps.
+
 
 **Failure, checking, and tools:**
 

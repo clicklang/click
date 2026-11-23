@@ -1553,7 +1553,7 @@ fn expand_declared_resource_proof_of(
                     },
                 )) => (
                     Some(*body),
-                    Some(constructors.bind(&rename.unwrap_or(name), Some(click_type))),
+                    Some(constructors.bind(rename.unwrap_or(name), Some(click_type))),
                 ),
                 Some((_, ClickProposition::Implies(_, consequent))) => (Some(*consequent), None),
                 _ => (None, None),

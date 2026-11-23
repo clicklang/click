@@ -843,11 +843,11 @@ mod term_payload_contract_tests {
         );
         let values = [
             algebraic(pointer.clone()),
-            algebraic(pointer.with_declared_object_class(true.then(|| {
+            algebraic(pointer.with_declared_object_class(Some(
                 crate::kernel::effective_type::CAccessClass::Scalar(
                     crate::kernel::effective_type::CScalarClass::Int,
-                )
-            }))),
+                ),
+            ))),
         ];
         for value in &values {
             let input = StoredAlgebraicTerm::from(value.clone());

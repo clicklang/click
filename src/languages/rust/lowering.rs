@@ -1129,7 +1129,13 @@ fn lower_function(
                 .iter()
                 .enumerate()
                 .filter_map(|(ordinal, local)| {
-                    let id = if let Some(&ordinal) = mir.compound_literals.get(&local.name) {
+                    let id = if local.name == mir.return_place {
+                        let id = LocalBindingId::return_place(owner.clone());
+                        if let Ok(value_type) = scalar_type(&local.value_type) {
+                            id.initialize_program_type(value_type.to_kernel_type());
+                        }
+                        id
+                    } else if let Some(&ordinal) = mir.compound_literals.get(&local.name) {
                         let id = LocalBindingId::compound_literal(owner.clone(), ordinal);
                         match &local.value_type {
                             Type::Array { element, length } => {

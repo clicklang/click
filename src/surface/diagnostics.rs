@@ -1356,7 +1356,9 @@ pub(super) fn describe_proof_context(
 /// locals.
 pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::LoopHeadRefusal) -> String {
     let (proposition, context, state) = match refusal {
-        crate::kernel::LoopHeadRefusal::Message(message) => return message.clone(),
+        crate::kernel::LoopHeadRefusal::Message(message)
+        | crate::kernel::LoopHeadRefusal::ResourceEvaluation(message)
+        | crate::kernel::LoopHeadRefusal::GuardEvaluation(message) => return message.clone(),
         crate::kernel::LoopHeadRefusal::UnheldResource { fact, state } => {
             let (parameters, arguments) = local_naming_tables(state);
             return format!(
@@ -6025,7 +6027,7 @@ pub(super) fn describe_program_value(
         {
             let base = describe_pointer(pointer, parameter_binding);
             let ty = crate::kernel::program_type_spelling(pointer.program_type());
-            format!("({})", click_cast(&base, &format!("{ty}")))
+            format!("({})", click_cast(&base, ty))
         }
         ProgramValue::Pointer(pointer) => describe_pointer(pointer, parameter_binding),
     }

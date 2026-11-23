@@ -2821,9 +2821,10 @@ fn evaluate_program_conditional_paths(
                 &truthiness.facts,
                 &truthiness.obligations,
             );
-            for branch_path in
+            for mut branch_path in
                 evaluate_program_expression_paths(state, branch, &branch_assumptions, budget)?
             {
+                guard_conditional_cast_bounds(&truthiness.facts, &mut branch_path.obligations);
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &truthiness.facts,
                     &truthiness.obligations,

@@ -150,9 +150,24 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProofDiagnosticStage {
+    CheckedStep,
+    Other(&'static str),
+}
+
+impl ProofDiagnosticStage {
+    fn label(self) -> &'static str {
+        match self {
+            Self::CheckedStep => "proof step",
+            Self::Other(label) => label,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProofDiagnosticOrigin {
-    pub stage: String,
+    pub stage: ProofDiagnosticStage,
     pub location: String,
     /// Written outer tactic and each nested `have`/`with` body position.
     pub source_tactic_path: Option<Vec<usize>>,
@@ -501,7 +516,7 @@ fn render_diagnostic_labeled(
         rendered.push_str("proof refusal:\n  ");
         rendered.push_str(&diagnostic.reason);
         rendered.push_str("\n  stage: ");
-        rendered.push_str(&diagnostic.origin.stage);
+        rendered.push_str(diagnostic.origin.stage.label());
         rendered.push_str("\n  location: ");
         rendered.push_str(&diagnostic.origin.location);
     }
@@ -533,7 +548,7 @@ fn render_diagnostic_labeled(
     }
     if summary.is_some() {
         rendered.push_str("\n  stage: ");
-        rendered.push_str(&diagnostic.origin.stage);
+        rendered.push_str(diagnostic.origin.stage.label());
         rendered.push_str("\n  location: ");
         rendered.push_str(&diagnostic.origin.location);
     }
@@ -868,7 +883,7 @@ mod tests {
             failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
-                stage: "proof step".into(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location: "source tactic 4".into(),
                 source_tactic_path: None,
             },
@@ -907,7 +922,7 @@ mod tests {
             failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
-                stage: "proof step".into(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location: "source tactic 4".into(),
                 source_tactic_path: None,
             },
@@ -950,7 +965,7 @@ mod tests {
             failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
-                stage: "step".into(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::Other("step"),
                 location: "source tactic 44".into(),
                 source_tactic_path: None,
             },
@@ -1050,7 +1065,7 @@ mod tests {
                 failing_path: None,
                 checks: None,
                 origin: ProofDiagnosticOrigin {
-                    stage: "proof step".into(),
+                    stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                     location: "source tactic 1".into(),
                     source_tactic_path: None,
                 },
@@ -1091,7 +1106,7 @@ mod tests {
             failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
-                stage: "proof step".into(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location: "loop closure".into(),
                 source_tactic_path: None,
             },
@@ -1105,7 +1120,7 @@ mod tests {
                 failing_path: None,
                 checks: None,
                 origin: ProofDiagnosticOrigin {
-                    stage: "proof step".into(),
+                    stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                     location: "loop closure".into(),
                     source_tactic_path: None,
                 },

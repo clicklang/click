@@ -185,11 +185,11 @@ pub(super) fn write_type_resources(
                 .and_then(|(name, _)| struct_layouts.get(name)),
             struct_layouts,
         ) {
-            for at in index..=semicolon {
+            for (at, token) in source.iter().enumerate().take(semicolon + 1).skip(index) {
                 if written.contains(&at) {
                     moved.insert(output.len());
                 }
-                output.push(source[at].clone());
+                output.push(token.clone());
             }
             note(&record, optional);
             let position = source[index].1.clone();

@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "copy_points.cpp": {
+              "compilation_database_sha256": "a76d1b4d1e86e55459021967f2eac266c87aa50c08b4702d89c14e17c9856d8b",
+              "dependencies": {},
+              "logical_source_sha256": "1cf0468277734d77cc5c526180eff7c31e0ce854de06b0b53bde5cd19a725915",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "copy_points.cpp",
+                  "-o",
+                  "copy_points.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "copy_points.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "1cf0468277734d77cc5c526180eff7c31e0ce854de06b0b53bde5cd19a725915"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
+          "name": "clang"
+        },
+        "sources": {
+          "copy_points.cpp": {
+            "artifact": {
+              "bytes": 10649,
+              "path": ".click/captures/fixture/copy_points.cpp.click-cpp.json",
+              "sha256": "641e52a2a01a4e3e3d2456b174cf24016de5373f23e25e046a6c87aebb3a6d50"
+            },
+            "identity": "5819404cf86423775ea19196195adba509fa817474f02024bb42fce2bd6692ab",
+            "inputs": {
+              "$unit/copy_points.cpp": "1cf0468277734d77cc5c526180eff7c31e0ce854de06b0b53bde5cd19a725915"
+            }
+          }
+        },
+        "unit": "4b296337197a471d026bea0ca4f64861b819137131fb0b3c5244da25df965006"
+      }
+    }
+  }
+}

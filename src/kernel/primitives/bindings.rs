@@ -92,6 +92,7 @@ enum LocalBindingKind {
     RangeEnd,
     CompoundLiteral,
     SliceComponent { length: bool },
+    ReturnPlace,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -177,6 +178,14 @@ impl LocalBindingId {
                 LocalBindingKind::SliceComponent { length: true },
             )
         })
+    }
+
+    pub(crate) fn return_place(owner: LocalFunctionId) -> Self {
+        Self::new_unnamed(owner, 0, LocalBindingKind::ReturnPlace)
+    }
+
+    pub(crate) fn is_return_place(&self) -> bool {
+        self.0.kind == LocalBindingKind::ReturnPlace
     }
 
     fn new_unnamed(owner: LocalFunctionId, ordinal: u32, kind: LocalBindingKind) -> Self {
@@ -457,6 +466,7 @@ impl Hash for LocalBindingId {
             LocalBindingKind::SliceComponent { length } => {
                 (&self.0.owner, 14u8, self.0.ordinal, length).hash(state)
             }
+            LocalBindingKind::ReturnPlace => (&self.0.owner, 15u8).hash(state),
         }
     }
 }
@@ -485,6 +495,9 @@ impl LocalBindingId {
 impl std::fmt::Display for CanonicalLocalBinding<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let id = self.0;
+        if id.is_return_place() {
+            return f.write_str("<return storage>");
+        }
         if id.is_temporary() {
             return f.write_str("<temporary storage>");
         }

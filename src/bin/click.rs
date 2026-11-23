@@ -53,25 +53,14 @@ fn main() {
 fn report_error(message: String) -> ! {
     // A Rust item prints as the path its sidecar writes.
     let message = click::surface::display_source_names(&message);
-    if [
-        "tactic error",
-        "unsuccessful search",
-        "incomplete proof",
-        "contract error",
-        "unsupported",
-        "unclassified verification refusal",
-        "syntax error",
-        "type error",
-        "internal error",
-        "work limit reached",
-        "timed out",
-    ]
-    .iter()
-    .any(|heading| {
-        message
-            .strip_prefix(heading)
-            .is_some_and(|rest| rest.starts_with(':') || rest.starts_with(" in `"))
-    }) {
+    if click::surface::VerificationOutcome::ALL
+        .iter()
+        .any(|outcome| {
+            message
+                .strip_prefix(outcome.label())
+                .is_some_and(|rest| rest.starts_with(':') || rest.starts_with(" in `"))
+        })
+    {
         eprintln!("{message}");
     } else {
         eprintln!("click: {message}");
@@ -688,6 +677,29 @@ int32 f(int32 n) {
         let report = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(report.starts_with("contract error:"), "{report}");
         assert!(report.contains("has no recursive edge to rank"), "{report}");
+    }
+
+    #[test]
+    fn invalid_loop_measures_report_contract_errors() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, detail) in [
+            (
+                "c_decreases_rejects_address_escaped_loop_measure.md",
+                "has its address taken",
+            ),
+            (
+                "loop_decreases_model_function_rejects_a_c_local.md",
+                "reads a resource binder's model and also the C variable `n`",
+            ),
+        ] {
+            let report = entry([
+                "verify".to_owned(),
+                fixtures.join(name).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(report.starts_with("contract error:"), "{name}: {report}");
+            assert!(report.contains(detail), "{name}: {report}");
+        }
     }
 
     #[test]
@@ -1513,6 +1525,101 @@ int32 check(struct link* node) {
             .unwrap_err();
             assert!(error.starts_with(&format!("{heading}:")), "{error}");
             assert!(error.contains(detail), "{error}");
+        }
+    }
+
+    #[test]
+    fn verify_classifies_contract_closing_and_theorem_setup_failures() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, heading, detail) in [
+            (
+                "a_claim_that_cannot_lower_after_step_until_is_refused_with_its_cause.md",
+                "incomplete proof",
+                "requires owning authority",
+            ),
+            (
+                "an_unbounded_variable_tag_does_not_preserve_a_pointer_relationship.md",
+                "incomplete proof",
+                "integer-to-pointer cast requires",
+            ),
+            (
+                "loop_decreases_rejects_a_state_measure.md",
+                "contract error",
+                "a termination measure must be a function of the current state alone",
+            ),
+            (
+                "algebraic_generic_theorem_rejects_cyclic_verification.md",
+                "contract error",
+                "circular theorem justification",
+            ),
+            (
+                "c_contract_executes_signature.md",
+                "contract error",
+                "executes signature does not match",
+            ),
+            (
+                "defined_of_a_match_owes_its_arms_operands_domains.md",
+                "contract error",
+                "condition of its evaluation",
+            ),
+            (
+                "nested_loop_mark_invariant_diagnostic.md",
+                "contract error",
+                "cannot be used in a loop invariant",
+            ),
+            (
+                "loop_entry_memory_capture_short_rejected.md",
+                "incomplete proof",
+                "loop declares a resource the enclosing function does not hold",
+            ),
+            (
+                "resource_child_pure_arguments_non_c.md",
+                "type error",
+                "does not return a C value",
+            ),
+            (
+                "loop_preserve_bare_instantiate_names_repair.md",
+                "unsupported",
+                "move the operation into `have proposition by { ... }`",
+            ),
+            (
+                "named_contract_rejects_unheld_link_read.md",
+                "contract error",
+                "could not address resource clause",
+            ),
+            (
+                "abbreviated_produced_view_ambiguous.md",
+                "contract error",
+                "matches multiple input views",
+            ),
+            (
+                "while_guard_unreadable_operand_rejected.md",
+                "tactic error",
+                "the loop condition could not be evaluated on this path",
+            ),
+            (
+                "a_closer_with_no_open_goal_is_refused.md",
+                "tactic error",
+                "has no goal to close",
+            ),
+            (
+                "c_builtin_limits_conflicting_definition.md",
+                "syntax error",
+                "macro `INT_MAX` is redefined",
+            ),
+            (
+                "conditional_compilation_rejects_expression.md",
+                "unsupported",
+                "unsupported conditional expression",
+            ),
+        ] {
+            let error = entry([
+                "verify".to_string(),
+                fixtures.join(name).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(error.starts_with(&format!("{heading}:")), "{name}: {error}");
+            assert!(error.contains(detail), "{name}: {error}");
         }
     }
 

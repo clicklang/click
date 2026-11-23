@@ -4917,7 +4917,6 @@ fn execute_execution_statement_leaf_paths(
             steps,
             expression,
             value_type,
-            pointee_constant: _,
             ..
         } => {
             if let Some(layout) = aggregate_layout {

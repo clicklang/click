@@ -21,6 +21,41 @@ pub(crate) use undefined_site::{
     UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
 
+/// A cast in a selected conditional arm owes its range only on that arm.
+/// The caller supplies the facts just produced by evaluating the condition,
+/// before executing the selected arm. Arm results and later facts cannot
+/// justify an earlier cast.
+fn guard_conditional_cast_bounds(prefix: &ExecutionFacts, obligations: &mut [ProofObligation]) {
+    if prefix.is_empty() || !obligations.iter().any(|bound| bound.float_to_integer_bound) {
+        return;
+    }
+    let guards = prefix
+        .iter()
+        .filter_map(|fact| {
+            crate::instrumentation::record_deterministic_work(1);
+            let proposition = fact.proposition();
+            (fact.is_public()
+                && !fact.is_certified()
+                && matches!(proposition, Proposition::ConditionIs(..)))
+            .then_some(proposition)
+        })
+        .collect::<Vec<_>>();
+    if guards.is_empty() {
+        return;
+    }
+    for obligation in obligations
+        .iter_mut()
+        .filter(|bound| bound.float_to_integer_bound)
+    {
+        *obligation = obligation.clone().map_proposition(|goal| {
+            guards.iter().rev().fold(goal, |body, guard| {
+                crate::instrumentation::record_deterministic_work(1);
+                Proposition::Implies(Box::new((*guard).clone()), Box::new(body))
+            })
+        });
+    }
+}
+
 /// Retain each sequential volatile access as a unique, kernel-certified fact.
 /// The event id is allocated from the execution's existing fresh-variable
 /// stream, so repeated accesses remain distinct even when they have the same

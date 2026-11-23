@@ -86,12 +86,41 @@ pub(crate) fn integer_key(fold: &KernelFold) -> Option<IntegerFoldAlphaKey> {
     })
 }
 
+/// Integer variables, arithmetic and mathematical range binders are unchanged
+/// by comparison normalization. Other nodes need the existing normalization
+/// before they can supply a fact key.
+pub(super) fn unchanged_integer_comparison_key(
+    operator: IntegerComparisonOperator,
+    [left, right]: &[KernelTerm; 2],
+) -> Option<IntegerConditionAlphaKey> {
+    let mut bindings = bindings();
+    alpha_work_checkpoint(&mut bindings, 1)?;
+    alpha_work_checkpoint(&mut bindings, 1)?;
+    let mut next_binder = 0;
+    let mut operand_key = |operand| {
+        RetainedIntegerKey {
+            unchanged_in_comparisons: true,
+            ..Default::default()
+        }
+        .into_key(operand, &mut bindings, &mut next_binder)
+    };
+    let condition =
+        AlphaConditionKey::IntegerComparison(operator, operand_key(left)?, operand_key(right)?);
+    #[cfg(test)]
+    ALPHA_PROPOSITION_KEY_VISITS.with(|visits| visits.set(visits.get() + 1));
+    Some(IntegerConditionAlphaKey {
+        key: AlphaPropositionKey::Condition(condition, true),
+        work_units: bindings.work_units,
+    })
+}
+
 #[derive(Default)]
 struct RetainedIntegerKey {
     nodes: Vec<AlphaIntegerNode>,
     retained: HashMap<(u64, u64, u64), usize>,
     native: HashMap<(u64, u64, u64), usize>,
     argument_export: KernelTermExport,
+    unchanged_in_comparisons: bool,
 }
 
 impl RetainedIntegerKey {
@@ -107,6 +136,20 @@ impl RetainedIntegerKey {
         }
         alpha_work_checkpoint(bindings, 1)?;
         use KernelTermNode as Node;
+        if self.unchanged_in_comparisons
+            && !matches!(
+                term.node(),
+                Node::IntegerLiteral(_)
+                    | Node::Variable(_)
+                    | Node::IntegerOperation { .. }
+                    | Node::Fold(KernelFold {
+                        index: KernelFoldIndex::Integer,
+                        ..
+                    })
+            )
+        {
+            return None;
+        }
         let node = match term.node() {
             Node::IntegerLiteral(value) => {
                 alpha_work_checkpoint(bindings, (value.bits() as usize).saturating_add(1))?;
@@ -247,10 +290,18 @@ impl RetainedIntegerKey {
         bindings: &mut AlphaBindings,
         next_binder: &mut usize,
     ) -> Option<AlphaIntegerKey> {
-        let mut builder = Self::default();
-        let root = builder.node(term, bindings, next_binder)?;
+        Self::default().into_key(term, bindings, next_binder)
+    }
+
+    fn into_key(
+        mut self,
+        term: &KernelTerm,
+        bindings: &mut AlphaBindings,
+        next_binder: &mut usize,
+    ) -> Option<AlphaIntegerKey> {
+        let root = self.node(term, bindings, next_binder)?;
         Some(AlphaIntegerKey {
-            nodes: builder.nodes,
+            nodes: self.nodes,
             root,
         })
     }

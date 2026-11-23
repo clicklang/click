@@ -5552,8 +5552,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
 fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
     let identity = crate::kernel::StringLiteralId::new("text", 1).with_source("literal_raising.c");
     let pointer = SymbolicMemory::string_literal_pointer(&identity, b"same\0");
-    let value = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer)
-        .with_pointer_pointee_constant(true);
+    let value = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer);
     let raised =
         synthesize_surface_value(&value, ParameterBinding::default(), &ExecutionState::new())
             .expect("a literal needs no local or recorded alias to have a name");

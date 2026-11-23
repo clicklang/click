@@ -10215,16 +10215,6 @@ mod checked_singleton_substitution_tests {
 }
 
 #[cfg(test)]
-mod checked_surface_load_resolution_tests {
-    use super::*;
-
-    fn observed(variable: Variable) -> IntegerTerm {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(variable))
-            .unwrap()
-    }
-}
-
-#[cfg(test)]
 #[test]
 fn float_conversion_substitution_matches_direct_constant_cast() {
     let _session = crate::kernel::VerificationSession::enter();

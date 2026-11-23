@@ -1149,6 +1149,9 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
             })
     };
     if signed_quotient_bridge_requirement(goal).is_some_and(|guard| selected(&[guard]))
+        || (matches!(premises.len(), 1 | 2)
+            && shifted_one_bounds(goal, premises.len() == 2)
+                .is_some_and(|bounds| selected(&bounds)))
         || (premises.len() == 2
             && shift_count_mask_requirements(goal).is_some_and(|required| selected(&required)))
         || (matches!(premises.len(), 2 | 3)
@@ -2749,6 +2752,157 @@ pub(crate) fn signed_shift_bound_mask_identity(goal: &Proposition) -> Option<Pro
     ))
 }
 
+/// Explicit premises for one signed right-shift bound on a promoted narrow
+/// unsigned value, or for carrying that bound through the shift-count widening.
+pub(crate) fn promoted_right_shift_bounds(goal: &Proposition) -> Option<Vec<Proposition>> {
+    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::machine_integer::comparison::{
+        condition_for_operand_views, structural_boolean_comparison_view,
+    };
+    use crate::kernel::machine_integer::range::constant_word;
+
+    let Proposition::ConditionIs(condition, expected) = goal else {
+        return None;
+    };
+    let comparison = structural_boolean_comparison_view(condition.operand_view())?;
+    let format = comparison.format;
+    let [left, right] = comparison
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
+    let (operand, literal, reversed) = if let Some(literal) = right.literal() {
+        (left, literal, false)
+    } else {
+        (right, left.literal()?, true)
+    };
+    use CompareRelation as R;
+    let relation = match (comparison.relation, reversed, *expected) {
+        (R::LessThan, false, true)
+        | (R::GreaterThan, true, true)
+        | (R::GreaterEqual, false, false)
+        | (R::LessEqual, true, false) => R::LessThan,
+        (R::LessEqual, false, true)
+        | (R::GreaterEqual, true, true)
+        | (R::GreaterThan, false, false)
+        | (R::LessThan, true, false) => R::LessEqual,
+        (R::GreaterThan, false, true)
+        | (R::LessThan, true, true)
+        | (R::LessEqual, false, false)
+        | (R::GreaterEqual, true, false) => R::GreaterThan,
+        (R::GreaterEqual, false, true)
+        | (R::LessEqual, true, true)
+        | (R::LessThan, false, false)
+        | (R::GreaterThan, true, false) => R::GreaterEqual,
+        _ => return None,
+    };
+    let (shift, widened) = match format {
+        MachineIntegerType::Int32 => (operand, false),
+        MachineIntegerType::Int64 => {
+            let (_, MachineIntegerType::Int32, MachineIntegerType::Int64, source) =
+                operand.cast()?
+            else {
+                return None;
+            };
+            (source, true)
+        }
+        _ => return None,
+    };
+    let (MachineIntegerType::Int32, MachineBinaryOp::ShiftRight, [promoted, amount]) =
+        shift.binary()?
+    else {
+        return None;
+    };
+    let (narrow, _) = promoted.narrow_widening32_operand()?;
+    if narrow.format().is_signed()
+        || crate::kernel::machine_integer::bounds::constant_shift_count(amount)? >= 32
+    {
+        return None;
+    }
+    let bound = |operand, relation, endpoint: &num_bigint::BigInt| {
+        let literal = constant_word(MachineIntegerType::Int32, endpoint)?;
+        Some(Proposition::condition_is(
+            condition_for_operand_views(
+                MachineIntegerType::Int32,
+                relation,
+                [operand, View::Legacy(&literal)],
+            ),
+            true,
+        ))
+    };
+    if widened {
+        let endpoint = format.constant_from_term(&literal)?.to_integer();
+        return Some(vec![bound(shift, relation, &endpoint)?]);
+    }
+    let (lo, hi) = narrow.format().bounds();
+    Some(vec![
+        bound(promoted, R::GreaterEqual, &lo)?,
+        bound(promoted, R::LessEqual, &hi)?,
+    ])
+}
+
+/// An unsigned shift of one retains its only set bit if the count is
+/// below the width. A nonnegative signed reading is the same count as
+/// the unsigned reading of those bits.
+pub(crate) fn shifted_one_bounds(goal: &Proposition, signed: bool) -> Option<Vec<Proposition>> {
+    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::machine_integer::{
+        bounds::constant_shift_count,
+        comparison::{condition_for_operand_views, structural_boolean_comparison_view},
+        range::constant_word,
+    };
+    let Proposition::ConditionIs(condition, expected) = goal else {
+        return None;
+    };
+    let comparison = structural_boolean_comparison_view(condition.operand_view())?;
+    if comparison.relation != CompareRelation::Equal || *expected != comparison.negated {
+        return None;
+    }
+    let [left, right] = comparison
+        .operands
+        .each_ref()
+        .map(|value| value.operand_view());
+    for (shift, zero) in [(left, right), (right, left)] {
+        let Some((
+            format @ (MachineIntegerType::UInt32 | MachineIntegerType::UInt64),
+            MachineBinaryOp::ShiftLeft,
+            [one, count],
+        )) = shift.binary()
+        else {
+            continue;
+        };
+        let bits = format.format().bits();
+        if comparison.format.format().bits() != bits
+            || constant_shift_count(one) != Some(1)
+            || constant_shift_count(zero) != Some(0)
+        {
+            continue;
+        }
+        let count_format = match (format, signed) {
+            (MachineIntegerType::UInt32, true) => MachineIntegerType::Int32,
+            (MachineIntegerType::UInt64, true) => MachineIntegerType::Int64,
+            _ => format,
+        };
+        let bound = |relation, endpoint: u32| {
+            let literal = constant_word(count_format, &endpoint.into())?;
+            Some(Proposition::condition_is(
+                condition_for_operand_views(
+                    count_format,
+                    relation,
+                    [count, View::Legacy(&literal)],
+                ),
+                true,
+            ))
+        };
+        let upper = bound(CompareRelation::LessThan, bits)?;
+        return Some(if signed {
+            vec![bound(CompareRelation::GreaterEqual, 0)?, upper]
+        } else {
+            vec![upper]
+        });
+    }
+    None
+}
+
 /// Observe a signed native quotient with a positive divisor. Positivity
 /// excludes both zero and the sole signed division overflow pair.
 pub(crate) fn signed_quotient_bridge_requirement(goal: &Proposition) -> Option<Proposition> {
@@ -2932,6 +3086,29 @@ pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
     float_bound(proposition).is_some()
 }
 
+/// Multiplication by a finite nonzero literal is monotone (decreasing for
+/// a negative factor), including rounding and overflow to infinity.
+fn float_literal_scale(
+    value: FloatOperandView<'_>,
+    same_direction: bool,
+) -> Option<(FloatOperandView<'_>, u64)> {
+    let (crate::kernel::FloatBinaryOperator::Multiply, [a, b]) = value.binary()? else {
+        return None;
+    };
+    let (operand, scale) = if let Some(scale) = b.literal_bits() {
+        (a, scale)
+    } else {
+        (b, a.literal_bits()?)
+    };
+    let (sign, infinity) = match value.format() {
+        KernelFloatType::Float32 => (0x8000_0000, 0x7f80_0000),
+        KernelFloatType::Float64 => (0x8000_0000_0000_0000, 0x7ff0_0000_0000_0000),
+    };
+    let magnitude = scale & !sign;
+    (magnitude != 0 && magnitude < infinity && (scale & sign == 0) == same_direction)
+        .then_some((operand, scale))
+}
+
 /// A true ordered comparison excludes NaN in its operand. Exact widening
 /// preserves the order of a cited bound, and sign negation reverses it.
 pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> bool {
@@ -2939,15 +3116,31 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
         return false;
     };
     let same_direction = premise.lower == goal.lower;
-    let (premise_endpoint, goal_operand) = if premise.format == goal.format {
-        if same_direction {
-            (premise.endpoint, goal.operand)
-        } else if let Some(operand) = goal.operand.negate() {
+    let same_operand = |left, right| match (left, right) {
+        (FloatOperandView::Shared(left), FloatOperandView::Shared(right)) if left == right => true,
+        (left, right) => match (left.native_compat(), right.native_compat()) {
+            (Some(left), Some(right)) => bitvector_equal(left, right),
+            _ => false,
+        },
+    };
+    let (premise_endpoint, goal_operand, premise_strict) = if premise.format == goal.format {
+        if same_direction && same_operand(premise.operand, goal.operand) {
+            (premise.endpoint, None, premise.strict)
+        } else if !same_direction && let Some(operand) = goal.operand.negate() {
             let sign_bit = match goal.format {
                 KernelFloatType::Float32 => 1 << 31,
                 KernelFloatType::Float64 => 1 << 63,
             };
-            (premise.endpoint ^ sign_bit, operand)
+            (premise.endpoint ^ sign_bit, Some(operand), premise.strict)
+        } else if let Some((operand, scale)) = float_literal_scale(goal.operand, same_direction) {
+            let endpoint = crate::kernel::primitives::float_binary_bits_at(
+                goal.format,
+                premise.endpoint,
+                scale,
+                crate::kernel::FloatBinaryOperator::Multiply,
+            );
+            // Rounding can map distinct adjacent inputs to the same output.
+            (endpoint, Some(operand), false)
         } else {
             return false;
         }
@@ -2959,7 +3152,8 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
             crate::kernel::primitives::float_conversion::float32_to_float64_bits(
                 premise.endpoint as u32,
             ),
-            operand,
+            Some(operand),
+            premise.strict,
         )
     } else {
         return false;
@@ -2969,7 +3163,7 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
     } else {
         (premise_endpoint, goal.endpoint)
     };
-    let operator = if premise.strict || !goal.strict {
+    let operator = if premise_strict || !goal.strict {
         ComparisonOperator::LessEqual
     } else {
         ComparisonOperator::LessThan
@@ -2987,15 +3181,7 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
         ),
     };
     comparison == ConditionTerm::Constant(true)
-        && match (premise.operand, goal_operand) {
-            (FloatOperandView::Shared(left), FloatOperandView::Shared(right)) if left == right => {
-                true
-            }
-            (left, right) => match (left.native_compat(), right.native_compat()) {
-                (Some(left), Some(right)) => bitvector_equal(left, right),
-                _ => false,
-            },
-        }
+        && goal_operand.is_none_or(|operand| same_operand(premise.operand, operand))
 }
 
 fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {

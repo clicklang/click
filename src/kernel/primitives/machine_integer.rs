@@ -541,7 +541,15 @@ impl MachineTerm {
         pointer: impl Into<Box<crate::kernel::Address>>,
         kind: crate::kernel::LoadKind,
     ) -> Self {
-        Self::MemoryLoad(point, pointer.into(), kind)
+        let pointer = pointer.into();
+        #[cfg(test)]
+        crate::kernel::mixed_read_names::record_producer(
+            &point,
+            &pointer,
+            kind,
+            std::panic::Location::caller(),
+        );
+        Self::MemoryLoad(point, pointer, kind)
     }
 
     /// The `signed char` value of the byte whose `unsigned char` value is

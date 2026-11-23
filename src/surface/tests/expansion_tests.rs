@@ -3422,6 +3422,14 @@ fn rewritten_constructor_payload_expands_to_known() {
 }
 
 fn assert_constructor_matches_expand_to_known(fixture: &str, cases: &[(&str, &str, &str)]) {
+    assert_constructor_case_expansions(fixture, cases, |result| format!("== {result} by"));
+}
+
+fn assert_constructor_case_expansions(
+    fixture: &str,
+    cases: &[(&str, &str, &str)],
+    replacement: impl Fn(&str) -> String,
+) {
     let (source, _) = mdtest_sources(fixture);
     for &(theorem, result, wrong_result) in cases {
         let label = format!("{theorem}.ensures_0");
@@ -3435,8 +3443,7 @@ fn assert_constructor_matches_expand_to_known(fixture: &str, cases: &[(&str, &st
             verify_c_sources(&expanded, &[]).map_err(|error| error.report())
         })
         .unwrap();
-        let wrong_proof =
-            proof.replace(&format!("== {result} by"), &format!("== {wrong_result} by"));
+        let wrong_proof = proof.replace(&replacement(result), &replacement(wrong_result));
         assert_ne!(wrong_proof, proof);
         let mut wrong = expanded.clone();
         wrong.replace_range(start..end, &wrong_proof);
@@ -3604,6 +3611,122 @@ fn returned_constructor_match_values_expand_to_known() {
                 "Box::Value(second)",
             ),
         ],
+    );
+}
+
+#[test]
+fn two_constructor_match_results_expand_to_known() {
+    assert_constructor_case_expansions(
+        "mdtests/algebraic_match_two_results.md",
+        &[
+            (
+                "equal_literal_boxes",
+                "Slot::Right(Envelope::Hold(Box::Value(7)))",
+                "Slot::Right(Envelope::Hold(Box::Value(8)))",
+            ),
+            (
+                "equal_symbolic_boxes",
+                "Slot::Right(Envelope::Hold(Box::Value(a)))",
+                "Slot::Right(Envelope::Hold(Box::Value(b)))",
+            ),
+            (
+                "equal_opaque_boxes",
+                "Slot::Right(Envelope::Hold(b))",
+                "Slot::Left(Envelope::Hold(b))",
+            ),
+            (
+                "equal_flags",
+                "FlagSlot::Right(FlagEnvelope::Hold(Flag::Value(a)))",
+                "FlagSlot::Right(FlagEnvelope::Hold(Flag::Value(false)))",
+            ),
+            (
+                "equal_words",
+                "WordSlot::Right(WordEnvelope::Hold(Word::Value(a)))",
+                "WordSlot::Right(WordEnvelope::Hold(Word::Value(0u64)))",
+            ),
+            (
+                "equal_pairs",
+                "PairSlot::Right(PairEnvelope::Hold(Pair::Both(Box::Value(a), Box::Value(b))))",
+                "PairSlot::Right(PairEnvelope::Hold(Pair::Both(Box::Value(b), Box::Value(a))))",
+            ),
+            (
+                "capture_equals_binding",
+                "Slot::Right(Envelope::Hold(a))",
+                "Slot::Right(Envelope::Hold(b))",
+            ),
+            (
+                "rebuilt_equals_binding",
+                "Slot::Right(Envelope::Hold(Box::Value(a)))",
+                "Slot::Right(Envelope::Hold(Box::Value(0)))",
+            ),
+            (
+                "variant_equals_binding",
+                "Slot::Right(Envelope::Hold(Box::Value(a)))",
+                "Slot::Right(Envelope::Hold(other))",
+            ),
+            (
+                "shadow_equals_binding",
+                "Slot::Right(Envelope::Hold(Box::Value(a)))",
+                "Slot::Right(Envelope::Hold(Box::Value(b)))",
+            ),
+        ],
+        str::to_owned,
+    );
+}
+
+#[test]
+fn constructor_matches_with_bound_guards_expand_to_known() {
+    assert_constructor_case_expansions(
+        "mdtests/algebraic_match_bound_guards.md",
+        &[
+            ("selected_tag", "Switch::Hold(true)", "Switch::Hold(false)"),
+            (
+                "selected_true_literal",
+                "Switch::Hold(true)",
+                "Switch::Hold(false)",
+            ),
+            (
+                "selected_false_literal",
+                "Switch::Hold(false)",
+                "Switch::Hold(true)",
+            ),
+            (
+                "selected_number",
+                "NumberInput::Hold(true, a)",
+                "NumberInput::Hold(false, a)",
+            ),
+            (
+                "selected_capture",
+                "BoxInput::Hold(true, b)",
+                "BoxInput::Hold(false, b)",
+            ),
+            (
+                "selected_flag",
+                "FlagInput::Hold(false, a)",
+                "FlagInput::Hold(true, a)",
+            ),
+            (
+                "selected_word",
+                "WordInput::Hold(true, a)",
+                "WordInput::Hold(false, a)",
+            ),
+            (
+                "selected_nested_match",
+                "BoxInput::Hold(true, Box::Value(a))",
+                "BoxInput::Hold(false, Box::Value(a))",
+            ),
+            (
+                "selected_second_guard",
+                "DoubleInput::Hold(true, false)",
+                "DoubleInput::Hold(true, true)",
+            ),
+            (
+                "selected_both_sides",
+                "NumberInput::Hold(true, 7)",
+                "NumberInput::Hold(false, 7)",
+            ),
+        ],
+        str::to_owned,
     );
 }
 
@@ -17506,6 +17629,38 @@ fn indexed_reads_across_calls_expand_through_the_complete_write_footprint() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay dereferenced reads across writes"]
+fn dereferenced_reads_expand_through_recorded_footprints() {
+    let (source, sources) = mdtest_sources("mdtests/dereferenced_reads_across_writes.md");
+    let sources = crate::cli::source_refs(&sources);
+    for (claim, writes) in [
+        ("keep_pointer_xor.contract", 1),
+        ("keep_pointer_complement.contract", 1),
+        ("keep_pointer_byte.contract", 1),
+        ("keep_pointer_shift_count.contract", 1),
+        ("keep_offset_byte_across_stores.contract", 2),
+        ("keep_pointer_shift_across_stores.contract", 2),
+        ("keep_pointer_choice_across_stores.contract", 2),
+        ("keep_pointer_quotient_across_call.contract", 1),
+        ("keep_offset_remainder_across_call.contract", 1),
+        ("keep_pointer_mask_across_call.contract", 1),
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert_eq!(
+            expanded.matches("preserve(memory(").count(),
+            writes,
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn masked_64_bit_field_expands_through_explicit_store_preservation() {
     for fixture in [
         "mdtests/int64_read_survives_store_and_resource_call.md",
@@ -26476,6 +26631,21 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
         assert_ne!(missing, implicit);
         assert!(verify_c_sources(&missing, &sources).is_err());
     }
+}
+
+#[test]
+fn shifted_one_divisors_expand_to_checked_bounds() {
+    let (source, sources) = mdtest_sources("mdtests/shifted_one_divisors.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let mut expanded = source.clone();
+    for function in ["divide32", "divide64", "remain32", "remain64"] {
+        expanded = expand_function_proof_source(&expanded, &sources, function).unwrap();
+    }
+    assert_eq!(expanded.matches("step() by").count(), 4, "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]

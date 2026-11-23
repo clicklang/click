@@ -915,6 +915,22 @@ impl SourceExecutionLayout {
                     {
                         layout.call_captures.insert(name.clone(), *step);
                     }
+                    if let ProgramStatement::Assign { name, .. } = statement
+                        && name
+                            .local_id()
+                            .is_some_and(crate::kernel::LocalBindingId::is_return_place)
+                        && name.program_type().is_some_and(|ty| {
+                            ty == ProgramType::Bool
+                                || ty.is_pointer()
+                                || crate::kernel::MachineIntegerType::from_program_type(ty)
+                                    .is_some()
+                        })
+                    {
+                        // Record the value of the return expression at this
+                        // write, even if cleanup runs before the function exits.
+                        layout.call_results.insert(statement_index, name.clone());
+                        layout.snapshot_step_results = true;
+                    }
                     if let ProgramStatement::CallConstruct { target, .. }
                     | ProgramStatement::HeapAllocate { target, .. } = statement
                     {
@@ -965,7 +981,7 @@ impl SourceExecutionLayout {
             &mut layout,
             &mut aggregate_objects,
         )?;
-        layout.snapshot_step_results = !layout.call_numbers.is_empty();
+        layout.snapshot_step_results |= !layout.call_numbers.is_empty();
         for (step, pointee) in imported.step_pointee_layouts() {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(region) = layout.step_regions.get(step) {
@@ -1013,7 +1029,7 @@ impl SourceExecutionLayout {
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
         }
-        if layout.snapshot_step_results {
+        if !layout.call_numbers.is_empty() {
             let mut named = NamedCalls::default();
             for (region, callee) in &layout.call_targets {
                 crate::instrumentation::record_deterministic_work(1);
@@ -1696,7 +1712,7 @@ impl SourceExecutionLayout {
     /// it has no region of its own (a block). `.region(j)`, `.call(f, j)`,
     /// `.assignment(x, j)` and `.read(j)` name one of the statement's own
     /// regions, counted in executable order.
-    /// The local the call at `region` assigns its result to.
+    /// The local holding the value produced by `region` at its exit.
     pub(in crate::surface) fn call_result_local(
         &self,
         region: usize,

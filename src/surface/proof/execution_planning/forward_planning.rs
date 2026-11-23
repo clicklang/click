@@ -141,7 +141,12 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     .loop_source
                     .open_loop_proof(loop_index, statement.clone()),
             }
-            .map_err(|error| ClickError::new(error.message()))?;
+            .map_err(|error| {
+                crate::surface::verification::termination_analysis_error(
+                    &error,
+                    error.message().to_owned(),
+                )
+            })?;
             let loop_clause = environment
                 .function_block
                 .structural_clauses()
@@ -226,7 +231,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     context.next_kernel_variable,
                 )
                 .map_err(|refusal| {
-                    ClickError::new(format!(
+                    let diagnostic = ClickError::new(format!(
                         "`{}`: {}{}",
                         crate::surface::claim_labels::loop_phase_claim_label(
                             environment.function_block.signature().name(),
@@ -235,7 +240,18 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         ),
                         crate::surface::diagnostics::describe_loop_head_refusal(&refusal),
                         crate::surface::diagnostics::describe_execution_statement_site()
-                    ))
+                    ));
+                    match refusal {
+                        crate::kernel::LoopHeadRefusal::UnheldResource { .. }
+                        | crate::kernel::LoopHeadRefusal::MissingPrerequisite { .. }
+                        | crate::kernel::LoopHeadRefusal::ResourceEvaluation(_) => {
+                            diagnostic.with_proof_refusal(ProofRefusal::IncompleteProof)
+                        }
+                        crate::kernel::LoopHeadRefusal::GuardEvaluation(_) => {
+                            diagnostic.with_proof_refusal(ProofRefusal::Tactic)
+                        }
+                        crate::kernel::LoopHeadRefusal::Message(_) => diagnostic,
+                    }
                 })?;
                 let multiple_entries = preservation_contexts.len() > 1;
                 let mut entry_certificates = Vec::new();

@@ -524,7 +524,7 @@ impl CheckedFocusedTransition {
 /// Proof-local surface names introduced by checked refinements such as
 /// `choose`. The persistent map makes forks and one local binding logarithmic;
 /// the counter is branch-local scalar freshness state.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct ProofLocals {
     values: PersistentBinderMap<ContractExpression>,
     value_names: binding_names::BindingNames,
@@ -573,25 +573,6 @@ impl ProofLocals {
         self.value_names
             .update_algebraics(&self.algebraic_values, &values);
         self.algebraic_values = values;
-    }
-}
-
-impl Default for ProofLocals {
-    fn default() -> Self {
-        Self {
-            values: PersistentBinderMap::default(),
-            value_names: binding_names::BindingNames::default(),
-            integer_values: PersistentBinderMap::default(),
-            algebraic_values: PersistentBinderMap::default(),
-            surface_facts: SurfacePropositionMap::default(),
-            checked_lowerings: SurfacePropositionMap::default(),
-            termination_diagnostics: Default::default(),
-            next_choice_variable: 0,
-            retained_match_algebraic: PersistentBinderMap::default(),
-            retained_match_integers: PersistentBinderMap::default(),
-            induction_active: false,
-            structural_induction_setup: None,
-        }
     }
 }
 
@@ -2178,7 +2159,9 @@ impl Proof<'_> {
                 failing_path: Some(path_index),
                 checks: None,
                 origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                    stage: "execution path certification".into(),
+                    stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::Other(
+                        "execution path certification",
+                    ),
                     location: format!("{claim} path {path_index}"),
                     source_tactic_path: None,
                 },
@@ -2207,7 +2190,9 @@ impl Proof<'_> {
                 failing_path: None,
                 checks: None,
                 origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                    stage: "return-fold certification".into(),
+                    stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::Other(
+                        "return-fold certification",
+                    ),
                     location: self.claim_label().to_owned(),
                     source_tactic_path: None,
                 },
@@ -3758,7 +3743,7 @@ impl<'a> Proof<'a> {
             failing_path: None,
             checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                stage: "proof step".to_owned(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location,
                 source_tactic_path: self.site.source_tactic_path(),
             },
@@ -3809,7 +3794,7 @@ impl<'a> Proof<'a> {
             failing_path: None,
             checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                stage: "proof step".to_owned(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location,
                 source_tactic_path: self.site.source_tactic_path(),
             },
