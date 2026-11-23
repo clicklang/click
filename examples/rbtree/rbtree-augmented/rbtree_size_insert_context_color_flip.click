@@ -1,5 +1,5 @@
 // A color flip beneath a black parent retains an arbitrary owned outer context.
-verifying "rb_insert_augmented.c";
+verifying "rb_insert_augmented.c" as insert;
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";
 import "rbtree_size_context_flip_frames.click";
@@ -104,7 +104,28 @@ resource sized_context_flip_at(n: struct rb_node*, root: struct rb_root*) {
         },
     }
 }
-void __rb_insert(struct rb_node* node, struct rb_root* root,
+// Preserve the typed parent across the read of its packed word.
+struct rb_node* insert::rb_parent(struct rb_node* r) {
+    consumes word: sized_context_flip_typed_parent_word(r);
+    produces kept: sized_context_flip_typed_parent_word(r);
+    ensures kept.link == old(word.link);
+    ensures kept.word == old(word.word);
+    ensures result == old((r->__rb_parent_color & ~3) as (struct rb_node*));
+    ensures SizedContextFlipParent::At(result) == old(word.link);
+} by {
+    match word.link {
+        SizedContextFlipParent::At(up) => {
+            unfold(word);
+            step_until(function.exit);
+            let kept = fold(sized_context_flip_typed_parent_word(r), {
+                link: SizedContextFlipParent::At(up),
+                word: old(word.word)
+            });
+        },
+    }
+}
+
+void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                   void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     owns state: sized_context_flip_at(node, root);
     requires sized_context_flip_pending(state.phase) == 1;
@@ -134,6 +155,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         SizedContextFlipPhase::Before(g, p, u) => {
             let { focus: focus, path: path } = unfold(state);
             let { metadata: n_size, left: n_left, right: n_right } = unfold(focus);
+            have sized_parent_is(sized_left(old(state.seed)), old(node)) == 1 by known();
+            have sized_parent_is(sized_right(old(state.seed)), old(node)) == 1 by known();
+            have to_integer(sized_value(old(state.seed))) ==
+                1 + to_integer(sized_value(sized_left(old(state.seed)))) +
+                    to_integer(sized_value(sized_right(old(state.seed)))) by known();
             unfold(color_bit(Color::Red));
             have node->__rb_parent_color == address(p) by {
                 rewrite(node->__rb_parent_color, address(p) + (node->__rb_parent_color & 1));
@@ -155,6 +181,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
             let focus = fold(sized_at(node), { model: old(state.model), metadata: n_size, left: n_left, right: n_right });
             let state = fold(sized_context_flip_at(node,root), { phase: SizedContextFlipPhase::Before(g, p, u), model: old(state.model), context: old(state.context), outer: old(state.outer), seed: old(state.seed), parent_value: old(state.parent_value), grand_value: old(state.grand_value), other: old(state.other), uncle: old(state.uncle), focus: focus, path: path });
+            step_until(loop(0).entry);
             loop {
                 owns state: sized_context_flip_at(old(node),root);
                 decreases sized_context_depth(state.context);
@@ -350,11 +377,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 top: root->rb_node, xl: x->rb_left, xr: x->rb_right,
                                 yl: y->rb_left, yr: y->rb_right, zl: z->rb_left, zr: z->rb_right
                             });
-                            let parent_word = fold(sized_context_flip_parent_word(x), {
-                                up: ((x->__rb_parent_color & ~3) as (struct rb_node*)),
+                            let parent_word = fold(sized_context_flip_typed_parent_word(x), {
+                                link: SizedContextFlipParent::At(((x->__rb_parent_color & ~3) as (struct rb_node*))),
                                 word: x->__rb_parent_color
                             });
                             step();
+                            step();
+                            have aligned(gparent, 8) by known();
+                            have (address(gparent) | 1) == address(gparent) + 1 by {
+                                normalize() using { aligned(gparent, 8); };
+                            }
                             let uncle_word = fold(sized_context_flip_black_word(tmp, gparent), {
                                 word: tmp->__rb_parent_color
                             });
@@ -362,13 +394,32 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let black_parent_word = fold(sized_context_flip_black_word(parent, gparent), {
                                 word: parent->__rb_parent_color
                             });
+                            step();
+                            let { kept: parent_word } = step(insert::rb_parent, { word: parent_word });
+                            step();
                             unfold(parent_word);
-                            have x->__rb_parent_color == at(iteration, x->__rb_parent_color) by { known(); }
-                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { rewrite(x->__rb_parent_color, at(iteration, x->__rb_parent_color)); known(); }
-                            step(); step(); step();
+                            step();
                             unfold(uncle_word);
                             unfold(black_parent_word);
                             unfold(links);
+                            have parent == sized_context_parent(at(iteration,state.outer),0) by known();
+                            have x->__rb_parent_color == address(parent) by known();
+                            have aligned(parent, 8) by known();
+                            have (address(parent) & 7u64) == 0u64 by {
+                                solve() using { aligned(parent, 8); };
+                            }
+                            have (7u64 & 1u64) == 1u64 by normalize();
+                            apply(click::integer::uint64_mask_subset(address(parent), 7u64, 1u64));
+                            have (x->__rb_parent_color & 1) == 0 by {
+                                rewrite(x->__rb_parent_color, address(parent));
+                                known();
+                            }
+                            have x->__rb_parent_color == address(sized_context_parent(at(iteration,state.outer),0)) + (x->__rb_parent_color & 1) by {
+                                rewrite(x->__rb_parent_color, address(parent));
+                                rewrite(sized_context_parent(at(iteration,state.outer),0), parent);
+                                rewrite((address(parent) & 1u64), 0u64);
+                                normalize();
+                            }
                             have to_integer(sized_value(old(state.uncle))) == 1 + to_integer(sized_value(sized_left(old(state.uncle)))) + to_integer(sized_value(sized_right(old(state.uncle)))) by {
                                 known();
                             }
@@ -434,7 +485,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
     }
 }
 
-void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
+void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
                   void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     owns state: sized_context_flip_at(node, root);
     requires sized_context_flip_pending(state.phase) == 1;
@@ -446,10 +497,10 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_flip_finish(old(state.phase));
     ensures state.model == sized_plug(old(state.outer), sized_context_flip_subtree(sized_context_flip_finish(old(state.phase)), node, old(state.outer), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle)));
 } by {
-    step(__rb_insert, { state: state });
+    step(insert::__rb_insert, { state: state });
 }
 
-void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
+void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
                   const struct rb_augment_callbacks* augment) {
     views augment->rotate;
     owns state: sized_context_flip_at(node, root);
@@ -462,5 +513,6 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_flip_finish(old(state.phase));
     ensures state.model == sized_plug(old(state.outer), sized_context_flip_subtree(sized_context_flip_finish(old(state.phase)), node, old(state.outer), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle)));
 } by {
-    step(__rb_insert_augmented, { state: state });
+    have separate(state, memory(augment->rotate)) by known();
+    step(insert::__rb_insert_augmented, { state: state });
 }
