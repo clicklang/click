@@ -1908,8 +1908,12 @@ goal needs at least one strict link. Replay checks the listed links directly.
 A true `float` or `double` comparison against a literal can cite one stronger
 bound. Exact widening from `float` to `double` widens the endpoint and preserves
 the direction. Unary float negation negates the endpoint and reverses the
-direction. Equal endpoints require a strict premise for a strict goal. A
-negated comparison can hold for NaN and cannot supply an ordered bound.
+direction. Multiplication by a finite nonzero literal scales and rounds the
+endpoint at the same width. A negative factor reverses the bound. The scaled
+endpoint gives a non-strict bound because distinct inputs can round to the same
+result. An unscaled or exact bound with an equal endpoint requires a strict
+premise for a strict goal. A negated comparison can hold for NaN and cannot
+supply an ordered bound.
 
 For an unsigned left shift of one, citing the count bound proves the result
 is nonzero. For example, `normalize() using { d < 32u32; }` proves

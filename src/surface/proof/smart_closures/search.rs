@@ -3502,6 +3502,51 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .map(Some)
     }
 
+    /// Prove and cite the fixed premises of a local arithmetic rule.
+    /// Each recursive goal is a bound on an operand of the original goal.
+    fn try_normalize_after_arithmetic_bounds(
+        input: &Proof<'a>,
+        requirements: &[Proposition],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_normalize_after_arithmetic_bounds");
+        let mut proof = input.clone();
+        let mut surfaces = Vec::with_capacity(requirements.len());
+        for required in requirements {
+            check_verification_deadline()?;
+            let Some(surface) = Self::resolve_solve_premises_unmeasured(
+                &proof,
+                std::slice::from_ref(required),
+                introduced_surfaces,
+            )
+            .and_then(|mut pairs| pairs.pop().map(|(_, surface)| surface))
+            .or_else(|| proof.structural_proposition_candidate(required)) else {
+                return Ok(None);
+            };
+            if !proof.facts().listed_premise_available(required, &[], false) {
+                let Some(scope) =
+                    attempt::candidate_outcome(proof.driver().open_have(surface.clone()))?
+                else {
+                    return Ok(None);
+                };
+                let Some(closed) = scope
+                    .driver()
+                    .try_solve_closure_with_surfaces(introduced_surfaces)?
+                else {
+                    return Ok(None);
+                };
+                proof = closed.join()?;
+            }
+            surfaces.push(surface);
+        }
+        attempt::candidate_outcome(
+            proof
+                .driver()
+                .apply_step(ProofStep::NormalizeUsing(surfaces)),
+        )
+    }
+
     /// Close the small domain conjunction as ordinary checked `have` steps.
     /// In particular, `defined(cast)` is written as one term even though
     /// its lowered goal has two ordered bounds.
@@ -3512,9 +3557,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            is_float_bound, shift_count_mask_requirements, shifted_one_requirement,
-            signed_product_guard_candidates, signed_quotient_bridge_requirement,
-            signed_shift_bound_mask_identity,
+            is_float_bound, promoted_right_shift_bounds, shift_count_mask_requirements,
+            shifted_one_bounds, signed_product_guard_candidates,
+            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -3523,33 +3568,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Self::try_distinct_constant_exclusion(search_input, left, right);
         }
         if let Some(requirements) = shift_count_mask_requirements(goal) {
-            let mut proof = search_input.clone();
-            let mut surfaces = Vec::with_capacity(requirements.len());
-            for required in &requirements {
-                let Some(surface) = proof.structural_proposition_candidate(required) else {
-                    return Ok(None);
-                };
-                if !proof.facts().contains(required) {
-                    let Some(scope) =
-                        attempt::candidate_outcome(proof.driver().open_have(surface.clone()))?
-                    else {
-                        return Ok(None);
-                    };
-                    let Some(closed) = scope
-                        .driver()
-                        .try_solve_closure_with_surfaces(introduced_surfaces)?
-                    else {
-                        return Ok(None);
-                    };
-                    proof = closed.join()?;
-                }
-                surfaces.push(surface);
-            }
-            return attempt::candidate_outcome(
-                proof
-                    .driver()
-                    .apply_step(ProofStep::NormalizeUsing(surfaces)),
+            return Self::try_normalize_after_arithmetic_bounds(
+                search_input,
+                &requirements,
+                introduced_surfaces,
             );
+        }
+        if let Some(requirements) = promoted_right_shift_bounds(goal)
+            && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
+                search_input,
+                &requirements,
+                introduced_surfaces,
+            )?
+        {
+            return Ok(Some(closed));
         }
         if let Some(identity) = signed_shift_bound_mask_identity(goal)
             && let Some(equality) = search_input.structural_proposition_candidate(&identity)
@@ -3569,7 +3601,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if let Proposition::And(left, right) = goal
             && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
-                is_float_bound(leaf) || signed_product_guard_candidates(leaf).next().is_some()
+                is_float_bound(leaf)
+                    || promoted_right_shift_bounds(leaf).is_some()
+                    || signed_product_guard_candidates(leaf).next().is_some()
             })
         {
             let mut proof = search_input.clone();
@@ -3596,8 +3630,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(guard) = signed_quotient_bridge_requirement(goal) {
             candidates.push(vec![guard]);
         }
-        if let Some(guard) = shifted_one_requirement(goal) {
-            candidates.push(vec![guard]);
+        for signed in [false, true] {
+            if let Some(bounds) = shifted_one_bounds(goal, signed)
+                && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
+                    search_input,
+                    &bounds,
+                    introduced_surfaces,
+                )?
+            {
+                return Ok(Some(closed));
+            }
         }
         if is_float_bound(goal)
             && let Some(bound) = crate::kernel::search::ProofSearch::select_float_bound(
