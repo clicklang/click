@@ -4148,7 +4148,10 @@ impl ProgramType {
                     | ProgramType::Float32Array(_)
                     | ProgramType::Float64Array(_)
                     | ProgramType::PointerArray(_, _)
-                    | ProgramType::VoidPointerPointer => {
+                    | ProgramType::VoidPointerPointer
+                    // Click's untyped pointer is a specification type; no
+                    // callback signature names it.
+                    | ProgramType::Pointer => {
                         return None;
                     }
                 } + if constant { 23 } else { 0 },
@@ -4181,18 +4184,25 @@ impl ProgramType {
 
     pub fn is_pointer(self) -> bool {
         self.pointee_type().is_some()
-            || matches!(self, Self::VoidPointer | Self::FunctionPointer(_))
+            || matches!(
+                self,
+                Self::VoidPointer | Self::Pointer | Self::FunctionPointer(_)
+            )
     }
 
     pub(crate) fn is_object_pointer(self) -> bool {
         self.is_pointer() && !matches!(self, Self::FunctionPointer(_))
     }
 
+    /// Whether a pointer of type `self` is a value of type `other`. `void *`
+    /// converts to and from any object pointer type; so does Click's
+    /// untyped [`Self::Pointer`], which states no pointee type at all.
     pub(crate) fn pointer_types_compatible(self, other: Self) -> bool {
+        let untyped = |ty| matches!(ty, Self::VoidPointer | Self::Pointer);
         self == other
             || (self.is_object_pointer()
                 && other.is_object_pointer()
-                && (self == Self::VoidPointer || other == Self::VoidPointer))
+                && (untyped(self) || untyped(other)))
     }
 
     pub(crate) fn pointer_to(self) -> Option<Self> {
@@ -4226,6 +4236,9 @@ impl ProgramType {
             Self::Float64Pointer => Some(Self::Float64PointerPointer),
             Self::VoidPointer => Some(Self::VoidPointerPointer),
             Self::Int8PointerPointer | Self::Int8Array(_) => None,
+            // A pointer to a `Pointer` cell is itself a `Pointer`, not a
+            // type of its own; no pointer-to-`Pointer` type exists.
+            Self::Pointer => None,
             Self::Void
             | Self::VoidPointerPointer
             | Self::Int16PointerPointer
@@ -4416,6 +4429,7 @@ impl ProgramType {
             Self::Bool => 1,
             Self::VoidPointer => C_POINTER_BYTE_WIDTH,
             Self::VoidPointerPointer => C_POINTER_BYTE_WIDTH,
+            Self::Pointer => C_POINTER_BYTE_WIDTH,
             Self::Int8 => 1,
             Self::Int16 => 2,
             Self::Int32 => 4,
@@ -6663,6 +6677,90 @@ mod format_range_premise_tests {
         use super::*;
         include!(
             "../../scaling_tests/kernel/primitives/term_operations/format_range_premise_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod untyped_pointer_type_tests {
+    use super::*;
+    use crate::kernel::effective_type::CAccessClass;
+
+    /// Click's untyped `Pointer` is a pointer-width object pointer with no
+    /// pointee, compatible with every object pointer type and with no C
+    /// `void *` meaning of its own.
+    #[test]
+    fn every_program_type_query_answers_for_the_untyped_pointer() {
+        let pointer = ProgramType::Pointer;
+        assert!(pointer.is_pointer());
+        assert!(pointer.is_object_pointer());
+        assert!(!pointer.is_function_pointer());
+        assert!(!pointer.is_character_pointer());
+        assert_eq!(pointer.pointee_type(), None);
+        assert_eq!(pointer.pointer_to(), None);
+        assert_eq!(pointer.array_element_type(), None);
+        assert_eq!(pointer.byte_width(), C_POINTER_BYTE_WIDTH);
+        assert_eq!(pointer.abi_alignment(), C_POINTER_BYTE_WIDTH);
+        assert!(!pointer.supports_scalar_array_write(false));
+        assert!(pointer.is_signedness_view_of(pointer));
+        assert!(!pointer.is_signedness_view_of(ProgramType::VoidPointer));
+        for object_pointer in [
+            ProgramType::VoidPointer,
+            ProgramType::Int32Pointer,
+            ProgramType::UInt8Pointer,
+            ProgramType::Int8PointerPointer,
+            ProgramType::Float64Pointer,
+        ] {
+            assert!(pointer.pointer_types_compatible(object_pointer));
+            assert!(object_pointer.pointer_types_compatible(pointer));
+        }
+        let function = ProgramType::FunctionPointer(CallbackSignature::from_encoded(1));
+        assert!(!pointer.pointer_types_compatible(function));
+        assert!(!function.pointer_types_compatible(pointer));
+        assert!(!pointer.pointer_types_compatible(ProgramType::UInt64));
+        // A callback signature names no `Pointer`.
+        assert_eq!(
+            ProgramType::function_pointer_signature(ProgramType::Pointer, &[]),
+            CallbackSignature::UNSPECIFIED
+        );
+        assert_eq!(
+            ProgramType::function_pointer_signature(ProgramType::Void, &[ProgramType::Pointer]),
+            CallbackSignature::UNSPECIFIED
+        );
+        // A load or store at `Pointer` may access any pointer cell, as one
+        // at `void *` may.
+        assert_eq!(
+            CAccessClass::of_kernel_type(pointer),
+            Some(CAccessClass::VOID_POINTER)
+        );
+        assert_eq!(crate::kernel::program_type_spelling(pointer), "Pointer");
+    }
+
+    /// A `Pointer` accepts and reads any object pointer value and a null one,
+    /// and keeps it as stored; it accepts no integer and no function address.
+    #[test]
+    fn the_untyped_pointer_accepts_object_pointer_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = ProgramType::Pointer;
+        let typed = ProgramValue::typed_pointer(
+            Address::symbolic(Variable(4_321)),
+            ProgramType::Int32Pointer,
+        );
+        assert!(pointer.accepts(&typed));
+        assert_eq!(pointer.read_cell(&typed), Some(typed.clone()));
+        assert!(ProgramType::Int32Pointer.accepts(&typed.clone().retag_pointer(pointer)));
+        assert!(pointer.accepts(&ProgramValue::typed_pointer(
+            Address::null(),
+            ProgramType::Int32Pointer
+        )));
+        assert!(!pointer.accepts(&ProgramValue::UInt64(MachineTerm::uint64_constant(0))));
+        assert!(!pointer.accepts(&ProgramValue::typed_pointer(
+            Address::symbolic_function(Variable(4_322)),
+            ProgramType::Pointer
+        )));
+        assert_eq!(
+            typed.clone().resource_argument_at_type(pointer),
+            typed.retag_pointer(pointer)
         );
     }
 }

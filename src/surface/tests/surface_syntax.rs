@@ -3758,6 +3758,7 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
         ("load<float>(p)", (ProgramType::Float32, false, false)),
         ("load<double>(p)", (ProgramType::Float64, false, false)),
         ("load<void*>(p)", (ProgramType::VoidPointer, false, false)),
+        ("load<Pointer>(p)", (ProgramType::Pointer, false, false)),
         ("load<int32*>(p)", (ProgramType::Int32Pointer, false, false)),
         (
             "load<uint8**>(p)",
@@ -3804,7 +3805,12 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
         let (_, relowered) = lowered_load(&raised);
         assert_eq!(relowered, lowered, "lowering the raised `{raised}`");
     }
-    for refused in ["load<const int32>(p)", "load<void>(p)"] {
+    for refused in [
+        "load<const int32>(p)",
+        "load<void>(p)",
+        "load<Pointer*>(p)",
+        "load<pointer>(p)",
+    ] {
         assert!(
             parser::parse_file_items(&format!(
                 "function read(p: uint64*) -> Integer {{ {refused} }}"
@@ -3813,6 +3819,44 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
             "`{refused}` should be refused"
         );
     }
+}
+
+/// `p as Pointer` lowers to a cast to Click's untyped pointer, and printing
+/// it writes `p as Pointer` back, which lowers to the same cast.
+#[test]
+fn an_untyped_pointer_cast_lowers_and_raises_back_to_the_same_term() {
+    let lowered_cast = |text: &str| {
+        let file = parser::parse_file_items(&format!(
+            "function untyped(p: int32*) -> Pointer {{ {text} }}"
+        ))
+        .unwrap_or_else(|error| panic!("`{text}` should parse: {}", error.report()));
+        let body = file.click_function_definitions()[0].body().unwrap().clone();
+        let (ContractExpression::ProgramExpression(lowered @ ProgramExpression::Cast { .. })
+        | ContractExpression::CUnary {
+            lowered: lowered @ ProgramExpression::Cast { .. },
+            ..
+        }) = &body
+        else {
+            panic!("`{text}` should lower to a cast: {body:?}");
+        };
+        (body.clone(), lowered.clone())
+    };
+    let (cast, lowered) = lowered_cast("p as Pointer");
+    assert!(matches!(
+        lowered,
+        ProgramExpression::Cast {
+            target_type: ProgramType::Pointer,
+            ..
+        }
+    ));
+    let raised = crate::surface::diagnostics::describe_contract_expression(&cast);
+    // A cast printed alone is parenthesized, as every cast is.
+    assert_eq!(raised, "(p as Pointer)");
+    assert_eq!(lowered_cast(&raised).1, lowered);
+    assert!(
+        parser::parse_file_items("function f(p: int32*) -> Pointer { p as pointer }").is_err(),
+        "lowercase `pointer` is not a type"
+    );
 }
 
 #[test]

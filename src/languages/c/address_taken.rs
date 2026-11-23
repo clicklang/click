@@ -126,6 +126,7 @@ fn scalar_or_pointer(interface_type: InterfaceType) -> bool {
         | InterfaceType::Float64
         | InterfaceType::VoidPointer
         | InterfaceType::VoidPointerPointer
+        | InterfaceType::Pointer
         | InterfaceType::CharPointer(_)
         | InterfaceType::CharPointerPointer(_)
         | InterfaceType::Int16Pointer

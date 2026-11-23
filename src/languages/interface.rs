@@ -185,6 +185,9 @@ pub enum InterfaceType {
     /// Opaque pointer to a `void *` result slot. The declaration model keeps
     /// its exact type without assuming that pthread_join writes through it.
     VoidPointerPointer,
+    /// Click's untyped pointer `Pointer` ([`crate::kernel::ProgramType::Pointer`]):
+    /// a Click specification type, never a C declaration's type.
+    Pointer,
     Int8,
     Int16,
     Int32,
@@ -1831,6 +1834,7 @@ impl InterfaceType {
             self,
             Self::VoidPointer
                 | Self::VoidPointerPointer
+                | Self::Pointer
                 | Self::Int32Pointer
                 | Self::Int8Pointer
                 | Self::Int16Pointer
@@ -1901,6 +1905,7 @@ impl InterfaceType {
             Self::Int8 => None,
             Self::Void
             | Self::VoidPointer
+            | Self::Pointer
             | Self::Bool
             | Self::Int16
             | Self::Int32
@@ -1950,6 +1955,7 @@ impl InterfaceType {
             Self::Int8PointerPointer | Self::Int8Array(_) => return None,
             Self::Void
             | Self::VoidPointerPointer
+            | Self::Pointer
             | Self::Bool
             | Self::Int16PointerPointer
             | Self::UInt16PointerPointer
@@ -1999,6 +2005,7 @@ impl InterfaceType {
             Self::Bool => crate::kernel::ProgramType::Bool,
             Self::VoidPointer => crate::kernel::ProgramType::VoidPointer,
             Self::VoidPointerPointer => crate::kernel::ProgramType::VoidPointerPointer,
+            Self::Pointer => crate::kernel::ProgramType::Pointer,
             Self::Int8 => crate::kernel::ProgramType::Int8,
             Self::Int16 => crate::kernel::ProgramType::Int16,
             Self::Int32 => crate::kernel::ProgramType::Int32,

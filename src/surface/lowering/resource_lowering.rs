@@ -295,7 +295,9 @@ fn input_arguments(
                     )),
                 ));
             }
-            InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer => {
+            InterfaceType::VoidPointer
+            | InterfaceType::VoidPointerPointer
+            | InterfaceType::Pointer => {
                 arguments.push(initial_pointer_argument(
                     Address {
                         base: AddressBase::ExternalArgument,

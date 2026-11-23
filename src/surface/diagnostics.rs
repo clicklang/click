@@ -5740,6 +5740,7 @@ pub(super) fn diagnostic_parameter_element_width(
         InterfaceType::Bool => 1,
         InterfaceType::VoidPointer
         | InterfaceType::VoidPointerPointer
+        | InterfaceType::Pointer
         | InterfaceType::ParameterPointer(_) => 8,
         InterfaceType::CharPointer(_)
         | InterfaceType::CharArray(_, _)

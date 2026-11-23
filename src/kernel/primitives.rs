@@ -3941,6 +3941,15 @@ pub enum ProgramType {
     /// Pointer to an opaque object-pointer slot, needed to retain the exact
     /// `pthread_join` result parameter type even in null-only calls.
     VoidPointerPointer,
+    /// Click's untyped pointer, spelled `Pointer`: an address and a
+    /// provenance with no pointee type, like LLVM's opaque `ptr`. An access,
+    /// cast or call through it states its own type (`load<T>(p)`, `p as
+    /// (T *)`), so it cannot be dereferenced, indexed or scaled. It is not a
+    /// C type: C's `void *` rules (implicit conversions, GNU byte
+    /// arithmetic, the character view a conversion forms) do not apply to
+    /// it, and a cast to or from it keeps the value. For now it designates
+    /// objects only; function pointers keep their own signature type.
+    Pointer,
     Int8,
     Int16,
     Int32,

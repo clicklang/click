@@ -1712,6 +1712,13 @@ impl Parser {
                     operand = self.lower_click_cast(target_type, operand)?;
                     continue;
                 }
+                // Click's untyped pointer is one name, so its cast target is
+                // bare, `p as Pointer`, as a numeric one is.
+                Some(Token::Ident(name)) if name == UNTYPED_POINTER_TYPE => {
+                    self.position += 2;
+                    operand = self.lower_click_cast(ProgramType::Pointer, operand)?;
+                    continue;
+                }
                 Some(Token::LParen) => {
                     self.position += 1;
                     if let Some(cast) = self.peek_struct_pointer_cast() {
@@ -1793,6 +1800,9 @@ impl Parser {
         }
     }
 }
+
+/// The name of Click's untyped pointer type, [`ProgramType::Pointer`].
+pub(super) const UNTYPED_POINTER_TYPE: &str = "Pointer";
 
 /// The numeric type a bare Click cast target names, `x as uint32` or `x as float`.
 pub(super) fn click_numeric_cast_type(name: &str) -> Option<ProgramType> {

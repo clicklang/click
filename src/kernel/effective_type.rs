@@ -245,7 +245,9 @@ impl CAccessClass {
             ProgramType::Int128 | ProgramType::UInt128 => Self::Scalar(CScalarClass::Int128),
             ProgramType::Float32 => Self::Scalar(CScalarClass::Float),
             ProgramType::Float64 => Self::Scalar(CScalarClass::Double),
-            ProgramType::VoidPointer => Self::VOID_POINTER,
+            // Click's untyped `Pointer` reads or writes any pointer cell, as
+            // `void *` may: neither names a pointee type to disagree with.
+            ProgramType::VoidPointer | ProgramType::Pointer => Self::VOID_POINTER,
             _ => return None,
         })
     }

@@ -175,6 +175,8 @@ pub(crate) fn program_type_spelling(program_type: ProgramType) -> &'static str {
         ProgramType::Bool => "bool",
         ProgramType::VoidPointer => "void*",
         ProgramType::VoidPointerPointer => "void**",
+        // Click's untyped pointer is not a C type; it has Click's spelling.
+        ProgramType::Pointer => "Pointer",
         ProgramType::Int8 => "int8",
         ProgramType::Int16 => "int16",
         ProgramType::Int32 => "int32",

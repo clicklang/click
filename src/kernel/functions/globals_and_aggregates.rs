@@ -568,6 +568,7 @@ pub(super) fn aggregate_zero_fields(
                 | ProgramType::Int8PointerPointer
                 | ProgramType::Float32PointerPointer
                 | ProgramType::Float64PointerPointer
+                | ProgramType::Pointer
                 | ProgramType::FunctionPointer(_) => {
                     ProgramValue::typed_pointer(Address::null(), element_type)
                 }

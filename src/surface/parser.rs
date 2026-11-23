@@ -1349,6 +1349,7 @@ pub(super) fn is_c_type_keyword(name: &str) -> bool {
             | "_Bool"
             | "bool"
             | "Bool"
+            | "Pointer"
             | "struct"
             | "int32"
             | "int"
@@ -7216,6 +7217,10 @@ impl Parser {
                     InterfaceType::Bool
                 }
                 "Bool" => InterfaceType::Bool,
+                // Click's untyped pointer, an address and a provenance with
+                // no pointee type. A function head writes its language's
+                // type, so there the name is left to a C typedef.
+                "Pointer" if !self.exact_long_rank => InterfaceType::Pointer,
                 "int8" | "int8_t" => InterfaceType::Int8,
                 "int16" | "int16_t" => InterfaceType::Int16,
                 "int32" | "int32_t" => InterfaceType::Int32,
@@ -7288,6 +7293,12 @@ impl Parser {
                     return Err(self.error("a reference to `void` is not a type"));
                 }
                 InterfaceType::Void => InterfaceType::VoidPointer,
+                InterfaceType::Pointer => {
+                    return Err(self.error(
+                        "a `Pointer` has no pointee type, so `Pointer *` is not a type; a \
+                         pointer to a `Pointer` cell is itself a `Pointer`",
+                    ));
+                }
                 InterfaceType::Int8 => InterfaceType::Int8Pointer,
                 InterfaceType::Int16 => InterfaceType::Int16Pointer,
                 InterfaceType::UInt16 => InterfaceType::UInt16Pointer,
@@ -15322,6 +15333,7 @@ impl Parser {
     /// `verifying "f.c" as uint32` would otherwise read as a cast.
     fn refuse_cast_type_binder(&self, name: &str) -> Result<(), ClickError> {
         if rust_syntax::click_numeric_cast_type(name).is_some()
+            || name == rust_syntax::UNTYPED_POINTER_TYPE
             || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
         {
             return Err(self.error(format!(
@@ -18770,6 +18782,7 @@ impl Parser {
         match self.tokens.get(index + 1) {
             Some(Token::Ident(name)) => {
                 rust_syntax::click_numeric_cast_type(name).is_some()
+                    || name == rust_syntax::UNTYPED_POINTER_TYPE
                     || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
             }
             Some(Token::LParen) => matches!(

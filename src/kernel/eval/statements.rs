@@ -6223,7 +6223,9 @@ pub(in crate::kernel) fn declare_local(
         ProgramType::Parameter(_) => crate::kernel::ABSTRACT_VALUE_WIDTH,
         ProgramType::Void => unreachable!("void local objects are not supported"),
         ProgramType::Bool => 1,
-        ProgramType::VoidPointer | ProgramType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,
+        ProgramType::VoidPointer | ProgramType::VoidPointerPointer | ProgramType::Pointer => {
+            C_POINTER_BYTE_WIDTH
+        }
         ProgramType::Int8 => 1,
         ProgramType::Int16 | ProgramType::UInt16 => 2,
         ProgramType::Int32 => 4,

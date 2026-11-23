@@ -8011,8 +8011,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let outcome = match value {
                         ProgramValue::Pointer(pointer)
                             if target_type.is_pointer()
-                                && (*target_type != ProgramType::VoidPointer
-                                    || pointer.program_type().is_object_pointer()) =>
+                                && (!matches!(
+                                    *target_type,
+                                    ProgramType::VoidPointer | ProgramType::Pointer
+                                ) || pointer.program_type().is_object_pointer()) =>
                         {
                             ExpressionOutcome::Value(ProgramValue::Pointer(
                                 pointer.with_type(*target_type),
