@@ -5658,8 +5658,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                             );
                             let version = version.as_ref().unwrap_or(memory.shared_memory());
                             results.push(crate::kernel::MachineTerm::read_named(
-                                ProgramPoint::at(
+                                ProgramPoint::at_read_site(
                                     &(canonical_projected_load_memory(version, &canonical_pointer)),
+                                    memory,
                                 ),
                                 canonical_pointer,
                                 kind,
@@ -5718,8 +5719,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                             );
                             let version = version.as_ref().unwrap_or(next_memory.shared_memory());
                             results.push(crate::kernel::MachineTerm::read_named(
-                                ProgramPoint::at(
+                                ProgramPoint::at_read_site(
                                     &(canonical_projected_load_memory(version, &canonical_pointer)),
+                                    next_memory,
                                 ),
                                 canonical_pointer,
                                 next_kind,
@@ -6390,7 +6392,7 @@ pub(super) fn store_value_equation_at(
             value.byte_width(),
         )
     } else {
-        crate::kernel::canonical_form_of_load(after.shared_memory().clone(), pointer.clone(), kind)
+        crate::kernel::eval::canonical_form_of_load_at(after, pointer.clone(), kind)
     };
     let format = match value.numeric_value() {
         ProgramValue::Bool(_) => MachineIntegerType::UInt8,

@@ -4304,6 +4304,22 @@ pub(crate) fn canonical_form_of_load(
     canonical_scalar_read(&MachineTerm::memory_read(memory, pointer, kind))
 }
 
+/// [`canonical_form_of_load`] of the read made at `site`: named by `site`'s
+/// memory, as that function names it, and recording `site` as the read site
+/// (`ProgramPoint::at_read_site`). The term is the same.
+#[cfg_attr(test, track_caller)]
+pub(crate) fn canonical_form_of_load_at(
+    site: &ProgramPoint,
+    pointer: Address,
+    kind: LoadKind,
+) -> MachineTerm {
+    canonical_scalar_read(&MachineTerm::read_named(
+        ProgramPoint::at_read_site(site.shared_memory(), site),
+        pointer,
+        kind,
+    ))
+}
+
 /// Name a resource cell by its indexed store or entry point when available.
 pub(crate) fn canonical_cell_load(
     source: &ProgramPoint,
@@ -4314,7 +4330,7 @@ pub(crate) fn canonical_cell_load(
         return read;
     }
     let kind = LoadKind::of_type(ty).expect("scalar cell read kind");
-    canonical_form_of_load(source.shared_memory().clone(), pointer.clone(), kind)
+    canonical_form_of_load_at(source, pointer.clone(), kind)
 }
 
 /// Construct a cell read when its recorded point can supply a name.
@@ -5771,7 +5787,7 @@ pub(crate) fn comparison_identity_of_exact_read(
         .or_else(|| point.has_certified_read_view().then(|| point.clone()))
     {
         Some(version) => crate::kernel::MachineTerm::read_named(version, pointer.clone(), kind),
-        None => canonical_form_of_load(point.shared_memory().clone(), pointer.clone(), kind),
+        None => canonical_form_of_load_at(point, pointer.clone(), kind),
     }
 }
 

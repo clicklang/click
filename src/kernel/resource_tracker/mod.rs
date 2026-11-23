@@ -674,13 +674,13 @@ pub(crate) fn last_same_version_point(
     match resource {
         TrackedResource::Cell { pointer, bytes } => legacy_walk_audit::counted(&resource, || {
             cell_last_same_version_point(at.shared_memory(), pointer, bytes)
-                .map(|memory| ProgramPoint::at(&memory))
+                .map(|memory| ProgramPoint::at_read_site(&memory, at))
         }),
         TrackedResource::Block(block) => legacy_walk_audit::counted(&resource, || {
-            Some(ProgramPoint::at(&block_last_same_version_point(
-                at.shared_memory(),
-                block,
-            )))
+            Some(ProgramPoint::at_read_site(
+                &block_last_same_version_point(at.shared_memory(), block),
+                at,
+            ))
         }),
         // No term names a memory footprint, so a footprint has no naming path
         // to be the oldest point of. Its one caller knows both ends of the
