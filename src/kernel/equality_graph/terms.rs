@@ -1945,6 +1945,8 @@ impl TermClasses {
             }
             if let Some((id, point, pointer, kind)) = self.pending_narrow_loads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
+                #[cfg(test)]
+                crate::kernel::mixed_read_names::observe(&point, &pointer, kind);
                 let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
                 let address = self.read_address(address);
                 self.register_application(
@@ -1976,6 +1978,12 @@ impl TermClasses {
             // Integer reads use the same complete address application as
             // pointer and uint64 reads. A checked equality between addresses
             // must reindex this read even when no affine block relabel exists.
+            #[cfg(test)]
+            crate::kernel::mixed_read_names::observe(
+                &point,
+                &pointer,
+                crate::kernel::LoadKind::Int32,
+            );
             let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
             let address = self.read_address(address);
             self.register_application(

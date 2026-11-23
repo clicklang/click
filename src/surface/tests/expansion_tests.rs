@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn scoped_introduction_replays_after_expansion() {
+    let (source, program) = mdtest_sources("mdtests/scoped_intro.md");
+    let program = crate::cli::source_refs(&program);
+    for (claim, intro) in [
+        ("scoped_implication.ensures_0", "intro(k) {"),
+        ("scoped_claim.contract", "intro() {"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains(intro), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+fn exposed_resource_paths_replay_after_expansion() {
+    for (fixture, claim) in [
+        ("mdtests/exposed_child_paths.md", "by_unfold.contract"),
+        ("mdtests/exposed_child_paths.md", "by_scope.contract"),
+        (
+            "mdtests/open_resource_member_values.md",
+            "read_witness.contract",
+        ),
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn refolds_replay_with_the_opened_witness() {
     let (source, program) = mdtest_sources("mdtests/refold_reuses_the_opened_witness.md");
     let program = crate::cli::source_refs(&program);
@@ -3235,20 +3274,134 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
 }
 
 #[test]
+fn integer_constructor_arm_fields_expand_to_known() {
+    let (source, _) = mdtest_sources("mdtests/algebraic_integer_match_bindings.md");
+    for (theorem, result, wrong_result) in [
+        (
+            "nested_fields",
+            "nested(b, other) == Pair::Pair(n, m)",
+            "nested(b, other) == Pair::Pair(m, n)",
+        ),
+        (
+            "shadows",
+            "shadow(b, other, ambient) == Box::Box(m)",
+            "shadow(b, other, ambient) == Box::Box(n)",
+        ),
+        (
+            "swaps",
+            "swap(p) == Pair::Pair(b, a)",
+            "swap(p) == Pair::Pair(a, b)",
+        ),
+        (
+            "captures",
+            "capture(b, ambient) == Pair::Pair(payload, ambient)",
+            "capture(b, ambient) == Pair::Pair(payload, payload)",
+        ),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
+        let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
+        let proof = proof.split("\ntheorem ").next().unwrap();
+        assert!(proof.contains("known();"), "{expanded}");
+        assert!(!proof.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+        let wrong = expanded.replace(result, wrong_result);
+        assert_ne!(wrong, expanded);
+        let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
+        assert!(
+            error.contains("`known` requires the current goal"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn rewritten_constructor_payload_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/algebraic_match_on_known_constructor.md");
-    let label = "rewritten.ensures_0";
-    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
-    let (_, proof) = expanded.split_once("theorem rewritten").unwrap();
-    assert!(proof.contains("known();"), "{expanded}");
-    assert!(!proof.contains("normalize()"), "{expanded}");
-    without_implicit_solve_for_claim(label, || {
-        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
-    })
-    .unwrap();
-    let wrong = expanded.replace("== Output::Value(7) by", "== Output::Value(8) by");
-    assert_ne!(wrong, expanded);
-    assert!(verify_c_sources(&wrong, &[]).is_err());
+    for (theorem, result, wrong_result) in [
+        ("rewritten", "Output::Value(7)", "Output::Value(8)"),
+        (
+            "rewritten_symbolic",
+            "Output::Value(value)",
+            "Output::Value(8)",
+        ),
+        (
+            "rewritten_wide",
+            "WideOutput::Value(value)",
+            "WideOutput::Value(8u64)",
+        ),
+        (
+            "rewritten_tag",
+            "TaggedOutput::Value(value, 7u64)",
+            "TaggedOutput::Value(value, 8u64)",
+        ),
+        (
+            "rewritten_capture",
+            "TaggedOutput::Value(value, other)",
+            "TaggedOutput::Value(value, value)",
+        ),
+        (
+            "rewritten_bool_tag",
+            "BoolOutput::Value(value, true)",
+            "BoolOutput::Value(value, false)",
+        ),
+        (
+            "rewritten_bool_field",
+            "Flag::Value(flag)",
+            "Flag::Value(false)",
+        ),
+        (
+            "rewritten_bool_literal",
+            "Flag::Value(true)",
+            "Flag::Value(false)",
+        ),
+        (
+            "rewritten_bool_capture",
+            "BoolOutput::Value(value, flag)",
+            "BoolOutput::Value(value, false)",
+        ),
+        (
+            "rewritten_algebraic_field",
+            "BoxOutput::Item(value)",
+            "BoxOutput::Item(other)",
+        ),
+        (
+            "rewritten_algebraic_capture",
+            "BoxCapture::Item(value, captured)",
+            "BoxCapture::Item(value, other)",
+        ),
+        (
+            "rewritten_nullary_field",
+            "ColorOutput::Item(Color::Red)",
+            "ColorOutput::Item(Color::Green)",
+        ),
+        (
+            "rewritten_nullary_tag",
+            "ColorTag::Item(value, Color::Red)",
+            "ColorTag::Item(value, Color::Green)",
+        ),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
+        let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
+        let proof = proof.split("\ntheorem ").next().unwrap();
+        assert!(proof.contains("known();"), "{expanded}");
+        assert!(!proof.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+        let wrong = expanded.replace(&format!("== {result} by"), &format!("== {wrong_result} by"));
+        assert_ne!(wrong, expanded);
+        let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
+        assert!(
+            error.contains("`known` requires the current goal"),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -5252,6 +5405,20 @@ fn user_tactic_call_obligations_expand_and_recheck() {
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
+#[test]
+fn user_tactic_at_return_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/user_tactic_at_return.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "implicit_proof.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("divide(p, result,"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 /// The outer call of `y = f(f(y));` owes `f`'s requirement of the inner
 /// call's result. Whole-claim expansion renders its certificate after
 /// checking ends, and must still spell that result by its call, never as
@@ -5973,6 +6140,15 @@ fn branch_interface_service_solve_expands_and_rechecks() {
             )
         },
     );
+
+    let claim = "service_step.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("rewrite(owner->phase, at("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -11025,7 +11201,7 @@ fn selected_mirrored_disequality_expands_to_known() {
 }
 
 #[test]
-fn signed_order_theorems_check_a_store_prerequisite_without_search() {
+fn signed_order_theorems_check_ordered_stores_without_search() {
     let (source, program) = mdtest_sources("mdtests/stores_to_ordered_indices_keep_each_other.md");
     let program = crate::cli::source_refs(&program);
     let label = "mark.contract";
@@ -11035,6 +11211,8 @@ fn signed_order_theorems_check_a_store_prerequisite_without_search() {
         expanded.contains("int32_less_equal_less_than_transitive"),
         "{expanded}"
     );
+    assert!(expanded.contains("preserve(memory(a[i])"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve_for_claim(label, || {
         verify_c_sources(&expanded, &program).map_err(|error| error.report())
     })
@@ -16797,6 +16975,60 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the indexed old-value postcondition"]
+fn indexed_old_postcondition_expands_through_distinct_store_preservation() {
+    let (source, sources) =
+        mdtest_sources("mdtests/have_whole_fact_keeps_written_parameter_names.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "mark_one.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(
+        expanded.contains("separation::separate_elements("),
+        "{expanded}"
+    );
+    assert!(expanded.contains("preserve(memory(a[m])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the symbolic indexed read"]
+fn returned_read_expands_by_restricting_range_separation_to_the_cell() {
+    let (source, sources) = mdtest_sources("mdtests/separate_symbolic_unwritten_read.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "write_i_read_j.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve(memory(p[j])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the loop-exit frame"]
+fn returned_read_expands_through_its_loop_footprint() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_break_exit_ordinary_join_keeps_post_loop_read.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve(memory(q[0])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expand and replay fixed and variable array spans"]
 fn pruned_indexed_read_expands_through_distinct_store_preservation() {
     for (fixture, function) in [
@@ -16855,22 +17087,101 @@ fn quantified_read_expands_through_store_and_call_preservation() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: expand and replay the masked array read"]
-fn masked_indexed_read_expands_through_distinct_store_preservation() {
-    let (source, sources) = mdtest_sources("mdtests/an_if_form_fact_survives_a_disjoint_store.md");
+#[ignore = "nightly: expand and replay the terminator proof"]
+fn indexed_terminator_expands_through_ordered_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/memory_predicate_explicit_frame.md");
     let sources = crate::cli::source_refs(&sources);
-    let claim = "mark_odd.contract";
+    let claim = "set_before_terminator.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(
         expanded.contains("separation::separate_elements("),
         "{expanded}"
     );
-    assert!(expanded.contains("preserve(memory(a[m])"), "{expanded}");
+    assert!(
+        expanded.contains("preserve(memory(data[length])"),
+        "{expanded}"
+    );
     without_implicit_solve_for_claim(claim, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the conditional and masked array reads"]
+fn indexed_reads_in_expressions_expand_through_distinct_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/an_if_form_fact_survives_a_disjoint_store.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in ["mark_one.contract", "mark_odd.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains("separation::separate_elements("),
+            "{claim}: {expanded}"
+        );
+        assert!(
+            expanded.contains("preserve(memory(a[m])"),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed expressions across separated stores"]
+fn indexed_expressions_expand_through_range_separation() {
+    let (source, sources) =
+        mdtest_sources("mdtests/indexed_expressions_survive_separated_stores.md");
+    let sources = crate::cli::source_refs(&sources);
+    for (claim, cell) in [
+        ("keep_low_bit.contract", "a[0]"),
+        ("keep_positive_flag.contract", "p[j]"),
+        ("keep_bitwise_or.contract", "a[0]"),
+        ("keep_read_bound.contract", "a[0]"),
+        ("keep_reversed_condition.contract", "p[j]"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains(&format!("preserve(memory({cell})")),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed reads in comparisons with literals"]
+fn indexed_reads_in_literal_comparisons_expand_through_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_reads_in_literal_comparisons.md");
+    let sources = crate::cli::source_refs(&sources);
+    for (claim, cell) in [
+        ("keep_mask_disequality.contract", "a[0]"),
+        ("keep_mask_bound.contract", "a[0]"),
+        ("keep_masked_condition.contract", "p[j]"),
+        ("keep_reversed_flag_comparison.contract", "p[j]"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains(&format!("preserve(memory({cell})")),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
 }
 
 #[test]
@@ -26688,34 +26999,12 @@ fn returned_member_domain_access_expands_and_replays() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
-fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
-    let (source, sources) =
-        mdtest_sources("mdtests/resource_unfold_field_binding_rejects_consumed_read.md");
-    let sources = sources
-        .iter()
-        .map(|(name, text)| (name.as_str(), text.as_str()))
-        .collect::<Vec<_>>();
-    let error = verify_c_sources(&source, &sources).unwrap_err();
-    assert!(
-        error.message().contains("before.prefix"),
-        "{}",
-        error.report()
-    );
-    assert!(
-        error.message().contains("unfold(before)` consumed it"),
-        "{}",
-        error.report()
-    );
-    // Only the intentionally invalid invariant changes in the positive control.
-    let control = source.replace(
-        "invariant 0 <= i and i <= old(before.prefix);",
-        "invariant 0 <= i and i <= p;",
-    );
-    assert_ne!(control, source);
-    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
-    assert!(!source.contains("transport("), "{source}");
-    let expanded = expand_c_claim_source_by_label(&control, &sources, "claim.contract").unwrap();
+#[ignore = "nightly: opened field, preservation expansion and cold replay"]
+fn opened_field_replays_with_ordinary_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/resource_unfold_reads_the_opened_field.md");
+    let sources = crate::cli::source_refs(&sources);
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "claim.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve_for_claim("claim.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())

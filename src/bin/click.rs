@@ -59,16 +59,13 @@ fn report_error(message: String) -> ! {
         "incomplete proof",
         "contract error",
         "contract entry refused",
-        "execution prerequisite unmet",
-        "execution refused",
-        "invalid divergence declaration",
         "unsupported",
-        "unsupported proof",
         "unclassified verification refusal",
         "syntax error",
         "type error",
         "internal error",
-        "limit error",
+        "work limit reached",
+        "timed out",
     ]
     .iter()
     .any(|heading| {
@@ -347,8 +344,12 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+                "tactic error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
             )),
+            "{error}"
+        );
+        assert!(
+            error.contains("refused by: implicit step (loop preservation)"),
             "{error}"
         );
 
@@ -356,7 +357,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
+                "tactic error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
             "{error}"
         );
@@ -507,7 +508,7 @@ uint64 spell(const uint8* b, uint64 n) {
             trace.contains("`known` requires the current goal as an available semantic fact"),
             "{trace}"
         );
-        assert!(trace.contains("\ngoal: false\n"), "{trace}");
+        assert!(trace.contains("\nrequired evidence: false\n"), "{trace}");
         assert!(trace.contains(" = b + uint64("), "{trace}");
         assert!(
             trace.contains(" = at(statement(2).statement(0).entry, v)"),
@@ -558,7 +559,7 @@ uint64 spell(const uint8* b, uint64 n) {
             ),
             (
                 "diverges_rejects_unjustified_marker.md",
-                "invalid divergence declaration:",
+                "contract error:",
                 "remove the marker",
             ),
         ] {
@@ -581,6 +582,93 @@ uint64 spell(const uint8* b, uint64 n) {
         .unwrap_err();
         assert!(traced.starts_with("unsupported:"), "{traced}");
         assert!(traced.contains("proof refusal:"), "{traced}");
+    }
+
+    #[test]
+    fn execution_region_depth_reports_unsupported() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/proof_match_nesting_bound_named.md");
+        let report = entry(["verify".to_string(), fixture.display().to_string()]).unwrap_err();
+        assert!(report.starts_with("unsupported:"), "{report}");
+        assert!(
+            report.contains("checked execution-region recursion exceeds the supported depth"),
+            "{report}"
+        );
+        assert!(!report.contains("tactic@"), "{report}");
+    }
+
+    #[test]
+    fn contract_refinement_reports_the_specific_unsupported_capability() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("refinement.click");
+        for (contracts, callback, reason) in [
+            (
+                r#"contract int32 Raw(int32 x) throws int32 {
+    ensures result == x;
+    exceptional ensures exception == 7;
+}
+contract int32 Target(int32 x) throws int32 {
+    ensures result == x;
+    exceptional ensures exception == 7;
+}"#,
+                "int32 (*)(int32)",
+                "the source contract may throw",
+            ),
+            (
+                r#"authorized resource Permit(pool: int32*) {}
+contract void Raw(int32* pool) { ensures true; }
+contract void Target(int32* pool) {
+    owns authority(Permit(pool));
+    owns Permit(pool);
+    views *pool;
+}"#,
+                "void (*)(int32*)",
+                "Click cannot frame a resource of family `population authority`",
+            ),
+        ] {
+            fs::write(
+                &sidecar,
+                format!(
+                    "{contracts}\n
+theorem lift(callback: {callback}) {{
+    requires Raw(callback);
+    ensures Target(callback) by {{
+        unfold(Raw(callback));
+        unfold(Target(callback));
+        solve();
+    }}
+}}
+"
+                ),
+            )
+            .unwrap();
+            let report = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(report.starts_with("unsupported:"), "{report}");
+            assert!(report.contains(reason), "{report}");
+        }
+    }
+
+    #[test]
+    fn induction_in_an_execution_proof_reports_a_tactic_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let sidecar = directory.path().join("f.click");
+        fs::write(directory.path().join("f.c"), "int f(int n) { return n; }").unwrap();
+        for prefix in ["", "step();"] {
+            fs::write(
+                &sidecar,
+                format!(
+                    "verifying \"f.c\";\nint32 f(int32 n) {{ requires n >= 0; ensures result == n; }} by {{\n    {prefix}\n    let ih = induct(n);\n    known();\n}}"
+                ),
+            )
+            .unwrap();
+            let report = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert!(report.starts_with("tactic error:"), "{report}");
+            assert!(
+                report.contains("`induct` requires a pure theorem"),
+                "{report}"
+            );
+            assert!(report.contains("let ih = induct(n);"), "{report}");
+        }
     }
 
     #[test]
@@ -792,7 +880,10 @@ int32 f(int32 n) {
             "void set(int32 *p) {\n    owns p[0..1];\n}\nvoid lend_twice(int32 *p) {\n    owns p[0..1];\n}\n",
             &[],
         );
-        assert!(resource.contains("\ngoal: owns p[1]\n"), "{resource}");
+        assert!(
+            resource.contains("\nrequired evidence: owns p[1]\n"),
+            "{resource}"
+        );
 
         // A sidecar that does not load reports that failure, not the
         // `--trace-proof` naming hint.
@@ -978,7 +1069,10 @@ int32 check(struct link* node) {
             ordinary.contains("could not lower resource `tag` argument 0"),
             "{ordinary}"
         );
-        assert!(ordinary.contains("goal: defined(node[0])"), "{ordinary}");
+        assert!(
+            ordinary.contains("required evidence: defined(node->next)"),
+            "{ordinary}"
+        );
 
         let trace = entry([
             "verify".to_owned(),
@@ -992,7 +1086,8 @@ int32 check(struct link* node) {
             .unwrap_or_else(|| panic!("{trace}"));
         assert!(
             failed.lines().any(|line| {
-                line.starts_with("goal: defined-read(current, state#") && line.ends_with(", node)")
+                line.starts_with("required evidence: defined-read(current, state#")
+                    && line.ends_with(", node)")
             }),
             "{trace}"
         );
@@ -1069,7 +1164,7 @@ int32 check(struct link* node) {
             nested.contains("location: tactic 1 > have body tactic 1"),
             "{nested}"
         );
-        assert!(nested.contains("goal: 0 == 1"), "{nested}");
+        assert!(nested.contains("required evidence: 0 == 1"), "{nested}");
         assert!(nested.contains("steps through: declare x"), "{nested}");
 
         let wrong = entry([
@@ -1249,7 +1344,11 @@ int32 check(struct link* node) {
             traced.contains("requires: exists (k: int32) { k == 0 }"),
             "{traced}"
         );
-        assert_eq!(traced.matches("\ngoal:").count(), 1, "{traced}");
+        assert_eq!(
+            traced.matches("\nrequired evidence:").count(),
+            1,
+            "{traced}"
+        );
         assert!(
             traced
                 .contains("tactic@5:\n  let x = obtain(\n      exists (k: int32) { k == 0 }\n  );"),
@@ -1317,38 +1416,29 @@ int32 check(struct link* node) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    const SHARED_POPULATION_FIXTURE: &str =
+        include_str!("../../mdtests/shared_heap_population_certification.md");
+
     #[test]
     #[ignore = "nightly: 6s in the parallel gate"]
     fn tautological_ensure_preserves_population_certification() {
-        let directory =
-            std::env::temp_dir().join(format!("click-certification-trace-{}", std::process::id()));
-        if directory.exists() {
-            fs::remove_dir_all(&directory).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let fixture = directory.path().join("shared_population.md");
+        let tautology = "    ensures old(p->kid) == old(p->kid);\n";
+        let baseline = SHARED_POPULATION_FIXTURE.replacen(tautology, "", 1);
+        assert_ne!(baseline, SHARED_POPULATION_FIXTURE);
+
+        for source in [baseline.as_str(), SHARED_POPULATION_FIXTURE] {
+            fs::write(&fixture, source).unwrap();
+            entry([
+                "verify".to_string(),
+                "--trace-proof".to_string(),
+                "parent_detach".to_string(),
+                fixture.display().to_string(),
+            ])
+            .unwrap();
         }
-        fs::create_dir(&directory).unwrap();
-        fs::write(
-            directory.join("shared_parent.c"),
-            include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        let sidecar = directory.join("shared_parent.click");
-        let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
-        let source = source.replacen(
-            "    produces p->kid;\n",
-            "    produces p->kid;\n    ensures old(p->kid) == old(p->kid);\n",
-            1,
-        );
-        assert!(source.contains("ensures old(p->kid) == old(p->kid);"));
-        fs::write(&sidecar, source).unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        entry([
-            "verify".to_string(),
-            "--trace-proof".to_string(),
-            "parent_detach".to_string(),
-            sidecar.display().to_string(),
-        ])
-        .unwrap();
-        fs::remove_dir_all(directory).unwrap();
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
     }
 
     // Simple claim closers must perform the same checked return exchange as
@@ -1356,23 +1446,22 @@ int32 check(struct link* node) {
     #[test]
     #[ignore = "nightly: 10s in the parallel gate"]
     fn shared_population_release_expansion_retains_lifetime() {
-        let directory = std::env::temp_dir().join(format!(
-            "click-population-release-expansion-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&directory).unwrap();
-        fs::write(
-            directory.join("shared_parent.c"),
-            include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        let sidecar = directory.join("shared_parent.click");
-        let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
-        fs::write(&sidecar, source).unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        let release_end = source.find("void parent_attach(").unwrap();
-        let solve = source[..release_end].rfind("        solve();").unwrap();
-        let line = source[..solve]
+        let directory = tempfile::tempdir().unwrap();
+        let fixture = directory.path().join("shared_population.md");
+        let source = SHARED_POPULATION_FIXTURE;
+        fs::write(&fixture, source).unwrap();
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
+        let click_start = source.find("```click\n").unwrap();
+        let release_start =
+            click_start + source[click_start..].find("void child_release(").unwrap();
+        let release_end =
+            release_start + source[release_start..].find("void parent_attach(").unwrap();
+        let final_release = "        solve();\n    } else {";
+        let final_closer = release_start
+            + source[release_start..release_end]
+                .find(final_release)
+                .unwrap();
+        let line = source[..final_closer]
             .bytes()
             .filter(|byte| *byte == b'\n')
             .count()
@@ -1380,11 +1469,47 @@ int32 check(struct link* node) {
         entry([
             "expand".to_string(),
             "--in-place".to_string(),
-            format!("{}:{line}:9", sidecar.display()),
+            format!("{}:{line}:9", fixture.display()),
         ])
         .unwrap();
-        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-        fs::remove_dir_all(directory).unwrap();
+        let expanded = fs::read_to_string(&fixture).unwrap();
+        assert_ne!(expanded, source);
+        entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
+    }
+
+    #[test]
+    fn verification_separates_unprepared_safety_goals_from_unsupported_operations() {
+        let fixture = |name: &str| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("mdtests")
+                .join(name)
+                .display()
+                .to_string()
+        };
+        let error = entry([
+            "verify".to_string(),
+            fixture("a_symbolic_read_of_an_unwritten_local_element_is_uninitialized.md"),
+        ])
+        .unwrap_err();
+        assert!(error.starts_with("internal error:"), "{error}");
+        assert!(
+            error.contains("generated statement safety obligation")
+                && error.contains("read of uninitialized storage")
+                && error.contains("x == 0"),
+            "{error}"
+        );
+
+        let error = entry([
+            "verify".to_string(),
+            fixture("a_one_past_the_end_pointer_is_not_compared_with_another_object.md"),
+        ])
+        .unwrap_err();
+        assert!(error.starts_with("unsupported:"), "{error}");
+        assert!(
+            error.contains("whether the two objects are adjacent is unspecified"),
+            "{error}"
+        );
+        assert!(!error.contains("undefined behavior"), "{error}");
     }
 
     #[test]
@@ -1405,7 +1530,8 @@ int32 check(struct link* node) {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("execution refused:"), "{error}");
+        assert!(error.starts_with("tactic error:"), "{error}");
+        assert!(!error.contains("goal:"), "{error}");
         assert!(
             error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
             "{error}"
@@ -1476,7 +1602,10 @@ void recolor(struct rb_node* gparent) {
             .split_once("\n  checked target (wanted)\n  ")
             .and_then(|(_, rest)| rest.lines().next())
             .unwrap_or_else(|| panic!("{report}"));
-        assert!(report.contains(&format!("\ngoal: {target}\n")), "{report}");
+        assert!(
+            report.contains(&format!("\nrequired evidence: {target}\n")),
+            "{report}"
+        );
         assert!(report.contains("\n    address: value#"), "{report}");
         assert!(report.contains("= gparent + 16 bytes"), "{report}");
         assert!(!report.contains("\n  width\n"), "{report}");
@@ -1540,7 +1669,7 @@ void parent(int32* p) {
         );
         let current = read_state(
             failed_check,
-            "goal: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
+            "required evidence: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
         );
         assert_ne!(saved, current, "{report}");
     }
@@ -1570,7 +1699,7 @@ theorem bad(p: int32*, q: int32*) {
         let ordinary = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         let ordinary_goal = ordinary
             .lines()
-            .find_map(|line| line.trim().strip_prefix("goal: "))
+            .find_map(|line| line.trim().strip_prefix("required evidence: "))
             .unwrap();
         let report = entry([
             "verify".to_string(),
@@ -1583,8 +1712,11 @@ theorem bad(p: int32*, q: int32*) {
         // trace keeps the typed checked goal.
         assert!(ordinary_goal.contains("tag("), "{ordinary}");
         assert!(!ordinary_goal.contains("state#"), "{ordinary}");
-        assert_eq!(report.matches("goal:").count(), 1, "{report}");
-        let checked = report.lines().find(|line| line.contains("goal:")).unwrap();
+        assert_eq!(report.matches("required evidence:").count(), 1, "{report}");
+        let checked = report
+            .lines()
+            .find(|line| line.contains("required evidence:"))
+            .unwrap();
         assert!(checked.contains("tag("), "{report}");
         assert!(checked.contains("array-ref<int32>(state#1,"), "{report}");
         assert!(checked.contains("ptr<int32*>("), "{report}");
@@ -1633,7 +1765,12 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
 } by {
     mark before_call;
     let { result: r } = step(child);
-    have defined(at(before_call, a[i])) by { solve(); }
+    have defined(at(before_call, a[i])) by {
+        instantiate(at(before_call, forall (k: int32) {
+            0 <= k and k < n implies defined(a[k])
+        }), i);
+        known();
+    }
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])
     } by {

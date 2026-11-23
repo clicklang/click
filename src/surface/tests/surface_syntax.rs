@@ -1733,8 +1733,11 @@ fn verifies_explicit_structural_logic_tactics() {
         theorem negated_conjunction_rule(x: int32) {
             requires x == x;
             ensures not (x != x and x == x) by {
-                intro();
-                contradiction(x == x);
+                if x != x and x == x {
+                    contradiction(x == x);
+                } else {
+                    known();
+                }
             }
         }
 

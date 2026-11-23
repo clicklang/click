@@ -173,12 +173,11 @@ pub(crate) enum PropositionCloseError {
 
     ExpectedIntroduction(Proposition),
     IntegerFresheningExhausted,
-    /// The reserved universal-witness range
-    /// ([`crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE`])
-    /// holds no identity above the witnesses already in scope. The
-    /// introduction refuses rather than reusing one: an identity outside that
-    /// range is some other producer's, and a witness that names a live C
-    /// variable is the capture this range exists to prevent.
+    /// No witness is left above the witnesses already in scope
+    /// ([`crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT`]). The
+    /// introduction refuses rather than reusing one: a variable of another
+    /// origin is some other producer's, and a witness that names a live C
+    /// variable is the capture the witness origin exists to prevent.
     UniversalWitnessFresheningExhausted,
     IntegerChoiceSourceUnavailable,
     IntegerChoiceWrongSort,
@@ -212,7 +211,6 @@ pub(crate) enum PropositionIntroduction {
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
         algebraic: Option<crate::kernel::AlgebraicType>,
     },
-    Negation,
 }
 
 impl<'a, S> ProofExecutionView<'a, S> {
@@ -1231,8 +1229,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .facts
             .fresh_universal_witness(&excluded)
             .ok_or(PropositionCloseError::IntegerChoiceFresheningExhausted)?;
-        let variable = Variable(fresh.0.max(hint.0));
-        if !crate::kernel::ExecutionBudget::is_universal_witness_variable(variable) {
+        let variable = if hint.is_witness() && hint.0 > fresh.0 {
+            hint
+        } else {
+            fresh
+        };
+        if variable.0 >= crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT {
             return Err(PropositionCloseError::IntegerChoiceFresheningExhausted);
         }
         Ok(variable)
@@ -1365,7 +1367,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 _ => unreachable!("checked above"),
             };
             opened.push((current.clone(), chosen, sort));
-            next = Variable(
+            next = Variable::witness(
                 chosen
                     .0
                     .checked_add(1)
@@ -1408,21 +1410,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     pub(crate) fn apply_intro(
         &self,
         presentation: impl FnOnce(&P, PropositionIntroduction, Option<&Proposition>) -> P,
-    ) -> Result<Self, PropositionCloseError> {
-        self.apply_intro_opening(presentation, false)
-    }
-
-    /// `intro` on a goal. A disequality (`a != b`) is the negation of its
-    /// equality, so it opens like `not (a == b)`: the equality becomes a
-    /// fact and the goal `false`. `written_negation` says the author wrote
-    /// the goal as `not P` though lowering spelled `P`'s negation as one
-    /// comparison (`not (x < y)` as `x >= y`); the complement then opens the
-    /// same way. Assuming a condition's complement and refuting it proves the
-    /// condition, so either opening is sound for every condition.
-    pub(crate) fn apply_intro_opening(
-        &self,
-        presentation: impl FnOnce(&P, PropositionIntroduction, Option<&Proposition>) -> P,
-        written_negation: bool,
     ) -> Result<Self, PropositionCloseError> {
         let (goal, facts) = self
             .focused_proposition()
@@ -1472,57 +1459,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         object_class: sort.pointer_object_class(),
                         algebraic,
                     },
-                )
-            }
-            // A written `not forall` lowers to a defined counterexample.
-            // Preserve contradiction-style introduction by assuming the exact
-            // complement of that existential, including every domain conjunct.
-            Proposition::Exists {
-                name,
-                var,
-                sort,
-                body,
-            } if written_negation => {
-                let complement = match body.as_ref() {
-                    Proposition::ConditionIs(condition, value) => {
-                        Proposition::condition_is(condition.clone(), !value)
-                    }
-                    Proposition::Not(inner) => inner.as_ref().clone(),
-                    body => Proposition::Not(Box::new(body.clone())),
-                };
-                (
-                    Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
-                    Some(Proposition::ForAll {
-                        name: crate::kernel::BinderName::written(name),
-                        var: *var,
-                        sort: sort.clone(),
-                        body: Box::new(complement),
-                    }),
-                    PropositionIntroduction::Negation,
-                )
-            }
-            Proposition::Not(body) => (
-                Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
-                Some(body.as_ref().clone()),
-                PropositionIntroduction::Negation,
-            ),
-            Proposition::ConditionIs(condition, value)
-                if written_negation
-                    || condition_is_disequality(condition.native_compat(), *value) =>
-            {
-                let complement = match condition.native_compat() {
-                    crate::kernel::ConditionTerm::IntegerNotEqual(left, right) => {
-                        Proposition::condition_is(
-                            crate::kernel::ConditionTerm::IntegerEqual(left.clone(), right.clone()),
-                            *value,
-                        )
-                    }
-                    _ => Proposition::condition_is(condition.clone(), !*value),
-                };
-                (
-                    Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
-                    Some(complement),
-                    PropositionIntroduction::Negation,
                 )
             }
             other => {
@@ -1735,7 +1671,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         quantified: Proposition,
         argument: super::fact_reasoning::InstanceArgument,
-    ) -> Result<Self, PropositionCloseError> {
+    ) -> Result<(Self, Proposition), PropositionCloseError> {
         let (_, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
@@ -1753,20 +1689,23 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .then(|| conclusion.clone())
             .into_iter()
             .collect::<Vec<_>>();
-        let facts = facts.with_fact(conclusion);
-        Ok(Self::new(
-            ProofState {
-                termination: self.state.termination.clone(),
-                termination_root: self.state.termination_root,
-                locals: self.state.locals.clone(),
-                open_branches: self
-                    .state
-                    .open_branches
-                    .with_facts_at(self.focused_branch, facts),
-                checked_facts: Arc::new(added_facts.clone()),
-                added_facts: Arc::new(added_facts),
-            },
-            self.focused_branch,
+        let facts = facts.with_fact(conclusion.clone());
+        Ok((
+            Self::new(
+                ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
+                    locals: self.state.locals.clone(),
+                    open_branches: self
+                        .state
+                        .open_branches
+                        .with_facts_at(self.focused_branch, facts),
+                    checked_facts: Arc::new(added_facts.clone()),
+                    added_facts: Arc::new(added_facts),
+                },
+                self.focused_branch,
+            ),
+            conclusion,
         ))
     }
 
@@ -1851,9 +1790,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let first = facts
             .fresh_universal_witness(&reserved)
             .ok_or("match has exhausted fresh universal witness identities")?;
-        let mut variables = crate::kernel::KernelVariableGenerator::fresh_for(first.0, reserved);
+        // Every witness from `first` up is fresh: it is above each witness the
+        // state and the goal name.
+        let mut next = first.0;
         let cases = crate::kernel::api::algebraic_constructor_case_equations(value, &mut || {
-            variables.next()
+            let variable = Variable::witness(next);
+            next += 1;
+            variable
         })
         .ok_or("match requires a supported datatype with a nonempty constructor family")?;
         if order.len() != cases.len()
@@ -3013,25 +2956,6 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
     }
 }
 
-/// Whether `condition` at `value` states that two values differ: an equality
-/// at `false`, or an `Integer` disequality at `true`.
-fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: bool) -> bool {
-    use crate::kernel::ConditionTerm::*;
-    match condition {
-        IntegerNotEqual(..) => value,
-        Compare {
-            relation: crate::kernel::CompareRelation::Equal,
-            ..
-        }
-        | IntegerEqual(..)
-        | AlgebraicEqual(..)
-        | AddressEqual(..)
-        | PointerEqual(..)
-        | AddressOffsetEqual(..) => !value,
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3128,7 +3052,7 @@ mod tests {
     }
 
     #[test]
-    fn integer_choices_and_obtain_stay_in_the_witness_band() {
+    fn integer_choices_and_obtain_choose_witnesses() {
         let source = unused_integer_existential();
         let goal = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
         let proof = integer_choice_proof(
@@ -3136,7 +3060,11 @@ mod tests {
             PureFactStore::from_ordered(std::slice::from_ref(&source)),
             goal,
         );
-        for hint in [Variable(3_000_000), Variable((1 << 40) + 8)] {
+        for hint in [
+            Variable(3_000_000),
+            Variable((1 << 40) + 8),
+            Variable::witness(8),
+        ] {
             let (_, chosen) = proof
                 .check_integer_exists_choice(&source, hint)
                 .ok()
@@ -3148,24 +3076,24 @@ mod tests {
                 .expect("obtain");
             assert!(crate::kernel::ExecutionBudget::is_universal_witness_variable(opened[0].1));
         }
-        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING;
+        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT;
         let (_, last) = proof
-            .check_integer_exists_choice(&source, Variable(ceiling - 1))
+            .check_integer_exists_choice(&source, Variable::witness(ceiling - 1))
             .ok()
             .expect("last witness");
-        assert_eq!(last, Variable(ceiling - 1));
+        assert_eq!(last, Variable::witness(ceiling - 1));
         assert!(matches!(
-            proof.check_integer_exists_choice(&source, Variable(ceiling)),
+            proof.check_integer_exists_choice(&source, Variable::witness(ceiling)),
             Err(PropositionCloseError::IntegerChoiceFresheningExhausted)
         ));
         assert!(matches!(
-            proof.check_exists_bindings(&source, 1, Variable(ceiling)),
+            proof.check_exists_bindings(&source, 1, Variable::witness(ceiling)),
             Err(PropositionCloseError::IntegerChoiceFresheningExhausted)
         ));
         let exhausted = integer_choice_proof(
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source))
-                .with_reserved_variables([Variable(ceiling - 1)]),
+                .with_reserved_variables([Variable::witness(ceiling - 1)]),
             Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
         );
         assert!(matches!(
@@ -3230,16 +3158,16 @@ mod tests {
         assert!(opened.iter().all(|(_, var, _)| {
             crate::kernel::ExecutionBudget::is_universal_witness_variable(*var)
         }));
-        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING;
+        let ceiling = crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_LIMIT;
         assert!(matches!(
-            proof.check_exists_bindings(&source, 2, Variable(ceiling - 1)),
+            proof.check_exists_bindings(&source, 2, Variable::witness(ceiling - 1)),
             Err(PropositionCloseError::IntegerChoiceFresheningExhausted)
         ));
     }
 
     #[test]
     fn integer_choice_freshens_against_focused_goal_binding() {
-        let collision = Variable(crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE);
+        let collision = Variable::witness(0);
         let source = crate::kernel::quantifiers::test_exists(
             "source".into(),
             Variable(41),
@@ -3284,7 +3212,7 @@ mod tests {
 
     #[test]
     fn integer_choice_freshens_against_unused_ambient_binding() {
-        let ambient = Variable(crate::kernel::ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE);
+        let ambient = Variable::witness(0);
         let source = crate::kernel::quantifiers::test_exists(
             "source".into(),
             Variable(51),
@@ -3354,13 +3282,14 @@ mod tests {
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
             .freshen_int32_forall_body(bound, &body)
-            .expect("the witness range holds an identity for the first introduction");
+            .expect("a witness is left for the first introduction");
         assert!(
             crate::kernel::ExecutionBudget::is_universal_witness_variable(witness),
-            "{witness:?} is outside the reserved universal-witness range, so it is some other producer's identity"
+            "{witness:?} is not a witness, so it is some other producer's identity"
         );
-        assert!(
-            witness.0 >= crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING,
+        assert_ne!(
+            witness,
+            Variable(witness.0),
             "{witness:?} can still be a C identity or an execution identity"
         );
 
@@ -3401,10 +3330,10 @@ mod tests {
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
             .freshen_pointer_forall_body(bound, crate::kernel::ProgramType::Int32, &body)
-            .expect("the witness range holds an identity");
+            .expect("a witness is left");
         assert!(
             crate::kernel::ExecutionBudget::is_universal_witness_variable(witness),
-            "{witness:?} is outside the reserved universal-witness range"
+            "{witness:?} is not a witness"
         );
     }
 
@@ -3694,57 +3623,6 @@ mod tests {
             let wrong_body = Proposition::Implies(Box::new(truth.clone()), Box::new(falsehood));
             assert!(checked.with_implication_prefix(&wrong_body, 1).is_none());
         }
-    }
-
-    #[test]
-    fn negated_universal_intro_keeps_the_counterexample_domain() {
-        let variable = Variable(186);
-        let domain = Proposition::Predicate {
-            name: "defined".into(),
-            arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable).into())],
-        };
-        let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
-        let body = Proposition::And(Box::new(domain), Box::new(truth));
-        let goal = crate::kernel::quantifiers::test_exists(
-            "x".into(),
-            variable,
-            Sort::ProgramInt32,
-            body.clone(),
-        );
-        let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
-            ProofObject::root(
-                (),
-                ProofBranch::new(
-                    ProofObligation::Proposition(PropositionObligation::new(goal, ())),
-                    ProofBranchState {
-                        facts: PureFactStore::from_ordered(&[]),
-                        execution: None,
-                    },
-                ),
-            );
-        assert!(proof.apply_intro(|_, _, _| ()).is_err());
-        let next = proof
-            .apply_intro_opening(
-                |_, introduction, introduced| {
-                    assert!(matches!(introduction, PropositionIntroduction::Negation));
-                    assert_eq!(
-                        introduced,
-                        Some(&crate::kernel::quantifiers::test_forall(
-                            crate::kernel::BinderName::written("x"),
-                            variable,
-                            Sort::ProgramInt32,
-                            Proposition::Not(Box::new(body.clone()))
-                        ))
-                    );
-                },
-                true,
-            )
-            .unwrap_or_else(|_| panic!("written negation opens by contradiction"));
-        assert_eq!(
-            next.focused_proposition().unwrap().0.proposition(),
-            &Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true)
-        );
-        assert!(next.apply_normalize().is_err());
     }
 
     #[test]

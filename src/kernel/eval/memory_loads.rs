@@ -2785,7 +2785,7 @@ pub(crate) fn load_variable_registry_len() -> usize {
 /// Structural: no registry consultation, so the answer is deterministic
 /// and thread-agnostic.
 pub(crate) fn is_load_variable(variable: &Variable) -> bool {
-    LOAD_VARIABLE_RANGE.contains(&variable.0)
+    variable.is_ordinary() && LOAD_VARIABLE_RANGE.contains(&variable.0)
 }
 
 /// Whether a proposition is a load-variable defining equation
@@ -5380,6 +5380,90 @@ pub(crate) mod load_variable_fact_census {
     }
 }
 
+/// A test-only audit for the program-point migration (`roadmap/smart-tactics.md`,
+/// "Program-point memory migration"): while [`mixed_read_names::capture`]
+/// runs, each integer read the equality graph registers is filed by its
+/// memory state, address and kind, and a cell at one memory state that is
+/// named both by a selected program point and by its memory is reported.
+/// Those two terms denote one value, but no rule relates them, so a fact
+/// stated with one does not prove a goal stated with the other. Each report
+/// names the source line that built the memory-named read's bare point
+/// (`ProgramPoint::at`, and the read constructors that wrap it), which is the
+/// producer still to migrate. Two different points with equal memory are not
+/// reported: that is the precision the migration adds.
+#[cfg(test)]
+pub(crate) mod mixed_read_names {
+    use super::*;
+
+    type CellKey = ((u32, u32), Address, LoadKind);
+
+    #[derive(Default)]
+    struct Census {
+        point_named: std::collections::HashSet<CellKey>,
+        memory_named: std::collections::HashMap<CellKey, String>,
+        reported: std::collections::HashSet<CellKey>,
+        origins: std::collections::HashMap<(u32, u32), &'static std::panic::Location<'static>>,
+        reports: Vec<String>,
+    }
+
+    thread_local! {
+        static CENSUS: std::cell::RefCell<Option<Census>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Runs `run` and returns one line per cell named both ways.
+    pub(crate) fn capture(run: impl FnOnce()) -> Vec<String> {
+        let previous = CENSUS.with(|census| census.replace(Some(Census::default())));
+        run();
+        CENSUS
+            .with(|census| census.replace(previous))
+            .map(|census| census.reports)
+            .unwrap_or_default()
+    }
+
+    /// Files the source line that built a bare point at `memory`. The first
+    /// builder of a memory state is kept.
+    pub(crate) fn record_bare_point(
+        memory: &SharedMemory,
+        origin: &'static std::panic::Location<'static>,
+    ) {
+        CENSUS.with(|census| {
+            if let Some(census) = census.borrow_mut().as_mut() {
+                census.origins.entry(memory.arena_id()).or_insert(origin);
+            }
+        });
+    }
+
+    pub(crate) fn observe(point: &ProgramPoint, pointer: &Address, kind: LoadKind) {
+        CENSUS.with(|census| {
+            let mut census = census.borrow_mut();
+            let Some(census) = census.as_mut() else {
+                return;
+            };
+            let key = (point.shared_memory().arena_id(), pointer.clone(), kind);
+            if point.read_version_id().is_some() {
+                census.point_named.insert(key.clone());
+            } else {
+                let origin = census
+                    .origins
+                    .get(&key.0)
+                    .map_or_else(|| "unrecorded".to_string(), |origin| {
+                        format!("{}:{}", origin.file(), origin.line())
+                    });
+                census.memory_named.entry(key.clone()).or_insert(origin);
+            }
+            if census.point_named.contains(&key)
+                && let Some(origin) = census.memory_named.get(&key)
+                && census.reported.insert(key.clone())
+            {
+                let report = format!(
+                    "{kind:?} read of {pointer:?} named by a point and by its memory, built at {origin}"
+                );
+                census.reports.push(report);
+            }
+        });
+    }
+}
+
 /// A test-only audit of one read, one name (`docs/internals/raise-lower-principle.md`):
 /// while [`duplicate_read_names::capture`] runs, each load named at a new
 /// version of its cell is compared with the versions earlier loads of that
@@ -5941,6 +6025,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
     facts.push(defining);
 }
 
+#[cfg_attr(test, track_caller)]
 pub(in crate::kernel) fn symbolic_load_value(
     memory: &SymbolicMemory,
     pointer: &Address,
@@ -5957,6 +6042,7 @@ pub(in crate::kernel) fn symbolic_load_value(
 
 /// [`symbolic_load_value`] without recording the access width, for a caller
 /// that has already said how wide the access is.
+#[cfg_attr(test, track_caller)]
 pub(in crate::kernel) fn symbolic_load_value_unrecorded(
     memory: &SymbolicMemory,
     pointer: &Address,

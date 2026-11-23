@@ -8864,6 +8864,7 @@ impl SymbolicMemory {
             .is_some_and(|end| end <= block_size)
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Address) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8874,6 +8875,7 @@ impl SymbolicMemory {
 
     /// A signed byte read: the two's-complement conversion of the byte's
     /// one unsigned read ([`MachineTerm::memory_read`]).
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Address) -> ProgramValue {
         int8(MachineTerm::memory_read(
             crate::kernel::intern_memory(self.clone()),
@@ -8882,6 +8884,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Address) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8890,6 +8893,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Address) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8898,6 +8902,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Address) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8906,6 +8911,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Address) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8914,6 +8920,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::Int64(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8922,6 +8929,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::UInt64(MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
@@ -8930,6 +8938,7 @@ impl SymbolicMemory {
         ))
     }
 
+    #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_wide_integer_load(
         &self,
         pointer: &Address,
@@ -9234,10 +9243,128 @@ impl ExecutionState {
         identity: impl Into<InstanceRef>,
         children: &[String],
     ) -> Option<&ResourceInstance> {
-        if !children.is_empty() {
+        let identity = identity.into();
+        if children.is_empty() {
+            return self.resource_instance_fields(identity);
+        }
+        self.resources
+            .owned_instance(self.resource_path_identity(identity, children)?)
+    }
+
+    /// Resolve an exposed slot from the retained opening, independently of
+    /// whether the child is currently folded. This does not grant ownership.
+    pub(crate) fn resource_path_identity(
+        &self,
+        identity: impl Into<InstanceRef>,
+        children: &[String],
+    ) -> Option<InstanceId> {
+        let mut identity = match identity.into() {
+            InstanceRef::Body => self.resource_bindings.as_ref()?.body()?,
+            InstanceRef::Instance(identity) => self.bound_instance(identity)?,
+        };
+        for slot in children {
+            crate::instrumentation::record_deterministic_work(1);
+            if self.resources.owned_instance(identity).is_some() {
+                return None;
+            }
+            let InstanceConsumption::Opened { children, .. } =
+                self.resources.instance_consumption(identity)?
+            else {
+                return None;
+            };
+            identity = *children.get(slot)?;
+        }
+        Some(identity)
+    }
+
+    pub(crate) fn opened_resource_at_path(
+        &self,
+        identity: impl Into<InstanceRef>,
+        children: &[String],
+    ) -> Option<&ResourceInstance> {
+        let identity = self.resource_path_identity(identity, children)?;
+        match self.resources.instance_consumption(identity)? {
+            InstanceConsumption::Opened { instance, .. } => Some(instance),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn resource_witness(
+        &self,
+        identity: InstanceRef,
+        children: &[String],
+        name: &str,
+    ) -> Option<&ProgramValue> {
+        let identity = self.resource_path_identity(identity, children)?;
+        if self.resources.owned_instance(identity).is_some() {
             return None;
         }
-        self.resource_instance_fields(identity)
+        match self.resources.instance_consumption(identity)? {
+            InstanceConsumption::Opened { values, .. } => values.get(name),
+            _ => None,
+        }
+    }
+
+    /// Model reads may use an opening's captured fields. Resource operations
+    /// use the separate live-instance lookup.
+    pub(crate) fn projected_resource_field(
+        &self,
+        identity: InstanceRef,
+        children: &[String],
+        field_index: usize,
+        field_name: Option<&str>,
+    ) -> Option<(&ResourceInstance, usize)> {
+        if children.is_empty() {
+            return self
+                .resource_instance_fields(identity)
+                .or_else(|| self.opened_resource_at_path(identity, &[]))
+                .map(|instance| (instance, field_index));
+        }
+        let mut identity = self.resource_path_identity(identity, &[])?;
+        let field = field_name?;
+        for (index, slot) in children.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            let held = self
+                .resources
+                .owned_instance(identity)
+                .or_else(|| self.instance_field_scope.owned_instance(identity));
+            match held
+                .is_none()
+                .then(|| self.resources.instance_consumption(identity))
+                .flatten()
+            {
+                Some(InstanceConsumption::Opened { children, .. }) => {
+                    identity = *children.get(slot)?;
+                }
+                _ => {
+                    let instance = held?;
+                    let field = children[index..]
+                        .iter()
+                        .map(String::as_str)
+                        .chain(std::iter::once(field))
+                        .collect::<Vec<_>>()
+                        .join(".");
+                    let index = instance
+                        .schema()
+                        .fields()
+                        .iter()
+                        .position(|(name, _)| *name == field)?;
+                    return Some((instance, index));
+                }
+            }
+        }
+        let instance = self.resources.owned_instance(identity).or_else(|| {
+            match self.resources.instance_consumption(identity)? {
+                InstanceConsumption::Opened { instance, .. } => Some(instance.as_ref()),
+                _ => None,
+            }
+        })?;
+        let index = instance
+            .schema()
+            .fields()
+            .iter()
+            .position(|(name, _)| name == field)?;
+        Some((instance, index))
     }
     /// The caller instance a call-local instance binder names.
     fn bound_instance(&self, identity: InstanceId) -> Option<InstanceId> {

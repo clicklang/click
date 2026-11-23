@@ -86,7 +86,8 @@ impl SourceContext {
             ),
             Self::PostExecution => matches!(
                 tactic,
-                ProofTactic::FoldResource(_)
+                ProofTactic::UserTactic(_)
+                    | ProofTactic::FoldResource(_)
                     | ProofTactic::UnfoldResource(_)
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)

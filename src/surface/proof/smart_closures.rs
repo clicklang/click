@@ -3476,12 +3476,14 @@ impl<'a> Proof<'a> {
             None
         };
         if let Some(surface) = recorded {
-            let lowered = self.lower_surface_goal(surface, "recorded tactic requirement")?;
+            let lowered = self
+                .lower_surface_goal(surface, "recorded tactic requirement")
+                .map_err(|error| error.with_kind(crate::surface::ClickErrorKind::Internal))?;
             if !lowered_covers_recorded_requirement(&lowered, requirement) {
                 return Err(self.step_error(format!(
                     "a recorded tactic requirement does not round-trip (report this as a bug)\nSurface form `{}`",
                     crate::surface::printing::source_click_proposition(surface),
-                )));
+                )).with_kind(crate::surface::ClickErrorKind::Internal));
             }
             return Ok(Some(RequirementSpelling {
                 surface: surface.clone(),
@@ -3542,16 +3544,17 @@ impl<'a> Proof<'a> {
                 self.step_error(
                     "a generated prerequisite has no Surface form (report this as a bug)",
                 )
-                .with_unresolved_requirement(
-                    &ProofObligation::verification_condition(requirement.proposition.clone()),
-                )
+                .with_unresolved_requirement(&ProofObligation::verification_condition(
+                    requirement.proposition.clone(),
+                ))
+                .with_kind(crate::surface::ClickErrorKind::Internal)
             })?;
             let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
             if !lowered_states_requirement(&lowered, requirement) {
                 return Err(self.step_error(format!(
                     "a proof definedness requirement does not round-trip (report this as a bug)\nSurface form `{}`",
                     crate::surface::printing::source_click_proposition(&surface),
-                )));
+                )).with_kind(crate::surface::ClickErrorKind::Internal));
             }
             return Ok(Some(RequirementSpelling { surface }));
         }
@@ -4758,7 +4761,11 @@ fn source_backed_call_requirement_surface(
                     crate::surface::lowering::InstanceRename {
                         name: binding.instance().to_string(),
                         identity: binding.binder_identity().instance()?.into(),
-                        target_identity: Some(binding.identity().instance()?),
+                        target_identity: Some(
+                            binding
+                                .resolve_identity(&execution.core.state)?
+                                .instance()?,
+                        ),
                     },
                 ))
             })
@@ -5357,6 +5364,7 @@ mod synthesized_literal_tests {
             introductions: Default::default(),
             call_site: None,
             assertion_condition: None,
+            statement_safety: false,
             surface: None,
         };
         let less_equal = |left, right| ConditionTerm::Compare {

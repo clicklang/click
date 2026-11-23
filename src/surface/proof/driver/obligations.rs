@@ -5,15 +5,29 @@ use crate::surface::proof::driver::ProofDriver;
 /// The first requirement the implicit closer could not prepare or prove.
 pub(in crate::surface::proof) struct MissedObligation {
     index: usize,
-    searched: bool,
+    reason: RequirementMiss,
+}
+
+enum RequirementMiss {
+    Unprepared,
+    SafetyRaise,
+    SafetyOpen(String),
+    Search,
 }
 
 impl MissedObligation {
     fn classify(&self, error: ClickError) -> ClickError {
-        if self.searched {
-            error.with_proof_refusal(crate::surface::ProofRefusal::ImplicitStatementSearch)
-        } else {
-            error
+        match &self.reason {
+            RequirementMiss::Unprepared => error,
+            RequirementMiss::SafetyRaise => error.with_safety_preparation_error(
+                "Click could not raise the generated statement safety obligation",
+            ),
+            RequirementMiss::SafetyOpen(cause) => error.with_safety_preparation_error(&format!(
+                "Click could not open the generated statement safety obligation: {cause}"
+            )),
+            RequirementMiss::Search => {
+                error.with_proof_refusal(crate::surface::ProofRefusal::ImplicitStatementSearch)
+            }
         }
     }
 }
@@ -140,7 +154,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         ) -> Result<Proof<'a>, ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
-        if !matches!(step, ProofStep::FoldResource(_)) {
+        if !matches!(step, ProofStep::FoldResource(_) | ProofStep::UserTactic(_)) {
             driver_proof.require_execution_frontier("a step's obligation proofs")?;
         }
         let this = if matches!(step, ProofStep::FoldResource(_)) {
@@ -268,7 +282,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     let result = if implicit_solve_disabled() {
                         Err(MissedObligation {
                             index: 0,
-                            searched: false,
+                            reason: RequirementMiss::Unprepared,
                         })
                     } else {
                         current
@@ -401,8 +415,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 );
                 for leaf in &leaves {
                     if let Some(next) =
-                        crate::kernel::search::ProofSearch::retain_statement_order_bounds(
-                            &frontier, leaf,
+                        crate::kernel::search::ProofSearch::retain_signed_order_bounds(
+                            &frontier, leaf, 3,
                         )
                     {
                         frontier = next;
@@ -470,24 +484,44 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let mut entries = Vec::with_capacity(requirements.len());
         for (index, requirement) in requirements.iter().enumerate() {
             let Some(spelling) = current.requirement_surface(requirement, step)? else {
+                check_verification_deadline()?;
                 return Ok(Err(MissedObligation {
                     index,
-                    searched: false,
+                    reason: if requirement.statement_safety {
+                        RequirementMiss::SafetyRaise
+                    } else {
+                        RequirementMiss::Unprepared
+                    },
                 }));
             };
             let surface = spelling.surface.clone();
             current.debug_assert_spelling_relowers(requirement, &surface);
             let checkpoint = current.checkpoint();
-            let Ok(have) = current.driver().open_have(surface.clone()) else {
-                return Ok(Err(MissedObligation {
-                    index,
-                    searched: false,
-                }));
+            let have = match current.driver().open_have(surface.clone()) {
+                Ok(have) => have,
+                Err(error)
+                    if error.kind() != crate::surface::ClickErrorKind::Proof
+                        || crate::instrumentation::exceeded_verification_limit_context()
+                            .is_some() =>
+                {
+                    return Err(error);
+                }
+                Err(error) => {
+                    check_verification_deadline()?;
+                    return Ok(Err(MissedObligation {
+                        index,
+                        reason: if requirement.statement_safety {
+                            RequirementMiss::SafetyOpen(error.raw_summary().to_owned())
+                        } else {
+                            RequirementMiss::Unprepared
+                        },
+                    }));
+                }
             };
             let Some(closed) = have.driver().try_solve_closure()? else {
                 return Ok(Err(MissedObligation {
                     index,
-                    searched: true,
+                    reason: RequirementMiss::Search,
                 }));
             };
             current = closed.join()?;

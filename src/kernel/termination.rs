@@ -759,8 +759,6 @@ fn call_passes_witness_child(
     arm: &StructuralResourceArm,
     call_measure_arguments: &[ProgramExpression],
 ) -> bool {
-    const PARAMETER_VARIABLE_BASE: u64 = 4_200_000_000;
-    const WITNESS_VARIABLE_BASE: u64 = 4_250_000_000;
     if arm.witness_children.is_empty() {
         return false;
     }
@@ -773,7 +771,7 @@ fn call_passes_witness_child(
         .assume_entry_clause_spans();
     let mut parameter_state = ExecutionState::new();
     for (index, parameter) in function.parameters().iter().enumerate() {
-        let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);
+        let variable = Variable::produced(Producer::TerminationParameter, index as u64);
         let value = if parameter.program_type().is_pointer() {
             ProgramValue::typed_pointer(
                 Address {
@@ -817,7 +815,10 @@ fn call_passes_witness_child(
             );
         }
         for (index, witness) in definition.witnesses().iter().enumerate() {
-            let pointer = Address::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
+            let pointer = Address::symbolic(Variable::produced(
+                Producer::TerminationWitness,
+                index as u64,
+            ));
             body_state.locals.set_typed(
                 witness.name().to_string(),
                 ProgramValue::typed_pointer(pointer, witness.program_type()),

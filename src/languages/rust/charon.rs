@@ -3987,6 +3987,7 @@ pub(super) fn decode_crate(
         temporaries::bind_copied_call_arguments(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
+        temporaries::fold_constructor_reborrows(&mut locals, &mut blocks, &temporaries);
         temporaries::fold_returned_slice_lengths(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_copied_enum_scrutinees(
             &mut locals,

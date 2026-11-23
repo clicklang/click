@@ -62,6 +62,18 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
         return true;
     }
     if let Proposition::ConditionIs(condition, value) = goal {
+        if let Some(root) = condition.root()
+            && let KernelTermNode::IntegerCompare {
+                operator:
+                    operator @ (IntegerComparisonOperator::Equal | IntegerComparisonOperator::NotEqual),
+                arguments: [left, right],
+            } = root.node()
+            && let (KernelTermNode::Fold(left), KernelTermNode::Fold(right)) =
+                (left.node(), right.node())
+            && super::fact_keys::retained_folds_alpha_equivalent(left, right) == Some(true)
+        {
+            return *value == (*operator == IntegerComparisonOperator::Equal);
+        }
         match condition.native_compat() {
             ConditionTerm::IntegerEqual(left, right) if left == right => return *value,
             ConditionTerm::IntegerNotEqual(left, right) if left == right => return !*value,

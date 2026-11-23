@@ -4149,10 +4149,12 @@ fn charon_option_take_moves_out_and_leaves_none() {
 
 const BOX_FIELD_SIDECAR: &str = include_str!("../design/charon-trial/box-fields/holder.click");
 
-// A struct's `Option<Box<Cell>>` field is owned through a resource over its
-// allocation: `self.slot.take()` moves the box out and leaves `None`, and
-// assigning the field drops the old value in place. False claims fail, and a
-// resource that does not own the allocation cannot free the taken box.
+// A struct's `Option<Box<Cell>>` field is owned through its type resource,
+// with no proof: `self.slot.take()` moves the box out and leaves `None`, and
+// assigning the field drops the old value in place. The closer splits on
+// whether the field held a box at entry where a claim reads its contents
+// there. False claims fail, and a field the function does not own cannot be
+// taken.
 #[test]
 fn charon_box_fields_take_and_assign_through_self() {
     let p = Project::from_fixture("design/charon-trial/box-fields");
@@ -4162,24 +4164,24 @@ fn charon_box_fields_take_and_assign_through_self() {
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         (
-            "Option::Some(v) => v, Option::None => 0u32 });",
-            "Option::Some(v) => 0u32, Option::None => 0u32 });",
+            "implies result == old(self.slot.value);",
+            "implies result == 0u32;",
             "box_fields::Holder::read.ensures_0",
         ),
         (
             "ensures self.slot == 0;",
             "ensures self.slot == old(self.slot);",
-            "box_fields::Holder::read.ensures_1",
+            "box_fields::Holder::read.ensures_2",
         ),
         (
-            "ensures after.value == Option<u32>::Some(x);",
-            "ensures after.value == Option<u32>::None;",
-            "box_fields::Holder::put",
+            "ensures self.slot.value == x;",
+            "ensures self.slot.value == 0u32;",
+            "box_fields::Holder::put.ensures_1",
         ),
         (
-            "            owns allocation(p, sizeof(box_fields::Cell));\n",
-            "",
-            "missing resource fact `owns allocation(old(self.slot), 4)`",
+            "    fn read(&mut self) -> u32 {\n        owns self.slot;\n",
+            "    fn read(&mut self) -> u32 {\n",
+            "missing resource fact `views self.slot`",
         ),
     ] {
         assert!(BOX_FIELD_SIDECAR.contains(before), "{before}");

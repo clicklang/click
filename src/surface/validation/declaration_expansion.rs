@@ -7,6 +7,7 @@ mod tests;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct DeclaredResourceInfo {
     fields: std::sync::Arc<BTreeMap<String, (usize, ClickType)>>,
+    witnesses: std::sync::Arc<BTreeMap<String, InterfaceType>>,
     field_schema: Option<crate::kernel::ResourceFieldSchema>,
     parameter_types: Vec<InterfaceType>,
     resource_parameter_families: Vec<String>,
@@ -908,6 +909,9 @@ fn expand_declared_resource_clauses_with_rules(
                     fields: std::sync::Arc::new(definition.fields().iter().enumerate()
                         .map(|(index, field)| (field.name().to_string(), (index, field.click_type().clone())))
                         .collect()),
+                    witnesses: std::sync::Arc::new(definition.composite_body().into_iter()
+                        .flat_map(|body| body.witnesses())
+                        .map(|witness| (witness.name().to_owned(), witness.interface_type())).collect()),
                     field_schema: field_environment.as_ref().map(|environment|
                         crate::surface::lowering::resolve_resource_field_schema(definition, environment)
                     ).transpose()?,
@@ -961,6 +965,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: vec![InterfaceType::Int32Pointer, InterfaceType::Int32],
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         });
@@ -974,6 +979,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         },
@@ -988,6 +994,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         },
@@ -1002,6 +1009,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         },
@@ -1017,6 +1025,7 @@ fn expand_declared_resource_clauses_with_rules(
                 resource_parameter_families: Vec::new(),
                 parameter_types: vec![InterfaceType::VoidPointer],
                 kind: ResourceKind::Token,
+                witnesses: Default::default(),
                 child_slots: Default::default(),
                 arm_child_slots: Default::default(),
             },
@@ -1032,6 +1041,7 @@ fn expand_declared_resource_clauses_with_rules(
             resource_parameter_families: Vec::new(),
             parameter_types: Vec::new(),
             kind: ResourceKind::Token,
+            witnesses: Default::default(),
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
         },
@@ -1530,31 +1540,52 @@ fn expand_declared_resource_proof_of(
             ProofTactic::Intro => Some(None),
             ProofTactic::IntroAs(name) => Some(Some(SurfaceBinder::from(name))),
             ProofTactic::IntroBinder(name) => Some(Some(name.clone())),
+            ProofTactic::IntroBlock { binder, .. } => Some(binder.clone()),
             _ => None,
         };
-        match expand_declared_resource_tactic(tactic, resource_definitions) {
-            Ok(tactic) => expanded.push(tactic),
+        let scoped = matches!(tactic, ProofTactic::IntroBlock { .. });
+        let introduces = introduced.is_some();
+        let (inner_goal, binding) =
+            match introduced.and_then(|rename| goal.take().map(|goal| (rename, goal))) {
+                Some((
+                    rename,
+                    ClickProposition::ForAll {
+                        click_type,
+                        name,
+                        body,
+                        ..
+                    },
+                )) => (
+                    Some(*body),
+                    Some(constructors.bind(&rename.unwrap_or(name), Some(click_type))),
+                ),
+                Some((_, ClickProposition::Implies(_, consequent))) => (Some(*consequent), None),
+                _ => (None, None),
+            };
+        let tactic = match tactic {
+            ProofTactic::IntroBlock { binder, body } => {
+                expand_declared_intro_block(binder, body, inner_goal.as_ref(), resource_definitions)
+            }
+            tactic => expand_declared_resource_tactic(tactic, resource_definitions),
+        };
+        if let Some(binding) = binding {
+            if scoped {
+                constructors.restore(binding);
+            } else {
+                bound.push(binding);
+            }
+        }
+        match tactic {
+            Ok(tactic) => {
+                if introduces && !scoped {
+                    goal = inner_goal;
+                }
+                expanded.push(tactic);
+            }
             Err(error) => {
                 result = Err(error);
                 break;
             }
-        }
-        if let Some(rename) = introduced {
-            goal = match goal.take() {
-                Some(ClickProposition::ForAll {
-                    click_type,
-                    name,
-                    written_name,
-                    body,
-                }) => {
-                    let _ = written_name;
-                    let name = rename.unwrap_or(name);
-                    bound.push(constructors.bind(&name, Some(click_type)));
-                    Some(*body)
-                }
-                Some(ClickProposition::Implies(_, consequent)) => Some(*consequent),
-                _ => None,
-            };
         }
     }
     if let Some(first) = bound.first() {
@@ -1635,7 +1666,8 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Iterated(_)) => {
             expand_declared_resource_tactic_with_resources(tactic, resource_definitions)
         }
-        tactic @ (ProofTactic::Have(_)
+        tactic @ (ProofTactic::IntroBlock { .. }
+        | ProofTactic::Have(_)
         | ProofTactic::Open(_)
         | ProofTactic::If(_)
         | ProofTactic::Match(_)
@@ -1752,6 +1784,7 @@ fn expand_declared_resource_tactic_with_plain_scripts(
                             | ProofTactic::Intro
                             | ProofTactic::IntroAs(_)
                             | ProofTactic::IntroBinder(_)
+                            | ProofTactic::IntroBlock { .. }
                     )
                 }) {
                     let SourceProof::Script(tactics) = expand_declared_resource_proof_of(
@@ -1924,10 +1957,13 @@ fn expand_declared_resource_tactic_with_expressions(
         }
         ProofTactic::Instantiate {
             quantified,
-            argument,
+            arguments,
         } => Ok(ProofTactic::Instantiate {
             quantified: expand_declared_resource_proposition(quantified, resource_definitions)?,
-            argument: expand_declared_resource_expression(argument, resource_definitions)?,
+            arguments: arguments
+                .into_iter()
+                .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
+                .collect::<Result<_, _>>()?,
         }),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
@@ -2051,11 +2087,30 @@ fn expand_declared_resource_script(
     Ok(expanded)
 }
 
+fn expand_declared_intro_block(
+    binder: Option<SurfaceBinder>,
+    body: Vec<ProofTactic>,
+    goal: Option<&ClickProposition>,
+    resource_definitions: &DeclaredResourceScope,
+) -> Result<ProofTactic, ClickError> {
+    let alternatives = resource_definitions.begin_alternatives();
+    let proof = resource_definitions.arm(&alternatives, || {
+        expand_declared_resource_proof_of(SourceProof::Script(body), goal, resource_definitions)
+    })?;
+    let SourceProof::Script(body) = proof else {
+        unreachable!("expansion retains proof scripts");
+    };
+    Ok(ProofTactic::IntroBlock { binder, body })
+}
+
 fn expand_declared_resource_tactic_with_nested_proofs(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
     match tactic {
+        ProofTactic::IntroBlock { binder, body } => {
+            expand_declared_intro_block(binder, body, None, resource_definitions)
+        }
         ProofTactic::Have(have) => {
             let proposition =
                 expand_declared_resource_proposition(have.proposition, resource_definitions)?;
@@ -2345,7 +2400,7 @@ fn expand_declared_resource_clause(
             if !construction {
                 resource_definitions.refuse_ambiguous(binding.instance()?, &binding.name)?;
             }
-            let parent = if construction {
+            let mut parent = if construction {
                 name.clone()
             } else {
                 resource_definitions
@@ -2355,7 +2410,25 @@ fn expand_declared_resource_clause(
             // Unfold syntax can still carry the parser's provisional parent
             // family for a child. Keep the family resolved above, including
             // after an explicit child fold removed its slot annotation.
-            resource_definitions.record_instance(binding.instance()?, &parent, construction);
+            if binding.children.is_empty() {
+                resource_definitions.record_instance(binding.instance()?, &parent, construction);
+            } else if binding
+                .child_bindings
+                .as_ref()
+                .is_some_and(|children| !children.is_empty())
+            {
+                for slot in &binding.children {
+                    parent = resource_definitions
+                        .get(&parent)
+                        .and_then(|info| info.child_slots.get(slot))
+                        .and_then(Clone::clone)
+                        .ok_or_else(|| {
+                            ClickError::new(format!(
+                                "resource path has no unambiguous child slot `{slot}`"
+                            ))
+                        })?;
+                }
+            }
             if let Some(children) = binding.child_bindings.as_ref() {
                 let slots = resource_definitions
                     .get(&parent)
@@ -2389,6 +2462,12 @@ fn expand_declared_resource_clause(
                             "resource `{parent}` has no child slot or field `{slot}`"
                         )));
                     };
+                    if construction && child.contains('.') {
+                        // The path's root is the parent it is opened from,
+                        // not this argument's identity. The checked fold
+                        // resolves the path and checks the actual child.
+                        continue;
+                    }
                     // A slot whose resource differs between the parent's
                     // arms owns the one in the arm an enclosing proof
                     // `match` selects.
@@ -3267,8 +3346,7 @@ fn expand_declared_resource_expression_node(
                 .ok_or_else(|| {
                     ClickError::new(format!("unknown resource `{}`", access.resource_name))
                 })?;
-            // A hidden record retains child fields under their structural
-            // dotted path. Select that slot without opening the child.
+            let mut member = None;
             if !access.children.is_empty() {
                 let path = access
                     .children
@@ -3277,19 +3355,41 @@ fn expand_declared_resource_expression_node(
                     .chain(std::iter::once(access.field.as_str()))
                     .collect::<Vec<_>>()
                     .join(".");
-                if info.fields.contains_key(&path) {
-                    access.field = path;
-                    access.children.clear();
-                }
+                member = info.fields.get(&path).cloned();
             }
-            let (index, field) = info.fields.get(&access.field).ok_or_else(|| {
+            if member.is_none() {
+                let mut info = info;
+                for slot in &access.children {
+                    let family = info
+                        .child_slots
+                        .get(slot)
+                        .and_then(Option::as_ref)
+                        .ok_or_else(|| {
+                            ClickError::new(format!(
+                                "resource path has no unambiguous child slot `{slot}`"
+                            ))
+                        })?;
+                    info = resource_definitions
+                        .get(family)
+                        .ok_or_else(|| ClickError::new(format!("unknown resource `{family}`")))?;
+                }
+                member = info.fields.get(&access.field).cloned().or_else(|| {
+                    info.witnesses.get(&access.field).map(|ty| {
+                        (
+                            crate::kernel::ResourceFieldProjection::WITNESS,
+                            ClickType::Program(*ty),
+                        )
+                    })
+                });
+            }
+            let (index, field) = member.ok_or_else(|| {
                 ClickError::new(format!(
                     "resource `{}` has no field `{}`",
                     access.resource_name, access.field
                 ))
             })?;
-            access.field_index = *index;
-            access.click_type = Some(field.clone());
+            access.field_index = index;
+            access.click_type = Some(field);
             Ok(ContractExpression::ResourceField(access))
         }
         ContractExpression::ResourceCount(resource) => {

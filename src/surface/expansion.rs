@@ -1458,7 +1458,7 @@ fn unparseable_expansion_error_for_file(
     parse_error: ClickError,
     file: Option<&ClickFile>,
 ) -> ClickError {
-    if parse_error.kind() == super::ClickErrorKind::Limit {
+    if parse_error.verification_stopped() {
         return parse_error;
     }
     let fragment: String = replacement.chars().take(400).collect();
@@ -4964,6 +4964,9 @@ fn proof_tactic_entries(
                             .zip(all.arms.iter().map(|arm| arm.tactics.as_slice()))
                             .collect::<Vec<_>>(),
                     ),
+                    FlatTactic::Written(ProofTactic::IntroBlock { body, .. }) if !smart => Some(
+                        vec![(tokens.body_block(&item.tokens, "intro")?, body.as_slice())],
+                    ),
                     _ => None,
                 };
                 if let Some(arms) = arms {
@@ -5129,6 +5132,7 @@ fn block_tactic_entries(
             continue;
         }
         let arms: Option<Vec<&[ProofTactic]>> = match tactic {
+            ProofTactic::IntroBlock { body, .. } => Some(vec![body]),
             ProofTactic::If(proof_if) => Some(vec![&proof_if.then_tactics, &proof_if.else_tactics]),
             ProofTactic::Cases(cases) => {
                 Some(cases.arms().iter().map(|arm| arm.tactics()).collect())
@@ -5232,7 +5236,8 @@ fn smart_container_alias_entries(
             }
             SourceProof::Default => {}
         },
-        ProofTactic::CloseInvariantsBy(script)
+        ProofTactic::IntroBlock { body: script, .. }
+        | ProofTactic::CloseInvariantsBy(script)
         | ProofTactic::StepProved {
             proof: StepProof::By(script),
             ..
@@ -5720,7 +5725,7 @@ fn offset_at_position(source: &str, line: usize, column: usize) -> Result<usize,
 }
 
 /// The written arm blocks, as `(open, close)` token pairs, of a proof `if`,
-/// `cases`, or `all` tactic; `None` for any other tactic.
+/// `cases`, `all`, or `intro` tactic; `None` for any other tactic.
 fn structured_tactic_arm_blocks(
     tokens: &ProofTokens<'_>,
     range: Range<usize>,
@@ -5728,6 +5733,7 @@ fn structured_tactic_arm_blocks(
     Ok(match tokens[range.start].text.as_str() {
         "if" => Some(tokens.two_arms(&range, "if")?.to_vec()),
         "cases" | "all" => Some(tokens.cases_arms(&range)?),
+        "intro" => Some(vec![tokens.body_block(&range, "intro")?]),
         _ => None,
     })
 }

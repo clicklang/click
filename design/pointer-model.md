@@ -41,12 +41,24 @@ pointer loaded from memory, is opaque. It is named by where the pointer came
 from, as `ExternalObject` and `LoadedPointer` names are today. Two opaque
 provenances may or may not be the same allocation.
 
-### Types and qualifiers belong to accesses, not values
+### Types belong to terms, not values
 
-A pointer's type, `const` and `volatile` are properties of the expression or
-access that uses it, not of the value. `(int *)p` and `(void *)p` are the
-same pointer value as `p`. Click's identity includes them today
-(`Pointer::identity`); this model removes them.
+In C every expression and object has a type (C11 6.5p1, 6.2.5): `p` has type
+`int *`, `(char *)p` has type `char *`, and `*p` reads an `int` because of
+`p`'s type. The value a pointer expression denotes does not carry that type:
+converting between object pointer types and back yields a pointer that
+compares equal to the original (6.3.2.3p7), and TS 6010 and Cerberus model a
+pointer value as an address and a provenance. Rust's `p as *const U` likewise
+changes the static type and keeps the value.
+
+So a kernel term keeps its type, as a C expression does, and the pointer
+value it denotes is the address and provenance. `(int *)p` and `(void *)p`
+are different terms denoting the same pointer value as `p`: a cast changes
+the term's type, not the value, and `*p` takes its access type from `p`'s
+type. Pointer equality and identity compare values, so they ignore the type;
+an equality used to replace one term by another keeps the replaced term's
+type. `const` and `volatile` qualify the lvalue type of an access, which each
+access states (step 3a). Step 3c removed the type from `Pointer::identity`.
 
 One conversion has a meaning of its own in C: converting to a character
 pointer forms a view of the object's bytes (C11 6.3.2.3p7). In C provenance
@@ -143,7 +155,7 @@ and the raise-lower audit reports it. No new spelling is invented for it.
 | identity: address, provenance, bounds, bounds owner, type, `volatile` | address and provenance; C provenance includes the array object |
 | `same_object`: same address object, lowered to a conjunction | `same_allocation`: same provenance, one kernel fact |
 | a read's provenance set by each caller, sometimes another read (the version-point/exact mix) | provenance derived from the read |
-| the raiser guesses a read's pointer type (`int32 *`) | no type to guess |
+| the raiser guesses a read's pointer type (`int32 *`) | the term's type, recorded where the read is made |
 | `pointer<T>(address:, provenance:, bounds:)` proposed for raising | not needed; Rust `with_addr` and the C cast when supported |
 
 ## Plan
@@ -155,9 +167,10 @@ Each step is one PR, measured with the gate and the raise-lower audit.
    it a single kernel fact. Migrate its uses and the reference. Independent of
    the other steps.
 3. **Types and qualifiers off the pointer value.** Identity becomes address
-   and provenance. Move type and qualifiers to accesses, and fold subobject
-   bounds into C provenance. This is the largest kernel change: equality, the
-   equality graph, effective types and the raiser all change.
+   and provenance. Qualifiers move to accesses, the type stays on the term,
+   and subobject bounds fold into C provenance. This is the largest kernel
+   change: equality, the equality graph, effective types and the raiser all
+   change.
    - 3a, step 1: every C load and store states the volatility of its lvalue's
      type (C11 6.7.3p7), which the frontend computes as it computes pointee
      `const`. The kernel still also reads the pointer value's flag. Over the
@@ -175,6 +188,26 @@ Each step is one PR, measured with the gate and the raise-lower audit.
      refusal on a pointer value's `const` fires. Writing a `const` object
      stays undefined behaviour that the storage's read-only status refuses
      (C11 6.7.3p6). Declarations keep their qualifiers.
+   - 3c: the type leaves pointer identity and the keys that mirror it.
+     Comparisons no longer require equal types or retype both sides first,
+     and a rewrite by a pointer equality keeps the replaced occurrence's
+     type. A cast still builds a term of the target type.
+   - 3b, step 1: a pointer's array object is one value, `ArrayObject`:
+     the allocation, an opaque array object (named by where the pointer
+     came from, or unnamed for a view that may not use that name's
+     coverage), or a member, with the opaque array object it was selected
+     from. It replaces the separate `bounds`, `bounds_known` and
+     `bounds_owner` fields of `Pointer`, `SharedPointer` and `LValue`, and
+     rules out bounds on an opaque array object. Identity is unchanged.
+   - The e-graph already keeps the two parts as the model needs: a pointer
+     node joins a provenance node and an array-object node, `same_allocation`
+     merges only provenance, and pointer equality merges both. No change.
+   - 3b, step 2: comparisons that read only part of a provenance compare it
+     whole (`Pointer::same_provenance_as`). Known value equality required
+     equal allocations, bounds and addresses but not the array object, so a
+     `same_allocation` fact and equal addresses made a parameter equal to a
+     block pointer though it may point into a member.
+   - 3b, remaining: memory ranges' carriers.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

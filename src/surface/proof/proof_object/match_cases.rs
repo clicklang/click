@@ -364,7 +364,7 @@ impl<'a> Proof<'a> {
                             unreachable!()
                         };
                         ContractExpression::AlgebraicVariable {
-                            name: name.clone().into(), binder_index: ((variable.0 - 4_000_000) / 65_536) as usize,
+                            name: name.clone().into(), binder_index: variable.algebraic_binder_index().expect("a case binder is an algebraic binder") as usize,
                             algebraic_type: AlgebraicTypeApplication {
                                 rigid: value.algebraic_type.rigid, name: value.algebraic_type.name.clone(),
                                 arguments: value.algebraic_type.arguments.iter().map(super::super::pure_theorems::click_type_from_algebraic_value_type).collect::<Result<_,_>>()?,
@@ -456,10 +456,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("a `match` after execution requires a C execution proof"));
         };
         let case_indices = self.match_case_indices(source, value, execution.core.state.locals())?;
-        let first = next_variable
-            .max(self.state.locals().next_choice_variable)
-            .max(4_000_000);
-        let first = 4_000_000 + (first - 4_000_000).div_ceil(65_536) * 65_536;
+        let first = next_variable.max(self.state.locals().next_choice_variable);
         let (partition, _, next) = execution
             .core
             .algebraic_case_partition(
@@ -469,7 +466,6 @@ impl<'a> Proof<'a> {
                 context.function.composite_resource_definitions(),
                 None,
                 first,
-                65_536,
             )
             .ok_or_else(|| {
                 self.step_error("a `match` after execution requires a supported ADT scrutinee")
@@ -517,12 +513,30 @@ impl<'a> Proof<'a> {
         // resources. Other algebraic expressions remain ordinary matches.
         let matched_resource_field = match &expression {
             ContractExpression::ResourceField(access) => {
-                Some(crate::kernel::ResourceFieldProjection {
-                    identity: access.identity,
-                    children: access.children.clone(),
-                    field_index: access.field_index,
-                    at_entry: false,
-                })
+                let state = &execution.core.state;
+                let name = access.projected_name();
+                if let Some((instance, field_index)) = state.projected_resource_field(
+                    access.identity,
+                    &access.children,
+                    access.field_index,
+                    name.as_deref(),
+                ) {
+                    Some(crate::kernel::ResourceFieldProjection {
+                        identity: instance.identity().into(),
+                        children: Vec::new(),
+                        field_name: None,
+                        field_index,
+                        at_entry: false,
+                    })
+                } else {
+                    Some(crate::kernel::ResourceFieldProjection {
+                        identity: access.identity,
+                        children: access.children.clone(),
+                        field_name: name,
+                        field_index: access.field_index,
+                        at_entry: false,
+                    })
+                }
             }
             _ => None,
         };
@@ -574,10 +588,9 @@ impl<'a> Proof<'a> {
         };
         let case_indices =
             self.match_case_indices(source, &value, execution.core.state.locals())?;
-        // AlgebraicVariable's existing lowering assigns one aligned namespace
-        // slot per binder. The kernel, not this spelling, checks freshness.
-        let first = self.state.locals().next_choice_variable.max(4_000_000);
-        let first = 4_000_000 + (first - 4_000_000).div_ceil(65_536) * 65_536;
+        // Each case binder is an algebraic binder index. The kernel, not this
+        // spelling, checks freshness.
+        let first = self.state.locals().next_choice_variable;
         let (partition, _, next) = execution
             .core
             .algebraic_case_partition(
@@ -587,7 +600,6 @@ impl<'a> Proof<'a> {
                 context.function.composite_resource_definitions(),
                 matched_resource_field.as_ref(),
                 first,
-                65_536,
             )
             .ok_or_else(|| {
                 self.step_error(

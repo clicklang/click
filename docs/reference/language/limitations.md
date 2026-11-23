@@ -29,6 +29,16 @@ for example, sequence literals require scalar elements, so deeply
 nested bracket literals are checked for safe parsing and rendering but are not
 valid theorem values.
 
+A conjunction is narrower than its 512-operand parser bound when its later
+conjuncts owe evaluation domains. The right side of `and` is read only where
+its left side holds, so each domain it owes is guarded by every conjunct
+before it, and those guards grow with the square of the chain's length. A
+conjunction whose right side owes a domain under more than 64 earlier
+conjuncts is refused as unsupported rather than lowered slowly
+(`mdtests/a_conjunction_guarding_domains_past_the_supported_length_is_refused.md`).
+Separate `requires` clauses or `have` steps are not one chain, though each
+then owes its domain from the clauses before it rather than under a guard.
+
 ## Supported C is incomplete
 
 Click does not parse general C. [Language coverage](../coverage.md) summarizes

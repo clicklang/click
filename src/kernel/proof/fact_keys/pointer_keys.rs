@@ -326,18 +326,12 @@ pub(super) fn alpha_address<const ALLOW_LOADS: bool>(
 #[allow(dead_code)]
 pub(super) fn recorded_value(pointer: &SharedPointer) -> MemoryErasedPointerKey {
     let p = pointer.node();
-    let q = p.qualifiers.as_ref();
-    let known = q.is_some_and(|q| q.bounds_known);
+    let known = p.array.is_known();
     MemoryErasedPointerKey {
-        program_type: p.program_type,
         address: state_address(&p.address),
         provenance: state_address(&p.provenance),
-        bounds_owner: if known {
-            None
-        } else {
-            p.bounds_owner.as_ref().map(state_address)
-        },
-        bounds: q.and_then(|q| q.bounds.as_ref()).map(|e| {
+        bounds_owner: p.array.opaque_owner().map(state_address),
+        bounds: p.array.bounds().map(|e| {
             (
                 state_address(&e.start),
                 memory_operands::operand(V::Shared(&e.width)),
@@ -355,22 +349,15 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
 ) -> Option<AlphaProgramValueKey> {
     alpha_work_checkpoint(bindings, 1)?;
     let p = pointer.node();
-    let q = p.qualifiers.as_ref();
-    let known = q.is_some_and(|q| q.bounds_known);
     Some(AlphaProgramValueKey::Pointer {
-        program_type: p.program_type,
         pointer: alpha_address::<ALLOW_LOADS>(&p.address, bindings, next)?,
         provenance: alpha_address::<ALLOW_LOADS>(&p.provenance, bindings, next)?,
-        bounds_known: known,
-        bounds_owner: if known {
-            None
-        } else {
-            match &p.bounds_owner {
-                Some(p) => Some(alpha_address::<ALLOW_LOADS>(p, bindings, next)?),
-                None => None,
-            }
+        bounds_known: p.array.is_known(),
+        bounds_owner: match p.array.opaque_owner() {
+            Some(p) => Some(alpha_address::<ALLOW_LOADS>(p, bindings, next)?),
+            None => None,
         },
-        bounds: match q.and_then(|q| q.bounds.as_ref()) {
+        bounds: match p.array.bounds() {
             Some(e) => Some((
                 alpha_address::<ALLOW_LOADS>(&e.start, bindings, next)?,
                 alpha_machine_key::<ALLOW_LOADS>(V::Shared(&e.width), bindings, next)?,

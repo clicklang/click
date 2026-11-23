@@ -4835,6 +4835,10 @@ id = "library.theorem.separation::viewable_restrict"
 path = "reference/library/index.md#separationviewable_restrict"
 
 [[item]]
+id = "library.theorem.separation::viewable_offset_nonnull"
+path = "reference/library/index.md#separationviewable_offset_nonnull"
+
+[[item]]
 id = "language.read-event-result"
 path = "reference/language/index.md#at"
 

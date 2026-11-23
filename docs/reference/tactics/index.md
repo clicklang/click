@@ -470,7 +470,12 @@ This solving is smart and may miss; for example, it can prove a callee's
 `requires a > 0` from `requires x == 5 or x == 7`.
 
 Arithmetic evaluation still decides some safety conditions before generating
-an obligation; migrating those decisions is separate remaining work. An emitted
+an obligation; migrating those decisions is separate remaining work. Pointer
+subtraction and relational pointer comparison owe C's same-object
+precondition this way: when the context does not decide it, the step emits
+`same_allocation(left, right)` as an obligation at the operation, named by its
+C rule, rather than a path of undefined behavior
+(`mdtests/an_undecided_pointer_subtraction_owes_same_allocation.md`). An emitted
 definedness requirement states the defined path's condition, such as
 `s >= 0 and s < 32` for `x << s`.
 
@@ -520,8 +525,10 @@ a refusal there is not a bug.
 
 **Failure, checking, and tools:**
 
-A prerequisite the context cannot prove, or an unsupported transition, fails at
-that statement with that diagnostic. A refusal printed as `refused
+A direct safety refusal names the C operation, such as a read of an
+uninitialized local. A documented modeling limit reports `unsupported`.
+If Click generates a safety obligation but cannot prepare it for the
+implicit closer, it reports an internal error. A refusal printed as `refused
 by: the implicit closer that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with
@@ -1127,7 +1134,7 @@ step is still checked.
 | `let name = intro()` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
-| `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
+| `instantiate(F, value, ...)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
 | `apply(fact)` | simple | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
@@ -1145,9 +1152,9 @@ step is still checked.
 parses only under `click verify --allow-sorry` and closes its goal without
 checking it. See [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole).
 
-When `intro` must freshen a universal binder, it uses the reserved logical-witness
-range. Existential choices use that same range, separate from C execution,
-load and binder identities. Issued witnesses remain reserved even when their
+When `intro` must freshen a universal binder, it uses a logical witness, a
+variable kind of its own. Existential choices use witnesses too, separate from
+C execution, load and binder identities. Issued witnesses remain reserved even when their
 instantiated body does not mention them, so later introductions and choices
 cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
@@ -1686,15 +1693,20 @@ decided guard and otherwise bounds both arms. Its arithmetic uses only the
 operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
-builds a constructor directly from the bound literal `int32` fields. The check
-compares the result fields with the corresponding written payloads.
+builds a constructor from bound fields, literal fields, or captured variables.
+Literals and variables can be machine integers, `Integer`s, or `Bool`s.
+Algebraic fields can be variables or constructors with no fields. The check
+follows nested matches on written constructors and keeps the selected bindings
+in scope. Machine fields retain their exact width and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
 visits only the immediate fields and uses their literal values.
 
 Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
-and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
+and `0 | x == x` at a native word's own format, in either operand order. A bitwise
+OR is unequal to zero when either operand is a same-width nonzero literal. The
+rule also applies to the exact `Integer` observation of that word. Intrinsic
 alignment of a null, heap, global or static address reads only that address's
 block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
@@ -2167,14 +2179,15 @@ normalization steps with explicit premises.
 
 A disequality goal `a != b` (or `not (a == b)`) over machine or `Integer`
 operands, which no certificate family reads directly, is proved by refuting
-`a == b`: `intro()` adds the equality and leaves `false`, which arithmetic
-proves from the listed premises and the equality. `k < j` gives `k != j`
+`a == b`. In the equal arm of a proof `if`, arithmetic proves `false` from
+the listed premises and the equality. The other arm has the disequality as a
+fact. `k < j` gives `k != j`
 ([`arithmetic_proves_a_disequality_by_refuting_its_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_proves_a_disequality_by_refuting_its_equality.md));
 `k <= j` does not, and the refusal is the one for the `false` goal
 ([`a_disequality_its_premises_allow_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_disequality_its_premises_allow_is_refused.md)).
 `solve` proves `a < b`, or else `b < a`, by selected-premise arithmetic,
 which a linear refutation of `a == b` always leaves, and refutes the equality
-from it; its expansion writes that `have`, `intro()` and the certificate.
+from it. Expansion writes that `have` and the two arms of the proof `if`.
 
 Arithmetic reads no disequality premise, so a disequality goal that only
 another disequality gives is proved by cases. When every other strategy
@@ -2522,12 +2535,18 @@ charges the affected expression.
 
 ### Introducing a binder or premise
 
-**Form:** `intro()`
+**Forms:** `intro() { ... }` or `intro(name) { ... }` for a named universal binder.
 
-**Core.** For an implication, negation, or universal goal, add the antecedent or
-named binder and continue with the body goal. A universal's variable keeps the
-name its quantifier wrote; if that name is already in scope it shadows the older
-one, which stays readable as `outer.name`. That includes a range quantifier's
+**Core.** For an implication, the block assumes the antecedent and proves
+the consequent. For a universal, it fixes an arbitrary value and proves
+the body at that value. The closing brace discharges the original goal and
+ends the scope of the premise or binder. In a grouped contract proof the
+next tactic can then work on the next claim. The flat forms `intro();` and
+`let name = intro();` are also accepted.
+
+With `intro()`, a universal's variable keeps the name its quantifier wrote.
+An earlier binding of the same name stays readable as `outer.name`. That
+includes a range quantifier's
 variable in a `have` stated between C statements
 ([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)). A known C/C++ record binding named `outer` keeps ordinary `outer.field`
 access in a proof; it is not parsed as the shadowed-binder qualifier.
@@ -2548,20 +2567,11 @@ introduction:
   `k + 1 > 0`, or a path fact. It is introduced as a fact while the written
   goal stays focused, so a written `forall (k: int32) { k + 1 > 0 and k >= 0
   implies k >= 0 }` takes three `intro()`s: binder, guard, antecedent.
-- `not P` whose `P` lowers to a connective or quantifier, such as
-  `not (A and B)` or `not (forall (x: int32) { ... })`: `P` becomes a fact and
-  the goal is `false`, closed by `contradiction`.
-- `not P` for a comparison or `bool` `P`, written as `not`, such as
-  `not (n == 1)` or `not (x >= y)`, though lowering states it as one
-  comparison: `P` becomes a fact and the goal is `false`.
-- A disequality `a != b`, the negation of `a == b`, in every family:
-  `a == b` becomes a fact and the goal is `false`.
-
 **Outside it**, with what to write instead:
 
-- An order comparison not written as `not`, such as `x < y`: `intro` does not
-  turn it into a refutation of `x >= y`. Prove it directly, or split with a
-  proof `if` or `cases` on the complement.
+- A negation or disequality: use a proof `if` on the denied condition. Refute
+  that condition in the first arm and use the complementary fact in the
+  second arm.
 - A conjunction: `all`. A disjunction: prove one disjunct with `have` and
   close with `known()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
@@ -2571,10 +2581,10 @@ introduction:
 **Failure, checking, and tools:**
 
 A refusal names the goal's shape, such as "got a condition fact" or "got a
-conjunction". Click checks the one introduction rule; expansion is unchanged,
-and profiling charges one leaf.
+conjunction". Click checks the introduction and the proof of its body. Expansion preserves
+the written block and expands any smart steps inside it.
 
-**Checked examples:** [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`lowering_guard_before_written_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/lowering_guard_before_written_implication.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
+**Checked examples:** [`scoped_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/scoped_intro.md), [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`lowering_guard_before_written_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/lowering_guard_before_written_implication.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
 
 ### Naming an introduced binder
 
@@ -2717,11 +2727,14 @@ Expansion is unchanged, and profiling charges one leaf.
 
 ### Universal instantiation
 
-**Form:** `instantiate(F, value)`
+**Form:** `instantiate(F, value, ...)`
 
-**Specialized.** Substitute one value into an established universal fact and
-add its entire body, including any implication guards. No guard is proved or
-assumed by this operation.
+**Specialized.** Supply a nonempty prefix of values for an established
+universal fact, in binder order. For example, `instantiate(F, x, n)`
+specializes `forall (i: int32) { forall (j: uint64) { B } }` at `x` and
+`n`. Each substitution adds its resulting fact, including any implication
+guards. Supplying fewer values leaves a universal available. Each
+argument must have a remaining outer universal binder.
 
 **Accepts:**
 
@@ -2733,10 +2746,9 @@ assumed by this operation.
   expression such as `to_integer(x)` for `Integer`, and a correctly typed
   pointer for a pointer binder.
 
-The added fact is `B[value/k]`. For a range quantifier it retains the range
-condition. Nested quantifiers remain quantified and can be instantiated one
-binder at a time. The selected value is captured at the operation's state;
-`old` or `at` in the body does not reinterpret that argument at another state.
+A range quantifier retains the range condition. The selected values are
+captured at the operation's program point. Any `old` or `at` in the body
+reads its own state while using those captured values.
 
 For `forall (k: int32) { 0 <= k implies f(k) >= 0 }`, instantiating at `x`
 adds `0 <= x implies f(x) >= 0`. If `0 <= x` is already an exact fact,
@@ -2753,10 +2765,11 @@ list is rejected; write ordinary guard proofs instead.
 
 An unavailable source names the missing quantified fact. A non-universal or
 wrongly typed argument is refused locally. Missing guards do not cause an
-instantiation error: they remain in its resulting implication. If the whole
-instance is the goal, the step closes it; otherwise `known()` can close a
-consequence made available by propagation. Expansion emits bare instantiation
-and retains any needed guard proofs as ordinary `have` blocks. Checking does
+instantiation error: they remain in its resulting implication. After all
+arguments have checked, the step closes the goal if it added that exact
+fact. Use `known()` to close a consequence made available by propagation.
+Expansion retains the argument list and any needed guard proofs as ordinary
+`have` blocks. Checking does
 indexed source lookup and substitution over the selected body, without scans
 of unrelated facts.
 
@@ -3019,10 +3032,8 @@ before its declaration. Use `apply(ih(m))` at the top level and inside nested
 
 An unsupported parameter type, changed goal, repeated induction, or unproved
 signed nonnegative domain fails with a message naming the case. `induct` in
-a C function proof is refused with the generic "no checked proof driver accepts this proof
-script's shape". Click opens the
-induction rule; expansion is unchanged, and profiling charges the structural
-setup.
+a C execution proof reports a `tactic error`. Click opens the induction
+rule during checking and profiling charges the structural setup.
 
 **Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
 [`an_induction_hypothesis_applies_inside_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_a_have.md),
@@ -3282,6 +3293,9 @@ path out, including a function return. For an ordinary named instance,
 `with(c) { ... }` selects the same instance as `unfold(c)`. The scope must
 restore its original identity and field values. If the proof already restored
 that exact instance with `fold(c)`, the scope closes without another fold.
+For a named parent, `with(r)` exposes its children under paths such as
+`r.child`. The closing fold takes those same children back. Nested `with`
+blocks can use a child path directly.
 
 Use a family call for unnamed resources, including population members and
 viewed resources. Opening and restoring a population member preserves its
@@ -3723,6 +3737,13 @@ can mix these labels whether the resource is selected by name or by a family
 call. Witness bindings need a live execution frontier before function exit.
 See [`unfold_binds_witness_and_child.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_binds_witness_and_child.md).
 
+After `unfold(r)`, a child from slot `child` is held under `r.child`. An alias
+such as `let { child: c } = unfold(r)` names that same instance. Resource
+tactics on the path require the exposed child to be held. A model field or
+`where` witness of the open parent, such as `r.tag` or `r.base`, reads the
+value captured at the opening. A field read after refolding reads the new
+folded instance's field. See [the checked child path example](https://github.com/clicklang/click/blob/master/mdtests/exposed_child_paths.md).
+
 **Accepts** a declared resource with a body that the current state holds
 directly, owned or viewed, in a C function proof (at the execution frontier
 before exit, or at a function outcome after the C has returned) or in a `tactic`'s
@@ -3777,6 +3798,9 @@ consume the contained resource facts, and produce the named composite resource.
 Pure facts remain available. Refolding the same instance reuses its opening's
 `let ... where` witness values and checks their facts at the current state.
 This also applies to the closing fold of a `with` block.
+`fold(r)` supplies the exact children retained from `unfold(r)`. Each must
+be held in folded form when the parent is restored. To supply a replacement,
+use the explicit construction map and name the replacement in its slot.
 Folding a definition whose body views memory makes
 the head hold that borrow open until the head is unfolded or consumed. At a
 function outcome, `fold` also [creates an ordinary abstract
@@ -3971,8 +3995,8 @@ guards are false. Proofs should avoid relying on this behavior.
 **Form:** `name(args, { binder: instance })`
 
 **Specialized.** Write it to apply a `tactic` the project declares, such as a
-resource reshaping lemma. Apply the user-defined tactic `name` at the current
-execution frontier, before the function exits: bind each of its supplied
+resource reshaping lemma. Apply the user-defined tactic `name` at a running
+frontier or on a finished return outcome. Bind each of its supplied
 resource binders to an instance the proof holds and prove its `requires` at the
 call site. The application consumes its inputs, binds its outputs under the
 names of a `let { binder: name }` pattern, and adds its `ensures`.
@@ -3980,18 +4004,19 @@ names of a `let { binder: name }` pattern, and adds its `ensures`.
 No C runs and memory is unchanged, so every fact about a cell survives.
 
 Argument evaluation and instantiated contract requirements are ordinary proof
-obligations at the caller's frontier. Argument obligations come first. Use
+obligations at the selected state before the tactic changes its resources.
+Argument obligations come first. Use
 `by { ... }` for one obligation or `{ requires P by ...; }` to name obligations.
 Omitted proofs use implicit `solve()`, and expansion retains the proofs before
 the tactic's resource effects are applied.
 See [the checked call examples](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_requires_obligations.md).
 
-**Accepts**, at the execution frontier of a C function or `tactic` proof
-before exit, an application of a `tactic` declared earlier in the module (or
+**Accepts** an application of a `tactic` declared earlier in the module (or
 the tactic itself, for recursion), when:
 
-- There is one argument per parameter: any C-valued expression over the
-  frontier (`n + 1`, constants), and the literal `0` at a pointer parameter.
+- There is one argument per parameter. Use a C-valued expression over the
+  current state, including `result` at a return outcome, or the literal `0`
+  at a pointer parameter.
 - The map names every instance binder the tactic's `consumes`, `owns`, or
   `views` clauses declare, each mapped to an instance of the binder's
   resource that the proof holds. The map is left out only when the tactic
@@ -4010,18 +4035,17 @@ It consumes the mapped consumed instances, adds the produced ones under the
 
 - An instance an earlier step consumed, including an earlier application:
   it is gone; bind the instance that step produced.
-- Inside `have ... by { ... }`, or after the function exit: apply it at the
-  frontier before the `have` or before execution reaches the exit.
+- Inside `have ... by { ... }`: apply it in the surrounding function proof.
 
 **Failure, checking, and tools:**
 
 A missing requirement is refused by name, as are a map entry naming an unknown
-binder or an instance of the wrong resource, and an application after function
-exit. Click applies the tactic's certified contract once. Expansion retains
+binder, an instance of the wrong resource, or a thrown outcome. Click applies
+the tactic's certified contract once. Expansion retains
 the call and its obligation proofs, and profiling charges the checked
 application and its proof steps.
 
-**Checked examples:** [`user_tactic_reshapes_owned_resources.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_reshapes_owned_resources.md), [`user_tactic_application_owes_its_requirements.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_application_owes_its_requirements.md), [`user_tactic_binder_map_checks_the_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_binder_map_checks_the_resource.md), [`user_tactic_consumes_its_inputs.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_consumes_its_inputs.md), [`user_tactic_after_exit_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_after_exit_is_refused.md), [`user_tactic_accepts_null_pointer_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_accepts_null_pointer_arguments.md), [`user_tactic_recursion_converts_a_list.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_recursion_converts_a_list.md)
+**Checked examples:** [`user_tactic_reshapes_owned_resources.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_reshapes_owned_resources.md), [`user_tactic_application_owes_its_requirements.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_application_owes_its_requirements.md), [`user_tactic_binder_map_checks_the_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_binder_map_checks_the_resource.md), [`user_tactic_consumes_its_inputs.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_consumes_its_inputs.md), [`user_tactic_at_return.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_at_return.md), [`user_tactic_accepts_null_pointer_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_accepts_null_pointer_arguments.md), [`user_tactic_recursion_converts_a_list.md`](https://github.com/clicklang/click/blob/master/mdtests/user_tactic_recursion_converts_a_list.md)
 
 ### Observing resources
 
@@ -4079,8 +4103,8 @@ decided:
 Write `observe(c)` for a named folded instance you own. Its own fields supply the
 body arguments and its immediate memory permissions become read-only views
 supported by the instance. `observe(at(point, c))` selects the saved instance
-and requires it to still be held and folded. Use `unfold` to bind named children
-or prove facts that need their fields.
+and requires it to still be held and folded. Use `unfold` to expose named
+children, then `observe(r.child)` to observe an exposed child.
 
 **Outside it**, with what to write instead:
 

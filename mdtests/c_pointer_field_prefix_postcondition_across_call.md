@@ -64,12 +64,15 @@ int32 vector_push(struct vector* owner, int32 value) {
         have k < old(owner->len);
         // The append writes at the old length, beyond this prefix element.
         have old(owner->len) != k by {
-            intro();
-            have not (k < old(owner->len)) by {
-                rewrite(old(owner->len), k);
+            if old(owner->len) == k {
+                have not (k < old(owner->len)) by {
+                    rewrite(old(owner->len), k);
+                    known();
+                }
+                contradiction(k < old(owner->len));
+            } else {
                 known();
             }
-            contradiction(k < old(owner->len));
         }
         have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
             apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));

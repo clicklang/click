@@ -2458,6 +2458,86 @@ fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {
     assert!(duplicates.is_empty(), "{duplicates:?}");
 }
 
+/// One cell, one kind of name, over the whole mdtest corpus: every C mdtest
+/// is verified under [`crate::kernel::mixed_read_names::capture`], which
+/// lists each integer read the equality graph saw named both by a selected
+/// program point and by its memory, with the line that built the
+/// memory-named one. It prints the list and its count rather than failing:
+/// the program-point migration (`roadmap/smart-tactics.md`) is to drive it to
+/// zero. Nightly: it verifies the corpus once more, serially.
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: verifies every C mdtest again under the mixed-read-name audit"]
+fn every_mdtest_reports_its_mixed_read_names() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    let only = std::env::var("CLICK_MIXED_READ_NAMES_ONLY").ok();
+    let mut paths = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "md"))
+        .filter(|path| {
+            only.as_deref().is_none_or(|only| {
+                path.file_stem()
+                    .is_some_and(|stem| stem.to_string_lossy() == only)
+            })
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut total = 0;
+    let mut by_origin = std::collections::BTreeMap::<String, usize>::new();
+    for path in paths {
+        let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+        let Ok(mdtest) = crate::cli::read_mdtest(&path) else {
+            continue;
+        };
+        let (Some(click), Ok(inputs)) = (
+            mdtest.click_source.as_deref(),
+            crate::cli::prepare_mdtest_inputs(&mdtest),
+        ) else {
+            continue;
+        };
+        let crate::cli::VerificationInput::Bundle(sources) = &inputs else {
+            continue;
+        };
+        let sources = sources
+            .iter()
+            .map(|(file, source)| (file.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let project = crate::cli::read_mdtest_project_if_needed(&path, click, &inputs)
+            .ok()
+            .flatten();
+        // Each fixture on a thread of its own with the harness's stack, as
+        // the mdtest harness runs it; the census is per thread.
+        let reports = std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .stack_size(64 * 1024 * 1024)
+                .spawn_scoped(scope, || {
+                    crate::kernel::mixed_read_names::capture(|| {
+                        let _ = match &project {
+                            Some(project) => {
+                                crate::surface::verify_c_project(project, &sources).map(|_| ())
+                            }
+                            None => verify_c_sources(click, &sources).map(|_| ()),
+                        };
+                    })
+                })
+                .expect("a verifier thread")
+                .join()
+                .unwrap_or_default()
+        });
+        for report in &reports {
+            let origin = report.rsplit("built at ").next().unwrap_or("").to_string();
+            *by_origin.entry(origin).or_default() += 1;
+            eprintln!("{name}: {report}");
+        }
+        total += reports.len();
+    }
+    eprintln!("mixed read names: {total}; by the line that built the memory-named read:");
+    for (origin, count) in &by_origin {
+        eprintln!("  {count:6} {origin}");
+    }
+}
+
 /// One read, one name, over the whole mdtest corpus: every C mdtest is
 /// verified under [`crate::kernel::duplicate_read_names::capture`], and no
 /// read may be named twice for a version the assumption-free load equality

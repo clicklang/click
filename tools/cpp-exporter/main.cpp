@@ -1155,20 +1155,21 @@ private:
     const bool function_pointer =
         !parameter->getType().hasQualifiers() &&
         function_pointer_prototype(parameter->getType()) != nullptr;
-    const auto *pointed_record = record_pointer_target(parameter->getType());
+    const bool record_pointer =
+        (pointer != nullptr && !parameter->getType().hasQualifiers() &&
+         !pointer->getPointeeType().hasQualifiers() &&
+         layout_free_referent(pointer->getPointeeType()) != nullptr) ||
+        record_pointer_target(parameter->getType()) != nullptr;
     if (!int_reference && record_reference == nullptr && !native_pointer &&
         !by_value_bool && !by_value_integer && !trivial_record_value &&
-        !function_pointer && pointed_record == nullptr) {
+        !function_pointer && !record_pointer) {
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
            "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, a native element pointer or void pointer (possibly const pointee), or a "
            "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
-           "a mutable pointer to a simple record, or a pointer to a noexcept function");
-      return std::nullopt;
-    }
-    if (pointed_record != nullptr && !remember_record(pointed_record)) {
+           "a mutable pointer to a simple record or layout-free record, or a pointer to a noexcept function");
       return std::nullopt;
     }
     if (trivial_record_value && !remember_record(by_value_record)) {
@@ -1408,6 +1409,22 @@ private:
     return Json(std::move(result));
   }
 
+  std::optional<Json> lower_referent(clang::QualType type,
+                                    clang::SourceLocation location,
+                                    const clang::TypedefNameDecl *source_alias) {
+    if (const auto *record = layout_free_referent(type)) {
+      if (!remember_layout_free_record(record))
+        return std::nullopt;
+      llvm::json::Object nominal;
+      nominal["kind"] = "record";
+      nominal["declaration_id"] = declaration_id(record);
+      nominal["name"] = record_name(record);
+      nominal["is_const"] = type.isConstQualified();
+      return Json(std::move(nominal));
+    }
+    return lower_type(type, location, source_alias);
+  }
+
   std::optional<Json>
   lower_type(clang::QualType type, clang::SourceLocation location,
              const clang::TypedefNameDecl *source_alias = nullptr) {
@@ -1419,20 +1436,7 @@ private:
       return Json(std::move(result));
     }
     if (const auto *reference = type->getAs<clang::LValueReferenceType>()) {
-      clang::QualType referent = reference->getPointeeType();
-      std::optional<Json> pointee;
-      if (const auto *record = layout_free_referent(referent)) {
-        if (!remember_layout_free_record(record))
-          return std::nullopt;
-        llvm::json::Object nominal;
-        nominal["kind"] = "record";
-        nominal["declaration_id"] = declaration_id(record);
-        nominal["name"] = record_name(record);
-        nominal["is_const"] = referent.isConstQualified();
-        pointee.emplace(std::move(nominal));
-      } else {
-        pointee = lower_type(referent, location, source_alias);
-      }
+      auto pointee = lower_referent(reference->getPointeeType(), location, source_alias);
       if (!pointee) {
         return std::nullopt;
       }
@@ -1457,7 +1461,7 @@ private:
     if (function_pointer_prototype(type) != nullptr)
       return lower_function_pointer_type(type, location);
     if (const auto *pointer = type->getAs<clang::PointerType>()) {
-      auto pointee = lower_type(pointer->getPointeeType(), location);
+      auto pointee = lower_referent(pointer->getPointeeType(), location, nullptr);
       if (!pointee) {
         return std::nullopt;
       }
@@ -5570,7 +5574,7 @@ private:
       return false;
     }
     if (is_layout_free_library_record(definition)) {
-      fail(definition->getLocation(), "layout-free C++ records are only supported through references");
+      fail(definition->getLocation(), "layout-free C++ records have no modeled object storage for this operation");
       return false;
     }
     if (context_.getLangOpts().CXXExceptions &&

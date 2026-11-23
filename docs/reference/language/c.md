@@ -570,8 +570,6 @@ cast, a `return`, and a call argument: `unsigned char c = -56` holds 200,
 `kernel` mode
 (`mdtests/an_out_of_range_integer_constant_converts_modulo_its_destination_width.md`,
 `mdtests/a_negative_char_constant_is_unsigned_on_the_kernel_target.md`).
-A narrowing of a value that is not an integer constant expression keeps the
-checked range rule of the scalar casts below.
 
 The character pointer types `char *`, `signed char *`, and `unsigned char *`
 convert to one another by an explicit one-level cast, which C11 6.3.2.3p7 and
@@ -1289,7 +1287,11 @@ Supported C surface includes:
 - pointer subtraction with unsigned 32-bit and signed/unsigned 64-bit offsets,
   using checked signed displacement rather than unsigned negation. Displacements
   outside the modeled signed 64-bit range are rejected; object-bound checks
-  still apply. GNU `void*` addition and subtraction use one-byte steps. See
+  still apply. Two pointers formed on different terms, such as two
+  reads of one field across a store, subtract to the signed difference of
+  their addresses in elements, whatever the facts say; a proof relates it to
+  their offsets
+  (`mdtests/a_pointer_subtraction_across_a_preserved_field_read_verifies.md`). GNU `void*` addition and subtraction use one-byte steps. See
   `mdtests/c_unsigned_pointer_subtract.md` and
   `mdtests/c_unsigned_pointer_subtract_rejects_wrap.md`.
 - `__builtin_offsetof(struct_type, member)` for a direct member of a complete
@@ -1388,9 +1390,9 @@ assignments, and returns.
 `uint32` equality compares 32-bit values directly and its ordered comparisons
 use unsigned order. Its addition, subtraction, and multiplication wrap modulo
 2^32; division and remainder use unsigned operands. Its shifts preserve the
-promoted left operand's type, with logical right shift for `uint32`. Assigning or
-returning an `int32` into `int8`, `int16`, `uint8`, or `uint16`, including an explicit
-cast, requires Click to prove the corresponding target range. Conditional
+promoted left operand's type, with logical right shift for `uint32`. Narrowing
+an `int32` to `int8`, `int16`, `uint8`, or `uint16` uses the integer conversion
+described above in casts, assignments, and returns. Conditional
 expressions first convert arithmetic arms to their common C type, then evaluate
 only the selected branch.
 
@@ -2207,6 +2209,15 @@ running the proof of the contracts' pure conditions. The target contract must
 supply the resources the source requires and cover the writes the source permits.
 The resources the source returns, together with any resources it leaves
 untouched, must supply the resources the target promises to return.
+
+Framing preserves the resources the source leaves untouched. Explicit
+refinement can frame memory, composites, tokens, and owned instances of
+supported resources. Owned memory and resource instances must have unit
+quantity for this check. Other resource families, access modes, or quantities
+needed for framing report `unsupported` and name the first blocking resource
+or family. Extending this check requires using the resource family's checked
+split and composition rules, then proving that the source returns enough
+resources to reconstruct the target's promises with the untouched frame.
 
 A named contract can also take values that are fixed where it is attached to
 a function, declared in its body as `let name: type;`, with a scalar type and

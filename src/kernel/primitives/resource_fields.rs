@@ -462,6 +462,7 @@ mod tests {
             projection: ResourceFieldProjection {
                 identity: InstanceId::from_variable(Variable(10993301)).into(),
                 children: vec![],
+                field_name: None,
                 field_index: 0,
                 at_entry: false,
             },

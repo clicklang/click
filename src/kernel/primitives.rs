@@ -94,7 +94,8 @@ pub(crate) use kernel_term::{
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub(crate) use kernel_term::{
-    KernelAddressOffset, KernelMatchArm, SharedAddress, SharedAddressOffset, SharedPointer,
+    KernelAddressOffset, KernelArrayObject, KernelMatchArm, SharedAddress, SharedAddressOffset,
+    SharedPointer,
 };
 pub use kernel_term::{
     KernelFloatType, KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm,
@@ -212,10 +213,15 @@ pub(crate) const HEAP_ALLOCATION_ALIGNMENT: u64 = 16;
 /// constructor below; a kernel-allocated fresh variable carries a private
 /// origin as well, so even a caller-constructed variable with the same number
 /// cannot capture it. Names in source text are separate from this identity.
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Variable {
-    number: (u64,),
+    // The origin comes first, so variables order by producer: ordinary
+    // variables keep their numeric order ahead of every other origin, and
+    // each other origin is one contiguous run after them. A query for the
+    // greatest ordinary variable must bound itself by
+    // `Variable::FIRST_NON_ORDINARY` rather than read a set's last element.
     origin: VariableOrigin,
+    number: (u64,),
 }
 
 /// A quantifier's bound variable. Only closing a body over a free variable
@@ -257,6 +263,56 @@ enum VariableOrigin {
     /// arm. No other producer mints one, so an occurrence in an arm body is a
     /// bound occurrence of that arm's binder.
     MatchBinder,
+    /// A specification fold's accumulator or item, one per written binder
+    /// name and role, numbered in allocation order.
+    SpecFoldBinder,
+    /// A free variable `intro` or a logical choice introduced, standing for
+    /// an arbitrary value. Numbered from the witnesses its proof state
+    /// already reserves.
+    Witness,
+    /// A variable a named producer mints, numbered by that producer.
+    Produced(Producer),
+}
+
+/// A producer of free variables that numbers its own variables. Two
+/// producers never share a variable, whatever their numbers, so a producer
+/// numbers from zero by whatever rule suits it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum Producer {
+    /// A parameter of the function whose recursive call a termination check
+    /// compares, by parameter index.
+    TerminationParameter,
+    /// A `let` witness of a structural measure's definition, by index.
+    TerminationWitness,
+    /// A pointer argument of a pure theorem, by parameter index.
+    PointerArgument,
+    /// An Integer binder of a resource `match` arm, numbered once for a
+    /// function's whole resource environment.
+    ResourceIntegerBinding,
+    /// A variable Surface lowering binds while it lowers a quantifier, fold
+    /// or `match` in a fixed-state proof proposition, numbered per lowering.
+    ProofQuantifier,
+    /// The same while lowering a function's annotations.
+    FunctionQuantifier,
+    /// The same while lowering a requirement or contract summary.
+    RequirementQuantifier,
+    /// The same while lowering a resource body, condition or fold-read
+    /// definition.
+    ResourceQuantifier,
+    /// A Surface algebraic binder, by its binder index: a written algebraic
+    /// quantifier or `let`, or a constructor field a proof `match` splits on.
+    /// The index is how the binder raises back to Surface.
+    AlgebraicBinder,
+}
+
+// Hash the number before the origin, as before the fields were reordered for
+// `Ord`: hashing does not need the order, and keeping it leaves every hashed
+// collection of variables laid out as it was.
+impl std::hash::Hash for Variable {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.number.hash(state);
+        self.origin.hash(state);
+    }
 }
 
 impl std::fmt::Debug for Variable {
@@ -272,6 +328,15 @@ impl std::fmt::Debug for Variable {
             VariableOrigin::MatchBinder => {
                 formatter.debug_tuple("MatchBinder").field(&self.0).finish()
             }
+            VariableOrigin::Witness => formatter.debug_tuple("Witness").field(&self.0).finish(),
+            VariableOrigin::Produced(producer) => formatter
+                .debug_tuple(&format!("{producer:?}"))
+                .field(&self.0)
+                .finish(),
+            VariableOrigin::SpecFoldBinder => formatter
+                .debug_tuple("SpecFoldBinder")
+                .field(&self.0)
+                .finish(),
         }
     }
 }
@@ -312,6 +377,19 @@ impl Variable {
         }
     }
 
+    /// The least variable of any origin other than `Ordinary`: every
+    /// ordinary variable orders before it and every other variable at or
+    /// after it.
+    pub(crate) const FIRST_NON_ORDINARY: Self = Self {
+        number: (0,),
+        origin: VariableOrigin::KernelFresh,
+    };
+
+    /// Whether this is an ordinary numbered variable, `Variable(n)`.
+    pub(crate) fn is_ordinary(&self) -> bool {
+        self.origin == VariableOrigin::Ordinary
+    }
+
     /// Whether this is a quantifier's bound variable.
     pub(crate) fn is_bound(&self) -> bool {
         self.origin == VariableOrigin::Bound
@@ -323,6 +401,54 @@ impl Variable {
             number: (number,),
             origin: VariableOrigin::MatchBinder,
         }
+    }
+
+    /// The `number`th specification fold binder.
+    pub(in crate::kernel) const fn spec_fold_binder(number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::SpecFoldBinder,
+        }
+    }
+
+    /// Whether this is a specification fold's binder.
+    pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
+        self.origin == VariableOrigin::SpecFoldBinder
+    }
+
+    /// The `number`th variable `producer` minted.
+    pub(crate) const fn produced(producer: Producer, number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::Produced(producer),
+        }
+    }
+
+    /// The producer that minted this variable, if a named one did.
+    pub(crate) fn producer(&self) -> Option<Producer> {
+        match self.origin {
+            VariableOrigin::Produced(producer) => Some(producer),
+            _ => None,
+        }
+    }
+
+    /// The Surface binder index of an algebraic binder variable.
+    pub(crate) fn algebraic_binder_index(&self) -> Option<u64> {
+        (self.origin == VariableOrigin::Produced(Producer::AlgebraicBinder))
+            .then_some(self.number.0)
+    }
+
+    /// The `number`th universal-introduction or choice witness.
+    pub(in crate::kernel) const fn witness(number: u64) -> Self {
+        Self {
+            number: (number,),
+            origin: VariableOrigin::Witness,
+        }
+    }
+
+    /// Whether this is a universal-introduction or choice witness.
+    pub(in crate::kernel) fn is_witness(&self) -> bool {
+        self.origin == VariableOrigin::Witness
     }
 
     /// Whether this is a match arm's binder.
@@ -532,9 +658,10 @@ impl LazyReservedVariables {
     }
 
     fn contains(&self, variable: &Variable) -> bool {
-        let execution_range = (crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
-            ..crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING)
-            .contains(&variable.0);
+        let execution_range = variable.is_ordinary()
+            && (crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+                ..crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING)
+                .contains(&variable.0);
         if execution_range && self.execution_bound.is_none_or(|bound| *variable > bound) {
             #[cfg(debug_assertions)]
             if crate::instrumentation::lazy_reservation_cross_checks_enabled() {
@@ -2465,34 +2592,142 @@ pub(super) struct ObjectTypePremise {
     pub(super) scope: u64,
 }
 
-/// A C pointer value carries both its raw address and the type through which
-/// the address is being viewed.  `Address` remains the untyped address
-/// identity used by memory, aliasing, and provenance; pointer casts retag the
-/// value without changing that identity.
-///
-/// Whether the pointee is `const` is carried beside the value and is not part
-/// of its identity: equality, ordering and hashing ignore it. It is a property
-/// of the access path, which the write-through-`const` and implicit-discard
-/// checks read from the value or from the static type of the lvalue, and two
-/// values that differ only in it designate the same object. A fact about a
-/// pointer therefore matches the pointer however its type is qualified.
+/// A pointer value: an address and its provenance (`design/pointer-model.md`).
+/// C provenance is the allocation the pointer was derived from plus the array
+/// object within it (C11 6.5.6p8-9). The term's type is carried beside the
+/// value and is not part of its identity: equality, ordering and hashing
+/// ignore it, as they ignore the declared object class and type evidence.
 #[derive(Clone, Debug)]
 pub struct Pointer {
     address: Address,
-    /// The object designated when this value entered. Address aliases never
-    /// replace this component; only value transport or substitution maps it.
+    /// The allocation designated when this value entered. Address aliases
+    /// never replace this component; only value transport or substitution
+    /// maps it.
     provenance: Arc<Address>,
-    /// The opaque containing bounds retained through narrowing. A byte/void
-    /// view clears it, so that wider view cannot authorize the original input.
-    bounds_owner: Option<Arc<Address>>,
+    /// The array object within the allocation: C provenance's second part.
+    array: ArrayObject,
     program_type: ProgramType,
     qualifiers: Option<Arc<PointerQualifiers>>,
 }
 
+/// The C array object a pointer was derived from (C11 6.5.6p8-9): the part of
+/// its C provenance below the allocation. Arithmetic, one-past pointers,
+/// subtraction and accesses are bounded by it, not by the allocation.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::kernel) enum ArrayObject {
+    /// The complete object the provenance names: a local, a global, a heap
+    /// block, a temporary, or a function.
+    Allocation,
+    /// An array object whose creation the kernel did not see, as for a
+    /// parameter or a loaded pointer. It is named by where the pointer came
+    /// from, and coverage facts about that name give its extent. A view that
+    /// may not use the name's coverage has no name.
+    Opaque(Option<Arc<Address>>),
+    /// A member subobject of the allocation.
+    Member(Arc<MemberArray>),
+}
+
+/// A member subobject (`design/pointer-subobject-bounds.md`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(in crate::kernel) struct MemberArray {
+    /// The member's bytes. A memory range's carrier has none of its own: the
+    /// range's bytes are its bounds.
+    pub(in crate::kernel) bounds: Option<SubobjectBounds>,
+    /// The opaque array object the member was selected from, whose coverage
+    /// justified the selection.
+    pub(in crate::kernel) within: Option<Arc<Address>>,
+}
+
+impl ArrayObject {
+    /// The array object with these bounds and opaque name, as the three
+    /// separate fields spelled it: `known` is false only for an opaque array
+    /// object, which has no bounds of its own.
+    pub(in crate::kernel) fn from_parts(
+        known: bool,
+        bounds: Option<SubobjectBounds>,
+        owner: Option<Arc<Address>>,
+    ) -> Self {
+        if !known {
+            debug_assert!(bounds.is_none(), "an opaque array object has no bounds");
+            return Self::Opaque(owner);
+        }
+        match (bounds, owner) {
+            (None, None) => Self::Allocation,
+            (bounds, within) => Self::Member(Arc::new(MemberArray { bounds, within })),
+        }
+    }
+
+    pub(in crate::kernel) fn is_known(&self) -> bool {
+        !matches!(self, Self::Opaque(_))
+    }
+
+    pub(in crate::kernel) fn bounds(&self) -> Option<&SubobjectBounds> {
+        match self {
+            Self::Member(member) => member.bounds.as_ref(),
+            Self::Allocation | Self::Opaque(_) => None,
+        }
+    }
+
+    /// The opaque array object this one is or was selected from.
+    pub(in crate::kernel) fn owner(&self) -> Option<&Arc<Address>> {
+        match self {
+            Self::Allocation => None,
+            Self::Opaque(owner) => owner.as_ref(),
+            Self::Member(member) => member.within.as_ref(),
+        }
+    }
+
+    fn with_bounds(&self, bounds: Option<SubobjectBounds>) -> Self {
+        if bounds.is_none() && self.bounds().is_none() {
+            return self.clone();
+        }
+        Self::from_parts(true, bounds, self.owner().cloned())
+    }
+
+    fn with_owner(&self, owner: Option<Arc<Address>>) -> Self {
+        Self::from_parts(self.is_known(), self.bounds().cloned(), owner)
+    }
+
+    fn map(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
+        match self {
+            Self::Allocation => Self::Allocation,
+            Self::Opaque(owner) => Self::Opaque(owner.as_deref().map(|o| Arc::new(map(o)))),
+            Self::Member(member) => Self::Member(Arc::new(MemberArray {
+                bounds: member.bounds.as_ref().map(|bounds| SubobjectBounds {
+                    start: map(&bounds.start),
+                    width: bounds.width.clone(),
+                }),
+                within: member.within.as_deref().map(|o| Arc::new(map(o))),
+            })),
+        }
+    }
+
+    fn try_map(&self, mut map: impl FnMut(&Address) -> Option<Address>) -> Option<Self> {
+        Some(match self {
+            Self::Allocation => Self::Allocation,
+            Self::Opaque(owner) => Self::Opaque(match owner {
+                Some(owner) => Some(Arc::new(map(owner)?)),
+                None => None,
+            }),
+            Self::Member(member) => Self::Member(Arc::new(MemberArray {
+                bounds: match &member.bounds {
+                    Some(bounds) => Some(SubobjectBounds {
+                        start: map(&bounds.start)?,
+                        width: bounds.width.clone(),
+                    }),
+                    None => None,
+                },
+                within: match &member.within {
+                    Some(owner) => Some(Arc::new(map(owner)?)),
+                    None => None,
+                },
+            })),
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct PointerQualifiers {
-    bounds: Option<SubobjectBounds>,
-    bounds_known: bool,
     /// The class of the object the pointer was formed to designate, from the
     /// declaration that produced it (`design/effective-types.md`). It is not
     /// part of the value's identity, and it survives casts, `void *`,
@@ -2679,16 +2914,15 @@ impl Pointer {
             pointer.object_identity()
         };
         Self {
-            bounds_owner: (!known_root).then(|| Arc::new(root.clone())),
+            array: if known_root {
+                ArrayObject::Allocation
+            } else {
+                ArrayObject::Opaque(Some(Arc::new(root.clone())))
+            },
             provenance: Arc::new(root),
             address: pointer,
             program_type,
-            qualifiers: known_root.then(|| {
-                Arc::new(PointerQualifiers {
-                    bounds_known: true,
-                    ..Default::default()
-                })
-            }),
+            qualifiers: None,
         }
     }
 
@@ -2706,16 +2940,14 @@ impl Pointer {
         {
             return value;
         }
-        value.qualifiers = None;
         // Cache observations retain their unchanged-byte source directly.
         // This lookup crosses no writes: preservation across program states
         // needs explicit evidence, not a search for an older cell version.
         crate::instrumentation::record_deterministic_work(1);
         let source = memory.unchanged_bytes_source();
         let origin = Arc::new(Address::loaded_value(&source, cell));
-        value
-            .with_bounds_owner(Some(origin.clone()))
-            .with_provenance(origin)
+        value.array = ArrayObject::Opaque(Some(origin.clone()));
+        value.with_provenance(origin)
     }
 
     /// A point-named complete read uses the same identity for its address,
@@ -2743,9 +2975,9 @@ impl Pointer {
             return value;
         }
         let origin = Arc::new(address);
+        let mut value = value.with_provenance(origin.clone());
+        value.array = ArrayObject::Opaque(Some(origin));
         value
-            .with_bounds_owner(Some(origin.clone()))
-            .with_provenance(origin)
     }
 
     /// The read that introduced this complete pointer's opaque domain when
@@ -2772,12 +3004,22 @@ impl Pointer {
         &self.provenance
     }
 
-    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Address> {
-        self.bounds_owner.as_deref()
+    /// The array object within the allocation.
+    pub(in crate::kernel) fn array_object(&self) -> &ArrayObject {
+        &self.array
     }
 
-    pub(in crate::kernel) fn with_bounds_owner(mut self, bounds: Option<Arc<Address>>) -> Self {
-        self.bounds_owner = bounds;
+    pub(in crate::kernel) fn with_array_object(mut self, array: ArrayObject) -> Self {
+        self.array = array;
+        self
+    }
+
+    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Address> {
+        self.array.owner().map(|owner| &**owner)
+    }
+
+    pub(in crate::kernel) fn with_bounds_owner(mut self, owner: Option<Arc<Address>>) -> Self {
+        self.array = self.array.with_owner(owner);
         self
     }
 
@@ -2843,11 +3085,8 @@ impl Pointer {
 
     pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
         Self {
-            address: self.address,
-            provenance: self.provenance,
-            bounds_owner: self.bounds_owner,
             program_type,
-            qualifiers: self.qualifiers,
+            ..self
         }
     }
 
@@ -2866,18 +3105,16 @@ impl Pointer {
     }
 
     pub(crate) fn bounds(&self) -> Option<&SubobjectBounds> {
-        self.qualifiers.as_ref()?.bounds.as_ref()
+        self.array.bounds()
     }
 
     pub(crate) fn bounds_are_known(&self) -> bool {
-        self.qualifiers.as_ref().is_some_and(|q| q.bounds_known)
+        self.array.is_known()
     }
 
+    /// The complete allocation as the array object: a byte view's.
     pub(in crate::kernel) fn with_root_bounds(mut self) -> Self {
-        self.bounds_owner = None;
-        let qualifiers = Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default));
-        qualifiers.bounds = None;
-        qualifiers.bounds_known = true;
+        self.array = ArrayObject::Allocation;
         self
     }
 
@@ -2940,12 +3177,7 @@ impl Pointer {
     }
 
     pub(crate) fn with_bounds(mut self, bounds: Option<SubobjectBounds>) -> Self {
-        if bounds.is_some() {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).bounds_known = true;
-        }
-        if bounds.is_some() || self.bounds().is_some() {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).bounds = bounds;
-        }
+        self.array = self.array.with_bounds(bounds);
         self
     }
 
@@ -2959,13 +3191,7 @@ impl Pointer {
         if provenance != *self.provenance {
             result.provenance = Arc::new(provenance);
         }
-        result.bounds_owner = self.bounds_owner().map(|origin| Arc::new(map(origin)));
-        if let Some(bounds) = self.bounds() {
-            result = result.with_bounds(Some(SubobjectBounds {
-                start: map(&bounds.start),
-                width: bounds.width.clone(),
-            }));
-        }
+        result.array = self.array.map(map);
         result
     }
 
@@ -2975,31 +3201,22 @@ impl Pointer {
     ) -> Option<Self> {
         let pointer = map(&self.address)?;
         let provenance = map(&self.provenance)?;
-        let bounds_owner = match self.bounds_owner() {
-            Some(origin) => Some(Arc::new(map(origin)?)),
-            None => None,
-        };
-        let bounds = match self.bounds() {
-            Some(bounds) => Some(SubobjectBounds {
-                start: map(&bounds.start)?,
-                width: bounds.width.clone(),
-            }),
-            None => None,
-        };
+        let array = self.array.try_map(map)?;
         Some(
             self.clone()
                 .with_address(pointer)
                 .with_provenance(Arc::new(provenance))
-                .with_bounds(bounds)
-                .with_bounds_owner(bounds_owner),
+                .with_array_object(array),
         )
     }
 
     /// Re-spell physical addresses without changing the value's origin.
     pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Address) -> Address) -> Self {
-        self.map_pointers(map)
+        let mapped = self.map_pointers(map);
+        let array = mapped.array.with_owner(self.array.owner().cloned());
+        mapped
             .with_provenance(self.provenance.clone())
-            .with_bounds_owner(self.bounds_owner.clone())
+            .with_array_object(array)
     }
 
     /// Every address the value mentions, for variable collection.
@@ -3017,8 +3234,8 @@ impl Pointer {
 }
 
 impl Pointer {
-    /// Everything that is the value's identity: the address, the type it is
-    /// viewed through, and the subobject it
+    /// Everything that is the value's identity: the address, its provenance,
+    /// and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
     /// fresh scalar id, never a structural resource or ledger key.
     /// Two values at one address with different bounds are
@@ -3029,7 +3246,6 @@ impl Pointer {
     ) -> (
         &Address,
         &Address,
-        &ProgramType,
         bool,
         Option<&Address>,
         Option<&SubobjectBounds>,
@@ -3037,7 +3253,6 @@ impl Pointer {
         (
             &self.address,
             &self.provenance,
-            &self.program_type,
             self.bounds_are_known(),
             if self.bounds_are_known() {
                 None
@@ -3046,6 +3261,19 @@ impl Pointer {
             },
             self.bounds(),
         )
+    }
+}
+
+impl Pointer {
+    /// Whether the two have one C provenance, as identity compares it: the
+    /// same allocation and the same array object.
+    pub(crate) fn same_provenance_as(&self, other: &Self) -> bool {
+        let (_, provenance, known, owner, bounds) = self.identity();
+        let (_, other_provenance, other_known, other_owner, other_bounds) = other.identity();
+        provenance == other_provenance
+            && known == other_known
+            && owner == other_owner
+            && bounds == other_bounds
     }
 }
 
@@ -3930,12 +4158,11 @@ pub struct LValue {
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
-    /// The subobject bounds of the pointer this memory lvalue was reached
-    /// through. The access is checked against it, and `&lvalue` keeps it.
-    pub(super) bounds_known: bool,
-    pub(super) bounds_owner: Option<Arc<Address>>,
-    pub(super) bounds: Option<Arc<SubobjectBounds>>,
+    /// The provenance of the pointer this memory lvalue was reached through:
+    /// its allocation and array object. The access is checked against it,
+    /// and `&lvalue` keeps it.
     pub(super) provenance: Option<Arc<Address>>,
+    pub(super) array: Option<ArrayObject>,
     /// The class of the lvalue's type, which the access uses, when the
     /// frontend supplied one.
     pub(super) access_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -3980,7 +4207,9 @@ pub enum IntegerCastMode {
     /// target's type as written, and its value is that operator's native
     /// node at the target's format, `(a op b) mod 2^N`, with no promotion
     /// and no conversion. Only the Rust front end writes it; Rust's
-    /// overflow panics are separate checked assertions.
+    /// overflow panics for these operators are separate checked assertions.
+    /// Signed narrow `/ %` retain the promoted operation's converted term
+    /// and emit their own narrow overflow prerequisite.
     NarrowArithmetic,
     /// The conversion lowering inserts from a pure function's body to its
     /// declared result type: C's conversion, as `CConversion`, at whose
@@ -4664,10 +4893,17 @@ pub enum SpecAlgebraicExpressionNode {
 pub struct ResourceFieldProjection {
     pub identity: InstanceRef,
     pub children: Vec<String>,
+    /// Written member for a path whose final schema can differ from the
+    /// parent's retained record. A witness uses its name, with no field index.
+    pub field_name: Option<String>,
     pub field_index: usize,
     /// Select the explicit entry state supplied to spec evaluation. There is
     /// no fallback to the current state when that state is unavailable.
     pub at_entry: bool,
+}
+
+impl ResourceFieldProjection {
+    pub(crate) const WITNESS: usize = usize::MAX;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8118,11 +8354,11 @@ pub struct VerifiedLoopRule {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum UndefinedBehavior {
     SignedOverflow,
-    /// The signed overflow of an `int32` division or remainder, which
-    /// happens at exactly one operand pair, `INT_MIN / -1`. Kept apart from
+    /// The signed overflow of a division or remainder, which happens
+    /// when the minimum value of the format is divided by -1. Kept apart from
     /// [`Self::SignedOverflow`] so the refusal names the pair the facts
     /// leave open instead of a bare `signed overflow`.
-    SignedDivisionOverflow,
+    SignedDivisionOverflow(MachineIntegerType),
     PointerArithmetic,
     DivisionByZero,
     FloatToIntegerOutOfRange,
@@ -8174,10 +8410,14 @@ impl UndefinedBehavior {
     pub fn description(&self) -> String {
         match self {
             Self::SignedOverflow => "signed overflow".to_string(),
-            Self::SignedDivisionOverflow => {
+            Self::SignedDivisionOverflow(MachineIntegerType::Int32) => {
                 "signed overflow (INT_MIN / -1 is the one int32 division or remainder that overflows)"
                     .to_string()
             }
+            Self::SignedDivisionOverflow(format) => format!(
+                "signed overflow (the minimum signed {}-bit value divided by -1 overflows division and remainder)",
+                format.format().bits(),
+            ),
             Self::PointerArithmetic => "pointer arithmetic left the pointed-to object".to_string(),
             Self::SubobjectAccess { .. } => {
                 "access outside the subobject the pointer designates".to_string()
@@ -8438,6 +8678,10 @@ pub struct ResourceBodyFactSource {
     pub bindings: Vec<(String, ProgramValue)>,
 }
 
+/// The most earlier conjuncts a conjunction's right side may be read under
+/// while it owes evaluation domains: [`ExecutionLimit::GuardedConjunctionTooLong`].
+pub const GUARDED_CONJUNCTION_LIMIT: usize = 64;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ExecutionLimit {
     Deadline,
@@ -8459,6 +8703,11 @@ pub enum ExecutionLimit {
     BoolArithmetic,
     /// A conditional with an `int32` arm and a `Bool` arm.
     MixedBoolArms,
+    /// A conjunction whose right side owes evaluation domains read under
+    /// more than [`GUARDED_CONJUNCTION_LIMIT`] earlier conjuncts. Each such
+    /// domain carries its whole guard, so a longer chain is refused rather
+    /// than lowered slowly.
+    GuardedConjunctionTooLong,
     /// The execution's fresh-identity counter reached the first identity a
     /// producer outside the execution reserves by a constant base. Every
     /// kernel allocation counts up from one base, and the ranges above it
@@ -8541,6 +8790,9 @@ impl ExecutionLimit {
             Self::BoolOrdered => "an order on `Bool`".to_string(),
             Self::BoolArithmetic => "arithmetic on a `Bool`".to_string(),
             Self::MixedBoolArms => "a conditional with an integer and a `Bool` arm".to_string(),
+            Self::GuardedConjunctionTooLong => format!(
+                "a conjunction guarding evaluation domains by more than {GUARDED_CONJUNCTION_LIMIT} conjuncts"
+            ),
             Self::KernelVariables { ceiling } => {
                 format!("the execution's fresh-identity range, which ends below {ceiling}")
             }
@@ -11820,10 +12072,10 @@ pub(super) struct ResourceContextStorage {
 
 #[derive(Clone)]
 pub(crate) enum InstanceConsumption {
-    Unfold,
-    UnfoldWithWitnesses {
+    Opened {
         instance: std::sync::Arc<ResourceInstance>,
-        values: std::sync::Arc<[ProgramValue]>,
+        children: std::sync::Arc<std::collections::BTreeMap<String, InstanceId>>,
+        values: std::sync::Arc<std::collections::BTreeMap<String, ProgramValue>>,
     },
     FoldChild {
         parent: InstanceId,
@@ -12548,7 +12800,8 @@ impl InstanceId {
     /// ([`ExecutionBudget::allocate_instance_identity`]) rather than a
     /// binder the surface named.
     pub fn created_by_execution(self) -> bool {
-        self.0.0 >= ExecutionBudget::KERNEL_VARIABLE_BASE
+        (ExecutionBudget::KERNEL_VARIABLE_BASE..ExecutionBudget::KERNEL_VARIABLE_CEILING)
+            .contains(&self.0.0)
     }
 }
 
@@ -16807,13 +17060,13 @@ pub struct CallParameters(pub(crate) std::sync::Arc<ExecutionState>);
 impl CallParameters {
     /// The parameter binding of `interface`'s by-value aggregate parameters
     /// in `entry`, the state the call evaluates its contract in; `None` when
-    /// it has none. The state keeps `entry`'s memory and binds exactly
-    /// those parameters, so nothing else is named through it.
+    /// it has none. Keep the same read versions and bind only those
+    /// parameters, so nothing else is named through the snapshot.
     pub(super) fn of(
         entry: &ExecutionState,
         interface: &FunctionContractInterface,
     ) -> Option<Self> {
-        let mut bound = ExecutionState::new().with_memory(entry.memory().clone());
+        let mut bound = ExecutionState::at_state(entry);
         let mut any = false;
         for parameter in interface.parameters() {
             let Some(layout) = parameter.aggregate_layout() else {

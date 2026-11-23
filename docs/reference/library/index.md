@@ -7991,6 +7991,10 @@ allocation limit is smaller and aborts rather than returns.
 ### `Box<T>`
 
 ```click
+type Box<T> {
+    owns allocation(self, sizeof(T));
+    owns *self;
+}
 fn Box::new<T>(x: T) -> Box<T> {
     allocates(result, sizeof(T));
     produces *result;
@@ -8005,7 +8009,8 @@ fn Box::drop<T>(b: Box<T>) {
 ```
 
 **Meaning:** A box owns its allocation, `sizeof(T)` bytes, and the value in
-it. `Box::new(x)` moves `x` into an allocation the call creates
+it: its [type resource](../rust.md#type-resources), `Box<R>(b)`, holds
+both. `Box::new(x)` moves `x` into an allocation the call creates
 ([fresh allocations](../language/c.md#fresh-allocations)); allocation
 failure aborts, so it returns only a non-null box. `Box::drop(b)` is
 `<Box<T> as Drop>::drop`, which the compiler calls after the contents'
@@ -8300,6 +8305,30 @@ paths; both premises are explicit.
 
 **Verified use:** `mdtests/viewable_restrict_memory.md` and
 `mdtests/viewable_restrict_resources.md`.
+
+### `separation::viewable_offset_nonnull`
+
+```click
+axiom viewable_offset_nonnull<T>(p: T*, lo: uint64, hi: uint64, k: uint64) {
+    requires viewable(memory(p[lo..hi]));
+    requires lo < hi;
+    requires lo <= k;
+    requires k <= hi;
+    ensures &p[k] != 0;
+}
+```
+
+**Axiom:** trusted, not proved. C11 6.3.2.3p3 makes a null pointer unequal to
+every pointer to an object. A nonempty viewable range `p[lo..hi]` lies in a
+live object, and every element address `&p[k]` from `&p[lo]` through
+`&p[hi]`, one past the range's end, points into or just past that object
+(C11 6.5.6p8, 6.5.9p6), so none is null. An empty range states nothing:
+`lo < hi` is required, as C allows a null pointer with a zero length. With
+`k` equal to `0`, `&p[0]` is `p` itself, so a view of `p[0..n]` with `0 < n`
+gives `p != 0`. The premises are explicit; the axiom grants no access and
+searches for no range.
+
+**Verified use:** `mdtests/a_pointer_inside_a_viewed_range_is_not_null.md`.
 
 ### `separation::contains_joined_ranges`
 

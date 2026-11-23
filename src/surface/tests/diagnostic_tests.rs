@@ -646,7 +646,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
     );
     assert_eq!(
         error.concise_report_parts().0,
-        "execution refused in `use_mutex`:\n  could not prove that mutex `cell` was initialized on this path"
+        "tactic error in `use_mutex`:\n  could not prove that mutex `cell` was initialized on this path"
     );
     assert!(!error.message().contains("runtime error"), "{error:?}");
 }
@@ -2024,39 +2024,25 @@ fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
-fn unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern() {
-    let fixture = folded_child_loop_fixture();
-    let sources = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    let mut click = fixture.click_source.unwrap();
-    let loop_start = click.find("    loop {").unwrap();
-    click.truncate(loop_start);
-    click.push_str(
-        r#"
-        match w.model {
-            Wrap::Wrap(entry_model) => {
-                let { inner: child } = unfold(w);
-                have w.model == Wrap::Wrap(entry_model) by { solve(); }
-            },
-        }
-    }
-    "#,
+fn unfolded_algebraic_field_keeps_its_captured_model() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/loop_invariant_binds_model_from_a_folded_parent.md");
+    let fixture =
+        crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    let click = fixture.click_source.unwrap();
+    let insertion = "        Wrap::Wrap(entry_model) => {";
+    assert!(click.contains(insertion));
+    let click = click.replacen(
+        insertion,
+        r#"        Wrap::Wrap(entry_model) => {
+            unfold(w);
+            have w.model == Wrap::Wrap(entry_model) by { solve(); }
+            fold(w);"#,
+        1,
     );
-    let error = verify_c_sources(&click, &sources).unwrap_err();
-    assert!(
-        error.message().contains("`unfold(w)` consumed it"),
-        "{error:?}"
-    );
-    assert!(
-        error
-            .message()
-            .contains("an unfold pattern cannot bind an algebraic field"),
-        "{error:?}"
-    );
-    assert!(!error.message().contains("let { model:"), "{error:?}");
+    verify_c_sources(&click, &sources)
+        .unwrap_or_else(|error| panic!("the open parent's captured model must verify: {error:?}"));
 }
 
 #[test]
@@ -3203,6 +3189,12 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
                 "{}",
                 error.message()
             );
+            assert_eq!(
+                error.proof_refusal(),
+                Some(super::ProofRefusal::UnsuccessfulSearch)
+            );
+            let report = error.concise_report();
+            assert!(report.starts_with("unsuccessful search:"), "{report}");
             let trace = error
                 .trace_context_report()
                 .expect("the accepted prefix must survive exhaustion");
@@ -4235,6 +4227,8 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
                 "{}",
                 error.message()
             );
+            let report = error.concise_report();
+            assert!(report.starts_with("internal error:"), "{report}");
             let trace = error
                 .trace_context_report()
                 .expect("a stopped explicit transport retains the checked predecessor");
@@ -4606,7 +4600,7 @@ test_batches! {
     ],
     diagnostic_batch_12: [
         folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy,
-        unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern,
+        unfolded_algebraic_field_keeps_its_captured_model,
         unheld_field_without_a_checked_consumption_does_not_invent_one,
         source_unknown_local_pointer_diagnostics_identify_byte_units,
     ],

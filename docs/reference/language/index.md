@@ -331,8 +331,10 @@ function that may throw meets only a contract that may, and its
 `exceptional ensures` must give the contract's
 (`mdtests/exceptional_named_contract.md`,
 `mdtests/exceptional_external_contract.md`). An explicit refinement theorem
-for a source that may throw is not supported yet. The separate C++
-scalar-exception import profile accepts typed `throw int32`, one typed `try`/`catch (int name)`
+for a source that may throw reports `unsupported`. The automatic refinement
+check handles throwing contracts. Explicit refinement would need to generate
+and check each exceptional postcondition implication alongside the normal
+one. The separate C++ scalar-exception import profile accepts typed `throw int32`, one typed `try`/`catch (int name)`
 with a fresh payload binding, and the narrow single-guard cleanup shape
 documented by the import reference. It still rejects nested handlers and other
 catch forms. A direct modular call whose normal
@@ -855,7 +857,8 @@ body to rank.
 
 The marker is required on, and only on, a function that may not return. A
 function whose every loop is ranked and whose every call descends has nothing
-to justify the marker, and declaring it `diverges` is refused; see
+to justify the marker. Declaring it `diverges` reports a `contract error`
+that asks the author to remove the marker. See
 `mdtests/diverges_rejects_unjustified_marker.md`. An `extern` contract is
 exempt, because the declaration is all that is known about it. The marker is
 contagious: an unmarked caller of a marked function is refused, and the
@@ -2320,11 +2323,10 @@ cell the body does not own stays unreadable
 (`mdtests/contract_field_bearing_instance_views_grant_no_write.md`,
 `mdtests/contract_field_bearing_instance_views_only_owned_cells.md`).
 
-Unfolding consumes the instance, so its fields have nothing to read afterward:
-`before.prefix` is refused, and so is `old(before.prefix)` in a loop invariant,
-because a loop invariant reads `old(...)` at the loop's entry. The unfold
-pattern names a C-typed field's folded value instead, exactly as a proof
-`match` arm names a constructor payload:
+An open instance keeps its captured fields available by their ordinary names.
+After `unfold(before)`, `before.prefix` reads the captured prefix. A loop
+invariant can use `old(before.prefix)` to read it at loop entry.
+The unfold pattern can give a C-typed field a separate proof name:
 
 <!-- verified-example: mdtests/resource_unfold_binds_scalar_field.md -->
 ```click
@@ -2341,8 +2343,8 @@ fresh name that is not a C parameter or local in scope. Only C-typed fields
 bind this way; an algebraic or `Integer` field is refused. For an algebraic
 field, a proof `match` before the unfold names its constructor payloads.
 Expansion and audit print
-the pattern as written. The refusal for reading the consumed field is
-`mdtests/resource_unfold_field_binding_rejects_consumed_read.md`.
+the pattern as written. See the dotted form in
+`mdtests/resource_unfold_reads_the_opened_field.md`.
 
 A fold can also consume an instance as a child of its result. Reading that
 child's field afterward does not imply that the child was unfolded. If the
@@ -2684,9 +2686,11 @@ resource arena_prefix_state(arena: struct arena*) {
 }
 ```
 
-`let { marks: m, free: f } = unfold(state)` and
-`fold(arena_prefix_state(arena), { ..., marks: m, free: f })` expose and
-consume them as for an arm. A body or arm may also own a field-free declared
+`unfold(state)` exposes children at `state.marks` and `state.free`.
+`fold(state)` takes those same children back. To name them independently,
+use `let { marks: m, free: f } = unfold(state)`. To select inputs explicitly,
+use `fold(arena_prefix_state(arena), { ..., marks: m, free: f })`.
+A body or arm may also own a field-free declared
 resource without a name, `owns cell_value(cell);`; it stays folded while the
 parent is unfolded (`mdtests/resource_match_arm_unnamed_child.md`). A
 field-bearing resource owned in a body needs a child name. Loads must be readable from the immediate body's

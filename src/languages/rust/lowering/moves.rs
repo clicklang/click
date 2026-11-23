@@ -559,6 +559,7 @@ pub(super) fn lower(
                 arguments,
                 destination,
                 through_pointer: true,
+                result: result_step,
                 owned_arguments,
                 ..
             } => {
@@ -575,6 +576,8 @@ pub(super) fn lower(
                     cx.typed_arguments(parameters.clone(), arguments)?;
                 let call = if **result == Type::Unit {
                     program_call(function, arguments_values)
+                } else if let Some(step) = result_step {
+                    crate::kernel::program_call_value(*step, function, arguments_values).0
                 } else {
                     let destination = destination
                         .as_ref()
@@ -749,13 +752,24 @@ pub(super) fn lower(
                     index,
                     element,
                     taken,
-                } => cx.enumerate_next(
-                    iterator,
-                    option.as_deref(),
-                    index.as_deref(),
-                    element.as_deref(),
-                    *taken,
-                )?,
+                } => {
+                    let element = element
+                        .as_deref()
+                        .map(|name| {
+                            local_types
+                                .get(name)
+                                .map(|ty| (name, *ty))
+                                .ok_or("unknown Rust enumerate iterator payload")
+                        })
+                        .transpose()?;
+                    cx.enumerate_next(
+                        iterator,
+                        option.as_deref(),
+                        index.as_deref(),
+                        element,
+                        *taken,
+                    )?
+                }
                 S::RangeInitialize { target, start, end } => {
                     cx.range_initialize(target, start, end)?
                 }
@@ -843,40 +857,8 @@ pub(super) fn lower(
                             value_type,
                         },
                 } => {
-                    let closure = cx
-                        .functions
-                        .get(function.as_str())
-                        .ok_or("Rust closure instance of an unknown closure")?;
-                    let Type::FnPointer { parameters, result } = value_type else {
-                        return Err("Rust closure instance requires a callable type".into());
-                    };
-                    if closure.captures != captures.len()
-                        || closure.return_type != **result
-                        || closure.parameters.len() != closure.captures + parameters.len()
-                        || closure.parameters[closure.captures..]
-                            .iter()
-                            .zip(parameters)
-                            .any(|(parameter, expected)| parameter.value_type != *expected)
-                    {
-                        return Err(format!(
-                            "Rust closure instance of `{function}` does not have the closure's type"
-                        ));
-                    }
-                    let mut checks = program_skip();
-                    let mut values = Vec::new();
-                    for capture in captures {
-                        let (capture_checks, value) = cx.prepared_expr(capture)?;
-                        checks = program_seq(checks, capture_checks);
-                        values.push(value);
-                    }
-                    program_seq(
-                        checks,
-                        cx.call_then_assign(
-                            name,
-                            crate::languages::rust::names::closure_instance_name(function),
-                            values,
-                        ),
-                    )
+                    let (checks, value) = cx.prepared_closure(function, captures, value_type)?;
+                    program_seq(checks, program_assign(cx.binding(name), value))
                 }
                 S::Assign {
                     target: E::Local { name },
@@ -1620,41 +1602,42 @@ fn switch(
             exits,
         )?);
     }
-    let field_type = match scrutinee {
+    let capture_type = match scrutinee {
         E::EnumField {
             name,
             variant,
             index,
             ..
-        } => super::nested_enum_field_type(name, variant, *index)?.map(|ty| ty.to_kernel_type()),
+        } => super::nested_enum_field_type(name, variant, *index)?
+            .map(|ty| (ty.to_kernel_type(), "Rust enum field")),
+        E::Deref {
+            value_type: value_type @ Type::Enum { .. },
+            ..
+        } => Some((
+            scalar_type(value_type)?.to_kernel_type(),
+            "Rust match operand",
+        )),
         _ => None,
     };
     if groups.len() == 1 {
         let body = bodies.pop().expect("one match arm");
-        return Ok(if let Some(value_type) = field_type {
-            let projection = cx.expr(scrutinee)?;
-            Sited::at(
-                site,
-                typed_value_step(Vec::new(), projection, value_type, false),
-            )
-            .then(body)
+        return Ok(if let Some((value_type, _)) = capture_type {
+            let value = cx.expr(scrutinee)?;
+            Sited::at(site, typed_value_step(Vec::new(), value, value_type, false)).then(body)
         } else {
             body
         });
     }
-    // Read a nested enum projection once, even when its base is itself a
-    // retained call result. Only the last test can end it on both edges.
-    let capture = if let Some(value_type) = field_type {
+    // Read the match operand once so the proof can split on that value.
+    // Only the last test can end it on both edges.
+    let capture = if let Some((value_type, origin)) = capture_type {
         let step = cx.result_step();
-        let projection = cx.expr(scrutinee)?;
+        let value = cx.expr(scrutinee)?;
         Some((
-            Sited::at(
-                site,
-                typed_value_step(vec![step], projection, value_type, false),
-            ),
+            Sited::at(site, typed_value_step(vec![step], value, value_type, false)),
             ProgramExpression::StepResult {
                 step,
-                origin: StepOrigin::Value("Rust enum field"),
+                origin: StepOrigin::Value(origin),
                 ends: true,
             },
             value_type,

@@ -586,7 +586,7 @@ impl Default for ProofLocals {
             surface_facts: SurfacePropositionMap::default(),
             checked_lowerings: SurfacePropositionMap::default(),
             termination_diagnostics: Default::default(),
-            next_choice_variable: 3_000_000,
+            next_choice_variable: 0,
             retained_match_algebraic: PersistentBinderMap::default(),
             retained_match_integers: PersistentBinderMap::default(),
             induction_active: false,
@@ -3735,12 +3735,14 @@ impl<'a> Proof<'a> {
         &self,
         error: ClickError,
     ) -> ClickError {
-        if !matches!(
-            error.kind(),
-            crate::surface::ClickErrorKind::Proof
-                | crate::surface::ClickErrorKind::Internal
-                | crate::surface::ClickErrorKind::Unsupported
-        ) || error.proof_claim_label().is_some()
+        if error.proof_claim_label().is_some()
+            || (!error.verification_stopped()
+                && !matches!(
+                    error.kind(),
+                    crate::surface::ClickErrorKind::Proof
+                        | crate::surface::ClickErrorKind::Internal
+                        | crate::surface::ClickErrorKind::Unsupported
+                ))
         {
             return error;
         }
@@ -3900,7 +3902,10 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 
-        ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_) => "intro()",
+        ProofStep::Intro
+        | ProofStep::IntroAs(_)
+        | ProofStep::IntroBinder(_)
+        | ProofStep::IntroBlock { .. } => "intro()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step
         | ProofStep::StepBind(_)

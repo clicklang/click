@@ -2990,12 +2990,7 @@ impl CppFunction {
                     if let Some((declaration_id, name)) =
                         super::scalar::record_pointee(&parameter.value_type) =>
                 {
-                    let record = validate_record_reference(records, declaration_id, name)?;
-                    if record.is_layout_free() {
-                        return Err(format!(
-                            "layout-free C++ record `{name}` requires a reference parameter"
-                        ));
-                    }
+                    validate_record_reference(records, declaration_id, name)?;
                 }
                 CppType::Pointer { .. } => {
                     require_native_object_pointer(&parameter.value_type, "pointer parameter")?;

@@ -90,19 +90,19 @@ void inspect(struct node* parent) {
                     step();
                     mark split;
                     match f.model ensuring {
-                        owns nf: focus_at(parent->right);
+                        owns nf: focus_at(pid->right);
                         fact nf.model == at(split, f.model);
                     } {
                         Focus::Empty => {
                             have at(split, f.model) == Focus::Empty;
                             unfold(f);
-                            let nf = fold(focus_at(parent->right), { model: Focus::Empty });
+                            let nf = fold(focus_at(pid->right), { model: Focus::Empty });
                             have nf.model == at(split, f.model);
                         },
                         Focus::Live(identity) => {
                             have at(split, f.model) == Focus::Live(identity);
                             unfold(f);
-                            let nf = fold(focus_at(parent->right), { model: Focus::Live(identity) });
+                            let nf = fold(focus_at(pid->right), { model: Focus::Live(identity) });
                             have nf.model == at(split, f.model);
                         },
                     }

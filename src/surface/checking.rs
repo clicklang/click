@@ -170,6 +170,20 @@ pub(super) fn prove_ensure_resource<'e>(
             FunctionOutcome::Return { value, state } => (value, state),
             FunctionOutcome::Throw { value, state } if borrowed => (value, state),
             _ => {
+                let (kind, refusal) = match outcome {
+                    FunctionOutcome::UndefinedBehavior(kind) => (
+                        crate::surface::diagnostics::undefined_behavior_refusal_kind(kind),
+                        ProofRefusal::Tactic,
+                    ),
+                    FunctionOutcome::RuntimeError(error) => (
+                        crate::surface::diagnostics::runtime_refusal_kind(error),
+                        crate::surface::diagnostics::runtime_proof_refusal(error),
+                    ),
+                    FunctionOutcome::Throw { .. } => {
+                        (ClickErrorKind::Proof, ProofRefusal::IncompleteProof)
+                    }
+                    _ => (ClickErrorKind::Internal, ProofRefusal::IncompleteProof),
+                };
                 return Err(ClickError::new(format!(
                     "`{claim_label}` failed on path {path_index}: {}\n{}",
                     describe_function_outcome(outcome, parameter_binding),
@@ -183,7 +197,8 @@ pub(super) fn prove_ensure_resource<'e>(
                         &execution_pure_facts()
                     )
                 ))
-                .with_proof_refusal(ProofRefusal::Execution));
+                .with_kind(kind)
+                .with_proof_refusal(refusal));
             }
         };
         if guard_deferred {

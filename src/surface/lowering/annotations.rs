@@ -16,20 +16,17 @@ fn typed_let_program_value(
     }
 }
 
-// The lowerers share these two finite bands. Refusing at each ceiling keeps
-// quantifiers, algebraic binders, pointer identities, and spec fold binders
-// structurally separate even for unusually large source terms.
-const SURFACE_QUANTIFIER_VARIABLE_CEILING: u64 = 4_000_000;
-const ALGEBRAIC_VARIABLE_BASE: u64 = SURFACE_QUANTIFIER_VARIABLE_CEILING;
-const ALGEBRAIC_VARIABLE_CEILING: u64 = 4_000_000_000;
-const ALGEBRAIC_BINDER_STRIDE: u64 = 65_536;
-
-fn allocate_quantifier_variable(next: &mut u64) -> Result<Variable, String> {
-    if *next >= SURFACE_QUANTIFIER_VARIABLE_CEILING {
-        return Err("quantifier variable identity exhausted".to_string());
-    }
-    let variable = Variable(*next);
-    *next += 1;
+// Each lowering context binds its quantifier, fold and `match` variables as
+// its own producer, counting from zero, so they are separate from every other
+// identity and from another context's, whatever their numbers.
+fn allocate_quantifier_variable(
+    next: &mut u64,
+    producer: crate::kernel::Producer,
+) -> Result<Variable, String> {
+    let variable = Variable::produced(producer, *next);
+    *next = next
+        .checked_add(1)
+        .ok_or("quantifier variable identity exhausted")?;
     Ok(variable)
 }
 
@@ -37,12 +34,10 @@ pub(in crate::surface) fn algebraic_binder_variable(
     binder_index: usize,
 ) -> Result<Variable, String> {
     let index = u64::try_from(binder_index).map_err(|_| "too many algebraic binders")?;
-    let identity = index
-        .checked_mul(ALGEBRAIC_BINDER_STRIDE)
-        .and_then(|offset| ALGEBRAIC_VARIABLE_BASE.checked_add(offset))
-        .filter(|identity| *identity < ALGEBRAIC_VARIABLE_CEILING)
-        .ok_or("too many algebraic binders")?;
-    Ok(Variable(identity))
+    Ok(Variable::produced(
+        crate::kernel::Producer::AlgebraicBinder,
+        index,
+    ))
 }
 
 fn integer_comparison_operator(
@@ -771,7 +766,8 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             algebraic_types: BTreeMap::new(),
             loop_index: 0,
             statement_index: 0,
-            next_quantifier_variable: 3_200_000,
+            next_quantifier_variable: 0,
+            quantifier_producer: crate::kernel::Producer::ResourceQuantifier,
             branch_join_target: None,
             retained_states: None,
             loop_records: None,
@@ -840,7 +836,8 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         algebraic_types: BTreeMap::new(),
         loop_index: 0,
         statement_index: 0,
-        next_quantifier_variable: 3_200_000,
+        next_quantifier_variable: 0,
+        quantifier_producer: crate::kernel::Producer::ResourceQuantifier,
         branch_join_target: None,
         retained_states: None,
         loop_records: None,
@@ -930,7 +927,8 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         algebraic_types: BTreeMap::new(),
         loop_index: 0,
         statement_index: 0,
-        next_quantifier_variable: 3_200_000,
+        next_quantifier_variable: 0,
+        quantifier_producer: crate::kernel::Producer::ResourceQuantifier,
         branch_join_target: None,
         retained_states: None,
         loop_records: None,
@@ -1445,6 +1443,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         loop_index,
         statement_index: record.statement_index,
         next_quantifier_variable: previous.quantifiers_after,
+        quantifier_producer: crate::kernel::Producer::FunctionQuantifier,
         branch_join_target: None,
         retained_states: None,
         loop_records: None,
@@ -1972,7 +1971,8 @@ fn annotate_function(
         algebraic_types: BTreeMap::new(),
         loop_index: 0,
         statement_index: 0,
-        next_quantifier_variable: 3_000_000,
+        next_quantifier_variable: 0,
+        quantifier_producer: crate::kernel::Producer::FunctionQuantifier,
         branch_join_target: None,
         retained_states: None,
         loop_records: record_loops.then(Vec::new),
@@ -2299,7 +2299,8 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         algebraic_types: BTreeMap::new(),
         loop_index: 0,
         statement_index: 0,
-        next_quantifier_variable: 2_000_000,
+        next_quantifier_variable: 0,
+        quantifier_producer: crate::kernel::Producer::ProofQuantifier,
         branch_join_target: Some(branch_join_target),
         retained_states: Some(retained_states),
         loop_records: None,
@@ -2348,7 +2349,8 @@ fn fixed_state_elaboration<'a>(
         algebraic_types: BTreeMap::new(),
         loop_index: 0,
         statement_index: 0,
-        next_quantifier_variable: 2_000_000,
+        next_quantifier_variable: 0,
+        quantifier_producer: crate::kernel::Producer::ProofQuantifier,
         branch_join_target: None,
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
@@ -2428,12 +2430,16 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
                 referenced.insert(name);
             }
             QuantifierCapture::Variable(variable) => {
-                lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
-                    variable
-                        .0
-                        .checked_add(1)
-                        .ok_or("quantifier variable identity exhausted")?,
-                );
+                // Only this lowering's own producer can collide with a
+                // variable it is about to bind.
+                if variable.producer() == Some(lowerer.quantifier_producer) {
+                    lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
+                        variable
+                            .0
+                            .checked_add(1)
+                            .ok_or("quantifier variable identity exhausted")?,
+                    );
+                }
             }
         }
     }
@@ -2442,7 +2448,9 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
         if let Some(value) = context.values.get(&name) {
             let captured =
                 crate::kernel::SpecIntegerExpression::FromMachine(Box::new(value.clone()));
-            if let Some(variable) = max_spec_integer_expression_variable(&captured) {
+            if let Some(variable) =
+                max_spec_integer_expression_variable(&captured, lowerer.quantifier_producer)
+            {
                 lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
                     variable
                         .0
@@ -2454,6 +2462,7 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
         if let Some(crate::kernel::SpecIntegerExpression::Term(term)) = integer_values.get(&name)
             && let Some(variable) = max_spec_integer_expression_variable(
                 &crate::kernel::SpecIntegerExpression::Term(term.clone()),
+                lowerer.quantifier_producer,
             )
         {
             lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
@@ -2587,7 +2596,9 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
     // Reserve identities already present in captured Integer arguments so a
     // fold's accumulator or item cannot capture a caller value.
     for (_, value) in referenced_integer_values.iter() {
-        if let Some(variable) = max_spec_integer_expression_variable(value) {
+        if let Some(variable) =
+            max_spec_integer_expression_variable(value, lowerer.quantifier_producer)
+        {
             lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
                 variable
                     .0
@@ -2627,26 +2638,38 @@ impl ReferencedBinding for QuantifierCapture {
         let captured = crate::kernel::SpecIntegerExpression::FromMachine(Box::new(
             SpecExpression::Value(value.clone()),
         ));
-        if let Some(variable) = max_spec_integer_expression_variable(&captured) {
-            names.insert(Self::Variable(variable));
+        // The capturing lowering's producer is not known here; each
+        // producer's highest variable is recorded, and the lowering keeps
+        // only its own.
+        let mut variables = BTreeSet::new();
+        crate::kernel::collect_spec_integer_bound_variables(&captured, &mut variables);
+        let mut highest = BTreeMap::<crate::kernel::Producer, Variable>::new();
+        for variable in variables {
+            if let Some(producer) = variable.producer() {
+                let entry = highest.entry(producer).or_insert(variable);
+                if variable.0 > entry.0 {
+                    *entry = variable;
+                }
+            }
         }
+        names.extend(highest.into_values().map(Self::Variable));
     }
 }
 
-/// Finds the largest identity in the surface quantifier band nested in a
-/// captured Integer binding. Fold and other high identities are already
-/// disjoint; they must not push the quantifier counter into another band.
 /// The kernel visitor includes both free and bound identities, including
 /// those nested in machine/C payloads.
+/// The highest variable `producer` minted that `expression` binds, which a
+/// lowering of the same producer must number above.
 fn max_spec_integer_expression_variable(
     expression: &crate::kernel::SpecIntegerExpression,
+    producer: crate::kernel::Producer,
 ) -> Option<crate::kernel::Variable> {
     let mut variables = BTreeSet::new();
     crate::kernel::collect_spec_integer_bound_variables(expression, &mut variables);
     variables
         .into_iter()
-        .rev()
-        .find(|variable| variable.0 < SURFACE_QUANTIFIER_VARIABLE_CEILING)
+        .filter(|variable| variable.producer() == Some(producer))
+        .max_by_key(|variable| variable.0)
 }
 
 /// Elaborates an expression stated in a fixed-state proof into the kernel's
@@ -2747,7 +2770,9 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
             context.integer_values = context
                 .integer_values
                 .with_inserted(name.clone(), value.clone());
-            if let Some(variable) = max_spec_integer_expression_variable(value) {
+            if let Some(variable) =
+                max_spec_integer_expression_variable(value, lowerer.quantifier_producer)
+            {
                 lowerer.next_quantifier_variable = lowerer.next_quantifier_variable.max(
                     variable
                         .0
@@ -2839,7 +2864,8 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         algebraic_types: BTreeMap::new(),
         loop_index: 0,
         statement_index: 0,
-        next_quantifier_variable: 3_100_000,
+        next_quantifier_variable: 0,
+        quantifier_producer: crate::kernel::Producer::RequirementQuantifier,
         branch_join_target: None,
         retained_states: None,
         loop_records: None,
@@ -2919,7 +2945,8 @@ pub(in crate::surface) fn function_contract_summary(
         algebraic_types: BTreeMap::new(),
         loop_index: 0,
         statement_index: 0,
-        next_quantifier_variable: 3_100_000,
+        next_quantifier_variable: 0,
+        quantifier_producer: crate::kernel::Producer::RequirementQuantifier,
         branch_join_target: None,
         retained_states: None,
         loop_records: None,
@@ -3474,6 +3501,8 @@ struct AnnotationLowerer<'a> {
     loop_index: usize,
     statement_index: usize,
     next_quantifier_variable: u64,
+    /// The producer this lowering binds its variables as.
+    quantifier_producer: crate::kernel::Producer,
     branch_join_target: Option<&'a ProgramPointRef>,
     /// The states a proof recorded at program points and marks, when the
     /// proposition is stated inside a proof.
@@ -4939,7 +4968,10 @@ impl AnnotationLowerer<'_> {
             } => {
                 let display_name = name.kernel_name();
                 let _ = written_name;
-                let variable = allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
+                let variable = allocate_quantifier_variable(
+                    &mut self.next_quantifier_variable,
+                    self.quantifier_producer,
+                )?;
                 let mut body_environment = environment.clone();
                 body_environment.integer_values.remove(name);
                 body_environment.values.remove(name);
@@ -5065,7 +5097,10 @@ impl AnnotationLowerer<'_> {
                     .as_ref()
                     .map(crate::kernel::BindingName::from)
                     .unwrap_or_else(|| name.kernel_name());
-                let variable = allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
+                let variable = allocate_quantifier_variable(
+                    &mut self.next_quantifier_variable,
+                    self.quantifier_producer,
+                )?;
                 let mut body_environment = environment.clone();
                 body_environment.integer_values.remove(name);
                 body_environment.values.remove(name);
@@ -5195,7 +5230,10 @@ impl AnnotationLowerer<'_> {
                 let wide = self.range_bounds_are_uint64(start, end, environment);
                 let start = self.lower_contract_expression_to_spec(start, environment)?;
                 let end = self.lower_contract_expression_to_spec(end, environment)?;
-                let variable = allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
+                let variable = allocate_quantifier_variable(
+                    &mut self.next_quantifier_variable,
+                    self.quantifier_producer,
+                )?;
                 let item_carrier = if wide {
                     ProgramValue::UInt64(MachineTerm::Variable(variable))
                 } else {
@@ -5258,7 +5296,10 @@ impl AnnotationLowerer<'_> {
                 let wide = self.range_bounds_are_uint64(start, end, environment);
                 let start = self.lower_contract_expression_to_spec(start, environment)?;
                 let end = self.lower_contract_expression_to_spec(end, environment)?;
-                let variable = allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
+                let variable = allocate_quantifier_variable(
+                    &mut self.next_quantifier_variable,
+                    self.quantifier_producer,
+                )?;
                 let item_carrier = if wide {
                     ProgramValue::UInt64(MachineTerm::Variable(variable))
                 } else {
@@ -5830,20 +5871,31 @@ impl AnnotationLowerer<'_> {
             crate::kernel::model_fields::register_instance_spelling(identity, &access.owner);
         }
         if let Some(state) = environment.reference_state.as_ref() {
-            return state
-                .resource_instance_at_path(access.identity, &access.children)
-                .and_then(|instance| {
-                    crate::kernel::record_transport_field(instance, access.field_index);
-                    instance.fields().get(access.field_index)
-                })
-                .map(crate::kernel::ResourceFieldValue::into_native)
-                .map(Some)
-                .ok_or_else(|| {
-                    format!(
-                        "resource instance `{}` is not owned at this state",
-                        access.owner
+            let value = if access.field_index == crate::kernel::ResourceFieldProjection::WITNESS {
+                state
+                    .resource_witness(access.identity, &access.children, &access.field)
+                    .cloned()
+                    .map(AlgebraicValue::Program)
+            } else {
+                state
+                    .projected_resource_field(
+                        access.identity,
+                        &access.children,
+                        access.field_index,
+                        access.projected_name().as_deref(),
                     )
-                });
+                    .and_then(|(instance, index)| {
+                        crate::kernel::record_transport_field(instance, index);
+                        instance.fields().get(index)
+                    })
+                    .map(crate::kernel::ResourceFieldValue::into_native)
+            };
+            return value.map(Some).ok_or_else(|| {
+                format!(
+                    "resource instance `{}` is not owned at this state",
+                    access.owner
+                )
+            });
         }
         Ok(None)
     }
@@ -6326,6 +6378,7 @@ impl AnnotationLowerer<'_> {
                 crate::kernel::ResourceFieldProjection {
                     identity: access.identity,
                     children: access.children.clone(),
+                    field_name: access.projected_name(),
                     field_index: access.field_index,
                     at_entry: environment.at_function_entry,
                 },
@@ -6580,10 +6633,14 @@ impl AnnotationLowerer<'_> {
                 body,
             } => {
                 let initial = self.lower_contract_integer_to_spec(initial, environment)?;
-                let accumulator_variable =
-                    allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
-                let item_variable =
-                    allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
+                let accumulator_variable = allocate_quantifier_variable(
+                    &mut self.next_quantifier_variable,
+                    self.quantifier_producer,
+                )?;
+                let item_variable = allocate_quantifier_variable(
+                    &mut self.next_quantifier_variable,
+                    self.quantifier_producer,
+                )?;
                 // Bare numerals inherit the range's index carrier. Only an
                 // explicitly mathematical operand selects Integer indices.
                 fn integer_index_expression(
@@ -7133,6 +7190,7 @@ impl AnnotationLowerer<'_> {
                     projection: crate::kernel::ResourceFieldProjection {
                         identity: access.identity,
                         children: access.children.clone(),
+                        field_name: access.projected_name(),
                         field_index: access.field_index,
                         at_entry: environment.at_function_entry,
                     },
@@ -7479,10 +7537,28 @@ impl AnnotationLowerer<'_> {
                         byte_width: element_width,
                     });
                 }
-                Ok(SpecExpression::Add(
-                    Box::new(self.lower_contract_expression_to_spec(left, environment)?),
-                    Box::new(self.lower_contract_expression_to_spec(right, environment)?),
-                ))
+                let lowered_left =
+                    Box::new(self.lower_contract_expression_to_spec(left, environment)?);
+                let lowered_right =
+                    Box::new(self.lower_contract_expression_to_spec(right, environment)?);
+                // The copied parameter's field type is known once its
+                // recorded layout has been selected. Its parsed C fragment
+                // does not carry a type.
+                if let Some(byte_width) = copied_parameter_pointer_width(left, &lowered_left) {
+                    return Ok(SpecExpression::PointerOffset {
+                        pointer: lowered_left,
+                        elements: lowered_right,
+                        byte_width,
+                    });
+                }
+                if let Some(byte_width) = copied_parameter_pointer_width(right, &lowered_right) {
+                    return Ok(SpecExpression::PointerOffset {
+                        pointer: lowered_right,
+                        elements: lowered_left,
+                        byte_width,
+                    });
+                }
+                Ok(SpecExpression::Add(lowered_left, lowered_right))
             }
             ContractExpression::Subtract(left, right) => {
                 if let Some(element_width) = self.contract_pointer_element_width(left, environment)
@@ -7914,6 +7990,7 @@ impl AnnotationLowerer<'_> {
                         crate::kernel::ResourceFieldProjection {
                             identity: access.identity,
                             children: access.children.clone(),
+                            field_name: access.projected_name(),
                             field_index: access.field_index,
                             at_entry: environment.at_function_entry,
                         },
@@ -8315,8 +8392,10 @@ impl AnnotationLowerer<'_> {
                     })
                 }
                 AlgebraicValueType::Integer => {
-                    let variable =
-                        allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
+                    let variable = allocate_quantifier_variable(
+                        &mut self.next_quantifier_variable,
+                        self.quantifier_producer,
+                    )?;
                     SpecAlgebraicValue::Integer(SpecIntegerExpression::Term(
                         crate::kernel::IntegerTerm::var(variable),
                     ))
@@ -11151,7 +11230,7 @@ mod integer_source_quantifier_tests {
             SpecExpression, SpecPoint, SpecPureFunctionArgument, SymbolicMemory,
         };
 
-        let explicit = Variable(2_001);
+        let explicit = Variable::produced(crate::kernel::Producer::ProofQuantifier, 2_001);
         let unrelated_heap_variable = Variable(9_000_001);
         let heap_pointer = Address {
             base: AddressBase::Heap(77),
@@ -11189,7 +11268,10 @@ mod integer_source_quantifier_tests {
         );
 
         assert_eq!(
-            max_spec_integer_expression_variable(&captured),
+            max_spec_integer_expression_variable(
+                &captured,
+                crate::kernel::Producer::ProofQuantifier
+            ),
             Some(explicit),
             "freshness must follow explicit expression identities, not cells in an unrelated state"
         );
@@ -11206,10 +11288,13 @@ mod integer_source_quantifier_tests {
             panic!("expected proposition")
         };
         let state = ExecutionState::new();
-        for captured_variable in [1_999_999, 2_000_000, 2_000_017] {
-            let captured = ProgramValue::UInt64(crate::kernel::MachineTerm::Variable(Variable(
-                captured_variable,
-            )));
+        for captured_variable in [
+            Variable(1_999_999),
+            crate::kernel::Variable::produced(crate::kernel::Producer::ProofQuantifier, 0),
+            crate::kernel::Variable::produced(crate::kernel::Producer::ProofQuantifier, 17),
+        ] {
+            let captured =
+                ProgramValue::UInt64(crate::kernel::MachineTerm::Variable(captured_variable));
             for embedded in [false, true] {
                 let mut proposition = proposition.clone();
                 if embedded {
@@ -11246,7 +11331,7 @@ mod integer_source_quantifier_tests {
                 let SpecProposition::ForAllMachineInteger { variable, body, .. } = lowered else {
                     panic!("expected machine forall")
                 };
-                assert_ne!(variable, Variable(captured_variable));
+                assert_ne!(variable, captured_variable);
                 let SpecProposition::Comparison { left, right, .. } = *body else {
                     panic!("expected native comparison")
                 };
@@ -11262,7 +11347,7 @@ mod integer_source_quantifier_tests {
     }
 
     #[test]
-    fn integer_quantifier_stays_out_of_the_execution_band_and_avoids_caller_bindings() {
+    fn integer_quantifier_is_its_own_producer_and_avoids_caller_bindings() {
         let file = crate::surface::parse(
             "theorem capture(x: Integer) { ensures forall (z: Integer) { x == z }; }",
         )
@@ -11273,13 +11358,16 @@ mod integer_source_quantifier_tests {
         };
         let state = ExecutionState::new().with_population_creation_tracking();
 
-        // The final execution identity must not move the quantifier allocator
-        // back into the execution band's range. The first quantifier identity
-        // is also captured here to ensure the binder advances past caller data.
-        for captured_variable in [1_999_999, 2_000_000] {
+        // An execution identity cannot collide with a quantifier variable.
+        // The first quantifier identity is also captured here to ensure the
+        // binder advances past caller data.
+        for captured_variable in [
+            Variable(1_999_999),
+            crate::kernel::Variable::produced(crate::kernel::Producer::ProofQuantifier, 0),
+        ] {
             let integer_values = [(
                 "x".to_string(),
-                SpecIntegerExpression::Term(IntegerTerm::var(Variable(captured_variable))),
+                SpecIntegerExpression::Term(IntegerTerm::var(captured_variable)),
             )]
             .into_iter()
             .collect();
@@ -11306,10 +11394,11 @@ mod integer_source_quantifier_tests {
             let SpecProposition::ForAllInteger { variable, body, .. } = lowered else {
                 panic!("expected Integer forall")
             };
-            assert_ne!(variable, Variable(captured_variable));
-            assert!(
-                (2_000_000..4_000_000).contains(&variable.0),
-                "quantifier variable {variable:?} must stay outside the execution band"
+            assert_ne!(variable, captured_variable);
+            assert_eq!(
+                variable.producer(),
+                Some(crate::kernel::Producer::ProofQuantifier),
+                "quantifier variable {variable:?} must be the lowering's own producer"
             );
             let SpecProposition::IntegerComparison {
                 left: SpecIntegerExpression::Term(left),
@@ -11319,7 +11408,7 @@ mod integer_source_quantifier_tests {
             else {
                 panic!("expected Integer comparison")
             };
-            assert_eq!(left, IntegerTerm::var(Variable(captured_variable)));
+            assert_eq!(left, IntegerTerm::var(captured_variable));
             assert_eq!(right, IntegerTerm::var(variable));
         }
     }
@@ -11387,6 +11476,26 @@ pub(in crate::surface) fn opaque_contract_refusal_suffix(function: &str) -> Stri
 pub(in crate::surface) enum RegionParameterAccess<'a> {
     Field(&'a str),
     Index(&'a ContractExpression),
+}
+
+fn copied_parameter_pointer_width(
+    mut expression: &ContractExpression,
+    lowered: &SpecExpression,
+) -> Option<u32> {
+    let SpecExpression::MemoryLoad { value_type, .. } = lowered else {
+        return None;
+    };
+    let pointee = value_type.pointee_type()?;
+    while let ContractExpression::At {
+        expression: inner, ..
+    }
+    | ContractExpression::Old(inner)
+    | ContractExpression::Exact(inner) = expression
+    {
+        expression = inner;
+    }
+    region_parameter_read(expression)?;
+    Some(pointee.byte_width())
 }
 
 /// The call region, parameter and accesses of `expression` when it reads

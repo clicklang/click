@@ -457,7 +457,9 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
                 collect_applied_theorems(&proof_if.then_tactics, names);
                 collect_applied_theorems(&proof_if.else_tactics, names);
             }
-            ProofTactic::CloseInvariantsBy(body) => collect_applied_theorems(body, names),
+            ProofTactic::IntroBlock { body, .. } | ProofTactic::CloseInvariantsBy(body) => {
+                collect_applied_theorems(body, names);
+            }
             ProofTactic::StepProved { proof, .. } => match proof {
                 StepProof::By(body) => collect_applied_theorems(body, names),
                 StepProof::Requires(entries) => {
@@ -6344,7 +6346,7 @@ pub(in crate::surface) fn composite_resource_definitions(
     // Resource-match Integer binders are logical atoms in the lowered arm
     // facts. Allocate them once for the complete function environment so
     // unrelated resources cannot accidentally share a carrier identity.
-    let mut next_integer_binding_variable = 9_100_000_000u64;
+    let mut next_integer_binding_variable = 0u64;
     for definition in resource_environment.definitions.values() {
         // An unmatched body's named children are split out of its clauses
         // and facts, as each matched arm's are.
@@ -6496,7 +6498,10 @@ pub(in crate::surface) fn composite_resource_definitions(
                 let mut binding_variables = Vec::with_capacity(bindings.len());
                 for (name, ty) in &bindings {
                     if *ty == ClickType::Integer {
-                        let variable = crate::kernel::Variable(next_integer_binding_variable);
+                        let variable = crate::kernel::Variable::produced(
+                            crate::kernel::Producer::ResourceIntegerBinding,
+                            next_integer_binding_variable,
+                        );
                         next_integer_binding_variable = next_integer_binding_variable
                             .checked_add(1)
                             .ok_or_else(|| {
@@ -8953,7 +8958,7 @@ fn termination_analysis_error(
         }
         None => located,
     };
-    if located.work_limit_exhausted {
+    if located.verification_stopped() {
         return located;
     }
     match error.kind() {
@@ -8992,7 +8997,7 @@ pub(in crate::surface) fn program_contract_failure(
             match goal {
                 ProgramContractGoal::DivergencePolicy(name) => {
                     let name = spelling(&name);
-                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name).with_proof_refusal(ProofRefusal::DivergenceDeclaration)
+                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name).with_proof_refusal(ProofRefusal::Contract)
                 }
                 ProgramContractGoal::CallbackSafety => {
                     let unsuitable = &verdicts.unsuitable_callbacks[0];

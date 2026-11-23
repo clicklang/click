@@ -23,6 +23,66 @@ fn successor(id: u64) -> IntegerTerm {
 }
 
 #[test]
+fn retained_fold_literal_machine_guards_match_native_rewrites() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Variable(101_010);
+    let replacement = IntegerTerm::constant_i64(42);
+    let renamings = BTreeMap::new();
+    for format in crate::kernel::machine_integer::FORMATS {
+        let literal = |value| {
+            Box::new(MachineTerm::machine_constant(
+                MachineIntegerConstant::from_signed(format.format(), value).unwrap(),
+            ))
+        };
+        let guards = [
+            ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::Equal,
+                left: literal(0),
+                right: literal(0),
+            },
+            ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::LessThan,
+                left: literal(1),
+                right: literal(0),
+            },
+            ConditionTerm::Overflows {
+                format,
+                op: OverflowOperation::Add,
+                left: literal(1),
+                right: literal(1),
+            },
+        ];
+        for guard in guards {
+            let native = IntegerTerm::If {
+                condition: Box::new(guard),
+                then_term: IntegerTerm::Variable(source).into(),
+                else_term: IntegerTerm::constant_i64(7).into(),
+            };
+            let mut import = KernelTermImport::default();
+            let retained = import.integer(&native.clone().into());
+            for substitute in [false, true] {
+                let new_rewrite = || {
+                    if substitute {
+                        TermRewrite::for_integer_variables(source, &replacement, false, &renamings)
+                    } else {
+                        TermRewrite::empty()
+                    }
+                };
+                let native = new_rewrite().integer(&native);
+                let retained = new_rewrite().shared_fold_integer_child(&retained).unwrap();
+                assert_eq!(
+                    retained,
+                    import.integer(&native.into()),
+                    "format={format:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn integer_conditional_is_built_only_when_undecided_with_distinct_arms() {
     assert_eq!(
         IntegerTerm::if_then_else(ConditionTerm::Constant(true), integer(1), integer(2)),

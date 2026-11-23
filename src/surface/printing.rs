@@ -1212,6 +1212,12 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::ArithmeticUsing(premises) => {
             write_using_premises(output, "solve()", premises, indent)
         }
+        ProofTactic::IntroBlock { binder, body } => {
+            let name = binder.as_ref().map(ToString::to_string).unwrap_or_default();
+            line(output, &prefix, &format!("intro({name}) {{"));
+            write_tactics(output, body, indent + 1);
+            line(output, &prefix, "}");
+        }
         ProofTactic::Intro => line(output, &prefix, "intro();"),
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("let {name} = intro();")),
@@ -1269,7 +1275,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         }
         ProofTactic::Instantiate {
             quantified,
-            argument,
+            arguments,
         } => {
             line(
                 output,
@@ -1277,7 +1283,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 &format!(
                     "instantiate({}, {});",
                     source_click_proposition(quantified),
-                    describe_contract_expression(argument)
+                    arguments
+                        .iter()
+                        .map(describe_contract_expression)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             );
         }
@@ -1389,6 +1399,9 @@ pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> Str
     else {
         unreachable!("fold, unfold, and observe use declared resources")
     };
+    // A resource instance at Rust types, as the sidecar writes it.
+    let name = crate::languages::rust::names::resource_instance_display(name)
+        .unwrap_or_else(|| name.clone());
     format!(
         "{name}({})",
         arguments

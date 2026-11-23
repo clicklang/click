@@ -593,7 +593,25 @@ fn imported_project_rebuild_reason(project: &ClickProject) -> Option<&'static st
 }
 
 fn click_message(error: click::surface::ClickError) -> String {
-    error.concise_report()
+    label_tactic_evidence(&error, error.concise_report())
+}
+
+fn label_tactic_evidence(error: &ClickError, report: String) -> String {
+    if error.proof_refusal() != Some(ProofRefusal::Tactic) {
+        return report;
+    }
+    let mut result = String::with_capacity(report.len());
+    for line in report.split_inclusive('\n') {
+        let content = line.trim_start_matches(' ');
+        if let Some(evidence) = content.strip_prefix("goal: ") {
+            result.push_str(&line[..line.len() - content.len()]);
+            result.push_str("required evidence: ");
+            result.push_str(evidence);
+        } else {
+            result.push_str(line);
+        }
+    }
+    result
 }
 
 /// Where the declaration a failure is about is written: the one the failure
@@ -658,7 +676,7 @@ fn located_click_message(
         report.push_str("\n\n");
         report.push_str(&excerpt);
     }
-    report
+    label_tactic_evidence(&error, report)
 }
 
 fn shell_word(value: &str) -> String {
@@ -840,13 +858,13 @@ fn verification_error_report(
                 "\n\nproof trace unavailable: no checked path was retained for this failure",
             );
         }
-        return report;
+        return label_tactic_evidence(error, report);
     }
     // The hint is printed only for a command that `--trace-proof` accepts:
     // both resolve the name through `trace_unit`.
     if matches!(
         error.kind(),
-        ClickErrorKind::Proof | ClickErrorKind::Unsupported
+        ClickErrorKind::Proof | ClickErrorKind::Unsupported | ClickErrorKind::Internal
     ) && let Some(declaration) = error.proof_claim_label().and_then(|claim| {
         if claim == "program.termination" {
             Some(claim)
@@ -861,7 +879,7 @@ fn verification_error_report(
             shell_word(&sidecar.display().to_string())
         ));
     }
-    click::surface::bound_diagnostic_message(report)
+    click::surface::bound_diagnostic_message(label_tactic_evidence(error, report))
 }
 
 /// What refused a proof step, by class, and the `click docs` entry that
@@ -2922,7 +2940,7 @@ int32 read_first(int32 m) {
     }
 
     #[test]
-    fn a_c_parsing_work_stop_is_a_limit_error() {
+    fn c_parsing_reports_the_whole_run_work_limit() {
         let c_source = "int identity(int x) { return x; }";
         let click_source = "verifying \"program.c\";\n\
             int identity(int x) { ensures result == x; }\n";
@@ -2934,7 +2952,7 @@ int32 read_first(int32 m) {
         ])
         .expect_err("one work unit stops while parsing valid C");
         fs::remove_dir_all(&root).unwrap();
-        assert!(error.starts_with("limit error:"), "{error}");
+        assert!(error.starts_with("work limit reached:"), "{error}");
         assert!(!error.contains("syntax error"), "{error}");
         assert!(error.contains("C parsing stopped"), "{error}");
         assert!(
@@ -2950,13 +2968,53 @@ int32 read_first(int32 m) {
             verify_c_sources(click_source, &[("program.c", c_source)])
         })
         .expect_err("the API preserves the parser's stop kind too");
-        assert_eq!(error.kind(), ClickErrorKind::Limit);
-        assert!(error.report().contains("error kind: limit error"));
+        assert_eq!(error.kind(), ClickErrorKind::WorkLimitReached);
+        assert!(error.report().contains("error kind: work limit reached"));
 
         let syntax_error = verify_c_sources(click_source, &[("program.c", "int identity( {")])
             .expect_err("malformed C still reports a syntax error");
         assert_eq!(syntax_error.kind(), ClickErrorKind::Syntax);
         assert!(syntax_error.concise_report().starts_with("syntax error:"));
+    }
+
+    #[test]
+    fn solve_work_exhaustion_reports_unsuccessful_search() {
+        let (root, click_path) = temporary_project(
+            "solve-work-limit",
+            "int32 f(int32 x) { return x; }",
+            r#"verifying "program.c";
+               int32 f(int32 x) { ensures result == x; } by {
+                   step();
+                   solve();
+               }
+            "#,
+        );
+        let verify = |options: &[&str]| {
+            click::instrumentation::with_tactic_work_limits(
+                click::instrumentation::TacticWorkLimits {
+                    smart: 0,
+                    ..Default::default()
+                },
+                || {
+                    let arguments = options
+                        .iter()
+                        .map(|option| (*option).to_string())
+                        .chain(std::iter::once(click_path.display().to_string()));
+                    entry_with(arguments)
+                },
+            )
+            .expect_err("the written solve has no work allowance")
+        };
+        let error = verify(&[]);
+        let trace = verify(&["--trace-proof", "f"]);
+        fs::remove_dir_all(&root).unwrap();
+        assert!(error.starts_with("unsuccessful search"), "{error}");
+        assert!(
+            error.contains("tactic `solve`") && error.contains("smart work budget"),
+            "{error}"
+        );
+        assert!(error.contains("goal: result == x"), "{error}");
+        assert!(trace.contains("steps through: return x"), "{trace}");
     }
 
     /// The crash-containment bound is installed before the run loads its
@@ -2986,7 +3044,7 @@ int32 read_first(int32 m) {
         .expect_err("one millisecond cannot parse four thousand functions");
         fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
         assert!(
-            error.starts_with("click verify was stopped after")
+            error.starts_with("timed out:\n  click verify was stopped after")
                 && error.contains("by the 1ms wall-clock crash-containment bound")
                 && error.contains("C parsing stopped")
                 && error.contains(

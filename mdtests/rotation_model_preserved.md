@@ -1,17 +1,16 @@
 # A left rotation preserves the modeled tree
 
-The positive sibling of the three `rotation_model_rejects_*` tests. The C is
-the ordinary left rotation: it moves the pivot's left subtree to the root's
+The positive counterpart to `rotation_model_rejects_swapped_order.md`. The C
+performs an ordinary left rotation: it moves the pivot's left subtree to the root's
 right slot and hangs the root under the pivot. The contract consumes one
 modeled tree and produces the returned tree with model
 `heap_rotate_left(old(t.model))`, so the claim names every node address, every
 payload, and all three subtrees.
 
-The proof is the one the negatives reuse unchanged: match the entry model,
-close the empty cases from the preconditions, unfold the root and the pivot,
-run the four C statements, and fold the lower node and the returned pivot from
-the exposed children. Each negative keeps this script and changes only the C,
-so a failure there is about the model and not about proof syntax.
+The proof matches the entry model, closes the empty cases, and unfolds the
+root and pivot. It checks the writes and the child pointers they preserve
+before folding the lower node and the returned pivot. The swapped-order
+fixture folds the tree its C actually builds and rejects the model equation.
 
 ```c filename=rotation_model_preserved.c
 struct tree_node {
@@ -103,10 +102,52 @@ struct tree_node* rotate_left(struct tree_node* root) {
                     let { left: l, right: r } = unfold(t);
                     let { left: m, right: z } = unfold(r);
                     step_until(function.exit);
+                    have separate(memory(root->left), memory(root->right)) by { known(); }
+                    have separate(memory(root->left), memory(result->left)) by { known(); }
+                    have separate(statement(4).footprint, memory(root->left)) by {
+                        normalize() using { separate(memory(root->left), memory(root->right)); };
+                    }
+                    have separate(statement(5).footprint, memory(root->left)) by {
+                        normalize() using { separate(memory(root->left), memory(result->left)); };
+                    }
+                    have at(statement(4).exit, root->left) == at(statement(4).entry, root->left) by {
+                        preserve(memory(root->left), statement(4));
+                    }
+                    have at(statement(5).exit, root->left) == at(statement(5).entry, root->left) by {
+                        preserve(memory(root->left), statement(5));
+                    }
+                    have root->left == old(root->left) by {
+                        rewrite(at(statement(5).exit, root->left), at(statement(5).entry, root->left));
+                        rewrite(at(statement(4).exit, root->left), at(statement(4).entry, root->left));
+                        known();
+                    }
+                    have at(statement(4).exit, root->right) == old(root->right->left) by { known(); }
+                    have separate(memory(root->right), memory(result->left)) by { known(); }
+                    have separate(statement(5).footprint, memory(root->right)) by {
+                        normalize() using { separate(memory(root->right), memory(result->left)); };
+                    }
+                    have at(statement(5).exit, root->right) == at(statement(5).entry, root->right) by {
+                        preserve(memory(root->right), statement(5));
+                    }
+                    have root->right == old(root->right->left) by {
+                        rewrite(at(statement(5).exit, root->right), at(statement(5).entry, root->right));
+                        known();
+                    }
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, left_model, middle_model),
                         left: l, right: m
                     });
+                    have separate(memory(result->right), memory(root->right)) by { known(); }
+                    have separate(statement(4).footprint, memory(result->right)) by {
+                        normalize() using { separate(memory(result->right), memory(root->right)); };
+                    }
+                    have at(statement(4).exit, pivot->right) == at(statement(4).entry, pivot->right) by {
+                        preserve(memory(result->right), statement(4));
+                    }
+                    have result->right == old(root->right->right) by {
+                        rewrite(at(statement(4).exit, pivot->right), at(statement(4).entry, pivot->right));
+                        known();
+                    }
                     let rotated = fold(tree_at(result), {
                         model: HeapTree::Node(pivot_node, pivot_value,
                             HeapTree::Node(node, value, left_model, middle_model), far_right_model),

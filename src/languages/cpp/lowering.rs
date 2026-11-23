@@ -433,9 +433,16 @@ fn lower_parameter_value(
                 .pointer_type()
                 .to_kernel_type(),
         )),
-        pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => Ok(
-            program_parameter(binding.clone(), ProgramType::Int32Pointer),
-        ),
+        pointer @ CppType::Pointer { .. }
+            if let Some((_, name)) = scalar::record_pointee(pointer) =>
+        {
+            let carrier_type = if layouts.contains_key(name) {
+                ProgramType::Int32Pointer
+            } else {
+                ProgramType::VoidPointer
+            };
+            Ok(program_parameter(binding, carrier_type))
+        }
         pointer if let Some(is_const) = scalar::void_pointer(pointer) => {
             Ok(program_parameter(binding.clone(), ProgramType::VoidPointer)
                 .with_pointee_constant(is_const))

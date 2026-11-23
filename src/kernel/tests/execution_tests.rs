@@ -2682,8 +2682,7 @@ fn a_join_successor_cannot_continue_from_a_rewound_counter() {
 
 /// Every kernel allocation counts up from one base, and the ranges above it
 /// belong to producers that pick identities by a constant base and a hash:
-/// the surface's quantifier variables, the spec fold binders, the algebraic
-/// binders. Those producers cannot avoid an execution that has counted into
+/// the surface's quantifier variables and the algebraic binders. Those producers cannot avoid an execution that has counted into
 /// their range, so the execution refuses at the lowest of them instead --
 /// promptly, by name, and without a panic.
 #[test]
@@ -2705,15 +2704,14 @@ fn the_execution_identity_counter_refuses_at_the_first_reserved_range() {
     let mut variables = KernelVariableGenerator::fresh_for_execution(BTreeSet::new());
     assert_eq!(variables.next_in(&mut budget), refusal);
 
-    // The ceiling is below the first range it protects. The spec fold
-    // binders are checked here against the constant they are built from; the
-    // surface's quantifier base (`2_000_000`) and algebraic base
-    // (`4_000_000`) are above it by the same reasoning.
+    // The ceiling is below the first range it protects: the surface's
+    // quantifier base (`2_000_000`) and algebraic base (`4_000_000`). Spec
+    // fold binders have their own origin, so no execution identity is one.
     for name in ["index", "accumulator", "item"] {
+        let binder = crate::kernel::spec::spec_fold_bound_variable(&name.into(), 0);
         assert!(
-            crate::kernel::spec::spec_fold_bound_variable(&name.into(), 0).0
-                >= ExecutionBudget::KERNEL_VARIABLE_CEILING,
-            "a spec fold binder must lie above everything an execution can issue"
+            binder.is_spec_fold_binder() && binder != Variable(binder.0),
+            "a spec fold binder must be no identity an execution can issue"
         );
     }
 }
@@ -2952,43 +2950,21 @@ fn a_budget_beside_a_live_state_refuses_an_execution_identity() {
     );
 }
 
-/// Fold binders must occupy their own range, disjoint from every identity
-/// producer that can contribute free variables to a fold body.
+/// Spec fold binders have their own origin, so none equals an identity any
+/// other producer that can contribute free variables to a fold body mints.
 #[test]
-fn the_spec_fold_binder_range_is_disjoint_from_every_other_producer() {
-    let fold_binders = crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_BASE
-        ..crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_CEILING;
-    let reserved: [(&str, std::ops::Range<u64>); 8] = [
-        ("C identities", 0..1_000_000),
-        ("execution identities", 1_000_000..2_000_000),
-        ("surface quantifiers", 2_000_000..4_000_000),
-        ("surface algebraic binders", 4_000_000..4_000_000_000),
-        ("symbolic address bases", 4_000_000_000..8_000_000_000),
-        ("load variables", (1 << 40)..(1 << 41)),
-        (
-            "universal witnesses",
-            ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE
-                ..ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING,
-        ),
-        ("arm refutations", (1 << 56)..(1 << 57)),
-    ];
-    for (name, range) in reserved {
-        assert!(
-            fold_binders.end <= range.start || range.end <= fold_binders.start,
-            "fold binders {fold_binders:?} overlap {name} at {range:?}"
-        );
-    }
-    assert!(
-        fold_binders.end <= (1 << 60),
-        "structural induction begins at 1 << 60"
-    );
+fn a_spec_fold_binder_is_no_other_producer_s_identity() {
+    let mut allocated = std::collections::BTreeSet::new();
     for name in ["accumulator", "item", "index", "sum", "nested"] {
         for salt in [0, 1] {
             let variable = crate::kernel::spec::spec_fold_bound_variable(&name.into(), salt);
             assert!(
-                fold_binders.contains(&variable.0),
+                variable.is_spec_fold_binder(),
                 "{name} salt {salt}: {variable:?}"
             );
+            assert_ne!(variable, Variable(variable.0), "{name} salt {salt}");
+            assert!(!variable.is_match_binder(), "{name} salt {salt}");
+            assert!(allocated.insert(variable), "{name} salt {salt} aliases");
         }
     }
 }
@@ -3033,52 +3009,63 @@ fn a_match_binder_is_no_other_producer_s_identity() {
     );
 }
 
-/// A universal introduction's witness is a free identity standing for an
-/// arbitrary value, and its range has to miss every producer that can appear
-/// free beside it — starting with the C identities, which the freshener used
-/// to count into from `Variable(0)`.
+/// Variables order by origin first: every ordinary variable, whatever its
+/// number, before `Variable::FIRST_NON_ORDINARY`, and every other origin at
+/// or after it, so a query for the greatest ordinary variable bounds itself
+/// by the sentinel and a producer's variables are one contiguous run.
 #[test]
-fn the_universal_witness_range_is_disjoint_from_every_other_producer() {
-    let witnesses = ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE
-        ..ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_CEILING;
-    let reserved: [(&str, std::ops::Range<u64>); 7] = [
-        ("the C identities below every reserved base", 0..1_000_000),
-        (
-            "the execution counter",
-            ExecutionBudget::KERNEL_VARIABLE_BASE..ExecutionBudget::KERNEL_VARIABLE_CEILING,
-        ),
-        ("surface quantifiers", 2_000_000..4_000_000),
-        ("surface algebraic binders", 4_000_000..4_000_000_000),
-        (
-            "spec fold binders",
-            crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_BASE
-                ..crate::kernel::spec::SPEC_FOLD_BINDER_VARIABLE_CEILING,
-        ),
-        ("symbolic address bases", 4_000_000_000..8_000_000_000),
-        ("load variables", (1 << 40)..(1 << 41)),
+fn variables_order_by_origin_before_number() {
+    let others = [
+        Variable::FIRST_NON_ORDINARY,
+        Variable::match_binder(0),
+        Variable::spec_fold_binder(3),
+        Variable::witness(0),
+        Variable::produced(crate::kernel::Producer::ProofQuantifier, 0),
     ];
-    for (name, range) in reserved {
-        assert!(
-            witnesses.end <= range.start || range.end <= witnesses.start,
-            "the universal-witness range {witnesses:?} overlaps {name} at {range:?}"
-        );
+    for other in others {
+        assert!(Variable(u64::MAX) < other, "{other:?}");
+        assert!(Variable::FIRST_NON_ORDINARY <= other, "{other:?}");
+        assert!(!other.is_ordinary() || other == Variable::FIRST_NON_ORDINARY);
     }
-    assert!(
-        !ExecutionBudget::is_universal_witness_variable(Variable(0)),
-        "a C identity must never pass as a universal witness"
+    assert!(Variable(0).is_ordinary() && !Variable::FIRST_NON_ORDINARY.is_ordinary());
+    let set: std::collections::BTreeSet<_> = [
+        Variable(7),
+        Variable::witness(1),
+        Variable(u64::MAX - 1),
+        Variable::match_binder(2),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        set.range(..Variable::FIRST_NON_ORDINARY).next_back(),
+        Some(&Variable(u64::MAX - 1))
     );
-    assert!(
-        !ExecutionBudget::is_universal_witness_variable(Variable(
-            ExecutionBudget::KERNEL_VARIABLE_BASE
-        )),
-        "an execution identity must never pass as a universal witness"
-    );
-    assert!(
-        ExecutionBudget::is_universal_witness_variable(Variable(
-            ExecutionBudget::UNIVERSAL_WITNESS_VARIABLE_BASE
-        )),
-        "the first witness identity must be recognized as one"
-    );
+    let witnesses: Vec<_> = set
+        .range(Variable::witness(0)..=Variable::witness(u64::MAX))
+        .collect();
+    assert_eq!(witnesses, [&Variable::witness(1)]);
+}
+
+/// A universal introduction's witness is a free identity standing for an
+/// arbitrary value, and it has to miss every producer that can appear free
+/// beside it — starting with the C identities, which the freshener used to
+/// count into from `Variable(0)`. Witnesses have their own origin, so no
+/// identity another producer mints is one, whatever its number.
+#[test]
+fn a_universal_witness_is_no_other_producer_s_identity() {
+    for number in [0, 1, ExecutionBudget::KERNEL_VARIABLE_BASE, 1 << 42] {
+        assert!(
+            !ExecutionBudget::is_universal_witness_variable(Variable(number)),
+            "an ordinary identity numbered {number} must never pass as a witness"
+        );
+        assert!(ExecutionBudget::is_universal_witness_variable(
+            Variable::witness(number)
+        ));
+        assert_ne!(Variable::witness(number), Variable(number));
+    }
+    assert!(!ExecutionBudget::is_universal_witness_variable(
+        Variable::match_binder(0)
+    ));
 }
 
 /// A loop invariant the entry lowering cannot evaluate names where it
@@ -3094,6 +3081,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
             projection: ResourceFieldProjection {
                 identity: InstanceId::from_variable(Variable(10)).into(),
                 children: vec![],
+                field_name: None,
                 field_index: 0,
                 at_entry: false,
             },

@@ -538,10 +538,70 @@ fn decode(text: &str) -> Option<(String, &str)> {
     Some((segments.join("::"), rest))
 }
 
+/// `text` with each whole identifier that names a generic resource's
+/// instance at Rust types, `Option_A39_Box_A31___rust_q_I10_box_fields_I4_Cell`,
+/// spelled as a sidecar writes it, `Option<Box<box_fields::Cell>>`.
+fn display_resource_instances(text: &str) -> Cow<'_, str> {
+    let identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+    let bytes = text.as_bytes();
+    let mut output = String::new();
+    let mut copied = 0;
+    let mut at = 0;
+    while at < bytes.len() {
+        if !identifier(bytes[at]) {
+            at += 1;
+            continue;
+        }
+        let start = at;
+        while at < bytes.len() && identifier(bytes[at]) {
+            at += 1;
+        }
+        let word = &text[start..at];
+        if word.contains("_A")
+            && word.contains(PREFIX)
+            && let Some(display) = resource_instance_display(word)
+        {
+            output.push_str(&text[copied..start]);
+            output.push_str(&display);
+            copied = at;
+        }
+    }
+    if copied == 0 {
+        return Cow::Borrowed(text);
+    }
+    output.push_str(&text[copied..]);
+    Cow::Owned(output)
+}
+
+/// The sidecar spelling of `name` when it is a generic resource's instance
+/// whose every type argument is a Rust item or another such instance:
+/// `Box<box_fields::Cell>` for `Box_A31___rust_q_I10_box_fields_I4_Cell`.
+pub(crate) fn resource_instance_display(name: &str) -> Option<String> {
+    if name.starts_with(PREFIX) {
+        return None;
+    }
+    name.match_indices("_A").find_map(|(split, _)| {
+        let base = &name[..split];
+        if base.is_empty() || base.contains(PREFIX) {
+            return None;
+        }
+        let spelled = instance_type_arguments(name, base)?
+            .iter()
+            .map(|argument| {
+                rust_display_name(argument).or_else(|| resource_instance_display(argument))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(format!("{base}<{}>", spelled.join(", ")))
+    })
+}
+
 /// `text` with every whole importer name it contains spelled as its path.
 pub fn display_rust_names(text: &str) -> Cow<'_, str> {
     if !text.contains(PREFIX) {
         return Cow::Borrowed(text);
+    }
+    if let Cow::Owned(instances) = display_resource_instances(text) {
+        return Cow::Owned(display_rust_names(&instances).into_owned());
     }
     let mut output = String::with_capacity(text.len());
     let mut rest = text;
@@ -574,6 +634,21 @@ pub fn display_rust_names(text: &str) -> Cow<'_, str> {
 mod tests {
     use super::*;
     use crate::languages::claim_label_matches;
+
+    #[test]
+    fn resource_instances_at_rust_types_read_as_written() {
+        let cell = qualified_name(["box_fields", "Cell"]);
+        let mut boxed = "Box".to_string();
+        push_type_argument(&mut boxed, &cell);
+        let mut optional = "Option".to_string();
+        push_type_argument(&mut optional, &boxed);
+        assert_eq!(
+            display_rust_names(&format!("unfold({optional}(self.slot));")),
+            "unfold(Option<Box<box_fields::Cell>>(self.slot));"
+        );
+        // A name whose arguments are not Rust items is kept.
+        assert_eq!(display_rust_names("cell_A3_i32(p)"), "cell_A3_i32(p)");
+    }
 
     #[test]
     fn generic_trait_instances_read_with_their_arguments() {

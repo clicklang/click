@@ -105,6 +105,53 @@ struct tree_node* rotate_left(struct tree_node* root) {
                     let { left: l, right: r } = unfold(t);
                     let { left: m, right: z } = unfold(r);
                     step_until(function.exit);
+                    have separate(memory(root->left), memory(root->right)) by { known(); }
+                    have separate(statement(6).footprint, memory(root->left)) by {
+                        normalize() using { separate(memory(root->left), memory(root->right)); };
+                    }
+                    have at(statement(6).exit, root->left) == at(statement(6).entry, root->left) by {
+                        preserve(memory(root->left), statement(6));
+                    }
+                    have separate(memory(root->left), memory(result->left)) by { known(); }
+                    have separate(statement(7).footprint, memory(root->left)) by {
+                        normalize() using { separate(memory(root->left), memory(result->left)); };
+                    }
+                    have at(statement(7).exit, root->left) == at(statement(7).entry, root->left) by {
+                        preserve(memory(root->left), statement(7));
+                    }
+                    have separate(memory(root->left), memory(result->right)) by { known(); }
+                    have separate(statement(8).footprint, memory(root->left)) by {
+                        normalize() using { separate(memory(root->left), memory(result->right)); };
+                    }
+                    have at(statement(8).exit, root->left) == at(statement(8).entry, root->left) by {
+                        preserve(memory(root->left), statement(8));
+                    }
+                    have root->left == old(root->left) by {
+                        rewrite(at(statement(8).exit, root->left), at(statement(8).entry, root->left));
+                        rewrite(at(statement(7).exit, root->left), at(statement(7).entry, root->left));
+                        rewrite(at(statement(6).exit, root->left), at(statement(6).entry, root->left));
+                        known();
+                    }
+                    have at(statement(6).exit, root->right) == old(root->right->left) by { known(); }
+                    have separate(memory(root->right), memory(result->left)) by { known(); }
+                    have separate(statement(7).footprint, memory(root->right)) by {
+                        normalize() using { separate(memory(root->right), memory(result->left)); };
+                    }
+                    have at(statement(7).exit, root->right) == at(statement(7).entry, root->right) by {
+                        preserve(memory(root->right), statement(7));
+                    }
+                    have separate(memory(root->right), memory(result->right)) by { known(); }
+                    have separate(statement(8).footprint, memory(root->right)) by {
+                        normalize() using { separate(memory(root->right), memory(result->right)); };
+                    }
+                    have at(statement(8).exit, root->right) == at(statement(8).entry, root->right) by {
+                        preserve(memory(root->right), statement(8));
+                    }
+                    have root->right == old(root->right->left) by {
+                        rewrite(at(statement(8).exit, root->right), at(statement(8).entry, root->right));
+                        rewrite(at(statement(7).exit, root->right), at(statement(7).entry, root->right));
+                        known();
+                    }
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, left_model, middle_model),
                         left: l, right: m

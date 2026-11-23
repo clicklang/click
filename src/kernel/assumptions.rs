@@ -620,18 +620,15 @@ pub fn conditions_equal_ignoring_memories(left: &ConditionTerm, right: &Conditio
     if let (ConditionTerm::PointerEqual(a, b), ConditionTerm::PointerEqual(c, d)) = (left, right) {
         // Candidate selection only. The context's state bridge separately
         // compares both complete provenances before accepting this candidate.
-        return a.program_type() == c.program_type()
-            && b.program_type() == d.program_type()
-            && pointers_equal_with_load_atoms(
-                a.address(),
-                c.address(),
-                &load_atoms_equal_ignoring_memories,
-            )
-            && pointers_equal_with_load_atoms(
-                b.address(),
-                d.address(),
-                &load_atoms_equal_ignoring_memories,
-            );
+        return pointers_equal_with_load_atoms(
+            a.address(),
+            c.address(),
+            &load_atoms_equal_ignoring_memories,
+        ) && pointers_equal_with_load_atoms(
+            b.address(),
+            d.address(),
+            &load_atoms_equal_ignoring_memories,
+        );
     }
     conditions_equal_with_load_atoms(left, right, &load_atoms_equal_ignoring_memories)
 }
@@ -7518,9 +7515,13 @@ impl PureFactContext {
                     .admitted
                     .pointer_value_classes
                     .equal(left, right)
-                    || (self.provenance_equal(left.provenance(), right.provenance())
-                        && left.bounds() == right.bounds()
-                        && self.pointers_known_equal(left.address(), right.address()))
+                    // Value equality compares the whole provenance, the
+                    // allocation and the array object, and the address.
+                    || (pointer_checks::origins_match(
+                        pointer_checks::Origins::native(left),
+                        pointer_checks::Origins::native(right),
+                        self,
+                    ) && self.pointers_known_equal(left.address(), right.address()))
             }
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => self
                 .equality_graph

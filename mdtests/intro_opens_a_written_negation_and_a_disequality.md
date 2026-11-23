@@ -1,8 +1,7 @@
-# intro opens a written negation and a disequality
+# Refuting a condition or equality with a proof if
 
-`not (n == 1)` lowers to the comparison `n != 1`, and `not (x >= y)` to
-`x < y`. `intro()` opens a goal written as `not P`, and a disequality, which
-is the negation of an equality: `P` becomes a fact and the goal is `false`.
+A proof `if` on the denied proposition puts it in scope in one arm.
+That arm can close with `contradiction`; the other arm has the goal as a fact.
 
 ```c filename=intro_opens_a_written_negation_and_a_disequality.c
 void unused(void) {}
@@ -14,24 +13,35 @@ verifying "intro_opens_a_written_negation_and_a_disequality.c";
 theorem written_negation(n: int32) {
     requires n == 0;
     ensures not (n == 1) by {
-        intro();
-        solve() using { n == 0; n == 1; };
+        if n == 1 {
+            have false by { solve() using { n == 0; n == 1; }; }
+            contradiction(false);
+        } else {
+            known();
+        }
     }
 }
 
 theorem disequality(a: Integer, b: Integer) {
     requires a < b;
     ensures a != b by {
-        intro();
-        solve() using { a < b; a == b; };
+        if a == b {
+            have false by { solve() using { a < b; a == b; }; }
+            contradiction(false);
+        } else {
+            known();
+        }
     }
 }
 
 theorem written_order_negation(x: int32, y: int32) {
     requires x < y;
     ensures not (x >= y) by {
-        intro();
-        contradiction(x < y);
+        if x >= y {
+            contradiction(x < y);
+        } else {
+            known();
+        }
     }
 }
 ```

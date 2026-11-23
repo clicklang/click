@@ -129,25 +129,29 @@ proofs. Both can use simplification, theorem application, exact derivation,
 logical tactics, and proof-level `if`; a nested `have` proof cannot execute C
 or transform resources.
 
-In a pure theorem proof or a C postcondition proof, an introduced `int32`
-binder may shadow an earlier name. After `intro()`, `x` names the newest
-binding and `outer.x` names the previous binding of `x`; `outer.outer.x`
-names the one before that. In a C postcondition, the outer name can refer to
-the function parameter. The qualifier resolves to the retained binder
-identity, including in a nested `have` and in its checked expansion. A
-qualifier with no corresponding enclosing binding is rejected. A `have`
-written after `intro()` stays inside that postcondition's binder scope.
+Use `intro() { ... }` to prove an implication under its antecedent or to
+introduce a universal's variable using its written name. Use
+`intro(name) { ... }` to choose the variable's name. The block proves the
+focused goal. Its variables and assumptions are local to the braces, so a
+grouped postcondition proof can work on the next claim after the block.
+
+In a pure theorem or postcondition proof, a universal binder may shadow an
+earlier name. Inside the block, `x` names the newest binding, `outer.x` names
+the previous binding of `x`, and `outer.outer.x` names the one before that.
+In a C postcondition, the outer name can be the function parameter. The
+qualifier keeps that binder identity in nested proofs and checked expansion.
 
 A proof binder may reuse a name. The newest binding of a name wins wherever
 the name is read, until the block that binds it ends: a value bound by
-`let { ... } = unfold(...)`, `obtain`, `let name = intro()`, a call or step result, or
+`let { ... } = unfold(...)`, `obtain`, `intro(name) { ... }`, a call or step result, or
 a `match` arm hides a fact named by `have` and a resource instance of the same
 name, so a citation, a value and a resource argument all read the same
 binding (`mdtests/intro_as_hides_a_fact_name.md`). One name cannot be hidden:
 in an execution proof, a proof binder may not take the name of a C parameter
 or C object, since `step()` and `at(...)` keep reading the program's variable.
-`intro()` and `let name = intro()` are the exception described above, and reach the
-parameter through `outer.`.
+An `intro()` block can introduce a quantifier variable that shadows a
+parameter. The parameter remains accessible in the
+block through `outer.`.
 
 Whichever kind it is, a proposition a step writes down is lowered against the
 premises in scope where it is written: the claim's own `requires` and every
@@ -194,8 +198,11 @@ returns expand and check again. Nesting the next case inside the continuing
 `else` arm is checked the same way, and the parser reads those `else` chains
 iteratively, but every return then adds a delimiter level, and source nesting
 is limited to 128. The driver still bounds active recursive regions at depth
-11; its diagnostic reports that recursion bound rather than counting every
-written `else` block.
+11 and reports `unsupported` when a proof exceeds it. A `have` can
+move proposition-only work out of an execution region. Removing the depth
+restriction requires checking nested execution regions with an explicit
+stack that retains each region's frontier and join, extending the iterative
+handling already used for sequential early returns.
 
 An execution proof may name the C body's own locals, not only the function's
 parameters. A local of struct-pointer type is a memory base there, so

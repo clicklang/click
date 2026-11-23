@@ -1459,10 +1459,8 @@ impl ExecutionBudget {
     /// The first identity a symbolic execution may invent.
     pub(in crate::kernel) const KERNEL_VARIABLE_BASE: u64 = 1_000_000;
 
-    /// The first identity a symbolic execution may not invent: the surface's
-    /// quantifier variables start here, algebraic binders at `4_000_000`,
-    /// and load and fold variables in separate higher bands beginning at
-    /// `1 << 40`. Those producers use bounded counters or a name hash in
+    /// The first identity a symbolic execution may not invent. Load variables
+    /// are in a separate higher band beginning at `1 << 40`. Those producers use bounded counters or a name hash in
     /// their own ranges, so they cannot avoid an execution
     /// that has counted into their range; the execution refuses instead.
     pub(in crate::kernel) const KERNEL_VARIABLE_CEILING: u64 = 2_000_000;
@@ -1481,39 +1479,18 @@ impl ExecutionBudget {
         variable.is_match_binder()
     }
 
-    /// The first identity a universal introduction or existential choice may use.
-    ///
-    /// `intro()` on `forall v. body` replaces `v` by a *free* identity that
-    /// stands for an arbitrary value, so it must name nothing the surrounding
-    /// state already names. The facts are only part of that state: a C proof
-    /// also carries program variables, a symbolic store, a memory state and a
-    /// resource context, and an identity that occurs in none of the facts can
-    /// still be the identity of a live C variable. Picking the witness from a
-    /// shared by logical witnesses and no other producer makes the distinction structural instead
-    /// of leaving it to whichever variables happen to appear in a fact.
-    ///
-    /// The range overlaps none of the reserved ones: the C identities run
-    /// below `1_000_000`, the execution counter runs
-    /// `1_000_000 .. 2_000_000`, surface quantifiers run below `4_000_000`,
-    /// algebraic binders stop at `4_000_000_000`, symbolic address bases span
-    /// `4_000_000_000 .. 8_000_000_000`, load variables span
-    /// `1 << 40 .. 1 << 41`, and spec fold binders span
-    /// `1 << 43 .. 1 << 44`; match binders have their own origin. The
-    /// kernel test
-    /// `the_universal_witness_range_is_disjoint_from_every_other_producer`
-    /// asserts that rather than leaving it to this comment.
-    pub(in crate::kernel) const UNIVERSAL_WITNESS_VARIABLE_BASE: u64 = 1 << 42;
+    /// How many witnesses one proof state may introduce. `intro()` on
+    /// `forall v. body` replaces `v` by a *free* variable that stands for an
+    /// arbitrary value, so it must name nothing the surrounding state names:
+    /// program variables, the store, the memory state and resources as well
+    /// as the facts. Witnesses have their own origin, which no other producer
+    /// mints, so that is structural; a proof that needs more than this many
+    /// refuses rather than reusing one.
+    pub(in crate::kernel) const UNIVERSAL_WITNESS_LIMIT: u64 = 1 << 40;
 
-    /// The first identity past the universal-witness range. A proof that
-    /// introduced more witnesses than this would start naming something else,
-    /// so freshening refuses here exactly as the execution counter refuses at
-    /// [`Self::KERNEL_VARIABLE_CEILING`].
-    pub(in crate::kernel) const UNIVERSAL_WITNESS_VARIABLE_CEILING: u64 = 1 << 43;
-
-    /// Whether `variable` is a universal-introduction or existential-choice witness identity.
+    /// Whether `variable` is a universal-introduction or choice witness.
     pub(in crate::kernel) fn is_universal_witness_variable(variable: Variable) -> bool {
-        (Self::UNIVERSAL_WITNESS_VARIABLE_BASE..Self::UNIVERSAL_WITNESS_VARIABLE_CEILING)
-            .contains(&variable.0)
+        variable.is_witness()
     }
 
     /// The first runtime error an evaluation under this budget dropped

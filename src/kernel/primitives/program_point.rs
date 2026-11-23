@@ -97,31 +97,8 @@ impl StepLog {
                 )
             },
         );
-        let step_preserves_external_storage = match step.as_ref() {
-            MemoryDerivation::Store { pointer, .. }
-            | MemoryDerivation::RepresentationWrite { pointer, .. } => indexed_local(&pointer.base),
-            // A declaration makes fresh storage: a local, or the
-            // temporary a call result is built in.
-            MemoryDerivation::BlockDeclared { block, .. } => {
-                indexed_local(block) || matches!(block, AddressBase::Temporary(_))
-            }
-            MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
-            // Pending and resolved fresh allocations leave existing objects alone.
-            MemoryDerivation::HeapAllocationPending { .. }
-            | MemoryDerivation::HeapAllocationFailed { .. }
-            | MemoryDerivation::HeapAllocated { .. } => true,
-            // The call's write effect is recorded separately. The return
-            // clause supplies initialization evidence for the typed cell.
-            MemoryDerivation::ObjectInitializationRecorded { .. } => true,
-            MemoryDerivation::LoopHavoc {
-                mutable_ranges: Some(ranges),
-                ..
-            } => ranges.iter().all(|range| {
-                crate::instrumentation::record_deterministic_work(1);
-                indexed_local(&range.base().base)
-            }),
-            _ => names_existing_cells,
-        };
+        let step_preserves_external_storage =
+            step_preserves_external_storage(&step, names_existing_cells);
         let preserves_external_storage = step_preserves_external_storage
             && previous
                 .as_ref()
@@ -178,6 +155,37 @@ impl StepLog {
     pub(crate) fn newest_first(&self) -> impl Iterator<Item = (&MemoryDerivation, &SharedMemory)> {
         std::iter::successors(Some(self), |log| log.previous.as_deref())
             .map(|log| (log.step.as_ref(), &log.produced))
+    }
+}
+
+/// Whether one recorded step leaves all caller-supplied storage unchanged.
+/// `names_existing_cells` says the step only named cells the view already
+/// held.
+fn step_preserves_external_storage(step: &MemoryDerivation, names_existing_cells: bool) -> bool {
+    match step {
+        MemoryDerivation::Store { pointer, .. }
+        | MemoryDerivation::RepresentationWrite { pointer, .. } => indexed_local(&pointer.base),
+        // A declaration makes fresh storage: a local, or the
+        // temporary a call result is built in.
+        MemoryDerivation::BlockDeclared { block, .. } => {
+            indexed_local(block) || matches!(block, AddressBase::Temporary(_))
+        }
+        MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
+        // Pending and resolved fresh allocations leave existing objects alone.
+        MemoryDerivation::HeapAllocationPending { .. }
+        | MemoryDerivation::HeapAllocationFailed { .. }
+        | MemoryDerivation::HeapAllocated { .. } => true,
+        // The call's write effect is recorded separately. The return
+        // clause supplies initialization evidence for the typed cell.
+        MemoryDerivation::ObjectInitializationRecorded { .. } => true,
+        MemoryDerivation::LoopHavoc {
+            mutable_ranges: Some(ranges),
+            ..
+        } => ranges.iter().all(|range| {
+            crate::instrumentation::record_deterministic_work(1);
+            indexed_local(&range.base().base)
+        }),
+        _ => names_existing_cells,
     }
 }
 
@@ -277,6 +285,7 @@ struct PointNode {
     /// local suffix can reach this point without crossing the call for scalars.
     array_version_after_call: Option<ReadVersionPoint>,
     array_block_versions: Option<ArrayBlockVersions>,
+    external_entry_writes: Option<ExternalEntryWrites>,
 }
 
 #[derive(Clone, Debug)]
@@ -292,6 +301,167 @@ impl ReadVersionPoint {
             memory: self.memory.clone(),
             path: PathLink(Some(self.point.upgrade()?), self.view.clone()),
             read,
+        })
+    }
+}
+
+/// The bytes of caller-supplied storage written since function entry, when
+/// every effect since entry either left that storage alone or wrote a
+/// fixed-width cell at a fixed displacement from one parameter origin. A
+/// read from that origin of bytes none of those writes reached still holds
+/// its entry value, so it keeps the entry version whatever else was written.
+#[derive(Clone, Debug)]
+struct ExternalEntryWrites {
+    entry: Weak<PointNode>,
+    /// The view the first step after entry started from.
+    entry_view: SharedMemory,
+    /// The one origin all writes since entry used; none before the first.
+    origin: Option<(AddressBase, AddressOffset)>,
+    written: PersistentSet<i64>,
+    /// The point whose effect last changed `written` or `origin`, or the
+    /// entry. Two arms with one generation hold one record.
+    generation: ProgramPointId,
+}
+
+impl ExternalEntryWrites {
+    /// The record at `from`: its own, or a fresh one when `from` is the
+    /// function entry. `source` is the view the next step starts from.
+    fn at(from: &PathLink, source: &SharedMemory) -> Option<Self> {
+        if !from.matches_indexed_view(source) {
+            return None;
+        }
+        let node = from.0.as_ref()?;
+        if node.function_entry {
+            return Some(Self {
+                entry: Arc::downgrade(node),
+                entry_view: source.clone(),
+                origin: None,
+                written: PersistentSet::default(),
+                generation: node.id,
+            });
+        }
+        node.external_entry_writes.clone()
+    }
+
+    fn after(
+        predecessors: &[PathLink],
+        steps: Option<&StepLog>,
+        memory: &SharedMemory,
+        id: ProgramPointId,
+        transition: PointTransition,
+    ) -> Option<Self> {
+        let [from] = predecessors else {
+            return None;
+        };
+        let source = match steps {
+            Some(log)
+                if log.contiguous
+                    && log.produced.arena_id() == memory.arena_id()
+                    && (transition != PointTransition::Provisional || log.previous.is_none()) =>
+            {
+                &log.first_base
+            }
+            Some(_) => return None,
+            None => memory,
+        };
+        let mut record = Self::at(from, source)?;
+        if let Some(log) = steps {
+            if log.previous.is_none() {
+                record.record(log, id)?;
+            } else {
+                let effects = std::iter::successors(Some(log), |log| log.previous.as_deref())
+                    .collect::<Vec<_>>();
+                for effect in effects.into_iter().rev() {
+                    record.record(effect, id)?;
+                }
+            }
+        }
+        Some(record)
+    }
+
+    fn record(&mut self, effect: &StepLog, id: ProgramPointId) -> Option<()> {
+        crate::instrumentation::record_deterministic_work(1);
+        let step = effect.step.as_ref();
+        if step_preserves_external_storage(step, effect.named_cells_origin.is_some()) {
+            return Some(());
+        }
+        let (MemoryDerivation::Store { pointer, .. }
+        | MemoryDerivation::RepresentationWrite { pointer, .. }) = step
+        else {
+            return None;
+        };
+        if !external_storage(&pointer.base) {
+            return None;
+        }
+        let width = i64::from(step.single_write_extent()?.1.bytes()?);
+        if !(1..=super::MAX_SCALAR_ACCESS_BYTES).contains(&width) {
+            return None;
+        }
+        let (anchor, start) = read_displacement(&pointer.offset)?;
+        let origin = read_origin(pointer, anchor)?;
+        match &self.origin {
+            Some(known) if *known != origin => return None,
+            Some(_) => {}
+            None => self.origin = Some(origin),
+        }
+        for byte in start..start.checked_add(width)? {
+            crate::instrumentation::record_deterministic_work(1);
+            self.written = self.written.with_value(byte);
+        }
+        self.generation = id;
+        Some(())
+    }
+
+    /// Keep the record only when every arm holds the same one.
+    fn joining(points: &[ProgramPoint]) -> Option<Self> {
+        let at = |point: &ProgramPoint| Self::at(&point.path, &point.memory);
+        let (first, rest) = points.split_first()?;
+        let record = at(first)?;
+        for point in rest {
+            crate::instrumentation::record_deterministic_work(1);
+            let other = at(point)?;
+            if !Weak::ptr_eq(&record.entry, &other.entry) || record.generation != other.generation {
+                return None;
+            }
+        }
+        Some(record)
+    }
+
+    /// The entry read of `bytes` at `pointer`, when no recorded write since
+    /// entry reached them.
+    fn unwritten_entry_read(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+        allow_materialized_entry: bool,
+    ) -> Option<ProgramPoint> {
+        if !external_storage(&pointer.base) {
+            return None;
+        }
+        let (anchor, start) = read_displacement(&pointer.offset)?;
+        if self
+            .origin
+            .as_ref()
+            .is_some_and(|origin| Some(origin) != read_origin(pointer, anchor).as_ref())
+        {
+            return None;
+        }
+        for byte in start..start.checked_add(i64::from(bytes))? {
+            crate::instrumentation::record_deterministic_work(1);
+            if self.written.contains(&byte) {
+                return None;
+            }
+        }
+        let entry = self.entry.upgrade()?;
+        if entry.memory.memory() != &SymbolicMemory::default()
+            || (!allow_materialized_entry && self.entry_view.memory() != &SymbolicMemory::default())
+        {
+            return None;
+        }
+        Some(ProgramPoint {
+            memory: entry.memory.clone(),
+            path: PathLink(Some(entry), IndexedView::Recorded),
+            read: ReadSelection::Entry,
         })
     }
 }
@@ -676,6 +846,7 @@ impl PathLink {
                 external_read_start,
                 array_version_after_call: None,
                 array_block_versions: ArrayBlockVersions::joining(points, joined),
+                external_entry_writes: ExternalEntryWrites::joining(points),
             })),
             IndexedView::Recorded,
         )
@@ -715,6 +886,13 @@ impl PathLink {
                     id,
                     transition,
                 );
+                let external_entry_writes = ExternalEntryWrites::after(
+                    &predecessors,
+                    steps.as_deref(),
+                    &memory,
+                    id,
+                    transition,
+                );
                 PointNode {
                     id,
                     function_entry: transition == PointTransition::FunctionEntry,
@@ -726,6 +904,7 @@ impl PathLink {
                     external_read_start,
                     array_version_after_call,
                     array_block_versions,
+                    external_entry_writes,
                 }
             })),
             IndexedView::Recorded,
@@ -1360,7 +1539,10 @@ impl Ord for ProgramPoint {
 
 impl ProgramPoint {
     /// A point built from a bare memory state, with no place on a path.
+    #[cfg_attr(test, track_caller)]
     pub fn at(memory: &SharedMemory) -> Self {
+        #[cfg(test)]
+        crate::kernel::mixed_read_names::record_bare_point(memory, std::panic::Location::caller());
         Self {
             memory: memory.clone(),
             path: PathLink::default(),
@@ -1370,6 +1552,7 @@ impl ProgramPoint {
 
     /// The point a `SymbolicMemory` value stands at, interning it first. Callers
     /// that already hold an interned state use [`ProgramPoint::at`].
+    #[cfg_attr(test, track_caller)]
     pub(crate) fn of_memory(memory: &SymbolicMemory) -> Self {
         Self::at(&intern_memory(memory.clone()))
     }
@@ -1610,7 +1793,7 @@ impl ProgramPoint {
         {
             return None;
         }
-        self.external_entry_read(pointer, false)
+        self.external_entry_read(pointer, Some(kind.byte_width()), false)
     }
 
     pub(crate) fn generic_entry_version(
@@ -1621,17 +1804,41 @@ impl ProgramPoint {
         if parameter.is_enum() {
             return None;
         }
-        self.external_entry_read(pointer, false)
+        self.external_entry_read(pointer, None, false)
     }
 
+    /// The entry version of a caller cell of `bytes`, when unknown its width
+    /// is `None`: from a suffix that left all caller storage alone, or, for
+    /// a known width, from a record of the caller bytes written since entry.
     fn external_entry_read(
         &self,
         pointer: &Address,
+        bytes: Option<u32>,
         allow_materialized_entry: bool,
     ) -> Option<Self> {
         if pointer.base != AddressBase::ExternalArgument {
             return None;
         }
+        self.external_entry_read_from_suffix(pointer, allow_materialized_entry)
+            .or_else(|| {
+                let bytes = bytes?;
+                if !self.path.matches_indexed_view(&self.memory) {
+                    return None;
+                }
+                self.path
+                    .0
+                    .as_ref()?
+                    .external_entry_writes
+                    .as_ref()?
+                    .unwritten_entry_read(pointer, bytes, allow_materialized_entry)
+            })
+    }
+
+    fn external_entry_read_from_suffix(
+        &self,
+        pointer: &Address,
+        allow_materialized_entry: bool,
+    ) -> Option<Self> {
         let mut entry = self.parameter_read_start(&pointer.base);
         let node = entry.path.0.as_ref()?;
         // Entry setup can attach a proof view to the root without executing
@@ -1686,11 +1893,13 @@ impl ProgramPoint {
             | ProgramType::UInt64
             | ProgramType::Int128
             | ProgramType::UInt128 => self
-                .external_entry_read(pointer, true)
+                .external_entry_read(pointer, Some(value_type.byte_width()), true)
                 .or_else(|| self.entry_read_through_loaded_pointer(pointer, value_type)),
-            value_type if value_type.is_pointer() => self.external_entry_read(pointer, true),
+            value_type if value_type.is_pointer() => {
+                self.external_entry_read(pointer, Some(value_type.byte_width()), true)
+            }
             ProgramType::Parameter(parameter) if !parameter.is_enum() => {
-                self.external_entry_read(pointer, true)
+                self.external_entry_read(pointer, None, true)
             }
             _ => None,
         }
@@ -2917,5 +3126,37 @@ mod tests {
     }
     mod scaling_tests {
         include!("../../scaling_tests/kernel/primitives/program_point.rs");
+    }
+
+    /// One cell at one memory state named by a selected point and by its
+    /// memory is reported once, with the line that built the bare point.
+    /// A cell named one way, however often, is not.
+    #[test]
+    fn the_mixed_read_name_audit_reports_a_cell_named_both_ways() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let selected = entry
+            .program_point()
+            .entry_integer_version(&cell, LoadKind::Int32)
+            .expect("an entry read");
+        let observe = |point: &ProgramPoint| {
+            crate::kernel::mixed_read_names::observe(point, &cell, LoadKind::Int32);
+        };
+        let reports = crate::kernel::mixed_read_names::capture(|| {
+            observe(&selected);
+            observe(&selected);
+            let bare = ProgramPoint::at(selected.shared_memory());
+            observe(&bare);
+            observe(&bare);
+        });
+        let [report] = reports.as_slice() else {
+            panic!("{reports:?}");
+        };
+        assert!(report.contains("program_point.rs"), "{report}");
+        assert!(crate::kernel::mixed_read_names::capture(|| observe(&selected)).is_empty());
     }
 }

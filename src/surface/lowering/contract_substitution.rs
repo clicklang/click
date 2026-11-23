@@ -4988,7 +4988,14 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
             *volatile,
             *pointee_constant,
         )),
-        ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
+        // Reads rooted at a copied argument need the recorded parameter
+        // point, which the cached C fragment cannot represent.
+        ContractExpression::Field { lowered, .. }
+        | ContractExpression::ArrayIndex { lowered, .. } => {
+            super::annotations::region_parameter_read(expression)
+                .is_none()
+                .then(|| lowered.clone())
+        }
         ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             Some(ProgramExpression::Variable((name.clone()).into()))
         }
@@ -5053,7 +5060,6 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
             Box::new(contract_expression_as_program_expression(base)?),
             Box::new(contract_expression_as_program_expression(index)?),
         )),
-        ContractExpression::ArrayIndex { lowered, .. } => Some(lowered.clone()),
         ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }
         | ContractExpression::Let { .. } => None,
@@ -5138,7 +5144,14 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
             *volatile,
             *pointee_constant,
         )),
-        ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
+        // Reads rooted at a copied argument need the recorded parameter
+        // point, which the cached C fragment cannot represent.
+        ContractExpression::Field { lowered, .. }
+        | ContractExpression::ArrayIndex { lowered, .. } => {
+            super::annotations::region_parameter_read(expression)
+                .is_none()
+                .then(|| lowered.clone())
+        }
         ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             Some(ProgramExpression::Variable((name.clone()).into()))
         }
@@ -5203,7 +5216,6 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
             Box::new(contract_expression_to_program_expression(base)?),
             Box::new(contract_expression_to_program_expression(index)?),
         )),
-        ContractExpression::ArrayIndex { lowered, .. } => Some(lowered.clone()),
         ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }
         | ContractExpression::Let { .. } => None,

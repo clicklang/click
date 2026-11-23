@@ -24,6 +24,8 @@ void object_retain(int32* obj) {
     ensures count(object_ref(obj)) == old(count(object_ref(obj))) + 1;
 } by {
     fold(object_ref(obj));
+    step_until(function.exit);
+    solve();
 }
 ```
 

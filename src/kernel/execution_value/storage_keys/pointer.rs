@@ -15,7 +15,6 @@ struct PointerData {
 struct PointerIdentity {
     address: AddressKey,
     provenance: AddressKey,
-    program_type: ProgramType,
     bounds_known: bool,
     bounds_owner: Option<AddressKey>,
     bounds: Option<(AddressKey, MachineTerm)>,
@@ -53,7 +52,6 @@ impl PointerStorageKey {
         Self::new(PointerIdentity {
             address: AddressKey::native(value.address()),
             provenance: AddressKey::native(value.provenance()),
-            program_type: value.program_type(),
             bounds_known: value.bounds_are_known(),
             bounds_owner: (!value.bounds_are_known())
                 .then(|| value.bounds_owner().map(AddressKey::native))
@@ -65,19 +63,14 @@ impl PointerStorageKey {
     }
     fn shared(value: &SharedPointer) -> Self {
         let value = value.node();
-        let q = value.qualifiers.as_deref();
-        let bounds_known = q.is_some_and(|q| q.bounds_known);
         Self::new(PointerIdentity {
             address: AddressKey::shared(&value.address),
             provenance: AddressKey::shared(&value.provenance),
-            program_type: value.program_type,
-            bounds_known,
-            bounds_owner: (!bounds_known)
-                .then(|| value.bounds_owner.as_ref().map(AddressKey::shared))
-                .flatten(),
+            bounds_known: value.array.is_known(),
+            bounds_owner: value.array.opaque_owner().map(AddressKey::shared),
             // Widths have native MachineTerm structural identity, unlike offset
             // index handles. Keep this selected scalar adapter explicit.
-            bounds: q.and_then(|q| q.bounds.as_ref()).map(|e| {
+            bounds: value.array.bounds().map(|e| {
                 (
                     AddressKey::shared(&e.start),
                     KernelTermExport::machine(&e.width).expect("selected subobject width"),

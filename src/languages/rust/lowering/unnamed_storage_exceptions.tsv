@@ -1,29 +1,12 @@
 # Existing Rust MIR storage exceptions. Remove a row when lowering gives its slot a supported identity.
 # Source	Function	Line	Column	MIR key
-boxed.rs	__rust_q_I5_boxed_I13_maybe_through	40	14	__rust_mir_3
-closure.rs	__rust_q_I18_capturing_closures_I5_moved	11	11	__rust_mir_6
-closure.rs	__rust_q_I18_capturing_closures_I6_caller	6	11	__rust_mir_3
-closure.rs	__rust_q_I7_impl_fn_I4_both	26	7	__rust_mir_7
-closure.rs	__rust_q_I7_impl_fn_I5_twice	30	10	__rust_mir_3
-closure.rs	__rust_q_I7_impl_fn_I6_caller	6	11	__rust_mir_3
-enumerate.rs	last_index	3	24	__rust_mir_15
-errors.rs	describe	27	11	__rust_mir_2
 errors.rs	doubled	22	13	__rust_mir_3
 errors.rs	forwarded	17	13	__rust_mir_3
-errors.rs	unwrapped	39	11	__rust_mir_2
-held.rs	__rust_q_I11_held_values_I4_peek	10	11	__rust_mir_4
 holder.rs	__rust_q_I10_box_fields_T33___rust_q_I10_box_fields_I6_Holder_I4_read	11	15	__rust_mir_2
 list.rs	__rust_q_I14_recursive_drop_T36___rust_q_I14_recursive_drop_I5_Stack_I3_pop	21	20	__rust_mir_3
-refs.rs	__rust_q_I11_option_refs_I4_peek	12	11	__rust_mir_4
-refs.rs	__rust_q_I12_generic_refs_I8_use_refs	22	9	__rust_mir_8
-refs.rs	__rust_q_I15_nongeneric_refs_I8_use_refs	22	9	__rust_mir_8
 results.rs	__rust_q_I13_result_values_I7_quarter	26	16	__rust_mir_3
-slots.rs	__rust_q_I14_resource_state_I11_through_dyn	43	16	__rust_mir_3
-slots.rs	__rust_q_I14_resource_state_I7_through	39	12	__rust_mir_3
 slots.rs	__rust_q_T35___rust_q_I14_resource_state_I4_Slot_R43___rust_q_I14_resource_state_I5_Store_A3_u32_I7_take_or	21	15	__rust_mir_3
 stack.rs	__rust_q_I13_generic_stack_T40___rust_q_I13_generic_stack_I5_Stack_A1_T_I3_pop	23	20	__rust_mir_3
 stack.rs	__rust_q_I17_generic_container_T44___rust_q_I17_generic_container_I5_Stack_A1_T_I3_pop	23	20	__rust_mir_3
-trial.rs	guarded_increment	15	31	__rust_mir_6
 trial.rs	guarded_increment	23	21	__rust_mir_14
-values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	9	__rust_mir_7
 values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	12	__rust_mir_8

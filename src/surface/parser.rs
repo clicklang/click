@@ -9,6 +9,7 @@ mod rust_generic_resources;
 mod rust_generic_traits;
 mod rust_literals;
 mod rust_reference_authority;
+mod rust_type_resources;
 use super::names;
 use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
@@ -1915,6 +1916,13 @@ impl Parser {
                     &parser.struct_layouts,
                     &parser.rust_enum_types,
                 )?;
+            // A box or option-of-box place holds its value's type resource.
+            let (tokens, positions, written) = rust_type_resources::write_type_resources(
+                tokens,
+                positions,
+                written,
+                &parser.struct_layouts,
+            )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
             parser.positions = positions;
@@ -2646,6 +2654,11 @@ impl Parser {
                 algebraic_type_definitions.push(self.parse_algebraic_type_definition()?);
             } else if self.peek_ident() == Some("type")
                 && matches!(self.peek_next(), Some(Token::Ident(_)))
+                && self.type_resource_declaration_follows()
+            {
+                self.skip_type_resource_declaration()?;
+            } else if self.peek_ident() == Some("type")
+                && matches!(self.peek_next(), Some(Token::Ident(_)))
             {
                 algebraic_type_definitions.push(self.parse_primitive_type_definition()?);
             } else if self.peek_ident() == Some("predicate") {
@@ -3243,6 +3256,45 @@ impl Parser {
     /// `type Vec<T>;` in a Click library module: a primitive type with no
     /// definition, like `uint32`. Its meaning is the library's bodyless
     /// functions over it and the axioms that relate them.
+    /// Whether a `type` at the cursor declares a type resource, `type
+    /// Box<T> { ... }`: its head is followed by a body, not by `;`.
+    fn type_resource_declaration_follows(&self) -> bool {
+        self.tokens[self.position..]
+            .iter()
+            .find(|token| matches!(token, Token::LBrace | Token::Semicolon))
+            == Some(&Token::LBrace)
+    }
+
+    /// A type resource declaration, `type Box<T> { owns ...; }`. The Rust
+    /// front end reads the library's declarations where it derives the
+    /// authority a value's type grants
+    /// (`rust_reference_authority::type_resources`); a source names only a
+    /// type the library declares.
+    fn skip_type_resource_declaration(&mut self) -> Result<(), ClickError> {
+        self.expect_ident_spelling("type")?;
+        let name = self.expect_ident("type name")?;
+        if !rust_reference_authority::declares_type_resource(&name) {
+            return Err(self.error(format!(
+                "`type {name} {{ ... }}` declares a type resource, which only the Click library declares"
+            )));
+        }
+        let mut depth = 0usize;
+        while let Some(token) = self.peek().cloned() {
+            self.position += 1;
+            match token {
+                Token::LBrace => depth += 1,
+                Token::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
+        }
+        Err(self.error(format!("unterminated `type {name}` declaration")))
+    }
+
     fn parse_primitive_type_definition(&mut self) -> Result<AlgebraicTypeDefinition, ClickError> {
         if !self.library_primitives {
             return Err(self.error(
@@ -7083,6 +7135,17 @@ impl Parser {
                     }
                     saw_pointer = true;
                 }
+                if alias_pointer.is_none()
+                    && self.verifies_cpp()
+                    && !self.struct_layouts.contains_key(&struct_name)
+                {
+                    if interface_type != InterfaceType::Int32Pointer {
+                        return Err(
+                            self.error("layout-free C++ records support only one pointer level")
+                        );
+                    }
+                    interface_type = InterfaceType::VoidPointer;
+                }
                 return Ok(ParsedType {
                     interface_type,
                     struct_name: Some(struct_name),
@@ -8253,7 +8316,7 @@ impl Parser {
                 self.position += 1;
                 continue;
             }
-            let instance = self.expect_ident("caller resource instance")?;
+            let instance = self.expect_resource_path()?;
             crate::instrumentation::record_deterministic_work(1);
             let Some(declaration) = declared.get(&binder) else {
                 return Err(self.error(format!(
@@ -8268,12 +8331,20 @@ impl Parser {
             if !bound.insert(binder.clone()) {
                 return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
             }
-            let Some((identity, family)) = self.names.resource_bindings.get(&instance).cloned()
+            let (root, path) = instance.split_once('.').unwrap_or((&instance, ""));
+            let Some((identity, root_family)) = self.names.resource_bindings.get(root).cloned()
             else {
-                return Err(self.unknown_instance(&instance, "resource instance"));
+                return Err(self.unknown_instance(root, "resource instance"));
             };
+            let slots = path
+                .split('.')
+                .filter(|slot| !slot.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            let family = self.resource_path_family(&root_family, &slots);
             if let Some(expected) = &declaration.family
-                && family != *expected
+                && let Some(family) = family
+                && family != expected
                 && !(expected == "mutex_use" && family == "mutex_live")
                 && !self.child_slot_identities.contains(&identity)
             {
@@ -8281,7 +8352,7 @@ impl Parser {
                     "binder `{binder}` expects resource `{expected}`, but `{instance}` is `{family}`"
                 )));
             }
-            if !instances.insert(identity) {
+            if !instances.insert((identity, path.to_owned())) {
                 return Err(self.error(format!(
                     "resource instance `{instance}` cannot supply two binders of `{callee}`"
                 )));
@@ -8988,6 +9059,25 @@ impl Parser {
         }
         self.position = start;
         self.parse_resource_target(ResourceAccessMode::Own)
+    }
+
+    fn expect_resource_path(&mut self) -> Result<String, ClickError> {
+        let mut name = self.expect_ident("resource instance")?;
+        while self.peek() == Some(&Token::Dot) {
+            self.position += 1;
+            name.push('.');
+            name.push_str(&self.expect_ident("child resource name")?);
+        }
+        Ok(name)
+    }
+
+    fn resource_path_family<'a>(&'a self, family: &'a str, path: &[String]) -> Option<&'a str> {
+        path.iter().try_fold(family, |family, slot| {
+            self.declared_resource_child_slots
+                .get(family)?
+                .get(slot)?
+                .as_deref()
+        })
     }
 
     fn parse_region_proof_items(&mut self) -> Result<Vec<StructuralItem>, ClickError> {
@@ -10577,6 +10667,16 @@ impl Parser {
             if !slots.insert(slot.clone()) || !names.insert(name.clone()) {
                 return Err(self.error("duplicate child slot or resource name"));
             }
+            if !introduce && let Some((root, _)) = name.split_once('.') {
+                let identity = self
+                    .names
+                    .resource_bindings
+                    .get(root)
+                    .and_then(|(identity, _)| identity.instance())
+                    .ok_or_else(|| self.unknown_instance(root, "child resource"))?;
+                result.push((slot, name, identity));
+                continue;
+            }
             if self.names.contains(NameKind::ContractBinding, &name)
                 || matches!(
                     self.specification_binding_kind(&name),
@@ -10858,11 +10958,13 @@ impl Parser {
             ResourceClause::Named { binding, resource } => {
                 // A child keeps its parent's clause as a placeholder until
                 // its actual resource arguments are known.
+                let (root, _) = binding.name.split_once('.').unwrap_or((&binding.name, ""));
                 let family = self
                     .names
                     .resource_bindings
-                    .get(&binding.name)
-                    .map(|(_, family)| family.clone());
+                    .get(root)
+                    .and_then(|(_, family)| self.resource_path_family(family, &binding.children))
+                    .map(str::to_owned);
                 let declared_witnesses = family
                     .as_ref()
                     .and_then(|family| self.declared_resource_witnesses.get(family));
@@ -10956,7 +11058,7 @@ impl Parser {
                     }),
                 };
                 if is_child {
-                    children.push((key, self.expect_ident("child resource name")?));
+                    children.push((key, self.expect_resource_path()?));
                 } else {
                     let value = self.parse_contract_expression()?;
                     let value = if declared.iter().any(|field| {
@@ -11035,16 +11137,18 @@ impl Parser {
             else {
                 continue;
             };
-            let Some((_, family)) = self.names.resource_bindings.get(child) else {
+            let mut path = child.split('.');
+            let root = path.next().expect("a child path has a root");
+            let Some((_, family)) = self.names.resource_bindings.get(root) else {
                 continue;
             };
             fields.push((
                 field.name.clone(),
                 ContractExpression::ResourceField(ResourceFieldAccess {
-                    owner: child.clone(),
+                    owner: root.to_owned(),
                     resource_name: family.clone(),
                     identity: (*identity).into(),
-                    children: vec![],
+                    children: path.map(str::to_owned).collect(),
                     field: child_field.to_string(),
                     field_index: 0,
                     click_type: None,
@@ -11274,6 +11378,7 @@ impl Parser {
             } else {
                 self.parse_declared_resource_call()?
             };
+            let resource = self.hidden_binder(&resource).unwrap_or(resource);
             self.expect(Token::RParen)?;
             let tactics = self.parse_possibly_empty_tactic_block()?;
             if self.peek_ident() == Some("by") {
@@ -11675,6 +11780,40 @@ impl Parser {
         })
     }
 
+    fn parse_intro_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        if self.peek() != Some(&Token::LParen) {
+            return Err(self.error("`intro` requires parentheses; write `intro()`"));
+        }
+        self.expect(Token::LParen)?;
+        let binder = if self.peek() == Some(&Token::RParen) {
+            None
+        } else {
+            Some(self.expect_surface_binder("introduced variable")?)
+        };
+        self.expect(Token::RParen)?;
+        if binder.is_none() && self.peek() != Some(&Token::LBrace) {
+            if self.peek_ident() == Some("as") {
+                return Err(self.error("write `intro(name) { ... }` to introduce a named binder"));
+            }
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::Intro);
+        }
+        let scope = self.names.scope();
+        let old_names = self.names.take(NameKind::ProofBinder);
+        let body = (|| {
+            if let Some(name) = binder.as_ref() {
+                self.named_intro(name.clone())?;
+            }
+            self.parse_possibly_empty_tactic_block()
+        })();
+        self.names.end(scope);
+        self.names.replace(NameKind::ProofBinder, old_names);
+        Ok(ProofTactic::IntroBlock {
+            binder,
+            body: body?,
+        })
+    }
+
     // Keep the large leaf-tactic dispatch frame out of recursive proof-body
     // parsing. Expanded both/if/closure scopes can nest while reading terms.
     #[inline(never)]
@@ -11961,13 +12100,7 @@ impl Parser {
                 };
                 ProofTactic::Preserve(separation)
             }
-            "intro" => {
-                self.expect_empty_tactic_args(&name)?;
-                if self.peek_ident() == Some("as") {
-                    return Err(self.error("`intro() as name` is now `let name = intro();`"));
-                }
-                ProofTactic::Intro
-            }
+            "intro" => return self.parse_intro_tactic(),
             "split" | "left" | "right" => {
                 return Err(self.error(format!(
                     "`{name}()` is now `known()`, which closes a conjunction whose sides are facts and a disjunction with one side a fact"
@@ -12020,14 +12153,18 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let quantified = self.parse_proposition()?;
                 self.expect(Token::Comma)?;
-                let argument = self.parse_contract_expression()?;
+                let mut arguments = vec![self.parse_contract_expression()?];
+                while self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                    arguments.push(self.parse_contract_expression()?);
+                }
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
                     return Err(self.error("`instantiate` takes no `using` list; prove guards with ordinary `have` steps"));
                 }
                 ProofTactic::Instantiate {
                     quantified,
-                    argument,
+                    arguments,
                 }
             }
             "solve" => {

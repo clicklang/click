@@ -1369,10 +1369,16 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
         }
         _ => {}
     }
-    if matches!(
-        target,
-        Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. }
-    ) {
+    if let Proposition::MemoryReadDefined {
+        memory,
+        pointer,
+        value_type,
+        ..
+    } = target
+    {
+        return assumptions.proves_memory_read_defined(memory, pointer, *value_type);
+    }
+    if matches!(target, Proposition::MemoryLoadable { .. }) {
         return crate::kernel::search::ProofSearch::derive_atomic_proposition(assumptions, target)
             .is_some();
     }

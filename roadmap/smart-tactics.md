@@ -97,6 +97,14 @@ calling site, resource and storage class; migrate the routes in order of
 that count. `known_legacy_fresh_reads_through_a_loaded_pointer_cost_the_same_at_every_position`
 is a step shape that still reaches it.
 
+A slice must move every producer of a read kind together: a cell named by a
+selected point in one place and by its memory in another has two terms no
+rule relates, so a fact stated with one does not prove a goal stated with
+the other. `crate::kernel::mixed_read_names::capture` reports each such cell
+the equality graph registers, with the line that built the memory-named read;
+the nightly `every_mdtest_reports_its_mixed_read_names` lists them over the
+mdtests by producer line. Run it before and after each slice.
+
 Named scalar observations and read congruence use indexed versions where the
 producer has a recorded typed write or one of the supported entry versions.
 Concrete resource cells and compact runs can retain their source point.
@@ -221,12 +229,13 @@ work items; this reconciliation changes no behavior.
 Step preparation retains emitted verification conditions and call preconditions,
 and fold preparation retains its body facts, even when already known. The driver
 proves each obligation with a written block or ordinary `solve`. This does not
-finish evaluator migration. Executed uint32 and uint64 division and remainder always
-retain their ordinary nonzero-divisor obligation; generation has no ambient
-fact-context parameter and expansion writes a step proof that replays without
-implicit solve. The driver reports division by zero when indexed facts refute
-that obligation. Other arithmetic operators still decide some safety conditions
-before emitting any obligation. Replacing those decisions needs
+finish evaluator migration. Executed uint32 and uint64 division and remainder
+retain their ordinary nonzero-divisor obligation unless an exact indexed guard
+from operand evaluation already proves it. Generation has no ambient
+fact-context parameter. Expansion writes a step proof for open obligations
+that replays without implicit solve. The driver reports division by zero when
+indexed facts refute the obligation. Other arithmetic operators still decide
+some safety conditions before emitting any obligation. Replacing those decisions needs
 round-trippable goals and flat generation/publication costs. The earlier, unlanded arithmetic-migration prototype failed `struct_array_element_expands_with_its_subscript`
 (the initialized-global sum has no round-tripping overflow-goal raising) and
 `straight_line_assignments_cost_the_same_at_every_position` (work grows from

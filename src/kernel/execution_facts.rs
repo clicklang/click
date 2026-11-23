@@ -197,6 +197,27 @@ impl ExecutionFacts {
     pub(crate) fn contains_proposition(&self, proposition: &Proposition) -> bool {
         self.indexes().propositions.contains(proposition)
     }
+    /// An expression consumer can use a guard indexed by its producer, without
+    /// preparing the execution stream on a miss.
+    pub(in crate::kernel) fn contains_indexed_proposition(
+        &self,
+        proposition: &Proposition,
+    ) -> bool {
+        self.data
+            .indexes
+            .get()
+            .is_some_and(|indexes| indexes.propositions.contains(proposition))
+    }
+
+    /// The path merge has already indexed these same logical occurrences in
+    /// its validation stream. Keep that index when publishing shared blocks.
+    pub(in crate::kernel) fn retain_validated_membership(&mut self, validated: &Self) {
+        if self.data.indexes.get().is_none()
+            && let Some(indexes) = validated.data.indexes.get()
+        {
+            let _ = Arc::make_mut(&mut self.data).indexes.set(indexes.clone());
+        }
+    }
     fn push_shared(&mut self, fact: Arc<ExecutionPureFact>) {
         let data = Arc::make_mut(&mut self.data);
         if let Some(indexes) = data.indexes.get_mut() {

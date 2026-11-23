@@ -97,6 +97,8 @@ pub(crate) use memory_loads::load_variable_for_cell_with_origin;
 pub(crate) use memory_loads::load_variable_for_exact_cell;
 pub(crate) use memory_loads::load_variable_for_term;
 pub(crate) use memory_loads::loaded_pointer_predates_block;
+#[cfg(test)]
+pub(crate) use memory_loads::mixed_read_names;
 pub(in crate::kernel) use memory_loads::observed_scalar_read_width;
 pub(crate) use memory_loads::offsets_have_same_canonical_form;
 #[cfg(test)]

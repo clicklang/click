@@ -1,19 +1,10 @@
-# A consumed instance's field is refused with the unfold binding as the repair
+# A loop can read an opened resource field at its entry
 
-`unfold(before)` consumes the instance, so its fields have nothing to read
-afterwards. A loop invariant reads `old(..)` at the loop's entry, not at
-function entry, so `old(before.prefix)` in the invariant below reads a field
-of the consumed instance. The refusal names the field and the repair: bind
-the field's folded value where the instance is unfolded,
-`let { prefix: name } = unfold(before);`, as the passing twin
-[`resource_unfold_binds_scalar_field.md`](resource_unfold_binds_scalar_field.md)
-does.
+The loop invariant reads the captured prefix at loop entry. The opening
+keeps that value available while the proof advances through the loop and
+refolds the resource.
 
-The store suffix uses explicit cell separation and `preserve`. Its expansion
-regression repairs only the invalid invariant to use `p`, then verifies and
-cold-replays the complete proof while rejecting legacy transport output.
-
-```c filename=resource_unfold_field_binding_rejects_consumed_read.c
+```c filename=resource_unfold_reads_the_opened_field.c
 int32 claim(int32* data, int32* occupied, int32 capacity) {
     int32 i;
     i = 0;
@@ -40,7 +31,7 @@ resource claimed_prefix(data: int32*, occupied: int32*, capacity: int32) {
     };
 }
 
-verifying "resource_unfold_field_binding_rejects_consumed_read.c";
+verifying "resource_unfold_reads_the_opened_field.c";
 
 int32 claim(int32* data, int32* occupied, int32 capacity) {
     consumes before: claimed_prefix(data, occupied, capacity);
@@ -208,5 +199,5 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
 ```
 
 ```expect
-fail: `before.prefix` reads a field of `before`, which is not held here; `unfold(before)` consumed it; name the field's folded value where the instance is unfolded with `let { prefix: name } = unfold(before);`
+pass
 ```

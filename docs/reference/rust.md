@@ -1049,9 +1049,9 @@ A precondition such as `x % 2u8 == 0u8` therefore proves the corresponding
 branch or `assert!` guard without an explicit proof. The nonzero-divisor
 obligation still applies
 ([`design/charon-trial/narrow-remainder`](https://github.com/clicklang/click/blob/master/design/charon-trial/narrow-remainder/widths.click)).
-A narrow signed quotient or remainder is bounded only for a nonnegative
-dividend and positive divisor; with negative operands its range is not yet
-provable
+For `i8` and `i16`, the nonzero divisor and narrow overflow exclusion
+also establish that the promoted result fits the original type. Contracts
+can use the normal Rust domain for either sign of the operands
 ([`design/charon-trial/signed-arithmetic`](https://github.com/clicklang/click/blob/master/design/charon-trial/signed-arithmetic/signed.click)).
 A core `From` between
 integers converts when every source value is a target value. Integer `as`
@@ -1746,18 +1746,43 @@ after, `taken_twice`, whose second `take` finds `None`, `scalar_taken`, and
 old(*o);` and `ensures *o == Option<u32>::None;`.
 
 A crate struct may hold a box or an option of one in a field, as the box's
-address, when the struct lives behind a reference. A resource states what the
-field owns: in
+address, when the struct lives behind a reference. Owning the field owns what
+its value holds, its [type resource](#type-resources): in
 [`design/charon-trial/box-fields`](https://github.com/clicklang/click/blob/master/design/charon-trial/box-fields/holder.click)
-`resource slot(p: *mut box_fields::Cell)` has `field value: Option<u32>`, is
-`fact p == 0` at `None`, and at `Some(v)` owns `allocation(p,
-sizeof(box_fields::Cell))` and `*p` with `fact p.value == v`; `sizeof` takes a
-Rust type. `Holder::read(&mut self)` takes the box out of `self.slot` and
-reads it, and `Holder::put(&mut self, x)` takes the old box, assigns
-`Some(Box::new(..))`, and frees the old one at scope end. Assigning a box
-field first drops its old value in place, which is the drop of that value
-moved out. Each proof splits on the resource's field, unfolds it, and folds
-the produced one.
+`Holder::read(&mut self) -> u32` takes the box out of `self.slot` and reads
+it, and verifies `owns self.slot; ensures old(self.slot) != 0 implies result
+== old(self.slot.value); ensures old(self.slot) == 0 implies result == 0u32;
+ensures self.slot == 0;` with no proof. `Holder::put(&mut self, x)` takes
+the old box, assigns `Some(Box::new(..))`, frees the old one at scope end, and
+verifies `ensures self.slot != 0; ensures self.slot.value == x;`. Assigning a
+box field first drops its old value in place, which is the drop of that value
+moved out. Removing `owns self.slot;` is refused at the field's first read
+(``missing resource fact `views self.slot` ``).
+
+### Type resources
+
+A type resource is the resource a value of a type holds: holding a value of
+the type as a resource holds it. The library declares `Box<T>`'s with the
+`type` keyword, `type Box<T> { owns allocation(self, sizeof(T)); owns *self;
+}`, where `self` is the box, its address
+([`Box<T>`](library/index.md#boxt)). An `Option<Box<R>>`, the box's address
+or null, holds its box's when it is not null, as if declared `if self != 0 {
+owns Box<R>(self); }`. A sidecar declares no type resource of its own; a
+`type` declaration the library does not make is refused.
+
+Each one is an ordinary resource, named by its type applied to the value,
+`Box<box_fields::Cell>(p)` or `Option<Box<box_fields::Cell>>(self.slot)`,
+and every resource rule applies: `fold`, `unfold`, `owns`, `consumes` and
+`produces` take it. A contract clause `owns self.f;` on a field of a box or
+an option of one of a struct with no box fields of its own also consumes the
+field's entry value's type resource and produces its exit value's, since the
+value may change. The implicit closer unfolds and folds them where the
+program reads and writes through them, and where a claim reads the field's
+contents at entry, `old(self.slot.value)`, it splits on the resource's own
+condition at entry, `if self.slot != 0 { unfold(...); ... } else { ... }`,
+which `click expand` writes. Recursive structs, a list's node holding
+`Option<Box<Node>>`, have no derived type resource yet and state theirs as a
+named resource, as below.
 
 A struct may hold a box of its own type, `Node { value: u32, next:
 Option<Box<Node>> }`. Dropping a box of such a struct runs the struct's drop
