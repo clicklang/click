@@ -44,9 +44,8 @@ theorem increment_is_guarded_progress() {
         intro();
         all {
             old(cell[0]) < 1000 => {
-                solve() using {
-                    old(cell[0]) < 100;
-                };
+                have 100 <= 1000 by known();
+                apply(click::integer::int32_less_than_less_equal_transitive(old(cell[0]), 100, 1000));
             }
             (
                 to_integer(old(cell[0])) + 1 <= 2147483647 and

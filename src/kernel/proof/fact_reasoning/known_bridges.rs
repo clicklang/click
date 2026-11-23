@@ -133,6 +133,9 @@ fn integer_arm(
             then_term,
             else_term,
         } => {
+            if then_term.as_ref() == other && else_term.as_ref() == other {
+                return true;
+            }
             return [(true, then_term), (false, else_term)]
                 .into_iter()
                 .any(|(truth, arm)| {
@@ -148,6 +151,9 @@ fn integer_arm(
         }
         _ => return false,
     };
+    if arms.iter().all(|arm| arm.as_ref() == Some(other)) {
+        return true;
+    }
     [(true, &arms[0]), (false, &arms[1])]
         .into_iter()
         .any(|(truth, arm)| arm.as_ref() == Some(other) && guard_holds(condition, truth, available))
@@ -174,6 +180,12 @@ fn narrow_machine_arm(
         let Some(other) = other.observe(format) else {
             continue;
         };
+        if [then_arm, else_arm].into_iter().all(|arm| {
+            arm.observe(format)
+                .is_some_and(|arm| arm.value_read() == other.value_read())
+        }) {
+            return true;
+        }
         for (truth, arm) in [(true, then_arm), (false, else_arm)] {
             if arm
                 .observe(format)
@@ -933,6 +945,37 @@ mod tests {
             ));
             assert!(!known(&equality(value.clone(), wrong), &[premise]));
             assert!(!known(&equality(value.clone(), arm), &[]));
+        }
+    }
+    #[test]
+    fn known_identical_conditional_arms_do_constant_work() {
+        let _session = VerificationSession::enter();
+        let a = IntegerTerm::var(Variable(995708));
+        let value = IntegerTerm::If {
+            condition: Box::new(ConditionTerm::Variable(Variable(995707))),
+            then_term: a.clone().into(),
+            else_term: a.clone().into(),
+        };
+        let goal = equality(value, a.clone());
+        let mut expected_work = None;
+        for count in [0, 8, 128] {
+            let facts = PureFactStore::from_ordered(
+                &(0..count)
+                    .flat_map(|index| {
+                        let other = IntegerTerm::var(Variable(996000 + 2 * index));
+                        let unrelated = IntegerTerm::var(Variable(996001 + 2 * index));
+                        [
+                            equality(a.clone(), other.clone()),
+                            equality(other, unrelated),
+                        ]
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                known_bridge_leaf(&goal, &|fact| facts.pure_known_available(fact))
+            });
+            assert!(proved);
+            assert_eq!(work, *expected_work.get_or_insert(work));
         }
     }
     fn native_binary(ty: MachineIntegerType, op: MachineBinaryOp, count: i32) -> IntegerTerm {

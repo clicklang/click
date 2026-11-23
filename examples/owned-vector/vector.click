@@ -552,7 +552,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         }
         // Restrict the struct/array separation to the length field and element.
         have k < old(owner->cap) by {
-            solve() using { k < old(owner->len); old(owner->len) <= old(owner->cap); };
+            apply(click::integer::int32_less_than_less_equal_transitive(k, old(owner->len), old(owner->cap)));
         }
         have contains(memory(*owner), memory(owner->len)) by { normalize(); }
         have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {

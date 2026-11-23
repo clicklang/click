@@ -1750,6 +1750,8 @@ by its power of two when the exact result is in range; signed shifts also
 require a nonnegative source. A bitwise-and with a nonnegative literal mask
 is between zero and the mask, and is at most a nonnegative source. A root
 conditional equals its selected arm when its written guard is available.
+A root Integer or machine conditional with identical arms equals that shared
+arm without a guard premise.
 Shared native comparison guards retain their operand DAGs; other shared
 compound guards require explicit logical steps rather than exporting a guard
 tree. Missing guards and unsupported forms are refused.
