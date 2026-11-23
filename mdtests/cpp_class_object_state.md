@@ -52,7 +52,7 @@ int caller(const Square& square, int scale) {
     ensures result == square.side + scale;
 } by {
     step_until(call(Square__click_pack_const__Shape, 0).entry);
-    let { __object_object: packed } = step(Square__click_pack_const__Shape);
+    let { object_resource(): packed } = step(Square__click_pack_const__Shape);
 }
 ```
 

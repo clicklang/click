@@ -946,6 +946,12 @@ contract inputs, and the `let` pattern names outputs such as
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
+  In a Rust or C++ object pack contract, `object_resource()` selects the
+  packed object's resource. For example,
+  `let { object_resource(): packed } = step(Square__click_pack_const__Shape);`
+  names that instance `packed`. Other resources still use their declared
+  output binders. Use the same selector in the input map of an unpack step
+  to supply the packed instance.
 - Omit the input map when there are no entries. An empty map is equivalent,
   and expansion uses the shorter spelling. Either form can bind a call result
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
