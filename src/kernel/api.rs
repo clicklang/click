@@ -7348,14 +7348,13 @@ pub fn substitute_integer_term_in_proposition(
                 walk_term(left, from, to, changed, memo),
                 walk_term(right, from, to, changed, memo),
             ),
-            IntegerTerm::TruncatingQuotient(left, right) => IntegerTerm::truncating_quotient(
-                walk_term(left, from, to, changed, memo).as_ref().clone(),
-                walk_term(right, from, to, changed, memo).as_ref().clone(),
-            ),
-            IntegerTerm::TruncatingRemainder(left, right) => IntegerTerm::truncating_remainder(
-                walk_term(left, from, to, changed, memo).as_ref().clone(),
-                walk_term(right, from, to, changed, memo).as_ref().clone(),
-            ),
+            IntegerTerm::TruncatingQuotient(left, right)
+            | IntegerTerm::TruncatingRemainder(left, right) => {
+                let left = walk_term(left, from, to, changed, memo);
+                let right = walk_term(right, from, to, changed, memo);
+                let remainder = matches!(term.as_ref(), IntegerTerm::TruncatingRemainder(..));
+                IntegerTerm::truncating_division_shared(left, right, remainder)
+            }
             _ => term.as_ref().clone(),
         };
         let result = SharedIntegerTerm::intern(rebuilt);
