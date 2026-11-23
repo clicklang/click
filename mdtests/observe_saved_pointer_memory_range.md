@@ -46,8 +46,10 @@ int32 update_bounds(struct box* box, int32 n) {
     step();
     mark saved;
     step();
-    observe(at(saved, memory(box->data[0..count])));
     step_until(function.exit);
+    have at(saved, count) == n by { known(); }
+    observe(at(saved, memory(box->data[0..count])));
+    have viewable(at(function.entry, memory(box->data[0..n]))) by { known(); }
     known();
 }
 ```

@@ -33,6 +33,7 @@ int32 fill_bytes(uint8 buf[], int32 n) {
         invariant i >= 0 and i <= n;
     }
     step();
+    observe(buf[0..n]);
     solve();
 }
 ```

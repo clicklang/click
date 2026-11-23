@@ -82,28 +82,21 @@ int32 owned_split_buffer_set_left(
     ensures owner->data == old(owner->data);
 } by {
     mark before_store;
-    have index <= ((index + 1) as int32);
-    have ((index + 1) as int32) <= owner->len;
-    have contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1])) by {
-        apply(separation::contains_subrange(owner->data, 0, owner->len, index, index + 1));
-    }
-    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
-    have separate(memory(owner->data), memory(owner->data[index..index + 1])) by {
-        apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
-            memory(owner->data), memory(owner->data[index..index + 1])));
-    }
-    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { transport(at(function.entry, contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))), contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))) using {
-        }; }
-    have contains(memory(owner->data), memory(owner->data)) by { apply(click::separation::contains_refl(memory(owner->data))); }
-    have separate(memory(owner->data), memory(owner->data[index])) by {
-        apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
-            memory(owner->data), memory(owner->data[index])));
-    }
     have index < owner->len by { solve(); }
     have contains(memory(owner->data[0..owner->len]), memory(owner->data[index])) by {
         apply(separation::contains_element(owner->data, 0, owner->len, index));
     }
-    have separate(memory(owner->data[index]), memory(*owner)) by { solve(); }
+    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+    have separate(memory(owner->data), memory(owner->data[index])) by {
+        apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
+            memory(owner->data), memory(owner->data[index])));
+    }
+    apply(separation::contains_refl(memory(*owner)));
+    have separate(memory(owner->data[index]), memory(*owner)) by {
+        apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
+            memory(*owner), memory(owner->data[index])));
+        apply(separation::separate_symm(memory(*owner), memory(owner->data[index])));
+    }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
         solve() using {
@@ -140,28 +133,21 @@ int32 owned_split_buffer_set_right(
 } by {
     have 0 <= index;
     mark before_store;
-    have index <= ((index + 1) as int32);
-    have ((index + 1) as int32) <= owner->len;
-    have contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1])) by {
-        apply(separation::contains_subrange(owner->data, 0, owner->len, index, index + 1));
-    }
-    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
-    have separate(memory(owner->data), memory(owner->data[index..index + 1])) by {
-        apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
-            memory(owner->data), memory(owner->data[index..index + 1])));
-    }
-    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { transport(at(function.entry, contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))), contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))) using {
-        }; }
-    have contains(memory(owner->data), memory(owner->data)) by { apply(click::separation::contains_refl(memory(owner->data))); }
-    have separate(memory(owner->data), memory(owner->data[index])) by {
-        apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
-            memory(owner->data), memory(owner->data[index])));
-    }
     have index < owner->len by { solve(); }
     have contains(memory(owner->data[0..owner->len]), memory(owner->data[index])) by {
         apply(separation::contains_element(owner->data, 0, owner->len, index));
     }
-    have separate(memory(owner->data[index]), memory(*owner)) by { solve(); }
+    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+    have separate(memory(owner->data), memory(owner->data[index])) by {
+        apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
+            memory(owner->data), memory(owner->data[index])));
+    }
+    apply(separation::contains_refl(memory(*owner)));
+    have separate(memory(owner->data[index]), memory(*owner)) by {
+        apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
+            memory(*owner), memory(owner->data[index])));
+        apply(separation::separate_symm(memory(*owner), memory(owner->data[index])));
+    }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
         solve() using {
