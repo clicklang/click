@@ -4454,7 +4454,8 @@ impl AnnotationLowerer<'_> {
                      earlier state.",
                     crate::surface::verification::termination_measure_source(expression),
                     fixed.spelling()
-                )));
+                ))
+                .with_proof_refusal(crate::surface::ProofRefusal::Contract));
             }
             if written.is_none()
                 && let Ok(program_expression) = resource_argument_to_program_expression(expression)
