@@ -120,7 +120,14 @@ impl TermRewrite<'_> {
             if memo.borrow().contains_key(&key(&term)) {
                 continue;
             }
+            let retained_fold_if = self.condition_exact.is_none()
+                && matches!(
+                    term.node(),
+                    KernelTermNode::IntegerIf { arguments }
+                        if matches!(arguments[0].node(), KernelTermNode::BoolLiteral(_))
+                );
             if fold_child
+                && !retained_fold_if
                 && !matches!(
                     term.node(),
                     KernelTermNode::IntegerLiteral(_)
@@ -202,19 +209,35 @@ impl TermRewrite<'_> {
                     }
                 }
                 KernelTermNode::IntegerIf { arguments } => {
-                    if self.collected_conditions.is_some() {
+                    if self.collected_conditions.is_some() && !fold_child {
                         return None;
                     }
                     if !finish {
-                        let preserve = self.integer_variables.is_some()
-                            && crate::kernel::proof::fact_reasoning::is_literal_value_if_guard_root(
-                                &arguments[0],
-                            );
-                        let guard = self.shared_boolean_operand(&arguments[0])?;
-                        let guard = if preserve {
-                            guard
+                        let (guard, preserve) = if fold_child {
+                            // Keep the native guard check and its collection
+                            // rules while the Integer arms stay in the DAG.
+                            let guard = KernelTermExport::condition(&arguments[0]).ok()?;
+                            if let Some(conditions) = &mut self.collected_conditions {
+                                conditions.push(guard.clone());
+                            }
+                            let preserve = self.preserves_closed_value_conditional(&guard);
+                            let guard = self.condition(&guard);
+                            if self.checked_work_exhausted() {
+                                return None;
+                            }
+                            (import.condition(&guard), preserve)
                         } else {
-                            common_boolean::folded_shared_machine_condition(guard)
+                            let preserve = self.integer_variables.is_some()
+                                && crate::kernel::proof::fact_reasoning::is_literal_value_if_guard_root(
+                                    &arguments[0],
+                                );
+                            let guard = self.shared_boolean_operand(&arguments[0])?;
+                            let guard = if preserve {
+                                guard
+                            } else {
+                                common_boolean::folded_shared_machine_condition(guard)
+                            };
+                            (guard, preserve)
                         };
                         guards.insert(term.id(), (guard.clone(), preserve));
                         pending.push((term.clone(), true));

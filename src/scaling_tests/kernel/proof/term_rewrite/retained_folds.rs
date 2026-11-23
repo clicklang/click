@@ -224,3 +224,79 @@ fn nested_integer_fold_rewrites_keep_shared_bodies_and_scopes() {
         }
     }
 }
+
+#[test]
+fn literal_integer_conditionals_in_folds_keep_retained_arms() {
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = Variable(98_000);
+        let accumulator = Variable(98_001);
+        let item = Variable(98_002);
+        let value = KernelTerm::variable(KernelType::Integer, source);
+        let zero = KernelTerm::integer_literal(0.into());
+        let guard = KernelTermImport::default().condition(&ConditionTerm::Constant(false));
+        let mut body = value.clone();
+        for _ in 0..depth {
+            body = KernelTerm::integer_if_raw([guard.clone(), body.clone(), body]);
+        }
+
+        let fold = KernelFold::new(
+            KernelFoldIndex::Integer,
+            accumulator,
+            item,
+            [zero.clone(), zero.clone(), zero, body],
+        )
+        .unwrap();
+        let samples = [0, 16, 64, 256].map(|unrelated| {
+            let replacement = IntegerTerm::Variable(accumulator);
+            let renamings = BTreeMap::new();
+            let mut rewrite =
+                TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
+            for index in 0..unrelated {
+                let other = KernelTerm::variable(KernelType::Integer, Variable(99_000 + index));
+                assert_eq!(rewrite.shared_fold_integer_child(&other), Some(other));
+            }
+
+            let exports = KernelTermExport::integer_export_count();
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| rewrite.retained_fold(&fold));
+            let result = result.unwrap();
+            assert_ne!(result.accumulator, accumulator);
+            assert_eq!(KernelTermExport::integer_export_count(), exports);
+
+            // Integer substitution preserves written closed guards, even
+            // when the two arms coincide. The replacement stays free.
+            let mut body = &result.arguments[3];
+            for _ in 0..depth {
+                let KernelTermNode::IntegerIf {
+                    arguments: [condition, yes, no],
+                } = body.node()
+                else {
+                    panic!("expected retained conditional");
+                };
+                assert_eq!(*condition, guard);
+                assert_eq!(yes, no);
+                body = yes;
+            }
+            assert_eq!(
+                *body,
+                KernelTerm::variable(KernelType::Integer, accumulator)
+            );
+
+            // A rewrite that simplifies closed guards keeps the selected arm.
+            let mut simplify = TermRewrite::empty();
+            let exports = KernelTermExport::integer_export_count();
+            assert_eq!(simplify.retained_fold(&fold).unwrap().arguments[3], value);
+            assert_eq!(KernelTermExport::integer_export_count(), exports);
+            work
+        });
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        assert!(
+            samples[0] <= 100 * depth + 400,
+            "depth={depth}, work={samples:?}"
+        );
+    }
+}
