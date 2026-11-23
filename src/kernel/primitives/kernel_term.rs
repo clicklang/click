@@ -950,13 +950,23 @@ impl KernelTerm {
     }
 
     pub(in crate::kernel::primitives) fn intern(ty: KernelType, node: KernelTermNode) -> Self {
-        static INTERNER: OnceLock<Mutex<Interner>> = OnceLock::new();
         crate::instrumentation::record_deterministic_work(match &node {
             KernelTermNode::IntegerOperation { arguments, .. } => arguments.len() + 1,
             KernelTermNode::Call { name, arguments } => name.len() + arguments.len() + 1,
             KernelTermNode::IntegerLiteral(value) => value.bits() as usize + 1,
             _ => 1,
         });
+        Self::intern_node(ty, node)
+    }
+
+    // Native Integer interning is a shallow identity lookup. Its callers
+    // charge the operation or literal they construct, as before.
+    pub(super) fn intern_native_integer(node: KernelTermNode) -> Self {
+        Self::intern_node(KernelType::Integer, node)
+    }
+
+    fn intern_node(ty: KernelType, node: KernelTermNode) -> Self {
+        static INTERNER: OnceLock<Mutex<Interner>> = OnceLock::new();
         let key = NodeKey::new(ty, node);
         INTERNER
             .get_or_init(Default::default)

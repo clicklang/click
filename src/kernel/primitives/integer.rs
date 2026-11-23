@@ -1770,36 +1770,32 @@ impl IntegerTerm {
 
     pub(super) fn mathematical_root(&self) -> Option<KernelTerm> {
         use KernelIntegerOperator as Op;
-        let fold = |index, accumulator, item, arguments| {
-            KernelFold::new(index, accumulator, item, arguments)
-                .expect("mathematical Integer fold")
-                .into_term()
-        };
-        let operation = |op, left: &SharedIntegerTerm, right: &SharedIntegerTerm| {
-            Some(
-                KernelTerm::integer_operation(
-                    op,
-                    vec![
+        let operation = |operator, left: &SharedIntegerTerm, right: &SharedIntegerTerm| {
+            Some(KernelTerm::intern_native_integer(
+                KernelTermNode::IntegerOperation {
+                    operator,
+                    arguments: vec![
                         left.mathematical_root()?.clone(),
                         right.mathematical_root()?.clone(),
                     ],
-                )
-                .expect("mathematical Integer operands"),
-            )
+                },
+            ))
         };
-        match self {
-            Self::Constant(value) => Some(KernelTerm::integer_literal(value.clone())),
-            Self::Variable(variable) => Some(KernelTerm::variable(KernelType::Integer, *variable)),
-            Self::Negate(value) => Some(
-                KernelTerm::integer_operation(Op::Negate, vec![value.mathematical_root()?.clone()])
-                    .expect("mathematical Integer operand"),
-            ),
-            Self::Add(left, right) => operation(Op::Add, left, right),
-            Self::Subtract(left, right) => operation(Op::Subtract, left, right),
-            Self::Multiply(left, right) => operation(Op::Multiply, left, right),
-            Self::TruncatingQuotient(left, right) => operation(Op::TruncatingQuotient, left, right),
+        let root = match self {
+            Self::Constant(value) => KernelTermNode::IntegerLiteral(value.clone()),
+            Self::Variable(variable) => KernelTermNode::Variable(*variable),
+            Self::Negate(value) => KernelTermNode::IntegerOperation {
+                operator: Op::Negate,
+                arguments: vec![value.mathematical_root()?.clone()],
+            },
+            Self::Add(left, right) => return operation(Op::Add, left, right),
+            Self::Subtract(left, right) => return operation(Op::Subtract, left, right),
+            Self::Multiply(left, right) => return operation(Op::Multiply, left, right),
+            Self::TruncatingQuotient(left, right) => {
+                return operation(Op::TruncatingQuotient, left, right);
+            }
             Self::TruncatingRemainder(left, right) => {
-                operation(Op::TruncatingRemainder, left, right)
+                return operation(Op::TruncatingRemainder, left, right);
             }
             Self::RangeFold {
                 index: IntegerRangeFoldIndex::Integer { start, end },
@@ -1807,19 +1803,20 @@ impl IntegerTerm {
                 accumulator,
                 item,
                 body,
-            } => Some(fold(
-                KernelFoldIndex::Integer,
-                *accumulator,
-                *item,
-                [
+            } => KernelTermNode::Fold(KernelFold {
+                index: KernelFoldIndex::Integer,
+                accumulator: *accumulator,
+                item: *item,
+                arguments: [
                     start.mathematical_root()?.clone(),
                     end.mathematical_root()?.clone(),
                     initial.mathematical_root()?.clone(),
                     body.mathematical_root()?.clone(),
                 ],
-            )),
-            _ => None,
-        }
+            }),
+            _ => return None,
+        };
+        Some(KernelTerm::intern_native_integer(root))
     }
 
     pub(super) fn shallow_key(&self) -> IntegerShallowKey {
