@@ -167,6 +167,7 @@ pub(crate) use equality_graph::{
 };
 pub(crate) use eval::canonical_condition_fact;
 pub(crate) use eval::canonical_form_of_load;
+pub(crate) use eval::canonical_form_of_load_at;
 pub(crate) use eval::canonical_term;
 pub(crate) use eval::canonicalized_offset_index_term;
 #[cfg(test)]
