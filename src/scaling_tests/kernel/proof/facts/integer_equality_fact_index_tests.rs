@@ -4,6 +4,10 @@
 
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    IntegerComparisonOperator, KernelFold, KernelFoldIndex, KernelIntegerOperator, KernelTerm,
+    KernelTermExport, KernelTermImport, KernelType, StoredConditionTerm,
+};
 
 #[test]
 fn wide_equality_decision_uses_only_its_indexed_component() {
@@ -155,10 +159,109 @@ fn integer_alpha_index_skips_growing_scalar_certificate_facts() {
             0,
             "scalar certificate facts must stay off the fold alpha index"
         );
+        let scalar = KernelTermImport::default().integer(&scalar.into());
+        let retained = (0..depth)
+            .map(|value| {
+                let root = KernelTerm::integer_comparison(
+                    IntegerComparisonOperator::Equal,
+                    [scalar.clone(), KernelTerm::integer_literal(value.into())],
+                )
+                .unwrap();
+                Proposition::condition_is(StoredConditionTerm::from_root(root).unwrap(), true)
+            })
+            .collect::<Vec<_>>();
+        let exports = KernelTermExport::integer_export_count();
+        let (_, retained_work) = crate::instrumentation::measure_deterministic_work(|| {
+            retained
+                .iter()
+                .fold(PersistentMap::default(), index_integer_condition_fact)
+        });
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert!(
+            retained_work <= depth,
+            "depth={depth}, work={retained_work}"
+        );
         samples.push(work);
     }
     for pair in samples.windows(2) {
         assert!(pair[1] <= pair[0] * 3 + 32, "{samples:?}");
+    }
+}
+
+#[test]
+fn integer_alpha_index_reads_arithmetic_only_folds_without_export() {
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let comparison = |accumulator, end: i64| {
+            let mut body = KernelTerm::variable(KernelType::Integer, Variable(accumulator));
+            for _ in 0..depth {
+                body = KernelTerm::integer_operation(
+                    KernelIntegerOperator::Add,
+                    vec![body.clone(), body],
+                )
+                .unwrap();
+            }
+            let zero = KernelTerm::integer_literal(0.into());
+            let fold = KernelFold::new(
+                KernelFoldIndex::Integer,
+                Variable(accumulator),
+                Variable(accumulator + 1),
+                [
+                    zero.clone(),
+                    KernelTerm::integer_literal(end.into()),
+                    zero,
+                    body,
+                ],
+            )
+            .unwrap();
+            KernelTerm::integer_comparison(
+                IntegerComparisonOperator::LessEqual,
+                [fold.into_term(), KernelTerm::integer_literal(9.into())],
+            )
+            .unwrap()
+        };
+        let retained =
+            |root| Proposition::condition_is(StoredConditionTerm::from_root(root).unwrap(), true);
+        let source_root = comparison(214_000, 8);
+        let source = retained(source_root.clone());
+        let required = retained(comparison(215_000, 8));
+        let different = retained(comparison(215_000, 9));
+        let exports = KernelTermExport::integer_export_count();
+        let index = index_integer_condition_fact(PersistentMap::default(), &source);
+        let key = integer_condition_alpha_key(&required).unwrap();
+        assert!(index.get(&key.fingerprint()).is_some());
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+
+        let native =
+            Proposition::condition_is(KernelTermExport::condition(&source_root).unwrap(), true);
+        assert_eq!(integer_condition_alpha_key(&native), Some(key));
+        let mut samples = Vec::new();
+        for unrelated in [0, 16, 64, 256] {
+            let mut premises = vec![native.clone()];
+            premises.extend((0..unrelated).map(|index| Proposition::Predicate {
+                name: format!("unrelated_{index}"),
+                arguments: vec![],
+            }));
+            let facts = PureFactStore::from_ordered(&premises);
+            let exports = KernelTermExport::integer_export_count();
+            let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
+                (
+                    facts.matching_integer_condition_alpha_fact(&required),
+                    facts.matching_integer_condition_alpha_fact(&different),
+                )
+            });
+            assert_eq!(matched, (Some(native.clone()), None));
+            assert_eq!(KernelTermExport::integer_export_count(), exports);
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        assert!(
+            samples[0] <= 50 * depth + 200,
+            "depth={depth}, work={samples:?}"
+        );
     }
 }
 

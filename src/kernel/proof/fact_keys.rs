@@ -16,7 +16,7 @@ use crate::kernel::{
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
-    MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
+    KernelTermNode, MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
     SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
@@ -825,6 +825,32 @@ pub(crate) fn integer_condition_alpha_key(
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
+    if let Some(root) = condition.root() {
+        if let KernelTermNode::IntegerCompare {
+            operator,
+            arguments,
+        } = root.node()
+        {
+            if !arguments.iter().any(|operand| match operand.node() {
+                KernelTermNode::Fold(_) => true,
+                KernelTermNode::Legacy(payload) => matches!(
+                    payload.value(),
+                    PureFunctionArgument::Integer(value) if matches!(value.as_ref(), IntegerTerm::RangeFold { .. })
+                ),
+                _ => false,
+            }) {
+                return None;
+            }
+            if let Some(key) = fold_keys::unchanged_integer_comparison_key(*operator, arguments) {
+                return Some(key);
+            }
+            if crate::instrumentation::deadline_exceeded_with_work(0) {
+                return None;
+            }
+        } else if !matches!(root.node(), KernelTermNode::LegacyBool(_)) {
+            return None;
+        }
+    }
     let (left, right) = match condition.native_compat() {
         crate::kernel::integer_comparison_condition!(left, right) => (left, right),
         _ => return None,
@@ -848,9 +874,21 @@ pub(crate) fn integer_condition_alpha_key(
 pub(crate) fn integer_equality_alpha_key(
     proposition: &Proposition,
 ) -> Option<IntegerEqualityAlphaKey> {
-    matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
-    .then(|| integer_condition_alpha_key(proposition))
-    .flatten()
+    let Proposition::ConditionIs(condition, true) = proposition else {
+        return None;
+    };
+    let is_equal = match condition.root().map(|root| root.node()) {
+        Some(KernelTermNode::IntegerCompare { operator, .. }) => {
+            *operator == IntegerComparisonOperator::Equal
+        }
+        Some(KernelTermNode::LegacyBool(_)) | None => {
+            matches!(condition.native_compat(), ConditionTerm::IntegerEqual(_, _))
+        }
+        _ => false,
+    };
+    is_equal
+        .then(|| integer_condition_alpha_key(proposition))
+        .flatten()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
