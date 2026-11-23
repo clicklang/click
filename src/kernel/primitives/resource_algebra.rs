@@ -7733,8 +7733,8 @@ impl ResourceContext {
                 available.is_some_and(|available| {
                     (!required.typed_carrier
                         || (available.provenance == required.provenance
-                            && (required.carrier_bounds_known
-                                || available.bounds_owner == required.bounds_owner)))
+                            && (required.carrier_known()
+                                || available.carrier_owner() == required.carrier_owner())))
                         && memory_range_structurally_covers(&available, required, None)
                             == Some(true)
                 })
@@ -14463,7 +14463,10 @@ fn merge_memory_ranges(
         return None;
     }
     if !assumptions.provenance_equal(&left.provenance, &right.provenance)
-        || !match (left.bounds_owner.as_deref(), right.bounds_owner.as_deref()) {
+        || !match (
+            left.carrier_owner().map(|owner| &**owner),
+            right.carrier_owner().map(|owner| &**owner),
+        ) {
             (None, None) => true,
             (Some(a), Some(b)) => assumptions.bounds_owners_equal(a, b),
             _ => false,

@@ -1787,10 +1787,9 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
         .with_provenance(std::sync::Arc::new(s.pointer(&range.provenance)))
         .with_bounds_owner(
             range
-                .bounds_owner
-                .as_deref()
+                .carrier_owner()
                 .map(|origin| std::sync::Arc::new(s.pointer(origin))),
-            range.carrier_bounds_known,
+            range.carrier_known(),
         );
     if !range.formation_coverage.is_empty() {
         result.formation_coverage = range
