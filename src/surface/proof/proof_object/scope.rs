@@ -833,13 +833,27 @@ impl<'a> ProofScope<'a> {
 }
 
 impl<'a> Proof<'a> {
-    /// Retain a checked introduction and its body as a single scoped step.
+    /// The membership implication must be the next head after opening a
+    /// written range binder. Leave any intervening lowering guard explicit.
+    pub(in crate::surface::proof) fn has_range_intro_guard(&self) -> bool {
+        self.proposition_obligation().is_some_and(|goal| {
+            matches!(goal.kernel(), Proposition::Implies(_, _))
+                && matches!(
+                    goal.introductions.head(),
+                    None | Some(crate::kernel::LoweringIntroduction::WrittenImplication)
+                )
+        })
+    }
+
+    /// Retain a checked binder or premise, its optional range guard, and
+    /// the body as a single scoped step.
     pub(in crate::surface::proof) fn finish_scoped_intro(
         &self,
+        introduced: &Self,
         opened: &Self,
         mut completed: Self,
     ) -> Result<Self, ClickError> {
-        let opening = opened.certificate_since(&self.checkpoint())?;
+        let opening = introduced.certificate_since(&self.checkpoint())?;
         let binder = match opening.steps() {
             [ProofStep::Intro] => None,
             [ProofStep::IntroAs(name)] => Some(SurfaceBinder::Written(name.clone())),

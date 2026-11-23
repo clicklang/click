@@ -143,7 +143,7 @@ src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_solve_closure_with_su
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemma	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemma	try_direct_logical_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::have_by_integer_arithmetic	driver	1
-src/surface/proof/driver/scripts.rs	driver	ProofDriver::apply_scoped_intro	driver	1
+src/surface/proof/driver/scripts.rs	driver	ProofDriver::apply_scoped_intro	driver	2
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_planned_fact_transport	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	19
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_execution_fact_transport_or_refusal	1
