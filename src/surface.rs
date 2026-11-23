@@ -4888,10 +4888,10 @@ impl RecordedStates {
 
     /// The region a footprint runs across, which `R.footprint` names: the
     /// region its entry point is recorded as entering, when that region's
-    /// recorded exit is the footprint's end point. A point can carry several
-    /// names (a statement and the call it makes end together), so the exit
-    /// is confirmed by its identity rather than read from the point's name.
-    /// Two lookups.
+    /// recorded exit is the footprint's end point and its recorded footprint
+    /// is this one. A point can carry several names (a statement and the
+    /// call it makes end together), so the exit is confirmed by its identity
+    /// rather than read from the point's name.
     pub(in crate::surface) fn footprint_region(
         &self,
         footprint: &crate::kernel::RegionFootprint,
@@ -4907,8 +4907,18 @@ impl RecordedStates {
             region: region.clone(),
             kind: ProgramPointKind::Exit,
         });
-        (self.get(&exit)?.observation_point_id() == footprint.after_point.id())
-            .then(|| region.clone())
+        if self.get(&exit)?.observation_point_id() != footprint.after_point.id() {
+            return None;
+        }
+        // A region of several recorded effects has a combined footprint of
+        // its own, which `R.footprint` lowers to; only the region whose
+        // recorded footprint is this one names it.
+        match self.footprint(region) {
+            Ok(crate::kernel::Resource::Footprint(recorded)) if *recorded == *footprint => {
+                Some(region.clone())
+            }
+            _ => None,
+        }
     }
 
     /// The name of the recorded point a path reached, by that point's
