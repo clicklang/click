@@ -111,6 +111,7 @@ fn float_literal_operations_check_one_cited_bound_as_ambient_bounds_grow() {
     let goals = [
         (FloatBinaryOperator::Multiply, 0.5f32, -5.0),
         (FloatBinaryOperator::Add, 1.0f32, -9.0),
+        (FloatBinaryOperator::Divide, 2.0f32, -5.0),
     ]
     .map(|(operation, literal, endpoint)| {
         let result = MachineTerm::float32_binary(

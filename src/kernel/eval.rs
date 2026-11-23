@@ -26,8 +26,9 @@ pub(crate) use undefined_site::{
 /// before executing the selected operand. Its result and later facts cannot
 /// justify an earlier operation.
 fn guard_conditional_arithmetic(prefix: &ExecutionFacts, obligations: &mut [ProofObligation]) {
-    let is_arithmetic =
-        |bound: &ProofObligation| bound.float_to_integer_bound || bound.unsigned_divisor;
+    let is_arithmetic = |bound: &ProofObligation| {
+        bound.float_to_integer_bound || bound.unsigned_divisor || bound.signed_shift_bound
+    };
     if prefix.is_empty() || !obligations.iter().any(is_arithmetic) {
         return;
     }

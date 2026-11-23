@@ -10558,6 +10558,7 @@ impl ProofObligation {
             assertion_failure: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
+            signed_shift_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10577,6 +10578,7 @@ impl ProofObligation {
             assertion_failure: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
+            signed_shift_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10605,6 +10607,10 @@ impl ProofObligation {
                 .with_context("unsigned division requires a nonzero divisor");
         obligation.unsigned_divisor = true;
         obligation
+    }
+
+    pub(crate) fn is_signed_shift_bound(&self) -> bool {
+        self.signed_shift_bound
     }
 
     fn bound_under_exact_guards<'a>(&'a self, facts: &PureFactContext) -> Option<&'a Proposition> {
@@ -10859,6 +10865,7 @@ impl ProofObligation {
             assertion_failure: self.assertion_failure,
             unsigned_divisor: self.unsigned_divisor,
             float_to_integer_bound: self.float_to_integer_bound,
+            signed_shift_bound: self.signed_shift_bound,
             statement_entry_required: self.statement_entry_required,
             live_view_write: self.live_view_write,
             call_requirement_site: None,
