@@ -374,6 +374,45 @@ int32 short_sum(int32 seed) {
         }
     }
 
+    /// A quantifier raises with the name it was written with, `forall (k:
+    /// int32)`, rather than a generated `binder(N)`, when nothing its body
+    /// names is spelled `k`; the named form still lowers back to the fact.
+    #[test]
+    fn a_quantifier_raises_with_its_written_binder_name() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("call_step_retains_old_array_bound.md"),
+            include_str!("../../../mdtests/call_step_retains_old_array_bound.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            let _ = crate::surface::verify_c_sources(
+                fixture.click_source.as_deref().unwrap(),
+                &sources,
+            );
+        });
+        let raised = lines
+            .iter()
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .filter(|fields| fields[7].contains("forall ("))
+            .collect::<Vec<_>>();
+        assert!(
+            raised.iter().any(|fields| fields[0] == "same"
+                && fields[7].starts_with("forall (k: int32) { 0 <= k and k < n")),
+            "{lines:#?}"
+        );
+        assert!(
+            raised
+                .iter()
+                .all(|fields| !fields[7].contains("forall (binder(")),
+            "{lines:#?}"
+        );
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
