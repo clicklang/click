@@ -95,6 +95,12 @@ theorem use_uint64_add_distinct(base: uint64, a: uint64, b: uint64) {
     }
 }
 
+theorem use_uint64_add_subtract_cancel(a: uint64, b: uint64) {
+    ensures ((((a + b) as uint64) - a) as uint64) == b by {
+        apply(integer::uint64_add_subtract_cancel(a, b));
+    }
+}
+
 theorem use_uint64_or_add_low(base: uint64, tag: uint64, bits: uint64, mask: uint64) {
     requires (mask & (mask + 1u64)) == 0u64;
     requires (base & mask) == 0u64;
@@ -131,6 +137,12 @@ theorem use_uint8_pointer_add_address_int64(p: uint8*, index: int64) {
     }
 }
 
+theorem use_uint8_pointer_add_address_uint64(p: uint8*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 1u64) as uint64) by {
+        apply(integer::uint8_pointer_add_address_uint64(p, index));
+    }
+}
+
 theorem use_int8_pointer_add_address_int32(p: int8*, index: int32) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 1u64) as uint64) by {
         apply(integer::int8_pointer_add_address_int32(p, index));
@@ -140,6 +152,12 @@ theorem use_int8_pointer_add_address_int32(p: int8*, index: int32) {
 theorem use_int8_pointer_add_address_int64(p: int8*, index: int64) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 1u64) as uint64) by {
         apply(integer::int8_pointer_add_address_int64(p, index));
+    }
+}
+
+theorem use_int8_pointer_add_address_uint64(p: int8*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 1u64) as uint64) by {
+        apply(integer::int8_pointer_add_address_uint64(p, index));
     }
 }
 
@@ -155,6 +173,12 @@ theorem use_uint16_pointer_add_address_int64(p: uint16*, index: int64) {
     }
 }
 
+theorem use_uint16_pointer_add_address_uint64(p: uint16*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 2u64) as uint64) by {
+        apply(integer::uint16_pointer_add_address_uint64(p, index));
+    }
+}
+
 theorem use_int16_pointer_add_address_int32(p: int16*, index: int32) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 2u64) as uint64) by {
         apply(integer::int16_pointer_add_address_int32(p, index));
@@ -164,6 +188,12 @@ theorem use_int16_pointer_add_address_int32(p: int16*, index: int32) {
 theorem use_int16_pointer_add_address_int64(p: int16*, index: int64) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 2u64) as uint64) by {
         apply(integer::int16_pointer_add_address_int64(p, index));
+    }
+}
+
+theorem use_int16_pointer_add_address_uint64(p: int16*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 2u64) as uint64) by {
+        apply(integer::int16_pointer_add_address_uint64(p, index));
     }
 }
 
@@ -179,6 +209,12 @@ theorem use_uint32_pointer_add_address_int64(p: uint32*, index: int64) {
     }
 }
 
+theorem use_uint32_pointer_add_address_uint64(p: uint32*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64) by {
+        apply(integer::uint32_pointer_add_address_uint64(p, index));
+    }
+}
+
 theorem use_int32_pointer_add_address_int32(p: int32*, index: int32) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 4u64) as uint64) by {
         apply(integer::int32_pointer_add_address_int32(p, index));
@@ -188,6 +224,12 @@ theorem use_int32_pointer_add_address_int32(p: int32*, index: int32) {
 theorem use_int32_pointer_add_address_int64(p: int32*, index: int64) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 4u64) as uint64) by {
         apply(integer::int32_pointer_add_address_int64(p, index));
+    }
+}
+
+theorem use_int32_pointer_add_address_uint64(p: int32*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64) by {
+        apply(integer::int32_pointer_add_address_uint64(p, index));
     }
 }
 
@@ -203,6 +245,12 @@ theorem use_uint64_pointer_add_address_int64(p: uint64*, index: int64) {
     }
 }
 
+theorem use_uint64_pointer_add_address_uint64(p: uint64*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64) by {
+        apply(integer::uint64_pointer_add_address_uint64(p, index));
+    }
+}
+
 theorem use_int64_pointer_add_address_int32(p: int64*, index: int32) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64) by {
         apply(integer::int64_pointer_add_address_int32(p, index));
@@ -212,6 +260,12 @@ theorem use_int64_pointer_add_address_int32(p: int64*, index: int32) {
 theorem use_int64_pointer_add_address_int64(p: int64*, index: int64) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64) by {
         apply(integer::int64_pointer_add_address_int64(p, index));
+    }
+}
+
+theorem use_int64_pointer_add_address_uint64(p: int64*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64) by {
+        apply(integer::int64_pointer_add_address_uint64(p, index));
     }
 }
 
@@ -227,6 +281,12 @@ theorem use_float32_pointer_add_address_int64(p: float*, index: int64) {
     }
 }
 
+theorem use_float32_pointer_add_address_uint64(p: float*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64) by {
+        apply(integer::float32_pointer_add_address_uint64(p, index));
+    }
+}
+
 theorem use_float64_pointer_add_address_int32(p: double*, index: int32) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64) by {
         apply(integer::float64_pointer_add_address_int32(p, index));
@@ -236,6 +296,12 @@ theorem use_float64_pointer_add_address_int32(p: double*, index: int32) {
 theorem use_float64_pointer_add_address_int64(p: double*, index: int64) {
     ensures address(p + index) == ((address(p) + (index as uint64) * 8u64) as uint64) by {
         apply(integer::float64_pointer_add_address_int64(p, index));
+    }
+}
+
+theorem use_float64_pointer_add_address_uint64(p: double*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64) by {
+        apply(integer::float64_pointer_add_address_uint64(p, index));
     }
 }
 ```
