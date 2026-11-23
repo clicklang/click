@@ -1,7 +1,8 @@
 # Point-named reads: one name, and the relations it needs
 
 Status: approved (2026-11-23). P0 is implemented. P1 has begun: logical
-integer reads ask `ProgramPoint::read_version`.
+integer reads ask `ProgramPoint::read_version`. The plan was reordered on
+2026-11-23: points are attached everywhere first ("Plan").
 
 ## Problem
 
@@ -160,17 +161,94 @@ Design check
 
 ## Plan
 
-0. **P0.** One constructor and the construction ratchet. Then attribute the
-   census at the constructors and recount the corpus.
-1. **P1, no new coverage.** Route producers to `read_version`, one producer
-   per commit. Exit: both harnesses pass, legacy-walk work on `examples/` does
-   not rise, and the census count does not rise.
-2. **P2.** Add the hop, with a scaling test and the `dfs` and `bounded_pool`
-   frame steps as regressions. Exit: harnesses pass.
-3. **Coverage slices.** Re-apply the caller-storage suffix version, then
-   loaded-pointer and heap storage, as step-2 entries. Exit per slice: the
-   harnesses pass and the `click audit legacy-walk` count falls.
-4. **Delete the walk** when step 3 of `read_version` is unreachable on the corpus.
+The migration has three stages, in this order:
+
+1. **A point everywhere.** Every read and every point carries its place on a
+   path. No new names: a read keeps its legacy selection, and so its memory
+   identity, until stage 2 moves it.
+2. **Reasoning on points.** P1, P2 and the coverage slices below move names
+   and relations from snapshots to points.
+3. **No snapshots.** The legacy walk and `ReadKey::Memory` are deleted.
+
+### Why points come first
+
+Stage 2 cannot run ahead of stage 1. Tried on 2026-11-23 (local branches
+`codex/p1-comparison-identity`, `codex/p1-naming-bisect`):
+
+- **Logical integer reads named by the point walk.** 19 of the 20 example
+  failures came from this change alone (bisected per producer). Each traced
+  failure was a mixed name: the logical read took a point name while another
+  producer built a read of the same cell from a bare memory. In `cpp-stack`
+  it was the scalar local refreshed after a call
+  (`refresh_scalar_local_binding`); naming it by point fixed the example. In
+  `with_restore` both integer reads shared a point, but the pointer loaded
+  from `guard.p` was still memory-named, so its address could not meet
+  `&value` (`design/loads.md` steps 1 and 2).
+- **C reads and store equations named by point.** No example changed, and
+  legacy-walk queries on `examples/` fell 0.3% (84,117 to 83,877). Most reads
+  had no point to select from.
+- **Array arguments by a block walk over points.** Every array argument that
+  reached the legacy walk in `rbtree_model` started from a point with no
+  path, so there was nothing to walk.
+
+A census of points built without a path, over the 57 examples that verify
+standalone (local branch `codex/pathless-census`):
+
+| Built without a path | Calls | Sites |
+| --- | --- | --- |
+| `ProgramPoint::at(memory)` | 88,406 | 45 |
+| read terms named at such a point | 43,090 | 28 |
+| `ExecutionState::program_point()` with no path | 999 | 7 |
+
+Execution and proof states nearly always have their path. Pathless points are
+built inside the kernel, by functions handed a `SharedMemory` that wrap it in
+`ProgramPoint::at`. The largest:
+
+| Site | Calls | Owner |
+| --- | --- | --- |
+| `pointer_load_identity` (`eval/memory_loads.rs`) | 31,308 | `design/loads.md` steps 1 and 2 |
+| `canonical_form_of_load`, 26 callers | 13,404 | this design |
+| `SymbolicMemory::symbolic_int32_load` | 9,020 | this design |
+| `read_observations::record` | 7,652 | this design |
+| the legacy walk's own results (`resource_tracker`) | 8,676 | goes with the walk |
+
+### Stage 1: a point everywhere
+
+A function that builds a read or a point takes the caller's `ProgramPoint`,
+not a `SharedMemory`. `ProgramPoint::at` remains only for a memory with no
+place on any path; a pure theorem's memory uses `ProgramPoint::starting_at`.
+A ratchet like `build_support/read_construction.rs` holds the count of
+`ProgramPoint::at` sites (349 non-test sites today) to a falling baseline.
+
+Attaching a path keeps the legacy selection, so `read_key()` and term
+identity do not change. Code that branches on `ProgramPoint::id()` or
+`has_certified_read_view()` can still change behavior; each slice is checked
+on the harnesses, and its census count must fall. Pointer loads are threaded
+with `design/loads.md` steps 1 and 2.
+
+### Stage 2: reasoning on points
+
+0. **P0** (done). One constructor and the construction ratchet.
+1. **P1.** Route producers to one selector, `read_version` then the point
+   walk, together, one producer class per commit. Exit: both harnesses pass,
+   legacy-walk work on `examples/` does not rise, and the mixed-name census
+   does not rise. The logical-read walk and the scalar-local refresh move
+   together.
+2. **P2.** Add the hop when a failing proof needs it, with a scaling test.
+   The `dfs` and `bounded_pool` frame steps are its regressions.
+3. **Relating reads through equal addresses.** `with_restore` relates two
+   reads at one point through `guard.p == &value`. Check that point-named
+   reads get this from the equality graph's address congruence once pointer
+   loads are point-named; P3's assumption that only memory-named reads need
+   such edges is unconfirmed until then.
+4. **Coverage slices.** The caller-storage suffix version, then loaded-pointer
+   and heap storage, as `read_version` entries. Exit per slice: the harnesses
+   pass and the `click audit legacy-walk` count falls.
+
+### Stage 3: no snapshots
+
+Delete the walk and `ReadKey::Memory` when no producer reaches them on the
+corpus.
 
 ## Open questions
 
