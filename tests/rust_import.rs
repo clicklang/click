@@ -4169,7 +4169,7 @@ fn charon_box_fields_take_and_assign_through_self() {
             "box_fields::Holder::read.ensures_0",
         ),
         (
-            "ensures self.slot == 0;",
+            "ensures self.slot == Option<Box<box_fields::Cell>>::None;",
             "ensures self.slot == old(self.slot);",
             "box_fields::Holder::read.ensures_2",
         ),

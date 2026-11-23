@@ -2510,6 +2510,10 @@ id = "library.rust.Option::unwrap"
 path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
 
 [[item]]
+id = "library.rust.Option::take"
+path = "reference/library/index.md#optiontaket"
+
+[[item]]
 id = "library.rust.Option::unwrap_or"
 path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
 

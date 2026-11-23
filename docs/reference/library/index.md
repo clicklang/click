@@ -8071,6 +8071,25 @@ every other element unchanged.
 
 **Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `exchange`, `swap_bytes` and `reverse_three` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs), and refuses a `swap` index not shown in bounds.
 
+### `Option::take<T>`
+
+```click
+fn Option::take<T>(o: &mut Option<T>) -> Option<T> {
+    owns *o;
+    ensures result == old(*o);
+    ensures *o == Option<T>::None;
+}
+```
+
+**Meaning:** `o.take()` is `mem::replace(o, None)`: it returns the option
+`*o` held and leaves `None` there. The importer declares it at a scalar
+payload, `Option::take<u32>`; an option of a box is still lowered to the move
+the call makes ([Boxes](../rust.md#boxes)).
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `scalar_taken` and `take_param` in [`design/charon-trial/option-take/take.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-take/take.rs) in `charon_option_take_moves_out_and_leaves_none`.
+
 ### `Option<T>` and `Result<T, E>` unwrapping
 
 ```click

@@ -82,7 +82,7 @@ noted, and a new interface must not copy one.
 
 | Language | Special case | Where | What replaces it |
 | --- | --- | --- | --- |
-| Rust | `Option::take` is rewritten into the move its implementation makes | `src/languages/rust/charon/option_take.rs` | One generic `Option::take<T>` contract |
+| Rust | `Option::take` of an option of a box is rewritten into the move its implementation makes; an option of a scalar calls the `Option::take<T>` contract | `src/languages/rust/charon/option_take.rs` | The `Option::take<T>` contract at every payload |
 | Rust | `?` checks the library's own `Try` and `FromResidual` impls, then rewrites them into the `match` they define | `src/languages/rust/charon/option_try.rs`, `src/languages/rust/charon/result_try.rs` | Contracts of `branch` and `from_residual` |
 | Rust | `Range`, `slice::Iter`, `ChunksExact` and `Enumerate` are importer statements (`RangeNext`, `ChunkNext`, ...) over the iterators' fields | `src/languages/rust/charon/`, `src/languages/rust/lowering/` | Contracts of each iterator's `next` |
 | C++ | `std::span` and `std::array` contracts read their objects' layout | `library/cpp/span.interface.click`, `library/cpp/array.interface.click` | Contracts over each object's logical state ([C++ standard library](../reference/cli/capture.md#c-standard-library)) |
