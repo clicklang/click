@@ -1738,7 +1738,8 @@ fn refinement_preparation_error(
                 | ExecutionLimit::BoolOrdered
                 | ExecutionLimit::BoolArithmetic
                 | ExecutionLimit::MixedBoolArms => error.with_kind(ClickErrorKind::Type),
-                ExecutionLimit::GuardedConjunctionTooLong => {
+                ExecutionLimit::GuardedConjunctionTooLong
+                | ExecutionLimit::SymbolicPointerConditional => {
                     error.with_kind(ClickErrorKind::Unsupported)
                 }
                 ExecutionLimit::UnsupportedPureFunctionResult(_) => {

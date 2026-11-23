@@ -2004,7 +2004,8 @@ pub(super) fn describe_runtime_error(
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
             format!("function contract could not be applied: {message}")
         }
-        crate::kernel::RuntimeError::ContractEntryInvariant(message) => message.clone(),
+        crate::kernel::RuntimeError::ContractEntryInvariant(message)
+        | crate::kernel::RuntimeError::UnsupportedContractEntry(message) => message.clone(),
         crate::kernel::RuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
             describe_pointer(mutex, parameter_binding)
@@ -2105,9 +2106,8 @@ pub(super) fn runtime_refusal_kind(error: &crate::kernel::RuntimeError) -> Click
             may_alias: true, ..
         } => ClickErrorKind::Internal,
         crate::kernel::RuntimeError::ContractEntryInvariant(_) => ClickErrorKind::Internal,
-        crate::kernel::RuntimeError::UnsupportedOpaqueFunctionContract(_) => {
-            ClickErrorKind::Unsupported
-        }
+        crate::kernel::RuntimeError::UnsupportedOpaqueFunctionContract(_)
+        | crate::kernel::RuntimeError::UnsupportedContractEntry(_) => ClickErrorKind::Unsupported,
         _ => ClickErrorKind::Proof,
     }
 }

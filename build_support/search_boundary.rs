@@ -155,8 +155,10 @@ impl Boundary<'_> {
                 name,
                 "expand_composite_resource_fact"
                     | "expand_composite_resource_fact_with_children"
+                    | "checked_expand_composite_resource_fact_with_children"
                     | "expand_all_composite_resource_facts"
                     | "expand_all_composite_resource_facts_at_state"
+                    | "checked_expand_all_composite_resource_facts_at_state"
                     | "construct_composite_resource_body"
                     | "try_construct"
             )

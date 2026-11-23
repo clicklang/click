@@ -8570,6 +8570,7 @@ pub enum RuntimeError {
     InvalidContractResource(String),
     /// An argument or state produced for opening a contract had the wrong representation.
     ContractEntryInvariant(String),
+    UnsupportedContractEntry(String),
     OverlappingContractInputView {
         owned: Box<ResourceFact>,
         viewed: Box<ResourceFact>,
@@ -8671,6 +8672,12 @@ pub enum RuntimeError {
     },
 }
 
+impl From<crate::kernel::BorrowRefusalDiagnostic> for RuntimeError {
+    fn from(diagnostic: crate::kernel::BorrowRefusalDiagnostic) -> Self {
+        Self::BorrowRefusal(Box::new(diagnostic))
+    }
+}
+
 /// The written clause of a refused composite assembly, with the parameter
 /// values at that call. Diagnostic metadata only; it supplies no evidence.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8704,6 +8711,8 @@ pub enum ExecutionLimit {
     BoolArithmetic,
     /// A conditional with an `int32` arm and a `Bool` arm.
     MixedBoolArms,
+    /// A symbolic specification conditional whose pointer arms cannot share a value.
+    SymbolicPointerConditional,
     /// A conjunction whose right side owes evaluation domains read under
     /// more than [`GUARDED_CONJUNCTION_LIMIT`] earlier conjuncts. Each such
     /// domain carries its whole guard, so a longer chain is refused rather
@@ -8791,6 +8800,9 @@ impl ExecutionLimit {
             Self::BoolOrdered => "an order on `Bool`".to_string(),
             Self::BoolArithmetic => "arithmetic on a `Bool`".to_string(),
             Self::MixedBoolArms => "a conditional with an integer and a `Bool` arm".to_string(),
+            Self::SymbolicPointerConditional => {
+                "a symbolic choice between distinct pointer values".to_string()
+            }
             Self::GuardedConjunctionTooLong => format!(
                 "a conjunction guarding evaluation domains by more than {GUARDED_CONJUNCTION_LIMIT} conjuncts"
             ),
@@ -8965,6 +8977,7 @@ pub struct ExecutionBudget {
     pub(super) dropped_fold_body: Option<DroppedFoldBody>,
     /// A comparison the requested operator could not build for its operands.
     /// Diagnostic only; it never changes which paths or terms are produced.
+    pub(super) dropped_symbolic_pointer_conditional: bool,
     pub(super) dropped_comparison: Option<(ProgramType, ComparisonOperator, ProgramType)>,
     /// Set when a stated resource relation was dropped because this context
     /// already proves one of its memory ranges is not a valid byte span.
