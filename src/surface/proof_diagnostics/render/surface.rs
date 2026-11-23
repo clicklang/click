@@ -1530,6 +1530,11 @@ impl Printer<'_> {
                         depth,
                     );
                 }
+                if let Some(field) =
+                    crate::kernel::model_fields::entry_model_field_surface(*variable)
+                {
+                    return Some(atom(field));
+                }
                 if crate::kernel::model_fields::registered_model_field_origin(*variable).is_some() {
                     return self.placeholder(|printer| printer.unnamed_variable(*variable));
                 }
@@ -2751,6 +2756,7 @@ impl Printer<'_> {
                         .then(|| self.labels.current_algebraic_field_name(*variable, value))
                         .flatten()
                 })
+                .or_else(|| crate::kernel::model_fields::entry_model_field_surface(*variable))
                 .map(atom)
                 .or_else(|| self.placeholder(|printer| printer.unnamed_variable(*variable))),
             AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
@@ -2877,7 +2883,10 @@ impl Printer<'_> {
                     && crate::kernel::model_fields::registered_model_field_origin(*variable)
                         .is_some() =>
             {
-                self.placeholder(|printer| printer.unnamed_variable(*variable))
+                match crate::kernel::model_fields::entry_model_field_surface(*variable) {
+                    Some(field) => Some(atom(field)),
+                    None => self.placeholder(|printer| printer.unnamed_variable(*variable)),
+                }
             }
             IntegerTerm::Variable(variable) => match self
                 .bound
@@ -3252,6 +3261,39 @@ mod tests {
         assert_eq!(source(&second, &mut labels), "<unnamed B> == 0");
         assert_eq!(source(&first, &mut labels), "<unnamed A> == 0");
         assert!(render(&first, &mut labels).is_none());
+    }
+
+    /// A contract's entry model is spelled `old(owner.field)`, which always
+    /// denotes it. A model a call replaced has no point-free spelling and keeps
+    /// its placeholder.
+    #[test]
+    fn a_contract_entry_model_field_is_spelled_with_old() {
+        use crate::kernel::model_fields::{ModelFieldOrigin, ModelMint};
+        let _session = crate::kernel::VerificationSession::enter();
+        let instance = crate::kernel::InstanceId::from_variable(Variable(901_000));
+        let register = |variable, minted_by| {
+            crate::kernel::model_fields::register_model_field_variable(
+                Variable(variable),
+                ModelFieldOrigin {
+                    identity: instance,
+                    field: "count".into(),
+                    field_index: 0,
+                    minted_by,
+                },
+            )
+        };
+        register(901_001, ModelMint::ContractEntry { owner: "up".into() });
+        register(
+            901_002,
+            ModelMint::CallReturn {
+                callee: "refill".into(),
+            },
+        );
+        let mut labels = MemoryStateLabels::default();
+        let entry = equality(MachineTerm::Variable(Variable(901_001)));
+        let replaced = equality(MachineTerm::Variable(Variable(901_002)));
+        assert_eq!(source(&entry, &mut labels), "old(up.count) == 0");
+        assert_eq!(source(&replaced, &mut labels), "<unnamed A> == 0");
     }
 
     #[test]
