@@ -6,6 +6,8 @@ fn scoped_introduction_replays_after_expansion() {
     let program = crate::cli::source_refs(&program);
     for (claim, intro) in [
         ("scoped_implication.ensures_0", "intro(k) {"),
+        ("scoped_range.ensures_0", "intro(i) {"),
+        ("nested_scoped_ranges.ensures_0", "intro() {"),
         ("scoped_claim.contract", "intro() {"),
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &program, claim)
@@ -2092,7 +2094,6 @@ fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
 fn scalar_induction_keeps_integer_parameters_and_their_guards() {
     let (source, _) = mdtest_sources("mdtests/scalar_induction_keeps_fixed_integer_parameters.md");
     let expanded = expand_c_claim_source_by_label(
@@ -2141,13 +2142,34 @@ fn structural_induction_resolves_local_and_global_calls_after_expansion() {
     }
 }
 
+/// Without implicit solving the written application is refused; its
+/// expansion writes the missing premises as `have` proofs before the call and
+/// replays cold.
+fn assert_induction_application_expands_missing_premises(source: &str, label: &str, call: &str) {
+    assert!(
+        without_implicit_solve_for_claim(label, || {
+            verify_click_theorems(source).map_err(|error| error.report())
+        })
+        .is_err()
+    );
+    let expanded = expand_c_claim_source_by_label(source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let (before, _) = expanded
+        .split_once(call)
+        .unwrap_or_else(|| panic!("{expanded}"));
+    assert!(before.contains("have "), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_click_theorems(&expanded).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 #[test]
 fn induction_application_proves_missing_premises_and_cold_replays() {
     let (scalar, _) = mdtest_sources("mdtests/scalar_induction_after_helper_facts.md");
     let scalar = scalar
         .replace("have 0 <= to_integer(n - 1);", "")
         .replace("have to_integer(n - 1) < to_integer(n);", "");
-    let (range, _) = mdtest_sources("mdtests/induction_hypothesis_owes_the_range_span.md");
     let structural = r#"
         spec enum Chain { Nil, Link(Chain) }
         function copy(xs: Chain) -> Chain decreases xs {
@@ -2172,36 +2194,29 @@ fn induction_application_proves_missing_premises_and_cold_replays() {
             }
         }
     "#;
-    for (source, label, call) in [
-        (
-            scalar.as_str(),
-            "countdown_is_zero.ensures_0",
-            "apply(ih((n - 1)))",
-        ),
-        (structural, "structural.ensures_0", "apply(ih(tail,"),
-        (
-            range.as_str(),
-            "hypothesis_owes_the_range_span.ensures_0",
-            "apply(ih((hi - 1)))",
-        ),
-    ] {
-        assert!(
-            without_implicit_solve_for_claim(label, || {
-                verify_click_theorems(source).map_err(|error| error.report())
-            })
-            .is_err()
-        );
-        let expanded = expand_c_claim_source_by_label(source, &[], label)
-            .unwrap_or_else(|error| panic!("{}", error.report()));
-        let (before, _) = expanded
-            .split_once(call)
-            .unwrap_or_else(|| panic!("{expanded}"));
-        assert!(before.contains("have "), "{expanded}");
-        without_implicit_solve_for_claim(label, || {
-            verify_click_theorems(&expanded).map_err(|error| error.report())
-        })
-        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
-    }
+    assert_induction_application_expands_missing_premises(
+        &scalar,
+        "countdown_is_zero.ensures_0",
+        "apply(ih((n - 1)))",
+    );
+    assert_induction_application_expands_missing_premises(
+        structural,
+        "structural.ensures_0",
+        "apply(ih(tail,",
+    );
+}
+
+/// The moved range's span premises are Integer facts about `hi - 1 - lo`;
+/// their expansion is the costliest of the induction applications, so it
+/// runs as its own test.
+#[test]
+fn induction_application_proves_a_moved_range_span_and_cold_replays() {
+    let (range, _) = mdtest_sources("mdtests/induction_hypothesis_owes_the_range_span.md");
+    assert_induction_application_expands_missing_premises(
+        &range,
+        "hypothesis_owes_the_range_span.ensures_0",
+        "apply(ih((hi - 1)))",
+    );
 }
 
 #[test]
@@ -25900,7 +25915,6 @@ test_batches! {
         unsigned_widening_special_certificates_expand_and_recheck,
         borrowed_resource_receipts_do_not_hide_an_unspent_authority_member,
         uint64_measure_induction_expands_and_rechecks_without_narrowing,
-        scalar_induction_keeps_integer_parameters_and_their_guards,
         structural_induction_resolves_local_and_global_calls_after_expansion,
     ],
     expansion_batch_03: [
@@ -26986,6 +27000,25 @@ fn displaced_native_view_expands_to_rebase_and_restriction() {
 }
 
 #[test]
+fn branch_join_expands_returned_read_with_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/branch_join_borrow_separation.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "run.contract").unwrap();
+    assert!(
+        expanded.contains("preserve(memory(input[0]), region(0))"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("run.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn instantiated_indexed_read_expands_without_transport() {
     let c_source = "void keep(int32 p[], int32 n, int32 *q) { *q = 9; }";
     let source = r#"
@@ -27913,4 +27946,19 @@ fn explicit_produced_view_release_expands_and_reverifies() {
         verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
     })
     .expect("replay the explicit view release");
+}
+
+#[test]
+fn conditional_signed_shift_retains_its_checked_requirement_on_return() {
+    let (source, sources) =
+        mdtest_sources("mdtests/arithmetic_expression_conditional_signed_shift.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "shift64.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+    assert!(expanded.contains("step() by {"), "{expanded}");
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
 }

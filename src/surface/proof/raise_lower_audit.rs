@@ -431,6 +431,38 @@ int32 short_sum(int32 seed) {
         );
     }
 
+    #[test]
+    fn a_theorem_resource_parameter_round_trips_by_name() {
+        let source = r#"
+            import click::separation;
+            theorem separate_from_a_star(A: Resource, B: Resource, C: Resource, E: Resource) {
+                requires separate(A, C);
+                requires separate(B, C);
+                requires contains(A * B, E);
+                ensures separate(E, C) by {
+                    apply(separation::separate_star(A, B, C));
+                    apply(separation::contains_refl(C));
+                    apply(separation::separate_restrict(A * B, C, E, C));
+                }
+            }
+        "#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        let outcomes = lines
+            .iter()
+            .map(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                (fields[0], fields[6])
+            })
+            .collect::<Vec<_>>();
+        assert!(outcomes.contains(&("same", "separate(E, C)")), "{lines:#?}");
+        assert!(
+            outcomes.contains(&("same", "separate((A * B), C)")),
+            "{lines:#?}"
+        );
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();

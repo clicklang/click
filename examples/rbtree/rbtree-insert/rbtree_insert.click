@@ -469,7 +469,9 @@ void dummy_rotate(struct rb_node* old, struct rb_node* new) {
 theorem dummy_rotate_is_augment_rotate()
     executes dummy_rotate(struct rb_node* old, struct rb_node* new) {
     ensures AugmentRotate(&dummy_rotate) by {
-        step();
+        step() {
+            requires new != 0 by known();
+        }
     }
 }
 

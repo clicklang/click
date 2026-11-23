@@ -89,11 +89,17 @@ impl TermRewrite<'_> {
         root: &KernelTerm,
         fold_child: bool,
     ) -> Option<KernelTerm> {
-        if root.ty() != &KernelType::Integer || self.integer_exact.is_some() {
-            // This partial entry point admits variable/typed substitutions.
-            // Exact-source/read-through matching is required before Term use.
+        if root.ty() != &KernelType::Integer {
             return None;
         }
+        let exact = match self.integer_exact {
+            Some((source, replacement)) if fold_child && root.is_mathematical_integer() => Some((
+                source.read_through_ref().mathematical_root()?.clone(),
+                replacement.mathematical_root()?.clone(),
+            )),
+            Some(_) => return None,
+            None => None,
+        };
         if !fold_child {
             self.reserve_shared_rewrite_variables_once(root)?;
             self.visit(); // The native integer entry charges before its shared walk.
@@ -158,6 +164,25 @@ impl TermRewrite<'_> {
             if !finish {
                 self.visit();
                 if self.checked_work_exhausted() {
+                    return None;
+                }
+            }
+            if let Some((source, replacement)) = &exact {
+                if term == *source {
+                    let work = match replacement.node() {
+                        KernelTermNode::IntegerLiteral(value) => value.bits() as usize + 1,
+                        _ => 1,
+                    };
+                    self.charge_rewrite_work(work);
+                    if self.checked_work_exhausted() {
+                        return None;
+                    }
+                    self.changed = true;
+                    memo.borrow_mut().insert(key(&term), replacement.clone());
+                    continue;
+                }
+                if matches!(term.node(), KernelTermNode::Fold(_)) {
+                    self.unsupported_integer_scope = true;
                     return None;
                 }
             }
@@ -631,12 +656,20 @@ mod conditional_tests {
                             rewrite.push_integer_substitution_scope(from, Variable(995105), false)
                         });
                         let expected = baseline.integer(&input);
-                        let exports = KernelTermExport::machine_export_count();
+                        let exports = (
+                            KernelTermExport::machine_export_count(),
+                            KernelTermExport::integer_export_count(),
+                        );
                         let cached = root.has_cached_native_argument();
                         let actual = rewrite.shared_integer_operand(&root).unwrap();
-                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        assert_eq!(
+                            (
+                                KernelTermExport::machine_export_count(),
+                                KernelTermExport::integer_export_count(),
+                            ),
+                            exports,
+                        );
                         assert_eq!(root.has_cached_native_argument(), cached);
-                        assert!(!actual.has_cached_native_argument());
                         assert_eq!(rewrite.changed, baseline.changed);
                         assert_eq!(rewrite.refusal(), baseline.refusal());
                         assert_eq!(

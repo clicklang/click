@@ -550,6 +550,20 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
         {
             continue;
         }
+        if obligation.is_invalid_mutex_held_observation() {
+            let context = obligation
+                .context()
+                .expect("an invalid held observation has a cause");
+            let message = format!(
+                "{context} in {} `{}`",
+                site.form.noun(),
+                site.form.describe()
+            );
+            crate::surface::proof::execution_planning::record_terminal_lowering_refusal(
+                ClickError::new(message.clone()).with_proof_refusal(ProofRefusal::Tactic),
+            );
+            return Err(message);
+        }
         let message = if crate::surface::proof::theorem_application::preparing_application() {
             "theorem argument has an evaluation obligation".to_owned()
         } else {

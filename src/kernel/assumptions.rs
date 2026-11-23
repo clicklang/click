@@ -10556,8 +10556,10 @@ impl ProofObligation {
             assumable: true,
             evaluation_domain: false,
             assertion_failure: false,
+            invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
+            signed_shift_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10575,8 +10577,10 @@ impl ProofObligation {
             assumable: false,
             evaluation_domain: false,
             assertion_failure: false,
+            invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
+            signed_shift_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10595,6 +10599,10 @@ impl ProofObligation {
         self
     }
 
+    pub(crate) fn is_invalid_mutex_held_observation(&self) -> bool {
+        self.invalid_mutex_held_observation
+    }
+
     pub(crate) fn is_assertion_failure(&self) -> bool {
         self.assertion_failure
     }
@@ -10605,6 +10613,10 @@ impl ProofObligation {
                 .with_context("unsigned division requires a nonzero divisor");
         obligation.unsigned_divisor = true;
         obligation
+    }
+
+    pub(crate) fn is_signed_shift_bound(&self) -> bool {
+        self.signed_shift_bound
     }
 
     fn bound_under_exact_guards<'a>(&'a self, facts: &PureFactContext) -> Option<&'a Proposition> {
@@ -10857,8 +10869,10 @@ impl ProofObligation {
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
+            invalid_mutex_held_observation: self.invalid_mutex_held_observation,
             unsigned_divisor: self.unsigned_divisor,
             float_to_integer_bound: self.float_to_integer_bound,
+            signed_shift_bound: self.signed_shift_bound,
             statement_entry_required: self.statement_entry_required,
             live_view_write: self.live_view_write,
             call_requirement_site: None,

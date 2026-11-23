@@ -67,5 +67,5 @@ int32 read_counter(struct counter *counter) {
 ```
 
 ```expect
-fail: not established: `false == true`
+fail: held cannot inspect an opaque contract protocol
 ```

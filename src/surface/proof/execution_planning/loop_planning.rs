@@ -394,7 +394,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 "`{claim_label}`: loop binder `{name}` is not an enclosing contract binder, so an \
                  invariant that reads it has nothing to read at loop entry; reuse the enclosing \
                  binder's name, whose instance the loop takes over"
-            ));
+            ))
+            .with_proof_refusal(ProofRefusal::Contract);
         }
         if let Some(refusal) = invariant_items.iter().find_map(|item| {
             crate::surface::diagnostics::describe_consumed_instance_field_read(
@@ -405,7 +406,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         }) {
             return ClickError::new(format!(
                 "`{claim_label}` loop {loop_index} invariant: {refusal}"
-            ));
+            ))
+            .with_proof_refusal(ProofRefusal::IncompleteProof);
         }
         ClickError::new(format!("`{claim_label}`: {message}"))
     })?;
@@ -415,7 +417,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             entry_goals.declarations().len(),
             invariant_items.len(),
         ))
-        .with_proof_refusal(ProofRefusal::Contract));
+        .with_kind(ClickErrorKind::Internal));
     }
     let layout = initialize_script_layout(proof, &invariant_items, initialize_source_index);
     let mut phase = Proof::for_fixed_state_frontier_of_list(
@@ -492,7 +494,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 item.title(invariant_index),
                 goals.len(),
                 bodies.len()
-            )).with_proof_refusal(ProofRefusal::IncompleteProof));
+            )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("loop"));
         }
         // With one body the invariant's goals all run it; the timing label
         // below describes that first body either way.
@@ -547,7 +549,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 if obligation.is_impossible_goal()
                     && let Some(reason) = obligation.context()
                 {
-                    return ClickError::new(reason);
+                    return error
+                        .with_rewritten_place(|detail| Some(format!("{reason}\n{detail}")));
                 }
                 // Name the judgment that was compared: a declaration owes its
                 // side conditions as goals of their own beside its body, so

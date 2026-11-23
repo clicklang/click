@@ -33,10 +33,9 @@ use crate::kernel::{
     assume_universally_quantified_pure_implication, contract_refinement_context, int32,
     loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
     program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
-    program_function_contract_refinement_arguments, program_function_contract_refinement_context,
-    program_function_entry_state, program_function_termination_plan, program_if,
-    program_pointer_offsets_proven_equal_for_effect, program_seq,
-    program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
+    program_function_contract_refinement_arguments, program_function_entry_state,
+    program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
+    program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
     prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
     prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
@@ -11789,7 +11788,7 @@ impl ClickError {
             introductions: obligation.introductions().cloned().unwrap_or_default(),
             call_site: obligation.call_requirement_site().cloned(),
             assertion_condition: None,
-            statement_safety: false,
+            statement_safety: obligation.is_signed_shift_bound(),
             surface: None,
         }));
         self

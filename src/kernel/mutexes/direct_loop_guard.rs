@@ -1,6 +1,7 @@
 //! Typed, affine custody for conditional loop guard clauses.
 //! Metadata locates custody; protocol heldness alone never transfers a guard.
 use super::*;
+use crate::kernel::loops::LoopResourceFailure;
 use crate::kernel::*;
 
 pub(super) struct DirectLoopGuard {
@@ -71,12 +72,12 @@ fn source_condition(
     state: &ExecutionState,
     spec: &ResourceSpec,
     assumptions: &PureFactContext,
-) -> Result<ConditionTerm, String> {
+) -> Result<ConditionTerm, LoopResourceFailure> {
     let guard = spec
         .guard()
         .ok_or("conditional loop resource has no condition")?;
     if !scalar_condition(guard) {
-        return Err("conditional mutex guard ownership currently requires a scalar comparison over C values".into());
+        return Err(LoopResourceFailure::Contract("conditional mutex guard ownership requires a scalar comparison over C values, independent of the mutex heldness it describes".into()));
     }
     let paths = crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry(
         state,
@@ -184,7 +185,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     spec: &ResourceSpec,
     identity: InstanceId,
     assumptions: &PureFactContext,
-) -> Result<(ExecutionState, Address, ResourceFact), String> {
+) -> Result<(ExecutionState, Address, ResourceFact), LoopResourceFailure> {
     let mutex = source_mutex(entry, spec, assumptions)?;
     // A previous loop may have left an empty or held carrier at its exit.
     // Retire it only by the same checked ownership exchange as a runtime use.
@@ -194,12 +195,12 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
         .and_then(|ledger| ledger.storage.direct_loop_carriers.get(&mutex))
         .is_some_and(|carrier| owns_carrier(entry, carrier))
     {
-        let open = |state: &ExecutionState| -> Result<ExecutionState, String> {
+        let open = |state: &ExecutionState| -> Result<ExecutionState, LoopResourceFailure> {
             let context = MutexContext::new(state.clone());
             let opened = context
                 .open_direct_loop_guard(&mutex, assumptions)
-                .map_err(|_| missing_guard(spec))?
-                .ok_or_else(|| missing_guard(spec))?;
+                .map_err(|_| LoopResourceFailure::Tactic(missing_guard(spec)))?
+                .ok_or_else(|| LoopResourceFailure::Tactic(missing_guard(spec)))?;
             Ok(opened
                 .materialize_loop_mutex(&mutex, assumptions)
                 .map_err(|_| "Requires the previous conditional loop guard condition")?
@@ -221,7 +222,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     if crate::kernel::loops::condition_is_decided(assumptions, &ledger.held_condition(&mutex))
         != Some(active)
     {
-        return Err(missing_guard(spec));
+        return Err(LoopResourceFailure::Tactic(missing_guard(spec)));
     }
     let old_guard = active.then(|| ledger.guard_resource(&mutex)).flatten();
     if active
@@ -232,7 +233,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
                 .is_none()
         })
     {
-        return Err(missing_guard(spec));
+        return Err(LoopResourceFailure::Tactic(missing_guard(spec)));
     }
     let condition = StoredConditionTerm::from_minted(source_condition(head, spec, assumptions)?);
     let mut state = abstract_loop_mutex(head, &mutex, condition.clone())?;
@@ -259,7 +260,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
         state.resources = state
             .resources
             .without_fact_incrementally(&guard, assumptions)
-            .ok_or_else(|| missing_guard(spec))?;
+            .ok_or_else(|| LoopResourceFailure::Tactic(missing_guard(spec)))?;
     }
     state.resources = state
         .resources
@@ -373,7 +374,8 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         if !owns_carrier(top, carrier) {
             continue;
         }
-        let held = source_condition(&state, &carrier.source, assumptions)?;
+        let held = source_condition(&state, &carrier.source, assumptions)
+            .map_err(|error| error.context())?;
         if source_mutex(&state, &carrier.source, assumptions)? != *mutex {
             return Err("conditional loop guard changed its mutex".into());
         }

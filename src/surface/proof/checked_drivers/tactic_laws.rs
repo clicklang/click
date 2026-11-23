@@ -584,7 +584,7 @@ fn refuse_rebound_loop_labels(
                     CodeRegion::Loop(index) => format!("loop({index})"),
                     CodeRegion::Statement(index) => format!("region({index})"),
                 }
-            )));
+            )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("loop"));
         }
     }
     Ok(())

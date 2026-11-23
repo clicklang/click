@@ -5436,11 +5436,13 @@ pub(in crate::surface) fn build_function_environment(
                 contract.with_value_parameters(definition.value_parameters().len())
             })
             .ok_or_else(|| {
-                ClickError::new(format!(
-                    "named contract `{}` cannot be applied opaquely{}",
+                crate::surface::lowering::opaque_contract_refusal(
                     definition.name(),
-                    crate::surface::lowering::opaque_contract_refusal_suffix(definition.name())
-                ))
+                    format!(
+                        "named contract `{}` cannot be applied opaquely",
+                        definition.name()
+                    ),
+                )
             })?;
         let proof_parameters = definition
             .proof_parameters()
@@ -5731,24 +5733,20 @@ pub(in crate::surface) fn build_function_environment(
         )?;
         let mut rule =
             crate::kernel::program_external_function_rule(function.clone()).ok_or_else(|| {
-                ClickError::new(format!(
-                    "external function `{}` has a contract that cannot be applied opaquely{}",
-                    function_block.signature().name(),
-                    crate::surface::lowering::opaque_contract_refusal_suffix(
-                        function_block.signature().name()
-                    )
-                ))
+                crate::surface::lowering::opaque_contract_refusal(
+                    name,
+                    format!(
+                        "external function `{name}` has a contract that cannot be applied opaquely"
+                    ),
+                )
             })?;
         // A crate trait method's interface is also the named contract its
         // implementations refine.
         if interfaces.contains(name) {
             let contract = FunctionContract::new(name, function.clone()).ok_or_else(|| {
-                ClickError::new(format!(
-                    "trait method interface `{name}` has a contract that cannot be applied opaquely{}",
-                    crate::surface::lowering::opaque_contract_refusal_suffix(
-                        function_block.signature().name()
-                    )
-                ))
+                crate::surface::lowering::opaque_contract_refusal(
+                    name, format!("trait method interface `{name}` has a contract that cannot be applied opaquely"),
+                )
             })?;
             environment = environment.with_function_contract(contract);
         }
@@ -5850,25 +5848,29 @@ fn check_trait_method_implementations(
         let Some(implementation) = environment.get_function(function.name()) else {
             continue;
         };
-        let mut refines = true;
+        let mut refusal = None;
         for contract in contracts {
-            refines &= match (contract, verified_interface) {
-                (None, Some(interface)) => {
-                    crate::kernel::program_function_refines_function_contract(
-                        environment,
-                        interface,
-                        implementation,
-                    )
+            let interface = match (contract, verified_interface) {
+                (None, Some(interface)) => crate::kernel::OverrideInterface::Verified(interface),
+                (contract, _) => {
+                    crate::kernel::OverrideInterface::Named(contract.unwrap_or(interface))
                 }
-                (contract, _) => crate::kernel::program_function_refines_named_contract(
-                    environment,
-                    contract.unwrap_or(interface),
-                    implementation,
-                ),
+            };
+            refusal = crate::kernel::program_override_refinement_failure(
+                environment,
+                interface,
+                implementation,
+            )
+            .map_err(|error| {
+                ClickError::new(format!("could not check override refinement: {error}"))
+                    .with_kind(ClickErrorKind::Internal)
+                    .at_declaration(function.name())
+            })?;
+            if refusal.is_some() {
+                break;
             }
-            .map_err(ClickError::new)?;
         }
-        if !refines {
+        if let Some(refusal) = refusal {
             let (name, interface) = if rust {
                 (
                     function.name(),
@@ -5880,12 +5882,47 @@ fn check_trait_method_implementations(
                     format!("the virtual method `{interface_name}` it overrides"),
                 )
             };
+            let detail = match refusal {
+                crate::kernel::OverrideRefusal::InterfaceUnavailable => {
+                    return Err(ClickError::new(format!(
+                        "Click could not prepare {interface} for override checking"
+                    ))
+                    .with_kind(ClickErrorKind::Internal)
+                    .at_declaration(function.name()));
+                }
+                crate::kernel::OverrideRefusal::UnprovedRequirement(index) => {
+                    let written = implementation
+                        .contract_interface()
+                        .contract_requirement_source(index)
+                        .flatten()
+                        .and_then(|source_index| {
+                            function_blocks
+                                .iter()
+                                .find(|block| block.signature().name() == function.source_name())?
+                                .requires()
+                                .get(source_index)?
+                                .proposition()
+                        });
+                    match written {
+                        Some(proposition) => format!(
+                            "\n  override requirement not established by the interface: `{}`",
+                            crate::surface::diagnostics::describe_click_proposition(proposition),
+                        ),
+                        None => format!(
+                            "\n  override requirement {} is not established by the interface",
+                            index + 1
+                        ),
+                    }
+                }
+                crate::kernel::OverrideRefusal::Incompatible => String::new(),
+            };
             return Err(ClickError::new(format!(
                 "`{name}` does not refine {interface}: its contract must accept every call the \
                  interface allows; it inherits the interface's guarantees, and its `requires` \
                  must follow from the interface's, each clause read exactly or decided as a \
-                 bare comparison"
+                 bare comparison{detail}"
             ))
+            .with_proof_refusal(ProofRefusal::Contract)
             .at_declaration(function.name()));
         }
     }

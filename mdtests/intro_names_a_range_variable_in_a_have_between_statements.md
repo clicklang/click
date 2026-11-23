@@ -1,8 +1,8 @@
 # `intro()` names a range quantifier's variable in a `have` between statements
 
 A `have` stated between C statements is lowered at the execution frontier,
-which records no lowering head chain for its binders. `intro()` still names
-a range quantifier's variable as written, so the body can cite it: here
+which records no lowering head chain for its binders. A scoped `intro()`
+names a range quantifier's variable as written and makes its bounds available. Here
 `instantiate` specializes `memset`'s postcondition at `k` and the value
 conjunct closes the goal.
 
@@ -24,10 +24,11 @@ void fill(uint8* dst) {
 } by {
     step();
     have (0u64..4u64).all(|k| { dst[k] == 7 }) by {
-        intro();
-        intro();
-        instantiate((0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }), k);
-        known();
+        intro() {
+            have k < 4u64 by { known(); }
+            instantiate((0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }), k);
+            known();
+        }
     }
 }
 ```

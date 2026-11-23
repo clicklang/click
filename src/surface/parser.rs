@@ -2915,6 +2915,7 @@ impl Parser {
                 return Err(ClickError::new(
                     crate::languages::display_source_names(&message).into_owned(),
                 )
+                .with_kind(ClickErrorKind::Unsupported)
                 .at_declaration(&crate::languages::display_source_names(caller)));
             }
         }

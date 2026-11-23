@@ -16418,10 +16418,14 @@ pub struct ProofObligation {
     /// Producer metadata: emitted on the false arm of a C assertion.
     /// This tags the existing truthiness obligation, not a new proposition.
     pub(super) assertion_failure: bool,
+    /// A `held` observation could not be made in this state.
+    pub(super) invalid_mutex_held_observation: bool,
     /// Refuting this nonzero-divisor obligation is division by zero.
     pub(super) unsigned_divisor: bool,
     /// An ordered range bound for an executed float-to-integer conversion.
     pub(super) float_to_integer_bound: bool,
+    /// A representability bound for an executed signed left shift.
+    pub(super) signed_shift_bound: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
     /// Diagnostic metadata only. The proposition itself carries both ranges.

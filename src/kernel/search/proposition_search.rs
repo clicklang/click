@@ -409,13 +409,41 @@ impl super::ProofSearch<PureFactContext> {
         if !float && signed_max_shift_count_bound(goal).is_none() {
             return None;
         }
-        let checks = |premise: &Proposition| {
-            if float {
+        Self::find_connected_arithmetic_bound(context, goal, float, |premise| {
+            let checks = if float {
                 float_bound_weakens(premise, goal)
             } else {
                 same_signed_max_shift_bound(premise, goal)
-            }
+            };
+            checks.then(|| premise.clone())
+        })
+    }
+
+    pub(crate) fn select_float_literal_bound_chain(
+        context: &PureFactContext,
+        goal: &Proposition,
+    ) -> Option<Vec<Proposition>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_float_literal_bound_chain");
+        use crate::kernel::proof::arithmetic_special::{
+            float_literal_bound_chain, is_compound_float_literal_bound,
         };
+        if !is_compound_float_literal_bound(goal) {
+            return None;
+        }
+        Self::find_connected_arithmetic_bound(context, goal, true, |premise| {
+            float_literal_bound_chain(premise, goal)
+        })
+    }
+
+    fn find_connected_arithmetic_bound<T>(
+        context: &PureFactContext,
+        goal: &Proposition,
+        float: bool,
+        select: impl Fn(&Proposition) -> Option<T>,
+    ) -> Option<T> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("find_connected_arithmetic_bound");
         for key in collect_atomic_connection_keys(goal) {
             for fact in context.atomic_facts_connected_to(&key, false).0 {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
@@ -431,12 +459,14 @@ impl super::ProofSearch<PureFactContext> {
                                 )) =>
                     {
                         let premise = Proposition::condition_is(condition.clone(), expected);
-                        if checks(&premise) {
-                            return Some(premise);
+                        if let Some(selected) = select(&premise) {
+                            return Some(selected);
                         }
                     }
-                    AtomicConnectedFact::Proposition(premise) if checks(premise) => {
-                        return Some(premise.clone());
+                    AtomicConnectedFact::Proposition(premise) => {
+                        if let Some(selected) = select(premise) {
+                            return Some(selected);
+                        }
                     }
                     _ => {}
                 }

@@ -89,7 +89,18 @@ pub(super) fn prove_contract_propositions(
     assumptions: &mut PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
-    for proposition in propositions {
+    first_unproved_contract_proposition(state, entry_state, propositions, assumptions, budget)
+        .map(|unproved| unproved.is_none())
+}
+
+pub(super) fn first_unproved_contract_proposition(
+    state: &ExecutionState,
+    entry_state: &ExecutionState,
+    propositions: &[SpecProposition],
+    assumptions: &mut PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Option<usize>> {
+    for (index, proposition) in propositions.iter().enumerate() {
         // Each clause is lowered as its own term, so a clause both contracts
         // state lowers identically on each side, inline `match` binders included.
         let paths = budget.with_match_binders_from_base(|budget| {
@@ -102,7 +113,7 @@ pub(super) fn prove_contract_propositions(
             )
         })?;
         let [path] = paths.as_slice() else {
-            return Ok(false);
+            return Ok(Some(index));
         };
         for fact in &path.facts {
             *assumptions = assumptions
@@ -113,7 +124,7 @@ pub(super) fn prove_contract_propositions(
             !required_obligation_is_exactly_discharged(assumptions, obligation.proposition())
         }) || !contract_refinement_proves(assumptions, &path.proposition)
         {
-            return Ok(false);
+            return Ok(Some(index));
         }
         for obligation in &path.obligations {
             *assumptions = assumptions
@@ -124,7 +135,7 @@ pub(super) fn prove_contract_propositions(
             .clone()
             .assume_proposition(path.proposition.clone());
     }
-    Ok(true)
+    Ok(None)
 }
 
 /// The exact routes a refinement check may use on one leaf proposition:

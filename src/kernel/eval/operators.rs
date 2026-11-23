@@ -5022,28 +5022,15 @@ fn apply_program_int64_shift_left_nonnegative(
     assumptions: &PureFactContext,
     unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
+    let fits = ConditionTerm::signed_shift_result_fits(
         MachineIntegerType::Int64,
         left.clone(),
         right.clone(),
         unsigned_count,
-    ));
-    split_on_undefined_behavior(
-        overflow,
-        UndefinedBehavior::SignedOverflow,
-        facts,
-        obligations,
-        assumptions,
-        |facts, obligations| {
-            vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(ProgramValue::Int64(
-                    MachineTerm::int64_shift_left(left, right),
-                )),
-                facts,
-                obligations,
-            }]
-        },
-    )
+    );
+    signed_shift_result_path(fits, facts, obligations, assumptions, || {
+        ProgramValue::Int64(MachineTerm::int64_shift_left(left, right))
+    })
 }
 
 fn apply_program_uint64_shift_left_valid_count(
@@ -5346,26 +5333,44 @@ fn apply_program_int32_shift_left_nonnegative(
     assumptions: &PureFactContext,
     unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
+    let fits = ConditionTerm::signed_shift_result_fits(
         MachineIntegerType::Int32,
         left.clone(),
         right.clone(),
         unsigned_count,
-    ));
-    split_on_undefined_behavior(
-        overflow,
-        UndefinedBehavior::SignedOverflow,
+    );
+    signed_shift_result_path(fits, facts, obligations, assumptions, || {
+        int32(MachineTerm::shift_left(left, right))
+    })
+}
+
+/// After validating the count and operand sign, retain an undecided
+/// representability check as a requirement on the shift's value path.
+fn signed_shift_result_path(
+    fits: ConditionTerm,
+    facts: ExecutionFacts,
+    mut obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    result: impl FnOnce() -> ProgramValue,
+) -> Vec<ExpressionPath> {
+    let outcome = match decide_with_facts(assumptions, &facts, &fits) {
+        Some(false) => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
+        decision => {
+            if decision.is_none() {
+                let mut obligation =
+                    ProofObligation::verification_condition(Proposition::condition_is(fits, true))
+                        .with_context("signed overflow from a left shift must be ruled out");
+                obligation.signed_shift_bound = true;
+                obligations.push(obligation);
+            }
+            ExpressionOutcome::Value(result())
+        }
+    };
+    vec![ExpressionPath {
+        outcome,
         facts,
         obligations,
-        assumptions,
-        |facts, obligations| {
-            vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(int32(MachineTerm::shift_left(left, right))),
-                facts,
-                obligations,
-            }]
-        },
-    )
+    }]
 }
 
 pub(in crate::kernel) fn evaluate_program_equal_paths(

@@ -76,6 +76,7 @@ fn direct_loop_guard_requires_real_entry_custody() {
             &PureFactContext::new()
         )
         .unwrap_err()
+        .context()
         .contains("mutex_guard")
     );
 }

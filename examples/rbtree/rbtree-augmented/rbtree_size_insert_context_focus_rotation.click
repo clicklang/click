@@ -109,6 +109,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
     requires RotateTreeRight(augment_rotate);
     owns state: sized_insert_context_focus_at(node, root);
     requires sized_context_focus_pending(state.phase) == 1;
+    requires node->rb_left != node;
+    requires node->rb_right != node;
     ensures state.context == old(state.context);
     ensures state.whole_model == sized_plug(old(state.context), state.model);
     ensures state.phase == sized_context_focus_finish(old(state.phase));
@@ -143,7 +145,22 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(node->__rb_parent_color, address(p) + (node->__rb_parent_color & 1));
                 rewrite((node->__rb_parent_color & 1), 0); normalize();
             }
+            have node->rb_left != node by known();
+            have node->rb_right != node by known();
             let initial_focus = fold(context_focus_node_frame(node, p), { color: Color::Red, word: node->__rb_parent_color, left: node->rb_left, right: node->rb_right });
+            have p == g->rb_left by known();
+            have p->__rb_parent_color == address(g) + (p->__rb_parent_color & 1) by {
+                rewrite(p, g->rb_left);
+                known();
+            }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by {
+                rewrite(p, g->rb_left);
+                known();
+            }
+            have (p->__rb_parent_color & 1) == color_bit(Color::Red) by {
+                rewrite(p, g->rb_left);
+                known();
+            }
             let initial_parent = fold(context_focus_node_frame(p, g), { color: Color::Red, word: p->__rb_parent_color, left: p->rb_left, right: p->rb_right });
             let initial_grandparent = fold(context_focus_node_frame(g, above), { color: Color::Black, word: g->__rb_parent_color, left: g->rb_left, right: g->rb_right });
             step(); step(); step(); step();
@@ -397,6 +414,8 @@ void insert::__rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     requires RotateTreeRight(augment_rotate);
     owns state: sized_insert_context_focus_at(node, root);
     requires sized_context_focus_pending(state.phase) == 1;
+    requires node->rb_left != node;
+    requires node->rb_right != node;
     ensures state.context == old(state.context);
     ensures state.whole_model == sized_plug(old(state.context), state.model);
     ensures state.phase == sized_context_focus_finish(old(state.phase));
@@ -411,11 +430,14 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     requires RotateTreeRight(augment->rotate);
     owns state: sized_insert_context_focus_at(node, root);
     requires sized_context_focus_pending(state.phase) == 1;
+    requires node->rb_left != node;
+    requires node->rb_right != node;
     ensures state.context == old(state.context);
     ensures state.whole_model == sized_plug(old(state.context), state.model);
     ensures state.phase == sized_context_focus_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_focus_expected(old(state.phase), node);
 } by {
+    have separate(state, memory(augment->rotate)) by known();
     step(insert::__rb_insert_augmented, { state: state });
 }
 

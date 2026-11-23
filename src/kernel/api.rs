@@ -1031,6 +1031,8 @@ impl LoopPreservationContext {
 pub enum LoopHeadRefusal {
     /// A refusal the kernel spells on its own.
     Message(String),
+    Contract(String),
+    Tactic(String),
     /// A declared loop resource could not be read at the loop entry.
     ResourceEvaluation(String),
     /// The loop test did not produce a value on a reachable path.
@@ -1187,6 +1189,12 @@ pub(crate) fn loop_phase_preservation_contexts(
         return Err(match failure {
             super::loops::LoopResourceFailure::Message(message) => {
                 LoopHeadRefusal::Message(message.clone())
+            }
+            super::loops::LoopResourceFailure::Contract(message) => {
+                LoopHeadRefusal::Contract(message.clone())
+            }
+            super::loops::LoopResourceFailure::Tactic(message) => {
+                LoopHeadRefusal::Tactic(message.clone())
             }
             super::loops::LoopResourceFailure::Evaluation(message) => {
                 LoopHeadRefusal::ResourceEvaluation(message.clone())
@@ -1355,32 +1363,33 @@ fn loop_head_invariant_failure(
     iterations: &IntegerTerm,
     assumptions: &PureFactContext,
     error: ExecutionLimit,
-) -> String {
+) -> LoopHeadRefusal {
     let mut budget = ExecutionBudget::beside_live_state();
     for check in invariant_checks {
-        if assume_invariant_checks(
-            top_state,
-            loop_entry_state,
-            std::slice::from_ref(check),
-            iterations,
-            assumptions,
-            &[],
-            &[],
-            &mut budget,
-        )
-        .is_err()
-        {
+        if matches!(
+            assume_invariant_checks(
+                top_state,
+                loop_entry_state,
+                std::slice::from_ref(check),
+                iterations,
+                assumptions,
+                &[],
+                &[],
+                &mut budget,
+            ),
+            Err(ExecutionLimit::ResourceFieldInstanceUnavailable)
+        ) {
             let context = invariant_context(check, InvariantPhase::Preservation)
                 .unwrap_or("a loop invariant");
-            return format!(
+            return LoopHeadRefusal::Contract(format!(
                 "{context}: could not be read at the loop head; a loop invariant may only read the resource instances the loop declares"
-            );
+            ));
         }
     }
-    format!(
+    LoopHeadRefusal::Message(format!(
         "could not assume loop invariants: they stopped at {}",
         error.describe()
-    )
+    ))
 }
 
 pub fn loop_invariant_obligations_at_back_edge(
@@ -1486,15 +1495,34 @@ pub fn program_execution_environment_with_recursion_anchor(
     caller_state: &ExecutionState,
     arguments: &[ProgramExpression],
 ) -> Result<ExecutionEnvironment, String> {
+    program_execution_environment_with_recursion_anchor_reporting(
+        environment,
+        function,
+        caller_state,
+        arguments,
+    )
+    .map_err(|error| error.to_string())
+}
+
+pub(crate) fn program_execution_environment_with_recursion_anchor_reporting(
+    environment: ExecutionEnvironment,
+    function: &ProgramFunction,
+    caller_state: &ExecutionState,
+    arguments: &[ProgramExpression],
+) -> Result<ExecutionEnvironment, TerminationError> {
     if !function.contract_interface().has_call_ranked_recursion() {
         return Ok(environment);
     }
     let entry_state =
         program_function_entry_state(caller_state, function, arguments).ok_or_else(|| {
-            format!(
-                "could not bind `{}`'s arguments to read its `decreases` measure at entry",
-                function.name()
-            )
+            TerminationError {
+                message: format!(
+                    "could not bind `{}`'s arguments to read its `decreases` measure at entry",
+                    function.name()
+                ),
+                function: Some(function.name().to_owned()),
+                kind: TerminationErrorKind::Internal,
+            }
         })?;
     let anchor = crate::kernel::termination::program_function_recursion_anchor(
         function,
@@ -7348,14 +7376,13 @@ pub fn substitute_integer_term_in_proposition(
                 walk_term(left, from, to, changed, memo),
                 walk_term(right, from, to, changed, memo),
             ),
-            IntegerTerm::TruncatingQuotient(left, right) => IntegerTerm::truncating_quotient(
-                walk_term(left, from, to, changed, memo).as_ref().clone(),
-                walk_term(right, from, to, changed, memo).as_ref().clone(),
-            ),
-            IntegerTerm::TruncatingRemainder(left, right) => IntegerTerm::truncating_remainder(
-                walk_term(left, from, to, changed, memo).as_ref().clone(),
-                walk_term(right, from, to, changed, memo).as_ref().clone(),
-            ),
+            IntegerTerm::TruncatingQuotient(left, right)
+            | IntegerTerm::TruncatingRemainder(left, right) => {
+                let left = walk_term(left, from, to, changed, memo);
+                let right = walk_term(right, from, to, changed, memo);
+                let remainder = matches!(term.as_ref(), IntegerTerm::TruncatingRemainder(..));
+                IntegerTerm::truncating_division_shared(left, right, remainder)
+            }
             _ => term.as_ref().clone(),
         };
         let result = SharedIntegerTerm::intern(rebuilt);
@@ -7768,26 +7795,72 @@ pub fn program_function_contract_refinement_context(
     target_name: &str,
     values: &[ProgramValue],
 ) -> Option<FunctionContractRefinementContext> {
+    program_function_contract_refinement_context_reporting(
+        environment,
+        contract_name,
+        target_name,
+        values,
+    )
+    .ok()
+}
+
+pub(crate) enum ConcreteRefinementRefusal {
+    MissingContract,
+    InvalidContractArguments,
+    MissingTarget,
+    ThrowingTarget,
+    DifferentExceptionType,
+    IncompatibleInterface,
+    ContextUnavailable,
+}
+
+pub(crate) fn program_function_contract_refinement_context_reporting(
+    environment: &ExecutionEnvironment,
+    contract_name: &str,
+    target_name: &str,
+    values: &[ProgramValue],
+) -> Result<FunctionContractRefinementContext, ConcreteRefinementRefusal> {
+    use ConcreteRefinementRefusal::*;
     let contract = environment
-        .get_function_contract(contract_name)?
-        .instantiated(values)?;
-    let function = if let Some(rule) = environment.get_verified_function_rule(target_name) {
-        &rule.function
-    } else {
-        &environment
-            .get_external_function_rule(target_name)?
-            .function
-    };
+        .get_function_contract(contract_name)
+        .ok_or(MissingContract)?
+        .instantiated(values)
+        .ok_or(InvalidContractArguments)?;
+    let checked = environment
+        .get_verified_function_rule(target_name)
+        .map(|rule| &rule.function)
+        .or_else(|| {
+            environment
+                .get_external_function_rule(target_name)
+                .map(|rule| &rule.function)
+        });
+    let declaration = checked
+        .or_else(|| environment.get_function(target_name))
+        .ok_or(MissingTarget)?;
+    let required = contract.interface().exceptional_signature();
+    let actual = declaration.contract_interface().exceptional_signature();
+    if !actual.is_empty() && actual != required {
+        return Err(if required.is_empty() {
+            ThrowingTarget
+        } else {
+            DifferentExceptionType
+        });
+    }
+    let function = checked.ok_or(MissingTarget)?;
+    if !contract.has_compatible_signature_and_resource_vocabulary(function) {
+        return Err(IncompatibleInterface);
+    }
     let mut context = prepare_function_contract_refinement_context(
         &contract,
         function,
         &mut ExecutionBudget::for_new_execution(),
-    )?;
+    )
+    .ok_or(ContextUnavailable)?;
     context.object_type_requirements = function
         .contract_interface()
         .object_type_requirements()
         .clone();
-    Some(context)
+    Ok(context)
 }
 
 /// Whether `function`'s contract refines the named contract `contract_name`,
@@ -7830,6 +7903,51 @@ pub fn program_function_refines_function_contract(
         &mut ExecutionBudget::for_new_execution(),
     )
     .map_err(ExecutionLimit::describe)
+}
+
+pub(crate) enum OverrideInterface<'a> {
+    Named(&'a str),
+    Verified(&'a ProgramFunction),
+}
+
+pub(crate) enum OverrideRefusal {
+    InterfaceUnavailable,
+    UnprovedRequirement(usize),
+    Incompatible,
+}
+
+pub(crate) fn program_override_refinement_failure(
+    environment: &ExecutionEnvironment,
+    interface: OverrideInterface<'_>,
+    function: &ProgramFunction,
+) -> ExecutionResult<Option<OverrideRefusal>> {
+    let verified_contract;
+    let contract = match interface {
+        OverrideInterface::Named(name) => environment.get_function_contract(name),
+        OverrideInterface::Verified(interface) => {
+            verified_contract = FunctionContract::new(interface.name(), interface.clone());
+            verified_contract.as_ref()
+        }
+    };
+    let Some(contract) = contract else {
+        return Ok(Some(OverrideRefusal::InterfaceUnavailable));
+    };
+    let mut unproved = None;
+    let refines = super::functions::function_refines_named_contract_reporting(
+        contract,
+        function,
+        function.contract_interface().object_type_requirements(),
+        &mut ExecutionBudget::for_new_execution(),
+        Some(&mut unproved),
+    )?;
+    Ok(if refines {
+        None
+    } else {
+        Some(unproved.map_or(
+            OverrideRefusal::Incompatible,
+            OverrideRefusal::UnprovedRequirement,
+        ))
+    })
 }
 
 /// The explicit refinement theorem a refused concrete formation needs.

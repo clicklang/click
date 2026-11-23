@@ -144,7 +144,7 @@ src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_solve_closure_with_su
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemma	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemma	try_direct_logical_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::have_by_integer_arithmetic	driver	1
-src/surface/proof/driver/scripts.rs	driver	ProofDriver::apply_scoped_intro	driver	1
+src/surface/proof/driver/scripts.rs	driver	ProofDriver::apply_scoped_intro	driver	2
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_planned_fact_transport	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	19
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_execution_fact_transport_or_refusal	1
@@ -880,3 +880,9 @@ src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_index_disequality_from_order	driver	3
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_index_disequality_from_order	retain_signed_order_bounds	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_store_read_rewrite	try_memory_footprint_separation	1
+src/kernel/search/proposition_search.rs	search	ProofSearch::select_arithmetic_bound	find_connected_arithmetic_bound	1
+src/kernel/search/proposition_search.rs	search	ProofSearch::select_float_literal_bound_chain	find_connected_arithmetic_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	select_float_literal_bound_chain	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_literal_bound_chain	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_literal_bound_chain	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_literal_bound_chain	resolve_solve_premises_unmeasured	1
