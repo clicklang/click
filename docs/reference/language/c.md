@@ -2076,8 +2076,12 @@ for its projected declaration. It reads
 the format as a C string the caller views: it requires
 `click::c::stdio::literal_format` of the format's `n` bytes, and states the
 characters written as `click::c::stdio::format_output` and their count as
-`click::c::stdio::format_length`. The format need not be a literal, and
-arguments it does not convert are ignored (C11 7.21.6.1p2). For a literal
+`click::c::stdio::format_length`. Arguments the format does not convert are
+ignored (C11 7.21.6.1p2). The contract reads any format the caller views,
+but a format other than a string literal also needs the stream's write shown
+separate from the caller's view of it, which the abstract `stream` resource
+cannot yet state; a string literal's storage is separate by construction, so
+in practice the format is a literal. For a literal
 format, `solve` evaluates the three functions one level at a time, so a
 caller's proof states the output it expects with no written steps
 (`mdtests/printf_and_fprintf_share_the_streams_write_history.md`,
