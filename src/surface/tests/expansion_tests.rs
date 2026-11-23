@@ -10831,6 +10831,23 @@ fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
+fn restricted_field_increment_definedness_expands_with_discrete_order() {
+    let (source, sources) =
+        mdtest_sources("mdtests/restricted_solve_of_field_sum_definedness_raises_its_conjuncts.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "bump.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("integer::lt_step_le("), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
 fn restricted_solve_expands_positive_to_nonnegative_arithmetic_steps() {
     let click_source = r#"
         theorem positive_is_nonnegative(value: int32) {
@@ -26151,6 +26168,7 @@ test_batches! {
     expansion_batch_41: [
         pure_solve_retains_one_selected_equality_rewrite_before_known,
         restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic,
+        restricted_field_increment_definedness_expands_with_discrete_order,
         restricted_solve_expands_positive_to_nonnegative_arithmetic_steps,
         restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic,
     ],

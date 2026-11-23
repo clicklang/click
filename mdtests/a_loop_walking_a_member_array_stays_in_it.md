@@ -43,10 +43,18 @@ int32 walk(struct Rec* r, int32 n) {
             step();
             step();
             have p == &r->arr[0] + i by {
-                solve() using {
-                    at(region(5).entry, p) == at(region(5).entry, &r->arr[0] + i);
-                    at(region(5).entry, i) < at(region(5).entry, n);
-                };
+                have p == at(region(5).entry, p) + 1 by known();
+                have defined(at(region(5).entry, i) + 1) by {
+                    apply(integer::int32_increment_below_max_is_defined(at(region(5).entry, i)));
+                    known();
+                }
+                apply(integer::int32_add_to_integer(at(region(5).entry, i), 1));
+                have i == at(region(5).entry, i) + 1 by known();
+                apply(integer::int32_pointer_add_associate_int32((&r->arr[0] as (int32 *)), at(region(5).entry, i), 1));
+                rewrite(p, at(region(5).entry, p) + 1);
+                rewrite(at(region(5).entry, p), &r->arr[0] + at(region(5).entry, i));
+                rewrite(i, at(region(5).entry, i) + 1);
+                known();
             }
         }
     }
