@@ -2832,7 +2832,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                         .unwrap_or_default();
                     return Err(ClickError::new(format!(
                         "`{claim_label}`: the tactics after a proof split in this loop body{after} are reached by more than one of its arms at the same program point, so they would be checked once per arm. Rejoin the arms where they end with `match value ensuring {{ ... }} {{ ... }}` or `if P ensuring {{ ... }} then {{ ... }} else {{ ... }}`, or move those tactics into each arm"
-                    )));
+                    )).with_proof_refusal(ProofRefusal::Tactic));
                 }
                 node = next;
                 pending = rest;

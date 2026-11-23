@@ -3507,7 +3507,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 "owns"
             },
             describe_resource_clause(resource),
-        )));
+        ))
+        .with_proof_refusal(ProofRefusal::Tactic)
+        .with_failed_tactic("with"));
     }
     let resources = if let Some(resources) = folded_resources {
         resources
@@ -4709,13 +4711,15 @@ fn fold_composite_resources_on_outcome_with_facts(
             let Some(next) = next else {
                 let diagnostic_facts = resources.facts().to_vec();
                 let available_pure_facts = pure_facts.materialize();
-                let action = match closure {
+                let target = describe_resource_clause(resource);
+                let (action, refusal) = match closure {
                     ResourceBodyClosure::Initialize => {
-                        format!("`fold({})`", describe_resource_clause(resource))
+                        (format!("`fold({target})`"), ProofRefusal::Tactic)
                     }
-                    ResourceBodyClosure::CloseOpen { .. } => {
-                        format!("closing `with({})`", describe_resource_clause(resource))
-                    }
+                    ResourceBodyClosure::CloseOpen { .. } => (
+                        format!("closing `with({target})`"),
+                        ProofRefusal::IncompleteProof,
+                    ),
                 };
                 return Err(ClickError::new(format!(
                     "`{claim_label}` path {path_index}: {action} failed: {}",
@@ -4726,7 +4730,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                         parameter_binding,
                         execution_pure_facts
                     )
-                )));
+                ))
+                .with_proof_refusal(refusal));
             };
             resources = next;
         }

@@ -745,6 +745,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             aggregate_parameters: Default::default(),
             program_parameter_types: Default::default(),
             local_type_state: None,
+            type_inference_failure: None,
             pointer_element_types: definition
                 .parameters()
                 .iter()
@@ -815,6 +816,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         aggregate_parameters: Default::default(),
         program_parameter_types: Default::default(),
         local_type_state: None,
+        type_inference_failure: None,
         pointer_element_types: definition
             .parameters()
             .iter()
@@ -906,6 +908,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         aggregate_parameters: Default::default(),
         program_parameter_types: Default::default(),
         local_type_state: None,
+        type_inference_failure: None,
         pointer_element_types: definition
             .parameters()
             .iter()
@@ -1440,6 +1443,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         pointer_element_types: shape.pointer_element_types.clone(),
         parameter_pointer_element_widths: shape.parameter_pointer_element_widths.clone(),
         local_type_state: None,
+        type_inference_failure: None,
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -1951,6 +1955,7 @@ fn annotate_function(
             .collect::<BTreeMap<_, _>>()
             .into(),
         local_type_state: None,
+        type_inference_failure: None,
         pointer_element_types: parsed_function
             .parameters()
             .iter()
@@ -2283,6 +2288,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             .collect::<BTreeMap<_, _>>()
             .into(),
         local_type_state: Some(current_state),
+        type_inference_failure: None,
         pointer_element_types: parameters
             .iter()
             .filter_map(|parameter| {
@@ -2345,6 +2351,7 @@ fn fixed_state_elaboration<'a>(
         aggregate_parameters: Default::default(),
         program_parameter_types: Default::default(),
         local_type_state: None,
+        type_inference_failure: None,
         pointer_element_types: array_element_types.into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths.into(),
         quantified_values: BinderMap::new(),
@@ -2848,6 +2855,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
             .collect::<BTreeMap<_, _>>()
             .into(),
         local_type_state: None,
+        type_inference_failure: None,
         pointer_element_types: parameters
             .iter()
             .filter_map(|parameter| {
@@ -2928,6 +2936,7 @@ pub(in crate::surface) fn function_contract_summary(
             .collect::<BTreeMap<_, _>>()
             .into(),
         local_type_state: None,
+        type_inference_failure: None,
         pointer_element_types: parsed_function
             .parameters()
             .iter()
@@ -3005,14 +3014,14 @@ pub(in crate::surface) fn function_contract_summary(
     let mut requires = Vec::new();
     let mut contract_requirement_sources = Vec::new();
     for proposition in requirement_definedness_surfaces(function_block.requires()) {
-        match lowerer.click_proposition_to_spec_proposition(&proposition, &context) {
+        match lowerer.lower_opaque_contract_proposition(&proposition, &context) {
             Ok(proposition) => {
                 requires.push(proposition);
                 contract_requirement_sources.push(None);
             }
             Err(error) => {
                 opaque_contract_supported = false;
-                note_opaque_contract_refusal(function_block.signature().name(), &error);
+                note_opaque_contract_refusal(function_block.signature().name(), error);
             }
         }
     }
@@ -3039,7 +3048,7 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
-        match lowerer.click_proposition_to_spec_proposition(&proposition, &context) {
+        match lowerer.lower_opaque_contract_proposition(&proposition, &context) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
                     predicate_unfoldings.push(
@@ -3052,7 +3061,7 @@ pub(in crate::surface) fn function_contract_summary(
             }
             Err(error) => {
                 opaque_contract_supported = false;
-                note_opaque_contract_refusal(function_block.signature().name(), &error);
+                note_opaque_contract_refusal(function_block.signature().name(), error);
             }
         }
     }
@@ -3093,7 +3102,7 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
-        match lowerer.click_proposition_to_spec_proposition(&proposition, &ensures_context) {
+        match lowerer.lower_opaque_contract_proposition(&proposition, &ensures_context) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
                     predicate_unfoldings
@@ -3103,7 +3112,7 @@ pub(in crate::surface) fn function_contract_summary(
             }
             Err(error) => {
                 opaque_contract_supported = false;
-                note_opaque_contract_refusal(function_block.signature().name(), &error);
+                note_opaque_contract_refusal(function_block.signature().name(), error);
             }
         }
     }
@@ -3126,11 +3135,11 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
-        match lowerer.click_proposition_to_spec_proposition(proposition, &exceptional_context) {
+        match lowerer.lower_opaque_contract_proposition(proposition, &exceptional_context) {
             Ok(proposition) => exceptional_ensures.push(proposition),
             Err(error) => {
                 opaque_contract_supported = false;
-                note_opaque_contract_refusal(function_block.signature().name(), &error);
+                note_opaque_contract_refusal(function_block.signature().name(), error);
             }
         }
     }
@@ -3486,6 +3495,7 @@ struct AnnotationLowerer<'a> {
     /// Live declaration types for state-parametric branch facts; values remain symbolic.
     /// Each referenced name uses the state's existing index, without a body/history scan.
     local_type_state: Option<&'a ExecutionState>,
+    type_inference_failure: Option<String>,
     /// Declared C types of the function's parameters, where a function is
     /// in scope: a clause's range over a `size_t` parameter is a `size_t`
     /// range.
@@ -8642,6 +8652,27 @@ impl AnnotationLowerer<'_> {
             .is_ok_and(|instance| matches!(instance.return_type(), ClickType::Algebraic(_)))
     }
 
+    fn lower_opaque_contract_proposition(
+        &mut self,
+        proposition: &ClickProposition,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecProposition, ClickError> {
+        self.type_inference_failure = None;
+        self.click_proposition_to_spec_proposition(proposition, environment)
+            .map_err(|message| {
+                // The general elaborator still uses strings. Only a type
+                // inference failure that actually escaped this lowering
+                // supplies the type diagnosis, including after spec probes.
+                let is_type_error = self.type_inference_failure.as_ref() == Some(&message);
+                let error = ClickError::new(message);
+                if is_type_error {
+                    error.with_kind(ClickErrorKind::Type)
+                } else {
+                    error
+                }
+            })
+    }
+
     fn instantiate_click_function_for_call(
         &mut self,
         definition: &ClickFunctionDefinition,
@@ -8668,7 +8699,11 @@ impl AnnotationLowerer<'_> {
                 .iter()
                 .map(|parameter| parameter.click_type().clone()),
             argument_types,
-        )?;
+        )
+        .map_err(|message| {
+            self.type_inference_failure = Some(message.clone());
+            message
+        })?;
         generics::instantiate_function(definition, &substitution)
     }
 
@@ -8698,7 +8733,11 @@ impl AnnotationLowerer<'_> {
                 .iter()
                 .map(|parameter| parameter.click_type().clone()),
             argument_types,
-        )?;
+        )
+        .map_err(|message| {
+            self.type_inference_failure = Some(message.clone());
+            message
+        })?;
         generics::instantiate_predicate(definition, &substitution)
     }
 
@@ -11553,7 +11592,7 @@ thread_local! {
     /// Why a function's contract could not be lowered for opaque use: the
     /// first clause's lowering error, by function name. A diagnostic only;
     /// the verdict is the contract's own.
-    static OPAQUE_CONTRACT_REFUSALS: std::cell::RefCell<BTreeMap<String, String>> =
+    static OPAQUE_CONTRACT_REFUSALS: std::cell::RefCell<BTreeMap<String, ClickError>> =
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
@@ -11563,25 +11602,23 @@ fn clear_opaque_contract_refusal(function: &str) {
     });
 }
 
-fn note_opaque_contract_refusal(function: &str, error: &impl std::fmt::Display) {
+fn note_opaque_contract_refusal(function: &str, error: ClickError) {
     OPAQUE_CONTRACT_REFUSALS.with(|refusals| {
         refusals
             .borrow_mut()
             .entry(function.to_string())
-            .or_insert_with(|| error.to_string());
+            .or_insert(error);
     });
 }
 
-/// `": <reason>"` when lowering `function`'s contract refused a clause, so a
-/// refusal to apply the contract opaquely names the clause's own error.
-pub(in crate::surface) fn opaque_contract_refusal_suffix(function: &str) -> String {
-    OPAQUE_CONTRACT_REFUSALS.with(|refusals| {
-        refusals
-            .borrow()
-            .get(function)
-            .map(|reason| format!(": {reason}"))
-            .unwrap_or_default()
-    })
+/// Preserve the first clause's cause and add the opaque-use site.
+pub(in crate::surface) fn opaque_contract_refusal(function: &str, message: String) -> ClickError {
+    OPAQUE_CONTRACT_REFUSALS
+        .with(|refusals| match refusals.borrow().get(function) {
+            Some(reason) => reason.clone().with_context(message),
+            None => ClickError::new(message),
+        })
+        .at_declaration(function)
 }
 
 /// One step of a read through a call's parameter, `R.parameter(v).f[i]`.

@@ -1846,13 +1846,29 @@ fn verify_contract_refinement_theorem(
     })?;
     let refinement = match (concrete_target, &source_contract) {
         (Some(target), None) => {
-            program_function_contract_refinement_context(function_environment, name, spec_definitions.predicates.function_execution_name(target), &target_values).ok_or_else(
-                || {
-                    ClickError::new(format!(
-                        "`{claim_label}`: `{target}` is not a verified or external function compatible with contract `{name}`"
-                    ))
-                },
-            )?
+            crate::kernel::program_function_contract_refinement_context_reporting(
+                function_environment, name, spec_definitions.predicates.function_execution_name(target), &target_values,
+            )
+            .map_err(|refusal| {
+                use crate::kernel::ConcreteRefinementRefusal::*;
+                let (detail, internal) = match refusal {
+                    MissingContract => ("the named contract is missing from the checked environment", true),
+                    InvalidContractArguments => ("the named contract's value arguments could not be bound", true),
+                    MissingTarget => ("the target has no verified or external contract in scope", false),
+                    ThrowingTarget => ("the target may throw, but the named contract promises it cannot throw", false),
+                    DifferentExceptionType => ("the target and named contract declare different exception payload types", false),
+                    IncompatibleInterface => ("the signatures or resource interfaces are incompatible", false),
+                    ContextUnavailable => ("Click could not prepare refinement for the compatible interfaces", true),
+                };
+                let error = ClickError::new(format!(
+                    "`{claim_label}`: `{target}` is not a verified or external function compatible with contract `{name}`: {detail}"
+                ));
+                if internal {
+                    error.with_kind(ClickErrorKind::Internal)
+                } else {
+                    error.with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("unfold")
+                }
+            })?
         }
         (None, Some((source_name, _, source_values))) => {
             let binding = symbolic_binding.expect("abstract refinement has a callback binding");

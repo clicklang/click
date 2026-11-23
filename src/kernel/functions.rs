@@ -2119,7 +2119,9 @@ fn execute_function_paths(
             Ok(None) => std::borrow::Cow::Borrowed(execution_context.environment),
             Err(message) => {
                 paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                        message.to_string(),
+                    )),
                     arguments_path.facts,
                     argument_obligations,
                 ));
