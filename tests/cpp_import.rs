@@ -19113,6 +19113,60 @@ fn layout_free_cpp_references_forward_to_contracts() {
     );
 }
 
+#[test]
+fn layout_free_cpp_pointers_forward_to_contracts() {
+    let project = Project::with_fixture(
+        "driver.cpp",
+        "read",
+        "struct Buffer;\nunsigned long length(Buffer* buffer) noexcept;\nunsigned long read(Buffer* buffer) noexcept { return length(buffer); }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [record] = import.export().records.as_slice() else {
+        panic!("one nominal record declaration")
+    };
+    assert_eq!(record.path, ["Buffer"]);
+    assert_eq!((record.size_bytes, record.alignment_bytes), (0, 0));
+    assert!(record.fields.is_empty());
+
+    fs::write(
+        project.directory.join("buffer.interface.click"),
+        r#"abstract resource buffer_state(buffer: Buffer*) { field count: uint64; }
+unsigned long length(Buffer* buffer) {
+    owns state: buffer_state(buffer);
+    ensures state.count == old(state.count);
+    ensures result == state.count;
+}
+"#,
+    )
+    .unwrap();
+    let path = project.directory.join("read.click");
+    let source = r#"import "buffer.interface.click";
+verifying "driver.cpp";
+unsigned long read(Buffer* buffer) {
+    owns state: buffer_state(buffer);
+    ensures state.count == old(state.count);
+    ensures result == state.count;
+}
+"#;
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+
+    let missing_state = r#"import "buffer.interface.click";
+verifying "driver.cpp";
+unsigned long read(Buffer* buffer) { ensures result == result; }
+"#;
+    let parsed = read_click_project(&path, missing_state).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error.report().contains("unbound instance binder `state`"),
+        "{}",
+        error.report()
+    );
+}
+
 const BYTE_VECTOR_FIXTURE_HEADER: &str = r#"#pragma clang system_header
 namespace std {
 template<class T> struct allocator;

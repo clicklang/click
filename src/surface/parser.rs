@@ -7135,6 +7135,17 @@ impl Parser {
                     }
                     saw_pointer = true;
                 }
+                if alias_pointer.is_none()
+                    && self.verifies_cpp()
+                    && !self.struct_layouts.contains_key(&struct_name)
+                {
+                    if interface_type != InterfaceType::Int32Pointer {
+                        return Err(
+                            self.error("layout-free C++ records support only one pointer level")
+                        );
+                    }
+                    interface_type = InterfaceType::VoidPointer;
+                }
                 return Ok(ParsedType {
                     interface_type,
                     struct_name: Some(struct_name),
