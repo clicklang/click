@@ -408,6 +408,32 @@ fn stored_uint8_observation(term: &IntegerTerm) -> Option<num_bigint::BigInt> {
     stored_uint8_literal(value.ty(), value.operand_view()).map(|byte| byte.to_integer())
 }
 
+fn literal_word_bits(operand: MachineOperandView<'_>, width: u32) -> Option<u128> {
+    let MachineTerm::Constant { format, bits } = operand.literal()? else {
+        return None;
+    };
+    (format.format().bits() == width).then_some(bits)
+}
+
+/// A same-width OR preserves every set bit of either operand. Only the root
+/// and its immediate operands matter; the other operand can remain opaque.
+fn bitwise_or_has_set_bit(value: MachineOperandView<'_>, width: u32) -> bool {
+    let Some((format, MachineBinaryOp::BitwiseOr, operands)) = value.binary() else {
+        return false;
+    };
+    format.format().bits() == width
+        && operands
+            .into_iter()
+            .any(|operand| literal_word_bits(operand, width).is_some_and(|bits| bits != 0))
+}
+
+fn observed_bitwise_or_has_set_bit(value: &IntegerTerm) -> bool {
+    let IntegerTerm::Machine(value) = value else {
+        return false;
+    };
+    bitwise_or_has_set_bit(value.operand_view(), value.ty().format().bits())
+}
+
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -426,6 +452,16 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                 | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
                 _ => unreachable!(),
             };
+            if matches!(
+                condition,
+                ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..)
+            ) && ((left.as_const().is_some_and(num_traits::Zero::is_zero)
+                && observed_bitwise_or_has_set_bit(right))
+                || (right.as_const().is_some_and(num_traits::Zero::is_zero)
+                    && observed_bitwise_or_has_set_bit(left)))
+            {
+                return Some(matches!(condition, ConditionTerm::IntegerNotEqual(..)));
+            }
             if left == right {
                 return Some(matches!(
                     condition,
@@ -476,6 +512,15 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             left,
             right,
         } => {
+            let a = MachineOperandView::Legacy(left);
+            let b = MachineOperandView::Legacy(right);
+            let width = format.format().bits();
+            if *relation == CompareRelation::Equal
+                && ((literal_word_bits(a, width) == Some(0) && bitwise_or_has_set_bit(b, width))
+                    || (literal_word_bits(b, width) == Some(0) && bitwise_or_has_set_bit(a, width)))
+            {
+                return Some(false);
+            }
             if *format == MachineIntegerType::Int32
                 && *relation == CompareRelation::Equal
                 && (unchanged_machine_folds_equal(left, right)
@@ -484,8 +529,6 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             {
                 return Some(true);
             }
-            let a = MachineOperandView::Legacy(left);
-            let b = MachineOperandView::Legacy(right);
             if *format == MachineIntegerType::Int32
                 && *relation == CompareRelation::Equal
                 && (a.conditional_view().is_some() || b.conditional_view().is_some())
