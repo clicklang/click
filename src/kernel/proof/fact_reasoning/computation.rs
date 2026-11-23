@@ -907,6 +907,21 @@ fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
     }
 }
 
+fn constructor_payload_variable(field: &AlgebraicValue) -> Option<Variable> {
+    match field {
+        AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
+        | AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => Some(*variable),
+        AlgebraicValue::Program(ProgramValue::Bool(MachineTerm::BoolCast {
+            to: MachineIntegerType::UInt8,
+            value,
+        })) => match value.as_ref() {
+            ConditionTerm::Variable(variable) => Some(*variable),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Follow selected constructor arms that forward scalar payloads into a
 /// constructor, possibly alongside literals or captured scalar variables.
 /// Resolve each binding in its scrutinee's scope before checking the result.
@@ -938,27 +953,21 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         }
         // The new bindings are in scope in the arm body, but not in its scrutinee.
         for (binder, field) in arm.bindings.iter().zip(fields) {
-            let (variable, payload) = match (binder, field) {
-                (
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(source))),
-                )
-                | (
-                    AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-                    AlgebraicValue::Integer(IntegerTerm::Variable(source)),
-                ) => (variable, payloads.get(source).copied().unwrap_or(field)),
-                (
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
-                    | AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-                    field,
-                ) if is_constructor_payload_literal(field) => (variable, field),
-                _ => return false,
+            let Some(variable) = constructor_payload_variable(binder) else {
+                return false;
+            };
+            let payload = if let Some(source) = constructor_payload_variable(field) {
+                payloads.get(&source).copied().unwrap_or(field)
+            } else if is_constructor_payload_literal(field) {
+                field
+            } else {
+                return false;
             };
             let field_type = field.value_type();
             if binder.value_type() != field_type || payload.value_type() != field_type {
                 return false;
             }
-            bindings.push((*variable, payload));
+            bindings.push((variable, payload));
         }
         for (variable, payload) in bindings.drain(..) {
             if payloads.insert(variable, payload).is_some() {
@@ -983,12 +992,10 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         .iter()
         .zip(expected_fields)
         .all(|(field, expected)| {
-            let variable = match field {
-                AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
-                | AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => variable,
-                _ => return is_constructor_payload_literal(field) && field == expected,
+            let Some(variable) = constructor_payload_variable(field) else {
+                return is_constructor_payload_literal(field) && field == expected;
             };
-            let payload = payloads.get(variable).copied().unwrap_or(field);
+            let payload = payloads.get(&variable).copied().unwrap_or(field);
             payload.value_type() == field.value_type() && payload == expected
         })
         && matched.is_well_formed()
