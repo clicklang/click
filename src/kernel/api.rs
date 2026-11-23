@@ -1031,6 +1031,8 @@ impl LoopPreservationContext {
 pub enum LoopHeadRefusal {
     /// A refusal the kernel spells on its own.
     Message(String),
+    /// A declared loop resource could not be read at the loop entry.
+    ResourceEvaluation(String),
     /// A premise the head's guard owes that the entry context does not
     /// discharge. The invariants owe none here: their side conditions are
     /// invariant content, assumed at the head and owed at entry and at every
@@ -1183,6 +1185,9 @@ pub(crate) fn loop_phase_preservation_contexts(
         return Err(match failure {
             super::loops::LoopResourceFailure::Message(message) => {
                 LoopHeadRefusal::Message(message.clone())
+            }
+            super::loops::LoopResourceFailure::Evaluation(message) => {
+                LoopHeadRefusal::ResourceEvaluation(message.clone())
             }
             super::loops::LoopResourceFailure::Unheld { fact, state } => {
                 LoopHeadRefusal::UnheldResource {

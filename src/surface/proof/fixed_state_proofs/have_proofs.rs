@@ -362,14 +362,19 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_intr
 
 #[derive(Debug)]
 pub(in crate::surface) enum StatedPropositionRefusal {
+    Elaboration(String),
     Lowering(String),
+    Stopped(crate::kernel::ExecutionLimit, String),
     Evaluation(String),
 }
 
 impl std::fmt::Display for StatedPropositionRefusal {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Lowering(message) | Self::Evaluation(message) => formatter.write_str(message),
+            Self::Elaboration(message)
+            | Self::Lowering(message)
+            | Self::Stopped(_, message)
+            | Self::Evaluation(message) => formatter.write_str(message),
         }
     }
 }
@@ -421,15 +426,14 @@ pub(in crate::surface) fn lower_stated_proposition(
     let is_conjunct_label = options.is_conjunct_label;
     let obligation_assumptions = options.obligation_assumptions.unwrap_or(assumptions);
     let (lowered, introductions, facts, obligations) =
-        lower_fixed_state_proposition_retaining_requirements(
+        lower_stated_proposition_retaining_requirements(
             proposition,
             assumptions,
             contract_environment,
             fixed_state,
             spec_definitions,
             options,
-        )
-        .map_err(StatedPropositionRefusal::Lowering)?;
+        )?;
     if !is_conjunct_label {
         refuse_unproved_conversion_bounds(
             &obligations,
@@ -462,6 +466,33 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         Vec<crate::kernel::ProofObligation>,
     ),
     String,
+> {
+    lower_stated_proposition_retaining_requirements(
+        proposition,
+        assumptions,
+        contract_environment,
+        fixed_state,
+        spec_definitions,
+        options,
+    )
+    .map_err(|refusal| refusal.to_string())
+}
+
+pub(in crate::surface) fn lower_stated_proposition_retaining_requirements(
+    proposition: &ClickProposition,
+    assumptions: &PureFactContext,
+    contract_environment: ContractEnvironment<'_>,
+    fixed_state: FixedStateFrame<'_>,
+    spec_definitions: SpecDefinitions<'_>,
+    options: FixedStateLoweringOptions<'_>,
+) -> Result<
+    (
+        Proposition,
+        crate::kernel::LoweringIntroductions,
+        Vec<Proposition>,
+        Vec<crate::kernel::ProofObligation>,
+    ),
+    StatedPropositionRefusal,
 > {
     let no_integer_values = PersistentBinderMap::default();
     let FixedStateLoweringOptions {
@@ -498,7 +529,8 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         fixed_state.recorded_states,
         spec_definitions,
         opaque_click_functions.cloned().unwrap_or_default(),
-        pointer_element_widths,)?;
+        pointer_element_widths,
+    ).map_err(StatedPropositionRefusal::Elaboration)?;
     let spec = IterativeSpecPropositionDrop::new(spec);
     let lower = if assumed_interface {
         crate::kernel::program_lower_assumed_interface_proposition_with_checked_obligations
@@ -511,12 +543,15 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         Some(&states.entry_state),
         assumptions,
     )
-    .map_err(|refusal| match &refusal.dropped_fold_body {
+    .map_err(|refusal| match refusal.dropped_fold_body {
+        _ if let Some(stop) = refusal.limit => {
+            StatedPropositionRefusal::Stopped(stop, refusal.message)
+        }
         // The kernel pruned the only lowering of a range fold. It knows
         // which check fired and what it was about; only the surface can
         // say so in the names the reader wrote.
-        Some(dropped) => describe_dropped_fold_body(
-            dropped,
+        Some(dropped) => StatedPropositionRefusal::Evaluation(describe_dropped_fold_body(
+            &dropped,
             obligation_assumptions,
             &StatedSite::new(
                 StatedForm::Proposition(proposition),
@@ -524,7 +559,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
                 contract_environment.values,
             )
             .with_integer_values(integer_values),
-        ),
+        )),
         None => match refusal.dropped_comparison {
             Some((left, operator, right)) => {
                 use crate::kernel::ComparisonOperator::*;
@@ -536,7 +571,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
                     GreaterThan => ">",
                     GreaterEqual => ">=",
                 };
-                format!(
+                StatedPropositionRefusal::Elaboration(format!(
                     "cannot compare `{}` and `{}` with `{operator}`",
                     describe_interface_type(
                         crate::surface::generics::interface_type_from_program_type(left)
@@ -544,9 +579,9 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
                     describe_interface_type(
                         crate::surface::generics::interface_type_from_program_type(right)
                     )
-                )
+                ))
             }
-            None => refusal.message,
+            None => StatedPropositionRefusal::Lowering(refusal.message),
         },
     })?;
     refuse_impossible_loads(
@@ -555,7 +590,8 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
             .map(|obligation| obligation.proposition().clone())
             .collect::<Vec<_>>(),
         obligation_assumptions,
-    )?;
+    )
+    .map_err(StatedPropositionRefusal::Evaluation)?;
     Ok((lowered, introductions, facts, obligations))
 }
 

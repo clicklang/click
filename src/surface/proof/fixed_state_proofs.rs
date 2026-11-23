@@ -38,5 +38,6 @@ pub(in crate::surface) use have_proofs::{
     lower_fixed_state_proposition_through_kernel_with,
     lower_fixed_state_proposition_through_kernel_with_facts,
     lower_fixed_state_proposition_through_kernel_with_introductions, lower_stated_proposition,
+    lower_stated_proposition_retaining_requirements,
 };
 pub(super) use theorem_application::*;

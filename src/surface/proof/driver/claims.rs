@@ -1633,6 +1633,7 @@ fn closing_goal_error(claim: &str, reason: crate::kernel::EnsureGoalRefusal) -> 
         ) => diagnostic.with_kind(ClickErrorKind::Internal),
         EnsureGoalRefusal::Stopped(
             ExecutionLimit::GuardedConjunctionTooLong
+            | ExecutionLimit::SymbolicPointerConditional
             | ExecutionLimit::UnsupportedPureFunctionResult(_),
         ) => diagnostic.with_kind(ClickErrorKind::Unsupported),
         EnsureGoalRefusal::Stopped(

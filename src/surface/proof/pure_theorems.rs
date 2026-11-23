@@ -885,12 +885,7 @@ pub(super) fn pure_theorem_context(
                 theorem.name(),
                 theorem.name(),
             )).at_declaration(theorem.name());
-            match reason {
-                StatedPropositionRefusal::Evaluation(_) => {
-                    diagnostic.with_proof_refusal(ProofRefusal::Contract)
-                }
-                StatedPropositionRefusal::Lowering(_) => diagnostic.with_kind(ClickErrorKind::Internal),
-            }
+            theorem_statement_error(diagnostic, reason)
         })?;
         // Guard evidence is available to later requirements, while every
         // principal remains in the exported implication's premise list.
@@ -967,6 +962,34 @@ pub(super) fn pure_theorem_context(
         requires,
         surface_requirements,
     })
+}
+
+fn theorem_statement_error(
+    diagnostic: ClickError,
+    refusal: StatedPropositionRefusal,
+) -> ClickError {
+    use crate::kernel::ExecutionLimit;
+    match refusal {
+        StatedPropositionRefusal::Elaboration(_) | StatedPropositionRefusal::Evaluation(_) => {
+            diagnostic.with_proof_refusal(ProofRefusal::Contract)
+        }
+        StatedPropositionRefusal::Stopped(
+            ExecutionLimit::GuardedConjunctionTooLong
+            | ExecutionLimit::SymbolicPointerConditional
+            | ExecutionLimit::UnsupportedPureFunctionResult(_),
+            _,
+        ) => diagnostic.with_kind(ClickErrorKind::Unsupported),
+        StatedPropositionRefusal::Stopped(
+            ExecutionLimit::BoolArithmetic
+            | ExecutionLimit::BoolComparedWithInteger
+            | ExecutionLimit::BoolOrdered
+            | ExecutionLimit::MixedBoolArms,
+            _,
+        ) => diagnostic.with_proof_refusal(ProofRefusal::Contract),
+        StatedPropositionRefusal::Stopped(..) | StatedPropositionRefusal::Lowering(_) => {
+            diagnostic.with_kind(ClickErrorKind::Internal)
+        }
+    }
 }
 
 /// Lowers imported or otherwise unselected theorem statements into scoped
@@ -1481,7 +1504,7 @@ fn verify_theorem_ensure(
     let lowering_assumptions = assumptions_from_propositions(&context.requires);
     let state = ExecutionState::at_point(&context.point);
     let (goal, goal_introductions, _, obligations) =
-        lower_fixed_state_proposition_retaining_requirements(
+        lower_stated_proposition_retaining_requirements(
             surface_goal,
             &PureFactContext::new(),
             ContractEnvironment::new(&context.values, &context.array_refs),
@@ -1493,11 +1516,12 @@ fn verify_theorem_ensure(
                 ..Default::default()
             },
         )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` failed: could not lower conclusion: pure theorem `{}`: {message}",
+        .map_err(|reason| {
+            let diagnostic = ClickError::new(format!(
+                "`{claim_label}` failed: could not lower conclusion: pure theorem `{}`: {reason}",
                 theorem.name()
-            ))
+            ));
+            theorem_statement_error(diagnostic, reason)
         })?;
     // This probe checks only retained requirements, not a proof operation.
     // No unchecked successor or theorem authority is produced here.
@@ -1517,7 +1541,8 @@ fn verify_theorem_ensure(
             )
         });
 
-    entry_check.map_err(ClickError::new)?;
+    entry_check
+        .map_err(|message| ClickError::new(message).with_proof_refusal(ProofRefusal::Contract))?;
 
     if theorem.is_axiom() {
         // A Click library axiom is trusted: it states what the library's

@@ -238,7 +238,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     ));
                     match refusal {
                         crate::kernel::LoopHeadRefusal::UnheldResource { .. }
-                        | crate::kernel::LoopHeadRefusal::MissingPrerequisite { .. } => {
+                        | crate::kernel::LoopHeadRefusal::MissingPrerequisite { .. }
+                        | crate::kernel::LoopHeadRefusal::ResourceEvaluation(_) => {
                             diagnostic.with_proof_refusal(ProofRefusal::IncompleteProof)
                         }
                         crate::kernel::LoopHeadRefusal::Message(_) => diagnostic,
