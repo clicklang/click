@@ -136,7 +136,8 @@ fn algebraic_constructor_payload_check_scales_with_written_fields() {
         let mut fields = (0..size)
             .map(|i| variable(994_300 + i as u64))
             .collect::<Vec<_>>();
-        fields[0] = layer(tag("Red"));
+        // The scrutinee reads this ID before the arm introduces its binding.
+        fields[0] = layer(variable(994_101));
         let bindings = (0..size)
             .map(|i| variable(994_100 + i as u64))
             .collect::<Vec<_>>();

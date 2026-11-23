@@ -1696,8 +1696,9 @@ A match on a written constructor can close an equality when its selected arm
 builds a constructor from bound fields, literal fields, or captured variables.
 Literals and variables can be machine integers, `Integer`s, or `Bool`s.
 Algebraic result fields can also be constructors that contain these values.
-A constructor passed into a pattern binder can contain literal fields and
-nested constructors. The check follows nested matches on written constructors
+A constructor passed into a pattern binder can contain literals, variables,
+and nested constructors. The check reads those variables in the scope where
+the constructor was written. It follows nested matches on written constructors
 or constructors held by earlier pattern binders. Machine fields retain their
 exact width and signedness.
 
