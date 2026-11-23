@@ -6,6 +6,8 @@ fn scoped_introduction_replays_after_expansion() {
     let program = crate::cli::source_refs(&program);
     for (claim, intro) in [
         ("scoped_implication.ensures_0", "intro(k) {"),
+        ("scoped_range.ensures_0", "intro(i) {"),
+        ("nested_scoped_ranges.ensures_0", "intro() {"),
         ("scoped_claim.contract", "intro() {"),
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &program, claim)

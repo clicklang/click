@@ -4,6 +4,10 @@ A named universal introduction and an implication introduction can nest. In a
 function proof, closing the block returns focus to the next claim. Here the
 fresh `x` shadows the function parameter only inside the block.
 
+For a written range, one block binds the index and introduces both bounds.
+Nested ranges take one nested block each, and an implication written in the
+body still takes its own block.
+
 ```c filename=scoped_intro.c
 int scoped_claim(int x) { return x; }
 ```
@@ -16,6 +20,31 @@ theorem scoped_implication() {
         intro(k) {
             intro() {
                 solve() using { 1 <= k; };
+            }
+        }
+    }
+}
+
+theorem scoped_range(lo: int32, hi: int32) {
+    ensures (lo..hi).all(|written| { lo <= written and written < hi }) by {
+        intro(i) {
+            all {
+                lo <= i => { known(); }
+                i < hi => { known(); }
+            }
+        }
+    }
+}
+
+theorem nested_scoped_ranges(end: uint64) {
+    ensures (0u64..end).all(|i| {
+        (0u64..i).all(|j| { end == end implies j < end })
+    }) by {
+        intro() {
+            intro() {
+                intro() {
+                    solve() using { j < i; i < end; };
+                }
             }
         }
     }

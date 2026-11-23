@@ -458,7 +458,18 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let step = binder
             .cloned()
             .map_or(ProofStep::Intro, ProofStep::IntroBinder);
-        let opened = self.apply_step(step)?;
+        let introduced = self.apply_step(step)?;
+        // A written range universal includes its membership guard. The flat
+        // form still takes one kernel step at a time.
+        let range = matches!(
+            parent.surface_goal(),
+            Some(ClickProposition::RangeAll { .. })
+        ) && matches!(parent.goal(), Some(Proposition::ForAll { .. }))
+            && introduced.has_range_intro_guard();
+        let range_opened = range
+            .then(|| introduced.driver().apply_step(ProofStep::Intro))
+            .transpose()?;
+        let opened = range_opened.as_ref().unwrap_or(&introduced);
         let sites = (0..body.len())
             .map(|index| parent.site().in_arm(0, "intro", index))
             .collect::<Vec<_>>();
@@ -466,7 +477,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .driver()
             .run_addressed_linear_script(body, &sites, &mut None, None, implicit_tail)?
             .ok_or_else(|| parent.step_error("the `intro` block must prove its opened goal"))?;
-        parent.finish_scoped_intro(&opened, completed)
+        parent.finish_scoped_intro(&introduced, opened, completed)
     }
 
     pub(in crate::surface::proof) fn run_addressed_linear_script(

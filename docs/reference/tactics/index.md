@@ -2572,8 +2572,7 @@ variable in a `have` stated between C statements
 ([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)). A known C/C++ record binding named `outer` keeps ordinary `outer.field`
 access in a proof; it is not parsed as the shadowed-binder qualifier.
 
-**Accepts** a goal whose lowered head is one of these, and makes one
-introduction:
+**Accepts** a goal whose lowered head is one of these:
 
 - `A implies B`: `A` becomes a fact and the goal is `B`. A conjunction `A` is
   available conjunct by conjunct, so `known()` closes `0 <= k` after
@@ -2581,13 +2580,16 @@ introduction:
   `A implies B implies C` takes two `intro()`s.
 - `forall (x: T) { B }` for an `int32`, `uint64`, pointer, `Integer`, or
   `spec enum` binder: `x` is a new variable in scope and the goal is `B`.
-- `(lo..hi).all(|x| { B })`: the first `intro()` binds `x`; the second adds
-  the range guard `lo <= x and x < hi` as a fact and leaves `B`.
-- An implication lowering inserted in front of a written body: the definedness
-  of an operation the body evaluates, such as `defined(k + 1)` for
-  `k + 1 > 0`, or a path fact. It is introduced as a fact while the written
-  goal stays focused, so a written `forall (k: int32) { k + 1 > 0 and k >= 0
-  implies k >= 0 }` takes three `intro()`s: binder, guard, antecedent.
+- `(lo..hi).all(|x| { B })`: one scoped introduction binds `x` and makes
+  both `lo <= x` and `x < hi` available while proving `B`. Use one nested
+  block per range and a separate block for an implication written in `B`.
+  Flat introductions take two steps, one for the binder and one for membership.
+- An implication lowering inserted in front of a written body, such as a
+  path fact: `intro()` adds the premise and keeps the written goal focused.
+  If such an implication sits between a range binder and the membership
+  premise, introduce those premises explicitly inside the binder's block.
+  Definedness requirements for evaluated expressions must be established
+  separately.
 **Outside it**, with what to write instead:
 
 - A negation or disequality: use a proof `if` on the denied condition. Refute
@@ -2605,7 +2607,7 @@ A refusal names the goal's shape, such as "got a condition fact" or "got a
 conjunction". Click checks the introduction and the proof of its body. Expansion preserves
 the written block and expands any smart steps inside it.
 
-**Checked examples:** [`scoped_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/scoped_intro.md), [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`lowering_guard_before_written_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/lowering_guard_before_written_implication.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
+**Checked examples:** [`scoped_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/scoped_intro.md), [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
 
 ### Naming an introduced binder
 

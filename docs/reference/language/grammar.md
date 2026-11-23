@@ -768,10 +768,10 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
 ```
 
 The value forms use `item` as the written range binder. An `.any` witness
-therefore names `item`; an `.all` proof may choose a binder with
-`let k = intro()`. The universal range proof introduces both its index and
-its range condition, as `let k = intro(); intro();`. Elaborated applications
-use the existing universal/existential range terms and add no proof search.
+therefore names `item`. In an `.all` proof, `intro(k) { ... }` binds the
+index as `k` and introduces both bounds for the block. The flat equivalent
+is `let k = intro(); intro();`. Elaborated applications use the existing
+universal/existential range terms and add no proof search.
 
 ### Range folds
 
