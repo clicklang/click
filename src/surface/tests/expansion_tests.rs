@@ -26546,6 +26546,21 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
 }
 
 #[test]
+fn shifted_one_divisors_expand_to_checked_bounds() {
+    let (source, sources) = mdtest_sources("mdtests/shifted_one_divisors.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let mut expanded = source.clone();
+    for function in ["divide32", "divide64", "remain32", "remain64"] {
+        expanded = expand_function_proof_source(&expanded, &sources, function).unwrap();
+    }
+    assert_eq!(expanded.matches("step() by").count(), 4, "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
 fn arithmetic_safety_bounds_expand_to_checked_proofs() {
     for (path, function) in [
         ("mdtests/arithmetic_safety_float_widening.md", "convert"),

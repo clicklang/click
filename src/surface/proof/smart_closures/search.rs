@@ -3512,8 +3512,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            is_float_bound, shift_count_mask_requirements, signed_product_guard_candidates,
-            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
+            is_float_bound, shift_count_mask_requirements, shifted_one_requirement,
+            signed_product_guard_candidates, signed_quotient_bridge_requirement,
+            signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -3593,6 +3594,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
         let mut candidates = signed_product_guard_candidates(goal).collect::<Vec<_>>();
         if let Some(guard) = signed_quotient_bridge_requirement(goal) {
+            candidates.push(vec![guard]);
+        }
+        if let Some(guard) = shifted_one_requirement(goal) {
             candidates.push(vec![guard]);
         }
         if is_float_bound(goal)

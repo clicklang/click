@@ -1909,6 +1909,11 @@ the direction. Unary float negation negates the endpoint and reverses the
 direction. Equal endpoints require a strict premise for a strict goal. A
 negated comparison can hold for NaN and cannot supply an ordered bound.
 
+For an unsigned left shift of one, citing the count bound proves the result
+is nonzero. For example, `normalize() using { d < 32u32; }` proves
+`(1u32 << d) != 0u32`. This also discharges the divisor obligation for
+C division and remainder.
+
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
 Both must lie within the operation or destination format. A bound on one

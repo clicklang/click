@@ -1149,6 +1149,8 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
             })
     };
     if signed_quotient_bridge_requirement(goal).is_some_and(|guard| selected(&[guard]))
+        || (premises.len() == 1
+            && shifted_one_requirement(goal).is_some_and(|guard| selected(&[guard])))
         || (premises.len() == 2
             && shift_count_mask_requirements(goal).is_some_and(|required| selected(&required)))
         || (matches!(premises.len(), 2 | 3)
@@ -2747,6 +2749,56 @@ pub(crate) fn signed_shift_bound_mask_identity(goal: &Proposition) -> Option<Pro
         condition_for_operand_views(width, CompareRelation::Equal, [masked, count]),
         true,
     ))
+}
+
+/// An unsigned shift of one retains its only set bit if the count is
+/// below the width. Read the count as unsigned so the bound also excludes
+/// negative signed counts represented by the same bits.
+pub(crate) fn shifted_one_requirement(goal: &Proposition) -> Option<Proposition> {
+    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::machine_integer::{
+        bounds::constant_shift_count,
+        comparison::{condition_for_operand_views, structural_boolean_comparison_view},
+        range::constant_word,
+    };
+    let Proposition::ConditionIs(condition, expected) = goal else {
+        return None;
+    };
+    let comparison = structural_boolean_comparison_view(condition.operand_view())?;
+    if comparison.relation != CompareRelation::Equal || *expected != comparison.negated {
+        return None;
+    }
+    let [left, right] = comparison
+        .operands
+        .each_ref()
+        .map(|value| value.operand_view());
+    for (shift, zero) in [(left, right), (right, left)] {
+        let Some((
+            format @ (MachineIntegerType::UInt32 | MachineIntegerType::UInt64),
+            MachineBinaryOp::ShiftLeft,
+            [one, count],
+        )) = shift.binary()
+        else {
+            continue;
+        };
+        let bits = format.format().bits();
+        if comparison.format.format().bits() != bits
+            || constant_shift_count(one) != Some(1)
+            || constant_shift_count(zero) != Some(0)
+        {
+            continue;
+        }
+        let limit = constant_word(format, &bits.into())?;
+        return Some(Proposition::condition_is(
+            condition_for_operand_views(
+                format,
+                CompareRelation::LessThan,
+                [count, View::Legacy(&limit)],
+            ),
+            true,
+        ));
+    }
+    None
 }
 
 /// Observe a signed native quotient with a positive divisor. Positivity
