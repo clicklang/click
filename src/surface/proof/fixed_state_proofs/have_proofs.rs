@@ -360,8 +360,21 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_intr
     .map(|(proposition, introductions, _)| (proposition, introductions))
 }
 
-/// The kernel lowering of a proof-side proposition at a fixed state, with the
-/// head chain it recorded and the facts lowering established.
+#[derive(Debug)]
+pub(in crate::surface) enum StatedPropositionRefusal {
+    Lowering(String),
+    Evaluation(String),
+}
+
+impl std::fmt::Display for StatedPropositionRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Lowering(message) | Self::Evaluation(message) => formatter.write_str(message),
+        }
+    }
+}
+
+/// Lower a proof-side proposition and return the recorded introductions and facts.
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_facts(
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
@@ -377,6 +390,32 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
     ),
     String,
 > {
+    lower_stated_proposition(
+        proposition,
+        assumptions,
+        contract_environment,
+        fixed_state,
+        spec_definitions,
+        options,
+    )
+    .map_err(|error| error.to_string())
+}
+
+pub(in crate::surface) fn lower_stated_proposition(
+    proposition: &ClickProposition,
+    assumptions: &PureFactContext,
+    contract_environment: ContractEnvironment<'_>,
+    fixed_state: FixedStateFrame<'_>,
+    spec_definitions: SpecDefinitions<'_>,
+    options: FixedStateLoweringOptions<'_>,
+) -> Result<
+    (
+        Proposition,
+        crate::kernel::LoweringIntroductions,
+        Vec<Proposition>,
+    ),
+    StatedPropositionRefusal,
+> {
     let no_integer_values = PersistentBinderMap::default();
     let integer_values = options.integer_values.unwrap_or(&no_integer_values);
     let is_conjunct_label = options.is_conjunct_label;
@@ -389,7 +428,8 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
             fixed_state,
             spec_definitions,
             options,
-        )?;
+        )
+        .map_err(StatedPropositionRefusal::Lowering)?;
     if !is_conjunct_label {
         refuse_unproved_conversion_bounds(
             &obligations,
@@ -400,7 +440,8 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
                 contract_environment.values,
             )
             .with_integer_values(integer_values),
-        )?;
+        )
+        .map_err(StatedPropositionRefusal::Evaluation)?;
     }
     Ok((lowered, introductions, facts))
 }

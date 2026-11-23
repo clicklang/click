@@ -27,7 +27,8 @@ pub(super) use have_proofs::{
     reverse_surface_equality,
 };
 pub(in crate::surface) use have_proofs::{
-    FixedStateLoweringOptions, capture_fixed_state_retained_expression_with_guards,
+    FixedStateLoweringOptions, StatedPropositionRefusal,
+    capture_fixed_state_retained_expression_with_guards,
     evaluate_fixed_state_array_ref_through_kernel, evaluate_fixed_state_expression_through_kernel,
     evaluate_fixed_state_expression_through_kernel_with_algebraic_values,
     evaluate_program_expression_through_kernel, evaluate_resource_argument_through_kernel,
@@ -36,6 +37,6 @@ pub(in crate::surface) use have_proofs::{
     lower_fixed_state_proposition_through_kernel,
     lower_fixed_state_proposition_through_kernel_with,
     lower_fixed_state_proposition_through_kernel_with_facts,
-    lower_fixed_state_proposition_through_kernel_with_introductions,
+    lower_fixed_state_proposition_through_kernel_with_introductions, lower_stated_proposition,
 };
 pub(super) use theorem_application::*;

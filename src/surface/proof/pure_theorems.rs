@@ -866,21 +866,31 @@ pub(super) fn pure_theorem_context(
     let mut requires = Vec::with_capacity(surface_requires.len());
     let mut requirement_assumptions = PureFactContext::new();
     for proposition in &surface_requires {
-        let (lowered, _) = lower_pure_theorem_proposition_recording_introductions(
-            theorem.name(),
+        let state = ExecutionState::at_point(&point);
+        let (lowered, _, _) = lower_stated_proposition(
             proposition,
-            &requirement_assumptions,
+            &PureFactContext::new(),
             ContractEnvironment::new(&values, &array_refs),
-            &BTreeMap::new(),
-            &integer_values,
-            &point,
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
             spec_definitions,
+            FixedStateLoweringOptions {
+                integer_values: Some(&integer_values),
+                obligation_assumptions: Some(&requirement_assumptions),
+                ..Default::default()
+            },
         )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "theorem `{}` setup failed: could not lower requirement: {message}",
-                theorem.name()
-            ))
+        .map_err(|reason| {
+            let diagnostic = ClickError::new(format!(
+                "theorem `{}` setup failed: could not lower requirement: pure theorem `{}`: {reason}",
+                theorem.name(),
+                theorem.name(),
+            )).at_declaration(theorem.name());
+            match reason {
+                StatedPropositionRefusal::Evaluation(_) => {
+                    diagnostic.with_proof_refusal(ProofRefusal::Contract)
+                }
+                StatedPropositionRefusal::Lowering(_) => diagnostic.with_kind(ClickErrorKind::Internal),
+            }
         })?;
         // Guard evidence is available to later requirements, while every
         // principal remains in the exported implication's premise list.

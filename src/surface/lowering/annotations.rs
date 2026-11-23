@@ -4589,7 +4589,8 @@ impl AnnotationLowerer<'_> {
                  earlier state.",
                 crate::surface::verification::termination_measure_source(expression),
                 fixed.spelling()
-            )));
+            ))
+            .with_proof_refusal(crate::surface::ProofRefusal::Contract));
         }
         // The carrier is chosen exactly as the loop slot chooses it: an
         // `Integer`-typed measure lowers into the Integer carrier and owes the
@@ -4659,6 +4660,7 @@ impl AnnotationLowerer<'_> {
                             "loop {loop_index} {}: {message}",
                             item.title(item_index)
                         ))
+                        .with_proof_refusal(crate::surface::ProofRefusal::Contract)
                     })?,
                     Some(format!(
                         "loop {loop_index} {} entry",

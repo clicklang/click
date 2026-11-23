@@ -1517,6 +1517,61 @@ int32 check(struct link* node) {
     }
 
     #[test]
+    fn verify_classifies_contract_closing_and_theorem_setup_failures() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, heading, detail) in [
+            (
+                "a_claim_that_cannot_lower_after_step_until_is_refused_with_its_cause.md",
+                "incomplete proof",
+                "requires owning authority",
+            ),
+            (
+                "an_unbounded_variable_tag_does_not_preserve_a_pointer_relationship.md",
+                "incomplete proof",
+                "integer-to-pointer cast requires",
+            ),
+            (
+                "loop_decreases_rejects_a_state_measure.md",
+                "contract error",
+                "a termination measure must be a function of the current state alone",
+            ),
+            (
+                "algebraic_generic_theorem_rejects_cyclic_verification.md",
+                "contract error",
+                "circular theorem justification",
+            ),
+            (
+                "c_contract_executes_signature.md",
+                "contract error",
+                "executes signature does not match",
+            ),
+            (
+                "defined_of_a_match_owes_its_arms_operands_domains.md",
+                "contract error",
+                "condition of its evaluation",
+            ),
+            (
+                "nested_loop_mark_invariant_diagnostic.md",
+                "contract error",
+                "cannot be used in a loop invariant",
+            ),
+            (
+                "loop_entry_memory_capture_short_rejected.md",
+                "incomplete proof",
+                "loop declares a resource the enclosing function does not hold",
+            ),
+        ] {
+            let error = entry([
+                "verify".to_string(),
+                fixtures.join(name).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(error.starts_with(&format!("{heading}:")), "{name}: {error}");
+            assert!(error.contains(detail), "{name}: {error}");
+        }
+    }
+
+    #[test]
     fn verification_separates_unprepared_safety_goals_from_unsupported_operations() {
         let fixture = |name: &str| {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
