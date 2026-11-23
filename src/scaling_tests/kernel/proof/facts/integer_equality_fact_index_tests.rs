@@ -340,6 +340,100 @@ fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
 }
 
 #[test]
+fn memory_erased_integer_keys_read_retained_observations_and_skip_scalar_dags() {
+    use crate::kernel::MachineBinaryOp;
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut operand = KernelTerm::variable(
+            KernelType::Program(format.program_type()),
+            Variable(216_000),
+        );
+        for _ in 0..depth {
+            operand = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [operand.clone(), operand],
+            );
+        }
+        let observation =
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, operand).unwrap());
+        let observation = KernelTermImport::default().integer(&observation.into());
+        let literal = KernelTerm::integer_literal(9.into());
+        let retained = |root, truth| {
+            Proposition::condition_is(StoredConditionTerm::from_root(root).unwrap(), truth)
+        };
+        let comparison = |operator| {
+            KernelTerm::integer_comparison(operator, [observation.clone(), literal.clone()])
+                .unwrap()
+        };
+        let exports = KernelTermExport::integer_export_count();
+        let machine_exports = KernelTermExport::machine_export_count();
+        let fact = retained(comparison(IntegerComparisonOperator::LessEqual), true);
+        let (key, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory_erased_proposition_key(&fact)
+        });
+        assert!(matches!(key, MemoryErasedPropositionKey::Condition(..)));
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert_eq!(KernelTermExport::machine_export_count(), machine_exports);
+        samples.push(work);
+
+        for operator in [
+            IntegerComparisonOperator::Equal,
+            IntegerComparisonOperator::NotEqual,
+            IntegerComparisonOperator::LessThan,
+            IntegerComparisonOperator::LessEqual,
+            IntegerComparisonOperator::GreaterThan,
+            IntegerComparisonOperator::GreaterEqual,
+        ] {
+            let root = comparison(operator);
+            let keys = [true, false]
+                .map(|truth| check_retained_key_no_export(&retained(root.clone(), truth)));
+            let native = KernelTermExport::condition(&root).unwrap();
+            for (actual, truth) in keys.into_iter().zip([true, false]) {
+                assert_eq!(
+                    actual,
+                    memory_erased_proposition_key(&Proposition::condition_is(
+                        native.clone(),
+                        truth
+                    ))
+                );
+            }
+        }
+
+        let scalar = KernelTermImport::default().integer(&growing_shared_scalar_dag(depth).into());
+        let huge = KernelTerm::integer_literal(num_bigint::BigInt::from(1) << 1024usize);
+        let wide =
+            KernelTerm::integer_comparison(IntegerComparisonOperator::Equal, [observation, huge])
+                .unwrap();
+        assert!(matches!(
+            check_retained_key_no_export(&retained(wide, true)),
+            MemoryErasedPropositionKey::Exact(_)
+        ));
+        let root =
+            KernelTerm::integer_comparison(IntegerComparisonOperator::Equal, [scalar, literal])
+                .unwrap();
+        let fact = retained(root, true);
+        let (key, work) = crate::instrumentation::measure_deterministic_work(|| {
+            check_retained_key_no_export(&fact)
+        });
+        assert!(matches!(key, MemoryErasedPropositionKey::Exact(_)));
+        assert!(work <= 2, "depth={depth}, work={work}");
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= 4 * pair[0] + 64, "{samples:?}");
+    }
+}
+
+fn check_retained_key_no_export(fact: &Proposition) -> MemoryErasedPropositionKey {
+    let exports = KernelTermExport::integer_export_count();
+    let key = memory_erased_proposition_key(fact);
+    assert_eq!(KernelTermExport::integer_export_count(), exports);
+    key
+}
+
+#[test]
 fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 128] {

@@ -8,8 +8,8 @@ pub(crate) use fact_identity::{FactOperand, fact_operand_identity};
 
 use super::{Relation, identity, range, representation};
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineIntegerType, MachineTerm, Proposition, SharedIntegerTerm,
-    SharedMachineIntegerTerm,
+    ConditionTerm, IntegerComparisonOperator, IntegerTerm, KernelTerm, KernelTermNode,
+    MachineIntegerType, MachineTerm, Proposition, SharedIntegerTerm, SharedMachineIntegerTerm,
 };
 
 /// A written comparison for structural matching. Unlike checking views, this
@@ -113,29 +113,52 @@ pub(crate) fn structural_comparison_view(
     })
 }
 
+fn integer_comparison_operands(
+    condition: &ConditionTerm,
+) -> Option<(IntegerComparisonOperator, [&SharedIntegerTerm; 2])> {
+    use IntegerComparisonOperator as Op;
+    Some(match condition {
+        ConditionTerm::IntegerLessThan(left, right) => (Op::LessThan, [left, right]),
+        ConditionTerm::IntegerLessEqual(left, right) => (Op::LessEqual, [left, right]),
+        ConditionTerm::IntegerGreaterThan(left, right) => (Op::GreaterThan, [left, right]),
+        ConditionTerm::IntegerGreaterEqual(left, right) => (Op::GreaterEqual, [left, right]),
+        ConditionTerm::IntegerEqual(left, right) => (Op::Equal, [left, right]),
+        ConditionTerm::IntegerNotEqual(left, right) => (Op::NotEqual, [left, right]),
+        _ => return None,
+    })
+}
+
 /// An Integer comparison as `left REL right` with its truth folded in:
 /// `>`/`>=` swap their operands, and a false comparison is negated.
 fn integer_relation(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(Relation, &SharedIntegerTerm, &SharedIntegerTerm)> {
-    let (relation, left, right) = match condition {
-        ConditionTerm::IntegerLessThan(left, right) => (Relation::Less, left, right),
-        ConditionTerm::IntegerLessEqual(left, right) => (Relation::LessEqual, left, right),
-        ConditionTerm::IntegerGreaterThan(left, right) => (Relation::Less, right, left),
-        ConditionTerm::IntegerGreaterEqual(left, right) => (Relation::LessEqual, right, left),
-        ConditionTerm::IntegerEqual(left, right) => (Relation::Equal, left, right),
-        ConditionTerm::IntegerNotEqual(left, right) => (Relation::NotEqual, left, right),
-        _ => return None,
+    let (operator, operands) = integer_comparison_operands(condition)?;
+    Some(order_integer_operands(operator, operands, value))
+}
+
+fn order_integer_operands<T>(
+    operator: IntegerComparisonOperator,
+    [left, right]: [T; 2],
+    value: bool,
+) -> (Relation, T, T) {
+    use IntegerComparisonOperator as Op;
+    let (relation, left, right) = match operator {
+        Op::LessThan => (Relation::Less, left, right),
+        Op::LessEqual => (Relation::LessEqual, left, right),
+        Op::GreaterThan => (Relation::Less, right, left),
+        Op::GreaterEqual => (Relation::LessEqual, right, left),
+        Op::Equal => (Relation::Equal, left, right),
+        Op::NotEqual => (Relation::NotEqual, left, right),
     };
-    Some(match (relation, value) {
+    match (relation, value) {
         (relation, true) => (relation, left, right),
-        // not (l < r) is r <= l; not (l <= r) is r < l.
         (Relation::Less, false) => (Relation::LessEqual, right, left),
         (Relation::LessEqual, false) => (Relation::Less, right, left),
         (Relation::Equal, false) => (Relation::NotEqual, left, right),
         (Relation::NotEqual, false) => (Relation::Equal, left, right),
-    })
+    }
 }
 
 /// The native machine comparison equivalent to the Integer comparison
@@ -1013,6 +1036,64 @@ pub(crate) fn native_comparison_view(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<NativeComparisonView<'static>> {
+    let (operator, operands) = integer_comparison_operands(condition)?;
+    native_comparison_from_integer_operands(operator, operands, value)
+}
+
+/// Read a shared Integer comparison for the memory-erased fact index.
+/// The outer option is absent if a compatibility operand is still needed.
+/// The inner option is absent when this comparison has only an exact key.
+pub(crate) fn retained_integer_observation_comparison(
+    operator: IntegerComparisonOperator,
+    arguments: &[KernelTerm; 2],
+    value: bool,
+) -> Option<Option<NativeComparisonView<'static>>> {
+    use KernelTermNode as Node;
+    if !arguments.iter().any(|argument| {
+        matches!(
+            argument.node(),
+            Node::MachineObservation { .. } | Node::Legacy(_)
+        )
+    }) || arguments.iter().any(|argument| {
+        matches!(
+            argument.node(),
+            Node::Variable(_)
+                | Node::Call { .. }
+                | Node::Fold(_)
+                | Node::IntegerIf { .. }
+                | Node::Match(_)
+        ) || matches!(argument.node(), Node::IntegerLiteral(value) if value.bits() > 128)
+    }) {
+        // Only a machine observation or literal arithmetic can change its
+        // outer form. A literal wider than any machine format has no bridge.
+        return Some(None);
+    }
+    let operand = |argument: &KernelTerm| -> Option<SharedIntegerTerm> {
+        match argument.node() {
+            Node::MachineObservation { format, operand } => Some(
+                IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(
+                    *format,
+                    operand.clone(),
+                )?)
+                .into(),
+            ),
+            Node::IntegerLiteral(value) => Some(IntegerTerm::Constant(value.clone()).into()),
+            _ => None,
+        }
+    };
+    let [left, right] = arguments.each_ref().map(operand);
+    Some(native_comparison_from_integer_operands(
+        operator,
+        [&left?, &right?],
+        value,
+    ))
+}
+
+fn native_comparison_from_integer_operands(
+    operator: IntegerComparisonOperator,
+    written: [&SharedIntegerTerm; 2],
+    value: bool,
+) -> Option<NativeComparisonView<'static>> {
     // Numeric evaluation belongs in the checking comparison form. Surface
     // lowering uses the structural reading below, retaining arithmetic.
     // An observation is read through its value relations (rule W):
@@ -1028,34 +1109,17 @@ pub(crate) fn native_comparison_view(
         crate::kernel::proof::integer_arithmetic::literal_integer_value(term)
             .map(|value| IntegerTerm::constant(value).into())
     };
-    let written = condition;
-    let condition = match condition {
-        ConditionTerm::IntegerLessThan(left, right) => {
-            ConditionTerm::IntegerLessThan(operand(left)?, operand(right)?)
-        }
-        ConditionTerm::IntegerLessEqual(left, right) => {
-            ConditionTerm::IntegerLessEqual(operand(left)?, operand(right)?)
-        }
-        ConditionTerm::IntegerGreaterThan(left, right) => {
-            ConditionTerm::IntegerGreaterThan(operand(left)?, operand(right)?)
-        }
-        ConditionTerm::IntegerGreaterEqual(left, right) => {
-            ConditionTerm::IntegerGreaterEqual(operand(left)?, operand(right)?)
-        }
-        ConditionTerm::IntegerEqual(left, right) => {
-            ConditionTerm::IntegerEqual(operand(left)?, operand(right)?)
-        }
-        ConditionTerm::IntegerNotEqual(left, right) => {
-            ConditionTerm::IntegerNotEqual(operand(left)?, operand(right)?)
-        }
-        _ => return None,
-    };
-    // Reading an exact extension can expose different operand formats (for
-    // example int32 i beside int64 n). Keep the written common-format view
-    // available to the order checker in that case. This selects two roots;
-    // it neither exports a shared subtree nor consults facts.
-    structural_native_comparison_view(&condition, value)
-        .or_else(|| structural_native_comparison_view(written, value))
+    let [left, right] = written;
+    let (read_left, read_right) = (operand(left)?, operand(right)?);
+    let (relation, left, right) =
+        order_integer_operands(operator, [read_left.as_ref(), read_right.as_ref()], value);
+    // Exact extensions can expose different formats. Retry at the written
+    // formats when the value readings no longer share a machine format.
+    structural_native_comparison_from_operands(relation, left, right).or_else(|| {
+        let (relation, left, right) =
+            order_integer_operands(operator, written.map(SharedIntegerTerm::as_ref), value);
+        structural_native_comparison_from_operands(relation, left, right)
+    })
 }
 
 pub(crate) fn structural_native_comparison_of_integer_observation(
@@ -1069,6 +1133,15 @@ pub(crate) fn structural_native_comparison_view(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<NativeComparisonView<'static>> {
+    let (relation, left, right) = integer_relation(condition, value)?;
+    structural_native_comparison_from_operands(relation, left, right)
+}
+
+fn structural_native_comparison_from_operands(
+    relation: Relation,
+    left: &IntegerTerm,
+    right: &IntegerTerm,
+) -> Option<NativeComparisonView<'static>> {
     // A 128-bit comparison has a native node, but the kernel's order
     // reasoning (the difference graph, interval bounds) works on its
     // Integer form, so an Integer comparison of 128-bit observations keeps
@@ -1077,17 +1150,10 @@ pub(crate) fn structural_native_comparison_view(
         IntegerTerm::Machine(machine) => representation::spells_comparison_natively(machine.ty()),
         _ => true,
     };
-    if let ConditionTerm::IntegerLessThan(left, right)
-    | ConditionTerm::IntegerLessEqual(left, right)
-    | ConditionTerm::IntegerGreaterThan(left, right)
-    | ConditionTerm::IntegerGreaterEqual(left, right)
-    | ConditionTerm::IntegerEqual(left, right)
-    | ConditionTerm::IntegerNotEqual(left, right) = condition
-        && !(spelled_natively(left) && spelled_natively(right))
-    {
+    if !spelled_natively(left) || !spelled_natively(right) {
         return None;
     }
-    comparison_view_at_format(condition, value)
+    comparison_view_at_format_from_operands(relation, left, right)
 }
 
 /// Whether `proposition` is an Integer comparison of exact observations of
@@ -1117,7 +1183,15 @@ fn comparison_view_at_format(
     value: bool,
 ) -> Option<NativeComparisonView<'static>> {
     let (relation, left, right) = integer_relation(condition, value)?;
-    let ty = match (&**left, &**right) {
+    comparison_view_at_format_from_operands(relation, left, right)
+}
+
+fn comparison_view_at_format_from_operands(
+    relation: Relation,
+    left: &IntegerTerm,
+    right: &IntegerTerm,
+) -> Option<NativeComparisonView<'static>> {
+    let ty = match (left, right) {
         (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) if left.ty() == right.ty() => {
             left.ty()
         }

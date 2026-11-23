@@ -348,13 +348,29 @@ pub(crate) fn memory_erased_proposition_key(
 }
 
 fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedPropositionKey {
+    use crate::kernel::machine_integer::comparison::{
+        native_comparison_view, retained_integer_observation_comparison,
+    };
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && let Some(root) = condition.root()
+        && let KernelTermNode::IntegerCompare {
+            operator,
+            arguments,
+        } = root.node()
+        && let Some(view) = retained_integer_observation_comparison(*operator, arguments, *value)
+    {
+        return view.map_or_else(
+            || MemoryErasedPropositionKey::Exact(proposition.clone()),
+            state_observation_key,
+        );
+    }
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((condition @ crate::kernel::integer_comparison_condition!(_, _), _)) =
                 condition_source_0.condition_native() =>
         {
-            state_observation_key(condition, *value)
-                .map(|(key, value)| MemoryErasedPropositionKey::Condition(key, value))
+            native_comparison_view(condition, *value)
+                .map(state_observation_key)
                 .unwrap_or_else(|| MemoryErasedPropositionKey::Exact(proposition.clone()))
         }
         // `Bool` values have no state-blind key yet: they are filed
@@ -424,15 +440,13 @@ pub(super) fn memory_erased_nonoverflow_key(
 }
 
 fn state_observation_key(
-    condition: &ConditionTerm,
-    value: bool,
-) -> Option<(MemoryErasedConditionKey, bool)> {
+    view: crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+) -> MemoryErasedPropositionKey {
     use crate::kernel::CompareRelation as R;
     use crate::kernel::machine_integer::{
         Relation,
-        comparison::{FactOperand, fact_operand_identity, native_comparison_view},
+        comparison::{FactOperand, fact_operand_identity},
     };
-    let view = native_comparison_view(condition, value)?;
     let (relation, truth) = match view.relation {
         Relation::Equal => (R::Equal, true),
         Relation::NotEqual => (R::Equal, false),
@@ -452,14 +466,14 @@ fn state_observation_key(
             memory_erased_bitvector_key(&MachineTerm::narrow_constant(format, value as u128))
         }
     });
-    Some((
+    MemoryErasedPropositionKey::Condition(
         MemoryErasedConditionKey::Comparison(
             BitvectorComparisonOp::Compare(format, relation),
             left,
             right,
         ),
         truth,
-    ))
+    )
 }
 
 fn memory_erased_boolean_operand_key(
