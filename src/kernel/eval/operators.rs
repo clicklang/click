@@ -4518,8 +4518,8 @@ fn apply_program_int64_division_nonzero(
     )
 }
 
-/// One conditional successor with C's divisor domain left for the driver.
-/// Even an already known domain is retained; this operation has no fact context.
+/// Keep C's divisor domain for the driver unless the evaluated operands' path
+/// already establishes it. Only facts available before this operation count.
 fn apply_program_unsigned_division_like(
     width: ScalarWidth,
     left: MachineTerm,
@@ -4535,9 +4535,20 @@ fn apply_program_unsigned_division_like(
         ScalarWidth::UInt64 => (MachineTerm::uint64_constant(0), ProgramValue::UInt64),
         _ => unreachable!("unsigned division width"),
     };
-    let zero_divisor =
-        ConditionTerm::machine_compare(width.format(), CompareRelation::Equal, right.clone(), zero);
-    obligations.push(ProofObligation::nonzero_unsigned_divisor(zero_divisor));
+    let equals = |left, right| {
+        ConditionTerm::machine_compare(width.format(), CompareRelation::Equal, left, right)
+    };
+    let zero_divisor = equals(right.clone(), zero.clone());
+    let already_guarded = !facts.is_empty()
+        && (facts
+            .contains_indexed_proposition(&Proposition::condition_is(zero_divisor.clone(), false))
+            || facts.contains_indexed_proposition(&Proposition::condition_is(
+                equals(zero, right.clone()),
+                false,
+            )));
+    if !already_guarded {
+        obligations.push(ProofObligation::nonzero_unsigned_divisor(zero_divisor));
+    }
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(wrap(result(left, right))),
         facts,
