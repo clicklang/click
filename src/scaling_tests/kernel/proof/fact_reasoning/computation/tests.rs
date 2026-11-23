@@ -220,30 +220,22 @@ fn nested_constructor_selection_reuses_closed_payloads() {
             variant: variant.into(),
             fields,
         };
-        let value = |node| {
-            AlgebraicValue::Algebraic(AlgebraicTerm {
-                algebraic_type: chain.clone(),
-                node,
-            })
+        let value = |node| AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node,
         };
         let end = value(constructor("End", vec![]));
-        let link = |field| value(constructor("Link", vec![field]));
+        let link = |field| value(constructor("Link", vec![AlgebraicValue::Algebraic(field)]));
         let variable = |index| AlgebraicTerm {
             algebraic_type: chain.clone(),
             node: AlgebraicTermNode::Variable(Variable(995_000 + index)),
         };
         let field = (0..depth).fold(end.clone(), |field, _| link(field));
-        scrutinee.node = constructor("Arm", vec![field]);
-        let algebraic_type = scrutinee.algebraic_type.clone();
-        let result = |field| AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: constructor("Arm", vec![field]),
-        };
-        let expected = result(end.clone());
-        let mut body = expected.clone();
+        scrutinee.node = constructor("Arm", vec![AlgebraicValue::Algebraic(field)]);
+        let mut body = variable(depth);
         for index in (0..depth).rev() {
             body = AlgebraicTerm {
-                algebraic_type: algebraic_type.clone(),
+                algebraic_type: chain.clone(),
                 node: AlgebraicTermNode::Match {
                     scrutinee: Box::new(variable(index)),
                     arms: vec![
@@ -251,7 +243,7 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                             variant: "End".into(),
                             binding_names: Default::default(),
                             bindings: vec![],
-                            body: result(link(end.clone())),
+                            body: link(end.clone()),
                         },
                         AlgebraicResultMatchArm {
                             variant: "Link".into(),
@@ -264,7 +256,7 @@ fn nested_constructor_selection_reuses_closed_payloads() {
             };
         }
         let matched = AlgebraicTerm {
-            algebraic_type,
+            algebraic_type: chain.clone(),
             node: AlgebraicTermNode::Match {
                 scrutinee: Box::new(scrutinee),
                 arms: vec![AlgebraicResultMatchArm {
@@ -275,10 +267,7 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                 }],
             },
         };
-        let goal = Proposition::Equal(
-            Term::Algebraic(matched.into()),
-            Term::Algebraic(expected.into()),
-        );
+        let goal = Proposition::Equal(Term::Algebraic(matched.into()), Term::Algebraic(end.into()));
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
         assert!(proved);

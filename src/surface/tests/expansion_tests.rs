@@ -3560,6 +3560,37 @@ fn symbolic_constructor_payloads_expand_to_known() {
 }
 
 #[test]
+fn returned_constructor_match_values_expand_to_known() {
+    assert_constructor_matches_expand_to_known(
+        "mdtests/algebraic_match_returned_values.md",
+        &[
+            ("returns_literal_box", "Box::Value(7)", "Box::Value(8)"),
+            ("returns_symbolic_box", "Box::Value(value)", "Box::Value(0)"),
+            ("returns_opaque_box", "value", "other"),
+            ("returns_capture", "value", "other"),
+            ("returns_flag", "Flag::Value(flag)", "Flag::Value(false)"),
+            ("returns_word", "Word::Value(value)", "Word::Value(0u64)"),
+            (
+                "returns_pair",
+                "Pair::Both(Box::Value(first), Box::Value(second))",
+                "Pair::Both(Box::Value(second), Box::Value(first))",
+            ),
+            ("returns_selected_variant", "Box::Value(value)", "other"),
+            (
+                "returns_rebuilt_value",
+                "Box::Value(value)",
+                "Box::Value(0)",
+            ),
+            (
+                "returns_shadowed_value",
+                "Box::Value(first)",
+                "Box::Value(second)",
+            ),
+        ],
+    );
+}
+
+#[test]
 fn constant_byte_containment_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/byte_containment_preserves_physical_width.md");
     let label = "last_byte.ensures_0";

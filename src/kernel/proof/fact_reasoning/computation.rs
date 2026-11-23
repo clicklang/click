@@ -900,8 +900,7 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     {
         return Some(true);
     }
-    if constructor_match_forwards_payload(left, right)
-        || constructor_match_forwards_payload(right, left)
+    if scoped_constructor_match_equals(left, right) || scoped_constructor_match_equals(right, left)
     {
         return Some(true);
     }
@@ -1079,18 +1078,14 @@ fn constructor_result_fields_match(
     true
 }
 
-/// Follow selected constructor arms that forward payloads into a constructor,
-/// preserving the scope of variables inside the forwarded fields.
+/// Compare the final value of selected constructor arms with the expected value.
 /// Resolve each binding in its scrutinee's scope before checking the result.
-fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
-    let AlgebraicTermNode::Constructor {
-        variant: expected_variant,
-        fields: expected_fields,
-    } = &expected.node
-    else {
-        return false;
-    };
-    if !matches!(matched.node, AlgebraicTermNode::Match { .. }) {
+fn scoped_constructor_match_equals(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
+    if !matches!(
+        expected.node,
+        AlgebraicTermNode::Constructor { .. } | AlgebraicTermNode::Variable(_)
+    ) || !matches!(matched.node, AlgebraicTermNode::Match { .. })
+    {
         return false;
     }
 
@@ -1154,17 +1149,37 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         selected = &arm.body;
     }
 
-    let AlgebraicTermNode::Constructor {
-        variant: result_variant,
-        fields: result_fields,
-    } = &selected.node
-    else {
-        return false;
+    let result = if let AlgebraicTermNode::Variable(variable) = &selected.node
+        && let Some((_, payload)) = payloads.get(variable)
+    {
+        let AlgebraicValue::Algebraic(value) = payload.value else {
+            return false;
+        };
+        if value.algebraic_type != selected.algebraic_type {
+            return false;
+        }
+        scope = payload.scope;
+        value
+    } else {
+        selected
     };
-    result_variant == expected_variant
-        && constructor_result_fields_match(result_fields, expected_fields, scope, &payloads)
-        && matched.is_well_formed()
-        && expected.is_well_formed()
+    let equal = match (&result.node, &expected.node) {
+        (
+            AlgebraicTermNode::Constructor { variant, fields },
+            AlgebraicTermNode::Constructor {
+                variant: expected_variant,
+                fields: expected_fields,
+            },
+        ) => {
+            variant == expected_variant
+                && constructor_result_fields_match(fields, expected_fields, scope, &payloads)
+        }
+        (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Variable(expected)) => {
+            variable == expected
+        }
+        _ => false,
+    };
+    equal && matched.is_well_formed() && expected.is_well_formed()
 }
 
 /// Select an algebraic field when the match names its constructor and
