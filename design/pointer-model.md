@@ -199,8 +199,15 @@ Each step is one PR, measured with the gate and the raise-lower audit.
      from. It replaces the separate `bounds`, `bounds_known` and
      `bounds_owner` fields of `Pointer`, `SharedPointer` and `LValue`, and
      rules out bounds on an opaque array object. Identity is unchanged.
-   - 3b, remaining: one e-graph class for provenance and array object, the
-     comparisons that read only part of it, and memory ranges' carriers.
+   - The e-graph already keeps the two parts as the model needs: a pointer
+     node joins a provenance node and an array-object node, `same_allocation`
+     merges only provenance, and pointer equality merges both. No change.
+   - 3b, step 2: comparisons that read only part of a provenance compare it
+     whole (`Pointer::same_provenance_as`). Known value equality required
+     equal allocations, bounds and addresses but not the array object, so a
+     `same_allocation` fact and equal addresses made a parameter equal to a
+     block pointer though it may point into a member.
+   - 3b, remaining: memory ranges' carriers.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

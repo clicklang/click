@@ -3823,11 +3823,7 @@ impl ConditionTerm {
         match self {
             Self::AddressOffsetEqual(a, b) => Some((a, b)),
             Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
-            Self::PointerEqual(a, b)
-                if a.base == b.base
-                    && a.provenance() == b.provenance()
-                    && a.bounds() == b.bounds() =>
-            {
+            Self::PointerEqual(a, b) if a.base == b.base && a.same_provenance_as(b) => {
                 Some((&a.offset, &b.offset))
             }
             _ => None,
@@ -3856,10 +3852,7 @@ impl ConditionTerm {
         if left.is_null() || right.is_null() {
             return Self::address_equal(left.address().clone(), right.address().clone());
         }
-        if (left.provenance() == right.provenance()
-            && left.bounds() == right.bounds()
-            && left.bounds_are_known() == right.bounds_are_known()
-            && (left.bounds_are_known() || left.bounds_owner() == right.bounds_owner()))
+        if left.same_provenance_as(&right)
             || (matches!(left.program_type(), ProgramType::FunctionPointer(_))
                 && matches!(right.program_type(), ProgramType::FunctionPointer(_)))
         {
