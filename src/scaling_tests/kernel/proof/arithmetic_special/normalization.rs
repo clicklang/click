@@ -85,7 +85,9 @@ fn shifted_one_uses_one_cited_bound_as_related_and_unrelated_bounds_grow() {
             (hit_work, miss_work)
         });
         assert!(
-            samples.iter().all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
+            samples
+                .iter()
+                .all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
             "{related}: {samples:?}"
         );
     }
