@@ -4830,7 +4830,7 @@ fn advance_checked_branch_arms<'a>(
             };
             return Err(ClickError::new(format!(
                 "the {name} `branch` arm's {keyword}, so the arms have no common successor to join; write this case as a proof `if` on the C condition, whose arms each reach the loop rule on their own"
-            )));
+            )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("branch"));
         }
     }
     let mut consumed_continuation = false;

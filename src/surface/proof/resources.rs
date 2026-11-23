@@ -4247,6 +4247,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                             "`{claim_label}` path {path_index}: closing `with({})` {message}",
                             describe_resource_clause(resource)
                         ))
+                        .with_proof_refusal(ProofRefusal::IncompleteProof)
                     })?;
                 authority_closing_fact_state = Some(state.clone().with_resource_context(projected));
             } else if composite_body

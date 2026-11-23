@@ -4488,7 +4488,8 @@ impl AnnotationLowerer<'_> {
                          structure it walks, name its resource binder (`decreases c;`) or a \
                          function of the binder's model into `Integer` or `Nat`",
                         value_type.name()
-                    )));
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Contract));
                 }
                 let observed = ContractExpression::Call {
                     name: "to_integer".to_string(),
