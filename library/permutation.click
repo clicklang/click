@@ -9,9 +9,29 @@ theorem two_indicator_counts_commute(a: Bool, b: Bool) {
     ensures (0 + (if a { 1 } else { 0 }) + (if b { 1 } else { 0 })) ==
             (0 + (if b { 1 } else { 0 }) + (if a { 1 } else { 0 })) by {
         if a {
-            if b { known(); } else { known(); }
+            have (if a { 1 } else { 0 }) == 1 by known();
+            rewrite((if a { 1 } else { 0 }), 1);
+            if b {
+                have (if b { 1 } else { 0 }) == 1 by known();
+                rewrite((if b { 1 } else { 0 }), 1);
+                known();
+            } else {
+                have (if b { 1 } else { 0 }) == 0 by known();
+                rewrite((if b { 1 } else { 0 }), 0);
+                known();
+            }
         } else {
-            if b { known(); } else { known(); }
+            have (if a { 1 } else { 0 }) == 0 by known();
+            rewrite((if a { 1 } else { 0 }), 0);
+            if b {
+                have (if b { 1 } else { 0 }) == 1 by known();
+                rewrite((if b { 1 } else { 0 }), 1);
+                known();
+            } else {
+                have (if b { 1 } else { 0 }) == 0 by known();
+                rewrite((if b { 1 } else { 0 }), 0);
+                known();
+            }
         }
     }
 }
