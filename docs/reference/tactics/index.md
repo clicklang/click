@@ -1698,8 +1698,8 @@ Literals and variables can be machine integers, `Integer`s, or `Bool`s.
 Algebraic result fields can also be constructors that contain these values.
 A constructor passed into a pattern binder can contain literal fields and
 nested constructors. The check follows nested matches on written constructors
-and keeps the selected bindings in scope. Machine fields retain their exact
-width and signedness.
+or constructors held by earlier pattern binders. Machine fields retain their
+exact width and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check

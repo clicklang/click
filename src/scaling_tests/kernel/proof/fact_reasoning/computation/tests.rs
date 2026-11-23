@@ -189,6 +189,107 @@ fn algebraic_constructor_payload_check_scales_with_written_fields() {
 }
 
 #[test]
+fn nested_constructor_selection_reuses_closed_payloads() {
+    let field_type = AlgebraicValueType::Algebraic {
+        name: "Chain".into(),
+        arguments: vec![],
+    };
+    let variants: std::sync::Arc<[AlgebraicVariantType]> = [
+        AlgebraicVariantType {
+            name: "End".into(),
+            fields: vec![],
+        },
+        AlgebraicVariantType {
+            name: "Link".into(),
+            fields: vec![field_type.clone()],
+        },
+    ]
+    .into();
+    for depth in [4_u64, 8, 16] {
+        let _session = VerificationSession::enter();
+        let mut scrutinee = KernelMatch::test_scrutinee(vec![field_type.clone()]);
+        let outer = &mut scrutinee.algebraic_type;
+        outer.schemas =
+            std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([
+                (outer.value_type(), outer.variants.clone()),
+                (field_type.clone(), variants.clone()),
+            ])));
+        let chain = outer.resolve_nested_type(&field_type).unwrap();
+        let constructor = |variant: &str, fields| AlgebraicTermNode::Constructor {
+            variant: variant.into(),
+            fields,
+        };
+        let value = |node| {
+            AlgebraicValue::Algebraic(AlgebraicTerm {
+                algebraic_type: chain.clone(),
+                node,
+            })
+        };
+        let end = value(constructor("End", vec![]));
+        let link = |field| value(constructor("Link", vec![field]));
+        let variable = |index| AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node: AlgebraicTermNode::Variable(Variable(995_000 + index)),
+        };
+        let field = (0..depth).fold(end.clone(), |field, _| link(field));
+        scrutinee.node = constructor("Arm", vec![field]);
+        let algebraic_type = scrutinee.algebraic_type.clone();
+        let result = |field| AlgebraicTerm {
+            algebraic_type: algebraic_type.clone(),
+            node: constructor("Arm", vec![field]),
+        };
+        let expected = result(end.clone());
+        let mut body = expected.clone();
+        for index in (0..depth).rev() {
+            body = AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Match {
+                    scrutinee: Box::new(variable(index)),
+                    arms: vec![
+                        AlgebraicResultMatchArm {
+                            variant: "End".into(),
+                            binding_names: Default::default(),
+                            bindings: vec![],
+                            body: result(link(end.clone())),
+                        },
+                        AlgebraicResultMatchArm {
+                            variant: "Link".into(),
+                            binding_names: Default::default(),
+                            bindings: vec![AlgebraicValue::Algebraic(variable(index + 1))],
+                            body,
+                        },
+                    ],
+                },
+            };
+        }
+        let matched = AlgebraicTerm {
+            algebraic_type,
+            node: AlgebraicTermNode::Match {
+                scrutinee: Box::new(scrutinee),
+                arms: vec![AlgebraicResultMatchArm {
+                    variant: "Arm".into(),
+                    binding_names: Default::default(),
+                    bindings: vec![AlgebraicValue::Algebraic(variable(0))],
+                    body,
+                }],
+            },
+        };
+        let goal = Proposition::Equal(
+            Term::Algebraic(matched.into()),
+            Term::Algebraic(expected.into()),
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
+        assert!(proved);
+        let depth = depth as usize;
+        assert!(
+            (6 * depth..=6 * depth + 32).contains(&work),
+            "{depth}: {work}"
+        );
+    }
+}
+
+#[test]
 fn nested_constructor_payload_check_scales_with_selected_arms() {
     for depth in [4, 8, 16] {
         let _session = VerificationSession::enter();

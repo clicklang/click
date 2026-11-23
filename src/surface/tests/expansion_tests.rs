@@ -3404,36 +3404,9 @@ fn rewritten_constructor_payload_expands_to_known() {
     }
 }
 
-#[test]
-fn compound_constructor_payloads_expand_to_known() {
-    let (source, _) = mdtest_sources("mdtests/algebraic_match_compound_fields.md");
-    for (theorem, result, wrong_result) in [
-        (
-            "forwarded",
-            "ResultForwarded::Item(Box::Value(7))",
-            "ResultForwarded::Item(Box::Value(8))",
-        ),
-        (
-            "wrapped",
-            "ResultWrapped::Item(Box::Value(value))",
-            "ResultWrapped::Item(Box::Value(other))",
-        ),
-        (
-            "captured",
-            "ResultCaptured::Tagged(value, Box::Value(other))",
-            "ResultCaptured::Tagged(value, Box::Value(value))",
-        ),
-        (
-            "tagged",
-            "ResultTagged::Tagged(value, Box::Value(7))",
-            "ResultTagged::Tagged(value, Box::Value(8))",
-        ),
-        (
-            "mixed",
-            "ResultMixed::Item(Pair::Both(Box::Value(value), Box::Value(other)))",
-            "ResultMixed::Item(Pair::Both(Box::Value(other), Box::Value(value)))",
-        ),
-    ] {
+fn assert_constructor_matches_expand_to_known(fixture: &str, cases: &[(&str, &str, &str)]) {
+    let (source, _) = mdtest_sources(fixture);
+    for &(theorem, result, wrong_result) in cases {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
         let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
@@ -3452,6 +3425,75 @@ fn compound_constructor_payloads_expand_to_known() {
             "{error}"
         );
     }
+}
+
+#[test]
+fn compound_constructor_payloads_expand_to_known() {
+    assert_constructor_matches_expand_to_known(
+        "mdtests/algebraic_match_compound_fields.md",
+        &[
+            (
+                "forwarded",
+                "ResultForwarded::Item(Box::Value(7))",
+                "ResultForwarded::Item(Box::Value(8))",
+            ),
+            (
+                "wrapped",
+                "ResultWrapped::Item(Box::Value(value))",
+                "ResultWrapped::Item(Box::Value(other))",
+            ),
+            (
+                "captured",
+                "ResultCaptured::Tagged(value, Box::Value(other))",
+                "ResultCaptured::Tagged(value, Box::Value(value))",
+            ),
+            (
+                "tagged",
+                "ResultTagged::Tagged(value, Box::Value(7))",
+                "ResultTagged::Tagged(value, Box::Value(8))",
+            ),
+            (
+                "mixed",
+                "ResultMixed::Item(Pair::Both(Box::Value(value), Box::Value(other)))",
+                "ResultMixed::Item(Pair::Both(Box::Value(other), Box::Value(value)))",
+            ),
+        ],
+    );
+}
+
+#[test]
+fn bound_constructor_matches_expand_to_known() {
+    assert_constructor_matches_expand_to_known(
+        "mdtests/algebraic_match_bound_constructor.md",
+        &[
+            ("select_color", "Chosen::Red", "Chosen::Green"),
+            (
+                "select_number",
+                "NumberResult::Value(7)",
+                "NumberResult::Value(8)",
+            ),
+            (
+                "select_flag",
+                "FlagResult::Value(true)",
+                "FlagResult::Value(false)",
+            ),
+            (
+                "forward_box",
+                "BoxResult::Value(Box::Value(7))",
+                "BoxResult::Value(Box::Value(8))",
+            ),
+            (
+                "select_pair",
+                "PairResult::Value(7, a)",
+                "PairResult::Value(a, 7)",
+            ),
+            (
+                "select_chain",
+                "NumberResult::Value(9)",
+                "NumberResult::Value(8)",
+            ),
+        ],
+    );
 }
 
 #[test]
