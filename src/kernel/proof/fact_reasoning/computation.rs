@@ -900,8 +900,7 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     {
         return Some(true);
     }
-    if scoped_constructor_match_equals(left, right) || scoped_constructor_match_equals(right, left)
-    {
+    if scoped_constructor_matches_equal(left, right) {
         return Some(true);
     }
     let projected_left = constructor_match_projection(left);
@@ -1028,11 +1027,11 @@ impl<'a> ConstructorPayload<'a> {
 fn constructor_result_fields_match(
     result: &[AlgebraicValue],
     expected: &[AlgebraicValue],
-    scope: usize,
-    payloads: &ConstructorBindings<'_>,
+    left: &ConstructorResult<'_>,
+    right: &ConstructorResult<'_>,
 ) -> bool {
-    let mut pending = vec![(result, expected, scope)];
-    while let Some((result, expected, scope)) = pending.pop() {
+    let mut pending = vec![(result, expected, left.scope, right.scope)];
+    while let Some((result, expected, left_scope, right_scope)) = pending.pop() {
         if result.len() != expected.len() {
             return false;
         }
@@ -1040,13 +1039,21 @@ fn constructor_result_fields_match(
         for (field, expected) in result.iter().zip(expected) {
             let resolved = ConstructorPayload {
                 value: field,
-                scope,
+                scope: left_scope,
             }
-            .resolve(payloads);
+            .resolve(&left.bindings);
+            let expected_resolved = ConstructorPayload {
+                value: expected,
+                scope: right_scope,
+            }
+            .resolve(&right.bindings);
             let payload = resolved.value;
-            if !same_constructor_payload_type(payload, field) {
+            if !same_constructor_payload_type(payload, field)
+                || !same_constructor_payload_type(expected_resolved.value, expected)
+            {
                 return false;
             }
+            let expected = expected_resolved.value;
             if let (
                 AlgebraicValue::Algebraic(AlgebraicTerm {
                     node: AlgebraicTermNode::Constructor { variant, fields },
@@ -1066,7 +1073,12 @@ fn constructor_result_fields_match(
                 {
                     return false;
                 }
-                pending.push((fields, expected_fields, resolved.scope));
+                pending.push((
+                    fields,
+                    expected_fields,
+                    resolved.scope,
+                    expected_resolved.scope,
+                ));
             } else if !(constructor_payload_variable(payload).is_some()
                 || is_constructor_payload_literal(payload))
                 || payload != expected
@@ -1078,55 +1090,53 @@ fn constructor_result_fields_match(
     true
 }
 
-/// Compare the final value of selected constructor arms with the expected value.
-/// Resolve each binding in its scrutinee's scope before checking the result.
-fn scoped_constructor_match_equals(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
-    if !matches!(
-        expected.node,
-        AlgebraicTermNode::Constructor { .. } | AlgebraicTermNode::Variable(_)
-    ) || !matches!(matched.node, AlgebraicTermNode::Match { .. })
-    {
-        return false;
-    }
+struct ConstructorResult<'a> {
+    term: &'a AlgebraicTerm,
+    scope: usize,
+    bindings: ConstructorBindings<'a>,
+}
 
+/// Resolve each selected binding in its scrutinee's scope, keeping the
+/// bindings for this side of the equality together with the result.
+fn scoped_constructor_result(term: &AlgebraicTerm) -> Option<ConstructorResult<'_>> {
     let mut payloads = ConstructorBindings::new();
     let mut scope = 0;
     let mut bindings = Vec::new();
-    let mut selected = matched;
+    let mut selected = term;
     while let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node {
         let (scrutinee, scrutinee_scope, already_checked) =
             if let AlgebraicTermNode::Variable(variable) = &scrutinee.node {
                 let Some((_, payload)) = payloads.get(variable) else {
-                    return false;
+                    return None;
                 };
                 let AlgebraicValue::Algebraic(value) = payload.value else {
-                    return false;
+                    return None;
                 };
                 if value.algebraic_type != scrutinee.algebraic_type {
-                    return false;
+                    return None;
                 }
                 (value, payload.scope, true)
             } else {
                 (scrutinee.as_ref(), scope, false)
             };
         let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
-            return false;
+            return None;
         };
         crate::instrumentation::record_deterministic_work(arms.len() + fields.len());
         let Some(arm) = arms.iter().find(|arm| arm.variant == *variant) else {
-            return false;
+            return None;
         };
         if arm.bindings.len() != fields.len() {
-            return false;
+            return None;
         }
         // The new bindings are in scope in the arm body, but not in its scrutinee.
         for (binder, field) in arm.bindings.iter().zip(fields) {
             let Some(variable) = constructor_payload_variable(binder) else {
-                return false;
+                return None;
             };
             // Previously bound constructors already passed the shape check.
             if !already_checked && !is_constructor_payload(field) {
-                return false;
+                return None;
             }
             let payload = ConstructorPayload {
                 value: field,
@@ -1136,14 +1146,14 @@ fn scoped_constructor_match_equals(matched: &AlgebraicTerm, expected: &Algebraic
             if !same_constructor_payload_type(binder, field)
                 || !same_constructor_payload_type(payload.value, field)
             {
-                return false;
+                return None;
             }
             bindings.push((variable, payload));
         }
         scope += 1;
         for (variable, payload) in bindings.drain(..) {
             if payloads.insert(variable, (scope, payload)).is_some() {
-                return false;
+                return None;
             }
         }
         selected = &arm.body;
@@ -1153,17 +1163,46 @@ fn scoped_constructor_match_equals(matched: &AlgebraicTerm, expected: &Algebraic
         && let Some((_, payload)) = payloads.get(variable)
     {
         let AlgebraicValue::Algebraic(value) = payload.value else {
-            return false;
+            return None;
         };
         if value.algebraic_type != selected.algebraic_type {
-            return false;
+            return None;
         }
         scope = payload.scope;
         value
     } else {
         selected
     };
-    let equal = match (&result.node, &expected.node) {
+    Some(ConstructorResult {
+        term: result,
+        scope,
+        bindings: payloads,
+    })
+}
+
+fn scoped_constructor_matches_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
+    if !matches!(left.node, AlgebraicTermNode::Match { .. })
+        && !matches!(right.node, AlgebraicTermNode::Match { .. })
+    {
+        return false;
+    }
+    if ![left, right].iter().all(|term| {
+        matches!(
+            term.node,
+            AlgebraicTermNode::Match { .. }
+                | AlgebraicTermNode::Constructor { .. }
+                | AlgebraicTermNode::Variable(_)
+        )
+    }) {
+        return false;
+    }
+    let (Some(a), Some(b)) = (
+        scoped_constructor_result(left),
+        scoped_constructor_result(right),
+    ) else {
+        return false;
+    };
+    let equal = match (&a.term.node, &b.term.node) {
         (
             AlgebraicTermNode::Constructor { variant, fields },
             AlgebraicTermNode::Constructor {
@@ -1172,14 +1211,14 @@ fn scoped_constructor_match_equals(matched: &AlgebraicTerm, expected: &Algebraic
             },
         ) => {
             variant == expected_variant
-                && constructor_result_fields_match(fields, expected_fields, scope, &payloads)
+                && constructor_result_fields_match(fields, expected_fields, &a, &b)
         }
         (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Variable(expected)) => {
             variable == expected
         }
         _ => false,
     };
-    equal && matched.is_well_formed() && expected.is_well_formed()
+    equal && left.is_well_formed() && right.is_well_formed()
 }
 
 /// Select an algebraic field when the match names its constructor and
