@@ -3,8 +3,8 @@
 Status: draft for review. Nothing here is implemented.
 
 This design sits between two others. `design/point-named-reads.md` decides
-*which version* a read names: one selector, `read_name`, over the cell store,
-the point indexes and the legacy walk. `design/pointer-model.md` decides what a
+*which version* a read names: one selector, `ProgramPoint::read_version`,
+over the held value, the point indexes and the legacy walk. `design/pointer-model.md` decides what a
 pointer *value* is: an address and a provenance, with the type on the term.
 This design decides what a read *term* is, so that both have one thing to
 name.
@@ -44,16 +44,22 @@ decide read identity from the pointer layer.
 ## The rule
 
 > A read's identity is what determines its value: the version point, the cell,
-> and, for an integer read, the format it is read at. Nothing else.
+> and, for an integer read, the `LoadKind` it is read at. Nothing else.
 
 - **The cell** is the address and the width in bytes. A 4-byte read and an
   8-byte read at one address read different bytes, so they are different
   reads.
-- **An integer read's format** (width and signedness, `LoadKind`) is part of
-  it, because the format changes the value: the `int8` and `uint8` reads of
-  one byte are -1 and 255. They stay two terms related by the 8-bit sign cast,
-  as `MachineTerm::memory_read` already states (maintainer direction,
-  2026-10-30). This design keeps that direction; it does not need to change.
+- **An integer read's `LoadKind`** is part of it. For 8-, 16-, 32- and 128-bit
+  reads the kind is the format, width and signedness, because the format
+  changes the value: the `int8` and `uint8` reads of one byte are -1 and 255.
+  They stay two terms related by the sign cast, as `MachineTerm::memory_read`
+  states (maintainer direction, 2026-10-30).
+- **64-bit reads are the exception.** Signed and unsigned 64-bit reads share
+  `LoadKind::Bits64`, a carrier of the bits, with signedness applied where
+  the value is used (`docs/concepts/memory-model.md`: "Signed and unsigned
+  64-bit reads share a version of the same 64 bits"). Their values differ
+  (-1 and 2^64 - 1), so by this rule they would be two reads. This design
+  keeps today's behavior and leaves the inconsistency as open question 4.
 - **A pointer read's type** is not part of it, because the type does not
   change the value. One version point and one 8-byte cell are one pointer
   value, whatever pointer type reads it. The type belongs to the `Pointer`
@@ -94,18 +100,24 @@ part of its value, a pointer's type is not.
 A read's value comes from the store that set its version (read-over-write).
 
 - A pointer read is answered by the latest store to its 8-byte cell at its
-  version, if that store wrote a pointer of any type. The stored value keeps
-  its own provenance; the reading term keeps its own type.
+  version, if that store wrote a pointer of the same category, object or
+  function, of any type. The stored value keeps its own provenance and
+  array object; the reading term keeps its own type. An object pointer's
+  member bounds are bytes (`SubobjectBounds`), independent of the pointee
+  type, so they stay valid through a read at another object-pointer type. A
+  function-pointer read takes its call target from the store, so only a
+  function-pointer store answers it; reading a function pointer's bytes as
+  an object pointer, or the reverse, is not answered by the store.
 - An integer read is answered by a store of the same cell and format, as
   today. A store of another format answers through the sign cast, as R-mem
   already does.
 - A partial or overlapping store ends the version and answers nothing, as
   today.
 
-So `indexed_typed_version` matches a pointer read on "a pointer store to this
-cell", not on equal types. That is in the program-point layer's selector
-path (`read_version` → `ordinary_typed_version`); its owner agreed to the
-change.
+So `indexed_typed_version` matches a pointer read on "a pointer store of the
+same category to this cell", not on equal types. That is in the program-point
+layer's selector path (`read_version` → `ordinary_typed_version`), in
+`program_point.rs`; its owner agreed to the change and reviews it.
 
 ## Raising
 
@@ -177,6 +189,24 @@ Design check
    confirm with the scaling tests before step 3.
 3. **Exactness in identity.** Integer read equality already compares only
    `read_key()`, so an `Exact` and an `IndexedCell` selection of one point are
-   one term. Pointer reads should match. Confirm that no pointer consumer asks
-   `is_exact_read()` of a registered read for anything but selecting its
-   version.
+   one term. Pointer reads should match. Two consumers ask `is_exact_read()`
+   for more than first selection, and both still choose a version:
+   - substitution and term rewriting keep an exact read's point when they
+     rewrite its address (`is_exact_read() && has_certified_read_view()`),
+     where an indexed version is reselected;
+   - `exact-reads.md` E3 makes a pointer read's provenance and bounds owner
+     the same kind of read as its address. With one term per point this
+     holds, but `Pointer::from_read` names an exact read by the
+     unchanged-bytes source; check that it builds the same point as the
+     version path where they coincide.
+4. **64-bit signedness** (for the maintainer). `Bits64` makes the signed and
+   unsigned 64-bit reads of a cell one term, while every other width keeps
+   them two. Either 64-bit reads split into two kinds, as 128-bit reads are,
+   or the rule says a read's kind is its bits and signedness is always at the
+   use, which would reverse the 2026-10-30 direction for the other widths.
+5. **Types on pointer terms.** `Pointer` carries its type outside identity
+   (`pointer-model.md`, "Types belong to terms"). Whether it should carry one
+   at all, or whether every type comes from the operation or declaration that
+   uses the pointer (accesses, calls through a function pointer, declared
+   locals, parameters and fields), is being decided with the maintainer. It
+   does not change the read rule.
