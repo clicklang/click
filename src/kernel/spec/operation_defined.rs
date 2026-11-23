@@ -623,7 +623,7 @@ fn replace_fragment(
         },
         P::PointerOffsetBytes { bytes, .. } => P::PointerOffsetBytes {
             pointer: next(),
-            bytes: bytes.clone(),
+            bytes: *bytes,
         },
         P::Subobject { width, .. } => P::Subobject {
             pointer: next(),
@@ -639,7 +639,7 @@ fn replace_fragment(
             variant,
             fields,
         } => P::EnumConstruct {
-            enum_type: enum_type.clone(),
+            enum_type: *enum_type,
             variant: variant.clone(),
             fields: fields.iter().map(|_| *next()).collect(),
         },
