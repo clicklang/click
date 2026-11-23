@@ -73,7 +73,7 @@ fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
             matches!(
                 &block.terminator,
                 click::languages::rust::schema::MirTerminator::Call { owned_arguments, .. }
-                    if owned_arguments.iter().any(|arg| arg.local.as_deref() == Some("words") && !arg.moved)
+                    if owned_arguments.iter().any(|arg| arg.local.as_ref().and_then(|local| local.source_name()) == Some("words") && !arg.moved)
             )
         });
     assert!(folded_argument);

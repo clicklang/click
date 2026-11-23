@@ -2866,7 +2866,7 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
                     click::languages::rust::schema::MirStatement::Assign {
                         target: click::languages::rust::schema::Expression::Local { name },
                         value: click::languages::rust::schema::Expression::Borrow { .. },
-                    } => Some((block, index, name.as_str())),
+                    } => Some((block, index, name)),
                     _ => None,
                 })
         })
@@ -2902,7 +2902,7 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
         accesses[0].kind(),
         click::languages::rust::borrow_frontiers::ScalarReferenceAccessKind::Write
     );
-    assert_eq!(accesses[0].reference_local(), child);
+    assert_eq!(Some(accesses[0].reference_local()), child.source_name());
     assert_eq!(accesses[0].borrow_point(), borrow_point);
     assert_eq!(accesses[0].import_identity(), prepared.identity());
     let click::languages::rust::schema::MirStatement::Assign { target, .. } =
@@ -4805,18 +4805,44 @@ fn rust_unnamed_scalar_storage_has_no_generated_name_in_proofs() {
              let (front, tail) = bytes.split_at(bytes.len() - bytes.len() % 4);
              let __rust_mir_17 = tail.len();
              front.len() + __rust_mir_17
+         }
+         pub fn first_len(bytes: &[u8]) -> usize {
+             let halves = bytes.split_at(2);
+             halves.0.len()
          }",
     );
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let mir = prepared.export().functions[0].mir.as_ref().unwrap();
+    let encoded = serde_json::to_value(prepared.export()).unwrap();
+    let decoded: click::languages::rust::schema::RustExport =
+        serde_json::from_value(encoded.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
+    let mir = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|function| function.name == "front")
+        .unwrap()
+        .mir
+        .as_ref()
+        .unwrap();
     let unnamed_scalars: Vec<_> = mir
         .locals
         .iter()
         .filter(|local| local.value_type.is_scalar() && mir.unnamed_locals.contains(&local.name))
         .collect();
     assert!(!unnamed_scalars.is_empty());
-    assert!(!mir.unnamed_locals.contains("__rust_mir_17"));
+    for local in unnamed_scalars {
+        assert!(matches!(
+            local.name,
+            click::languages::rust::schema::MirLocalId::Compiler(_)
+        ));
+    }
+    assert!(
+        !mir.unnamed_locals
+            .iter()
+            .any(|local| local == "__rust_mir_17")
+    );
     let sidecar = r#"verifying "borrow.rs";
 fn front(bytes: &[u8]) -> usize {
     requires bytes.len() == 7u64;
@@ -4825,7 +4851,12 @@ fn front(bytes: &[u8]) -> usize {
     step_until(function.exit);
     solve();
 }
+fn first_len(bytes: &[u8]) -> usize {
+    requires bytes.len() == 7u64;
+    ensures result == 2u64;
+}
 "#;
+    ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     let output = p.cli(&["verify", "--trace-proof", "front"]);
     let trace = format!(
@@ -4836,15 +4867,13 @@ fn front(bytes: &[u8]) -> usize {
     assert!(output.status.success(), "{trace}");
     assert!(trace.contains("proof trace"), "{trace}");
     assert!(trace.contains("__rust_mir_17 = tail.len()"), "{trace}");
-    for local in unnamed_scalars {
-        assert!(
-            !trace.lines().any(|line| line
-                .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
-                .any(|word| word == local.name)),
-            "unnamed scalar {} leaked into the trace: {trace}",
-            local.name
-        );
-    }
+    assert!(!trace.contains("MIR local "), "{trace}");
+    assert!(
+        trace
+            .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+            .all(|word| !word.starts_with("__rust_mir_") || word == "__rust_mir_17"),
+        "{trace}"
+    );
 }
 
 #[test]
@@ -6904,7 +6933,7 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
         .iter()
         .find(|f| f.name == "length")
         .unwrap();
-    assert_eq!(function.mir.as_ref().unwrap().blocks.iter().filter(|b| matches!(&b.terminator, click::languages::rust::schema::MirTerminator::Call { function, .. } if function == "size")).count(), 1);
+    assert_eq!(function.mir.as_ref().unwrap().blocks.iter().filter(|b| matches!(&b.terminator, click::languages::rust::schema::MirTerminator::Call { function, .. } if function.source_name() == Some("size"))).count(), 1);
 }
 
 #[test]

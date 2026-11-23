@@ -2180,7 +2180,6 @@ pub(super) fn declared_pointer_locals(
 pub struct RustLoopIterator {
     pub(crate) chunk_fields: Option<ChunkIteratorFields>,
     pub(crate) slice_fields: Option<SliceIteratorFields>,
-    pub local: String,
     pub kind: RustIteratorKind,
     pub(crate) count_binding: Option<crate::kernel::BindingName>,
     pub(crate) range_bounds: Option<[crate::kernel::BindingName; 2]>,

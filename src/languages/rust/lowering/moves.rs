@@ -115,7 +115,7 @@ pub(super) fn lower(
         .parameters
         .iter()
         .chain(&mir.locals)
-        .map(|local| (local.name.as_str(), &local.value_type))
+        .map(|local| (&local.name, &local.value_type))
         .collect();
     for (name, last_use) in super::super::charon::scalar_expression_operands(mir, &loop_tests) {
         cx.scalar_operands
@@ -123,19 +123,19 @@ pub(super) fn lower(
     }
     // Index storage starts once. Locals without a compiler storage event
     // retain their function-entry backing (including return-place arrays).
-    let storage_starts: BTreeSet<&str> = mir
+    let storage_starts: BTreeSet<&MirLocalId> = mir
         .blocks
         .iter()
         .flat_map(|block| &block.statements)
         .filter_map(|statement| match statement {
-            S::BeginStorage { local } => Some(local.as_str()),
+            S::BeginStorage { local } => Some(local),
             _ => None,
         })
         .collect();
     // The locals the body borrows, `_5 = &mut o`.
     // The locals a borrow names: a borrow is a statement's value, or a call's
     // argument, `f(&mut x)`.
-    let borrowed: BTreeSet<&str> = mir
+    let borrowed: BTreeSet<&MirLocalId> = mir
         .blocks
         .iter()
         .flat_map(|block| {
@@ -154,7 +154,7 @@ pub(super) fn lower(
         })
         .filter_map(|value| match value {
             E::Borrow { place, .. } => match place.as_ref() {
-                E::Local { name } => Some(name.as_str()),
+                E::Local { name } => Some(name),
                 _ => None,
             },
             _ => None,
@@ -257,9 +257,7 @@ pub(super) fn lower(
         let statement = match &local.value_type {
             Type::Unit => program_skip(),
             Type::Reference { .. } if iterator_reference(&local.value_type) => program_skip(),
-            _ if mir.unnamed_locals.contains(&local.name)
-                && !cx.bindings.contains_key(&local.name) =>
-            {
+            _ if local.name.source_name().is_none() && !cx.bindings.contains_key(&local.name) => {
                 return Err(format!(
                     "{}:{}:{}: unsupported Rust construct: an unnamed compiler local requires storage with no supported identity",
                     cx.source, local.span.line, local.span.column
@@ -267,21 +265,21 @@ pub(super) fn lower(
             }
             Type::Record { name } => {
                 cx.owned_locals.insert(local.name.clone());
-                records.insert(local.name.as_str(), name.as_str());
+                records.insert(&local.name, name.as_str());
                 if parameter {
                     continue;
                 }
                 // Construction grants authority over fresh stack bytes;
                 // source reads cannot observe the kernel's fresh placeholders,
                 // since rustc reads no field before it is written.
-                if !drop_operands.contains_key(local.name.as_str())
-                    && storage_starts.contains(local.name.as_str())
+                if !drop_operands.contains_key(&local.name)
+                    && storage_starts.contains(&local.name)
                     && check_copyable(cx, name).is_ok()
                 {
                     program_skip()
                 } else {
                     program_begin_aggregate_construction(
-                        cx.binding(&local.name),
+                        cx.binding(&local.name)?,
                         cx.layouts
                             .get(name.as_str())
                             .ok_or("missing owned record layout")?
@@ -301,7 +299,7 @@ pub(super) fn lower(
                     .insert(local.name.clone(), (length.clone(), element_type));
                 program_seq(
                     program_declare_with_all_qualifiers(
-                        cx.binding(&local.name),
+                        cx.binding(&local.name)?,
                         pointer_type,
                         false,
                         false,
@@ -317,7 +315,7 @@ pub(super) fn lower(
                     .insert(local.name.clone(), (length.clone(), !mutable));
                 program_seq(
                     program_declare_with_all_qualifiers(
-                        cx.binding(&local.name),
+                        cx.binding(&local.name)?,
                         ProgramType::UInt8Pointer,
                         false,
                         false,
@@ -337,7 +335,7 @@ pub(super) fn lower(
                 cx.arrays
                     .insert(local.name.clone(), (*length, element, !mutable));
                 program_declare_with_all_qualifiers(
-                    cx.binding(&local.name),
+                    cx.binding(&local.name)?,
                     scalar_type(&local.value_type)?.to_kernel_type(),
                     false,
                     false,
@@ -359,11 +357,11 @@ pub(super) fn lower(
                 cx.local_arrays.insert(local.name.clone());
                 cx.arrays
                     .insert(local.name.clone(), (*length, element, false));
-                if storage_starts.contains(local.name.as_str()) {
+                if storage_starts.contains(&local.name) {
                     program_skip()
                 } else {
                     program_begin_aggregate_construction(
-                        cx.binding(&local.name),
+                        cx.binding(&local.name)?,
                         AggregateLayout::new(
                             *length as u32 * element.byte_width(),
                             element.byte_width(),
@@ -373,7 +371,7 @@ pub(super) fn lower(
                 }
             }
             Type::Reference { mutable, .. } => program_declare_with_all_qualifiers(
-                cx.binding(&local.name),
+                cx.binding(&local.name)?,
                 scalar_type(&local.value_type)?.to_kernel_type(),
                 false,
                 false,
@@ -383,12 +381,12 @@ pub(super) fn lower(
             // A borrowed enum or type-parameter local keeps its value in its
             // object's memory, where a write through the borrow lands.
             t @ (Type::Enum { .. } | Type::Parameter { .. } | Type::Vec { .. })
-                if borrowed.contains(local.name.as_str()) =>
+                if borrowed.contains(&local.name) =>
             {
                 let value_type = scalar_type(t)?.to_kernel_type();
                 cx.memory_values.insert(local.name.clone(), value_type);
                 program_begin_aggregate_construction(
-                    cx.binding(&local.name),
+                    cx.binding(&local.name)?,
                     AggregateLayout::holding_value(value_type),
                 )
             }
@@ -401,13 +399,13 @@ pub(super) fn lower(
                 if t.is_scalar() {
                     cx.addressable_locals.insert(local.name.clone());
                 }
-                program_declare(cx.binding(&local.name), scalar_type(t)?.to_kernel_type())
+                program_declare(cx.binding(&local.name)?, scalar_type(t)?.to_kernel_type())
             }
         };
         if cx.bindings.contains_key(&local.name)
-            && (drop_operands.contains_key(local.name.as_str())
+            && (drop_operands.contains_key(&local.name)
                 || !matches!(local.value_type, Type::Record { .. } | Type::Array { .. }))
-            && storage_starts.contains(local.name.as_str())
+            && storage_starts.contains(&local.name)
         {
             scoped.insert(local.name.clone(), statement);
         } else {
@@ -428,7 +426,7 @@ pub(super) fn lower(
         escape_flags.insert(*header, flag);
     }
     let mut nodes = vec![None; mir.blocks.len()];
-    let check = |local: &str, record: &str| -> Result<(), String> {
+    let check = |local: &MirLocalId, record: &str| -> Result<(), String> {
         if records.get(local).copied() != Some(record) {
             return Err("owned MIR place disagrees with record type".into());
         }
@@ -441,7 +439,7 @@ pub(super) fn lower(
             T::ReturnValue { .. }
                 | T::BoxFree { .. }
                 | T::Call {
-                    through_pointer: false,
+                    function: MirCallee::Direct(_),
                     ..
                 }
         )
@@ -460,7 +458,7 @@ pub(super) fn lower(
                         check(&mir.return_place, name)?;
                     }
                     program_return(crate::kernel::program_expression::variable(
-                        cx.binding(&mir.return_place),
+                        cx.binding(&mir.return_place)?,
                     ))
                 }
             }
@@ -533,7 +531,7 @@ pub(super) fn lower(
                     Some(dtor) if cx.functions.contains_key(dtor.as_str()) => program_call(
                         dtor,
                         vec![crate::kernel::program_expression::cast(
-                            crate::kernel::program_expression::variable(cx.binding(local)),
+                            crate::kernel::program_expression::variable(cx.binding(local)?),
                             ProgramType::Int32Pointer,
                         )],
                     ),
@@ -544,23 +542,24 @@ pub(super) fn lower(
                 }
             }
             T::Call {
-                function,
+                function: MirCallee::Pointer { local },
                 arguments,
                 destination,
-                through_pointer: true,
                 result: result_step,
                 owned_arguments,
                 ..
             } => {
                 // The pointer's own type gives the arguments and result.
-                let Some(Type::FnPointer { parameters, result }) =
-                    local_types.get(function.as_str()).copied()
+                let Some(Type::FnPointer { parameters, result }) = local_types.get(local).copied()
                 else {
                     return Err("Rust pointer call target is not a function-pointer local".into());
                 };
                 if !owned_arguments.is_empty() {
                     return Err("Rust pointer call carries owned-argument metadata".into());
                 }
+                let function = local
+                    .source_name()
+                    .ok_or("unsupported Rust construct: unnamed function pointer call")?;
                 let (prefix, arguments_values) =
                     cx.typed_arguments(parameters.clone(), arguments)?;
                 let call = if **result == Type::Unit {
@@ -571,12 +570,12 @@ pub(super) fn lower(
                     let destination = destination
                         .as_ref()
                         .ok_or("missing Rust pointer call destination")?;
-                    cx.call_then_assign(destination, function, arguments_values)
+                    cx.call_then_assign(destination, function, arguments_values)?
                 };
                 program_seq(prefix, call)
             }
             T::Call {
-                function,
+                function: MirCallee::Direct(function),
                 arguments,
                 owned_arguments,
                 destination,
@@ -612,7 +611,7 @@ pub(super) fn lower(
                         (
                             Some(E::CallResult {
                                 call,
-                                function,
+                                function: MirCallee::Direct(function),
                                 keeps: false,
                             }),
                             None,
@@ -680,19 +679,19 @@ pub(super) fn lower(
                             .to_kernel_aggregate_layout();
                         let (call, result) = cx.call_value(function, arguments_values);
                         let copy = crate::kernel::program_copy_aggregate(
-                            crate::kernel::program_expression::variable(cx.binding(destination)),
+                            crate::kernel::program_expression::variable(cx.binding(destination)?),
                             result,
                             layout,
                         );
                         program_seq(call, copy)
-                    } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
+                    } else if let Some(&value_type) = cx.memory_values.get(destination) {
                         let (call, result) = cx.call_value(function, arguments_values);
                         let address = cx.address(&E::Local {
                             name: destination.clone(),
                         })?;
                         program_seq(call, program_typed_store(address, result, value_type))
                     } else {
-                        cx.call_then_assign(destination, function, arguments_values)
+                        cx.call_then_assign(destination, function, arguments_values)?
                     }
                 } else {
                     return Err("missing Rust call destination for a non-scalar result".into());
@@ -747,7 +746,7 @@ pub(super) fn lower(
                     left,
                     right,
                 } => {
-                    let slot = |name: &String| super::super::schema::Place {
+                    let slot = |name: &MirLocalId| super::super::schema::Place {
                         name: name.clone(),
                         value_type: Type::ByteSlice { mutable: false },
                         span: super::super::schema::Span { line: 0, column: 0 },
@@ -765,7 +764,7 @@ pub(super) fn lower(
                     taken,
                 } => {
                     let payload = payload
-                        .as_deref()
+                        .as_ref()
                         .map(|name| {
                             local_types
                                 .get(name)
@@ -773,7 +772,7 @@ pub(super) fn lower(
                                 .ok_or("unknown Rust slice iterator payload")
                         })
                         .transpose()?;
-                    cx.shared_array_next(iterator, option.as_deref(), payload, *taken)?
+                    cx.shared_array_next(iterator, option.as_ref(), payload, *taken)?
                 }
                 S::ChunkInitialize {
                     target,
@@ -793,7 +792,7 @@ pub(super) fn lower(
                     taken,
                 } => {
                     let element = element
-                        .as_deref()
+                        .as_ref()
                         .map(|name| {
                             local_types
                                 .get(name)
@@ -801,13 +800,7 @@ pub(super) fn lower(
                                 .ok_or("unknown Rust enumerate iterator payload")
                         })
                         .transpose()?;
-                    cx.enumerate_next(
-                        iterator,
-                        option.as_deref(),
-                        index.as_deref(),
-                        element,
-                        *taken,
-                    )?
+                    cx.enumerate_next(iterator, option.as_ref(), index.as_ref(), element, *taken)?
                 }
                 S::RangeInitialize { target, start, end } => {
                     cx.range_initialize(target, start, end)?
@@ -821,9 +814,9 @@ pub(super) fn lower(
                     taken,
                 } => cx.range_next(
                     iterator,
-                    option.as_deref(),
+                    option.as_ref(),
                     option_type,
-                    payload.as_deref(),
+                    payload.as_ref(),
                     *taken,
                 )?,
                 S::ChunkNext {
@@ -831,13 +824,13 @@ pub(super) fn lower(
                     option,
                     payload,
                     taken,
-                } => cx.chunk_next(iterator, option.as_deref(), payload.as_deref(), *taken)?,
+                } => cx.chunk_next(iterator, option.as_ref(), payload.as_ref(), *taken)?,
                 S::Assign {
                     target: E::Local { name },
                     value,
                 } if cx.scalar_operands.contains_key(name) => {
                     let (prefix, value) = cx.prepared_expr(value)?;
-                    let ty = scalar_type(local_types[name.as_str()])?.to_kernel_type();
+                    let ty = scalar_type(local_types[name])?.to_kernel_type();
                     let step = cx.scalar_operands[name].0;
                     program_seq(prefix, typed_value_step(vec![step], value, ty, false))
                 }
@@ -897,12 +890,12 @@ pub(super) fn lower(
                         },
                 } => {
                     let (checks, value) = cx.prepared_closure(function, captures, value_type)?;
-                    program_seq(checks, program_assign(cx.binding(name), value))
+                    program_seq(checks, program_assign(cx.binding(name)?, value))
                 }
                 S::Assign {
                     target: E::Local { name },
                     value,
-                } if !records.contains_key(name.as_str()) => cx.assign(name, value)?,
+                } if !records.contains_key(name) => cx.assign(name, value)?,
                 S::Assign { target, value } => {
                     if let E::Deref {
                         value_type: Type::Array { element, length },
@@ -945,7 +938,7 @@ pub(super) fn lower(
                     check(target, record)?;
                     write_fields(
                         cx,
-                        crate::kernel::program_expression::variable(cx.binding(target)),
+                        crate::kernel::program_expression::variable(cx.binding(target)?),
                         record,
                         fields,
                     )?
@@ -981,12 +974,12 @@ pub(super) fn lower(
                         let offset = cx.field_offset(record, &field.name)?;
                         let source_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
-                                crate::kernel::program_expression::variable(cx.binding(source)),
+                                crate::kernel::program_expression::variable(cx.binding(source)?),
                                 offset,
                             );
                         let target_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
-                                crate::kernel::program_expression::variable(cx.binding(target)),
+                                crate::kernel::program_expression::variable(cx.binding(target)?),
                                 offset,
                             );
                         let write = if let Type::Array { element, length } = &field.value_type {
@@ -1022,22 +1015,22 @@ pub(super) fn lower(
                 // source declaration only when there is a written binding.
                 S::BeginStorage { local } if scoped.contains_key(local) => {
                     if let Some(site) = site
-                        && !drop_operands.contains_key(local.as_str())
+                        && !drop_operands.contains_key(local)
                     {
-                        cx.declaration_sites.push((cx.binding(local), site));
+                        cx.declaration_sites.push((cx.binding(local)?, site));
                     }
                     scoped[local].clone()
                 }
                 S::EndStorage { local }
                     if scoped.contains_key(local) || mir.compound_literals.contains_key(local) =>
                 {
-                    program_end_automatic_lifetimes(vec![cx.binding(local)])
+                    program_end_automatic_lifetimes(vec![cx.binding(local)?])
                 }
                 // Any other repeated name's storage start, as an iterator's
                 // whose fields are its own locals, runs nothing.
                 S::BeginStorage { local }
                     if cx.bindings.contains_key(local)
-                        && !records.contains_key(local.as_str())
+                        && !records.contains_key(local)
                         && !cx.local_arrays.contains(local) =>
                 {
                     program_skip()
@@ -1048,7 +1041,7 @@ pub(super) fn lower(
                     // lifetime start, including each symbolic loop iteration.
                     // Re-entry retires the old object and checks live borrows.
                     program_begin_aggregate_construction(
-                        cx.binding(&local.clone()),
+                        cx.binding(local)?,
                         AggregateLayout::new(
                             arrays::array_length(element, length)? * element.byte_width(),
                             element.byte_width(),
@@ -1057,16 +1050,14 @@ pub(super) fn lower(
                     )
                 }
                 S::BeginStorage { local } => {
-                    let record = records
-                        .get(local.as_str())
-                        .ok_or("unknown record storage start")?;
+                    let record = records.get(local).ok_or("unknown record storage start")?;
                     // Plain values carry no destructor or borrowed authority,
                     // so StorageLive starts a fresh lifetime, also in each
                     // pass of a loop. Drop/reference-bearing records keep the
                     // storage they were declared with.
                     if check_copyable(cx, record).is_ok() {
                         program_begin_aggregate_construction(
-                            cx.binding(&local.clone()),
+                            cx.binding(local)?,
                             cx.layouts
                                 .get(*record)
                                 .ok_or("missing record storage layout")?
@@ -1304,11 +1295,10 @@ fn loop_iterator(
                 }
                 _ => None,
             });
-        if let Some(local) = user {
+        if user.is_some() {
             return Some(RustLoopIterator {
                 chunk_fields: None,
                 slice_fields: None,
-                local,
                 kind: K::User,
                 count_binding: None,
                 range_bounds: None,
@@ -1345,7 +1335,6 @@ fn loop_iterator(
                     .shared_array_iterators
                     .get(local)
                     .map(|iter| iter.fields.clone()),
-                local: local.clone(),
                 kind,
                 range_bounds: cx.ranges.get(local).map(|range| range.bounds.clone()),
                 count_binding: if kind == K::Enumerate {
@@ -1560,7 +1549,7 @@ fn region(
                         .get(name)
                         .is_some_and(|(_, last)| last.block == *then_target)
                 {
-                    let mut operand = cx.expr(&E::Local { name: name.into() })?;
+                    let mut operand = cx.expr(&E::Local { name: name.clone() })?;
                     if let ProgramExpression::StepResult { ends, .. } = &mut operand {
                         *ends = true;
                     }

@@ -32,11 +32,12 @@ fn charon_slice_into_iter_preserves_actual_typed_state_and_checked_reads() {
                 .iter()
                 .any(|local| matches!(local.value_type, Type::SharedArrayIterator { .. }))
         );
-        assert!(
-            !mir.locals
-                .iter()
-                .any(|local| local.name.contains("processed"))
-        );
+        assert!(!mir.locals.iter().any(|local| {
+            local
+                .name
+                .source_name()
+                .is_some_and(|name| name.contains("processed"))
+        }));
         assert!(mir.blocks.iter().any(|b| matches!(
             &b.terminator,
             T::If {
