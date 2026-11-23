@@ -2912,18 +2912,21 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                                 tactic_name(&indexed.tactic)
                                 )).with_failed_tactic(tactic_name(&indexed.tactic));
                                 let diagnostic = match declined {
-                                    Err(LinearScriptDecline::UnsuccessfulSearch(_)) => {
-                                        diagnostic.with_proof_refusal(ProofRefusal::UnsuccessfulSearch)
-                                    }
-                                    Err(LinearScriptDecline::Step(_)) => {
-                                        diagnostic.with_proof_refusal(ProofRefusal::Tactic)
-                                    }
-                                    Ok(_) if matches!(indexed.tactic, ProofTactic::Instantiate { .. }) => {
+                                    Err(Decline::ShortOfExit) => diagnostic
+                                        .with_proof_refusal(ProofRefusal::IncompleteProof),
+                                    Err(Decline::RegionDepth) => diagnostic
+                                        .with_context(format!(
+                                            "the checked execution region nesting limit is {MAX_CHECKED_EXECUTION_REGION_DEPTH}",
+                                        ))
+                                        .with_kind(ClickErrorKind::Unsupported),
+                                    Ok(_) | Err(Decline::Shape)
+                                        if matches!(indexed.tactic, ProofTactic::Instantiate { .. }) =>
+                                    {
                                         diagnostic
                                             .with_context("For proposition-only work, move the operation into `have proposition by { ... }`.")
                                             .with_kind(ClickErrorKind::Unsupported)
                                     }
-                                    Ok(_) | Err(LinearScriptDecline::Shape) => {
+                                    Ok(_) | Err(Decline::Shape) => {
                                         diagnostic.with_kind(ClickErrorKind::Internal)
                                     }
                                 };
