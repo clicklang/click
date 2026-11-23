@@ -3,8 +3,7 @@
 `let { parent: p } = unfold(linked(node))` names the resource's `let ...
 where` witness. The body facts the unfold publishes are spelled with that
 name, `aligned(p, 8)` and `node->word == address(p) + (node->word & 1)`, so
-the implicit `solve` after the fold can cite both to prove the masked
-postcondition.
+the proof can apply the mask law to both facts before folding the resource.
 
 ```c filename=a_named_unfold_witness_spells_its_body_facts.c
 struct node {
@@ -31,9 +30,16 @@ struct node* parent_of(struct node* node) {
     ensures address(result) == (node->word & ~3);
 } by {
     let { parent: p } = unfold(linked(node));
+    have (address(p) & 3u64) == 0u64 by known();
+    have ((node->word & 1u64) & ~3u64) == 0u64 by known();
+    apply(click::integer::uint64_mask_add_clear(address(p), node->word & 1u64, ~3u64));
+    have (node->word & ~3u64) == address(p) by {
+        rewrite(node->word, address(p) + (node->word & 1u64));
+        known();
+    }
     step_until(function.exit);
     fold(linked(node));
-    solve();
+    known();
 }
 ```
 

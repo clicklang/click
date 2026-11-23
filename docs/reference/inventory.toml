@@ -2253,6 +2253,10 @@ id = "library.function.permutation::count"
 path = "reference/library/index.md#permutationcount"
 
 [[item]]
+id = "library.theorem.permutation::two_indicator_counts_commute"
+path = "reference/library/index.md#permutationtwo_indicator_counts_commute"
+
+[[item]]
 id = "library.predicate.permutation::permutation"
 path = "reference/library/index.md#permutationpermutation"
 

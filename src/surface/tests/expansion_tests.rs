@@ -5997,6 +5997,7 @@ fn whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm() {
         .collect::<Vec<_>>();
     let expanded =
         expand_c_claim_source_by_label(&click, &sources, "read_after_step.contract").unwrap();
+    assert!(!expanded.contains("normalize("), "{expanded}");
     let proof = &expanded[expanded.rfind("} by {").unwrap()..];
     let arm = proof.find("Maybe::Some(value) => {").expect("the live arm");
     let fold = proof
@@ -6004,6 +6005,52 @@ fn whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm() {
         .expect("the arm's fold");
     let arm_end = arm + proof[arm..].find("\n        }\n").expect("the arm closes");
     assert!(arm < fold && fold < arm_end, "{proof}");
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
+fn identical_machine_conditional_arms_expand_after_a_rewrite() {
+    let (source, sources) = mdtest_sources("mdtests/exact_rewrite_equal_conditional_arms.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "equal_word_arms.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("rewrite(n, m)"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
+fn stored_uint64_sum_expands_with_the_checked_addition_theorem() {
+    let c = r#"
+        struct counter { uint64 reads; };
+        void bump(struct counter *c) { c->reads = c->reads + 1; }
+    "#;
+    let source = r#"
+        verifying "counter.c";
+        void bump(struct counter *c) {
+            owns *c;
+            requires c->reads < 1000u64;
+            ensures c->reads == old(c->reads) + 1u64;
+        }
+    "#;
+    let sources = [("counter.c", c)];
+    let claim = "bump.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("integer::uint64_add_to_integer("),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 /// A nested proof `match` is rebuilt where its own path took it. The arms of
@@ -10817,6 +10864,23 @@ fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
+fn restricted_field_increment_definedness_expands_with_discrete_order() {
+    let (source, sources) =
+        mdtest_sources("mdtests/restricted_solve_of_field_sum_definedness_raises_its_conjuncts.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "bump.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("integer::lt_step_le("), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
@@ -26001,6 +26065,8 @@ test_batches! {
         whole_claim_expansion_spells_an_inner_call_result_by_its_call,
         whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms,
         whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm,
+        identical_machine_conditional_arms_expand_after_a_rewrite,
+        stored_uint64_sum_expands_with_the_checked_addition_theorem,
         whole_claim_expansion_keeps_tactics_before_a_nested_match,
         whole_claim_expansion_omits_a_call_steps_empty_input_map,
     ],
@@ -26139,6 +26205,7 @@ test_batches! {
     expansion_batch_41: [
         pure_solve_retains_one_selected_equality_rewrite_before_known,
         restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic,
+        restricted_field_increment_definedness_expands_with_discrete_order,
         restricted_solve_expands_positive_to_nonnegative_arithmetic_steps,
         restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic,
     ],

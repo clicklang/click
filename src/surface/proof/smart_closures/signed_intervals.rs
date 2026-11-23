@@ -214,6 +214,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_native_integer_bound");
+        use crate::kernel::IntegerTerm;
         let (Some(goal), Some(written)) = (input.goal(), input.surface_goal()) else {
             return Ok(None);
         };
@@ -248,21 +249,33 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(None);
             };
             let one = || Box::new(number(1));
-            let (law, left, right, adjustment) = if let (Some(bound), Some(target)) =
-                (lo.as_const(), goal_lo.as_const())
+            let (law, left, right, adjustment) = if let IntegerTerm::Add(value, increment) =
+                goal_lo.as_ref()
+                && value.value_read() == lo.value_read()
+                && increment.as_const().is_some_and(num_traits::One::is_one)
+                && hi.value_read() == goal_hi.value_read()
+                && let ContractExpression::Add(observed, _) = lower
+            {
+                ("lt_step_le", *observed, upper, None)
+            } else if let (Some(bound), Some(target)) = (lo.as_const(), goal_lo.as_const())
                 && hi == goal_hi
                 && &(bound + BigInt::one()) == target
             {
                 let original = surface_signed_integer_literal(bound);
                 let shifted = ContractExpression::Add(Box::new(original.clone()), one());
-                ("lt_step_le", original, upper, eq(lower, shifted))
+                ("lt_step_le", original, upper, Some(eq(lower, shifted)))
             } else if let (Some(bound), Some(target)) = (hi.as_const(), goal_hi.as_const())
                 && lo == goal_lo
                 && &(bound - BigInt::one()) == target
             {
                 let original = surface_signed_integer_literal(bound);
                 let shifted = ContractExpression::Subtract(Box::new(original.clone()), one());
-                ("lt_le_predecessor", lower, original, eq(upper, shifted))
+                (
+                    "lt_le_predecessor",
+                    lower,
+                    original,
+                    Some(eq(upper, shifted)),
+                )
             } else {
                 continue;
             };
@@ -277,9 +290,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let observed = closed.join()?;
                 // The instantiated law retains its arithmetic endpoint.
                 // Rewrite the printed literal to that exact expression.
-                let rewritten = observed
-                    .driver()
-                    .apply_step(ProofStep::Rewrite(adjustment))?;
+                let rewritten = if let Some(adjustment) = adjustment {
+                    observed
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(adjustment))?
+                } else {
+                    observed
+                };
                 rewritten
                     .driver()
                     .apply_step(apply(law, vec![left, right], vec![granted]))
