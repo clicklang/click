@@ -113,6 +113,7 @@ impl<'a> Proof<'a> {
             });
         Ok(PureStructuralInductionApplication {
             kernel_premises,
+            surface_premises,
             implication,
             conclusion,
         })
