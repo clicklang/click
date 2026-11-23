@@ -709,11 +709,6 @@ pub(super) fn function_pointer_signature(
     ))
 }
 
-#[cfg(test)]
-mod scaling_tests {
-    include!("../../scaling_tests/languages/cpp/interface/tests.rs");
-}
-
 /// A reference or pointer to a symbolic record designates its whole object,
 /// `sizeof` bytes, as a Rust reference to one does.
 fn symbolic_reference_bounds(
@@ -724,4 +719,9 @@ fn symbolic_reference_bounds(
         size @ crate::kernel::LayoutSize::Of(_) => parameter.with_fixed_reference_bounds(size),
         crate::kernel::LayoutSize::Bytes(_) => parameter,
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/languages/cpp/interface/tests.rs");
 }

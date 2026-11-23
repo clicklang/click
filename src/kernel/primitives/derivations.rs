@@ -1489,6 +1489,7 @@ impl ExecutionBudget {
     pub(in crate::kernel) const UNIVERSAL_WITNESS_LIMIT: u64 = 1 << 40;
 
     /// Whether `variable` is a universal-introduction or choice witness.
+    #[cfg(test)]
     pub(in crate::kernel) fn is_universal_witness_variable(variable: Variable) -> bool {
         variable.is_witness()
     }

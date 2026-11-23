@@ -2258,13 +2258,12 @@ fn join_loop_exit_paths(
             exits[1..].iter().map(|exit| entries(exit).map(identity)),
         )
         .into_iter()
-        .filter_map(|index| {
-            seen.insert(&identities[index]).then(|| {
-                first_objects
-                    .get(index)
-                    .map(|fact| (*fact).clone())
-                    .unwrap_or_else(|| ExecutionPureFact::new(first[index].clone()))
-            })
+        .filter(|&index| seen.insert(&identities[index]))
+        .map(|index| {
+            first_objects
+                .get(index)
+                .map(|fact| (*fact).clone())
+                .unwrap_or_else(|| ExecutionPureFact::new(first[index].clone()))
         })
         .collect();
         return Some((facts, obligations, borrow_evidence));

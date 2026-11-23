@@ -549,12 +549,12 @@ fn choose_body_indexing_scales_with_selected_body_size() {
                 })
                 .collect(),
         );
-        let source = Proposition::Exists {
-            name: "source_value".to_string(),
-            var: chosen_variable,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body),
-        };
+        let source = crate::kernel::quantifiers::test_exists(
+            "source_value".to_string(),
+            chosen_variable,
+            Sort::ProgramInt32,
+            body,
+        );
         let owner = CallerSourceOwnerId::ordinary("test.c", "identity");
         let entry_origins = vec![EntryFactOrigin::Requirement {
             source_id: RequirementSourceId {

@@ -3819,10 +3819,9 @@ fn fold_nested_enum_call_match(
                 value,
             } = statement
                 && projection_base(value) == Some(destination)
+                && payload.replace(position).is_some()
             {
-                if payload.replace(position).is_some() {
-                    return false;
-                }
+                return false;
             }
         }
         reads.extend(payload.map(|position| (leaf, position)));

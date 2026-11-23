@@ -100,7 +100,7 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
                 ));
                 after
             };
-            let (after, work) = crate::instrumentation::measure_deterministic_work(&transition);
+            let (after, work) = crate::instrumentation::measure_deterministic_work(transition);
             assert_eq!(after.known_value(&at(32)), None);
             assert!(after.has_initialized_bytes_at(&at(32), 4));
             for offset in [0, 36, 64 + 4 * (count - 1)] {
@@ -163,7 +163,7 @@ fn exact_call_havoc_ignores_disjoint_run_slots_and_holes() {
                 assert!(after.matches_call_memory_havoc_result(&before, &ranges, &facts, None));
                 after
             };
-            let (after, work) = crate::instrumentation::measure_deterministic_work(&transition);
+            let (after, work) = crate::instrumentation::measure_deterministic_work(transition);
             assert_eq!(after.known_value(&at(4)), None);
             assert!(after.has_initialized_bytes_at(&at(4), 4));
             if bytes == 5 {

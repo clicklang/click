@@ -2788,6 +2788,7 @@ impl CellStore {
     /// module comment), so this is an equivalence of what a consumer reads
     /// and nothing weaker. The work is [`Self::differing_cells`]': what the
     /// two stores do not share.
+    #[cfg(test)]
     pub(crate) fn same_cells_as(&self, other: &Self) -> bool {
         self == other || self.same_logical_cells_by_difference(other)
     }

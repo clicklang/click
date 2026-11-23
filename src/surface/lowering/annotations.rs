@@ -8037,7 +8037,7 @@ impl AnnotationLowerer<'_> {
                 let algebraic_type = AlgebraicTypeApplication::of_enum_interface_type(
                     InterfaceType::Parameter(*enum_type),
                 )
-                .ok_or_else(|| "a program constructor of a type that is not a `spec enum`")?;
+                .ok_or("a program constructor of a type that is not a `spec enum`")?;
                 self.lower_contract_algebraic_to_spec(
                     &ContractExpression::AlgebraicConstructor {
                         algebraic_type,

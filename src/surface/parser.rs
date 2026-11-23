@@ -8073,9 +8073,22 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 return Ok(subject);
             }
-            let segment = self.parse_current_contract_segment()?;
+            let start = self.position;
+            let subject = match self.parse_current_contract_segment() {
+                Ok(segment) => ResourceSubject::Memory(segment),
+                Err(error) => {
+                    self.position = start;
+                    let Ok(base) = self.parse_contract_primary() else {
+                        return Err(error);
+                    };
+                    if !Self::is_allocation_address(&base) {
+                        return Err(error);
+                    }
+                    self.parse_saved_memory_range(base)?
+                }
+            };
             self.expect(Token::RParen)?;
-            return Ok(ResourceSubject::Memory(segment));
+            return Ok(subject);
         }
 
         let saved = self.position;
@@ -8098,6 +8111,13 @@ impl Parser {
 
     fn parse_saved_memory_subject(&mut self) -> Result<ResourceSubject, ClickError> {
         let base = self.parse_contract_primary()?;
+        self.parse_saved_memory_range(base)
+    }
+
+    fn parse_saved_memory_range(
+        &mut self,
+        base: ContractExpression,
+    ) -> Result<ResourceSubject, ClickError> {
         self.expect(Token::LBracket)?;
         let start = self.parse_contract_expression()?;
         let end = if self.peek() == Some(&Token::DotDot) {
@@ -15453,6 +15473,23 @@ impl Parser {
         self.lower_qualified_click_cast(target_type, false, false, operand)
     }
 
+    // A recorded allocation names an identity, even if the pointer returned
+    // by the allocator has since been reassigned. Address transformations of
+    // that identity do not read a pointer value from another program state.
+    fn is_allocation_address(expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::RegionAllocation(_) => true,
+            ContractExpression::CUnary { operand, lowered }
+                if matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
+                    || matches!(lowered, ProgramExpression::Cast { target_type, .. }
+                        if target_type.is_pointer()) =>
+            {
+                Self::is_allocation_address(operand)
+            }
+            _ => false,
+        }
+    }
+
     fn lower_qualified_click_cast(
         &mut self,
         target_type: ProgramType,
@@ -15460,8 +15497,10 @@ impl Parser {
         pointee_volatile: bool,
         operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
+        let allocation_address = Self::is_allocation_address(&operand);
         let historical = crate::surface::validation::contains_old_expression(&operand)
-            || crate::surface::validation::contains_at_expression(&operand);
+            || (!allocation_address
+                && crate::surface::validation::contains_at_expression(&operand));
         // Numeric casts consume the value observed by their operand.
         // Pointer casts retain their current-expression validation.
         let numeric_target = matches!(
@@ -15484,7 +15523,7 @@ impl Parser {
         }
         let expression = contract_expression_as_program_expression(&operand)
             .unwrap_or(ProgramExpression::Value(int32(0)));
-        if target_type == ProgramType::VoidPointer {
+        if target_type == ProgramType::VoidPointer && !allocation_address {
             crate::surface::validation::validate_void_pointer_cast_source(
                 &expression,
                 &self.names.program_parameter_types,
@@ -15648,7 +15687,7 @@ impl Parser {
                     source_base,
                     ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
-                        bytes: (*offset_bytes).into(),
+                        bytes: *offset_bytes,
                     },
                 ));
             }

@@ -1158,7 +1158,6 @@ struct CertifiedFunctionClaimPath {
 /// to inspect the context at the exact failed check.
 #[derive(Clone, Debug)]
 pub(crate) struct ContractPathPreparationFailure {
-    pub reason: String,
     refusal: Box<ContractClosingRefusal>,
     #[cfg(test)]
     pub available: Vec<Proposition>,
@@ -1167,9 +1166,8 @@ pub(crate) struct ContractPathPreparationFailure {
 }
 
 impl ContractPathPreparationFailure {
-    fn classified(reason: impl Into<String>, refusal: ContractClosingRefusal) -> Self {
+    fn classified(refusal: ContractClosingRefusal) -> Self {
         Self {
-            reason: reason.into(),
             refusal: Box::new(refusal),
             #[cfg(test)]
             available: Vec::new(),
@@ -1180,15 +1178,15 @@ impl ContractPathPreparationFailure {
 
     fn incomplete(reason: impl Into<String>) -> Self {
         let reason = reason.into();
-        Self::classified(reason.clone(), ContractClosingRefusal::Incomplete(reason))
+        Self::classified(ContractClosingRefusal::Incomplete(reason))
     }
 
     fn internal(reason: &str) -> Self {
-        Self::classified(reason, ContractClosingRefusal::Internal(reason.to_owned()))
+        Self::classified(ContractClosingRefusal::Internal(reason.to_owned()))
     }
 
-    fn stopped(reason: String, stop: ExecutionLimit) -> Self {
-        Self::classified(reason, ContractClosingRefusal::from_stop(stop))
+    fn stopped(stop: ExecutionLimit) -> Self {
+        Self::classified(ContractClosingRefusal::from_stop(stop))
     }
 
     fn runtime(reason: String, error: RuntimeError) -> Self {
@@ -1198,7 +1196,7 @@ impl ContractPathPreparationFailure {
             } else {
                 ContractClosingRefusal::Runtime(error)
             };
-        Self::classified(reason, refusal)
+        Self::classified(refusal)
     }
 
     fn into_closing_refusal(self) -> ContractClosingRefusal {
@@ -1217,8 +1215,7 @@ fn unproved_contract_path_condition(
     #[cfg(test)]
     let (available, available_count) = _assumptions.diagnostic_fact_sample(8, 24);
     ContractPathPreparationFailure {
-        refusal: Box::new(ContractClosingRefusal::Incomplete(reason.clone())),
-        reason,
+        refusal: Box::new(ContractClosingRefusal::Incomplete(reason)),
         #[cfg(test)]
         available,
         #[cfg(test)]
@@ -1278,7 +1275,6 @@ fn prepare_function_claim_path(
                 let reason = format!("the required resource context cannot be evaluated: {error}");
                 return Err(if error.is_contract_entry_resource_error() {
                     ContractPathPreparationFailure::classified(
-                        reason.clone(),
                         ContractClosingRefusal::InvalidContract(reason),
                     )
                 } else {
@@ -1286,10 +1282,7 @@ fn prepare_function_claim_path(
                 });
             }
             Err(limit) => {
-                return Err(ContractPathPreparationFailure::stopped(
-                    format!("the required resource context stopped at {limit}"),
-                    limit,
-                ));
+                return Err(ContractPathPreparationFailure::stopped(limit));
             }
         };
     let expanded_required = {
@@ -1432,10 +1425,7 @@ fn prepare_closing_path(
                 ));
             }
             Err(limit) => {
-                return Err(ContractPathPreparationFailure::stopped(
-                    format!("the deferred conditional contract exit stopped at {limit}"),
-                    limit,
-                ));
+                return Err(ContractPathPreparationFailure::stopped(limit));
             }
         }
     } else {
@@ -1516,10 +1506,6 @@ fn prepare_closing_path(
         }
         FunctionOutcome::UndefinedBehavior(undefined_behavior) => {
             return Err(ContractPathPreparationFailure::classified(
-                format!(
-                    "the certified path is not safe: undefined behavior: {}",
-                    undefined_behavior.description()
-                ),
                 ContractClosingRefusal::UndefinedBehavior(undefined_behavior.clone()),
             ));
         }
@@ -1536,7 +1522,6 @@ fn prepare_closing_path(
             let reason =
                 "the return path throws an exception the function's signature does not permit";
             return Err(ContractPathPreparationFailure::classified(
-                reason,
                 ContractClosingRefusal::InvalidContract(reason.into()),
             ));
         }
@@ -1563,10 +1548,7 @@ fn prepare_closing_path(
                     ));
                 }
                 Err(limit) => {
-                    return Err(ContractPathPreparationFailure::stopped(
-                        limit.describe(),
-                        limit,
-                    ));
+                    return Err(ContractPathPreparationFailure::stopped(limit));
                 }
             }
         }
@@ -1585,10 +1567,7 @@ fn prepare_closing_path(
                 ));
             }
             Err(limit) => {
-                return Err(ContractPathPreparationFailure::stopped(
-                    limit.describe(),
-                    limit,
-                ));
+                return Err(ContractPathPreparationFailure::stopped(limit));
             }
         }
     }

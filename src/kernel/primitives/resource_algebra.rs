@@ -12398,7 +12398,6 @@ pub(in crate::kernel) fn symbolic_object_covers_field(
         None => (required.constant_start() == Some(0))
             .then(|| required.constant_end())
             .flatten()
-            .and_then(|count| u32::try_from(count).ok())
             .and_then(|count| count.checked_mul(required.element_width()))
             .map(crate::kernel::AccessExtent::Bytes),
     };
