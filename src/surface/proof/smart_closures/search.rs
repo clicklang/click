@@ -6445,50 +6445,47 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        if *operator == ComparisonOperator::In {
+            return Ok(None);
+        }
         let field_bound = *operator == ComparisonOperator::LessEqual;
-        let left = match (operator, left, right) {
-            (ComparisonOperator::Equal, left, ContractExpression::IntegerLiteral(_)) => left,
+        let expression = match (left, right) {
+            (expression, ContractExpression::IntegerLiteral(_))
+            | (ContractExpression::IntegerLiteral(_), expression) => expression,
             (
-                ComparisonOperator::Equal,
                 left,
                 ContractExpression::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::Int32(value),
                 )),
-            ) if outcome && value.constant32().is_some() => left,
-            (_, read @ ContractExpression::Index(..), ContractExpression::IntegerLiteral(_))
-            | (_, ContractExpression::IntegerLiteral(_), read @ ContractExpression::Index(..))
-                if *operator != ComparisonOperator::In =>
+            ) if outcome
+                && *operator == ComparisonOperator::Equal
+                && value.constant32().is_some() =>
             {
-                read
+                left
             }
-            (
-                ComparisonOperator::LessEqual,
-                field @ ContractExpression::Field { .. },
-                ContractExpression::IntegerLiteral(_),
-            )
-            | (
-                ComparisonOperator::LessEqual,
-                ContractExpression::IntegerLiteral(_),
-                field @ ContractExpression::Field { .. },
-            ) => field,
             _ => return Ok(None),
         };
+        fn indexed_expression_read(expression: &ContractExpression) -> Option<&ContractExpression> {
+            match expression {
+                ContractExpression::Index(..) => Some(expression),
+                ContractExpression::BitwiseAnd(read, mask)
+                | ContractExpression::BitwiseOr(read, mask)
+                    if matches!(read.as_ref(), ContractExpression::Index(..))
+                        && matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_)) =>
+                {
+                    Some(read.as_ref())
+                }
+                _ => None,
+            }
+        }
         let indexed;
-        let read = match left {
-            read @ ContractExpression::Index(..) => read,
+        let read = match expression {
             read @ ContractExpression::Field { .. } if field_bound => read,
             ContractExpression::BitwiseAnd(read, mask)
-                if matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
-                    && matches!(
-                        read.as_ref(),
-                        ContractExpression::Field { .. } | ContractExpression::Index(..)
-                    ) =>
-            {
-                read.as_ref()
-            }
-            ContractExpression::BitwiseOr(read, mask)
-                if matches!(read.as_ref(), ContractExpression::Index(..))
-                    && matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_)) =>
+                if *operator == ComparisonOperator::Equal
+                    && matches!(left, ContractExpression::BitwiseAnd(..))
+                    && matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
+                    && matches!(read.as_ref(), ContractExpression::Field { .. }) =>
             {
                 read.as_ref()
             }
@@ -6498,24 +6495,28 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 else_branch,
             } if matches!(then_branch.as_ref(), ContractExpression::IntegerLiteral(_))
                 && matches!(else_branch.as_ref(), ContractExpression::IntegerLiteral(_))
-                && let ClickProposition::Comparison { left, right, .. } = condition.as_ref() =>
+                && let ClickProposition::Comparison {
+                    left,
+                    operator,
+                    right,
+                } = condition.as_ref()
+                && *operator != ComparisonOperator::In =>
             {
-                match (left, right) {
-                    (
-                        read @ ContractExpression::Index(..),
-                        ContractExpression::IntegerLiteral(_),
-                    )
-                    | (
-                        ContractExpression::IntegerLiteral(_),
-                        read @ ContractExpression::Index(..),
-                    ) => read,
+                let operand = match (left, right) {
+                    (operand, ContractExpression::IntegerLiteral(_))
+                    | (ContractExpression::IntegerLiteral(_), operand) => operand,
                     _ => return Ok(None),
-                }
+                };
+                let Some(read) = indexed_expression_read(operand) else {
+                    return Ok(None);
+                };
+                read
             }
-            _ if outcome => {
+            _ if let Some(read) = indexed_expression_read(expression) => read,
+            _ if outcome && *operator == ComparisonOperator::Equal => {
                 // A read raised from an outcome goal can be spelled *(a + i).
                 let Some(ProgramExpression::Load(pointer)) =
-                    contract_expression_as_program_expression(left)
+                    contract_expression_as_program_expression(expression)
                 else {
                     return Ok(None);
                 };
