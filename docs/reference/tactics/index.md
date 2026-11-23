@@ -1699,7 +1699,8 @@ Algebraic result fields can also be constructors that contain these values.
 A constructor passed into a pattern binder can contain literals, variables,
 and nested constructors. The check reads those variables in the scope where
 the constructor was written. It follows nested matches on written constructors
-or constructors held by earlier pattern binders. Machine fields retain their
+or constructors held by earlier pattern binders. A selected arm can return
+a bound or captured algebraic value directly. Machine fields retain their
 exact width and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
