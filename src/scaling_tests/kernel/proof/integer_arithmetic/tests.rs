@@ -274,6 +274,89 @@ fn affine_claims_read_retained_fold_operands_without_export() {
 }
 
 #[test]
+fn shared_additive_fold_claims_stay_retained() {
+    use crate::kernel::{KernelTermExport, KernelTermImport};
+    use KernelIntegerOperator as Op;
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let fold = int32_fold(0, 8, 91_000, 91_001, machine_fold_body(91_000, 91_001));
+        let root = KernelTermImport::default().integer(&fold.into());
+        let operation =
+            |operator, children| KernelTerm::integer_operation(operator, children).unwrap();
+        let mut expression = root.clone();
+        for _ in 0..depth {
+            // This DAG has exponentially many paths. Its net fold weight
+            // stays one, so coefficient bit lengths do not dominate work.
+            let twice = operation(Op::Add, vec![expression.clone(), expression.clone()]);
+            let difference = operation(Op::Subtract, vec![expression, twice]);
+            expression = operation(Op::Negate, vec![difference]);
+        }
+        let expression = operation(
+            Op::Add,
+            vec![expression, KernelTerm::integer_literal(3.into())],
+        );
+        let comparison =
+            KernelTerm::integer_comparison(IntegerComparisonOperator::Equal, [expression, root])
+                .unwrap();
+        let condition = StoredConditionTerm::from_root(comparison.clone()).unwrap();
+        let equal = Proposition::condition_is(condition.clone(), true);
+        let disequal = Proposition::condition_is(condition, false);
+        let exports = KernelTermExport::integer_export_count();
+        assert!(
+            crate::instrumentation::with_run_work_limit(8, || integer_affine_claim(&equal))
+                .is_none()
+        );
+        assert!(
+            crate::instrumentation::with_run_work_limit(8, || integer_disequality_claims(
+                &disequal
+            ))
+            .is_empty()
+        );
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        let works = [0, 16, 64, 256].map(|unrelated| {
+            let mut context = IntegerAffineCollectionContext::default();
+            context
+                .constants
+                .extend((0..unrelated).map(|id| (id, None)));
+            let exports = KernelTermExport::integer_export_count();
+            let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
+                integer_affine_claim_with_context(&equal, &mut context).unwrap()
+            });
+            assert!(claim.terms.is_empty());
+            assert_eq!(claim.constant, BigInt::from(3));
+            assert!(integer_disequality_claims(&disequal).is_empty());
+            assert!(excluded_type_bound(&disequal).is_none());
+            assert!(integer_affine_machine_values(&equal).is_empty());
+            assert_eq!(KernelTermExport::integer_export_count(), exports);
+            work
+        });
+        assert!(
+            works.iter().max().unwrap() - works.iter().min().unwrap() <= 16,
+            "{works:?}"
+        );
+        samples.push(works[0]);
+
+        let native = KernelTermExport::condition(&comparison).unwrap();
+        for value in [false, true] {
+            let native = Proposition::condition_is(native.clone(), value);
+            let retained = if value { &equal } else { &disequal };
+            assert_eq!(
+                integer_affine_claim(&native),
+                integer_affine_claim(retained)
+            );
+            assert_eq!(
+                integer_disequality_claims(&native),
+                integer_disequality_claims(retained)
+            );
+        }
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= 4 * pair[0] + 64, "{samples:?}");
+    }
+}
+
+#[test]
 fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
     use crate::kernel::SharedIntegerTerm;
     let mut costs = Vec::new();

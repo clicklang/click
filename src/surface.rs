@@ -9009,7 +9009,6 @@ pub enum ProofRefusal {
     ImplicitStatementSearch,
     IncompleteProof,
     Contract,
-    ContractEntry,
 }
 
 impl ProofRefusal {
@@ -9019,7 +9018,6 @@ impl ProofRefusal {
             Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
             Self::IncompleteProof => "incomplete proof",
             Self::Contract => "contract error",
-            Self::ContractEntry => "contract entry refused",
         }
     }
 }

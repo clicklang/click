@@ -2657,6 +2657,7 @@ fn verify_program_in_context(
                 "`{}` is not defined by any `verifying` source",
                 function_block.signature.name()
             ))
+            .with_kind(ClickErrorKind::Type)
         })?;
         check_signature(
             &function_block.signature,

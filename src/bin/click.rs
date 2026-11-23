@@ -58,7 +58,6 @@ fn report_error(message: String) -> ! {
         "unsuccessful search",
         "incomplete proof",
         "contract error",
-        "contract entry refused",
         "unsupported",
         "unclassified verification refusal",
         "syntax error",
@@ -1478,6 +1477,46 @@ int32 check(struct link* node) {
     }
 
     #[test]
+    fn verify_classifies_source_link_errors_and_failed_proof_splits() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, heading, detail) in [
+            (
+                "file_scope_incomplete_extern_array_link_errors.md",
+                "type error",
+                "has no definition",
+            ),
+            (
+                "file_scope_tentative_array_link_errors.md",
+                "type error",
+                "conflicting declarations",
+            ),
+            (
+                "cases_arms_that_do_not_rejoin_are_refused.md",
+                "tactic error",
+                "do not rejoin",
+            ),
+            (
+                "loop_body_proof_match_missing_arm.md",
+                "tactic error",
+                "cover every constructor",
+            ),
+            (
+                "population_rejects_nested_open.md",
+                "tactic error",
+                "population body is already open",
+            ),
+        ] {
+            let error = entry([
+                "verify".to_string(),
+                fixtures.join(name).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(error.starts_with(&format!("{heading}:")), "{error}");
+            assert!(error.contains(detail), "{error}");
+        }
+    }
+
+    #[test]
     fn verification_separates_unprepared_safety_goals_from_unsupported_operations() {
         let fixture = |name: &str| {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2730,6 +2769,39 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
                 "{name}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn symbolic_pointer_conditional_reports_unsupported_in_a_requirement() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("f.c"),
+            "int f(int flag, int *p, int *q) { return 0; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        let verify = |requirement: &str| {
+            fs::write(
+                &sidecar,
+                format!(
+                    "verifying \"f.c\";\nint32 f(int32 flag, int32* p, int32* q) {{\n    requires {requirement};\n    ensures result == 0;\n}}\n",
+                ),
+            )
+            .unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()])
+        };
+
+        let conditional = "(if flag == 0 { p } else { q }) != 0";
+        let error = verify(conditional).unwrap_err();
+        assert!(error.starts_with("unsupported:\n"), "{error}");
+        assert!(
+            error.contains("symbolic choice between distinct pointers"),
+            "{error}"
+        );
+        assert!(error.contains("using `or`"), "{error}");
+        assert!(error.contains(conditional), "{error}");
+        verify("(flag == 0 and p != 0) or (flag != 0 and q != 0)").unwrap();
+        verify(&format!("true or {conditional}")).unwrap();
     }
 
     #[test]

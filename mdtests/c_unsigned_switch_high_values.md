@@ -20,6 +20,20 @@ int32 classify(uint32 value) {
     ensures value == 2147483648u32 implies result == 20;
     ensures value == 4294967295u32 implies result == 30;
     ensures value != 0u32 and value != 2147483648u32 and value != 4294967295u32 implies result == 40;
+} by {
+    if value == 0u32 {
+        step_until(function.exit);
+    } else {
+        if value == 2147483648u32 {
+            step_until(function.exit);
+        } else {
+            if value == 4294967295u32 {
+                step_until(function.exit);
+            } else {
+                step_until(function.exit);
+            }
+        }
+    }
 }
 ```
 

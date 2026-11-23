@@ -25,7 +25,6 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `tactic error` | A written tactic or implicit proof step was refused. | Check `click docs TACTIC` and establish any evidence the operation requires at that program point. |
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
 | `incomplete proof` | The proof ended with a requirement outstanding. | Establish the named requirement before closing, such as a resource promised on return. |
-| `contract entry refused` | Click could not enter a contract. | Inspect the named clauses and work from the available goal. |
 
 When a proposition had to be true at a point and Click did not prove it,
 the report prints it on a `goal:` line. That goal can come from an `ensures`

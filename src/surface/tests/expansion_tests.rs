@@ -3409,16 +3409,20 @@ fn assert_constructor_matches_expand_to_known(fixture: &str, cases: &[(&str, &st
     for &(theorem, result, wrong_result) in cases {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
-        let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
-        let proof = proof.split("\n}").next().unwrap();
+        let start = expanded.find(&format!("theorem {theorem}(")).unwrap();
+        let end = start + expanded[start..].find("\n}").unwrap();
+        let proof = &expanded[start..end];
         assert!(proof.contains("known();"), "{expanded}");
         assert!(!proof.contains("normalize()"), "{expanded}");
         without_implicit_solve_for_claim(&label, || {
             verify_c_sources(&expanded, &[]).map_err(|error| error.report())
         })
         .unwrap();
-        let wrong = expanded.replace(&format!("== {result} by"), &format!("== {wrong_result} by"));
-        assert_ne!(wrong, expanded);
+        let wrong_proof =
+            proof.replace(&format!("== {result} by"), &format!("== {wrong_result} by"));
+        assert_ne!(wrong_proof, proof);
+        let mut wrong = expanded.clone();
+        wrong.replace_range(start..end, &wrong_proof);
         let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
         assert!(
             error.contains("`known` requires the current goal"),
@@ -3491,6 +3495,65 @@ fn bound_constructor_matches_expand_to_known() {
                 "select_chain",
                 "NumberResult::Value(9)",
                 "NumberResult::Value(8)",
+            ),
+        ],
+    );
+}
+
+#[test]
+fn symbolic_constructor_payloads_expand_to_known() {
+    assert_constructor_matches_expand_to_known(
+        "mdtests/algebraic_match_scoped_constructor_fields.md",
+        &[
+            (
+                "symbolic_integer",
+                "BoxOutput::Item(N::Value(a))",
+                "BoxOutput::Item(N::Value(b))",
+            ),
+            (
+                "symbolic_bool",
+                "BooleanOutput::Item(B::Value(a))",
+                "BooleanOutput::Item(B::Value(false))",
+            ),
+            (
+                "symbolic_word",
+                "WordOutput::Item(W::Value(a))",
+                "WordOutput::Item(W::Value(0u64))",
+            ),
+            (
+                "mixed_payload",
+                "PairOutput::Item(P::Pair(N::Value(a), N::Value(7)))",
+                "PairOutput::Item(P::Pair(N::Value(7), N::Value(a)))",
+            ),
+            (
+                "select_symbolic",
+                "NumberOutput::Item(a)",
+                "NumberOutput::Item(b)",
+            ),
+            (
+                "construct_from_outer_binding",
+                "BoxOutput::Item(N::Value(a))",
+                "BoxOutput::Item(N::Value(0))",
+            ),
+            (
+                "shadow_outer_binding",
+                "BoxOutput::Item(N::Value(a))",
+                "BoxOutput::Item(N::Value(b))",
+            ),
+            (
+                "relay_compound",
+                "BoxOutput::Item(N::Value(a))",
+                "BoxOutput::Item(N::Value(0))",
+            ),
+            (
+                "select_variant",
+                "NumberPairOutput::Item(1, a)",
+                "NumberPairOutput::Item(2, a)",
+            ),
+            (
+                "select_two_children",
+                "NumberPairOutput::Item(b, a)",
+                "NumberPairOutput::Item(a, b)",
             ),
         ],
     );
@@ -17322,6 +17385,38 @@ fn indexed_reads_in_wrapped_expressions_expand_through_store_preservation() {
         assert!(!expanded.contains("transport("), "{claim}: {expanded}");
         assert!(
             expanded.contains("preserve(memory(a[0])"),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed reads across two stores"]
+fn indexed_reads_across_two_stores_expand_through_both_footprints() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_reads_across_two_stores.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in [
+        "keep_mask.contract",
+        "keep_xor.contract",
+        "keep_complement.contract",
+        "keep_right_shift.contract",
+        "keep_narrowed_read.contract",
+        "keep_shift_count.contract",
+        "keep_quotient.contract",
+        "keep_remainder.contract",
+        "keep_conditional_read.contract",
+        "keep_upper_bound.contract",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert_eq!(
+            expanded.matches("preserve(memory(a[0])").count(),
+            2,
             "{claim}: {expanded}"
         );
         without_implicit_solve_for_claim(claim, || {

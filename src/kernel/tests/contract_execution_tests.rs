@@ -475,7 +475,10 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
         &PureFactContext::new(),
     )
     .expect_err("an owned clause inside the viewed range is refused at entry");
-    assert_eq!(refusal.category(), BorrowRefusalCategory::ProvenOverlap);
+    assert!(matches!(
+        refusal,
+        RuntimeError::BorrowRefusal(diagnostic) if diagnostic.category() == BorrowRefusalCategory::ProvenOverlap
+    ));
 }
 
 #[test]
@@ -498,7 +501,10 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
         &PureFactContext::new(),
     )
     .expect_err("a projection derived from owned authority is not an external root");
-    assert_eq!(refusal.category(), BorrowRefusalCategory::Missing);
+    assert!(matches!(
+        refusal,
+        RuntimeError::BorrowRefusal(diagnostic) if diagnostic.category() == BorrowRefusalCategory::Missing
+    ));
 
     let duplicate = ResourceContext::new().unchecked_with_facts([viewed.clone(), viewed]);
     let refusal = execution_state_with_borrowed_contract_inputs(
@@ -508,7 +514,10 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
         &PureFactContext::new(),
     )
     .expect_err("equal principal occurrences are ambiguous authority anchors");
-    assert_eq!(refusal.category(), BorrowRefusalCategory::Missing);
+    assert!(matches!(
+        refusal,
+        RuntimeError::BorrowRefusal(diagnostic) if diagnostic.category() == BorrowRefusalCategory::Missing
+    ));
 }
 
 /// The aggregate-copy path is the same shape at a wider width: the copy's

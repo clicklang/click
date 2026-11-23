@@ -1583,6 +1583,7 @@ impl ExecutionBudget {
             dropped_range_span: None,
             dropped_refuted_range_span: None,
             dropped_fold_body: None,
+            dropped_symbolic_pointer_conditional: false,
             dropped_comparison: None,
             program_byte_order: None,
         }

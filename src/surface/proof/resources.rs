@@ -3435,7 +3435,8 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         MachineTerm::constant(1),
     );
     if state.population_body_is_open(&population_name, &population_arguments) {
-        return Err(ClickError::new("population body is already open"));
+        return Err(ClickError::new("population body is already open")
+            .with_proof_refusal(ProofRefusal::Tactic));
     }
     if access == ResourceBodyAccess::Finalize {
         let quantity = requested_quantity;

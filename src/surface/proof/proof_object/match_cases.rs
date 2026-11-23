@@ -269,7 +269,10 @@ impl<'a> Proof<'a> {
     ) -> Result<Vec<usize>, ClickError> {
         let variants = &value.algebraic_type.variants;
         if source.arms.len() != variants.len() {
-            return Err(self.step_error("proof `match` must cover every constructor exactly once"));
+            return Err(self
+                .step_error("proof `match` must cover every constructor exactly once")
+                .with_failed_tactic("match")
+                .with_proof_refusal(crate::surface::ProofRefusal::Tactic));
         }
         let indices: BTreeMap<_, _> = variants
             .iter()

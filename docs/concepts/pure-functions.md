@@ -242,6 +242,11 @@ obligations at `n - 1` before `apply(ih(n - 1))` looks them up. They compare
 `to_integer(n - 1)`, the `int32` value the hypothesis is instantiated at, not
 the `Integer` difference that `0 <= n - 1` would state.
 
+Click cannot yet represent a specification conditional that selects between
+distinct pointer values with a symbolic guard. A comparison such as
+`(if flag == 0 { p } else { q }) != 0` can be written as
+`(flag == 0 and p != 0) or (flag != 0 and q != 0)`.
+
 `let ih = induct(n)` is a simple tactic. It requires the current
 facts to prove `n >= 0`. Within the rest of that theorem proof, `ih(m)` states
 the same goal at any proved nonnegative `m < n`. The application also requires
