@@ -3655,12 +3655,19 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let refusal = crate::surface::verify_c_sources(&missing_evidence, &[]).unwrap_err();
-        assert!(
-            refusal.message().contains("1000000"),
-            "{}",
-            refusal.report()
-        );
+        let label = "guarded_count.ensures_0";
+        let refusal = crate::surface::without_implicit_solve_for_claim(label, || {
+            crate::surface::verify_c_sources(&missing_evidence, &[]).map_err(|error| error.report())
+        })
+        .expect_err("cold replay needs the bound on the induction argument");
+        assert!(refusal.contains("1000000"), "{refusal}");
+
+        let expanded =
+            crate::surface::expand_c_claim_source_by_label(&missing_evidence, &[], label).unwrap();
+        crate::surface::without_implicit_solve_for_claim(label, || {
+            crate::surface::verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
         let false_claim = source.replace(
             "ensures guarded_countdown(n) == 0 and",
             "ensures guarded_countdown(n) == 1 and",
