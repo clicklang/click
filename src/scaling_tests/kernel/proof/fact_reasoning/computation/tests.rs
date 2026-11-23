@@ -38,18 +38,13 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
         let mut expected_fields = fields.into_iter().rev().collect::<Vec<_>>();
         let mut result_fields = bindings.iter().cloned().rev().collect::<Vec<_>>();
         let extra_field = match ty {
-            AlgebraicValueType::Integer => {
-                Some(AlgebraicValue::Integer(IntegerTerm::var(Variable(992_500))))
+            AlgebraicValueType::Program(ProgramType::UInt64) => {
+                AlgebraicValue::Program(uint64(MachineTerm::uint64_constant(7)))
             }
-            AlgebraicValueType::Program(ProgramType::UInt64) => Some(AlgebraicValue::Program(
-                uint64(MachineTerm::uint64_constant(7)),
-            )),
-            _ => None,
+            _ => value(992_500),
         };
-        if let Some(field) = extra_field {
-            expected_fields[0] = field.clone();
-            result_fields[0] = field;
-        }
+        expected_fields[0] = extra_field.clone();
+        result_fields[0] = extra_field;
         let expected = AlgebraicTerm {
             algebraic_type: scrutinee.algebraic_type.clone(),
             node: constructor(expected_fields),

@@ -3320,6 +3320,16 @@ fn rewritten_constructor_payload_expands_to_known() {
             "TaggedOutput::Value(value, 7u64)",
             "TaggedOutput::Value(value, 8u64)",
         ),
+        (
+            "rewritten_capture",
+            "TaggedOutput::Value(value, other)",
+            "TaggedOutput::Value(value, value)",
+        ),
+        (
+            "rewritten_bool_tag",
+            "BoolOutput::Value(value, true)",
+            "BoolOutput::Value(value, false)",
+        ),
     ] {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
