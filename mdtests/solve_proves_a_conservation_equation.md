@@ -29,8 +29,20 @@ theorem grow_conservation(capacity: int32, used: int32, available: int32, amount
     requires capacity == used + available;
     requires defined(used + available);
     requires defined(capacity + amount);
-    ensures defined(used + (available + amount)) and
-        capacity + amount == used + (available + amount);
+    ensures defined(available + amount) and defined(used + (available + amount)) and
+        capacity + amount == used + (available + amount) by {
+        have to_integer(capacity) + to_integer(amount) <= 2147483647 by known();
+        have to_integer(available) + to_integer(amount) <= 2147483647 by {
+            solve() using { 0 <= used; capacity == used + available; to_integer(capacity) + to_integer(amount) <= 2147483647; };
+        }
+        have -2147483648 <= to_integer(available) + to_integer(amount) by {
+            solve() using { 0 <= available; 0 <= amount; };
+        }
+        have defined(available + amount) by known();
+        have defined(used + (available + amount)) by solve();
+        have capacity + amount == used + (available + amount) by solve();
+        known();
+    }
 }
 ```
 

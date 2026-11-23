@@ -92,8 +92,9 @@ int32 owned_split_buffer_set_left(
         apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
             memory(owner->data), memory(owner->data[index..index + 1])));
     }
-    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { transport(at(function.entry, contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))), contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))) using {
-        }; }
+    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by {
+        apply(separation::contains_element(owner->data, index, index + 1, index));
+    }
     have contains(memory(owner->data), memory(owner->data)) by { apply(click::separation::contains_refl(memory(owner->data))); }
     have separate(memory(owner->data), memory(owner->data[index])) by {
         apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
@@ -150,8 +151,9 @@ int32 owned_split_buffer_set_right(
         apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
             memory(owner->data), memory(owner->data[index..index + 1])));
     }
-    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { transport(at(function.entry, contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))), contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))) using {
-        }; }
+    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by {
+        apply(separation::contains_element(owner->data, index, index + 1, index));
+    }
     have contains(memory(owner->data), memory(owner->data)) by { apply(click::separation::contains_refl(memory(owner->data))); }
     have separate(memory(owner->data), memory(owner->data[index])) by {
         apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
