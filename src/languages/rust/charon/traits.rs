@@ -238,7 +238,7 @@ impl Adapter<'_> {
                     ));
                 }
                 let mut parameters = vec![out::Place {
-                    name: "__rust_arg_0".into(),
+                    name: MirLocalId::PositionalParameter { position: 0 },
                     value_type: Type::Reference {
                         mutable: *kind == a::RefKind::Mut,
                         pointee: Box::new(Type::TraitObject),
@@ -253,7 +253,9 @@ impl Adapter<'_> {
                         return Err(unsupported("trait method parameter other than a scalar"));
                     }
                     parameters.push(out::Place {
-                        name: format!("__rust_arg_{}", index + 1).into(),
+                        name: MirLocalId::PositionalParameter {
+                            position: index + 1,
+                        },
                         value_type,
                         span: span(binder.item_meta.span),
                     });
@@ -627,7 +629,7 @@ impl Adapter<'_> {
                 name,
                 return_type: Type::Unit,
                 parameters: vec![out::Place {
-                    name: "__rust_arg_0".into(),
+                    name: MirLocalId::PositionalParameter { position: 0 },
                     value_type: Type::Reference {
                         mutable: false,
                         pointee: Box::new(Type::Record {
@@ -814,6 +816,9 @@ mod tests {
         let function = |name: &str| export.functions.iter().find(|f| f.name == name).unwrap();
         let interface = function(INTERFACE);
         assert!(interface.external && interface.mir.is_none());
+        for (position, parameter) in interface.parameters.iter().enumerate() {
+            assert_eq!(parameter.name, MirLocalId::PositionalParameter { position });
+        }
         assert_eq!(
             interface.parameters[0].value_type,
             Type::Reference {
@@ -920,6 +925,10 @@ mod tests {
                 })
                 .unwrap();
             assert!(coercion.external && coercion.return_type == Type::Unit);
+            assert_eq!(
+                coercion.parameters[0].name,
+                MirLocalId::PositionalParameter { position: 0 }
+            );
             assert!(super::super::super::names::is_object_coercion(
                 &coercion.name
             ));
