@@ -641,7 +641,7 @@ fn checked_difference_guard_uses_one_sign_and_one_comparison_as_facts_grow() {
     let expression = expr::conditional(
         expr::less_equal(
             expr::variable("x"),
-            expr::subtract(expr::int32_literal(i32::MAX), expr::variable("y")),
+            expr::subtract(expr::int32_literal(i32::MAX as u32), expr::variable("y")),
         ),
         expr::int32_literal(1),
         expr::int32_literal(0),
