@@ -1287,7 +1287,11 @@ Supported C surface includes:
 - pointer subtraction with unsigned 32-bit and signed/unsigned 64-bit offsets,
   using checked signed displacement rather than unsigned negation. Displacements
   outside the modeled signed 64-bit range are rejected; object-bound checks
-  still apply. GNU `void*` addition and subtraction use one-byte steps. See
+  still apply. Two pointers formed on different terms, such as two
+  reads of one field across a store, subtract to the signed difference of
+  their addresses in elements, whatever the facts say; a proof relates it to
+  their offsets
+  (`mdtests/a_pointer_subtraction_across_a_preserved_field_read_verifies.md`). GNU `void*` addition and subtraction use one-byte steps. See
   `mdtests/c_unsigned_pointer_subtract.md` and
   `mdtests/c_unsigned_pointer_subtract_rejects_wrap.md`.
 - `__builtin_offsetof(struct_type, member)` for a direct member of a complete

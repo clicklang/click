@@ -1966,6 +1966,23 @@ fn pointer_difference_offsets<'a>(
     Some((left, right))
 }
 
+/// `left - right` in elements of `byte_width` bytes when the two addresses
+/// share no written base: the signed difference of their address bits,
+/// divided by the element width. C defines the result only for pointers into
+/// one array object (C11 6.5.6p9), where the distance is a whole number of
+/// elements, so the truncating quotient is exact.
+fn symbolic_pointer_difference(left: &Address, right: &Address, byte_width: u32) -> MachineTerm {
+    let bytes = MachineTerm::int64_from_uint64_bits(MachineTerm::uint64_subtract(
+        MachineTerm::object_pointer_address(left.clone(), None),
+        MachineTerm::object_pointer_address(right.clone(), None),
+    ));
+    if byte_width == 1 {
+        bytes
+    } else {
+        MachineTerm::int64_divide(bytes, MachineTerm::int64_constant(i64::from(byte_width)))
+    }
+}
+
 fn apply_pointer_difference(
     left: &Address,
     right: &Address,
@@ -2035,10 +2052,15 @@ fn apply_pointer_difference(
     let indices = pointer_difference_offsets(left, right)
         .and_then(|(left, right)| Some((index(left)?, index(right)?)));
     let Some((left, right)) = indices else {
+        // The operands are built on different terms, such as two reads of
+        // one field across a store. Their distance is the difference of
+        // their addresses in elements, whatever the facts say; the proof
+        // relates it to their offsets. Same-object provenance was already
+        // decided or owed by the caller's guard.
         return vec![ExpressionPath {
-            outcome: ExpressionOutcome::RuntimeError(
-                RuntimeError::UnsupportedPointerSubtractionOffsets,
-            ),
+            outcome: ExpressionOutcome::Value(ProgramValue::Int64(symbolic_pointer_difference(
+                left, right, byte_width,
+            ))),
             facts,
             obligations,
         }];
@@ -2115,6 +2137,7 @@ fn apply_same_allocation_pointer_operation(
     state: &ExecutionState,
     left: Pointer,
     right: Pointer,
+    context: &'static str,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -2142,6 +2165,7 @@ fn apply_same_allocation_pointer_operation(
                     apply_same_allocation_guard(
                         &guard_left,
                         &guard_right,
+                        context,
                         facts,
                         obligations,
                         assumptions,
@@ -2167,8 +2191,9 @@ fn apply_same_allocation_pointer_operation(
 fn apply_same_allocation_guard(
     left: &Pointer,
     right: &Pointer,
+    context: &'static str,
     mut facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
+    mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> Vec<ExpressionPath> {
@@ -2184,28 +2209,16 @@ fn apply_same_allocation_guard(
             facts,
             obligations,
         }],
+        // Undecided here: C's precondition is the proof's to establish. It
+        // becomes an obligation at the operation, stated as written, and the
+        // path continues under it; the operation itself decides nothing more.
         None => {
-            let mut invalid_facts = facts.clone();
-            if add_path_fact(&mut facts, assumptions, fact.clone()).is_none() {
+            obligations
+                .push(ProofObligation::verification_condition(fact.clone()).with_context(context));
+            if add_path_fact(&mut facts, assumptions, fact).is_none() {
                 return Vec::new();
             }
-            let mut paths = apply(facts, obligations.clone());
-            if add_path_fact(
-                &mut invalid_facts,
-                assumptions,
-                Proposition::Not(Box::new(fact)),
-            )
-            .is_some()
-            {
-                paths.push(ExpressionPath {
-                    outcome: ExpressionOutcome::UndefinedBehavior(
-                        UndefinedBehavior::PointerArithmetic,
-                    ),
-                    facts: invalid_facts,
-                    obligations,
-                });
-            }
-            paths
+            apply(facts, obligations)
         }
     }
 }
@@ -2536,6 +2549,7 @@ pub(super) fn apply_program_comparison(
                 state,
                 left,
                 right,
+                "pointer comparison requires both pointers in one object (C11 6.5.8p5)",
                 facts,
                 obligations,
                 assumptions,
@@ -2809,6 +2823,7 @@ pub(in crate::kernel) fn apply_program_subtract(
                 state,
                 left,
                 right,
+                "pointer subtraction requires both pointers in one object (C11 6.5.6p9)",
                 facts,
                 obligations,
                 assumptions,
