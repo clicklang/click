@@ -3263,7 +3263,8 @@ fn ordinary_concise_diagnostics_bound_late_requirement_context() {
     );
     let report = error.concise_report();
     assert!(report.len() <= DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
-    assert!(report.starts_with("unclassified verification refusal:"));
+    assert!(report.starts_with("internal error:"));
+    assert!(report.contains("Click did not classify this verifier failure."));
     assert!(report.contains("requirement"));
     assert!(report.contains("diagnostic truncated"));
 }

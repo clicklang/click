@@ -27,9 +27,9 @@ use click::surface::source_display_name;
 use click::surface::verify_c_sources;
 use click::surface::{
     ClickError, ClickErrorKind, ClickProject, ProofRefusal, ProofSourceIndex,
-    VerifiedProgramTheorem, accepted_proof_trace, c_incremental_selection,
-    project_selected_proof_names, project_summary, selected_c_target, verify_c_project,
-    verify_project_at, verify_project_functions, verify_project_theorem,
+    VerificationDiagnostic, VerificationOutcome, VerifiedProgramTheorem, accepted_proof_trace,
+    c_incremental_selection, project_selected_proof_names, project_summary, selected_c_target,
+    verify_c_project, verify_project_at, verify_project_functions, verify_project_theorem,
     verify_project_with_summary, verifying_source_paths, with_proof_trace,
 };
 
@@ -563,7 +563,15 @@ fn verify_changed_sidecar(
         )
     }
     .map_err(|error| {
-        verification_error_report(&error, sidecar, false, &project, &inputs, 0, None)
+        verification_error_report(
+            error.verification_diagnostic(),
+            sidecar,
+            false,
+            &project,
+            &inputs,
+            0,
+            None,
+        )
     })?;
     print_assumptions(&summary.assumptions, &verified_theorems);
     if full_rebuild
@@ -593,11 +601,14 @@ fn imported_project_rebuild_reason(project: &ClickProject) -> Option<&'static st
 }
 
 fn click_message(error: click::surface::ClickError) -> String {
-    label_tactic_evidence(&error, error.concise_report())
+    label_tactic_evidence(
+        error.verification_diagnostic().outcome(),
+        error.concise_report(),
+    )
 }
 
-fn label_tactic_evidence(error: &ClickError, report: String) -> String {
-    if error.proof_refusal() != Some(ProofRefusal::Tactic) {
+fn label_tactic_evidence(outcome: VerificationOutcome, report: String) -> String {
+    if outcome != VerificationOutcome::TacticError {
         return report;
     }
     let mut result = String::with_capacity(report.len());
@@ -676,7 +687,7 @@ fn located_click_message(
         report.push_str("\n\n");
         report.push_str(&excerpt);
     }
-    label_tactic_evidence(&error, report)
+    label_tactic_evidence(error.verification_diagnostic().outcome(), report)
 }
 
 fn shell_word(value: &str) -> String {
@@ -691,7 +702,7 @@ fn shell_word(value: &str) -> String {
 }
 
 fn verification_error_report(
-    error: &ClickError,
+    diagnostic: VerificationDiagnostic<'_>,
     sidecar: &Path,
     show_trace: bool,
     project: &ClickProject,
@@ -699,7 +710,9 @@ fn verification_error_report(
     line_offset: usize,
     trace_target: Option<&click::surface::SourcePosition>,
 ) -> String {
-    let (mut report, mut context) = error.concise_report_parts();
+    let error = diagnostic.error();
+    let outcome = diagnostic.outcome();
+    let (mut report, mut context) = diagnostic.concise_report_parts();
     let source_locations = ProofSourceLocations::new(project, inputs);
     let implicit_tactic_error = error.implicit_tactic_step().is_some();
     let failure_position = if implicit_tactic_error {
@@ -858,7 +871,7 @@ fn verification_error_report(
                 "\n\nproof trace unavailable: no checked path was retained for this failure",
             );
         }
-        return label_tactic_evidence(error, report);
+        return label_tactic_evidence(outcome, report);
     }
     // The hint is printed only for a command that `--trace-proof` accepts:
     // both resolve the name through `trace_unit`.
@@ -879,7 +892,7 @@ fn verification_error_report(
             shell_word(&sidecar.display().to_string())
         ));
     }
-    click::surface::bound_diagnostic_message(label_tactic_evidence(error, report))
+    click::surface::bound_diagnostic_message(label_tactic_evidence(outcome, report))
 }
 
 /// What refused a proof step, by class, and the `click docs` entry that
@@ -1590,7 +1603,7 @@ fn verify_file_within_limits(
         };
         let report = |error: ClickError| {
             verification_error_report(
-                &error,
+                error.verification_diagnostic(),
                 click_path,
                 trace_proof.is_some(),
                 &project,
@@ -1762,7 +1775,7 @@ fn verify_location_within_limits(
         let result = verify_project_at(&project, &inputs.program_inputs(), line, column);
         result.map_err(|error| {
             verification_error_report(
-                &error,
+                error.verification_diagnostic(),
                 click_path,
                 false,
                 &project,
@@ -2477,7 +2490,7 @@ int32 read_first(int32 m) {
             )
             .expect_err("both preservation arms remain unfinished");
             verification_error_report(
-                &error,
+                error.verification_diagnostic(),
                 &fixture,
                 true,
                 &loaded.project,

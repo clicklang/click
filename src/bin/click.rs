@@ -53,25 +53,14 @@ fn main() {
 fn report_error(message: String) -> ! {
     // A Rust item prints as the path its sidecar writes.
     let message = click::surface::display_source_names(&message);
-    if [
-        "tactic error",
-        "unsuccessful search",
-        "incomplete proof",
-        "contract error",
-        "unsupported",
-        "unclassified verification refusal",
-        "syntax error",
-        "type error",
-        "internal error",
-        "work limit reached",
-        "timed out",
-    ]
-    .iter()
-    .any(|heading| {
-        message
-            .strip_prefix(heading)
-            .is_some_and(|rest| rest.starts_with(':') || rest.starts_with(" in `"))
-    }) {
+    if click::surface::VerificationOutcome::ALL
+        .iter()
+        .any(|outcome| {
+            message
+                .strip_prefix(outcome.label())
+                .is_some_and(|rest| rest.starts_with(':') || rest.starts_with(" in `"))
+        })
+    {
         eprintln!("{message}");
     } else {
         eprintln!("click: {message}");
