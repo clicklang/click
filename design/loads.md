@@ -159,6 +159,54 @@ at an abstract type, whose value the kernel treats as opaque.
 - **`Address::loaded_value`** is a memory-named load (`ReadKey::Memory`); it
   goes with the legacy walk.
 
+## Calls are stores
+
+A call writes memory too. Its effect on a cell is a store event like any
+other, recorded at the call's program point:
+
+- a cell the contract does not let the callee write keeps its version (framing);
+- a cell the contract states the exit value of is a store of that value, at the
+  cell's type, at the call;
+- a cell the callee may write without a stated value is a store of an unknown
+  value, at the call;
+- a result the contract states as an entry value, `result == old(*o)`, is the
+  load of `*o` at the call's entry point, the same term the caller holds.
+
+So `ensures *o == 0` answers a later load of `o` by read-over-write, and
+`ensures result == old(*o)` makes the result the load the caller already has
+facts about. Neither needs an equation that a proof must find.
+
+## Acceptance cases
+
+The Rust `Box` work paused on cases where loads and stores lose precision at a
+call (`Option::take` as a library contract,
+`fn take<T>(o: &mut Option<T>) -> Option<T> { owns *o; ensures result ==
+old(*o); ensures *o == None; }`). The C forms below are regressions for this
+design:
+
+1. **Entry value of a result.**
+   `int32* take(int32** o) { owns *o; ensures result == old(*o); ensures *o == 0; }`;
+   `p = make(); *p = x; o = p; t = take(&o); if (t == 0) return 0; v = *t;
+   release(t); return v;` with `ensures result == x`. The `t == 0` branch must
+   be decided: `t` is the caller's load of `o`, which is `p`, which is not null.
+2. **Exit value of a place.** `t = take(&o); if (o != 0) return 0; release(t);
+   return x;` The branch on `o` must be decided: the call stored 0 to `o`.
+3. **Framing a symbolic-size cell across a call.** Rust generic-stack `pop`:
+   `let node = self.head.take()?; self.head = node.next; Some(node.value)`, with
+   `Node<T>` laid out symbolically. The load of `node.value` (size `sizeof(T)`,
+   offset `offsetof(Node<T>, value)`) must cross the `take` call, which owns
+   only `self.head`. Today the call-havoc step gives up on any non-constant
+   extent (`resource_tracker/step_effect.rs`, `CallHavoc`), and the node's
+   two pointer loads are different `LoadedPointer` ids equal only by fact.
+   Framing on cells with symbolic sizes, and one load per cell, are what fix
+   it.
+
+A store that is recorded must be found by every later load of the same cell
+however its address is spelled: an earlier attempt to replace the call's havoc
+with the stated store was unsound because the havoc range and a later load
+spelled the cell differently, so the load saw the pre-call value. Stores and
+loads compare cells by the same identity.
+
 ## Abstract bytes
 
 A complete foundation needs bytes that are richer than bit patterns, as
