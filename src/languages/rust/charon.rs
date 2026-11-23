@@ -310,7 +310,7 @@ impl Adapter<'_> {
                     return Err(unsupported("extern function parameter other than a scalar"));
                 }
                 Ok(out::Place {
-                    name: format!("__rust_arg_{index}").into(),
+                    name: MirLocalId::PositionalParameter { position: index },
                     value_type,
                     span: span(f.item_meta.span),
                 })

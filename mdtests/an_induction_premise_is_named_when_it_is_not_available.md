@@ -1,6 +1,7 @@
-# An induction premise is named when it is not available
+# Induction application proves missing descent premises
 
-A missing induction premise is spelled with the measure's name.
+In the positive branch, the ordinary solver proves the nonnegativity and
+strict descent of the predecessor before applying the hypothesis.
 
 ```c filename=an_induction_premise_is_named_when_it_is_not_available.c
 void unused(void) {}
@@ -24,11 +25,14 @@ theorem t(n: int32) {
             normalize() using { n <= 0; };
         } else {
             apply(ih(n - 1));
+            unfold(cd(n));
+            rewrite(cd(n - 1), 0);
+            known();
         }
     }
 }
 ```
 
 ```expect
-fail: found no available fact for premise `to_integer((0 as int32)) <= to_integer(((n - 1) as int32))`
+pass
 ```

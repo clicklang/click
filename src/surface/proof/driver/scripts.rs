@@ -618,6 +618,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 ProofTactic::ApplyTheorem(application) => {
                     proof = proof.driver().apply_theorem_application(application)?;
                 }
+                ProofTactic::ApplyInduction {
+                    hypothesis,
+                    arguments,
+                } => {
+                    proof = proof
+                        .driver()
+                        .apply_induction_application(hypothesis, arguments)?;
+                }
                 ProofTactic::Solve => {
                     let mut search = attempt::search_scope("written solve");
                     let (selected, checks) = solve(&proof);

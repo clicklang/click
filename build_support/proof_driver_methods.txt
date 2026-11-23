@@ -6,6 +6,7 @@ apply_execution_statement_step
 apply_execution_steps_within
 apply_have_step
 apply_prepared_theorem
+prove_application_obligation
 apply_selected_theorem_application
 apply_step
 apply_step_at
@@ -15,6 +16,7 @@ apply_step_with_origin_inner
 apply_step_without_outcome_wrapping
 apply_step_without_outcome_wrapping_after_wide
 apply_theorem_application
+apply_induction_application
 apply_theorem_at_returned_outcome
 close_scope_with_body_fact_proof
 close_with_unsigned_lemma

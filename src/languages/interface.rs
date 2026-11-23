@@ -1680,20 +1680,9 @@ impl ImportedParameter {
         name: impl Into<crate::kernel::BindingName>,
         struct_name: Option<String>,
     ) -> Self {
-        let name = name.into();
-        let mut parameter = Self::new(interface_type, name.source_name().to_owned(), struct_name);
-        parameter.name = name;
-        parameter
-    }
-
-    pub(crate) fn new(
-        interface_type: InterfaceType,
-        name: String,
-        struct_name: Option<String>,
-    ) -> Self {
         Self {
             interface_type,
-            name: (name).into(),
+            name: name.into(),
             volatile: false,
             pointee_volatile: false,
             constant: false,
@@ -1709,6 +1698,14 @@ impl ImportedParameter {
             slice_length_parameter: None,
             fixed_reference_bounds: None,
         }
+    }
+
+    pub(crate) fn new(
+        interface_type: InterfaceType,
+        name: String,
+        struct_name: Option<String>,
+    ) -> Self {
+        Self::from_binding(interface_type, name, struct_name)
     }
 
     pub fn name(&self) -> &str {

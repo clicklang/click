@@ -74,6 +74,69 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .apply_selected_theorem_application(step)
     }
 
+    /// A written induction application uses ordinary premise proofs when its
+    /// checked step reports a missing prerequisite. Retain those proofs before
+    /// the application. Certificate steps themselves only run the checker.
+    pub(in crate::surface::proof) fn apply_induction_application(
+        &self,
+        hypothesis: &str,
+        arguments: &[ContractExpression],
+    ) -> Result<Proof<'a>, ClickError> {
+        let step = ProofStep::ApplyInduction {
+            hypothesis: hypothesis.to_string(),
+            arguments: arguments.to_vec(),
+        };
+        if implicit_solve_disabled() {
+            return self.apply_step(step);
+        }
+
+        let mut current = self.proof.clone();
+        let mut proved = std::collections::HashSet::new();
+        loop {
+            let refusal = match current.driver().apply_step(step.clone()) {
+                Ok(applied) => return Ok(applied),
+                Err(refusal) => refusal,
+            };
+            let Some(requirement) = refusal.unresolved_requirement() else {
+                return Err(refusal);
+            };
+            let Some(spelling) = current.requirement_surface(requirement, &step)? else {
+                return Err(refusal);
+            };
+            if !proved.insert(spelling.surface.clone()) {
+                return Err(refusal);
+            }
+            current =
+                current
+                    .driver()
+                    .prove_application_obligation(spelling.surface, true, |_| refusal)?;
+        }
+    }
+
+    /// An application's missing fact is an ordinary nested proof. Retaining
+    /// the joined scope makes the same application replay using checked facts.
+    fn prove_application_obligation(
+        &self,
+        surface: ClickProposition,
+        allow_solve: bool,
+        refusal: impl FnOnce(&Proof<'a>) -> ClickError,
+    ) -> Result<Proof<'a>, ClickError> {
+        let scope = self.open_have(surface)?;
+        if let Ok(closed) = scope.driver().apply_step(ProofStep::Known) {
+            return closed.join();
+        }
+        if !allow_solve {
+            return Err(refusal(scope.body()));
+        }
+        let _timing = crate::surface::proof::timing::TacticTiming::implicit_solve();
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
+        let Some(closed) = scope.driver().try_solve_closure()? else {
+            return Err(refusal(scope.body())
+                .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch));
+        };
+        closed.join()
+    }
+
     /// Apply the theorem after checking its own instantiated requirements.
     /// Certificate replay calls this with solving disabled.
     pub(in crate::surface::proof) fn apply_prepared_theorem(
@@ -94,29 +157,17 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     current.step_error("theorem application obligation has no Surface form")
                 })?
                 .surface;
-            let scope = current.driver().open_have(surface.clone())?;
-            let refusal = || {
-                scope.body().step_error(format!(
-                    "theorem `{}` has an unproved obligation: `{}`",
-                    application.name,
-                    crate::surface::printing::source_click_proposition(&surface)
-                ))
-            };
-            if let Ok(closed) = scope.driver().apply_step(ProofStep::Known) {
-                current = closed.join()?;
-                continue;
-            }
-            if !allow_solve {
-                return Err(refusal());
-            }
-            let _timing = crate::surface::proof::timing::TacticTiming::implicit_solve();
-            let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
-            let Some(closed) = scope.driver().try_solve_closure()? else {
-                return Err(
-                    refusal().with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
-                );
-            };
-            current = closed.join()?;
+            current = current.driver().prove_application_obligation(
+                surface.clone(),
+                allow_solve,
+                |body| {
+                    body.step_error(format!(
+                        "theorem `{}` has an unproved obligation: `{}`",
+                        application.name,
+                        crate::surface::printing::source_click_proposition(&surface)
+                    ))
+                },
+            )?;
         }
         let applied = current.finish_prepared_theorem_application(prepared, application)?;
         Ok(current
