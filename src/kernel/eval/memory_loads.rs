@@ -290,9 +290,12 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths_at(
 ) -> Vec<ExpressionPath> {
     // Indexed ordinary versions are selected before this compatibility
     // route. Symbolic Boolean and float reads can name the observation
-    // point directly. Other residual reads still use legacy selection.
+    // point directly, and an integer read takes the version the point
+    // indexes select (`ProgramPoint::read_version`). Other residual reads
+    // still use legacy selection.
     let origin = (value_type == ProgramType::Bool
-        || KernelFloatType::from_program_type(value_type).is_some())
+        || KernelFloatType::from_program_type(value_type).is_some()
+        || MachineIntegerType::from_program_type(value_type).is_some())
     .then_some(point);
     evaluate_logical_memory_load_paths_in_view(
         point.memory(),
@@ -572,6 +575,15 @@ fn point_named_symbolic_read(
     let point = origin?;
     if value_type == ProgramType::Bool && point.has_certified_read_view() {
         return exact_logical_read_value(point.clone(), pointer, value_type);
+    }
+    if MachineIntegerType::from_program_type(value_type).is_some()
+        && let Some(version) = point.read_version(pointer, value_type)
+    {
+        let kind = LoadKind::of_type(value_type)?;
+        return Some(crate::kernel::cell_run_value(
+            value_type,
+            MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
+        ));
     }
     point_named_symbolic_float_read(Some(point), pointer, value_type)
 }
