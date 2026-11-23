@@ -388,8 +388,9 @@ pub(super) struct PureInductionSetup {
 
 #[derive(Clone, Debug)]
 pub(super) struct PureStructuralInductionApplication {
-    /// The selected theorem's exact requirements at this child instance.
+    /// The selected theorem's exact requirements and their written forms.
     pub(super) kernel_premises: Vec<Proposition>,
+    pub(super) surface_premises: Vec<ClickProposition>,
     pub(super) implication: Proposition,
     pub(super) conclusion: Proposition,
 }

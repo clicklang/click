@@ -3101,8 +3101,8 @@ the arm certificates.
 
 **Form:** `apply(ih(m))`
 
-**Core.** Instantiate the local induction hypothesis when its premises are
-available. For a scalar measure, those premises are `m < n`, `0 <= m` for a
+**Core.** Instantiate the local induction hypothesis and prove its premises.
+For a scalar measure, those premises are `m < n`, `0 <= m` for a
 signed measure, and the theorem's requirements at `m`. Other parameters stay
 fixed. For structural induction, the inducted argument must be a recursive
 field of the current arm, and the requirements are checked at the full
@@ -3110,12 +3110,14 @@ written parameter list.
 
 A premise may be stated in an equivalent order form such as `n > m` for
 `m < n`. Range requirements also owe their span halves. A previously stated
-range supplies those halves where they are available. Use `have` to establish
-missing premises.
+range supplies those halves where they are available. The ordinary implicit
+solver tries any remaining premises, and a preceding `have` can supply a
+premise explicitly.
 
 The application adds the instantiated theorem conclusion and closes the
-focused goal if the conclusion proves it. Expansion keeps the application
-unchanged. A missing premise is named in the refusal.
+focused goal if the conclusion proves it. Expansion retains the premise
+proofs as `have` steps followed by the bare application. A refusal names the
+premise it could not prove.
 
 **Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md), [`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md), [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
 

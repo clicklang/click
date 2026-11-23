@@ -1625,7 +1625,8 @@ impl<'a> Proof<'a> {
                     return Err(self.step_error(format!(
                         "induction hypothesis `{hypothesis}` found no available fact for premise `{}`",
                         crate::surface::diagnostics::describe_click_proposition(&observed),
-                    )));
+                    ))
+                    .with_spelled_requirement(cited, observed, format!("induction hypothesis `{hypothesis}` premise")));
                 }
                 cited
             };
@@ -1705,18 +1706,24 @@ impl<'a> Proof<'a> {
                     self.step_error("induction hypothesis is not exactly available")
                 }
                 PropositionCloseError::InstantiateInvalid(error) => {
-                    // The kernel says which premise of the hypothesis it could
-                    // not discharge. Dropping that left "kernel rejected
-                    // induction application", which names nothing a reader can
-                    // act on — and a hypothesis premise is exactly what they
-                    // have to supply.
-                    self.step_error(format!(
+                    use crate::kernel::proof::fact_reasoning::ForallInstantiationError;
+                    let obligation = match &error {
+                        ForallInstantiationError::MissingGuard(guard) => {
+                            Some(ProofObligation::verification_condition(guard.clone()))
+                        }
+                        _ => None,
+                    };
+                    let error = self.step_error(format!(
                         "`apply` of the induction hypothesis failed: {}",
                         crate::surface::proof::format_forall_instantiation_error(
                             error,
                             &|missing| self.render_diagnostic_proposition(missing),
                         )
-                    ))
+                    ));
+                    match obligation {
+                        Some(obligation) => error.with_unresolved_requirement(&obligation),
+                        None => error,
+                    }
                 }
                 _ => unreachable!("kernel returned an unrelated induction error"),
             })
@@ -1729,14 +1736,21 @@ impl<'a> Proof<'a> {
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let application = self.structural_induction_instance(hypothesis, arguments)?;
         let explicit_premises = &application.kernel_premises;
-        if let Some(missing) = explicit_premises
+        if let Some((missing, surface)) = explicit_premises
             .iter()
-            .find(|premise| !self.facts().listed_premise_available(premise, &[], true))
+            .zip(&application.surface_premises)
+            .find(|(premise, _)| !self.facts().listed_premise_available(premise, &[], true))
         {
-            return Err(self.step_error(format!(
-                "induction premise is not exactly available: {}",
-                self.render_diagnostic_proposition(missing)
-            )));
+            return Err(self
+                .step_error(format!(
+                    "induction premise is not exactly available: {}",
+                    self.render_diagnostic_proposition(missing)
+                ))
+                .with_spelled_requirement(
+                    missing.clone(),
+                    surface.clone(),
+                    format!("induction hypothesis `{hypothesis}` premise"),
+                ));
         }
         let instantiated = self
             .facts()
@@ -1744,6 +1758,18 @@ impl<'a> Proof<'a> {
         if !instantiated.contains(&application.conclusion)
             && !instantiated.contains_discharged_implication_consequent(&application.conclusion)
         {
+            if let Some(guard) = explicit_premises
+                .iter()
+                .flat_map(crate::kernel::stated_loadable_span_guards)
+                .find(|guard| !self.facts().listed_premise_available(guard, &[], true))
+            {
+                return Err(self
+                    .step_error(format!(
+                        "induction range needs an established span: {}",
+                        self.render_diagnostic_proposition(&guard),
+                    ))
+                    .with_unresolved_requirement(&ProofObligation::verification_condition(guard)));
+            }
             return Err(self.step_error("kernel rejected structural induction application"));
         }
         let added = (!self.facts().contains_top_level(&application.conclusion))

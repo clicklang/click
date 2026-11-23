@@ -145,7 +145,7 @@ src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemm
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::have_by_integer_arithmetic	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::apply_scoped_intro	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_planned_fact_transport	1
-src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	18
+src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	19
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_execution_fact_transport_or_refusal	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_restricted_solve_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_solve_closure	3
@@ -170,8 +170,10 @@ src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_theorem_at_returned_outcome	driver	2
 src/surface/proof/driver/steps.rs	driver	ProofDriver::spell_applied_conclusions	driver	1
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_selected_theorem_application	driver	1
-src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_prepared_theorem	driver	4
-src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_prepared_theorem	try_solve_closure	1
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_induction_application	driver	2
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_prepared_theorem	driver	2
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_application_obligation	driver	2
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_application_obligation	try_solve_closure	1
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_theorem_application	driver	1
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_loop_phase_goal	driver	4
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_loop_phase_goal	try_solve_closure	2
