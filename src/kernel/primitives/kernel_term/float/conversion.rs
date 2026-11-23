@@ -34,6 +34,20 @@ impl<'a> FloatConversionOperand<'a> {
 }
 
 impl<'a> FloatOperandView<'a> {
+    pub(crate) fn widened_float32(self) -> Option<Self> {
+        if self.format() != KernelFloatType::Float64 {
+            return None;
+        }
+        match self.conversion()? {
+            FloatConversionOperand::Native(ProgramType::Float32, operand) => {
+                Some(Self::Native(KernelFloatType::Float32, operand))
+            }
+            FloatConversionOperand::Shared(root) => Some(Self::from_shared(root)?)
+                .filter(|operand| operand.format() == KernelFloatType::Float32),
+            _ => None,
+        }
+    }
+
     pub(crate) fn conversion(self) -> Option<FloatConversionOperand<'a>> {
         match self {
             Self::Native(format, MachineTerm::PureFunctionApplication { name, arguments }) => {
