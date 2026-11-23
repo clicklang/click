@@ -1923,7 +1923,9 @@ impl EqualityGraph {
                             let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
                             variables
                                 .get_greater_than(&Variable(range.start - 1))
-                                .is_none_or(|variable| variable.0 >= range.end)
+                                .is_none_or(|variable| {
+                                    !crate::kernel::eval::is_load_variable(variable)
+                                })
                         })
                     {
                         continue;

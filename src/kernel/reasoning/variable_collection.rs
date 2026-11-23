@@ -111,7 +111,9 @@ fn visit_machine_operand_carrier_leaves_selected(
             let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
             let mut previous = Variable(range.start - 1);
             while let Some(variable) = written.get_greater_than(&previous) {
-                if variable.0 >= range.end || checked_collection_checkpoint() {
+                if !crate::kernel::eval::is_load_variable(variable)
+                    || checked_collection_checkpoint()
+                {
                     break;
                 }
                 visit(MachineOperandView::Legacy(&MachineTerm::Variable(
@@ -3345,7 +3347,9 @@ fn collect_integer_variables_seen(
                         let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
                         let mut previous = Variable(range.start - 1);
                         while let Some(variable) = written.get_greater_than(&previous) {
-                            if variable.0 >= range.end || checked_collection_checkpoint() {
+                            if !crate::kernel::eval::is_load_variable(variable)
+                                || checked_collection_checkpoint()
+                            {
                                 break;
                             }
                             collect_bitvector_variables(
@@ -4535,13 +4539,15 @@ fn collect_machine_operand_scope_summary(
     {
         // The caller needs one maximum, not every arithmetic variable. Growing
         // prefixes must not repeatedly enumerate their complete variable sets.
-        if let Some(variable) = written.last() {
+        // The greatest ordinary variable: the fresh variables this maximum
+        // keeps clear of are ordinary, and other origins sort after them.
+        if let Some(variable) = written.get_less_than(&Variable::FIRST_NON_ORDINARY) {
             summary.reserve(*variable);
         }
         let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
         let mut previous = Variable(range.start - 1);
         while let Some(variable) = written.get_greater_than(&previous) {
-            if variable.0 >= range.end || checked_collection_checkpoint() {
+            if !crate::kernel::eval::is_load_variable(variable) || checked_collection_checkpoint() {
                 break;
             }
             summary.merge(collect_bitvector_scope_summary(
