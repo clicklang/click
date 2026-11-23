@@ -179,12 +179,15 @@ mod tests {
     #[test]
     fn integer_result_releases_native_source_and_keeps_its_common_children() {
         let _session = VerificationSession::enter();
-        let source: SharedIntegerTerm = IntegerTerm::Add(
-            IntegerTerm::var(Variable(1009701)).into(),
-            IntegerTerm::constant_i64(7).into(),
-        )
-        .into();
+        // Use a mixed expression that still has a separate native source.
+        let observation = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            MachineTerm::Variable(Variable(1009701)),
+        ));
+        let source: SharedIntegerTerm =
+            IntegerTerm::Add(observation.into(), IntegerTerm::constant_i64(7).into()).into();
         let weak = source.downgrade();
+        assert!(weak.upgrade().is_some());
         let expected = source.as_ref().clone();
         let value = IntegerResult::from(source.clone());
         drop(source);
