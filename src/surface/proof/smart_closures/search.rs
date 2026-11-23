@@ -3761,6 +3761,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 candidates.push(vec![bound]);
             }
         }
+        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_sum_bounds(
+            search_input.facts().assumptions(),
+            goal,
+        ) {
+            candidates.push(bounds.into());
+        }
         if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_bound_chain(
             search_input.facts().assumptions(),
             goal,

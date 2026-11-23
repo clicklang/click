@@ -886,3 +886,5 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arith
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_bound_chain	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	resolve_solve_premises_unmeasured	1
+src/kernel/search/proposition_search.rs	search	ProofSearch::select_float_sum_bounds	find_connected_arithmetic_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	select_float_sum_bounds	1

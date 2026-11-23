@@ -1174,6 +1174,16 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     {
         return true;
     }
+    if let [left, right] = premises
+        && let Some(sum) = FloatSumBound::new(goal)
+        && ([[left, right], [right, left]].into_iter().any(|pair| {
+            sum.operand_endpoint(0, pair[0])
+                .zip(sum.operand_endpoint(1, pair[1]))
+                .is_some_and(|(a, b)| sum.established_by([a, b]))
+        }))
+    {
+        return true;
+    }
     // Reject impossible arities before reading native operands. Convert each
     // explicit input once, shared by the fixed rule family, rather than once
     // per rejected checker (important for long native expression spines).
@@ -3083,13 +3093,14 @@ enum SignedProductSigns {
     Nonnegative,
     NonpositiveLeft,
     NegativeRight,
+    BothNegative,
 }
 
 pub(crate) fn signed_product_guard_candidates(
     goal: &Proposition,
 ) -> impl Iterator<Item = Vec<Proposition>> + '_ {
     use SignedProductSigns::*;
-    [Nonnegative, NonpositiveLeft, NegativeRight]
+    [Nonnegative, NonpositiveLeft, NegativeRight, BothNegative]
         .into_iter()
         .flat_map(|signs| [false, true].into_iter().map(move |swap| (signs, swap)))
         .filter_map(|(signs, swap)| signed_product_guard_requirements(goal, swap, signs))
@@ -3100,6 +3111,8 @@ pub(crate) fn signed_product_guard_candidates(
 /// bound, MAX/y with positive y rounds down and MIN/y with positive y rounds
 /// up. With negative y, MIN/y rounds down and multiplication reverses the
 /// comparison. Requiring y < -1 excludes the overflow of that quotient.
+/// MAX/y with negative y rounds up and is a lower bound on the other
+/// negative factor, again because multiplication reverses the comparison.
 fn signed_product_guard_requirements(
     goal: &Proposition,
     swap: bool,
@@ -3137,12 +3150,13 @@ fn signed_product_guard_requirements(
             ConditionTerm::integer_greater_equal(a.as_ref().clone(), zero())
         }
         NonpositiveLeft => ConditionTerm::integer_less_equal(a.as_ref().clone(), zero()),
+        BothNegative => ConditionTerm::integer_less_than(a.as_ref().clone(), zero()),
     };
     let y_sign = match signs {
         Nonnegative | NonpositiveLeft => {
             ConditionTerm::integer_greater_than(b.as_ref().clone(), zero())
         }
-        NegativeRight => {
+        NegativeRight | BothNegative => {
             ConditionTerm::integer_less_than(b.as_ref().clone(), IntegerTerm::constant_i64(-1))
         }
     };
@@ -3151,7 +3165,7 @@ fn signed_product_guard_requirements(
         Proposition::condition_is(y_sign, true),
     ];
     let needs_quotient_guard = match signs {
-        Nonnegative => upper,
+        Nonnegative | BothNegative => upper,
         NonpositiveLeft | NegativeRight => !upper,
     };
     if needs_quotient_guard {
@@ -3168,7 +3182,7 @@ fn signed_product_guard_requirements(
         let (x, quotient) = (observe(x)?, observe(quotient)?);
         let rejected_branch = match signs {
             Nonnegative | NegativeRight => ConditionTerm::integer_greater_than(x, quotient),
-            NonpositiveLeft => ConditionTerm::integer_less_than(x, quotient),
+            NonpositiveLeft | BothNegative => ConditionTerm::integer_less_than(x, quotient),
         };
         premises.push(Proposition::condition_is(rejected_branch, false));
     }
@@ -3429,7 +3443,16 @@ fn float_endpoint_establishes(
     } else {
         ComparisonOperator::LessThan
     };
-    let comparison = match goal.format {
+    float_endpoint_compare(goal.format, low, high, operator)
+}
+
+fn float_endpoint_compare(
+    format: KernelFloatType,
+    low: u64,
+    high: u64,
+    operator: ComparisonOperator,
+) -> bool {
+    let comparison = match format {
         KernelFloatType::Float32 => ConditionTerm::float32_compare(
             MachineTerm::constant(low as u32),
             MachineTerm::constant(high as u32),
@@ -3442,6 +3465,61 @@ fn float_endpoint_establishes(
         ),
     };
     comparison == ConditionTerm::Constant(true)
+}
+
+/// An ordered bound on a sum of two nonliteral operands. The checked rule
+/// takes one finite endpoint per operand, in the goal's direction.
+pub(crate) struct FloatSumBound<'a> {
+    goal: FloatBound<'a>,
+    operands: [FloatOperandView<'a>; 2],
+}
+
+impl<'a> FloatSumBound<'a> {
+    pub(crate) fn new(goal: &'a Proposition) -> Option<Self> {
+        let goal = float_bound(goal)?;
+        let (crate::kernel::FloatBinaryOperator::Add, operands) = goal.operand.binary()? else {
+            return None;
+        };
+        operands
+            .iter()
+            .all(|operand| operand.literal_bits().is_none())
+            .then_some(Self { goal, operands })
+    }
+
+    pub(crate) fn operand_endpoint(&self, index: usize, premise: &Proposition) -> Option<u64> {
+        let premise = float_bound(premise)?;
+        let infinity = match self.goal.format {
+            KernelFloatType::Float32 => 0x7f80_0000,
+            KernelFloatType::Float64 => 0x7ff0_0000_0000_0000,
+        };
+        (premise.format == self.goal.format
+            && premise.lower == self.goal.lower
+            && premise.endpoint & !float_sign_bit(premise.format) < infinity
+            && same_float_operand(premise.operand, self.operands[index]))
+        .then_some(premise.endpoint)
+    }
+
+    pub(crate) fn stronger_endpoint(&self, candidate: u64, previous: u64) -> bool {
+        let operator = if self.goal.lower {
+            ComparisonOperator::GreaterThan
+        } else {
+            ComparisonOperator::LessThan
+        };
+        float_endpoint_compare(self.goal.format, candidate, previous, operator)
+    }
+
+    pub(crate) fn established_by(&self, [left, right]: [u64; 2]) -> bool {
+        // Ordered lower bounds with finite endpoints exclude -infinity;
+        // ordered upper bounds exclude +infinity. Thus the sum cannot pair
+        // opposing infinities, and rounding preserves the non-strict bound.
+        let endpoint = crate::kernel::primitives::float_binary_bits_at(
+            self.goal.format,
+            left,
+            right,
+            crate::kernel::FloatBinaryOperator::Add,
+        );
+        float_endpoint_establishes(&self.goal, endpoint, false)
+    }
 }
 
 /// Planning only. Pick a suffix that starts at the selected bound and

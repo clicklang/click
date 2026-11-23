@@ -156,3 +156,57 @@ fn float_literal_operations_check_one_cited_bound_as_ambient_bounds_grow() {
         }
     }
 }
+
+#[test]
+fn float_sum_checks_two_cited_bounds_as_ambient_bounds_grow() {
+    use crate::kernel::{FloatBinaryOperator, Variable};
+
+    let x = MachineTerm::var(Variable(880401));
+    let y = MachineTerm::var(Variable(880402));
+    let bound = |value, endpoint: f32| {
+        Proposition::condition_is(
+            ConditionTerm::float32_compare(
+                value,
+                MachineTerm::constant(endpoint.to_bits()),
+                ComparisonOperator::GreaterEqual,
+            ),
+            true,
+        )
+    };
+    let goal = bound(
+        MachineTerm::float32_binary(x.clone(), y.clone(), FloatBinaryOperator::Add),
+        0.0,
+    );
+    let selected = [bound(x.clone(), -10.0), bound(y.clone(), 10.0)];
+    let insufficient = [selected[0].clone(), bound(y, 9.0)];
+    for related in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let mut ambient = selected.to_vec();
+            ambient.push(insufficient[1].clone());
+            for index in 0..size {
+                let value = if related {
+                    x.clone()
+                } else {
+                    MachineTerm::var(Variable(880410 + index))
+                };
+                ambient.push(bound(value, -20.0 - index as f32));
+            }
+            let facts = PureFactStore::from_ordered(&ambient);
+            let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &selected, &facts)
+            });
+            let (miss, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &insufficient, &facts)
+            });
+            hit.unwrap();
+            assert!(miss.is_err());
+            (hit_work, miss_work)
+        });
+        assert!(
+            samples
+                .iter()
+                .all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
+            "{related}: {samples:?}"
+        );
+    }
+}

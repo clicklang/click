@@ -1919,7 +1919,9 @@ multiplication or division by a negative literal reverse the direction.
 The rounded endpoint gives a non-strict bound because
 distinct inputs can round to the same result. An unchanged or exact endpoint
 requires a strict premise for a strict goal with that endpoint. A negated comparison can hold for NaN and cannot
-supply an ordered bound.
+supply an ordered bound. A sum of two float operands can cite one ordered
+bound per operand with finite literal endpoints. Both bounds must point in
+the goal's direction. The rule adds and rounds the endpoints at that width.
 
 For an unsigned left shift of one, citing the count bound proves the result
 is nonzero. For example, `normalize() using { d < 32u32; }` proves

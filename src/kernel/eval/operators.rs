@@ -4416,7 +4416,7 @@ fn apply_program_int32_division_like(
 ) -> Vec<ExpressionPath> {
     let zero = MachineTerm::constant(0);
     let divides_by_zero = ConditionTerm::equal(right.clone(), zero);
-    match decide_with_facts(assumptions, &facts, &divides_by_zero) {
+    match division_domains::decide_zero(&right, &divides_by_zero, assumptions, &facts) {
         Some(true) => {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
@@ -4519,7 +4519,7 @@ fn apply_program_int64_division_like(
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
 ) -> Vec<ExpressionPath> {
     let zero = ConditionTerm::int64_equal(right.clone(), MachineTerm::int64_constant(0));
-    match decide_with_facts(assumptions, &facts, &zero) {
+    match division_domains::decide_zero(&right, &zero, assumptions, &facts) {
         Some(true) => {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),

@@ -436,11 +436,39 @@ impl super::ProofSearch<PureFactContext> {
         })
     }
 
+    /// Select bounds independently, so a large premise bucket cannot
+    /// cause a Cartesian product of candidate pairs.
+    pub(crate) fn select_float_sum_bounds(
+        context: &PureFactContext,
+        goal: &Proposition,
+    ) -> Option<[Proposition; 2]> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_float_sum_bounds");
+        let sum = crate::kernel::proof::arithmetic_special::FloatSumBound::new(goal)?;
+        let mut best: [Option<(u64, Proposition)>; 2] = [None, None];
+        Self::find_connected_arithmetic_bound(context, goal, true, |premise| {
+            for (index, slot) in best.iter_mut().enumerate() {
+                if let Some(endpoint) = sum.operand_endpoint(index, premise)
+                    && slot
+                        .as_ref()
+                        .is_none_or(|(previous, _)| sum.stronger_endpoint(endpoint, *previous))
+                {
+                    *slot = Some((endpoint, premise.clone()));
+                }
+            }
+            let [Some((left, a)), Some((right, b))] = &best else {
+                return None;
+            };
+            sum.established_by([*left, *right])
+                .then(|| [a.clone(), b.clone()])
+        })
+    }
+
     fn find_connected_arithmetic_bound<T>(
         context: &PureFactContext,
         goal: &Proposition,
         float: bool,
-        select: impl Fn(&Proposition) -> Option<T>,
+        mut select: impl FnMut(&Proposition) -> Option<T>,
     ) -> Option<T> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("find_connected_arithmetic_bound");
