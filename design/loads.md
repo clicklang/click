@@ -201,7 +201,8 @@ facts about. Neither needs an equation that a proof must find.
   coverage slice of `read_version`'s step 2.
 - **`old(*o)` is evaluated through `read_version` at the call's entry point.**
   If the caller's memory holds a value for `*o`, that value is the result:
-  in acceptance case 1, `x`'s pointer, not a fresh load.
+  in acceptance case 1, `p`, the non-null pointer the memory holds for `o`,
+  not a fresh load.
 
 ## Acceptance cases
 
