@@ -4239,6 +4239,47 @@ function count<T>(p: T*, lo: int32, hi: int32, x: T) -> int32 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. [`mdtests/stdlib_permutation_count_over_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes.md) counts a `uint8` buffer, [`mdtests/stdlib_permutation_count_over_bytes_rejects_overwrite.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes_rejects_overwrite.md) refuses an overwrite as a byte permutation, and [`mdtests/stdlib_permutation_count_rejects_mixed_element_types.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_rejects_mixed_element_types.md) refuses an `int32` value counted in a `uint8` buffer.
 
+### `permutation::two_indicator_counts_commute`
+
+```click
+theorem two_indicator_counts_commute(a: Bool, b: Bool) {
+    ensures (0 + (if a { 1 } else { 0 }) + (if b { 1 } else { 0 })) ==
+            (0 + (if b { 1 } else { 0 }) + (if a { 1 } else { 0 })) by {
+        if a {
+            have (if a { 1 } else { 0 }) == 1 by known();
+            rewrite((if a { 1 } else { 0 }), 1);
+            if b {
+                have (if b { 1 } else { 0 }) == 1 by known();
+                rewrite((if b { 1 } else { 0 }), 1);
+                known();
+            } else {
+                have (if b { 1 } else { 0 }) == 0 by known();
+                rewrite((if b { 1 } else { 0 }), 0);
+                known();
+            }
+        } else {
+            have (if a { 1 } else { 0 }) == 0 by known();
+            rewrite((if a { 1 } else { 0 }), 0);
+            if b {
+                have (if b { 1 } else { 0 }) == 1 by known();
+                rewrite((if b { 1 } else { 0 }), 1);
+                known();
+            } else {
+                have (if b { 1 } else { 0 }) == 0 by known();
+                rewrite((if b { 1 } else { 0 }), 0);
+                known();
+            }
+        }
+    }
+}
+```
+
+Interchanges the two Boolean indicators in the unfolded two-element count.
+The equality keeps the fold's initial zero and uses native `int32` addition.
+Both the integer and byte swap proofs apply it after unfolding the counts.
+[`compare_swap2_permutation.md`](https://github.com/clicklang/click/blob/master/mdtests/compare_swap2_permutation.md)
+[`stdlib_permutation_count_over_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes.md)
+
 ### `permutation::permutation`
 
 ```click

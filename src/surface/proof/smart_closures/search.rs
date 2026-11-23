@@ -2111,6 +2111,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let before_product = proof.clone();
             let conversion =
                 crate::kernel::machine_integer::conversion::integer_conversion(observed).is_some();
+            let mut unsigned_sum = None;
             let (spelled_observed, spelled_value, signed_operation) = match value {
                 // The conversion's operand as the observation itself writes
                 // it, `E` of `to_integer(to_T(E))`: lowering is fact-stable,
@@ -2169,6 +2170,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             explicit_qualification: false,
                         },
                     };
+                    if machine.ty() == MachineIntegerType::UInt64
+                        && matches!(value, IntegerTerm::Add(..))
+                    {
+                        unsigned_sum = Some(vec![native(&spelled_left), native(&spelled_right)]);
+                    }
                     let operation = match value {
                         IntegerTerm::Subtract(..) => ContractExpression::Subtract(
                             Box::new(native(&spelled_left)),
@@ -2366,26 +2372,38 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
             {
                 closed
-            } else if let Some(operation) = signed_operation
-                && scope
-                    .body()
-                    .goal()
-                    .and_then(crate::kernel::comparison_form)
-                    .is_some()
-                && let Some(closed) = attempt::candidate_outcome((|| {
-                    let operation_identity = ClickProposition::Comparison {
+            } else if let Some(closed) = attempt::candidate_outcome((|| {
+                let step = if let Some(arguments) = unsigned_sum {
+                    ProofStep::ApplyPlannedTheorem {
+                        application: TheoremApplication {
+                            name: "click::integer::uint64_add_to_integer".into(),
+                            arguments,
+                        },
+                        premises: vec![upper.clone()],
+                    }
+                } else if let Some(operation) = signed_operation
+                    && scope
+                        .body()
+                        .goal()
+                        .and_then(crate::kernel::comparison_form)
+                        .is_some()
+                {
+                    let operation = ClickProposition::Comparison {
                         left: operation,
                         operator: ComparisonOperator::Equal,
                         right: spelled_value,
                     };
-                    let scope = scope
-                        .driver()
-                        .apply_step(super::super::wide_arithmetic::have(
-                            operation_identity,
-                            vec![ProofStep::Known],
-                        ))?;
-                    scope.driver().apply_step(ProofStep::Known)
-                })())?
+                    super::super::wide_arithmetic::have(operation, vec![ProofStep::Known])
+                } else {
+                    return Ok(None);
+                };
+                let applied = scope.driver().apply_step(step)?;
+                if applied.is_complete() {
+                    return Ok(Some(applied));
+                }
+                applied.driver().apply_step(ProofStep::Known).map(Some)
+            })())?
+            .flatten()
                 && closed.is_complete()
             {
                 closed
