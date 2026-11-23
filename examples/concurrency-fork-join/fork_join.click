@@ -141,8 +141,7 @@ void *fill_range(void *argument) {
                         apply(separation::separate_elements(at(iteration, job->output), at(iteration, index), k));
                     }
                     have contains(at(iteration, memory(job->output[k])), at(iteration, memory((&job->output[k])[0..1]))) by { normalize(); }
-                    have contains(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[index]))) by { transport(at(function.entry, contains(at(iteration, memory(load<int32*>(job)[index])), at(iteration, memory(load<int32*>(job)[index])))), contains(at(iteration, memory(load<int32*>(job)[index])), at(iteration, memory(load<int32*>(job)[index])))) using {
-                        }; }
+                    apply(separation::contains_refl(at(iteration, memory(job->output[index]))));
                     have separate(at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1]))) by {
                         apply(separation::separate_restrict(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[k])), at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1]))));
                     }

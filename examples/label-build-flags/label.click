@@ -46,12 +46,46 @@ uint64 label_copy(char* dst, const char* src) {
         step();
         have bytes::equal(dst, 0u64, src, 0u64, n) by {
             unfold(bytes::equal(dst, 0u64, src, 0u64, n));
-            transport(
-                at(copied, (0u64..n).all(|k| {
-                    (dst as (uint8 *))[0u64 + k] == old((src as (uint8 *))[0u64 + k])
-                })),
-                (0u64..n).all(|k| { (dst as (uint8 *))[0u64 + k] == (src as (uint8 *))[0u64 + k] })
-            );
+            intro(); intro();
+            have separate(memory((dst as (uint8 *))[n]), memory((dst as (uint8 *))[k])) by {
+                apply(separation::separate_elements(dst as (uint8 *), n, k));
+            }
+            have separate(statement(2).footprint, memory((dst as (uint8 *))[k])) by {
+                solve() using { separate(memory((dst as (uint8 *))[n]), memory((dst as (uint8 *))[k])); };
+            }
+            have (dst as (uint8 *))[k] == at(copied, (dst as (uint8 *))[k]) by {
+                preserve(memory((dst as (uint8 *))[k]), statement(2));
+            }
+            instantiate(at(copied, (0u64..n).all(|j| {
+                (dst as (uint8 *))[0u64 + j] == old((src as (uint8 *))[0u64 + j])
+            })), k);
+            have k < len + 1u64 by { solve(); }
+            apply(separation::contains_element(src as (uint8 *), 0u64, len + 1u64, k));
+            have contains(memory(dst[0u64..n]), statement(1).footprint) by { known(); }
+            apply(separation::contains_subrange(dst, 0u64, 32u64, 0u64, n));
+            apply(separation::contains_trans(memory(dst[0u64..32u64]), memory(dst[0u64..n]), statement(1).footprint));
+            apply(separation::separate_restrict(
+                memory(dst[0u64..32u64]), memory(src[0u64..len + 1u64]),
+                statement(1).footprint, memory((src as (uint8 *))[k])
+            ));
+            have at(copied, (src as (uint8 *))[k]) == at(statement(1).entry, (src as (uint8 *))[k]) by {
+                preserve(memory((src as (uint8 *))[k]), statement(1));
+            }
+            have at(statement(1).entry, (src as (uint8 *))[k]) == old((src as (uint8 *))[k]) by known();
+            apply(separation::separate_restrict(
+                memory(dst[0u64..32u64]), memory(src[0u64..len + 1u64]),
+                memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])
+            ));
+            have separate(statement(2).footprint, memory((src as (uint8 *))[k])) by {
+                solve() using { separate(memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])); };
+            }
+            have (src as (uint8 *))[k] == at(copied, (src as (uint8 *))[k]) by {
+                preserve(memory((src as (uint8 *))[k]), statement(2));
+            }
+            rewrite((src as (uint8 *))[k], at(copied, (src as (uint8 *))[k]));
+            rewrite(at(copied, (src as (uint8 *))[k]), old((src as (uint8 *))[k]));
+            rewrite((dst as (uint8 *))[k], at(copied, (dst as (uint8 *))[k]));
+            known();
         }
         step_until(function.exit);
     }

@@ -35,9 +35,36 @@ uint8 fill_byte_tail(uint8 p[], int32 n) {
         decreases n - i;
         invariant i >= 1 and i <= n;
         invariant first_byte(p) == old(first_byte(p));
+        maintain by {
+            mark iteration;
+            have i != 0 by { solve() using { 1 <= i; }; }
+            have separate(memory(p[i]), memory(p[0])) by {
+                apply(click::separation::separate_elements(p, i, 0));
+            }
+            step();
+            have separate(loop(0).statement(0).footprint, memory(p[0])) by {
+                normalize() using { at(iteration, separate(memory(p[i]), memory(p[0]))); };
+            }
+            have p[0] == at(iteration, p[0]) by {
+                preserve(memory(p[0]), loop(0).statement(0));
+            }
+            step();
+            have separate(loop(0).statement(1).footprint, memory(p[0])) by known();
+            have p[0] == at(loop(0).statement(1).entry, p[0]) by {
+                preserve(memory(p[0]), loop(0).statement(1));
+            }
+            have first_byte(p) == old(first_byte(p)) by {
+                rewrite(old(first_byte(p)), at(iteration, first_byte(p)));
+                unfold(first_byte(p));
+                known();
+            }
+        }
         otherwise {
             have first_byte(p) == p[0] by { unfold(first_byte(p)); known(); }
-            have p[0] == old(first_byte(p)) by solve();
+            have p[0] == old(first_byte(p)) by {
+                rewrite(p[0], first_byte(p));
+                known();
+            }
         }
     }
     step();
