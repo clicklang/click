@@ -2000,7 +2000,7 @@ pub(super) fn return_values(
     locals.retain(|local| &local.name != return_place);
 }
 
-/// Whether a value of `value_type` is returned as itself, a scalar.
+/// Whether a value of `value_type` is returned as a value without address-backed return storage.
 fn returned_directly(value_type: &super::super::schema::Type) -> bool {
     use super::super::schema::Type;
     matches!(
@@ -2017,6 +2017,7 @@ fn returned_directly(value_type: &super::super::schema::Type) -> bool {
             | Type::Usize
             | Type::Bool
             | Type::Enum { .. }
+            | Type::Vec { .. }
     )
 }
 
