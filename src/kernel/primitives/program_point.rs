@@ -2136,12 +2136,33 @@ impl ProgramPoint {
             if indexed_local(&pointer.base)
                 && matches!(pointer.offset, AddressOffset::Constant(_))
                 && !ty.has_abstract_size());
+        if let Some(category) = super::PointerLoadCategory::of_type(value_type) {
+            return self.indexed_pointer_version(pointer, category);
+        }
         if value_type == ProgramType::Bool || value_type.is_pointer() || indexed_algebraic {
             return self.indexed_version(pointer, value_type.byte_width(), |store| {
                 matches!(store, MemoryDerivation::Store { value, .. } if value.program_type() == value_type)
             });
         }
         self.indexed_integer_version(pointer, LoadKind::of_type(value_type)?)
+    }
+
+    /// The version a pointer load of `category` names at this point when a
+    /// recorded store wrote exactly its eight-byte cell. A load's identity is
+    /// its version point and cell, not the pointee type it decodes at
+    /// (`design/loads.md`, "Pointers"): a store of a pointer of the same
+    /// category answers it at any pointee type, while a store of the other
+    /// category does not. A partial or overlapping store still ends the
+    /// version by `indexed_version`'s extent check.
+    pub(crate) fn indexed_pointer_version(
+        &self,
+        pointer: &Address,
+        category: super::PointerLoadCategory,
+    ) -> Option<Self> {
+        self.indexed_version(pointer, super::C_POINTER_BYTE_WIDTH, |store| {
+            matches!(store, MemoryDerivation::Store { value, .. }
+                if super::PointerLoadCategory::of_type(value.program_type()) == Some(category))
+        })
     }
 
     pub(super) fn abstract_local_version(

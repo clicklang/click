@@ -362,7 +362,10 @@ fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
             stored.observation_point_id()
         );
         assert_eq!(descriptor.defining_address, field);
-        assert_eq!(descriptor.value_type, Some(ty));
+        assert_eq!(
+            descriptor.category,
+            Some(crate::kernel::PointerLoadCategory::Object)
+        );
         assert_eq!(read.provenance(), read.address());
         assert_eq!(read.bounds_owner(), Some(read.address()));
         assert_eq!(
@@ -446,7 +449,10 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
         stored.observation_point_id()
     );
     assert_eq!(descriptor.defining_address, source_member);
-    assert_eq!(descriptor.value_type, Some(pointer_type));
+    assert_eq!(
+        descriptor.category,
+        Some(crate::kernel::PointerLoadCategory::Object)
+    );
     assert_eq!(
         crate::kernel::eval::pointer_read_over_write_program_value(read.address()),
         Some(value),
