@@ -1699,7 +1699,9 @@ holds a different machine-integer literal of the same type. The check
 visits only the immediate fields and uses their literal values.
 
 Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
-and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
+and `0 | x == x` at a native word's own format, in either operand order. A bitwise
+OR is unequal to zero when either operand is a same-width nonzero literal. The
+rule also applies to the exact `Integer` observation of that word. Intrinsic
 alignment of a null, heap, global or static address reads only that address's
 block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
