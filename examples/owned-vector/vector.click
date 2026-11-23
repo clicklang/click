@@ -192,8 +192,14 @@ int32 vector_copy(
                         have at(region(4).entry, k) < at(region(4).entry, (i as int32)) by {
                             known();
                         }
-                        intro();
-                        solve() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
+                        if at(region(4).entry, k) == at(region(4).entry, (i as int32)) {
+                            have false by {
+                                solve() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
+                            }
+                            contradiction(false);
+                        } else {
+                            known();
+                        }
                     }
                     have 0 <= k and k < i;
                     instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
