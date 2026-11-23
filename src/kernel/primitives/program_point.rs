@@ -2408,6 +2408,38 @@ mod tests {
         assert!(left.memory().pending_steps.is_none());
     }
 
+    /// A legacy read records where it was made, and the record is no part
+    /// of its identity: the read at a site is the same term as the read of
+    /// the same memory built from that memory alone, and a point rebuilt
+    /// from the read's point keeps the site.
+    #[test]
+    fn a_legacy_read_records_its_site_without_changing_its_term() {
+        let state = stored(&ExecutionState::default().with_memory(memory_holding(0)), 1);
+        let site = state.program_point();
+        let memory = site.shared_memory().clone();
+        let bare = ProgramPoint::at(&memory);
+        let sited = ProgramPoint::at_read_site(&memory, &site);
+        assert!(bare.read_site().is_none());
+        assert!(sited.read_site().is_some_and(|path| path.id() == site.id()));
+        assert_eq!(sited.read_key(), bare.read_key());
+        assert_eq!(sited, bare);
+        assert_eq!(
+            MachineTerm::read_named(sited.clone(), slot(), LoadKind::Int32),
+            MachineTerm::read_named(bare.clone(), slot(), LoadKind::Int32)
+        );
+        let rebuilt = ProgramPoint::at_read_site(&memory, &sited);
+        assert!(
+            rebuilt
+                .read_site()
+                .is_some_and(|path| path.id() == site.id())
+        );
+        assert!(
+            bare.with_read_site_of(&site)
+                .read_site()
+                .is_some_and(|path| path.id() == site.id())
+        );
+    }
+
     /// A state set up by steps before its first point begins at the memory
     /// those steps started from, so a walk back can cross them.
     #[test]

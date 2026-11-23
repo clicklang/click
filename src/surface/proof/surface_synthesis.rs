@@ -5710,11 +5710,15 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let MachineTerm::MemoryLoad(_, pointer, kind) = read else {
         return None;
     };
-    let memory = crate::kernel::intern_memory_ref(state.memory());
-    let selected =
-        crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
-    (selected == *read)
-        .then(|| MachineTerm::memory_read(memory.clone(), pointer.as_ref().clone(), *kind))
+    let site = state.program_point();
+    let selected = crate::kernel::canonical_form_of_load_at(&site, pointer.as_ref().clone(), *kind);
+    (selected == *read).then(|| {
+        MachineTerm::read_named(
+            crate::kernel::ProgramPoint::at_read_site(site.shared_memory(), &site),
+            pointer.as_ref().clone(),
+            *kind,
+        )
+    })
 }
 
 // Unsigned division and remainder use the usual C conversion of both
@@ -6287,8 +6291,8 @@ fn synthesize_surface_bitvector(
                     bound_variables,
                 );
             }
-            let read = crate::kernel::canonical_form_of_load(
-                memory.shared_memory().clone(),
+            let read = crate::kernel::canonical_form_of_load_at(
+                memory,
                 kernel_pointer.as_ref().clone(),
                 *kind,
             );

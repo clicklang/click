@@ -153,6 +153,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
         source,
         byte_order,
         origin,
+        Some(point),
     );
     if let Some(address) = word_storage {
         for path in &mut paths {
@@ -603,6 +604,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
         point_named_symbolic_read(origin, &pointer, value_type).or_else(|| {
             canonicalized_symbolic_load_value_with_identity(
                 memory,
+                origin,
                 &pointer,
                 value_type,
                 facts,
@@ -638,6 +640,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
             &mut MemoryLoadAliasCache::default(),
             None,
             None,
+            origin,
             origin,
         );
         let mut paths: Vec<_> = paths
@@ -925,6 +928,7 @@ fn evaluate_memory_load_paths_with_alias_cache(
         source,
         byte_order,
         None,
+        None,
     )
     .into_iter()
     .map(ExecutionValuePath::into_native)
@@ -945,6 +949,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
     origin: Option<&ProgramPoint>,
+    site: Option<&ProgramPoint>,
 ) -> Vec<ExecutionValuePath> {
     let mut distinct_case = None;
     let mut paths = evaluate_retained_memory_load_case(
@@ -961,6 +966,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
         source,
         byte_order,
         origin,
+        site,
         true,
         &mut distinct_case,
     );
@@ -1006,6 +1012,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
             source,
             byte_order,
             origin,
+            site,
             splits,
             &mut distinct_case,
         ));
@@ -1046,6 +1053,7 @@ fn evaluate_retained_memory_load_case(
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
     origin: Option<&ProgramPoint>,
+    site: Option<&ProgramPoint>,
     splits: bool,
     distinct_case: &mut Option<DistinctLoadCase>,
 ) -> Vec<ExecutionValuePath> {
@@ -1058,6 +1066,7 @@ fn evaluate_retained_memory_load_case(
                 .or_else(|| {
                     canonicalized_retained_symbolic_load_value_with_identity(
                         memory,
+                        site,
                         &pointer,
                         value_type,
                         facts,
@@ -2074,6 +2083,7 @@ fn cell_value_recorded_on_path(
         }
         return canonicalized_retained_symbolic_load_value_with_identity(
             entry.memory(),
+            origin,
             pointer,
             value_type,
             facts,
@@ -2439,6 +2449,7 @@ fn symbolic_index_run_load(
     };
     canonicalized_symbolic_load_value_with_identity(
         run.source().memory(),
+        Some(run.source_point()),
         address,
         value_type,
         facts,
@@ -2478,6 +2489,7 @@ fn complete_loaded_word(
 
 fn canonicalized_symbolic_load_value_with_identity(
     memory: &SymbolicMemory,
+    site: Option<&ProgramPoint>,
     pointer: &Address,
     value_type: ProgramType,
     facts: &mut ExecutionFacts,
@@ -2487,6 +2499,7 @@ fn canonicalized_symbolic_load_value_with_identity(
 ) -> Option<ProgramValue> {
     canonicalized_retained_symbolic_load_value_with_identity(
         memory,
+        site,
         pointer,
         value_type,
         facts,
@@ -2500,6 +2513,7 @@ fn canonicalized_symbolic_load_value_with_identity(
 #[allow(clippy::too_many_arguments)]
 fn canonicalized_retained_symbolic_load_value_with_identity(
     memory: &SymbolicMemory,
+    site: Option<&ProgramPoint>,
     pointer: &Address,
     value_type: ProgramType,
     facts: &mut ExecutionFacts,
@@ -2566,7 +2580,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         record_load_access_width(memory, &address, value_type.byte_width());
         memory.symbolic_pointer_version_load(&address, value_type)
     } else {
-        symbolic_load_value(memory, &address, value_type)?
+        symbolic_load_value(memory, site, &address, value_type)?
     };
     // Ordinary scalar reads retain their selected memory and address directly.
     match &value {
@@ -6086,6 +6100,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
 #[cfg_attr(test, track_caller)]
 pub(in crate::kernel) fn symbolic_load_value(
     memory: &SymbolicMemory,
+    site: Option<&ProgramPoint>,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -6095,7 +6110,7 @@ pub(in crate::kernel) fn symbolic_load_value(
     // Recording it here is what lets an `int32` load keep being separated
     // from a store one element away.
     record_load_access_width(memory, pointer, value_type.byte_width());
-    symbolic_load_value_unrecorded(memory, pointer, value_type)
+    symbolic_load_value_unrecorded(memory, site, pointer, value_type)
 }
 
 /// [`symbolic_load_value`] without recording the access width, for a caller
@@ -6103,6 +6118,7 @@ pub(in crate::kernel) fn symbolic_load_value(
 #[cfg_attr(test, track_caller)]
 pub(in crate::kernel) fn symbolic_load_value_unrecorded(
     memory: &SymbolicMemory,
+    site: Option<&ProgramPoint>,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -6119,17 +6135,22 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         )),
         ProgramType::Void | ProgramType::VoidPointer => None,
         ProgramType::Bool => Some(ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
-            ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
+            match site {
+                Some(site) => {
+                    ProgramPoint::at_read_site(&crate::kernel::intern_memory_ref(memory), site)
+                }
+                None => ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
+            },
             pointer.clone(),
         ))),
-        ProgramType::Int8 => Some(memory.symbolic_int8_load(pointer)),
-        ProgramType::Int16 => Some(memory.symbolic_int16_load(pointer)),
-        ProgramType::Int32 => Some(memory.symbolic_int32_load(pointer)),
-        ProgramType::UInt8 => Some(memory.symbolic_uint8_load(pointer)),
-        ProgramType::UInt16 => Some(memory.symbolic_uint16_load(pointer)),
-        ProgramType::UInt32 => Some(memory.symbolic_uint32_load(pointer)),
-        ProgramType::Int64 => Some(memory.symbolic_int64_load(pointer)),
-        ProgramType::UInt64 => Some(memory.symbolic_uint64_load(pointer)),
+        ProgramType::Int8 => Some(memory.symbolic_int8_load(site, pointer)),
+        ProgramType::Int16 => Some(memory.symbolic_int16_load(site, pointer)),
+        ProgramType::Int32 => Some(memory.symbolic_int32_load(site, pointer)),
+        ProgramType::UInt8 => Some(memory.symbolic_uint8_load(site, pointer)),
+        ProgramType::UInt16 => Some(memory.symbolic_uint16_load(site, pointer)),
+        ProgramType::UInt32 => Some(memory.symbolic_uint32_load(site, pointer)),
+        ProgramType::Int64 => Some(memory.symbolic_int64_load(site, pointer)),
+        ProgramType::UInt64 => Some(memory.symbolic_uint64_load(site, pointer)),
         ProgramType::Float32 => Some(memory.symbolic_float32_load(pointer)),
         ProgramType::Float64 => Some(memory.symbolic_float64_load(pointer)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
@@ -6265,9 +6286,9 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
     }
     // Entry cells and contract reads select the same structural descriptor.
     let value = if record_width {
-        symbolic_load_value(memory, pointer, program_type)
+        symbolic_load_value(memory, None, pointer, program_type)
     } else {
-        symbolic_load_value_unrecorded(memory, pointer, program_type)
+        symbolic_load_value_unrecorded(memory, None, pointer, program_type)
     };
     value.map(|value| match value {
         ProgramValue::Int8(bits) => ProgramValue::Int8(canonical_scalar_read(&bits)),
@@ -6824,7 +6845,7 @@ mod tests {
             ProgramType::Int32Pointer,
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ] {
-            let ordinary = symbolic_load_value(&memory, &address, ty).unwrap();
+            let ordinary = symbolic_load_value(&memory, None, &address, ty).unwrap();
             let logical = memory.symbolic_pointer_version_load(&address, ty);
             let entry = symbolic_storage_cell_value(&memory, &address, ty, true)
                 .expect("entry pointer read");
@@ -7259,6 +7280,7 @@ mod tests {
         let mut facts = ExecutionFacts::new();
         let value = canonicalized_symbolic_load_value_with_identity(
             &base,
+            None,
             &address,
             ProgramType::Int32,
             &mut facts,
@@ -8804,6 +8826,7 @@ mod tests {
             let mut facts = ExecutionFacts::new();
             let ProgramValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
                 memory,
+                None,
                 &field,
                 ProgramType::Int32Pointer,
                 &mut facts,
@@ -8925,6 +8948,7 @@ mod tests {
         let read = |memory: &SymbolicMemory| {
             canonicalized_symbolic_load_value_with_identity(
                 memory,
+                None,
                 &field,
                 ProgramType::UInt64,
                 &mut ExecutionFacts::new(),
@@ -9426,6 +9450,7 @@ mod tests {
             let uncached_read = |facts: &PureFactContext| {
                 canonicalized_symbolic_load_value_with_identity(
                     &memory,
+                    None,
                     &slot,
                     ProgramType::Int32Pointer,
                     &mut ExecutionFacts::new(),

@@ -197,6 +197,7 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
         let read = |address: &Address| {
             let ProgramValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
                 &base,
+                None,
                 address,
                 ProgramType::Int32Pointer,
                 &mut Vec::new().into(),
@@ -281,6 +282,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     let read = |memory: &SymbolicMemory, address: &Address, purpose| {
         let ProgramValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
             memory,
+            None,
             address,
             ProgramType::Int32Pointer,
             &mut Vec::new().into(),
@@ -1464,7 +1466,7 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
         let address = Address::symbolic(Variable(199_101));
         let mut memory = SymbolicMemory::new();
         let ProgramValue::Pointer(original) =
-            symbolic_load_value(&memory, &address, ProgramType::Int64Pointer).unwrap()
+            symbolic_load_value(&memory, None, &address, ProgramType::Int64Pointer).unwrap()
         else {
             panic!("pointer read")
         };
@@ -1476,7 +1478,8 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
                         .clone()
                         .materialize_symbolic_cell(cell, ProgramType::Int32);
                     let ProgramValue::Pointer(read) =
-                        symbolic_load_value(&memory, &address, ProgramType::Int64Pointer).unwrap()
+                        symbolic_load_value(&memory, None, &address, ProgramType::Int64Pointer)
+                            .unwrap()
                     else {
                         panic!("pointer read")
                     };

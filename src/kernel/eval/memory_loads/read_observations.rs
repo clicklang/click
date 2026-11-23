@@ -624,6 +624,7 @@ mod tests {
             let mut facts = ExecutionFacts::new();
             let value = canonicalized_symbolic_load_value_with_identity(
                 &memory,
+                None,
                 &pointer,
                 ty,
                 &mut facts,

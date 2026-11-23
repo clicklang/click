@@ -857,8 +857,8 @@ fn separated_range_store_hop_retains_symbolic_membership_bounds() {
         .store(write, ProgramValue::Int32(MachineTerm::constant(7)));
     // An `Int32` read also encodes LP64 pointers. These terms represent int32 reads,
     // so use the typed producer to record their four-byte access width.
-    crate::kernel::eval::symbolic_load_value(&base, &load, ProgramType::Int32).unwrap();
-    crate::kernel::eval::symbolic_load_value(&after, &load, ProgramType::Int32).unwrap();
+    crate::kernel::eval::symbolic_load_value(&base, None, &load, ProgramType::Int32).unwrap();
+    crate::kernel::eval::symbolic_load_value(&after, None, &load, ProgramType::Int32).unwrap();
     let left = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory_ref(&after))),
         Box::new(load.clone()),
@@ -1805,9 +1805,10 @@ fn sibling_materialization_cells_must_not_launder_a_havoc() {
     let pristine = SymbolicMemory::new().with_block("arg-memory", 16);
     let loaded = arc_pointer(0);
     let sibling = arc_pointer(4);
-    let materialized = pristine
-        .clone()
-        .store(sibling.clone(), pristine.symbolic_int32_load(&sibling));
+    let materialized = pristine.clone().store(
+        sibling.clone(),
+        pristine.symbolic_int32_load(None, &sibling),
+    );
     let havocked = materialized.clone().with_call_memory_havoc(
         Variable(9000),
         &[MemoryRange::new(
@@ -1843,7 +1844,7 @@ fn a_load_projection_jump_does_not_restore_a_havocked_cell() {
     );
     let materialized = source
         .clone()
-        .store(sibling.clone(), source.symbolic_int32_load(&sibling));
+        .store(sibling.clone(), source.symbolic_int32_load(None, &sibling));
     let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(loaded.clone(), 0, 1))),
         right: Box::new(Resource::Memory(memory_range(sibling.clone(), 0, 1))),
@@ -4029,7 +4030,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
         ProgramType::Int32Pointer,
     );
     let Some(ProgramValue::Pointer(child)) =
-        crate::kernel::eval::symbolic_load_value(&before, &p, ProgramType::Int32Pointer)
+        crate::kernel::eval::symbolic_load_value(&before, None, &p, ProgramType::Int32Pointer)
     else {
         panic!("pointer load")
     };

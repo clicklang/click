@@ -8869,10 +8869,24 @@ impl SymbolicMemory {
             .is_some_and(|end| end <= block_size)
     }
 
+    /// The point a legacy symbolic read of this memory is named at: this
+    /// memory, recording `site` as the read site when the caller has one.
+    fn legacy_read_point(&self, site: Option<&ProgramPoint>) -> ProgramPoint {
+        let memory = crate::kernel::intern_memory(self.clone());
+        match site {
+            Some(site) => ProgramPoint::at_read_site(&memory, site),
+            None => ProgramPoint::at(&memory),
+        }
+    }
+
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int32_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         int32(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int32,
         ))
@@ -8881,63 +8895,91 @@ impl SymbolicMemory {
     /// A signed byte read: the two's-complement conversion of the byte's
     /// one unsigned read ([`MachineTerm::memory_read`]).
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Address) -> ProgramValue {
-        int8(MachineTerm::memory_read(
-            crate::kernel::intern_memory(self.clone()),
+    pub(in crate::kernel) fn symbolic_int8_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
+        int8(MachineTerm::read_named(
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int8,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int16_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         int16(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int16,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint8_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         uint8(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt8,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint16_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         uint16(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt16,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint32_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         uint32(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt32,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int64_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         ProgramValue::Int64(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Bits64,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint64_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         ProgramValue::UInt64(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Bits64,
         ))
