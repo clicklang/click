@@ -505,7 +505,7 @@ mod tests {
             });
             mir.locals
                 .extend(["some", "pointer", "index"].map(|field| Place {
-                    name: format!("{option}_{field}"),
+                    name: format!("{option}_{field}").into(),
                     value_type: Type::Usize,
                     span: span.clone(),
                 }));

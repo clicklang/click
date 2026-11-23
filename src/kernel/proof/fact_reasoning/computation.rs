@@ -1106,9 +1106,7 @@ fn scoped_constructor_result(term: &AlgebraicTerm) -> Option<ConstructorResult<'
     while let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node {
         let (scrutinee, scrutinee_scope, already_checked) =
             if let AlgebraicTermNode::Variable(variable) = &scrutinee.node {
-                let Some((_, payload)) = payloads.get(variable) else {
-                    return None;
-                };
+                let (_, payload) = payloads.get(variable)?;
                 let AlgebraicValue::Algebraic(value) = payload.value else {
                     return None;
                 };
@@ -1123,17 +1121,13 @@ fn scoped_constructor_result(term: &AlgebraicTerm) -> Option<ConstructorResult<'
             return None;
         };
         crate::instrumentation::record_deterministic_work(arms.len() + fields.len());
-        let Some(arm) = arms.iter().find(|arm| arm.variant == *variant) else {
-            return None;
-        };
+        let arm = arms.iter().find(|arm| arm.variant == *variant)?;
         if arm.bindings.len() != fields.len() {
             return None;
         }
         // The new bindings are in scope in the arm body, but not in its scrutinee.
         for (binder, field) in arm.bindings.iter().zip(fields) {
-            let Some(variable) = constructor_payload_variable(binder) else {
-                return None;
-            };
+            let variable = constructor_payload_variable(binder)?;
             // Previously bound constructors already passed the shape check.
             if !already_checked && !is_constructor_payload(field) {
                 return None;

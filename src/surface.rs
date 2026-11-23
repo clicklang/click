@@ -7080,17 +7080,6 @@ impl ProofCases {
         case_arms_disjunction(&self.arms)
     }
 
-    /// The same arms with each tactic list rewritten by `rewrite`.
-    pub(crate) fn try_map_tactics<E>(
-        &self,
-        mut rewrite: impl FnMut(&[ProofTactic]) -> Result<Vec<ProofTactic>, E>,
-    ) -> Result<Self, E> {
-        self.try_map(
-            |assumption| Ok(assumption.clone()),
-            |tactics| rewrite(tactics),
-        )
-    }
-
     /// The same arms with each assumption and tactic list rewritten.
     pub(crate) fn try_map<E>(
         &self,

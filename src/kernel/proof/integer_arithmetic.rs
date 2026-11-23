@@ -255,17 +255,16 @@ pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<Integ
         return Vec::new();
     }
     let mut context = IntegerAffineCollectionContext::default();
-    if let Some((_, arguments)) = retained_fold_comparison(condition) {
-        if let Some(difference) =
+    if let Some((_, arguments)) = retained_fold_comparison(condition)
+        && let Some(difference) =
             affine_difference(arguments, |operand, weight, terms, constant| {
                 collect_retained_affine_operand(operand, weight, terms, constant, &mut context)
             })
-        {
-            return (!difference.terms.is_empty())
-                .then_some(difference)
-                .into_iter()
-                .collect();
-        }
+    {
+        return (!difference.terms.is_empty())
+            .then_some(difference)
+            .into_iter()
+            .collect();
     }
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return Vec::new();
