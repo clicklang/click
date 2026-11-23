@@ -1477,6 +1477,46 @@ int32 check(struct link* node) {
     }
 
     #[test]
+    fn verify_classifies_source_link_errors_and_failed_proof_splits() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, heading, detail) in [
+            (
+                "file_scope_incomplete_extern_array_link_errors.md",
+                "type error",
+                "has no definition",
+            ),
+            (
+                "file_scope_tentative_array_link_errors.md",
+                "type error",
+                "conflicting declarations",
+            ),
+            (
+                "cases_arms_that_do_not_rejoin_are_refused.md",
+                "tactic error",
+                "do not rejoin",
+            ),
+            (
+                "loop_body_proof_match_missing_arm.md",
+                "tactic error",
+                "cover every constructor",
+            ),
+            (
+                "population_rejects_nested_open.md",
+                "tactic error",
+                "population body is already open",
+            ),
+        ] {
+            let error = entry([
+                "verify".to_string(),
+                fixtures.join(name).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(error.starts_with(&format!("{heading}:")), "{error}");
+            assert!(error.contains(detail), "{error}");
+        }
+    }
+
+    #[test]
     fn verification_separates_unprepared_safety_goals_from_unsupported_operations() {
         let fixture = |name: &str| {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
