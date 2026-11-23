@@ -17,6 +17,8 @@ fn main() {
             )
         });
     }
+    search_boundary::check_read_constructions()
+        .unwrap_or_else(|errors| panic!("read construction ratchet:\n{}", errors.join("\n")));
     let docs = Path::new(&manifest).join("docs");
     let summary_path = docs.join("SUMMARY.md");
     println!("cargo:rerun-if-changed={}", summary_path.display());

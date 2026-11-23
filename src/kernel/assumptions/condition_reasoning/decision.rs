@@ -2256,7 +2256,7 @@ impl PureFactContext {
             | MachineTerm::AlgebraicMatch { .. }
             | MachineTerm::IntegerToMachine { .. } => term.clone(),
             MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                MachineTerm::MemoryLoad(memory.clone(), pointer.clone(), *kind)
+                MachineTerm::read_named(memory.clone(), pointer.clone(), *kind)
             }
             MachineTerm::IntegerAddress(_, _) => term.clone(),
             term => match (term.as_binary(), term.as_unary()) {
@@ -3710,9 +3710,9 @@ mod shared_offset_evidence_tests {
         let pointer = crate::kernel::SymbolicMemory::global_pointer("offset-evidence");
         let memory = crate::kernel::SymbolicMemory::new().with_block("offset-evidence", 4);
         let read = |memory| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             )
         };

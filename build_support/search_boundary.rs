@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use syn::visit::Visit;
 #[path = "proof_search_boundary.rs"]
 pub(super) mod proof_search_boundary;
+#[path = "read_construction.rs"]
+pub(super) mod read_construction;
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {
@@ -1060,6 +1062,7 @@ pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
     };
     let mut pending = vec![(start.clone(), directory)];
     let mut errors = Vec::new();
+    let mut read_constructions = BTreeMap::new();
     while let Some((path, dir)) = pending.pop() {
         let path = path
             .canonicalize()
@@ -1077,14 +1080,34 @@ pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
                 if let Err(found) = proof_search_boundary::check(&relative, &file) {
                     errors.extend(found);
                 }
+                let constructions = read_construction::count(&file);
+                if constructions > 0 {
+                    read_constructions.insert(relative.clone(), constructions);
+                }
                 external_modules(&file.items, &dir, path.parent().unwrap(), &mut pending);
             }
             Err(found) => errors.extend(found),
         }
     }
+    read_constructions_by_tree()
+        .lock()
+        .unwrap()
+        .extend(read_constructions);
     if errors.is_empty() {
         Ok(())
     } else {
         Err(errors)
     }
+}
+
+/// The read-construction counts of every tree checked so far.
+fn read_constructions_by_tree() -> &'static std::sync::Mutex<BTreeMap<String, usize>> {
+    static COUNTS: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, usize>>> =
+        std::sync::OnceLock::new();
+    COUNTS.get_or_init(Default::default)
+}
+
+/// Checks the read-construction ratchet over every tree checked so far.
+pub fn check_read_constructions() -> Result<(), Vec<String>> {
+    read_construction::check(&read_constructions_by_tree().lock().unwrap())
 }

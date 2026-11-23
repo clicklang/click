@@ -1001,9 +1001,9 @@ impl OriginLoadEndpoint {
     }
 
     fn as_term(&self) -> MachineTerm {
-        MachineTerm::MemoryLoad(
+        crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&self.memory),
-            Box::new(self.pointer.clone()),
+            self.pointer.clone(),
             self.kind,
         )
     }
@@ -1862,14 +1862,14 @@ pub(crate) fn checked_origin_load_equality(
                     } else {
                         let mut selected = None;
                         for pointer in [&left_endpoint.pointer, &right_endpoint.pointer] {
-                            let first = MachineTerm::MemoryLoad(
+                            let first = crate::kernel::MachineTerm::read_named(
                                 ProgramPoint::at(&left_endpoint.memory),
-                                Box::new(pointer.clone()),
+                                pointer.clone(),
                                 left_endpoint.kind,
                             );
-                            let second = MachineTerm::MemoryLoad(
+                            let second = crate::kernel::MachineTerm::read_named(
                                 ProgramPoint::at(&right_endpoint.memory),
-                                Box::new(pointer.clone()),
+                                pointer.clone(),
                                 right_endpoint.kind,
                             );
                             let capture = CheckedLoadEqualityCapture::start_with_call_events(
@@ -3380,9 +3380,9 @@ fn checked_pointer_read_endpoint_and_kind(
         crate::kernel::equality_graph::logical_pointer_read_term(read).or_else(|| {
             let application = assumptions.retained_pointer_read_application(read)?;
             let definition = application.as_loaded_value()?;
-            Some(MachineTerm::MemoryLoad(
+            Some(crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&definition.defining_memory),
-                Box::new(definition.defining_address),
+                definition.defining_address,
                 LoadKind::of_type(ProgramType::Int32Pointer)?,
             ))
         })?
@@ -3883,7 +3883,7 @@ impl LoadCellWalks {
         }
         let kind = self.kind;
         let load = |memory: &SharedMemory| {
-            MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
+            crate::kernel::MachineTerm::read_named(ProgramPoint::at(memory), pointer.clone(), kind)
         };
         let pins = |cell: &MemoryDagCell, other: &MachineTerm| {
             matches!(cell, MemoryDagCell::Stored { .. })
@@ -5290,9 +5290,9 @@ pub(crate) fn wide_read_has_recorded_value(
             crate::kernel::MachineOperandView::Legacy(term),
         )
         .map(|read| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 read.origin.unwrap_or(read.point).for_legacy_read(),
-                Box::new(read.pointer),
+                read.pointer,
                 read.kind,
             )
         }),
@@ -5657,11 +5657,11 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                                 ),
                             );
                             let version = version.as_ref().unwrap_or(memory.shared_memory());
-                            results.push(MachineTerm::MemoryLoad(
+                            results.push(crate::kernel::MachineTerm::read_named(
                                 ProgramPoint::at(
                                     &(canonical_projected_load_memory(version, &canonical_pointer)),
                                 ),
-                                Box::new(canonical_pointer),
+                                canonical_pointer,
                                 kind,
                             ));
                             continue;
@@ -5717,11 +5717,11 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                                 ),
                             );
                             let version = version.as_ref().unwrap_or(next_memory.shared_memory());
-                            results.push(MachineTerm::MemoryLoad(
+                            results.push(crate::kernel::MachineTerm::read_named(
                                 ProgramPoint::at(
                                     &(canonical_projected_load_memory(version, &canonical_pointer)),
                                 ),
-                                Box::new(canonical_pointer),
+                                canonical_pointer,
                                 next_kind,
                             ));
                             break;
@@ -7059,23 +7059,23 @@ fn transport_framed_atomic_bitvector(
                             assumptions,
                         )
                     } else {
-                        let left = MachineTerm::MemoryLoad(
+                        let left = crate::kernel::MachineTerm::read_named(
                             memory.clone(),
-                            Box::new(pointer.as_ref().clone()),
+                            pointer.as_ref().clone(),
                             *kind,
                         );
-                        let right = MachineTerm::MemoryLoad(
+                        let right = crate::kernel::MachineTerm::read_named(
                             ProgramPoint::at(&(crate::kernel::intern_memory(after.clone()))),
-                            Box::new(transported_pointer.clone()),
+                            transported_pointer.clone(),
                             *kind,
                         );
                         checked_atomic_load_equality(&left, &right, assumptions)
                     }
                 })
             {
-                MachineTerm::MemoryLoad(
+                crate::kernel::MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(after.clone()))),
-                    Box::new(transported_pointer),
+                    transported_pointer,
                     *kind,
                 )
             } else {
@@ -7503,9 +7503,9 @@ mod exact_load_normalization_tests {
         };
         (0..length).fold(MachineTerm::constant(tail), |value, _| {
             let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(value));
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             )
         })
@@ -7536,9 +7536,9 @@ mod exact_load_normalization_tests {
             offset: AddressOffset::Constant(0),
         };
         let load = |memory: &SymbolicMemory, kind| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 kind,
             )
         };
@@ -7634,9 +7634,9 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
     let loaded = AddressOffset::scaled_int32_node(
-        MachineTerm::MemoryLoad(
+        crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory))),
-            Box::new(pointer),
+            pointer,
             crate::kernel::LoadKind::Int32,
         ),
         4,
@@ -7987,9 +7987,9 @@ mod opaque_pointer_frame_tests {
             ProgramValue::UInt64(MachineTerm::uint64_constant(2)),
         ));
         let cell_bits = |memory: &SharedMemory| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(memory),
-                Box::new(field.clone()),
+                field.clone(),
                 LoadKind::Int32,
             )
         };
@@ -8280,9 +8280,9 @@ mod opaque_pointer_frame_tests {
     fn opaque_pointer_transport_requires_unchanged_field_bytes() {
         let (field, _, argument, _, separation) = setup();
         let before = intern_memory(SymbolicMemory::default().with_block("local:opaque-frame", 8));
-        let read = MachineTerm::MemoryLoad(
+        let read = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&before),
-            Box::new(field.clone()),
+            field.clone(),
             LoadKind::Int32,
         );
         let variable = crate::kernel::eval::load_variable_for_term(&read)
@@ -8346,14 +8346,14 @@ mod opaque_pointer_frame_tests {
         );
         record_canonical_load_projection(&source, &left_memory, &left_pointer);
         record_canonical_load_projection(&source, &right_memory, &right_pointer);
-        let left = MachineTerm::MemoryLoad(
+        let left = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&left_memory),
-            Box::new(left_pointer.clone()),
+            left_pointer.clone(),
             LoadKind::Bits64,
         );
-        let right = MachineTerm::MemoryLoad(
+        let right = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&right_memory),
-            Box::new(right_pointer.clone()),
+            right_pointer.clone(),
             LoadKind::Bits64,
         );
         assert!(wide_read_has_recorded_value(&left, &right, &context));
@@ -8363,9 +8363,9 @@ mod opaque_pointer_frame_tests {
             &right,
             &PureFactContext::new(),
         ));
-        let narrow = MachineTerm::MemoryLoad(
+        let narrow = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&right_memory),
-            Box::new(right_pointer.clone()),
+            right_pointer.clone(),
             LoadKind::Int32,
         );
         assert!(!wide_read_has_recorded_value(&left, &narrow, &context));
@@ -8373,11 +8373,11 @@ mod opaque_pointer_frame_tests {
             right_pointer.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
         ));
-        let overwritten = MachineTerm::MemoryLoad(
+        let overwritten = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(
                 &(canonical_projected_load_memory(&overwritten_source, &right_pointer)),
             ),
-            Box::new(right_pointer),
+            right_pointer,
             LoadKind::Bits64,
         );
         assert!(!wide_read_has_recorded_value(&left, &overwritten, &context));
@@ -8414,14 +8414,14 @@ mod opaque_pointer_frame_tests {
         );
         let projected = canonical_projected_load_memory(&source, &address);
         assert_ne!(projected, source);
-        let direct = MachineTerm::MemoryLoad(
+        let direct = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&source),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Bits64,
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&projected),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Bits64,
         );
         assert!(wide_read_has_recorded_value(&direct, &value, &context));
@@ -8433,9 +8433,9 @@ mod opaque_pointer_frame_tests {
         ));
         let projected_read = |memory| {
             let source = intern_memory(memory);
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(canonical_projected_load_memory(&source, &address))),
-                Box::new(address.clone()),
+                address.clone(),
                 LoadKind::Bits64,
             )
         };
@@ -8514,8 +8514,11 @@ mod opaque_pointer_frame_tests {
         };
         assert!(!same_value());
         let memory = intern_memory(SymbolicMemory::new().store(field.clone(), word.clone()));
-        let read =
-            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(field), LoadKind::Bits64);
+        let read = crate::kernel::MachineTerm::read_named(
+            ProgramPoint::at(&memory),
+            field,
+            LoadKind::Bits64,
+        );
         assert!(wide_read_has_recorded_value(&read, &bits, &context));
         assert!(wide_read_has_recorded_value(&bits, &read, &context));
         assert!(!same_value());
@@ -8543,8 +8546,11 @@ mod opaque_pointer_frame_tests {
         assert!(context.uint64_values_known_equal(&stored, &wanted));
         let memory =
             intern_memory(SymbolicMemory::new().store(field.clone(), ProgramValue::UInt64(stored)));
-        let read =
-            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(field), LoadKind::Bits64);
+        let read = crate::kernel::MachineTerm::read_named(
+            ProgramPoint::at(&memory),
+            field,
+            LoadKind::Bits64,
+        );
         assert!(wide_read_has_recorded_value(&read, &wanted, &context));
         assert!(wide_read_has_recorded_value(&wanted, &read, &context));
         let (proved, diagnostics) = capture_read_resolutions(|| {
@@ -8602,9 +8608,9 @@ mod canonical_numeric_run_tests {
         let base = Address {
             base: "canonical-run".into(),
             offset: AddressOffset::scaled_int32_node(
-                MachineTerm::MemoryLoad(
+                crate::kernel::MachineTerm::read_named(
                     ProgramPoint::at(&source),
-                    Box::new(index_cell),
+                    index_cell,
                     LoadKind::Int32,
                 ),
                 1,
@@ -9293,9 +9299,9 @@ mod retained_offset_evidence_tests {
         let left = havoc(1018811);
         let right = havoc(1018812);
         let load = |memory: &SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
-                Box::new(read.clone()),
+                read.clone(),
                 LoadKind::Int32,
             )
         };
@@ -9340,9 +9346,9 @@ mod retained_boolean_dependency_tests {
             SymbolicMemory::new().with_block(AddressBase::Concrete("boolean_memory".into()), 8),
         );
         let read = |memory| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 memory,
-                Box::new(Address::symbolic(Variable(970_010))),
+                Address::symbolic(Variable(970_010)),
                 LoadKind::Int32,
             )
         };
@@ -9393,9 +9399,9 @@ mod common_boolean_transport_tests {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: crate::kernel::OverflowOperation::Add,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(crate::kernel::MachineTerm::read_named(
                     ProgramPoint::at(&memory),
-                    Box::new(address.clone()),
+                    address.clone(),
                     LoadKind::Int32,
                 )),
                 right: Box::new(MachineTerm::constant(1)),
@@ -9405,9 +9411,9 @@ mod common_boolean_transport_tests {
                     Address {
                         base: AddressBase::Symbolic(Variable(972_003)),
                         offset: AddressOffset::scaled_int32_node(
-                            MachineTerm::MemoryLoad(
+                            crate::kernel::MachineTerm::read_named(
                                 ProgramPoint::at(&memory),
-                                Box::new(address.clone()),
+                                address.clone(),
                                 LoadKind::Int32,
                             ),
                             4,
@@ -9421,9 +9427,9 @@ mod common_boolean_transport_tests {
                 Box::new(Address {
                     base: AddressBase::Symbolic(Variable(972_003)),
                     offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::MemoryLoad(
+                        crate::kernel::MachineTerm::read_named(
                             ProgramPoint::at(&memory),
-                            Box::new(address.clone()),
+                            address.clone(),
                             LoadKind::Int32,
                         ),
                         4,
@@ -9435,9 +9441,9 @@ mod common_boolean_transport_tests {
                 Box::new(AddressOffset::Add(
                     Box::new(AddressOffset::Constant(0)),
                     Box::new(AddressOffset::scaled_int32_node(
-                        MachineTerm::MemoryLoad(
+                        crate::kernel::MachineTerm::read_named(
                             ProgramPoint::at(&memory),
-                            Box::new(address.clone()),
+                            address.clone(),
                             LoadKind::Int32,
                         ),
                         4,
@@ -9452,9 +9458,9 @@ mod common_boolean_transport_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(crate::kernel::MachineTerm::read_named(
                     ProgramPoint::at(&memory),
-                    Box::new(address),
+                    address,
                     LoadKind::Int32,
                 )),
                 right: Box::new(MachineTerm::constant(0)),
@@ -9519,9 +9525,9 @@ mod common_boolean_read_tests {
             Address {
                 base: AddressBase::Symbolic(Variable(999370)),
                 offset: AddressOffset::scaled_int32_node(
-                    MachineTerm::MemoryLoad(
+                    crate::kernel::MachineTerm::read_named(
                         ProgramPoint::at(&old),
-                        Box::new(SymbolicMemory::global_pointer("bool-memory-index")),
+                        SymbolicMemory::global_pointer("bool-memory-index"),
                         LoadKind::Int32,
                     ),
                     4,
@@ -9551,8 +9557,8 @@ fn atomic_canonicalization_keeps_two_written_read_points() {
     let first = ProgramPoint::starting_at(&memory).for_exact_read();
     let second = ProgramPoint::starting_at(&memory).for_exact_read();
     let kind = LoadKind::Bits64;
-    let first = MachineTerm::MemoryLoad(first, Box::new(pointer.clone()), kind);
-    let second = MachineTerm::MemoryLoad(second, Box::new(pointer), kind);
+    let first = crate::kernel::MachineTerm::read_named(first, pointer.clone(), kind);
+    let second = crate::kernel::MachineTerm::read_named(second, pointer, kind);
     assert_ne!(first, second);
     assert_eq!(canonicalize_atomic_loads(&first), first);
     assert_eq!(canonicalize_atomic_loads(&second), second);

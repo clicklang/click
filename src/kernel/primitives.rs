@@ -5249,9 +5249,9 @@ impl AlgebraicTermNode {
         pointer: &Address,
         algebraic_type: &AlgebraicType,
     ) -> MachineTerm {
-        MachineTerm::MemoryLoad(
+        crate::kernel::MachineTerm::read_named(
             point.clone(),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::of_algebraic(algebraic_type),
         )
     }

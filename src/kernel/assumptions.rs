@@ -123,8 +123,16 @@ fn address_bases_equal_with_load_atoms(
                     return false;
                 };
                 loads_match(
-                    &MachineTerm::MemoryLoad(ProgramPoint::at(&am), Box::new(ap), LoadKind::Bits64),
-                    &MachineTerm::MemoryLoad(ProgramPoint::at(&bm), Box::new(bp), LoadKind::Bits64),
+                    &crate::kernel::MachineTerm::read_named(
+                        ProgramPoint::at(&am),
+                        ap,
+                        LoadKind::Bits64,
+                    ),
+                    &crate::kernel::MachineTerm::read_named(
+                        ProgramPoint::at(&bm),
+                        bp,
+                        LoadKind::Bits64,
+                    ),
                 )
             }
             (AddressBase::Symbolic(_), AddressBase::Symbolic(_)) => {
@@ -1817,9 +1825,9 @@ mod exact_materialization_tests {
         };
         (0..length).fold(MachineTerm::constant(tail), |value, _| {
             let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(value));
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             )
         })
@@ -1857,14 +1865,14 @@ mod exact_materialization_tests {
             base: "exact-kind-control".into(),
             offset: AddressOffset::Constant(0),
         };
-        let unsigned = MachineTerm::MemoryLoad(
+        let unsigned = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(
                 &(intern_memory(
                     SymbolicMemory::new()
                         .store(pointer.clone(), ProgramValue::UInt32(17u32.into())),
                 )),
             ),
-            Box::new(pointer),
+            pointer,
             LoadKind::UInt32,
         );
         for (left, right, expected) in [
@@ -1908,9 +1916,9 @@ mod exact_materialization_tests {
         };
         let before = SymbolicMemory::new().with_block("retained-retained_state", 64);
         let load = |memory| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 LoadKind::Int32,
             )
         };
@@ -5032,9 +5040,9 @@ impl PureFactContext {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(MachineTerm::Variable(*variable)),
-                        right: Box::new(MachineTerm::MemoryLoad(
+                        right: Box::new(crate::kernel::MachineTerm::read_named(
                             ProgramPoint::at(memory),
-                            Box::new(address.clone()),
+                            address.clone(),
                             kind,
                         )),
                     };
@@ -11548,9 +11556,9 @@ mod dynamic_current_load_tests {
         let pointer = pointer();
         let memory = SymbolicMemory::new();
         let retained_state = crate::kernel::intern_memory_ref(&memory);
-        let load = MachineTerm::MemoryLoad(
+        let load = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&retained_state),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             crate::kernel::LoadKind::Int32,
         );
         let value = Term::ProgramValue(ProgramValue::Int64(load.clone()).into());
@@ -11592,9 +11600,9 @@ mod dynamic_current_load_tests {
     fn load_payload(memory: &SymbolicMemory, format: MachineIntegerType) -> SharedIntegerTerm {
         let load = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
-                Box::new(pointer()),
+                pointer(),
                 crate::kernel::LoadKind::Int32,
             ),
         ))
@@ -13161,9 +13169,9 @@ mod execution_variable_ceiling_tests {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
-                Box::new(word(4)),
+                word(4),
                 crate::kernel::LoadKind::Int32,
             )),
             right: Box::new(MachineTerm::constant(0)),
@@ -13793,7 +13801,7 @@ mod shared_load_atom_comparison_tests {
                 ty.format().bits() / 8,
             );
             (
-                MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind),
+                crate::kernel::MachineTerm::read_named(ProgramPoint::at(&memory), pointer, kind),
                 variable,
             )
         };
@@ -14264,9 +14272,9 @@ mod shared_read_memory_collection_tests {
             base: AddressBase::Concrete("read-width".into()),
             offset: AddressOffset::Constant(0),
         };
-        let raw = MachineTerm::MemoryLoad(
+        let raw = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Int32,
         );
         let narrow = MachineTerm::Cast {
