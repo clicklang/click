@@ -4719,6 +4719,9 @@ fn infer_add_expression_type(
         [(left_expression, left), (right_expression, right)],
         context,
     )?;
+    if let Some(stepped) = void_pointer_step_type(left, right, false) {
+        return Ok(Some(stepped));
+    }
     refuse_untyped_pointer_operands([left, right], context)?;
     Ok(pointer_arithmetic_type(left, right).or_else(|| arithmetic_result_type(left, right)))
 }
@@ -4737,34 +4740,76 @@ fn infer_subtract_expression_type(
         [(left_expression, left), (right_expression, right)],
         context,
     )?;
+    if let Some(stepped) = void_pointer_step_type(left, right, true) {
+        return Ok(Some(stepped));
+    }
     refuse_untyped_pointer_operands([left, right], context)?;
     Ok(subtract_expression_type(left, right))
 }
 
-/// The refusal of a dereference, index or arithmetic step through Click's
-/// untyped `Pointer`: it states no pointee type to read at or step by.
-fn untyped_pointer_access_error(context: &str) -> ClickError {
-    ClickError::new(format!(
-        "a `Pointer` has no pointee type; cast it to a typed pointer or use `load<T>` in {context}"
-    ))
-    .with_kind(crate::surface::ClickErrorKind::Type)
+/// The spelling of a pointer type that states no pointee type: Click's
+/// untyped `Pointer` and C's `void *`. A dereference, index or arithmetic
+/// step through one has no type to read at or step by, and a spec does not
+/// invent one.
+pub(in crate::surface) fn pointee_less_pointer_spelling(
+    pointer_type: crate::kernel::ProgramType,
+) -> Option<&'static str> {
+    match pointer_type {
+        crate::kernel::ProgramType::Pointer => Some("Pointer"),
+        crate::kernel::ProgramType::VoidPointer => Some("void *"),
+        _ => None,
+    }
+}
+
+/// The refusal of a dereference, index or arithmetic step through a pointer
+/// spelled `spelling` by [`pointee_less_pointer_spelling`].
+pub(in crate::surface) fn pointee_less_access_message(spelling: &str) -> String {
+    format!("a `{spelling}` has no pointee type; cast it to a typed pointer or use `load<T>`")
+}
+
+/// The type of `q + k`, `k + q` or `q - k` for a `void *` `q` and a scalar
+/// `k`: C steps a `void *` by one byte (the GNU extension Click's C side
+/// follows), so a spec steps it the same way. A `Pointer` is not stepped;
+/// its byte step is spelled `byte_offset`.
+fn void_pointer_step_type(
+    left: Option<InterfaceType>,
+    right: Option<InterfaceType>,
+    subtract: bool,
+) -> Option<InterfaceType> {
+    match (left?, right?) {
+        (InterfaceType::VoidPointer, offset) if type_is_scalar(offset) => {
+            Some(InterfaceType::VoidPointer)
+        }
+        (offset, InterfaceType::VoidPointer) if !subtract && type_is_scalar(offset) => {
+            Some(InterfaceType::VoidPointer)
+        }
+        _ => None,
+    }
 }
 
 /// Refuses an operand of a dereference, index or pointer arithmetic whose
-/// type is Click's untyped `Pointer`.
+/// type states no pointee type: Click's untyped `Pointer` or `void *`.
 fn refuse_untyped_pointer_operands<const N: usize>(
     operands: [Option<InterfaceType>; N],
     context: &str,
 ) -> Result<(), ClickError> {
-    if operands.contains(&Some(InterfaceType::Pointer)) {
-        return Err(untyped_pointer_access_error(context));
+    if let Some(spelling) = operands
+        .into_iter()
+        .flatten()
+        .find_map(|operand| pointee_less_pointer_spelling(operand.to_kernel_type()))
+    {
+        return Err(ClickError::new(format!(
+            "{} in {context}",
+            pointee_less_access_message(spelling)
+        ))
+        .with_kind(crate::surface::ClickErrorKind::Type));
     }
     Ok(())
 }
 
 /// Refuses `*q`, `q[i]`, `q + k` and `q - k` in a lowered C fragment when
-/// `q` is a `Pointer`, through the address operands of reads, casts and byte
-/// offsets, where a `Pointer` is stepped or read through.
+/// `q` is a `Pointer` or `void *`, through the address operands of reads,
+/// casts and byte offsets, where such a pointer is stepped or read through.
 fn refuse_untyped_pointer_access(
     expression: &ProgramExpression,
     variables: &BinderMap<InterfaceType>,
@@ -4778,7 +4823,13 @@ fn refuse_untyped_pointer_access(
             refuse_untyped_pointer_access(pointer, variables, context)
         }
         ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => {
-            refuse_untyped_pointer_operands([operand_type(left), operand_type(right)], context)?;
+            let subtract = matches!(expression, ProgramExpression::Subtract(..));
+            if void_pointer_step_type(operand_type(left), operand_type(right), subtract).is_none() {
+                refuse_untyped_pointer_operands(
+                    [operand_type(left), operand_type(right)],
+                    context,
+                )?;
+            }
             refuse_untyped_pointer_access(left, variables, context)?;
             refuse_untyped_pointer_access(right, variables, context)
         }
@@ -5027,6 +5078,30 @@ fn validate_contract_segment_expression_types(
     Ok(())
 }
 
+/// Refuses `views q[a..b]` and `owns q[a..b]` for a `void *` `q`: a range
+/// counts elements, and C gives a `void *` no element type, so the range is
+/// not read as cells of an invented type. A cast states the type:
+/// `(q as (uint8 *))[0..n]`.
+fn refuse_void_pointer_range(
+    segment: &ContractSegment,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
+    context: &str,
+) -> Result<(), ClickError> {
+    let ContractSegmentSurface::Range { base, .. } = &segment.surface else {
+        return Ok(());
+    };
+    if let Ok(Some(InterfaceType::VoidPointer)) =
+        infer_contract_expression_type(base, variables, click_functions, context)
+    {
+        return Err(ClickError::new(format!(
+            "a `void *` has no pointee type to count a range in; cast it to a typed pointer, as in `(q as (uint8 *))[0..n]`, in {context}"
+        ))
+        .with_kind(crate::surface::ClickErrorKind::Type));
+    }
+    Ok(())
+}
+
 pub(super) fn validate_resource_clause(
     resource: &ResourceClause,
     resources: &BTreeMap<String, usize>,
@@ -5066,7 +5141,9 @@ pub(super) fn validate_resource_clause(
             variables,
             context,
         ),
-        ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_) => Ok(()),
+        ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
+            refuse_void_pointer_range(segment, variables, click_function_types, context)
+        }
         ResourceClause::MemoryAggregate { .. } => Ok(()),
         // The index binder is in scope only inside the clause; the resource
         // definition validation checks the clause with it bound.
