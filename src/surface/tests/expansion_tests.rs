@@ -17070,6 +17070,30 @@ fn indexed_reads_in_expressions_expand_through_distinct_store_preservation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed expressions across separated stores"]
+fn indexed_expressions_expand_through_range_separation() {
+    let (source, sources) =
+        mdtest_sources("mdtests/indexed_expressions_survive_separated_stores.md");
+    let sources = crate::cli::source_refs(&sources);
+    for (claim, cell) in [
+        ("keep_low_bit.contract", "a[0]"),
+        ("keep_positive_flag.contract", "p[j]"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains(&format!("preserve(memory({cell})")),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn masked_64_bit_field_expands_through_explicit_store_preservation() {
     for fixture in [
         "mdtests/int64_read_survives_store_and_resource_call.md",

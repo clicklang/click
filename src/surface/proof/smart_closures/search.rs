@@ -6663,24 +6663,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ),
             };
             let mut steps = Vec::new();
-            let proof = if matches!(read, ContractExpression::Index(..)) {
-                let Some(proof) = Self::try_distinct_indexed_store_separation(
+            let indexed = matches!(read, ContractExpression::Index(..));
+            let proof = if indexed
+                && let Some(proof) = Self::try_distinct_indexed_store_separation(
                     search_input,
                     written,
                     &kept,
                     &footprint_separation,
-                )?
-                else {
-                    continue;
-                };
+                )? {
                 proof
-            } else if field_bound {
-                let Some(proof) = Self::try_single_memory_write_separation(
-                    search_input,
-                    written,
-                    &kept,
-                    &footprint_separation,
-                )?
+            } else if indexed || field_bound {
+                let Some(proof) =
+                    attempt::candidate_outcome(Self::try_single_memory_write_separation(
+                        search_input,
+                        written,
+                        &kept,
+                        &footprint_separation,
+                    ))?
+                    .flatten()
                 else {
                     continue;
                 };
