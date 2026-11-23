@@ -186,6 +186,12 @@ pub(crate) fn negate_claim(
 fn integer_disequality(
     proposition: &Proposition,
 ) -> Option<(crate::kernel::SharedMachineIntegerTerm, BigInt)> {
+    let (condition, _) = affine_condition(proposition)?;
+    if retained_fold_comparison(condition).is_some() {
+        // These operands are folds, literals, or variables. Neither side
+        // observes a machine value whose type endpoint could yield a bound.
+        return None;
+    }
     let readings =
         crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
             proposition,
@@ -228,25 +234,35 @@ fn integer_disequality(
 /// disequality, or one whose difference has no atom: a disequality of
 /// constants is already a claim. `StrictFromDisequal` reads it.
 pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<IntegerAffineClaim> {
-    let (condition, value) = match proposition {
-        Proposition::ConditionIs(condition, value) => (condition, *value),
-        Proposition::Not(body) => match body.as_ref() {
-            Proposition::ConditionIs(condition, value) => (condition, !value),
-            _ => return Vec::new(),
-        },
-        _ => return Vec::new(),
+    let Some((condition, value)) = affine_condition(proposition) else {
+        return Vec::new();
     };
-    let readings = if matches!(
-        condition.native_compat(),
-        crate::kernel::integer_comparison_condition!(_, _)
-    ) {
+    let mut context = IntegerAffineCollectionContext::default();
+    if let Some((operator, arguments)) = retained_fold_comparison(condition) {
+        if !matches!(
+            (operator, value),
+            (IntegerComparisonOperator::NotEqual, true) | (IntegerComparisonOperator::Equal, false)
+        ) {
+            return Vec::new();
+        }
+        if let Some(difference) =
+            affine_difference(arguments.each_ref(), |operand, weight, terms, constant| {
+                collect_retained_affine_operand(operand, weight, terms, constant, &mut context)
+            })
+        {
+            return (!difference.terms.is_empty())
+                .then_some(difference)
+                .into_iter()
+                .collect();
+        }
+    }
+    let readings = if condition.operand_view().is_integer_comparison() {
         vec![Proposition::condition_is(condition.clone(), value)]
     } else {
         crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
             &Proposition::condition_is(condition.clone(), value),
         )
     };
-    let mut context = IntegerAffineCollectionContext::default();
     let mut differences = Vec::with_capacity(readings.len());
     for reading in &readings {
         let (left, right) = match reading {
@@ -260,34 +276,13 @@ pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<Integ
             }
             _ => continue,
         };
-        let mut terms = BTreeMap::new();
-        let mut constant = BigInt::zero();
-        if collect_integer_affine_terms(
-            left,
-            &BigInt::one(),
-            &mut terms,
-            &mut constant,
-            &mut context,
-        )
-        .is_none()
-            || collect_integer_affine_terms(
-                right,
-                &BigInt::from(-1),
-                &mut terms,
-                &mut constant,
-                &mut context,
-            )
-            .is_none()
-            || terms.is_empty()
+        if let Some(difference) =
+            affine_difference([left, right], |operand, weight, terms, constant| {
+                collect_integer_affine_terms(operand, weight, terms, constant, &mut context)
+            })
+            && !difference.terms.is_empty()
+            && !differences.contains(&difference)
         {
-            continue;
-        }
-        let difference = IntegerAffineClaim {
-            relation: IntegerAffineRelation::Equal,
-            terms,
-            constant,
-        };
-        if !differences.contains(&difference) {
             differences.push(difference);
         }
     }
@@ -507,14 +502,7 @@ fn integer_affine_claim_with_context(
     proposition: &Proposition,
     context: &mut IntegerAffineCollectionContext,
 ) -> Option<IntegerAffineClaim> {
-    let (condition, value) = match proposition {
-        Proposition::ConditionIs(condition, value) => (condition, *value),
-        Proposition::Not(body) => match body.as_ref() {
-            Proposition::ConditionIs(condition, value) => (condition, !value),
-            _ => return None,
-        },
-        _ => return None,
-    };
+    let (condition, value) = affine_condition(proposition)?;
     if let Some((operator, arguments)) = retained_fold_comparison(condition)
         && let Some(claim) = integer_affine_comparison_claim(
             *operator,
@@ -594,11 +582,18 @@ fn retained_fold_comparison(
     has_fold.then_some((operator, arguments))
 }
 
-/// The outer option reports whether both operands could be read. The inner
-/// option reports whether the comparison has an affine claim.
-fn integer_affine_comparison_claim<T>(
-    operator: IntegerComparisonOperator,
-    value: bool,
+fn affine_condition(proposition: &Proposition) -> Option<(&StoredConditionTerm, bool)> {
+    match proposition {
+        Proposition::ConditionIs(condition, value) => Some((condition, *value)),
+        Proposition::Not(body) => match body.as_ref() {
+            Proposition::ConditionIs(condition, value) => Some((condition, !value)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn affine_difference<T>(
     [left, right]: [T; 2],
     mut collect: impl FnMut(
         T,
@@ -606,6 +601,25 @@ fn integer_affine_comparison_claim<T>(
         &mut BTreeMap<IntegerAffineAtom, BigInt>,
         &mut BigInt,
     ) -> Option<()>,
+) -> Option<IntegerAffineClaim> {
+    let mut terms = BTreeMap::new();
+    let mut constant = BigInt::zero();
+    collect(left, &BigInt::one(), &mut terms, &mut constant)?;
+    collect(right, &BigInt::from(-1), &mut terms, &mut constant)?;
+    Some(IntegerAffineClaim {
+        relation: IntegerAffineRelation::Equal,
+        terms,
+        constant,
+    })
+}
+
+/// The outer option reports whether both operands could be read. The inner
+/// option reports whether the comparison has an affine claim.
+fn integer_affine_comparison_claim<T>(
+    operator: IntegerComparisonOperator,
+    value: bool,
+    [left, right]: [T; 2],
+    collect: impl FnMut(T, &BigInt, &mut BTreeMap<IntegerAffineAtom, BigInt>, &mut BigInt) -> Option<()>,
 ) -> Option<Option<IntegerAffineClaim>> {
     use IntegerComparisonOperator as Op;
     let (reverse, strict) = match (operator, value) {
@@ -614,40 +628,38 @@ fn integer_affine_comparison_claim<T>(
         (Op::GreaterEqual, true) | (Op::LessThan, false) => (true, false),
         _ => (false, false),
     };
-    let mut terms = BTreeMap::new();
-    let mut constant = BigInt::zero();
-    let (left, right) = if reverse {
-        (right, left)
+    let operands = if reverse {
+        [right, left]
     } else {
-        (left, right)
+        [left, right]
     };
-    collect(left, &BigInt::one(), &mut terms, &mut constant)?;
-    collect(right, &BigInt::from(-1), &mut terms, &mut constant)?;
+    let mut difference = affine_difference(operands, collect)?;
 
     let relation = match (operator, value) {
         (Op::Equal, true) | (Op::NotEqual, false) => IntegerAffineRelation::Equal,
         (Op::Equal, false) | (Op::NotEqual, true) => {
             return Some(
-                (terms.is_empty() && !constant.is_zero()).then_some(IntegerAffineClaim {
-                    relation: IntegerAffineRelation::LessEqual,
-                    terms,
-                    constant: BigInt::from(-1),
-                }),
+                (difference.terms.is_empty() && !difference.constant.is_zero()).then_some(
+                    IntegerAffineClaim {
+                        relation: IntegerAffineRelation::LessEqual,
+                        terms: difference.terms,
+                        constant: BigInt::from(-1),
+                    },
+                ),
             );
         }
         _ => IntegerAffineRelation::LessEqual,
     };
     if strict {
-        if crate::instrumentation::deadline_exceeded_with_work(constant.bits() as usize + 1) {
+        if crate::instrumentation::deadline_exceeded_with_work(
+            difference.constant.bits() as usize + 1,
+        ) {
             return None;
         }
-        constant += BigInt::one();
+        difference.constant += BigInt::one();
     }
-    Some(Some(IntegerAffineClaim {
-        relation,
-        terms,
-        constant,
-    }))
+    difference.relation = relation;
+    Some(Some(difference))
 }
 
 fn collect_retained_affine_operand(
