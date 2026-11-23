@@ -17573,6 +17573,38 @@ fn indexed_reads_across_calls_expand_through_the_complete_write_footprint() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay dereferenced reads across writes"]
+fn dereferenced_reads_expand_through_recorded_footprints() {
+    let (source, sources) = mdtest_sources("mdtests/dereferenced_reads_across_writes.md");
+    let sources = crate::cli::source_refs(&sources);
+    for (claim, writes) in [
+        ("keep_pointer_xor.contract", 1),
+        ("keep_pointer_complement.contract", 1),
+        ("keep_pointer_byte.contract", 1),
+        ("keep_pointer_shift_count.contract", 1),
+        ("keep_offset_byte_across_stores.contract", 2),
+        ("keep_pointer_shift_across_stores.contract", 2),
+        ("keep_pointer_choice_across_stores.contract", 2),
+        ("keep_pointer_quotient_across_call.contract", 1),
+        ("keep_offset_remainder_across_call.contract", 1),
+        ("keep_pointer_mask_across_call.contract", 1),
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert_eq!(
+            expanded.matches("preserve(memory(").count(),
+            writes,
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn masked_64_bit_field_expands_through_explicit_store_preservation() {
     for fixture in [
         "mdtests/int64_read_survives_store_and_resource_call.md",

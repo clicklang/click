@@ -6478,7 +6478,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(expression) = operand_against_literal(left, right) else {
             return Ok(None);
         };
-        fn indexed_expression_read(
+        fn expression_memory_read(
             mut expression: &ContractExpression,
         ) -> Option<&ContractExpression> {
             // Find one candidate read. The checked rewrite must still close the
@@ -6486,7 +6486,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             loop {
                 crate::instrumentation::record_deterministic_work(1);
                 expression = match expression {
-                    ContractExpression::Index(..) => return Some(expression),
+                    ContractExpression::Index(..)
+                    | ContractExpression::CUnary {
+                        lowered: ProgramExpression::Load(_),
+                        ..
+                    }
+                    | ContractExpression::ProgramExpression(ProgramExpression::Load(_)) => {
+                        return Some(expression);
+                    }
                     ContractExpression::BitwiseNot(operand) => operand,
                     ContractExpression::CUnary {
                         operand,
@@ -6539,32 +6546,60 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && *operator != ComparisonOperator::In =>
             {
                 let Some(read) =
-                    operand_against_literal(left, right).and_then(indexed_expression_read)
+                    operand_against_literal(left, right).and_then(expression_memory_read)
                 else {
                     return Ok(None);
                 };
                 read
             }
-            _ if let Some(read) = indexed_expression_read(expression) => read,
-            _ if outcome && *operator == ComparisonOperator::Equal => {
-                // A read raised from an outcome goal can be spelled *(a + i).
-                let Some(ProgramExpression::Load(pointer)) =
+            _ if outcome
+                && *operator == ComparisonOperator::Equal
+                && matches!(
+                    expression,
+                    ContractExpression::CUnary {
+                        lowered: ProgramExpression::Load(_),
+                        ..
+                    } | ContractExpression::ProgramExpression(ProgramExpression::Load(_))
+                )
+                && let Some(ProgramExpression::Load(pointer)) =
                     contract_expression_as_program_expression(expression)
-                else {
-                    return Ok(None);
-                };
-                let ProgramExpression::Add(base, index) = *pointer else {
-                    return Ok(None);
-                };
+                && let ProgramExpression::Add(base, index) = *pointer =>
+            {
+                // Retain the array base and index for same-array separation
+                // when an outcome read is raised as *(a + i).
                 indexed = ContractExpression::Index(
                     Box::new(ContractExpression::ProgramExpression(*base)),
                     Box::new(ContractExpression::ProgramExpression(*index)),
                 );
                 &indexed
             }
+            _ if let Some(read) = expression_memory_read(expression) => read,
             _ => return Ok(None),
         };
-        let anchored = outcome && matches!(read, ContractExpression::Index(..));
+        let pointed_cell = |base| ResourceSubject::SavedMemory {
+            base,
+            start: ContractExpression::IntegerLiteral("0".into()),
+            end: None,
+        };
+        let cell = match read {
+            ContractExpression::Index(base, index) => Some(ResourceSubject::SavedMemory {
+                base: base.as_ref().clone(),
+                start: index.as_ref().clone(),
+                end: None,
+            }),
+            ContractExpression::CUnary {
+                operand,
+                lowered: ProgramExpression::Load(_),
+            } => Some(pointed_cell(operand.as_ref().clone())),
+            ContractExpression::ProgramExpression(ProgramExpression::Load(pointer)) => {
+                Some(pointed_cell(ContractExpression::ProgramExpression(
+                    pointer.as_ref().clone(),
+                )))
+            }
+            _ => None,
+        };
+        let cell_read = cell.is_some();
+        let anchored = outcome && cell_read;
         let view = if field_bound || anchored {
             search_input.premise_fixed_state_view()
         } else {
@@ -6583,12 +6618,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 &BTreeMap::new(),
             )
         };
-        let kept = if let ContractExpression::Index(base, index) = read {
-            ResourceSubject::SavedMemory {
-                base: base.as_ref().clone(),
-                start: index.as_ref().clone(),
-                end: None,
-            }
+        let kept = if let Some(cell) = cell {
+            cell
         } else {
             let Some((
                 ConditionTerm::Compare {
@@ -6668,7 +6699,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let current = crate::kernel::intern_memory_ref(state.memory());
         let mut endpoint = current.clone();
         let mut prepared = search_input.clone();
-        let indexed = matches!(read, ContractExpression::Index(..));
         for (selector, _) in records.recent(MAX_TRANSPORT_SOURCE_POINTS) {
             check_verification_deadline()?;
             let ProgramPointSelector::ProgramPoint(ProgramPointRef {
@@ -6683,7 +6713,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             if !footprint.complete
                 || footprint.members.is_empty()
-                || (!indexed && footprint.members.len() != 1)
+                || (!cell_read && footprint.members.len() != 1)
                 || crate::kernel::intern_memory_ref(&footprint.after) != endpoint
             {
                 continue;
@@ -6719,7 +6749,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ),
             };
             let mut steps = Vec::new();
-            let proof = if indexed
+            let proof = if cell_read
                 && footprint.members.len() == 1
                 && let Some(written) = footprint.members.front()
                 && let Some(proof) = Self::try_distinct_indexed_store_separation(
@@ -6729,7 +6759,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &footprint_separation,
                 )? {
                 proof
-            } else if indexed || field_bound {
+            } else if cell_read || field_bound {
                 let Some(proof) =
                     attempt::candidate_outcome(Self::try_memory_footprint_separation(
                         &prepared,
@@ -6801,7 +6831,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 return Ok(Some(proof));
             }
-            if indexed {
+            if cell_read {
                 prepared = preserved;
                 endpoint = before;
             }
