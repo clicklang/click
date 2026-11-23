@@ -413,6 +413,62 @@ fn unsigned_division_domain_generation_ignores_ambient_facts() {
 }
 
 #[test]
+fn unsigned_division_checks_only_an_indexed_operand_guard() {
+    let width = MachineIntegerType::UInt32;
+    let dividend = Variable(992_311);
+    let divisor = Variable(992_312);
+    let assumptions = PureFactContext::new();
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let prefix = (0..count)
+            .map(|index| {
+                ExecutionPureFact::new(Proposition::condition_is(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(993_000 + index)),
+                        MachineTerm::constant(0),
+                    ),
+                    false,
+                ))
+            })
+            .collect::<ExecutionFacts>();
+        let guard = ConditionTerm::equal(MachineTerm::Variable(divisor), MachineTerm::constant(0));
+        let runs = [None, Some(false), Some(true)].map(|polarity| {
+            let mut facts = prefix.clone();
+            if let Some(polarity) = polarity {
+                facts.push(ExecutionPureFact::new(Proposition::condition_is(
+                    guard.clone(),
+                    polarity,
+                )));
+            }
+            facts.ensure_indexed();
+            let indexed = crate::kernel::execution_facts::indexed_execution_facts();
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::eval::apply_program_divide(
+                    width.symbolic_value(dividend),
+                    width.symbolic_value(divisor),
+                    facts,
+                    vec![],
+                    &assumptions,
+                )
+            });
+            assert_eq!(paths.len(), 1);
+            assert_eq!(paths[0].obligations.is_empty(), polarity == Some(false));
+            assert_eq!(
+                crate::kernel::execution_facts::indexed_execution_facts(),
+                indexed
+            );
+            work
+        });
+        samples.push(runs);
+    }
+    assert!(
+        samples.iter().all(|sample| *sample == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn signed_addition_does_not_walk_the_operands_equality_class() {
     let mut samples = Vec::new();
     for count in [8, 32, 128] {
