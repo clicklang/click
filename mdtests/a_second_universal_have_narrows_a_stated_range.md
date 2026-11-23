@@ -50,7 +50,8 @@ void walk(int32 *a, int32 *b, int32 n) {
         intro();
         have k <= k + 1 by { solve() using { 0 <= k; k < n; n <= 1073741823; }; }
         have k + 1 <= n by { solve() using { 0 <= k; k < n; n <= 1073741823; }; }
-        solve();
+        apply(click::separation::contains_subrange(a, 0, n, k, k + 1));
+        apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[k..k + 1])));
     }
 }
 ```
