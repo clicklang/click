@@ -229,7 +229,20 @@ qualification. Casting a pointer from a non-character type, including
 `void *`, to a byte pointer forms the byte view of its allocation, as the C
 conversion does; casting to `void *` or between byte pointer types keeps the
 pointer's bounds. Qualifying a pointer grants no
-memory access permission. A Rust source's sidecar
+memory access permission. A `void *` has no pointee type, as in C, so
+`*q` and `q[i]` on one are refused ("a `void *` has no pointee type; cast
+it to a typed pointer or use `load<T>`"); a spec casts first,
+`*(q as (uint8 *))`, or reads `load<T>(q)`
+(`mdtests/void_pointer_spec_dereference_is_refused.md`). `q + k`, `k + q`
+and `q - k` step a `void *` by `k` bytes, as Click's C side does (the GNU
+extension), so `ensures result == q + 1` states a body's `return q + 1;`
+(`mdtests/void_pointer_spec_addition_steps_one_byte.md`,
+`mdtests/void_pointer_spec_step_reads_the_next_byte.md`); the difference of
+two `void *` is refused
+(`mdtests/void_pointer_spec_difference_is_refused.md`). A range
+`q[a..b]` in `views` or `owns` counts elements, so one based at a `void *` is
+refused; `(q as (uint8 *))[0..n]` states the bytes
+(`mdtests/void_pointer_range_is_refused.md`). A Rust source's sidecar
 also writes Rust's scalar names, `x as u32`.
 
 Float pointer casts preserve the address and use the existing pointer-cast
