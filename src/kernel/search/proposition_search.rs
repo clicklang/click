@@ -1339,10 +1339,8 @@ impl super::ProofSearch<PureFactContext> {
             .map(|instances| PropositionDerivationRule::FiniteForAll { instances })
     }
 
-    /// Select one exact existential fact, rename its witness binder to the
-    /// goal binder, and derive the goal body from the witness body's
-    /// conjuncts. The selected fact is retained by the resulting rule; the
-    /// witness conjuncts are local assumptions of its child proof.
+    /// Open the goal and one selected existential fact at the same fresh
+    /// witness. The source conjuncts are local assumptions of the child proof.
     pub(crate) fn derive_exists_from_fact(
         context: &PureFactContext,
         var: Variable,
@@ -1351,6 +1349,9 @@ impl super::ProofSearch<PureFactContext> {
     ) -> Option<PropositionDerivationRule> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("derive_exists_from_fact");
+        let witness = crate::kernel::quantifiers::opening_witness()?;
+        let opened_goal =
+            crate::kernel::quantifiers::rename_quantified_variable(body, var, witness, sort)?;
         let candidates = context
             .proposition_facts(SearchPermission::new())
             .filter_map(|source| {
@@ -1366,10 +1367,10 @@ impl super::ProofSearch<PureFactContext> {
                 if source_sort != sort {
                     return None;
                 }
-                let renamed = crate::kernel::api::substitute_quantified_body_capture_free(
+                let renamed = crate::kernel::quantifiers::rename_quantified_variable(
                     source_body,
                     **source_var,
-                    var,
+                    witness,
                     sort,
                 )?;
                 Some((source.clone(), renamed))
@@ -1384,12 +1385,13 @@ impl super::ProofSearch<PureFactContext> {
             }
             let derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
                 &(witness_assumptions),
-                body,
+                &opened_goal,
                 false,
             );
             if let Some(derivation) = derivation {
                 return Some(PropositionDerivationRule::ExistsFromFact {
                     source: Box::new(source),
+                    witness,
                     body: derivation,
                 });
             }

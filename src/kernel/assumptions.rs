@@ -8978,7 +8978,11 @@ impl PropositionDerivation {
                         .all(|premise| !proposition_has_free_bitvector_variable(premise, *witness))
                     && proof.check(available)
             }
-            PropositionDerivationRule::ExistsFromFact { source, body } => {
+            PropositionDerivationRule::ExistsFromFact {
+                source,
+                witness,
+                body,
+            } => {
                 let Proposition::Exists {
                     var,
                     sort,
@@ -8999,15 +9003,22 @@ impl PropositionDerivation {
                 };
                 if sort != source_sort
                     || !available.proves_exact(source)
-                    || body.conclusion != **expected_body
+                    || witness.is_bound()
+                    || !crate::kernel::quantifiers::rename_quantified_variable(
+                        expected_body,
+                        **var,
+                        *witness,
+                        sort,
+                    )
+                    .is_some_and(|opened| body.conclusion == opened)
                 {
                     return false;
                 }
                 let Some(renamed_source_body) =
-                    crate::kernel::api::substitute_quantified_body_capture_free(
+                    crate::kernel::quantifiers::rename_quantified_variable(
                         source_body,
                         **source_var,
-                        **var,
+                        *witness,
                         sort,
                     )
                 else {

@@ -8543,6 +8543,43 @@ fn exact_condition_check_ignores_unrelated_implications() {
     );
 }
 
+#[test]
+fn existential_derivation_keeps_witness_conditions_local() {
+    let n = Variable(96_000);
+    let positive = Proposition::condition_is(
+        ConditionTerm::signed_less_than(MachineTerm::constant(0), MachineTerm::Variable(n)),
+        true,
+    );
+    let exact = Proposition::condition_is(
+        ConditionTerm::equal(MachineTerm::Variable(n), MachineTerm::constant(7)),
+        true,
+    );
+    let source = crate::kernel::quantifiers::test_exists(
+        "n".into(),
+        n,
+        Sort::ProgramInt32,
+        Proposition::And(Box::new(positive.clone()), Box::new(exact)),
+    );
+    let goal = crate::kernel::quantifiers::test_exists("n".into(), n, Sort::ProgramInt32, positive);
+    let Proposition::Exists {
+        var, sort, body, ..
+    } = &goal
+    else {
+        unreachable!("test goal is existential");
+    };
+    let available = PureFactContext::new().assume_proposition(source.clone());
+    let rule =
+        crate::kernel::search::ProofSearch::derive_exists_from_fact(&available, **var, sort, body)
+            .expect("the source witness establishes the goal body");
+    let proof = PropositionDerivation {
+        conclusion: goal,
+        rule,
+    };
+    assert_eq!(proof.context_premises(), vec![source]);
+    assert!(proof.check(&available));
+    assert!(!proof.check(&PureFactContext::new()));
+}
+
 /// A state-equivalent offset fact is read from the facts filed under the
 /// query's offset shape, and an alpha-equal existential from the goal's
 /// identity bucket. Both once scanned every fact, so a miss grew with

@@ -15790,11 +15790,11 @@ pub(crate) enum PropositionDerivationRule {
         witness: Variable,
         proof: Box<PropositionDerivation>,
     },
-    /// Prove an existential by selecting the bound variable from an exact
-    /// existential fact and checking the target body under that witness's
-    /// conjuncts.
+    /// Open an exact existential fact and the goal at a fresh witness. The
+    /// opened fact supplies local assumptions to the proof of the goal body.
     ExistsFromFact {
         source: Box<Proposition>,
+        witness: Variable,
         body: Box<PropositionDerivation>,
     },
     /// Prove an existential by selecting a free witness term and checking the
