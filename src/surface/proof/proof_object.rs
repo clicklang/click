@@ -3526,7 +3526,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn ends_in_empty_normalize_using(&self) -> bool {
         matches!(
             self.node.step.as_deref(),
-            Some(ProofStep::NormalizeUsing(premises)) if premises.is_empty()
+            Some(ProofStep::CompatibilityNormalize(Some(premises))) if premises.is_empty()
         )
     }
 
@@ -3945,6 +3945,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofStep::Known => "known()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
+        ProofStep::CompatibilityNormalize(_) => "compatibility normalization",
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 

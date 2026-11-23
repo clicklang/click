@@ -182,7 +182,8 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 pending.extend(then_proof.steps());
                 pending.extend(else_proof.steps());
             }
-            ProofStep::NormalizeUsing(premises) => {
+            ProofStep::NormalizeUsing(premises)
+            | ProofStep::CompatibilityNormalize(Some(premises)) => {
                 count += premises.len();
             }
             ProofStep::ApplyTheorem(application) => count += application.arguments.len(),
@@ -196,6 +197,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             } => count += application.arguments.len() + premises.len(),
             ProofStep::Known
             | ProofStep::Normalize
+            | ProofStep::CompatibilityNormalize(None)
             | ProofStep::Rewrite(_)
             | ProofStep::Intro
             | ProofStep::Contradiction(_) => {}

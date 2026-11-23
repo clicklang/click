@@ -3270,6 +3270,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
+                    | ProofTactic::CompatibilityNormalize(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -3400,8 +3401,9 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::CheckTerminationComponent { .. } => "check_termination_component",
         ProofTactic::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofTactic::Known => "known",
-        ProofTactic::Normalize => "normalize",
-        ProofTactic::NormalizeUsing(_) => "normalize",
+        ProofTactic::Normalize
+        | ProofTactic::NormalizeUsing(_)
+        | ProofTactic::CompatibilityNormalize(_) => "normalize",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
         ProofTactic::Intro
         | ProofTactic::IntroAs(_)

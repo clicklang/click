@@ -132,7 +132,7 @@ fn have(claim: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
 fn computational_fact(claim: ClickProposition) -> ProofStep {
     // Let run_scope prefer known and explicit algebra for goal-local
     // identities. Other identities still use the existing checked rule.
-    have(claim, vec![ProofStep::Normalize])
+    have(claim, vec![ProofStep::CompatibilityNormalize(None)])
 }
 
 fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> ContractExpression {
@@ -832,7 +832,7 @@ fn run_scope<'a>(
                 let closed = run_scope(nested, proof.steps())?;
                 scope = scope.join_nested(closed)?;
             }
-            ProofStep::Normalize => {
+            ProofStep::CompatibilityNormalize(None) => {
                 if scope
                     .body()
                     .goal()
@@ -844,7 +844,9 @@ fn run_scope<'a>(
                 {
                     scope = closed;
                 } else {
-                    scope = scope.driver().apply_step(ProofStep::Normalize)?;
+                    scope = scope
+                        .driver()
+                        .apply_step(ProofStep::CompatibilityNormalize(None))?;
                 }
             }
             step => scope = scope.driver().apply_step(step.clone())?,

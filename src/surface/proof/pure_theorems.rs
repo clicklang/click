@@ -2108,7 +2108,11 @@ fn certificate_int32_rewrites(
 ) -> Option<Vec<Proposition>> {
     let steps = certificate.steps();
     let (rewrite_steps, closer) = steps.split_at(steps.len().saturating_sub(1));
-    if !matches!(closer, [ProofStep::Known | ProofStep::Normalize]) || rewrite_steps.is_empty() {
+    if !matches!(
+        closer,
+        [ProofStep::Known | ProofStep::Normalize | ProofStep::CompatibilityNormalize(None)]
+    ) || rewrite_steps.is_empty()
+    {
         return None;
     }
     rewrite_steps

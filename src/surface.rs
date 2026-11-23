@@ -114,7 +114,7 @@ pub use expansion::{
     project_tactic_source_position, project_tactic_source_positions, select_smart_tactic,
     selected_c_target, selected_project_c_target, selected_project_thread_runtime,
     selected_thread_runtime, smart_tactic_source_sites, tactic_source_position,
-    tidy_expansion_closers, verifying_source_paths,
+    verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -6277,6 +6277,8 @@ pub enum ProofTactic {
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
+    /// A compatibility check used in verification. It has no expansion spelling.
+    CompatibilityNormalize(Option<Vec<ClickProposition>>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
     /// `let name = intro()`: introduce a universal goal's variable under a
@@ -6895,7 +6897,7 @@ impl ProofTactic {
             | Self::CheckTerminationComponent { .. }
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
             Self::Known => TacticClass::Simple(SimpleTactic::Known),
-            Self::Normalize | Self::NormalizeUsing(_) => {
+            Self::Normalize | Self::NormalizeUsing(_) | Self::CompatibilityNormalize(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
@@ -10688,7 +10690,7 @@ impl VerifiedProgramTheorem {
             self.function_block.signature().returns_reference(),
         );
         let _reference_carriers = diagnostics::ParameterPlaceScope::enter(&self.function_block);
-        Ok(format_proof_certificate(
+        expansion::require_surface_expansion(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))
     }
@@ -10738,7 +10740,7 @@ impl VerifiedPureTheorem {
             .contract_value_parameters
             .as_ref()
             .map(printing::ContractValueParameterScope::enter);
-        Ok(format_proof_certificate(&self.proof_certificate()?))
+        expansion::require_surface_expansion(format_proof_certificate(&self.proof_certificate()?))
     }
 }
 

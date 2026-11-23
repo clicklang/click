@@ -3828,7 +3828,7 @@ fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
         goal,
         Some(Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_)))
     ) {
-        steps.push(ProofStep::Normalize);
+        steps.push(ProofStep::CompatibilityNormalize(None));
     }
     // Without a proposition goal, keep both candidate refusals in the trace.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {

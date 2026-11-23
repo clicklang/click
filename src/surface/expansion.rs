@@ -266,13 +266,24 @@ pub fn expand_c_claim_source(
             unreachable!("function claim edits are never loop phases")
         }
     };
-    let expanded = splice_source(click_source, &tokens, span, &replacement);
+    let expanded = splice_source(click_source, &tokens, span, &replacement)?;
     checked_expanded_source(click_source, &sources, &replacement, expanded).map_err(|error| {
         error.with_context(format!(
             "expanding `{function_name}` {} at {target}",
             claim.describe()
         ))
     })
+}
+
+// The proof checker can use its compatibility rules without a Surface replay.
+// The formatter keeps that provenance even in nested or flattened proof edits.
+pub(super) fn require_surface_expansion(rendered: String) -> Result<String, ClickError> {
+    if rendered.contains(printing::COMPATIBILITY_NORMALIZATION) {
+        return Err(ClickError::new(
+            "proof expansion is unavailable: verification used legacy normalization and no ordinary proof was recorded",
+        ).with_kind(ClickErrorKind::Unsupported));
+    }
+    Ok(rendered)
 }
 
 /// Formats a function claim's already-checked certificate into its source.
@@ -321,7 +332,7 @@ pub fn expand_verified_function_claim_source_by_label(
         &tokens,
         span,
         &replacement,
-    )))
+    )?))
 }
 
 fn expand_project_claim_source(
@@ -363,7 +374,7 @@ fn expand_project_claim_source(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    let expanded = splice_source(click_source, &tokens, span, &replacement);
+    let expanded = splice_source(click_source, &tokens, span, &replacement)?;
     let rewritten = project.with_entry_source(expanded.clone());
     let rewritten_sources = ProgramSourceContext::of(inputs)?.with_click_project(&rewritten);
     resolve_click_project_context(&rewritten, &rewritten_sources)
@@ -419,7 +430,7 @@ fn expand_c_prepared_claim_source(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    let expanded = splice_source(click_source, &tokens, span, &replacement);
+    let expanded = splice_source(click_source, &tokens, span, &replacement)?;
     checked_expanded_source(click_source, &sources, &replacement, expanded).map_err(|error| {
         error.with_context(format!(
             "expanding `{function_name}` {} at {target}",
@@ -689,7 +700,7 @@ fn expand_program_prepared_claim_source_context(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    let expanded = splice_source(click_source, &tokens, span, &replacement);
+    let expanded = splice_source(click_source, &tokens, span, &replacement)?;
     checked_expanded_source(click_source, &sources, &replacement, expanded).map_err(|error| {
         error.with_context(format!(
             "expanding `{function_name}` {} at {target}",
@@ -754,10 +765,10 @@ pub fn expand_claim_by_label(
         result?;
         let certificate =
             certificate.expect("successful program verification publishes its proof certificate");
-        let replacement = format!(
+        let replacement = require_surface_expansion(format!(
             "termination {}\n",
             printing::format_proof_certificate(&certificate)
-        );
+        ))?;
         let source = if let Some((start, end)) = &file.termination_span {
             let first = offset_at_position(click_source, start.line, start.column)?;
             let last = offset_at_position(click_source, end.line, end.column)? + 1;
@@ -930,7 +941,7 @@ fn expand_loop_phase_claim(
         &replacement
     };
     let replacement = indent_replacement(click_source, span.start, replacement);
-    let expanded = splice_source(click_source, &tokens, &span, &replacement);
+    let expanded = splice_source(click_source, &tokens, &span, &replacement)?;
     let source = match project {
         Some(project) => {
             let rewritten = project.with_entry_source(expanded.clone());
@@ -1525,112 +1536,6 @@ fn checked_expanded_source(
     }
 }
 
-/// A shorter spelling of the grouped closers an expansion wrote, or `None`
-/// when it wrote none to shorten. Only lines the expansion changed are
-/// touched.
-///
-/// A grouped closure proves each open claim in a `have` and then closes
-/// every goal with its own `known();`. Where some of those `have`s are
-/// proved by `normalize();` alone and the run of closers ends its block,
-/// those `have`s are dropped and their claims' closers become
-/// `normalize();`. A closer acts on the first open goal, so the closers stay
-/// one per goal: those for goals no `have` proves, such as held resources,
-/// first, as a contract usually lists its resource clauses first, then one
-/// per `have` in order. This is a candidate only: the caller keeps it when
-/// it verifies, and the expansion as generated otherwise.
-pub fn tidy_expansion_closers(original: &str, expanded: &str) -> Option<String> {
-    let before = original.lines().collect::<Vec<_>>();
-    let lines = expanded.lines().collect::<Vec<_>>();
-    let first_changed = before
-        .iter()
-        .zip(&lines)
-        .take_while(|(left, right)| left == right)
-        .count();
-    let unchanged_tail = before[first_changed..]
-        .iter()
-        .rev()
-        .zip(lines[first_changed..].iter().rev())
-        .take_while(|(left, right)| left == right)
-        .count();
-    let changed_end = lines.len() - unchanged_tail;
-    let indent_of = |line: &str| line.len() - line.trim_start().len();
-    let mut tidied = Vec::with_capacity(lines.len());
-    let mut index = 0;
-    let mut shortened = false;
-    while index < lines.len() {
-        let line = lines[index];
-        let indent = &line[..indent_of(line)];
-        // The run of `have`s starting here, each as its line range and
-        // whether `normalize();` alone proves it.
-        let mut haves = Vec::new();
-        let mut next = index;
-        while index >= first_changed
-            && let Some(header) = lines.get(next)
-            && header.starts_with(indent)
-            && header[indent.len()..].starts_with("have ")
-        {
-            if header.ends_with(';') {
-                haves.push((next..next + 1, false));
-                next += 1;
-                continue;
-            }
-            if !header.ends_with(" by {") {
-                break;
-            }
-            let closing = format!("{indent}}}");
-            let Some(length) = lines[next + 1..].iter().position(|line| *line == closing) else {
-                break;
-            };
-            let normalized = length == 1 && lines[next + 1] == format!("{indent}    normalize();");
-            haves.push((next..next + length + 2, normalized));
-            next += length + 2;
-        }
-        let closer = format!("{indent}known();");
-        let closers = lines[next..]
-            .iter()
-            .take_while(|line| **line == closer)
-            .count();
-        let ends_block = lines.get(next + closers).is_some_and(|after| {
-            after.trim_start().starts_with('}') && indent_of(after) < indent.len()
-        });
-        let normalized = haves.iter().filter(|(_, normalized)| *normalized).count();
-        if normalized > 0 && closers >= haves.len() && ends_block && next + closers <= changed_end {
-            for (range, normalized) in &haves {
-                if !normalized {
-                    tidied.extend(lines[range.clone()].iter().map(|line| line.to_string()));
-                }
-            }
-            // One closer per goal, in contract order: the goals no `have`
-            // proves (held resources) first, then each `have`'s claim, by
-            // `normalize();` where its `have` was dropped.
-            tidied.extend(std::iter::repeat_n(closer.clone(), closers - haves.len()));
-            for (_, normalized) in &haves {
-                tidied.push(if *normalized {
-                    format!("{indent}normalize();")
-                } else {
-                    closer.clone()
-                });
-            }
-            index = next + closers;
-            shortened = true;
-            continue;
-        }
-        // A shorter run of the same `have`s ends at the same closers, so
-        // none of them starts a match either.
-        let skipped = next.max(index + 1);
-        tidied.extend(lines[index..skipped].iter().map(|line| line.to_string()));
-        index = skipped;
-    }
-    if !shortened {
-        return None;
-    }
-    let mut source = tidied.join("\n");
-    if expanded.ends_with('\n') {
-        source.push('\n');
-    }
-    Some(source)
-}
-
 /// Expands one tactic and returns the rewritten source.
 ///
 /// Certificate capture verifies the selected proof prefix. The caller is
@@ -1800,7 +1705,7 @@ fn expand_c_tactic_source_at_context(
         &proof_source_tokens(click_source, &selected.source_spans.implicit_proofs)?,
         &span,
         &replacement,
-    );
+    )?;
     if let Some(project) = project {
         let rewritten = project.with_entry_source(expanded.clone());
         let sources = ProgramSourceContext::bundle(c_sources).with_click_project(&rewritten);
@@ -1952,7 +1857,7 @@ fn expand_program_prepared_tactic_source_at_context(
         &proof_source_tokens(click_source, &selected.source_spans.implicit_proofs)?,
         &span,
         &replacement,
-    );
+    )?;
     checked_expanded_source(click_source, &sources, &replacement, expanded)
 }
 
@@ -2054,7 +1959,7 @@ fn expand_c_prepared_tactic_source_at_context(
         &proof_source_tokens(click_source, &selected.source_spans.implicit_proofs)?,
         &span,
         &replacement,
-    );
+    )?;
     if let Some(project) = project {
         let rewritten = project.with_entry_source(expanded.clone());
         let project_sources =
@@ -2150,7 +2055,7 @@ fn rewrite_verified_pure_theorem(
             unreachable!("theorem ensure edits are never loop phases")
         }
     };
-    Ok(splice_source(click_source, &tokens, span, &replacement))
+    splice_source(click_source, &tokens, span, &replacement)
 }
 
 /// Spells the checked certificate that replaces a whole claim proof.
@@ -2703,8 +2608,8 @@ fn splice_source(
     tokens: &[SourceToken],
     span: &Range<usize>,
     replacement: &str,
-) -> String {
-    let replacement = printing::spell_source_names(source, replacement);
+) -> Result<String, ClickError> {
+    let replacement = require_surface_expansion(printing::spell_source_names(source, replacement))?;
     let replacement = replacement.as_str();
     let mut open_blocks = Vec::new();
     let mut enclosing: Option<Range<usize>> = None;
@@ -2747,7 +2652,7 @@ fn splice_source(
             spliced.push_str(&source[span.end..]);
         }
     }
-    with_cited_library_imports(spliced, replacement, source)
+    Ok(with_cited_library_imports(spliced, replacement, source))
 }
 
 /// `source` with an `import click::...;` line for each Click library module
@@ -3936,6 +3841,7 @@ fn expand_selected_tactics_context(
     let mut cursor = 0;
     let mut replacement_spans = Vec::new();
     for (span, replacement) in retained {
+        let replacement = require_surface_expansion(replacement)?;
         rewritten.push_str(&source[cursor..span.start]);
         let replacement_start = rewritten.len();
         rewritten.push_str(&replacement);

@@ -1,5 +1,44 @@
 use super::*;
 
+fn assert_compatibility_normalization_refusal(error: ClickError) {
+    assert_eq!(error.kind(), ClickErrorKind::Unsupported, "{error:?}");
+    assert!(
+        error.message().contains("used legacy normalization"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
+    let (source, input) = mdtest_sources("mdtests/restricted_solve_pointer_alias_viewability.md");
+    let sources = crate::cli::source_refs(&input);
+    verify_c_sources(&source, &sources).unwrap();
+    let offset = source.find("solve() using").unwrap();
+    let position = expansion::position_at_offset(&source, offset);
+    let claim = "alias_value.contract";
+    let errors = [
+        expand_c_claim_source_by_label(&source, &sources, claim).unwrap_err(),
+        expand_c_tactic_source_at(&source, &sources, position.line, position.column).unwrap_err(),
+        expand_c_tactics_source_at(&source, &sources, &[position]).unwrap_err(),
+    ];
+    for error in errors {
+        assert_compatibility_normalization_refusal(error);
+    }
+
+    // Writing the compatibility tactic explicitly keeps the proof replayable.
+    let written = source.replacen("solve() using", "normalize() using", 1);
+    let expanded = expand_c_claim_source_by_label(&written, &sources, claim).unwrap();
+    assert_eq!(
+        expanded.matches("normalize() using").count(),
+        1,
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
 #[test]
 fn solve_expands_to_scoped_introductions_for_written_ranges() {
     let source = r#"
@@ -2115,18 +2154,19 @@ fn outcome_arithmetic_is_independent_of_postcondition_count() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
-fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
+fn uint64_measure_induction_verifies_without_narrowing() {
     let (source, _) = mdtest_sources("mdtests/uint64_measure_induction_counts_a_range_fold.md");
-    let expanded =
+    verify_click_theorems(&source).unwrap();
+    assert_compatibility_normalization_refusal(
         expand_c_claim_source_by_label(&source, &[], "full_width_count_is_its_length.ensures_0")
-            .unwrap();
-    verify_click_theorems(&expanded).unwrap();
-    let false_result = expanded.replacen(
+            .unwrap_err(),
+    );
+    let false_result = source.replacen(
         "ensures full_width_count(n) == to_integer(n)",
         "ensures full_width_count(n) == to_integer(n) + 1",
         1,
     );
-    assert_ne!(false_result, expanded);
+    assert_ne!(false_result, source);
     assert!(verify_click_theorems(&false_result).is_err());
 }
 
@@ -6849,7 +6889,7 @@ fn cpp_local_record_call_requirement_expands_and_replays() {
 }
 
 #[test]
-fn cpp_allocation_rewrites_expand_and_replay() {
+fn cpp_allocation_rewrites_verify_with_legacy_normalization() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/cpp_generic_class_state_in_a_resource.md");
     let fixture = crate::cli::read_mdtest(&path).unwrap();
@@ -6858,22 +6898,19 @@ fn cpp_allocation_rewrites_expand_and_replay() {
     let source = fixture.click_source.as_deref().unwrap();
     let function = "__cpp_q_X8_537461636b3c543e_I4_push";
     let claim = format!("{function}.contract");
-    let expanded = expand_claim_by_label(None, source, &program, &claim, None)
-        .unwrap_or_else(|error| panic!("{}", error.report()))
-        .source;
     let project = crate::surface::ClickProject::new(
         "proof.click",
         [crate::surface::ClickModuleSource::new(
             "proof.click",
-            &expanded,
+            source,
             [],
         )],
     );
-    check_audit_claim(&claim, true, || {
-        crate::surface::verify_project_functions(&project, &program, [function.to_owned()])
-            .map_err(|error| error.report())
-    })
-    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    crate::surface::verify_project_functions(&project, &program, [function.to_owned()])
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert_compatibility_normalization_refusal(
+        expand_claim_by_label(None, source, &program, &claim, None).unwrap_err(),
+    );
 }
 
 #[test]
@@ -11750,7 +11787,7 @@ fn signed_order_theorems_check_ordered_stores_without_search() {
         expanded.contains("int32_less_equal_less_than_transitive"),
         "{expanded}"
     );
-    assert!(expanded.contains("preserve(memory(a[i])"), "{expanded}");
+    assert!(expanded.contains("have a[i] == 1 by"), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve_for_claim(label, || {
         verify_c_sources(&expanded, &program).map_err(|error| error.report())
@@ -12503,16 +12540,21 @@ fn restricted_solve_rewrites_pointer_aliases_inside_memory_loads() {
         + 1;
     let sources = [("alias_value.c", c_source)];
 
-    let expanded = expand_c_tactic_source_at(click_source, &sources, line, column)
-        .expect("pointer-alias restricted solve should expand");
+    verify_c_sources(click_source, &sources).expect("restricted alias proof should verify");
+    assert_compatibility_normalization_refusal(
+        expand_c_tactic_source_at(click_source, &sources, line, column).unwrap_err(),
+    );
+
+    let written = click_source.replacen("solve() using", "normalize() using", 1);
+    let expanded = expand_c_tactic_source_at(&written, &sources, line, column)
+        .expect("the handwritten alias proof should expand");
     let expanded_have_start = expanded.find("have alias[index] == value").unwrap();
     let expanded_have_end = expanded[expanded_have_start..]
         .find("fold(valued_array")
         .map(|relative| expanded_have_start + relative)
         .unwrap();
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
-    // Indexed read congruence constructs a normalization certificate from
-    // the selected premises without spelling intermediate rewrites.
+    // Expansion preserves the selected premises in the handwritten alias proof.
     for selected in [
         "normalize() using {",
         "original[0] == value;",
@@ -16154,46 +16196,16 @@ fn outcome_predicate_unfold_evidence_survives_nested_have_expansion() {
         "the nested outcome tree should retain one Proof"
     );
 
-    let expanded = expand_c_claim_source(
+    let error = expand_c_claim_source(
         click_source,
         &sources,
         "sort_three_cells",
         ContractProofClaim::Ensure(0),
     )
-    .expect("the retained nested predicate proof should expand");
+    .expect_err("the nested proof still needs a verification-only fallback");
     assert!(
-        expanded.contains("have permutation::permutation(p, old(p), 0, 3) by {"),
-        "{expanded}"
-    );
-    assert!(expanded.contains("normalize();"), "{expanded}");
-    assert!(
-        expanded.contains("unfold(permutation::permutation("),
-        "{expanded}"
-    );
-    let (reverified, expanded_flat_units) =
-        proof::count_flat_proof_units(|| verify_c_sources(&expanded, &sources));
-    assert_eq!(
-        expanded_flat_units, 1,
-        "the rewritten nested proof should retain one Proof"
-    );
-    reverified.expect("the retained nested predicate proof should check independently");
-
-    let corrupted = expanded.replace("region(1).entry", "region(6).entry");
-    assert_ne!(
-        corrupted, expanded,
-        "the expansion should expose its checked root branch anchor"
-    );
-    let corrupted_result = { verify_c_sources(&corrupted, &sources) };
-    let error = corrupted_result
-        .expect_err("tampering with the nested execution branch anchor must invalidate the proof");
-    assert!(
-        error
-            .message()
-            .contains("expanded execution branch condition does not match the checked C branch")
-            || error
-                .message()
-                .contains("no symbolic state was recorded for `statement(2).entry`"),
-        "the checked Proof split should reject the tamper directly: {error:?}"
+        error.message().contains("used legacy normalization"),
+        "{error:?}"
     );
 }
 
@@ -16962,7 +16974,7 @@ fn vector_push_pipeline_has_no_outcome_fallbacks() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
-fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
+fn smart_have_using_legacy_normalization_refuses_expansion() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest
         .join("examples")
@@ -16993,19 +17005,14 @@ fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
     let c_sources = crate::cli::source_refs(&sources);
 
     verify_c_sources(&smart, &c_sources).expect("the smart have should verify");
-    let expanded = expand_c_claim_source(
+    let error = expand_c_claim_source(
         &smart,
         &c_sources,
         "ring_buffer_pipeline",
         ContractProofClaim::Grouped,
     )
-    .expect("the smart have should expand against its ordinary lowered goal");
-    assert!(
-        expanded.contains("have owner->head == old(owner->head) by {\n        normalize();\n    }"),
-        "the expansion used a different internal goal:\n{expanded}"
-    );
-    verify_c_sources(&expanded, &c_sources)
-        .expect("the expanded smart have should independently reverify");
+    .unwrap_err();
+    assert_compatibility_normalization_refusal(error);
 }
 
 #[test]
@@ -17267,19 +17274,9 @@ fn outcome_solve_preserves_viewability_after_a_call() {
     let verified = verify_c_sources(click_source, &sources);
     verified.expect("the call-preserved viewability should verify");
 
-    let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
-        .expect("call-preserved viewability should expand");
-    for region in [0, 2, 3] {
-        assert!(
-            expanded.contains(&format!("preserve(memory(p[0..1]), region({region}));")),
-            "{expanded}"
-        );
-    }
-    assert!(!expanded.contains("transport("), "{expanded}");
-    without_implicit_solve_for_claim("use_summary.contract", || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .expect("the expanded viewability proof should check without implicit solve");
+    assert_compatibility_normalization_refusal(
+        expand_function_proof_source(click_source, &sources, "use_summary").unwrap_err(),
+    );
 }
 
 #[test]
@@ -24261,42 +24258,6 @@ fn void_pointer_helper_selected_view_expands_and_checks() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
-fn tidied_expansion_closers_prove_normalized_claims_in_goal_order() {
-    let original = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n}\n";
-    let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        known();\n    }\n    have r == s by {\n        normalize();\n    }\n    known();\n    known();\n    known();\n    known();\n}\n";
-    assert_eq!(
-        tidy_expansion_closers(original, expanded).as_deref(),
-        Some(
-            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        known();\n    }\n    known();\n    normalize();\n    known();\n    normalize();\n}\n"
-        )
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
-fn tidied_expansion_closers_leave_other_closers_alone() {
-    let original = "f by {\n    step();\n}\n";
-    // Fewer closers than claims.
-    let short = "f by {\n    have a by {\n        normalize();\n    }\n    have b by {\n        normalize();\n    }\n    known();\n}\n";
-    // A closer run that does not end its block.
-    let continued =
-        "f by {\n    have a by {\n        normalize();\n    }\n    known();\n    step();\n}\n";
-    // No claim proved by `normalize();` alone.
-    let simplified = "f by {\n    have a by {\n        solve();\n    }\n    known();\n}\n";
-    for expanded in [short, continued, simplified] {
-        assert_eq!(
-            tidy_expansion_closers(original, expanded),
-            None,
-            "{expanded}"
-        );
-    }
-    // Text the expansion left as it was is never rewritten.
-    let written = "f by {\n    have a by {\n        normalize();\n    }\n    known();\n}\n";
-    assert_eq!(tidy_expansion_closers(written, written), None);
-}
-
-#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original C fixture expansion and checking take 0.9s"]
 fn integer_count_authority_retirement_expands_and_rechecks() {
@@ -25968,7 +25929,7 @@ test_batches! {
     expansion_batch_02: [
         unsigned_widening_special_certificates_expand_and_recheck,
         borrowed_resource_receipts_do_not_hide_an_unspent_authority_member,
-        uint64_measure_induction_expands_and_rechecks_without_narrowing,
+        uint64_measure_induction_verifies_without_narrowing,
         structural_induction_resolves_local_and_global_calls_after_expansion,
     ],
     expansion_batch_03: [
@@ -26445,8 +26406,6 @@ test_batches! {
         void_pointer_helper_selected_view_expands_and_checks,
     ],
     expansion_batch_83: [
-        tidied_expansion_closers_prove_normalized_claims_in_goal_order,
-        tidied_expansion_closers_leave_other_closers_alone,
         arithmetic_in_each_both_arm_is_selected_at_its_location,
         relinked_node_empty_check_requires_distinct_addresses,
     ],
@@ -26867,7 +26826,6 @@ fn shifted_one_divisors_expand_to_checked_bounds() {
 #[test]
 fn arithmetic_safety_bounds_expand_to_checked_proofs() {
     for (path, function) in [
-        ("mdtests/arithmetic_safety_float_widening.md", "convert"),
         ("mdtests/arithmetic_safety_right_shift_count.md", "shift32"),
         ("mdtests/arithmetic_safety_right_shift_count.md", "shift64"),
     ] {
@@ -26887,20 +26845,22 @@ fn arithmetic_safety_bounds_expand_to_checked_proofs() {
 }
 
 #[test]
-fn float_negation_cast_bounds_expand_to_selected_normalization() {
-    let (source, sources) = mdtest_sources("mdtests/float_negation_preserves_cast_bounds.md");
-    let sources = sources
-        .iter()
-        .map(|(n, s)| (n.as_str(), s.as_str()))
-        .collect::<Vec<_>>();
-    let mut expanded = source;
-    for function in ["cast32", "cast64"] {
-        expanded = expand_function_proof_source(&expanded, &sources, function).unwrap();
-        let claim = format!("{function}.ensures_0");
-        without_implicit_solve_for_claim(&claim, || {
-            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-        })
-        .unwrap();
+fn float_bounds_using_legacy_normalization_refuse_expansion() {
+    for (fixture, functions) in [
+        ("arithmetic_safety_float_widening", &["convert"][..]),
+        (
+            "float_negation_preserves_cast_bounds",
+            &["cast32", "cast64"][..],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        verify_c_sources(&source, &sources).unwrap();
+        for function in functions {
+            assert_compatibility_normalization_refusal(
+                expand_function_proof_source(&source, &sources, function).unwrap_err(),
+            );
+        }
     }
 }
 
@@ -28042,60 +28002,49 @@ fn explicit_produced_view_release_expands_and_reverifies() {
 }
 
 #[test]
-fn conditional_signed_shift_retains_its_checked_requirement_on_return() {
+fn conditional_signed_shifts_verify_with_legacy_normalization() {
     let (source, sources) =
         mdtest_sources("mdtests/arithmetic_expression_conditional_signed_shift.md");
     let sources = crate::cli::source_refs(&sources);
-    let claim = "shift64.ensures_0";
-    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
-        .unwrap_or_else(|error| panic!("{claim}: {error}"));
-    assert!(expanded.contains("step() by {"), "{expanded}");
-    crate::surface::check_audit_claim(claim, true, || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
-}
-
-#[test]
-fn guarded_signed_arithmetic_and_mixed_float_bounds_cold_replay() {
-    for (fixture, claims) in [
-        (
-            "mdtests/arithmetic_expression_guarded_signed_ring.md",
-            ["sum.ensures_0", "product.ensures_0"],
-        ),
-        (
-            "mdtests/arithmetic_expression_float_bound_composition.md",
-            ["negate_scaled.ensures_0", "widen_scaled.ensures_0"],
-        ),
-    ] {
-        let (source, sources) = mdtest_sources(fixture);
-        let sources = crate::cli::source_refs(&sources);
-        for claim in claims {
-            let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
-                .unwrap_or_else(|error| panic!("{claim}: {error}"));
-            crate::surface::check_audit_claim(claim, true, || {
-                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-            })
-            .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
-        }
+    verify_c_sources(&source, &sources).unwrap();
+    for claim in ["shift32.ensures_0", "shift64.ensures_0"] {
+        assert_compatibility_normalization_refusal(
+            expand_c_claim_source_by_label(&source, &sources, claim).unwrap_err(),
+        );
     }
 }
 
 #[test]
-fn arithmetic_checks_for_odd_divisors_negative_factors_and_float_sums_cold_replay() {
-    for (fixture, claim) in [
-        ("signed_odd_divisor", "divide.ensures_0"),
-        ("negative_signed_product", "product.ensures_0"),
-        ("float_add_pair", "sum.ensures_0"),
+fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
+    for (fixture, claims) in [
+        (
+            "guarded_signed_ring",
+            &[("sum", true), ("product", false)][..],
+        ),
+        (
+            "float_bound_composition",
+            &[("negate_scaled", false), ("widen_scaled", false)][..],
+        ),
+        ("signed_odd_divisor", &[("divide", true)][..]),
+        ("negative_signed_product", &[("product", false)][..]),
+        ("float_add_pair", &[("sum", false)][..]),
     ] {
         let (source, sources) =
             mdtest_sources(&format!("mdtests/arithmetic_expression_{fixture}.md"));
         let sources = crate::cli::source_refs(&sources);
-        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
-            .unwrap_or_else(|error| panic!("{claim}: {error}"));
-        crate::surface::check_audit_claim(claim, true, || {
-            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-        })
-        .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+        verify_c_sources(&source, &sources).unwrap();
+        for (function, replayable) in claims {
+            let claim = format!("{function}.ensures_0");
+            let result = expand_c_claim_source_by_label(&source, &sources, &claim);
+            if *replayable {
+                let expanded = result.unwrap_or_else(|error| panic!("{claim}: {error}"));
+                crate::surface::check_audit_claim(&claim, true, || {
+                    verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+                })
+                .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+            } else {
+                assert_compatibility_normalization_refusal(result.unwrap_err());
+            }
+        }
     }
 }
