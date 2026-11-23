@@ -6679,7 +6679,37 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 None
             }
         }
-        let Some(expression) = operand_against_literal(left, right) else {
+        let indexed_order_operand = || {
+            if !matches!(
+                operator,
+                ComparisonOperator::LessThan
+                    | ComparisonOperator::LessEqual
+                    | ComparisonOperator::GreaterThan
+                    | ComparisonOperator::GreaterEqual
+            ) {
+                return None;
+            }
+            [(left, right), (right, left)]
+                .into_iter()
+                .find_map(|(read, bound)| {
+                    (matches!(read, ContractExpression::Index(..))
+                        && matches!(
+                            bound,
+                            ContractExpression::Binding(_)
+                                | ContractExpression::ProgramBinding(_)
+                                | ContractExpression::ProgramExpression(
+                                    ProgramExpression::Variable(_)
+                                )
+                                | ContractExpression::QualifiedC {
+                                    lowered: ProgramExpression::Variable(_),
+                                    ..
+                                }
+                        ))
+                    .then_some(read)
+                })
+        };
+        let Some(expression) = operand_against_literal(left, right).or_else(indexed_order_operand)
+        else {
             return Ok(None);
         };
         fn expression_memory_read(
