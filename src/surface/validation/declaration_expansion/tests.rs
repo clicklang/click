@@ -7,7 +7,6 @@ fn authority_test_scope(
 ) -> DeclaredResourceScope {
     DeclaredResourceScope {
         family_rules: false,
-        local_hypotheses: Default::default(),
         definitions: BTreeMap::from([(
             "reference".to_string(),
             DeclaredResourceInfo {

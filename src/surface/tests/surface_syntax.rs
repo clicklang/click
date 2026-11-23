@@ -1078,25 +1078,15 @@ fn parses_and_prints_pure_induction_tactics() {
     ));
     assert!(matches!(
         &tactics[1],
-        ProofTactic::ApplyTheorem(application)
-            if application.name == "ih" && application.arguments.len() == 1
+        ProofTactic::ApplyInduction { hypothesis, arguments }
+            if hypothesis == "ih" && arguments.len() == 1
     ));
 
     let legacy = source.replace("apply(ih(n - 1));", "apply(ih(n - 1)) using { n > 0; };");
     let error = parse(&legacy).unwrap_err();
     assert!(error.message().contains("takes no `using` list"), "{error}");
 
-    let printable = vec![
-        tactics[0].clone(),
-        ProofTactic::ApplyInduction {
-            hypothesis: "ih".to_string(),
-            arguments: match &tactics[1] {
-                ProofTactic::ApplyTheorem(application) => application.arguments.clone(),
-                _ => unreachable!(),
-            },
-        },
-        ProofTactic::Known,
-    ];
+    let printable = vec![tactics[0].clone(), tactics[1].clone(), ProofTactic::Known];
     let printed = super::printing::format_partial_tactic_sequence(&printable);
     let reparsed = parse(&format!(
         "theorem induction_shape(n: int32) {{ requires n >= 0; ensures n == n by {{ {printed} }} }}"
@@ -1108,9 +1098,54 @@ fn parses_and_prints_pure_induction_tactics() {
     };
     assert!(matches!(
         &reparsed[1],
-        ProofTactic::ApplyTheorem(application) if application.name == "ih"
+        ProofTactic::ApplyInduction { hypothesis, .. } if hypothesis == "ih"
     ));
     assert!(matches!(&reparsed[2], ProofTactic::Known));
+
+    let source = r#"
+        spec enum Nodes { End, Next(Nodes) }
+        theorem smaller(n: Integer) { ensures n == n; }
+        theorem scoped_hypothesis(xs: Nodes) {
+            ensures true by {
+                apply(smaller(0));
+                if true {
+                    let smaller = induct(xs);
+                    have true by apply(smaller(xs));
+                } else {
+                    apply(smaller(1));
+                }
+                apply(smaller(2));
+            }
+        }
+        theorem another_proof() { ensures true by apply(smaller(3)); }
+    "#;
+    let file = parse(source).expect("local induction binding can shadow a theorem");
+    let SourceProof::Script(tactics) = file.theorem_definitions()[1].ensures()[0].proof() else {
+        panic!("expected an explicit theorem proof");
+    };
+    let ProofTactic::If(branch) = &tactics[1] else {
+        panic!("expected proof branches");
+    };
+    let ProofTactic::Have(have) = &branch.then_tactics[1] else {
+        panic!("expected a nested fact proof");
+    };
+    assert!(matches!(
+        have.proof.tactics().unwrap(),
+        [ProofTactic::ApplyInduction { hypothesis, arguments }]
+            if hypothesis == "smaller" && arguments.len() == 1
+    ));
+    let following_proof = file.theorem_definitions()[2].ensures()[0].proof();
+    for call in [
+        &tactics[0],
+        &branch.else_tactics[0],
+        &tactics[2],
+        &following_proof.tactics().unwrap()[0],
+    ] {
+        assert!(matches!(
+            call,
+            ProofTactic::ApplyTheorem(application) if application.name == "smaller"
+        ));
+    }
 }
 
 #[test]
@@ -1160,9 +1195,9 @@ fn parses_and_prints_structural_induction_arms() {
     assert!(arms[0].bindings.is_empty());
     assert_eq!(arms[1].bindings, ["head", "tail"]);
     assert!(matches!(
-        arms[1].tactics[0],
-        ProofTactic::ApplyTheorem(ref application)
-            if application.name == "ih" && application.arguments.len() == 1
+        &arms[1].tactics[0],
+        ProofTactic::ApplyInduction { hypothesis, arguments }
+            if hypothesis == "ih" && arguments.len() == 1
     ));
 
     let printed = super::printing::format_partial_tactic_sequence(tactics);

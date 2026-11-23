@@ -10058,6 +10058,13 @@ impl Parser {
         expected_name: &str,
     ) -> Result<(String, Vec<ContractExpression>), ClickError> {
         let name = self.expect_reference_name(expected_name)?;
+        let arguments = self.parse_call_argument_list()?;
+        let arguments = self.observe_integer_arguments(&name, arguments);
+        let arguments = self.spread_slice_arguments(&name, arguments)?;
+        Ok((name, arguments))
+    }
+
+    fn parse_call_argument_list(&mut self) -> Result<Vec<ContractExpression>, ClickError> {
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() != Some(&Token::RParen) {
@@ -10076,9 +10083,7 @@ impl Parser {
             }
         }
         self.expect(Token::RParen)?;
-        let arguments = self.observe_integer_arguments(&name, arguments);
-        let arguments = self.spread_slice_arguments(&name, arguments)?;
-        Ok((name, arguments))
+        Ok(arguments)
     }
 
     fn parse_proposition_comparison(&mut self) -> Result<ClickProposition, ClickError> {
@@ -10866,6 +10871,13 @@ impl Parser {
             let parameter = self.expect_ident("induction parameter")?;
             self.expect(Token::RParen)?;
             self.expect(Token::Semicolon)?;
+            if self.names.contains(NameKind::InductionHypothesis, &name) {
+                return Err(
+                    self.error("induction hypothesis was already introduced in this proof scope")
+                );
+            }
+            self.names
+                .set_scoped(NameKind::InductionHypothesis, &name, true);
             return Ok(ProofTactic::Induct {
                 parameter,
                 hypothesis: name,
@@ -11935,9 +11947,12 @@ impl Parser {
             }
             "apply" => {
                 self.expect(Token::LParen)?;
-                // A call remains a theorem application. Other propositions,
-                // including named facts and parenthesized implications, are facts.
+                // Resolve local callable bindings before global theorem names.
+                // Other propositions, including named facts, are implications.
                 let start = self.position;
+                let local = self.peek_ident().is_some_and(|name| {
+                    self.names.contains(NameKind::InductionHypothesis, name)
+                });
                 let application = if self.peek_ident().is_some()
                     && self.peek_next() == Some(&Token::LParen)
                     && !matches!(
@@ -11945,9 +11960,14 @@ impl Parser {
                         Some("at" | "old" | "exact" | "forall" | "exists")
                     )
                 {
-                    let application = self.parse_theorem_application()?;
+                    let call = if local {
+                        let hypothesis = self.expect_ident("induction hypothesis")?;
+                        (hypothesis, self.parse_call_argument_list()?)
+                    } else {
+                        self.parse_call_arguments("theorem name")?
+                    };
                     if self.peek() == Some(&Token::RParen) {
-                        Some(application)
+                        Some(call)
                     } else {
                         self.position = start;
                         None
@@ -11955,7 +11975,7 @@ impl Parser {
                 } else {
                     None
                 };
-                if application.is_none() {
+                let Some((name, arguments)) = application else {
                     let fact = self.parse_proposition()?;
                     self.expect(Token::RParen)?;
                     if self.peek_ident() == Some("using") {
@@ -11965,15 +11985,18 @@ impl Parser {
                     }
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ApplyFact(fact));
-                }
-                let application = application.unwrap();
+                };
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
                     return Err(self.error(
                         "application takes no `using` list; write `apply(name(args))`",
                     ));
                 }
-                ProofTactic::ApplyTheorem(application)
+                if local {
+                    ProofTactic::ApplyInduction { hypothesis: name, arguments }
+                } else {
+                    ProofTactic::ApplyTheorem(TheoremApplication { name, arguments })
+                }
             }
             "observe" => {
                 self.expect(Token::LParen)?;
@@ -12558,11 +12581,6 @@ impl Parser {
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         self.loop_proof_value_names = value_scope;
         result
-    }
-
-    fn parse_theorem_application(&mut self) -> Result<TheoremApplication, ClickError> {
-        let (name, arguments) = self.parse_call_arguments("theorem name")?;
-        Ok(TheoremApplication { name, arguments })
     }
 
     fn parse_declared_resource_call(&mut self) -> Result<ResourceClause, ClickError> {
@@ -19778,6 +19796,11 @@ mod tactic_classification_tests {
                         "reference".to_string(),
                     ),
                 );
+                if form.id == "apply-induction" {
+                    parser
+                        .names
+                        .insert(NameKind::InductionHypothesis, "ih".into());
+                }
                 parser.parse_proof_tactic()
             });
             let tactic = match parsed {
@@ -19786,17 +19809,6 @@ mod tactic_classification_tests {
                     failures.push(format!("{}: `{written}` does not parse: {error}", form.id));
                     continue;
                 }
-            };
-            // An induction binding is resolved after parsing the enclosing
-            // proof, so standalone call syntax initially parses as a theorem.
-            let tactic = match (form.id, tactic) {
-                ("apply-induction", ProofTactic::ApplyTheorem(application)) => {
-                    ProofTactic::ApplyInduction {
-                        hypothesis: application.name,
-                        arguments: application.arguments,
-                    }
-                }
-                (_, tactic) => tactic,
             };
             let class = tactic.class();
             classes.insert(form.id, class);

@@ -2120,6 +2120,23 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
+fn structural_induction_resolves_local_and_global_calls_after_expansion() {
+    let (source, _) = mdtest_sources("mdtests/structural_induction_surrounding_helpers.md");
+    for label in [
+        "surrounding.ensures_0",
+        "branch_before_declaration.ensures_0",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+        assert!(expanded.contains("apply(ih(tail));"), "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
     let (source, _) = mdtest_sources("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
@@ -25428,6 +25445,7 @@ test_batches! {
         borrowed_resource_receipts_do_not_hide_an_unspent_authority_member,
         uint64_measure_induction_expands_and_rechecks_without_narrowing,
         scalar_induction_keeps_integer_parameters_and_their_guards,
+        structural_induction_resolves_local_and_global_calls_after_expansion,
     ],
     expansion_batch_03: [
         arithmetic_after_fold_rewrites_expands_and_rechecks,
