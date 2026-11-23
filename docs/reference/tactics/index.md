@@ -470,7 +470,12 @@ This solving is smart and may miss; for example, it can prove a callee's
 `requires a > 0` from `requires x == 5 or x == 7`.
 
 Arithmetic evaluation still decides some safety conditions before generating
-an obligation; migrating those decisions is separate remaining work. An emitted
+an obligation; migrating those decisions is separate remaining work. Pointer
+subtraction and relational pointer comparison owe C's same-object
+precondition this way: when the context does not decide it, the step emits
+`same_allocation(left, right)` as an obligation at the operation, named by its
+C rule, rather than a path of undefined behavior
+(`mdtests/an_undecided_pointer_subtraction_owes_same_allocation.md`). An emitted
 definedness requirement states the defined path's condition, such as
 `s >= 0 and s < 32` for `x << s`.
 
