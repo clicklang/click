@@ -46,6 +46,18 @@ theorem rewritten_wide(p: WidePacket, value: uint64) {
         solve();
     }
 }
+
+spec enum TaggedOutput { Value(uint64, uint64) }
+
+theorem rewritten_tag(p: WidePacket, value: uint64) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(n) => TaggedOutput::Value(n, 7u64),
+    }) == TaggedOutput::Value(value, 7u64) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
 ```
 
 ```expect

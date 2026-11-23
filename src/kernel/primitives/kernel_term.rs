@@ -34,7 +34,10 @@ pub(crate) use addresses::{SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
 pub(crate) use offsets::{KernelAddressOffset, SharedAddressOffset};
-pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointer};
+pub(crate) use pointers::{
+    KernelArrayObject, KernelMemberArray, KernelSubobjectBounds, PointerRewrite,
+    PointerRewriteError, SharedPointer,
+};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
 

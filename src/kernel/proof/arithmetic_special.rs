@@ -1151,10 +1151,8 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     if signed_quotient_bridge_requirement(goal).is_some_and(|guard| selected(&[guard]))
         || (premises.len() == 2
             && shift_count_mask_requirements(goal).is_some_and(|required| selected(&required)))
-        || [false, true].into_iter().any(|swap| {
-            signed_product_guard_requirements(goal, swap)
-                .is_some_and(|required| selected(&required))
-        })
+        || (matches!(premises.len(), 2 | 3)
+            && signed_product_guard_candidates(goal).any(|required| selected(&required)))
     {
         return true;
     }
@@ -2797,12 +2795,32 @@ pub(crate) fn signed_quotient_bridge_requirement(goal: &Proposition) -> Option<P
     None
 }
 
-/// A guarded machine multiplication of two nonnegative signed values.
-/// For a positive divisor y, x <= MAX / y implies x*y <= MAX because
-/// the native quotient is floor(MAX/y). The sign premises give x*y >= 0.
-pub(crate) fn signed_product_guard_requirements(
+#[derive(Clone, Copy)]
+enum SignedProductSigns {
+    Nonnegative,
+    NonpositiveLeft,
+    NegativeRight,
+}
+
+pub(crate) fn signed_product_guard_candidates(
+    goal: &Proposition,
+) -> impl Iterator<Item = Vec<Proposition>> + '_ {
+    use SignedProductSigns::*;
+    [Nonnegative, NonpositiveLeft, NegativeRight]
+        .into_iter()
+        .flat_map(|signs| [false, true].into_iter().map(move |swap| (signs, swap)))
+        .filter_map(|(signs, swap)| signed_product_guard_requirements(goal, swap, signs))
+}
+
+/// Check one exact signed product bound from named signs and a quotient guard.
+/// The signs give the bound on the opposite side of zero. For the guarded
+/// bound, MAX/y with positive y rounds down and MIN/y with positive y rounds
+/// up. With negative y, MIN/y rounds down and multiplication reverses the
+/// comparison. Requiring y < -1 excludes the overflow of that quotient.
+fn signed_product_guard_requirements(
     goal: &Proposition,
     swap: bool,
+    signs: SignedProductSigns,
 ) -> Option<Vec<Proposition>> {
     let (condition, truth) = goal.condition_native()?;
     let (product, bound, upper) = match (condition, truth) {
@@ -2825,34 +2843,51 @@ pub(crate) fn signed_product_guard_requirements(
         MachineIntegerType::Int64 => (i64::MAX, i64::MIN),
         _ => return None,
     };
-    if y.ty() != width || *bound.as_const()? != (if upper { maximum } else { minimum }).into() {
+    let endpoint = if upper { maximum } else { minimum };
+    if y.ty() != width || *bound.as_const()? != endpoint.into() {
         return None;
     }
+    use SignedProductSigns::*;
+    let zero = || IntegerTerm::constant_i64(0);
+    let x_sign = match signs {
+        Nonnegative | NegativeRight => {
+            ConditionTerm::integer_greater_equal(a.as_ref().clone(), zero())
+        }
+        NonpositiveLeft => ConditionTerm::integer_less_equal(a.as_ref().clone(), zero()),
+    };
+    let y_sign = match signs {
+        Nonnegative | NonpositiveLeft => {
+            ConditionTerm::integer_greater_than(b.as_ref().clone(), zero())
+        }
+        NegativeRight => {
+            ConditionTerm::integer_less_than(b.as_ref().clone(), IntegerTerm::constant_i64(-1))
+        }
+    };
     let mut premises = vec![
-        Proposition::condition_is(
-            ConditionTerm::integer_greater_equal(a.as_ref().clone(), IntegerTerm::constant_i64(0)),
-            true,
-        ),
-        Proposition::condition_is(
-            ConditionTerm::integer_greater_than(b.as_ref().clone(), IntegerTerm::constant_i64(0)),
-            true,
-        ),
+        Proposition::condition_is(x_sign, true),
+        Proposition::condition_is(y_sign, true),
     ];
-    if upper {
-        // This initial rule covers scalar variables, so building the native
+    let needs_quotient_guard = match signs {
+        Nonnegative => upper,
+        NonpositiveLeft | NegativeRight => !upper,
+    };
+    if needs_quotient_guard {
+        // This rule covers scalar variables, so building the native
         // quotient key never exports a potentially large operand DAG.
         let x = MachineTerm::Variable(*x.operand_view().variable()?);
         let y = MachineTerm::Variable(*y.operand_view().variable()?);
         let numerator = match width {
-            MachineIntegerType::Int32 => MachineTerm::constant(maximum as u32),
-            _ => MachineTerm::int64_constant(maximum),
+            MachineIntegerType::Int32 => MachineTerm::constant(endpoint as u32),
+            _ => MachineTerm::int64_constant(endpoint),
         };
         let quotient = MachineTerm::machine_binary(width, MachineBinaryOp::Divide, numerator, y);
         let observe = |value| IntegerTerm::from_machine(width, value);
-        premises.push(Proposition::condition_is(
-            ConditionTerm::integer_greater_than(observe(x)?, observe(quotient)?),
-            false,
-        ));
+        let (x, quotient) = (observe(x)?, observe(quotient)?);
+        let rejected_branch = match signs {
+            Nonnegative | NegativeRight => ConditionTerm::integer_greater_than(x, quotient),
+            NonpositiveLeft => ConditionTerm::integer_less_than(x, quotient),
+        };
+        premises.push(Proposition::condition_is(rejected_branch, false));
     }
     Some(premises)
 }

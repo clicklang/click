@@ -3,6 +3,10 @@
 Counts remain unsigned 64-bit values. The symbolic prefix is not limited to
 32-bit lengths, and wider element types compare their complete byte spans.
 
+The word-prefix proof derives the requested bound from the held bound.
+It then cites the held view and the requested range's containment to
+establish the prefix at function exit.
+
 ```c filename=native_prefix.c
 void byte_prefix(const unsigned char *p, unsigned long held, unsigned long requested) {}
 void word_prefix(const unsigned int *p, unsigned long held, unsigned long requested) {}
@@ -28,12 +32,14 @@ void word_prefix(const uint32* p, uint64 held, uint64 requested) {
     views p[0u64..held];
     ensures viewable(p[0u64..requested]);
 } by {
-    have requested <= 2305843009213693951u64;
-    step_until(function.exit);
-    have contains(memory(p[0u64..held]), memory(p[0u64..requested])) by {
-        apply(click::separation::contains_subrange(p, 0u64, held, 0u64, requested));
+    have requested <= 2305843009213693951u64 by {
+        apply(click::integer::uint64_less_equal_transitive(requested, held, 2305843009213693951u64));
     }
+    step_until(function.exit);
+    have viewable(p[0u64..held]) by { known(); }
+    apply(click::separation::contains_subrange(p, 0u64, held, 0u64, requested));
     apply(click::separation::viewable_restrict(memory(p[0u64..held]), memory(p[0u64..requested])));
+    solve();
 }
 void first_byte(const uint8* p, uint64 held) {
     requires 1u64 <= held;

@@ -47,19 +47,14 @@ impl KernelPointerEquality {
     ) -> Self {
         let observation = self.arguments.each_ref().map(|value| {
             let p = value.node();
-            let q = p.qualifiers.as_ref();
-            let known = q.is_some_and(|q| q.bounds_known);
             PointerIdentity {
                 address: address(&p.address),
                 provenance: address(&p.provenance),
-                bounds_known: known,
-                bounds_owner: if known {
-                    None
-                } else {
-                    p.bounds_owner.as_ref().map(&mut address)
-                },
-                bounds: q
-                    .and_then(|q| q.bounds.as_ref())
+                bounds_known: p.array.is_known(),
+                bounds_owner: p.array.opaque_owner().map(&mut address),
+                bounds: p
+                    .array
+                    .bounds()
                     .map(|e| (address(&e.start), numeric(&e.width))),
             }
         });
@@ -76,31 +71,14 @@ impl SharedPointer {
             return true;
         }
         let (a, b) = (self.node(), other.node());
-        let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
-        let known = aq.is_some_and(|q| q.bounds_known);
-        known == bq.is_some_and(|q| q.bounds_known)
+        a.array.is_known() == b.array.is_known()
             && a.address.syntax_equal(&b.address)
             && a.provenance.syntax_equal(&b.provenance)
-            && (known
-                || match (&a.bounds_owner, &b.bounds_owner) {
-                    (None, None) => true,
-                    (Some(a), Some(b)) => a.syntax_equal(b),
-                    _ => false,
-                })
+            && opaque_owners_syntax_equal(&a.array, &b.array)
             && self.condition_bounds_equal(other)
     }
     pub(crate) fn condition_bounds_equal(&self, other: &Self) -> bool {
-        match (
-            self.node()
-                .qualifiers
-                .as_ref()
-                .and_then(|q| q.bounds.as_ref()),
-            other
-                .node()
-                .qualifiers
-                .as_ref()
-                .and_then(|q| q.bounds.as_ref()),
-        ) {
+        match (self.node().array.bounds(), other.node().array.bounds()) {
             (None, None) => true,
             (Some(a), Some(b)) => {
                 a.start.syntax_equal(&b.start)
@@ -121,13 +99,24 @@ impl SharedPointer {
         let mut p = self.node().clone();
         p.address = map(&p.address)?;
         p.provenance = map(&p.provenance)?;
-        p.bounds_owner = p.bounds_owner.as_ref().map(&mut map).transpose()?;
-        if let Some(q) = &mut p.qualifiers
-            && let Some(e) = &q.bounds
-        {
-            let start = map(&e.start)?;
-            Arc::make_mut(q).bounds.as_mut().unwrap().start = start;
-        }
+        p.array = match &p.array {
+            KernelArrayObject::Allocation => KernelArrayObject::Allocation,
+            KernelArrayObject::Opaque(owner) => {
+                KernelArrayObject::Opaque(owner.as_ref().map(&mut map).transpose()?)
+            }
+            KernelArrayObject::Member(member) => {
+                KernelArrayObject::Member(Arc::new(KernelMemberArray {
+                    bounds: match &member.bounds {
+                        Some(e) => Some(KernelSubobjectBounds {
+                            start: map(&e.start)?,
+                            width: e.width.clone(),
+                        }),
+                        None => None,
+                    },
+                    within: member.within.as_ref().map(&mut map).transpose()?,
+                }))
+            }
+        };
         let result = Self::new(p);
         Ok(if self.same_source_payload(&result) {
             self.clone()
@@ -136,6 +125,16 @@ impl SharedPointer {
         })
     }
 }
+/// Whether two array objects' opaque names, which are part of identity, are
+/// spelled alike.
+fn opaque_owners_syntax_equal(a: &KernelArrayObject, b: &KernelArrayObject) -> bool {
+    match (a.opaque_owner(), b.opaque_owner()) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.syntax_equal(b),
+        _ => false,
+    }
+}
+
 impl KernelTerm {
     pub(crate) fn pointer_equal_raw(arguments: [SharedPointer; 2]) -> Self {
         Self::intern(
@@ -159,17 +158,10 @@ impl KernelTerm {
         if a.address.syntax_equal(&null) || b.address.syntax_equal(&null) {
             return Self::address_equal([a.address.clone(), b.address.clone()]);
         }
-        let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
-        let known = aq.is_some_and(|q| q.bounds_known);
         let same_domain = a.provenance.syntax_equal(&b.provenance)
             && left.condition_bounds_equal(right)
-            && known == bq.is_some_and(|q| q.bounds_known)
-            && (known
-                || match (&a.bounds_owner, &b.bounds_owner) {
-                    (None, None) => true,
-                    (Some(a), Some(b)) => a.syntax_equal(b),
-                    _ => false,
-                });
+            && a.array.is_known() == b.array.is_known()
+            && opaque_owners_syntax_equal(&a.array, &b.array);
         if same_domain
             || (matches!(a.program_type, ProgramType::FunctionPointer(_))
                 && matches!(b.program_type, ProgramType::FunctionPointer(_)))

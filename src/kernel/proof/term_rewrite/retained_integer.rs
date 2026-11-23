@@ -78,8 +78,8 @@ impl TermRewrite<'_> {
         self.shared_integer_operand_in(root, false)
     }
 
-    /// Fold scope already performs the native capture checks. Rewrite the
-    /// arithmetic prefix here and bridge only the other node families.
+    /// Fold scope already performs capture checks. Rewrite arithmetic and
+    /// nested folds here, bridging the remaining node families.
     pub(super) fn shared_fold_integer_child(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         self.shared_integer_operand_in(root, true)
     }
@@ -126,6 +126,7 @@ impl TermRewrite<'_> {
                     KernelTermNode::IntegerLiteral(_)
                         | KernelTermNode::Variable(_)
                         | KernelTermNode::IntegerOperation { .. }
+                        | KernelTermNode::Fold(_)
                 )
             {
                 let native = self.fold_integer_bridge.integer(&term).ok()?;
@@ -166,6 +167,9 @@ impl TermRewrite<'_> {
                     } else {
                         import.integer(&rewritten.into())
                     }
+                }
+                KernelTermNode::Fold(fold) if fold_child => {
+                    self.retained_fold_in(fold).ok()?.into_term()
                 }
                 KernelTermNode::MachineObservation { format, operand } => {
                     let rewritten = self.shared_machine_operand(operand)?;

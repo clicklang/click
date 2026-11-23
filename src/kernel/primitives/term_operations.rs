@@ -4700,10 +4700,8 @@ impl LValue {
             pointee_volatile,
             constant: false,
             pointee_constant: false,
-            bounds: None,
             provenance: None,
-            bounds_known: false,
-            bounds_owner: None,
+            array: None,
             access_class: None,
             object_class: None,
         }
@@ -4730,10 +4728,8 @@ impl LValue {
             pointee_volatile,
             constant: false,
             pointee_constant: false,
-            bounds: None,
             provenance: None,
-            bounds_known: false,
-            bounds_owner: None,
+            array: None,
             access_class: None,
             object_class: None,
         }
@@ -4752,10 +4748,8 @@ impl LValue {
     /// The lvalue reached through `pointer`, which keeps its bounds and the
     /// class of the object it designates.
     pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &Pointer) -> Self {
-        self.bounds = pointer.bounds().cloned().map(std::sync::Arc::new);
         self.provenance = Some(std::sync::Arc::new(pointer.provenance().clone()));
-        self.bounds_known = pointer.bounds_are_known();
-        self.bounds_owner = pointer.bounds_owner.clone();
+        self.array = Some(pointer.array_object().clone());
         self.object_class = pointer.object_class();
         self
     }
@@ -4764,10 +4758,10 @@ impl LValue {
         self.provenance.as_deref().map(|root| {
             (
                 root,
-                if self.bounds_known {
+                if self.bounds_known() {
                     None
                 } else {
-                    self.bounds_owner.as_deref()
+                    self.bounds_owner().map(|owner| &**owner)
                 },
             )
         })
@@ -4795,7 +4789,17 @@ impl LValue {
     }
 
     pub(in crate::kernel) fn bounds(&self) -> Option<&SubobjectBounds> {
-        self.bounds.as_deref()
+        self.array.as_ref()?.bounds()
+    }
+
+    /// Whether the array object is known; false for a local lvalue, which
+    /// was not reached through a pointer.
+    pub(in crate::kernel) fn bounds_known(&self) -> bool {
+        self.array.as_ref().is_some_and(ArrayObject::is_known)
+    }
+
+    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&std::sync::Arc<Address>> {
+        self.array.as_ref()?.owner()
     }
 
     pub fn value_type(&self) -> ProgramType {

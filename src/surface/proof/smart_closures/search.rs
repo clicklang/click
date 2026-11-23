@@ -3512,7 +3512,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            is_float_bound, shift_count_mask_requirements, signed_product_guard_requirements,
+            is_float_bound, shift_count_mask_requirements, signed_product_guard_candidates,
             signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
@@ -3568,7 +3568,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if let Proposition::And(left, right) = goal
             && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
-                is_float_bound(leaf) || signed_product_guard_requirements(leaf, false).is_some()
+                is_float_bound(leaf) || signed_product_guard_candidates(leaf).next().is_some()
             })
         {
             let mut proof = search_input.clone();
@@ -3591,10 +3591,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
         }
 
-        let mut candidates = [false, true]
-            .into_iter()
-            .filter_map(|swap| signed_product_guard_requirements(goal, swap))
-            .collect::<Vec<_>>();
+        let mut candidates = signed_product_guard_candidates(goal).collect::<Vec<_>>();
         if let Some(guard) = signed_quotient_bridge_requirement(goal) {
             candidates.push(vec![guard]);
         }
@@ -6433,17 +6430,31 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_single_store_read_rewrite");
+        let outcome = search_input.focused_outcome_data().is_some();
+        let mut comparison = target;
+        // The outcome closer may leave an indexed comparison grouped with
+        // already discharged conjuncts. The final known checks the whole goal.
+        while outcome && let ClickProposition::And(left, _) = comparison {
+            comparison = left;
+        }
         let ClickProposition::Comparison {
             left,
             operator,
             right,
-        } = target
+        } = comparison
         else {
             return Ok(None);
         };
         let field_bound = *operator == ComparisonOperator::LessEqual;
         let left = match (operator, left, right) {
             (ComparisonOperator::Equal, left, ContractExpression::IntegerLiteral(_)) => left,
+            (
+                ComparisonOperator::Equal,
+                left,
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Int32(value),
+                )),
+            ) if outcome && value.constant32().is_some() => left,
             (
                 ComparisonOperator::LessEqual,
                 field @ ContractExpression::Field { .. },
@@ -6456,6 +6467,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ) => field,
             _ => return Ok(None),
         };
+        let indexed;
         let read = match left {
             read @ ContractExpression::Index(..) => read,
             read @ ContractExpression::Field { .. } if field_bound => read,
@@ -6482,9 +6494,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 read
             }
+            _ if outcome => {
+                // A read raised from an outcome goal can be spelled *(a + i).
+                let Some(ProgramExpression::Load(pointer)) =
+                    contract_expression_as_program_expression(left)
+                else {
+                    return Ok(None);
+                };
+                let ProgramExpression::Add(base, index) = *pointer else {
+                    return Ok(None);
+                };
+                indexed = ContractExpression::Index(
+                    Box::new(ContractExpression::ProgramExpression(*base)),
+                    Box::new(ContractExpression::ProgramExpression(*index)),
+                );
+                &indexed
+            }
             _ => return Ok(None),
         };
-        let view = if field_bound {
+        let anchored = outcome && matches!(read, ContractExpression::Index(..));
+        let view = if field_bound || anchored {
             search_input.premise_fixed_state_view()
         } else {
             search_input.execution_proposition_fixed_state_view()
@@ -6611,16 +6640,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 left: ResourceSubject::Footprint(region.clone()),
                 right: kept.clone(),
             };
+            let at = |kind| ContractExpression::At {
+                selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                    region: region.clone(),
+                    kind,
+                }),
+                expression: Box::new(read.clone()),
+            };
             let equality = ClickProposition::Comparison {
-                left: read.clone(),
-                operator: ComparisonOperator::Equal,
-                right: ContractExpression::At {
-                    selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                        region: region.clone(),
-                        kind: ProgramPointKind::Entry,
-                    }),
-                    expression: Box::new(read.clone()),
+                left: if anchored {
+                    at(ProgramPointKind::Exit)
+                } else {
+                    read.clone()
                 },
+                operator: ComparisonOperator::Equal,
+                right: at(ProgramPointKind::Entry),
             };
             let have = |proposition, step| ProofStep::Have {
                 proposition,
@@ -6665,11 +6699,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ]);
                 search_input.clone()
             };
-            steps.extend([
-                have(equality.clone(), ProofStep::Preserve(footprint_separation)),
-                ProofStep::Rewrite(equality),
-                ProofStep::Known,
-            ]);
+            steps.push(have(
+                equality.clone(),
+                ProofStep::Preserve(footprint_separation),
+            ));
+            if !anchored {
+                steps.push(ProofStep::Rewrite(equality));
+            }
+            steps.push(ProofStep::Known);
             if let Some(proof) = attempt::candidate_outcome(
                 proof.driver().apply_ordinary_transport_steps(target, steps),
             )? && proof.is_complete()

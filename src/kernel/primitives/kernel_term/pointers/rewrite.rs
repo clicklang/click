@@ -169,35 +169,30 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         let source = value.node();
         let address = self.address(&source.address)?;
         let provenance = self.address(&source.provenance)?;
-        let bounds_owner = source
-            .bounds_owner
-            .as_ref()
+        let owner = source
+            .array
+            .owner()
             .map(|address| self.address(address))
             .transpose()?;
-        let mut qualifiers = source.qualifiers.clone();
-        let mut bounds_changed = false;
-        if let Some(bounds) = source.qualifiers.as_ref().and_then(|q| q.bounds.as_ref()) {
-            let start = self.address(&bounds.start)?;
-            let width = self.numeric(&bounds.width)?;
-            if start != bounds.start || width != bounds.width {
-                bounds_changed = true;
-                Arc::make_mut(qualifiers.as_mut().expect("bounds qualifiers")).bounds =
-                    Some(KernelSubobjectBounds { start, width });
+        let mut array_changed = owner.as_ref() != source.array.owner();
+        let mut bounds = source.array.bounds().cloned();
+        if let Some(selected) = source.array.bounds() {
+            let start = self.address(&selected.start)?;
+            let width = self.numeric(&selected.width)?;
+            if start != selected.start || width != selected.width {
+                array_changed = true;
+                bounds = Some(KernelSubobjectBounds { start, width });
             }
         }
-        if address == source.address
-            && provenance == source.provenance
-            && bounds_owner == source.bounds_owner
-            && !bounds_changed
-        {
+        if address == source.address && provenance == source.provenance && !array_changed {
             return Ok(value.clone());
         }
         Ok(SharedPointer::new(KernelPointer {
             address,
             provenance,
-            bounds_owner,
+            array: KernelArrayObject::from_parts(source.array.is_known(), bounds, owner),
             program_type: source.program_type,
-            qualifiers,
+            qualifiers: source.qualifiers.clone(),
         }))
     }
 }
@@ -267,7 +262,7 @@ mod tests {
             .unwrap();
         assert_eq!(output.node().address, replacement);
         assert_eq!(output.node().provenance, source.node().provenance);
-        assert_eq!(output.node().bounds_owner, source.node().bounds_owner);
+        assert_eq!(output.node().array.owner(), source.node().array.owner());
         assert!(Arc::ptr_eq(
             output.node().qualifiers.as_ref().unwrap(),
             source.node().qualifiers.as_ref().unwrap()
@@ -352,16 +347,7 @@ mod tests {
             Err(PointerRewriteError::IndexType)
         );
         assert_eq!(
-            source
-                .node()
-                .qualifiers
-                .as_ref()
-                .unwrap()
-                .bounds
-                .as_ref()
-                .unwrap()
-                .width
-                .ty(),
+            source.node().array.bounds().unwrap().width.ty(),
             &KernelType::Program(ProgramType::Int32)
         );
     }

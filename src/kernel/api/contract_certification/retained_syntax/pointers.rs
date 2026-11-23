@@ -150,11 +150,7 @@ impl<'a> Value<'a> {
     fn bounds_owner(self) -> Option<BorrowedAddress<'a>> {
         match self {
             Self::Native(value) => value.bounds_owner().map(BorrowedAddress::Native),
-            Self::Shared(value) => value
-                .node()
-                .bounds_owner
-                .as_ref()
-                .map(BorrowedAddress::Shared),
+            Self::Shared(value) => value.node().array.owner().map(BorrowedAddress::Shared),
         }
     }
     fn bounds(self) -> Option<(BorrowedAddress<'a>, Operand<'a>)> {
@@ -165,20 +161,12 @@ impl<'a> Value<'a> {
                     Operand::Legacy(&bounds.width),
                 )
             }),
-            Self::Shared(value) => {
-                value
-                    .node()
-                    .qualifiers
-                    .as_ref()?
-                    .bounds
-                    .as_ref()
-                    .map(|bounds| {
-                        (
-                            BorrowedAddress::Shared(&bounds.start),
-                            Operand::Shared(&bounds.width),
-                        )
-                    })
-            }
+            Self::Shared(value) => value.node().array.bounds().map(|bounds| {
+                (
+                    BorrowedAddress::Shared(&bounds.start),
+                    Operand::Shared(&bounds.width),
+                )
+            }),
         }
     }
 }
