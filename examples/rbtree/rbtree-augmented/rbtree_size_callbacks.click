@@ -13,6 +13,50 @@ resource sized_callback_table(augment: const struct rb_augment_callbacks*) {
     fact RotateTreeRight(augment->rotate);
 }
 
+// Combine the table's three field views into the descriptor used by the call.
+theorem separate_from_sized_callback_reads(table: const int32*, input: Resource) {
+    requires separate(input, memory(table[0..2]));
+    requires separate(input, memory(table[2..4]));
+    requires separate(input, memory(table[4..6]));
+    ensures separate(input, (((memory(table[0..6]) * memory(table[0..2]))
+        * memory(table[2..4])) * memory(table[4..6]))) by {
+        apply(click::separation::separate_symm(input, memory(table[0..2])));
+        apply(click::separation::separate_symm(input, memory(table[2..4])));
+        apply(click::separation::separate_symm(input, memory(table[4..6])));
+        apply(click::separation::contains_refl(input));
+        apply(click::separation::contains_joined_ranges(table, 0, 2, 4));
+        apply(click::separation::separate_star(memory(table[0..2]), memory(table[2..4]), input));
+        apply(click::separation::separate_restrict(
+            memory(table[0..2]) * memory(table[2..4]), input,
+            memory(table[0..4]), input));
+        apply(click::separation::contains_joined_ranges(table, 0, 4, 6));
+        apply(click::separation::separate_star(
+            memory(table[0..4]), memory(table[4..6]), input));
+        apply(click::separation::separate_restrict(
+            memory(table[0..4]) * memory(table[4..6]), input,
+            memory(table[0..6]), input));
+        apply(click::separation::separate_star(memory(table[0..6]), memory(table[0..2]), input));
+        apply(click::separation::separate_star(
+            memory(table[0..6]) * memory(table[0..2]), memory(table[2..4]), input));
+        apply(click::separation::separate_star(
+            (memory(table[0..6]) * memory(table[0..2])) * memory(table[2..4]), memory(table[4..6]), input));
+        apply(click::separation::separate_symm(
+            ((memory(table[0..6]) * memory(table[0..2])) * memory(table[2..4])) * memory(table[4..6]), input));
+    }
+}
+
+theorem separate_callback_inputs(a: Resource, b: Resource, c: Resource, d: Resource, view: Resource) {
+    requires separate(a, view);
+    requires separate(b, view);
+    requires separate(c, view);
+    requires separate(d, view);
+    ensures separate(((a * b) * c) * d, view) by {
+        apply(click::separation::separate_star(a, b, view));
+        apply(click::separation::separate_star(a * b, c, view));
+        apply(click::separation::separate_star((a * b) * c, d, view));
+    }
+}
+
 void sized_copy_from_table(struct rb_node* old, struct rb_node* new,
                            const struct rb_augment_callbacks* augment) {
     views sized_callback_table(augment);
@@ -26,7 +70,22 @@ void sized_copy_from_table(struct rb_node* old, struct rb_node* new,
     ensures target.value == old(source.value);
 } by {
     with(sized_callback_table(augment)) {
-        step(); step();
+        have separate(source_tree, memory(augment->propagate)) by known();
+        have separate(target_tree, memory(augment->propagate)) by known();
+        have separate(source, memory(augment->propagate)) by known();
+        have separate(target, memory(augment->propagate)) by known();
+        apply(separate_callback_inputs(source_tree, target_tree, source, target, memory(augment->propagate)));
+        have separate(source_tree, memory(augment->copy)) by known();
+        have separate(target_tree, memory(augment->copy)) by known();
+        have separate(source, memory(augment->copy)) by known();
+        have separate(target, memory(augment->copy)) by known();
+        apply(separate_callback_inputs(source_tree, target_tree, source, target, memory(augment->copy)));
+        have separate(source_tree, memory(augment->rotate)) by known();
+        have separate(target_tree, memory(augment->rotate)) by known();
+        have separate(source, memory(augment->rotate)) by known();
+        have separate(target, memory(augment->rotate)) by known();
+        apply(separate_callback_inputs(source_tree, target_tree, source, target, memory(augment->rotate)));
+        apply(separate_from_sized_callback_reads(augment as (const int32 *), ((source_tree * target_tree) * source) * target));
         step(CopySizedStructure, {
             source_tree: source_tree, target_tree: target_tree, source: source, target: target
         });
@@ -103,7 +162,10 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
         match input.model {
             SizedRotationInput::Left(tree_model) => {
                 let { tree: tree } = unfold(input);
-                step(); step();
+                have separate(tree, memory(augment->propagate)) by known();
+                have separate(tree, memory(augment->copy)) by known();
+                have separate(tree, memory(augment->rotate)) by known();
+                apply(separate_from_sized_callback_reads(augment as (const int32 *), tree));
                 let { checked: checked } = step(RotateTreeLeft, { tree: tree });
                 have sized_rotation_input_tree(old(input.model)) == tree_model by {
                     rewrite(old(input.model), SizedRotationInput::Left(tree_model));
@@ -114,7 +176,10 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
             },
             SizedRotationInput::Right(tree_model) => {
                 let { tree: tree } = unfold(input);
-                step(); step();
+                have separate(tree, memory(augment->propagate)) by known();
+                have separate(tree, memory(augment->copy)) by known();
+                have separate(tree, memory(augment->rotate)) by known();
+                apply(separate_from_sized_callback_reads(augment as (const int32 *), tree));
                 let { checked: checked } = step(RotateTreeRight, { tree: tree });
                 have sized_rotation_input_tree(old(input.model)) == tree_model by {
                     rewrite(old(input.model), SizedRotationInput::Right(tree_model));
@@ -148,6 +213,12 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                                  const struct rb_augment_callbacks* augment) {
     ensures RotateTableLeft(&sized_rotate_from_table) as { tree: tree, checked: checked } by {
         let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Left(tree.model), tree: tree });
+        with(sized_callback_table(augment)) {
+            have separate(input, memory(augment->propagate)) by known();
+            have separate(input, memory(augment->copy)) by known();
+            have separate(input, memory(augment->rotate)) by known();
+            apply(separate_from_sized_callback_reads(augment as (const int32 *), input));
+        }
         let { checked: checked } = step(sized_rotate_from_table, { input: input });
         have sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))) == old(tree.model) by {
             unfold(sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))));
@@ -178,6 +249,12 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                                  const struct rb_augment_callbacks* augment) {
     ensures RotateTableRight(&sized_rotate_from_table) as { tree: tree, checked: checked } by {
         let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Right(tree.model), tree: tree });
+        with(sized_callback_table(augment)) {
+            have separate(input, memory(augment->propagate)) by known();
+            have separate(input, memory(augment->copy)) by known();
+            have separate(input, memory(augment->rotate)) by known();
+            apply(separate_from_sized_callback_reads(augment as (const int32 *), input));
+        }
         let { checked: checked } = step(sized_rotate_from_table, { input: input });
         have sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))) == old(tree.model) by {
             unfold(sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))));
@@ -199,7 +276,10 @@ void sized_propagate_from_table(struct rb_node* rb, struct rb_node* stop,
     ensures sized_counts_valid(sized_result_tree(whole.model)) == 1;
 } by {
     with(sized_callback_table(augment)) {
-        step(); step();
+        have separate(walk, memory(augment->propagate)) by known();
+        have separate(walk, memory(augment->copy)) by known();
+        have separate(walk, memory(augment->rotate)) by known();
+        apply(separate_from_sized_callback_reads(augment as (const int32 *), walk));
         let { whole: whole } = step(PropagateTree, { walk: walk });
         step_until(function.exit);
     }
