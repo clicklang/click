@@ -2769,7 +2769,15 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             &lowering_assumptions,
             &mut budget,
         )
-        .map_err(EnsureGoalRefusal::Stopped)?;
+        .map_err(|limit| EnsureGoalRefusal::Stopped(retained_lowering_limit(&budget, limit)))?;
+        if paths.is_empty()
+            && budget.dropped_symbolic_pointer_conditional
+            && budget.dropped_runtime_error().is_none()
+        {
+            return Err(EnsureGoalRefusal::Stopped(
+                ExecutionLimit::SymbolicPointerConditional,
+            ));
+        }
         if paths.is_empty() {
             return Err(EnsureGoalRefusal::Unavailable(no_single_path_message(
                 "lowering", &paths, &budget,
@@ -2881,7 +2889,15 @@ fn exceptional_goals_at_entry(
         &lowering_assumptions,
         &mut budget,
     )
-    .map_err(EnsureGoalRefusal::Stopped)?;
+    .map_err(|limit| EnsureGoalRefusal::Stopped(retained_lowering_limit(&budget, limit)))?;
+    if paths.is_empty()
+        && budget.dropped_symbolic_pointer_conditional
+        && budget.dropped_runtime_error().is_none()
+    {
+        return Err(EnsureGoalRefusal::Stopped(
+            ExecutionLimit::SymbolicPointerConditional,
+        ));
+    }
     if paths.iter().any(|path| {
         path.obligations.iter().any(|obligation| {
             super::program_loadability_obligation_impossible_with_assumptions(
