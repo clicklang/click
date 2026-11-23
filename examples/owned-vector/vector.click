@@ -196,7 +196,7 @@ int32 vector_copy(
                             have false by {
                                 solve() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
                             }
-                            contradiction(false);
+                            contradiction();
                         } else {
                             known();
                         }
@@ -448,7 +448,7 @@ int32 vector_grow(struct vector* owner) {
                                                 1073741823) as int32); at(function.entry, owner->cap) == (at(function.entry,
                                                 1073741823) as int32); };
                                     }
-                                    contradiction(false);
+                                    contradiction();
                                 } else {
                                     known();
                                 }

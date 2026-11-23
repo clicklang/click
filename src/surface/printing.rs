@@ -1222,6 +1222,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
+        ProofTactic::Contradiction(ClickProposition::Value(value))
+            if bool_literal_value(value) == Some(false) =>
+        {
+            line(output, &prefix, "contradiction();")
+        }
         ProofTactic::Contradiction(fact) => line(
             output,
             &prefix,
