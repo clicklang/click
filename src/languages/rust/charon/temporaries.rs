@@ -2896,6 +2896,64 @@ pub(super) fn collapse_iterator_moves(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// A source drop that moves its argument into a fresh, addressable place.
+pub(in crate::languages::rust) fn moved_drop_operands(mir: &MirBody) -> BTreeMap<&str, u32> {
+    let mut candidates = BTreeMap::new();
+    let mut sites = BTreeMap::<u32, usize>::new();
+    for block in &mir.blocks {
+        let (T::Drop { local, record, .. }, Some(site)) =
+            (&block.terminator, block.terminator_site)
+        else {
+            continue;
+        };
+        *sites.entry(site).or_default() += 1;
+        if mir.unnamed_locals.contains(local)
+            && let Some(S::Move {
+                target,
+                source,
+                record: moved,
+            }) = block
+                .statements
+                .iter()
+                .rev()
+                .find(|statement| !matches!(statement, S::Site { .. }))
+            && target == local
+            && source != local
+            && moved == record
+        {
+            candidates.insert(local.as_str(), (site, 0usize));
+        }
+    }
+    if candidates.is_empty() {
+        return BTreeMap::new();
+    }
+    for block in &mir.blocks {
+        for statement in &block.statements {
+            for name in mentioned_locals(statement) {
+                if let Some((_, mentions)) = candidates.get_mut(name.as_str()) {
+                    *mentions += 1;
+                }
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        named.extend(reads.into_keys());
+        named.extend(call_destination(&block.terminator).cloned());
+        for name in named {
+            if let Some((_, mentions)) = candidates.get_mut(name.as_str()) {
+                *mentions += 1;
+            }
+        }
+    }
+    candidates
+        .into_iter()
+        .filter_map(|(local, (site, mentions))| {
+            (mentions == 2 && sites[&site] == 1).then_some((local, site))
+        })
+        .collect()
+}
+
 /// Pass an adjacent by-value copy directly to the call that takes it. The
 /// callee already gets its own copy, so no caller-side storage is needed.
 pub(super) fn bind_copied_call_arguments(
@@ -2916,10 +2974,13 @@ pub(super) fn bind_copied_call_arguments(
         let Some(argument) = owned_arguments.last() else {
             continue;
         };
+        let Some(local) = &argument.local else {
+            continue;
+        };
         if !argument.moved
             || argument.index.checked_add(1) != Some(arguments.len())
-            || call_destination(&block.terminator) == Some(&argument.local)
-            || !temporaries.contains(&argument.local)
+            || call_destination(&block.terminator) == Some(local)
+            || !temporaries.contains(local)
         {
             continue;
         }
@@ -2939,7 +3000,7 @@ pub(super) fn bind_copied_call_arguments(
         else {
             continue;
         };
-        if target != &argument.local
+        if target != local
             || record != &argument.record
             || target == source
             || !matches!(arguments.last(), Some(E::Local { name }) if name == target)
@@ -3009,7 +3070,7 @@ pub(super) fn bind_copied_call_arguments(
         *arguments.last_mut().expect("selected a copied argument") = E::Local {
             name: source.clone(),
         };
-        argument.local = source;
+        argument.local = Some(source);
         argument.moved = false;
         block.statements.remove(position);
         removed.insert(target);
@@ -3095,7 +3156,7 @@ pub(super) fn fold_callback_copies(
             named.extend(
                 owned_arguments
                     .iter()
-                    .map(|argument| argument.local.clone()),
+                    .filter_map(|argument| argument.local.clone()),
             );
         } else {
             terminator_uses(&block.terminator, &mut reads, &mut named);
@@ -3341,6 +3402,56 @@ pub(super) fn call_steps(
                 *slot = None;
                 *result = Some(next_step);
             }
+            next_step += 1;
+            removed.insert(destination);
+            continue;
+        }
+        // A by-value argument can consume the preceding call's owned result
+        // directly. The producer has already materialized it, and the next
+        // call will initialize its own parameter from it.
+        if let Type::Record { name } = ty
+            && !through_pointer
+            && temporaries.contains(&destination)
+            && assigned.get(&destination) == Some(&1)
+            && reads.get(&destination) == Some(&(1, target))
+            && mentions.get(&destination) == Some(&1)
+            && target != index
+            && predecessors.get(target) == Some(&1)
+            && let Ok([producer, consumer]) = blocks.get_disjoint_mut([index, target])
+            && consumer
+                .statements
+                .iter()
+                .all(|statement| matches!(statement, S::Site { .. } | S::EndStorage { .. }))
+            && let T::Call {
+                arguments,
+                owned_arguments,
+                through_pointer: false,
+                ..
+            } = &mut consumer.terminator
+            && let Some(argument) = owned_arguments.iter_mut().find(|argument| {
+                argument.moved
+                    && argument.record == *name
+                    && argument.local.as_ref() == Some(&destination)
+            })
+            && let Some(operand @ E::Local { .. }) = arguments.get_mut(argument.index)
+            && matches!(operand, E::Local { name } if *name == destination)
+        {
+            *operand = E::CallResult {
+                call: next_step,
+                function,
+                keeps: false,
+            };
+            argument.local = None;
+            let T::Call {
+                destination: slot,
+                result,
+                ..
+            } = &mut producer.terminator
+            else {
+                unreachable!("selected a direct call");
+            };
+            *slot = None;
+            *result = Some(next_step);
             next_step += 1;
             removed.insert(destination);
             continue;
@@ -4009,7 +4120,11 @@ fn terminator_named_locals(terminator: &T) -> Vec<&String> {
             ..
         } => {
             let mut named = vec![function];
-            named.extend(owned_arguments.iter().map(|argument| &argument.local));
+            named.extend(
+                owned_arguments
+                    .iter()
+                    .filter_map(|argument| argument.local.as_ref()),
+            );
             named
         }
         T::If { .. }

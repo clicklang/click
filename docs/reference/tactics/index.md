@@ -1698,8 +1698,8 @@ Literals and variables can be machine integers, `Integer`s, or `Bool`s.
 Algebraic result fields can also be constructors that contain these values.
 A constructor passed into a pattern binder can contain literal fields and
 nested constructors. The check follows nested matches on written constructors
-and keeps the selected bindings in scope. Machine fields retain their exact
-width and signedness.
+or constructors held by earlier pattern binders. Machine fields retain their
+exact width and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
@@ -1901,9 +1901,11 @@ list order from the goal's lower endpoint to its upper endpoint. A strict
 goal needs at least one strict link. Replay checks the listed links directly.
 
 A true `float` or `double` comparison against a literal can cite one stronger
-bound on the same operand. The cited bound must have the same direction and
-width. Equal endpoints require a strict premise for a strict goal. A negated
-comparison can hold for NaN and cannot supply an ordered bound.
+bound in the same direction. The comparison can use the same operand or its
+exact widening from `float` to `double`. The checker widens the cited endpoint
+before comparing it to the goal's endpoint. Equal endpoints require a strict
+premise for a strict goal. A negated comparison can hold for NaN and cannot
+supply an ordered bound.
 
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.

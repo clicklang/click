@@ -1565,14 +1565,14 @@ Those keys belong to frontend bookkeeping. Surface terms, including terms
 raised from proof facts, use source names, source expressions, or selectors
 rooted in the source program. An unnamed local that survives normalization must
 lower through a supported representation, such as a scalar operand result,
-iterator state, or typed storage for a written literal or borrow. If lowering
+iterator state, or typed storage for a written literal or borrow. An
+immediately consumed plain record return feeds the by-value parameter as
+a retained call result. A record moved into an explicit drop has separate
+argument storage identified by the source drop site. If lowering
 would declare a program variable using the raw MIR key, it reports an
 unsupported Rust construct at the local's source location. The check uses the
 importer's unnamed-local metadata, so source identifiers remain valid
-regardless of spelling. The compatibility list in
-`src/languages/rust/lowering/unnamed_storage_exceptions.tsv` identifies existing
-slots by source, function, line, column, and MIR key.
-Each row can go when that slot has supported lowering.
+regardless of spelling.
 
 ### Paths and outcomes
 

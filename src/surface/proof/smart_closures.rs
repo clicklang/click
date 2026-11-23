@@ -2991,6 +2991,7 @@ impl<'a> Proof<'a> {
             .collect();
         let mut spelled: Vec<(crate::kernel::IntegerTerm, ContractExpression)> = Vec::new();
         let mut ranges = Vec::with_capacity(wanted.len());
+        let mut operands = None;
         for (value, upper) in wanted {
             let crate::kernel::IntegerTerm::Machine(machine) = value else {
                 return Err(value.clone());
@@ -2998,7 +2999,14 @@ impl<'a> Proof<'a> {
             let spelling = match spelled.iter().find(|(observed, _)| observed == value) {
                 Some((_, spelling)) => spelling.clone(),
                 None => {
-                    let Some(spelling) = self.spell_integer_observation(value, written) else {
+                    let Some(spelling) =
+                        self.spell_integer_observation(value, written).or_else(|| {
+                            self.spell_integer_observation(
+                                value,
+                                operands.get_or_insert_with(|| with_operation_operands(written)),
+                            )
+                        })
+                    else {
                         return Err(value.clone());
                     };
                     spelled.push((value.clone(), spelling.clone()));

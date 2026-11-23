@@ -215,8 +215,8 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                         known();
                     }
                     let { sibling: s, up: u } = unfold(c);
-                    step();
-                    step();
+                    // Finish the assignment from the inlined rb_parent call before folding.
+                    step_until(loop(0).back_edge);
                     let lifted = fold(rb_at(node, parent), {
                         model: RbTree::Node(identity, color, t.model, sibling_model),
                         left: t, right: s
@@ -236,8 +236,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                         known();
                     }
                     let { sibling: s, up: u } = unfold(c);
-                    step();
-                    step();
+                    step_until(loop(0).back_edge);
                     let lifted = fold(rb_at(node, parent), {
                         model: RbTree::Node(identity, color, sibling_model, t.model),
                         left: s, right: t
