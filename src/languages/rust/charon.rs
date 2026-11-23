@@ -3635,8 +3635,7 @@ pub(super) fn decode_crate(
         let mut locals = Vec::new();
         let mut local_names = BTreeSet::new();
         let mut occurrences = BTreeMap::<&str, usize>::new();
-        let mut reserved = BTreeSet::new();
-        let mut return_place = MirLocalId::from("result");
+        let return_place = out::return_place_id();
         // The locals the source does not name, apart from the return slot.
         let mut temporaries = BTreeSet::new();
         let mut spellings = BTreeMap::new();
@@ -3644,7 +3643,6 @@ pub(super) fn decode_crate(
         for local in &body.locals.locals {
             if let Some(name) = &local.name {
                 *occurrences.entry(name).or_default() += 1;
-                reserved.insert(name.clone());
             }
         }
         for local in &body.locals.locals {
@@ -3667,14 +3665,6 @@ pub(super) fn decode_crate(
             {
                 name.clone().into()
             } else if local.index.index() == 0 {
-                // The return place holds the value the function returns,
-                // which contracts call `result`; a source local of that name
-                // keeps it, and the return place takes the next free spelling.
-                let mut name = String::from("result");
-                while !reserved.insert(name.clone()) {
-                    name.push('_');
-                }
-                return_place = name.into();
                 return_place.clone()
             } else {
                 // A source name bound more than once, as `word` in two
@@ -5105,8 +5095,7 @@ mod tests {
             let a::Body::Unstructured(body) = &mut function.body else { return None; };
             Some(body)
         }).unwrap();
-        // A source local named `result` keeps that name; the return place
-        // takes the next free spelling.
+        // A source local named `result` is independent of the return ID.
         body.locals.locals[a::LocalId::from_usize(1)].name = Some("result".into());
         body.locals.locals[a::LocalId::from_usize(7)].name = Some("__rust_mir_8".into());
         let export = decode(
@@ -5131,7 +5120,10 @@ mod tests {
             names.len()
         );
         assert!(names.iter().any(|n| n.source_name() == Some("result")));
-        assert_eq!(function.mir.as_ref().unwrap().return_place, "result_");
+        assert_eq!(
+            function.mir.as_ref().unwrap().return_place,
+            out::return_place_id()
+        );
         assert!(names.iter().any(|n| **n == MirLocalId::Compiler(8)));
     }
 

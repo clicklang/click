@@ -3454,35 +3454,48 @@ fn boxed::read(b: Box<boxed::Cell>) -> u32 {
     }
 }
 
-/// The return place a drop follows is a local named `result`: `read` writes
-/// it with the box's field, then frees the box, then returns it. A proof
-/// steps to that write and reads `result` before the free.
+/// The read computes the returned value before freeing the box. Its
+/// region keeps that value available on both sides of the cleanup.
 #[test]
-fn charon_return_place_before_cleanup_is_named_result() {
+fn charon_return_expression_result_survives_cleanup() {
     let p = Project::from_fixture("design/charon-trial/boxes");
     fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
     let contract = "    ensures result == old(b.value);\n}\n\nfn boxed::through";
     assert!(BOX_SIDECAR.contains(contract));
-    let read = |claim: &str| {
+    let proof = |body: &str| {
         BOX_SIDECAR.replacen(
             contract,
             &format!(
-                "    ensures result == old(b.value);\n}} by {{\n    step_until(assignment(result, 0).entry);\n    step();\n    have {claim};\n    step_until(function.exit);\n}}\n\nfn boxed::through"
+                "    ensures result == old(b.value);\n}} by {{\n{body}\n}}\n\nfn boxed::through"
             ),
             1,
         )
     };
-    verify_rust_function(&read("result == old(b.value)"), &prepared, "boxed::read")
+    let before_return = "    step_until(statement(0).read(0).entry);\n    step();";
+    let return_expression = "statement(0).read(0).result";
+    let good = proof(&format!(
+        "{before_return}\n    have {return_expression} == old(b.value);\n    step_until(function.exit);\n    have result == {return_expression};"
+    ));
+    verify_rust_function(&good, &prepared, "boxed::read")
         .unwrap_or_else(|error| panic!("{error:?}"));
-    assert!(
-        verify_rust_function(
-            &read("result == old(b.value) + 1u32"),
-            &prepared,
-            "boxed::read"
-        )
-        .is_err()
-    );
+    for bad in [
+        good.replace(
+            "== old(b.value);\n    step_until",
+            "== old(b.value) + 1u32;\n    step_until",
+        ),
+        good.replace("have statement(0).read(0).result", "have result"),
+        good.replace(
+            "have statement(0).read(0).result",
+            "have at(statement(0).read(0).entry, statement(0).read(0).result)",
+        ),
+        good.replace("statement(0).read(0).entry", "assignment(result, 0).entry"),
+    ] {
+        assert!(
+            verify_rust_function(&bad, &prepared, "boxed::read").is_err(),
+            "{bad}"
+        );
+    }
 }
 
 const OPTION_BOX_SIDECAR: &str = include_str!("../design/charon-trial/option-boxes/options.click");

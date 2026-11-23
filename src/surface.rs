@@ -4394,10 +4394,13 @@ impl RecordedStates {
         let index = self.result_region_index(region)?;
         if let Some(selector) = selector
             && self.records_call_snapshots()
-            && self
-                .source_layout
-                .as_ref()
-                .is_some_and(|layout| layout.call_number(index).is_some())
+            && self.source_layout.as_ref().is_some_and(|layout| {
+                layout.call_number(index).is_some()
+                    || layout
+                        .call_result_local(index)
+                        .and_then(crate::kernel::BindingName::local_id)
+                        .is_some_and(crate::kernel::LocalBindingId::is_return_place)
+            })
         {
             return self
                 .call_results_at(selector)

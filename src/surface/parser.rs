@@ -1462,6 +1462,9 @@ impl ProgramLayouts {
             let Some(id) = binding.local_id() else {
                 return;
             };
+            if id.is_return_place() {
+                return;
+            }
             // A same-named local hides a slice parameter even if that
             // local has no length. Resolve through the live binding in proofs.
             if !id.is_parameter()

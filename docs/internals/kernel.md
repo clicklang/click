@@ -1528,7 +1528,7 @@ it lowers as `while (1) { next; if (!is_some) break; body }`.
 
 MIR writes a function's return value to its return place `_0` and then
 returns `_0`. `temporaries::return_values` returns the written value itself
-when `_0` holds a scalar or an enum, is written once, and that write reaches
+when `_0` holds a scalar, an enum, or a `Vec` value, is written once, and that write reaches
 `Return` past only source sites and storage markers, through blocks entered
 from nowhere else, as C's `return value` does:
 
@@ -1536,14 +1536,12 @@ from nowhere else, as C's `return value` does:
 - a tail call writing `_0` becomes a call step, and its successor ends in
   `ReturnValue` of `CallResult` for that step.
 
-`_0` is then not a local. It stays one when it is written on several paths
-that join before the return, when cleanup such as a drop runs between the
-write and the return, or when it holds a struct, a generic value or a heap
-value. A kept `_0` is named `result`, the name contracts give the returned
-value, or the next free spelling (`result_`) when a source local has that name;
-`MirBody::return_place` records the name for the lowering. The C++ importer
-names its capture of a return value that destructors follow the same way,
-with a numeric suffix on a collision.
+Other return destinations use a typed storage identity. This covers several
+writes that join before the return, values saved across cleanup, and
+address-backed results such as structs. `MirBody::return_place` identifies
+compiler slot zero. The region of a scalar write records its value for
+`.result` using the same result table as a value-producing call. C++ scalar
+returns that execute cleanup retain their evaluation as a value step.
 
 `temporaries::substitute_literals` puts a temporary assigned once with an
 unchanging value back at every read, in any block: a literal, a copy of a

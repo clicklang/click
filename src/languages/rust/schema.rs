@@ -551,10 +551,9 @@ pub enum Statement {
 pub struct MirBody {
     pub locals: Vec<Place>,
     pub blocks: Vec<MirBlock>,
-    /// The local MIR returns, `_0`, named `result` as contracts name the
-    /// returned value, unless a source local has that name. A function
-    /// whose return the importer reads directly (`ReturnValue`) has none.
-    #[serde(default = "return_place_name")]
+    /// MIR's return destination. A body that returns an expression directly
+    /// has no declaration for this ID.
+    #[serde(default = "return_place_id")]
     pub return_place: MirLocalId,
     /// The locals whose source name is bound more than once in the
     /// function, by their key in `locals`, with that source name. Each is
@@ -619,9 +618,9 @@ mod local_map {
     }
 }
 
-/// The name of a function's return place.
-pub fn return_place_name() -> MirLocalId {
-    "result".into()
+/// The compiler reserves slot zero for the function's return destination.
+pub fn return_place_id() -> MirLocalId {
+    MirLocalId::Compiler(0)
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
