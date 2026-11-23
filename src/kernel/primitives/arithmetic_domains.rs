@@ -214,14 +214,20 @@ impl ConditionTerm {
         format: MachineIntegerType,
         left: MachineOperandView<'_>,
         count: MachineOperandView<'_>,
+        unsigned_count: bool,
     ) -> Self {
         if matches!(left.literal(), Some(MachineTerm::Constant { bits: 0, .. })) {
             return Self::Constant(true);
         }
+        let comparison_format = match (format, unsigned_count) {
+            (MachineIntegerType::Int32, true) => MachineIntegerType::UInt32,
+            (MachineIntegerType::Int64, true) => MachineIntegerType::UInt64,
+            _ => format,
+        };
         let constant = |n: u64| {
             KernelTerm::retained_native_machine_operand(
-                format,
-                &crate::kernel::machine_integer::range::constant_word(format, &n.into())
+                comparison_format,
+                &crate::kernel::machine_integer::range::constant_word(comparison_format, &n.into())
                     .expect("shift bound fits"),
             )
         };
@@ -230,19 +236,26 @@ impl ConditionTerm {
                 left.machine_constant_reading(),
                 right.machine_constant_reading(),
             ) {
-                let value =
-                    MachineTerm::machine_binary(format, op, a.legacy_term(), b.legacy_term());
-                KernelTerm::retained_native_machine_operand(format, &value)
+                let value = MachineTerm::machine_binary(
+                    comparison_format,
+                    op,
+                    a.legacy_term(),
+                    b.legacy_term(),
+                );
+                KernelTerm::retained_native_machine_operand(comparison_format, &value)
             } else {
                 crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
-                    format, op, left, right,
+                    comparison_format,
+                    op,
+                    left,
+                    right,
                 )
             }
         };
         let bits = format.format().bits();
         let masked = operation(
             MachineBinaryOp::BitwiseAnd,
-            KernelTerm::retained_machine_operand(format, count),
+            KernelTerm::retained_machine_operand(comparison_format, count),
             constant(u64::from(bits - 1)),
         );
         let bound = operation(
@@ -254,6 +267,15 @@ impl ConditionTerm {
             }),
             masked,
         );
+        if unsigned_count {
+            // The masked count has the count's unsigned interpretation. The
+            // positive maximum shifts identically in either interpretation.
+            let left = left.observe(format).expect("signed shift operand");
+            let bound = MachineOperandView::Shared(&bound)
+                .observe(comparison_format)
+                .expect("unsigned shift bound");
+            return Self::integer_less_equal(left, bound);
+        }
         crate::kernel::machine_integer::comparison::condition_for_operand_views(
             format,
             CompareRelation::LessEqual,
@@ -265,9 +287,18 @@ impl ConditionTerm {
         format: MachineIntegerType,
         left: MachineTerm,
         count: MachineTerm,
+        unsigned_count: bool,
     ) -> Self {
         if matches!(left, MachineTerm::Constant { bits: 0, .. }) {
             return Self::Constant(true);
+        }
+        if unsigned_count {
+            return Self::signed_shift_result_fits_views(
+                format,
+                MachineOperandView::Legacy(&left),
+                MachineOperandView::Legacy(&count),
+                true,
+            );
         }
         let constant = |n: u64| {
             crate::kernel::machine_integer::range::constant_word(format, &n.into())

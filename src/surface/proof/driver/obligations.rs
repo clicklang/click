@@ -405,6 +405,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 if requirement.call_site.is_some() {
                     continue;
                 }
+                if let Some(next) =
+                    crate::kernel::search::ProofSearch::retain_computed_shift_divisor_bound(
+                        &frontier,
+                        &requirement.proposition,
+                    )?
+                {
+                    frontier = next;
+                    retained = true;
+                    continue;
+                }
                 let Some(spelling) = driver_proof.requirement_surface(requirement, &step)? else {
                     continue;
                 };

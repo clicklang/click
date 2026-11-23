@@ -478,7 +478,9 @@ precondition this way: when the context does not decide it, the step emits
 C rule, rather than a path of undefined behavior
 (`mdtests/an_undecided_pointer_subtraction_owes_same_allocation.md`). An emitted
 definedness requirement states the defined path's condition, such as
-`s >= 0 and s < 32` for `x << s`.
+`s >= 0 and s < 32` for `x << s`. Unsigned divisor and float-to-integer
+requirements in an operand of `&&`, `||`, or `?:` are conditional on the
+facts from the condition that selects that operand.
 
 The step produces one successor state:
 
@@ -1910,11 +1912,11 @@ goal needs at least one strict link. Replay checks the listed links directly.
 A true `float` or `double` comparison against a literal can cite one stronger
 bound. Exact widening from `float` to `double` widens the endpoint and preserves
 the direction. Unary float negation negates the endpoint and reverses the
-direction. Multiplication by a finite nonzero literal scales and rounds the
-endpoint at the same width. A negative factor reverses the bound. The scaled
-endpoint gives a non-strict bound because distinct inputs can round to the same
-result. An unscaled or exact bound with an equal endpoint requires a strict
-premise for a strict goal. A negated comparison can hold for NaN and cannot
+direction. Adding a finite literal or multiplying by a finite nonzero literal
+transforms and rounds the endpoint at the same width. A negative multiplier
+reverses the bound. The rounded endpoint gives a non-strict bound because
+distinct inputs can round to the same result. An unchanged or exact endpoint
+requires a strict premise for a strict goal with that endpoint. A negated comparison can hold for NaN and cannot
 supply an ordered bound.
 
 For an unsigned left shift of one, citing the count bound proves the result

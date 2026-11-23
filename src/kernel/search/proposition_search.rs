@@ -393,38 +393,49 @@ impl super::ProofSearch<PureFactContext> {
         })
     }
 
-    /// Choose one stronger float comparison from the goal's existing
-    /// dependency buckets. The certificate checks just the chosen premise.
-    pub(crate) fn select_float_bound(
+    /// Choose one bound from the goal's existing dependency buckets. The
+    /// certificate checks only that bound and any explicit count evidence.
+    pub(crate) fn select_arithmetic_bound(
         context: &PureFactContext,
         goal: &Proposition,
     ) -> Option<Proposition> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("select_float_bound");
-        use crate::kernel::proof::arithmetic_special::{float_bound_weakens, is_float_bound};
-        if !is_float_bound(goal) {
+        crate::kernel::search::record_discovery("select_arithmetic_bound");
+        use crate::kernel::proof::arithmetic_special::{
+            float_bound_weakens, is_float_bound, same_signed_max_shift_bound,
+            signed_max_shift_count_bound,
+        };
+        let float = is_float_bound(goal);
+        if !float && signed_max_shift_count_bound(goal).is_none() {
             return None;
         }
+        let checks = |premise: &Proposition| {
+            if float {
+                float_bound_weakens(premise, goal)
+            } else {
+                same_signed_max_shift_bound(premise, goal)
+            }
+        };
         for key in collect_atomic_connection_keys(goal) {
             for fact in context.atomic_facts_connected_to(&key, false).0 {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
                     return None;
                 }
                 match fact {
-                    AtomicConnectedFact::Condition(condition, true)
-                        if matches!(
-                            condition,
-                            ConditionTerm::Float32(_) | ConditionTerm::Float64(_)
-                        ) =>
+                    AtomicConnectedFact::Condition(condition, expected)
+                        if !float
+                            || (expected
+                                && matches!(
+                                    condition,
+                                    ConditionTerm::Float32(_) | ConditionTerm::Float64(_)
+                                )) =>
                     {
-                        let premise = Proposition::condition_is(condition.clone(), true);
-                        if float_bound_weakens(&premise, goal) {
+                        let premise = Proposition::condition_is(condition.clone(), expected);
+                        if checks(&premise) {
                             return Some(premise);
                         }
                     }
-                    AtomicConnectedFact::Proposition(premise)
-                        if float_bound_weakens(premise, goal) =>
-                    {
+                    AtomicConnectedFact::Proposition(premise) if checks(premise) => {
                         return Some(premise.clone());
                     }
                     _ => {}

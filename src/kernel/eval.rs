@@ -21,12 +21,14 @@ pub(crate) use undefined_site::{
     UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
 
-/// A cast in a selected conditional arm owes its range only on that arm.
+/// A conditional operand owes its arithmetic bounds only when it executes.
 /// The caller supplies the facts just produced by evaluating the condition,
-/// before executing the selected arm. Arm results and later facts cannot
-/// justify an earlier cast.
-fn guard_conditional_cast_bounds(prefix: &ExecutionFacts, obligations: &mut [ProofObligation]) {
-    if prefix.is_empty() || !obligations.iter().any(|bound| bound.float_to_integer_bound) {
+/// before executing the selected operand. Its result and later facts cannot
+/// justify an earlier operation.
+fn guard_conditional_arithmetic(prefix: &ExecutionFacts, obligations: &mut [ProofObligation]) {
+    let is_arithmetic =
+        |bound: &ProofObligation| bound.float_to_integer_bound || bound.unsigned_divisor;
+    if prefix.is_empty() || !obligations.iter().any(is_arithmetic) {
         return;
     }
     let guards = prefix
@@ -43,10 +45,7 @@ fn guard_conditional_cast_bounds(prefix: &ExecutionFacts, obligations: &mut [Pro
     if guards.is_empty() {
         return;
     }
-    for obligation in obligations
-        .iter_mut()
-        .filter(|bound| bound.float_to_integer_bound)
-    {
+    for obligation in obligations.iter_mut().filter(|bound| is_arithmetic(bound)) {
         *obligation = obligation.clone().map_proposition(|goal| {
             guards.iter().rev().fold(goal, |body, guard| {
                 crate::instrumentation::record_deterministic_work(1);

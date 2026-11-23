@@ -19,14 +19,7 @@ type ValidShiftCountEvaluator = fn(
     ExecutionFacts,
     Vec<ProofObligation>,
     &PureFactContext,
-) -> Vec<ExpressionPath>;
-
-type ValidInt64ShiftCountEvaluator = fn(
-    MachineTerm,
-    MachineTerm,
-    ExecutionFacts,
-    Vec<ProofObligation>,
-    &PureFactContext,
+    bool,
 ) -> Vec<ExpressionPath>;
 
 fn program_type_mismatch_expression_path(
@@ -114,7 +107,12 @@ fn add_arithmetic_branch_fact(
                 ))
             }
             OverflowOperation::ShiftLeft => Some(Proposition::condition_is(
-                ConditionTerm::signed_shift_result_fits(*format, *left.clone(), *right.clone()),
+                ConditionTerm::signed_shift_result_fits(
+                    *format,
+                    *left.clone(),
+                    *right.clone(),
+                    false,
+                ),
                 true,
             )),
             _ => None,
@@ -4732,7 +4730,7 @@ pub(in crate::kernel) fn apply_program_shift_left(
             assumptions,
             unsigned_count,
             right_is_64_bit,
-            |left, right, facts, obligations, _| {
+            |left, right, facts, obligations, _, _| {
                 vec![ExpressionPath {
                     outcome: ExpressionOutcome::Value(uint32(MachineTerm::uint32_shift_left(
                         left, right,
@@ -4827,7 +4825,7 @@ pub(in crate::kernel) fn apply_program_shift_right(
             assumptions,
             unsigned_count,
             right_is_64_bit,
-            |left, right, facts, obligations, _| {
+            |left, right, facts, obligations, _, _| {
                 vec![ExpressionPath {
                     outcome: ExpressionOutcome::Value(uint32(MachineTerm::logical_shift_right(
                         left, right,
@@ -4845,7 +4843,7 @@ pub(in crate::kernel) fn apply_program_shift_right(
             assumptions,
             unsigned_count,
             right_is_64_bit,
-            |left, right, facts, obligations, _| {
+            |left, right, facts, obligations, _, _| {
                 vec![ExpressionPath {
                     outcome: ExpressionOutcome::Value(int32(MachineTerm::arithmetic_shift_right(
                         left, right,
@@ -4875,7 +4873,7 @@ fn apply_program_int64_with_valid_shift_count(
     assumptions: &PureFactContext,
     unsigned_count: bool,
     right_is_64_bit: bool,
-    apply_valid_count: ValidInt64ShiftCountEvaluator,
+    apply_valid_count: ValidShiftCountEvaluator,
 ) -> Vec<ExpressionPath> {
     let count = if right_is_64_bit {
         right
@@ -4907,6 +4905,7 @@ fn apply_program_int64_with_valid_shift_count(
                 facts,
                 obligations,
                 assumptions,
+                unsigned_count,
                 apply_valid_count,
             )
         }
@@ -4917,6 +4916,7 @@ fn apply_program_int64_with_valid_shift_count(
             facts,
             obligations,
             assumptions,
+            unsigned_count,
             apply_valid_count,
         ),
         None => {
@@ -4934,6 +4934,7 @@ fn apply_program_int64_with_valid_shift_count(
                     valid_facts,
                     obligations.clone(),
                     assumptions,
+                    unsigned_count,
                     apply_valid_count,
                 )
             } else {
@@ -4948,6 +4949,7 @@ fn apply_program_int64_with_valid_shift_count(
                     valid_facts,
                     obligations.clone(),
                     assumptions,
+                    unsigned_count,
                     apply_valid_count,
                 )
             };
@@ -4968,7 +4970,8 @@ fn apply_program_int64_shift_count_upper_bound(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply_valid_count: ValidInt64ShiftCountEvaluator,
+    unsigned_count: bool,
+    apply_valid_count: ValidShiftCountEvaluator,
 ) -> Vec<ExpressionPath> {
     split_on_undefined_behavior(
         too_large,
@@ -4976,7 +4979,9 @@ fn apply_program_int64_shift_count_upper_bound(
         facts,
         obligations,
         assumptions,
-        |facts, obligations| apply_valid_count(left, count, facts, obligations, assumptions),
+        |facts, obligations| {
+            apply_valid_count(left, count, facts, obligations, assumptions, unsigned_count)
+        },
     )
 }
 
@@ -4986,6 +4991,7 @@ fn apply_program_int64_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     let negative_left =
         ConditionTerm::int64_signed_less_than(left.clone(), MachineTerm::int64_constant(0));
@@ -4996,7 +5002,14 @@ fn apply_program_int64_shift_left_valid_count(
         obligations,
         assumptions,
         |facts, obligations| {
-            apply_program_int64_shift_left_nonnegative(left, right, facts, obligations, assumptions)
+            apply_program_int64_shift_left_nonnegative(
+                left,
+                right,
+                facts,
+                obligations,
+                assumptions,
+                unsigned_count,
+            )
         },
     )
 }
@@ -5007,11 +5020,13 @@ fn apply_program_int64_shift_left_nonnegative(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
         MachineIntegerType::Int64,
         left.clone(),
         right.clone(),
+        unsigned_count,
     ));
     split_on_undefined_behavior(
         overflow,
@@ -5037,6 +5052,7 @@ fn apply_program_uint64_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
+    _unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_shift_left(
@@ -5053,6 +5069,7 @@ fn apply_program_int64_shift_right_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
+    _unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::Int64(
@@ -5069,6 +5086,7 @@ fn apply_program_uint64_shift_right_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
+    _unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::UInt64(
@@ -5234,6 +5252,7 @@ fn apply_program_int32_with_nonnegative_wide_shift_count(
                 facts,
                 obligations,
                 assumptions,
+                unsigned_count,
             )
         },
     )
@@ -5259,7 +5278,9 @@ fn apply_program_int32_with_nonnegative_shift_count(
         facts,
         obligations,
         assumptions,
-        |facts, obligations| apply_valid_count(left, right, facts, obligations, assumptions),
+        |facts, obligations| {
+            apply_valid_count(left, right, facts, obligations, assumptions, unsigned_count)
+        },
     )
 }
 
@@ -5269,6 +5290,7 @@ fn apply_program_int32_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     let negative_left = ConditionTerm::signed_less_than(left.clone(), MachineTerm::constant(0));
     match decide_with_facts(assumptions, &facts, &negative_left) {
@@ -5286,6 +5308,7 @@ fn apply_program_int32_shift_left_valid_count(
                 facts,
                 obligations,
                 assumptions,
+                unsigned_count,
             );
         }
         None => {}
@@ -5305,6 +5328,7 @@ fn apply_program_int32_shift_left_valid_count(
         normal_facts,
         obligations.clone(),
         assumptions,
+        unsigned_count,
     );
     paths.push(ExpressionPath {
         outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidShift),
@@ -5320,11 +5344,13 @@ fn apply_program_int32_shift_left_nonnegative(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
         MachineIntegerType::Int32,
         left.clone(),
         right.clone(),
+        unsigned_count,
     ));
     split_on_undefined_behavior(
         overflow,
@@ -5763,9 +5789,13 @@ pub(in crate::kernel) fn evaluate_program_logical_and_paths(
                         &left_truthiness.facts,
                         &left_truthiness.obligations,
                     );
-                    for right_path in
+                    for mut right_path in
                         evaluate_program_condition_paths(state, right, &right_assumptions, budget)?
                     {
+                        guard_conditional_arithmetic(
+                            &left_truthiness.facts,
+                            &mut right_path.obligations,
+                        );
                         let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                             &left_truthiness.facts,
                             &left_truthiness.obligations,
@@ -5861,9 +5891,13 @@ pub(in crate::kernel) fn evaluate_program_logical_or_paths(
                         &left_truthiness.facts,
                         &left_truthiness.obligations,
                     );
-                    for right_path in
+                    for mut right_path in
                         evaluate_program_condition_paths(state, right, &right_assumptions, budget)?
                     {
+                        guard_conditional_arithmetic(
+                            &left_truthiness.facts,
+                            &mut right_path.obligations,
+                        );
                         let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                             &left_truthiness.facts,
                             &left_truthiness.obligations,
