@@ -1901,11 +1901,10 @@ list order from the goal's lower endpoint to its upper endpoint. A strict
 goal needs at least one strict link. Replay checks the listed links directly.
 
 A true `float` or `double` comparison against a literal can cite one stronger
-bound in the same direction. The comparison can use the same operand or its
-exact widening from `float` to `double`. The checker widens the cited endpoint
-before comparing it to the goal's endpoint. Equal endpoints require a strict
-premise for a strict goal. A negated comparison can hold for NaN and cannot
-supply an ordered bound.
+bound. Exact widening from `float` to `double` widens the endpoint and preserves
+the direction. Unary float negation negates the endpoint and reverses the
+direction. Equal endpoints require a strict premise for a strict goal. A
+negated comparison can hold for NaN and cannot supply an ordered bound.
 
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
