@@ -1103,7 +1103,29 @@ fn scoped_constructor_result(term: &AlgebraicTerm) -> Option<ConstructorResult<'
     let mut scope = 0;
     let mut bindings = Vec::new();
     let mut selected = term;
-    while let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node {
+    loop {
+        if let AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } = &selected.node
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let truth = if let ConditionTerm::Variable(variable) = condition.as_ref() {
+                let (_, payload) = payloads.get(variable)?;
+                let AlgebraicValue::Program(ProgramValue::Bool(word)) = payload.value else {
+                    return None;
+                };
+                word.bool_constant_value()?
+            } else {
+                literal_value_if_guard(condition)?
+            };
+            selected = if truth { then_term } else { else_term };
+            continue;
+        }
+        let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node else {
+            break;
+        };
         let (scrutinee, scrutinee_scope, already_checked) =
             if let AlgebraicTermNode::Variable(variable) = &scrutinee.node {
                 let (_, payload) = payloads.get(variable)?;

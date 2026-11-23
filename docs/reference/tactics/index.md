@@ -1702,7 +1702,9 @@ the constructor was written. It follows nested matches on written constructors
 or constructors held by earlier pattern binders. A selected arm can return
 a bound or captured algebraic value directly. An equality can compare
 the selected results of two matches, with each side using its own bindings.
-Machine fields retain their exact width and signedness.
+Within a selected arm, a literal guard or a Boolean pattern binder holding a
+literal can select an `if` branch. Machine fields retain their exact width and
+signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check

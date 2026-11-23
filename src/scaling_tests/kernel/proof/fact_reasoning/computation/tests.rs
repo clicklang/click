@@ -208,7 +208,11 @@ fn nested_constructor_selection_reuses_closed_payloads() {
     .into();
     for depth in [4_u64, 8, 16] {
         let _session = VerificationSession::enter();
-        let mut scrutinee = KernelMatch::test_scrutinee(vec![field_type.clone()]);
+        let flag = Variable(995_900);
+        let mut scrutinee = KernelMatch::test_scrutinee(vec![
+            field_type.clone(),
+            AlgebraicValueType::Program(ProgramType::Bool),
+        ]);
         let outer = &mut scrutinee.algebraic_type;
         outer.schemas =
             std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([
@@ -231,7 +235,13 @@ fn nested_constructor_selection_reuses_closed_payloads() {
             node: AlgebraicTermNode::Variable(Variable(995_000 + index)),
         };
         let field = (0..depth).fold(end.clone(), |field, _| link(field));
-        scrutinee.node = constructor("Arm", vec![AlgebraicValue::Algebraic(field)]);
+        scrutinee.node = constructor(
+            "Arm",
+            vec![
+                AlgebraicValue::Algebraic(field),
+                AlgebraicValue::Program(ProgramValue::bool_constant(true)),
+            ],
+        );
         let mut body = variable(depth);
         for index in (0..depth).rev() {
             body = AlgebraicTerm {
@@ -254,6 +264,11 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                     ],
                 },
             };
+            body = value(AlgebraicTermNode::If {
+                condition: Box::new(ConditionTerm::Variable(flag)),
+                then_term: Box::new(body),
+                else_term: Box::new(link(end.clone())),
+            });
         }
         let matched = AlgebraicTerm {
             algebraic_type: chain.clone(),
@@ -262,7 +277,12 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                 arms: vec![AlgebraicResultMatchArm {
                     variant: "Arm".into(),
                     binding_names: Default::default(),
-                    bindings: vec![AlgebraicValue::Algebraic(variable(0))],
+                    bindings: vec![
+                        AlgebraicValue::Algebraic(variable(0)),
+                        AlgebraicValue::Program(ProgramValue::of_bool(ConditionTerm::Variable(
+                            flag,
+                        ))),
+                    ],
                     body,
                 }],
             },
@@ -298,7 +318,7 @@ fn nested_constructor_selection_reuses_closed_payloads() {
         assert!(proved);
         let depth = depth as usize;
         assert!(
-            (6 * depth..=6 * depth + 32).contains(&work),
+            (7 * depth..=7 * depth + 32).contains(&work),
             "{depth}: {work}"
         );
     }
