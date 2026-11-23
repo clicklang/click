@@ -873,19 +873,24 @@ pub(super) fn c_layouts(
                 .values()
                 .filter_map(syntax::library_contract_module),
         );
+        let hosted_stdout = unit
+            .globals
+            .get("stdout")
+            .is_some_and(syntax::CGlobal::is_hosted_stdout);
         for (name, header) in &unit.function_declarations {
             if let Some(contract) =
                 crate::languages::c::formatted_output::contract_for_function(name)
             {
                 frontend_contracts.entry(name.clone()).or_insert(contract);
             }
-            if let Some(contract) = syntax::library_interface_contract(header) {
+            if let Some(contract) = syntax::library_interface_contract(header, hosted_stdout) {
                 frontend_contracts
                     .entry(name.clone())
                     .or_insert_with(|| contract.to_string());
             }
         }
         tables.register_file_static_bindings(&unit);
+        record_declaration_tables(&mut tables, &unit);
         for function in unit.functions {
             tables.register_local_bindings(&function);
             tables.register_string_literals(&function);
@@ -1246,6 +1251,61 @@ pub(super) fn unit_qualified_objects(
         }
     }
     objects
+}
+
+/// Records the program objects a declared function's `extern` contract may
+/// name: the externally linked file-scope objects of a unit that declares
+/// it, and the hosted `stdout`. A contract reads them at the call, as it
+/// reads its parameters. A function this unit defines gets its own tables
+/// from [`record_function_tables`]; a declaration in several units sees the
+/// objects of each.
+fn record_declaration_tables(tables: &mut parser::ProgramLayouts, unit: &syntax::CTranslationUnit) {
+    let defined = unit
+        .functions
+        .iter()
+        .map(|function| function.source_name().to_string())
+        .collect::<BTreeSet<_>>();
+    let visible = unit
+        .globals
+        .values()
+        .filter(|object| !object.is_file_static())
+        .map(|object| object.name().to_string())
+        .chain(
+            unit.global_arrays
+                .values()
+                .filter(|object| !object.is_file_static())
+                .map(|object| object.name().to_string()),
+        )
+        .chain(
+            unit.global_aggregates
+                .values()
+                .filter(|object| !object.is_file_static())
+                .map(|object| object.name().to_string()),
+        )
+        .chain(
+            unit.global_aggregate_arrays
+                .values()
+                .filter(|object| !object.is_file_static())
+                .map(|object| object.name().to_string()),
+        )
+        .collect::<BTreeSet<_>>();
+    let stdout = unit
+        .globals
+        .get("stdout")
+        .and_then(syntax::CGlobal::hosted_stdout);
+    for name in unit.function_declarations.keys() {
+        if defined.contains(name) {
+            continue;
+        }
+        let names = tables.program_object_names.entry(name.clone()).or_default();
+        std::sync::Arc::make_mut(names).extend(visible.iter().cloned());
+        if let Some(stdout) = &stdout {
+            tables
+                .hosted_stdout
+                .entry(name.clone())
+                .or_insert_with(|| stdout.clone());
+        }
+    }
 }
 
 /// Records the objects, array shapes and locals of one C function that its
