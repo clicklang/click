@@ -2154,18 +2154,19 @@ fn outcome_arithmetic_is_independent_of_postcondition_count() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
-fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
+fn uint64_measure_induction_verifies_without_narrowing() {
     let (source, _) = mdtest_sources("mdtests/uint64_measure_induction_counts_a_range_fold.md");
-    let expanded =
+    verify_click_theorems(&source).unwrap();
+    assert_compatibility_normalization_refusal(
         expand_c_claim_source_by_label(&source, &[], "full_width_count_is_its_length.ensures_0")
-            .unwrap();
-    verify_click_theorems(&expanded).unwrap();
-    let false_result = expanded.replacen(
+            .unwrap_err(),
+    );
+    let false_result = source.replacen(
         "ensures full_width_count(n) == to_integer(n)",
         "ensures full_width_count(n) == to_integer(n) + 1",
         1,
     );
-    assert_ne!(false_result, expanded);
+    assert_ne!(false_result, source);
     assert!(verify_click_theorems(&false_result).is_err());
 }
 
@@ -6888,7 +6889,7 @@ fn cpp_local_record_call_requirement_expands_and_replays() {
 }
 
 #[test]
-fn cpp_allocation_rewrites_expand_and_replay() {
+fn cpp_allocation_rewrites_verify_with_legacy_normalization() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/cpp_generic_class_state_in_a_resource.md");
     let fixture = crate::cli::read_mdtest(&path).unwrap();
@@ -6897,22 +6898,19 @@ fn cpp_allocation_rewrites_expand_and_replay() {
     let source = fixture.click_source.as_deref().unwrap();
     let function = "__cpp_q_X8_537461636b3c543e_I4_push";
     let claim = format!("{function}.contract");
-    let expanded = expand_claim_by_label(None, source, &program, &claim, None)
-        .unwrap_or_else(|error| panic!("{}", error.report()))
-        .source;
     let project = crate::surface::ClickProject::new(
         "proof.click",
         [crate::surface::ClickModuleSource::new(
             "proof.click",
-            &expanded,
+            source,
             [],
         )],
     );
-    check_audit_claim(&claim, true, || {
-        crate::surface::verify_project_functions(&project, &program, [function.to_owned()])
-            .map_err(|error| error.report())
-    })
-    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    crate::surface::verify_project_functions(&project, &program, [function.to_owned()])
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert_compatibility_normalization_refusal(
+        expand_claim_by_label(None, source, &program, &claim, None).unwrap_err(),
+    );
 }
 
 #[test]
@@ -12542,16 +12540,21 @@ fn restricted_solve_rewrites_pointer_aliases_inside_memory_loads() {
         + 1;
     let sources = [("alias_value.c", c_source)];
 
-    let expanded = expand_c_tactic_source_at(click_source, &sources, line, column)
-        .expect("pointer-alias restricted solve should expand");
+    verify_c_sources(click_source, &sources).expect("restricted alias proof should verify");
+    assert_compatibility_normalization_refusal(
+        expand_c_tactic_source_at(click_source, &sources, line, column).unwrap_err(),
+    );
+
+    let written = click_source.replacen("solve() using", "normalize() using", 1);
+    let expanded = expand_c_tactic_source_at(&written, &sources, line, column)
+        .expect("the handwritten alias proof should expand");
     let expanded_have_start = expanded.find("have alias[index] == value").unwrap();
     let expanded_have_end = expanded[expanded_have_start..]
         .find("fold(valued_array")
         .map(|relative| expanded_have_start + relative)
         .unwrap();
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
-    // Indexed read congruence constructs a normalization certificate from
-    // the selected premises without spelling intermediate rewrites.
+    // Expansion preserves the selected premises in the handwritten alias proof.
     for selected in [
         "normalize() using {",
         "original[0] == value;",
@@ -17271,19 +17274,9 @@ fn outcome_solve_preserves_viewability_after_a_call() {
     let verified = verify_c_sources(click_source, &sources);
     verified.expect("the call-preserved viewability should verify");
 
-    let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
-        .expect("call-preserved viewability should expand");
-    for region in [0, 2, 3] {
-        assert!(
-            expanded.contains(&format!("preserve(memory(p[0..1]), region({region}));")),
-            "{expanded}"
-        );
-    }
-    assert!(!expanded.contains("transport("), "{expanded}");
-    without_implicit_solve_for_claim("use_summary.contract", || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .expect("the expanded viewability proof should check without implicit solve");
+    assert_compatibility_normalization_refusal(
+        expand_function_proof_source(click_source, &sources, "use_summary").unwrap_err(),
+    );
 }
 
 #[test]
@@ -25936,7 +25929,7 @@ test_batches! {
     expansion_batch_02: [
         unsigned_widening_special_certificates_expand_and_recheck,
         borrowed_resource_receipts_do_not_hide_an_unspent_authority_member,
-        uint64_measure_induction_expands_and_rechecks_without_narrowing,
+        uint64_measure_induction_verifies_without_narrowing,
         structural_induction_resolves_local_and_global_calls_after_expansion,
     ],
     expansion_batch_03: [
@@ -28009,18 +28002,16 @@ fn explicit_produced_view_release_expands_and_reverifies() {
 }
 
 #[test]
-fn conditional_signed_shift_retains_its_checked_requirement_on_return() {
+fn conditional_signed_shifts_verify_with_legacy_normalization() {
     let (source, sources) =
         mdtest_sources("mdtests/arithmetic_expression_conditional_signed_shift.md");
     let sources = crate::cli::source_refs(&sources);
-    let claim = "shift64.ensures_0";
-    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
-        .unwrap_or_else(|error| panic!("{claim}: {error}"));
-    assert!(expanded.contains("step() by {"), "{expanded}");
-    crate::surface::check_audit_claim(claim, true, || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+    verify_c_sources(&source, &sources).unwrap();
+    for claim in ["shift32.ensures_0", "shift64.ensures_0"] {
+        assert_compatibility_normalization_refusal(
+            expand_c_claim_source_by_label(&source, &sources, claim).unwrap_err(),
+        );
+    }
 }
 
 #[test]
