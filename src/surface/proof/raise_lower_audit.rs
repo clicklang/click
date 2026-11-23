@@ -413,6 +413,24 @@ int32 short_sum(int32 seed) {
         );
     }
 
+    /// A call's published bound `contains(R, region.footprint)` raises with
+    /// the footprint spelled as the region it belongs to, and lowers back to
+    /// the same descriptor.
+    #[test]
+    fn a_call_footprint_containment_round_trips() {
+        let lines = round_trips(
+            "call_checked_input_facts_keep_prestate.md",
+            include_str!("../../../mdtests/call_checked_input_facts_keep_prestate.md"),
+        );
+        assert!(
+            lines.contains(&(
+                "same".to_string(),
+                "contains(p[0], region(0).footprint)".to_string()
+            )),
+            "{lines:#?}"
+        );
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
