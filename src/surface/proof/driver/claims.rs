@@ -2135,6 +2135,7 @@ fn close_claim_directly_from_outcome<'a>(
         resource_facts,
         native_result.as_deref(),
         &mut labels,
+        &|fact| proof.round_trip_source_text(fact),
     );
     // A read of a cell a store dropped after the store search missed names
     // that store and the fact that keeps the cell.

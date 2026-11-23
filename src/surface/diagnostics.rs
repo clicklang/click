@@ -549,14 +549,31 @@ fn describe_context_facts_with_result(
     if let Some(result) = result {
         labels.source_value_type(result);
     }
-    let text = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
+    let text = describe_context_facts_labeled(
+        pure_facts,
+        execution_pure_facts,
+        &mut labels,
+        &rendered_facts_only,
+    );
     format!("{text}{}", labels.trace_legend())
+}
+
+/// How a refusal spells one fact of its proof context when the proof that
+/// failed is at hand: the fact's Click text when it raises to a Surface form
+/// that lowers back to it (`Proof::round_trip_source_text`), else `None`, and
+/// the renderer spells it.
+pub(crate) type FactSpelling<'a> = &'a dyn Fn(&Proposition) -> Option<String>;
+
+/// No proof at hand: every fact takes the renderer's spelling.
+pub(crate) fn rendered_facts_only(_: &Proposition) -> Option<String> {
+    None
 }
 
 fn describe_context_facts_labeled(
     pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
+    spelling: FactSpelling<'_>,
 ) -> String {
     let item_limit = diagnostic_item_limit();
     let mut total = 0;
@@ -574,9 +591,9 @@ fn describe_context_facts_labeled(
         }
         total += 1;
         if entries.len() < item_limit {
-            entries.push(
-                crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels),
-            );
+            entries.push(spelling(fact).unwrap_or_else(|| {
+                crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels)
+            }));
         }
     }
     compact_unspelled_facts(&mut entries);
@@ -1046,7 +1063,12 @@ fn describe_missing_fact_context(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
 ) -> String {
-    let available = describe_context_facts_labeled(pure_facts, execution_pure_facts, labels);
+    let available = describe_context_facts_labeled(
+        pure_facts,
+        execution_pure_facts,
+        labels,
+        &rendered_facts_only,
+    );
     let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
         resource_facts,
         labels,
@@ -1262,6 +1284,7 @@ pub(super) fn describe_goal_proof_context(
     resource_facts: &[ResourceFact],
     result: Option<&ProgramValue>,
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
+    spelling: FactSpelling<'_>,
 ) -> String {
     // The returned value's checked type decides how a constant beside it
     // prints, even when the value has no source name.
@@ -1281,12 +1304,12 @@ pub(super) fn describe_goal_proof_context(
     } else {
         format!(
             "\n  case: {}",
-            describe_context_facts_labeled(case_facts, &[], labels)
+            describe_context_facts_labeled(case_facts, &[], labels, spelling)
         )
     };
     // One label set for the whole context, so a `<state A>` on the case
     // line is the same memory as one among the pure facts.
-    let pure = describe_context_facts_labeled(&relevant, &[], labels);
+    let pure = describe_context_facts_labeled(&relevant, &[], labels, spelling);
     let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
         resource_facts,
         labels,
@@ -1307,7 +1330,12 @@ pub(super) fn describe_proof_context(
     // value the pure facts give the same name.
     let mut labels =
         crate::surface::proof_diagnostics::render::MemoryStateLabels::naming(parameter_binding);
-    let pure = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
+    let pure = describe_context_facts_labeled(
+        pure_facts,
+        execution_pure_facts,
+        &mut labels,
+        &rendered_facts_only,
+    );
     let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
         resource_facts,
         &mut labels,
