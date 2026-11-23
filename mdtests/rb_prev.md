@@ -1768,6 +1768,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                     }
                     let { right: right_l, left: right_r } = unfold(entry_r);
                     have node->rb_left != 0;
+                    have ((node->rb_left->__rb_parent_color & ~3) as (struct rb_node *)) == right_parent by known();
                     let t = fold(rb_at(node->rb_left), {
                         model: entry_right,
                         right: right_l,
@@ -2065,6 +2066,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                     step();
                     step();
                     step();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == entry_parent by known();
                     let t = fold(rb_at(node), {
                         model: old(t.model),
                         right: entry_l,
@@ -2121,10 +2123,14 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                         known();
                                     }
                                     let { right: l, left: r } = unfold(t);
+                                    // Recover the parent before evaluating the rest of the loop test.
+                                    have address(par) == (node->__rb_parent_color & ~3) by solve() using {
+                                        aligned(par, 8);
+                                        node->__rb_parent_color == address(par) + (node->__rb_parent_color & 1);
+                                    };
+                                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == par by known();
                                     step();
-                                    step();
-                                    step();
-                                    have parent == par;
+                                    have parent == par by known();
                                     have par == parent by {
                                         rewrite(parent, par);
                                         normalize();
@@ -2171,7 +2177,6 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                 known();
                                             }
                                             step();
-                                            step();
                                         },
                                         Context::Right(frame_identity, frame_parent, frame_color,
                                             frame_right, above) => {
@@ -2215,14 +2220,17 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                 known();
                                             }
                                             let { sibling: s, up: u } = unfold(c);
+                                            have defined(parent->rb_left) by {
+                                                rewrite(parent, frame_identity);
+                                                normalize();
+                                            }
                                             match s.model {
                                                 RbTree::Empty => {
                                                     unfold(s);
                                                     have parent->rb_left == 0;
                                                     have node != parent->rb_left;
-                                                    let s = fold(rb_at(parent->rb_left),
+                                                    let s = fold(rb_at(0),
                                                         { model: RbTree::Empty });
-                                                    step();
                                                     let c = fold(ctx_at(node),
                                                         {
                                                         model: Context::Right(frame_identity,
@@ -2266,8 +2274,25 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                             left: node_r } = unfold(t);
                                                     let { right: sibling_l,
                                                             left: sibling_r } = unfold(s);
-                                                    step();
-                                                    let s = fold(rb_at(parent->rb_left),
+                                                    have separate(memory(node->__rb_parent_color), memory(parent->rb_left->__rb_parent_color)) by {
+                                                        rewrite(parent, frame_identity);
+                                                        known();
+                                                    }
+                                                    have node != parent->rb_left by solve() using {
+                                                        separate(memory(node->__rb_parent_color), memory(parent->rb_left->__rb_parent_color));
+                                                    };
+                                                    // Refold using the opened frame's sibling address.
+                                                    have frame_identity->rb_left != 0 by known();
+                                                    have frame_identity->rb_left == sibling_identity by known();
+                                                    have address(sibling_parent) != address(frame_identity->rb_left) by known();
+                                                    have aligned(frame_identity->rb_left, 8) by known();
+                                                    have ((frame_identity->rb_left->__rb_parent_color & ~3) as (struct rb_node *)) == sibling_parent by known();
+                                                    have frame_identity->rb_left->__rb_parent_color ==
+                                                        address(sibling_parent) + (frame_identity->rb_left->__rb_parent_color & 1) by known();
+                                                    have (frame_identity->rb_left->__rb_parent_color & 1) == color_bit(sibling_color) by known();
+                                                    have rb_parent_is(sibling_left, frame_identity->rb_left) == 1 by known();
+                                                    have rb_parent_is(sibling_right, frame_identity->rb_left) == 1 by known();
+                                                    let s = fold(rb_at(frame_identity->rb_left),
                                                         {
                                                         model: frame_right,
                                                         right: sibling_l, left: sibling_r
@@ -2399,6 +2424,10 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                 known();
                                             }
                                             let { sibling: s, up: u } = unfold(c);
+                                            have parent->rb_left == node by {
+                                                rewrite(parent, frame_identity);
+                                                known();
+                                            }
                                             have rb_ctx_linked(RbTree::Node(frame_identity,
                                                     frame_parent, frame_color, RbTree::Node(identity, par, color,
                                                         right_model, left_model),
@@ -2411,7 +2440,6 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                                 left_model), frame_left), above));
                                                 known();
                                             }
-                                            step();
                                             step();
                                             step();
                                             let lifted = fold(rb_at(node),
