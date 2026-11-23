@@ -1,6 +1,6 @@
 # Pointers, loads and stores
 
-Status: draft for review. Nothing here is implemented.
+Status: approved (2026-11-23). Nothing here is implemented.
 
 ## Scope
 
@@ -269,7 +269,7 @@ derivation"): `n->next`, `p[i]`, `at(point, place)`, `exact(place)`, or
   kernel decoded it at.
 - An integer or float load that no place names raises as `load<T>(address)` at
   its format. Whether effective-type checking accepts that for every such cell
-  is open question 2.
+  is open question 1.
 
 ## Migration
 
@@ -300,6 +300,13 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
 5. **Abstract bytes**: uninitialized bytes and provenance fragments.
 6. **`loaded_value`** and the remaining scalar load variables go with the
    legacy walk.
+7. **Untyped `Pointer`.** Once loads and stores state their own types, remove
+   `program_type` from `Pointer` and `KernelPointer`. Today about 250 sites
+   read it; all have an operation or declaration in reach except untyped
+   `Load`/`Index` on an embedded value (lowering emits typed loads and byte
+   offsets instead), store records and memory cells (they record their encode
+   type), raising of stored pointers (raised by derivation or
+   `load<Pointer>`), and `free`'s element width (from the allocation record).
 
 ## Design check
 
@@ -320,19 +327,35 @@ Design check
   refuses at its own format does not raise; the raise-lower audit reports it.
 ```
 
+## Decisions
+
+1. **Signedness belongs to the decoding** (maintainer, 2026-11-23). Every
+   integer width is one load per cell, decoded at each format, as `Bits64` is
+   today. The `int8` and `uint8` values of one byte stay two terms, neither a
+   conversion of the other (2026-10-30), as two decodings of one load related
+   by the sign cast. A store at one format then answers a load at another of
+   the same width, which no special rule has to add after the legacy walk is
+   deleted.
+2. **Pointer terms are untyped** (maintainer, 2026-11-23). Types live on
+   operations and declarations (`pointer-model.md`, "Types belong to terms,
+   not values"); Click's Surface type for an untyped pointer is `Pointer`.
+   Whether a pointer designates an object or a function is part of its value,
+   from its address base and provenance, not a type.
+3. **Integer generality comes later.** Integer reasoning is partly generic
+   over `MachineIntegerType` and partly written per format (a value variant per
+   format; about 430 kernel functions named for one format, half of them for
+   `int32`). Making it generic over the format is a separate design, after
+   this one's integer steps.
+
 ## Open questions
 
-1. **Signedness of a load.** This design makes every integer load one load,
-   decoded at each format, as `Bits64` is today. That keeps the 2026-10-30
-   direction's distinct terms as distinct decodings. Confirm that this, and
-   not two loads, is the intended reading.
-2. **Effective type of an unnamed cell.** A specification `load<Pointer>`
+1. **Effective type of an unnamed cell.** A specification `load<Pointer>`
    carries no pointee type, so effective-type checking must accept it for any
    pointer cell. An integer or float `load<T>` that no place names raises at
    its own format; check that effective-type checking accepts it for every
    such cell. A refusal leaves that load with no spelling, and is the defect
    to fix.
-3. **Exactness.** Integer load equality compares only `read_key()`, so an
+2. **Exactness.** Integer load equality compares only `read_key()`, so an
    `Exact` and an `IndexedCell` selection of one point are one term; pointer
    loads match. Substitution and rewriting keep an exact load's point when
    they rewrite its address, and `exact-reads.md` E3 makes a pointer load's
@@ -342,4 +365,4 @@ Design check
    pointer form of the 53 integer cases. The mixed-name census
    (`kernel::mixed_read_names`) extends to pointer loads once step 2 gives
    them one constructor.
-4. **Interning cost** of `Load`, confirmed by the scaling tests before step 2.
+3. **Interning cost** of `Load`, confirmed by the scaling tests before step 2.
