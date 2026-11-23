@@ -120,15 +120,22 @@ impl TermRewrite<'_> {
             if memo.borrow().contains_key(&key(&term)) {
                 continue;
             }
-            let retained_fold_if = self.condition_exact.is_none()
-                && matches!(
-                    term.node(),
-                    KernelTermNode::IntegerIf { arguments }
-                        if matches!(
-                            arguments[0].node(),
-                            KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_)
-                        )
-                );
+            let retained_fold_if = match term.node() {
+                KernelTermNode::IntegerIf { arguments } if self.condition_exact.is_none() => {
+                    match arguments[0].node() {
+                        KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => true,
+                        // These guards have a fixed-width native representation.
+                        KernelTermNode::BoolCompare { arguments, .. }
+                        | KernelTermNode::BoolOverflow { arguments, .. } => {
+                            arguments.iter().all(|operand| {
+                                matches!(operand.node(), KernelTermNode::MachineLiteral(_))
+                            })
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
             if fold_child
                 && !retained_fold_if
                 && !matches!(

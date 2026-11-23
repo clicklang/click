@@ -370,3 +370,64 @@ fn boolean_variable_guards_in_integer_folds_select_retained_arms() {
         );
     }
 }
+
+#[test]
+fn literal_machine_guards_in_integer_folds_keep_retained_arms() {
+    let guards = [
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(MachineTerm::constant(u32::MAX)),
+            right: Box::new(MachineTerm::constant(0)),
+        },
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(MachineTerm::constant(i32::MAX as u32)),
+            right: Box::new(MachineTerm::constant(1)),
+        },
+    ];
+    for depth in [16, 64, 256] {
+        for native_guard in &guards {
+            let _session = crate::kernel::VerificationSession::enter();
+            let guard = KernelTermImport::default().condition(native_guard);
+            let source = Variable(101_000);
+            let value = KernelTerm::variable(KernelType::Integer, source);
+            let zero = KernelTerm::integer_literal(0.into());
+            let mut body = value.clone();
+            for _ in 0..depth {
+                body = KernelTerm::integer_if_raw([guard.clone(), body.clone(), body]);
+            }
+            let fold = KernelFold::new(
+                KernelFoldIndex::Integer,
+                Variable(101_001),
+                Variable(101_002),
+                [zero.clone(), zero.clone(), zero, body],
+            )
+            .unwrap();
+            let samples = [0, 16, 64, 256].map(|unrelated| {
+                let mut rewrite = TermRewrite::empty();
+                for index in 0..unrelated {
+                    let other =
+                        KernelTerm::variable(KernelType::Integer, Variable(101_100 + index));
+                    assert_eq!(rewrite.shared_fold_integer_child(&other), Some(other));
+                }
+                let exports = KernelTermExport::integer_export_count();
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    rewrite.retained_fold(&fold)
+                });
+                assert_eq!(result.unwrap().arguments[3], value);
+                assert_eq!(KernelTermExport::integer_export_count(), exports);
+                work
+            });
+            assert!(
+                samples.iter().all(|work| *work == samples[0]),
+                "{samples:?}"
+            );
+            assert!(
+                samples[0] <= 100 * depth + 400,
+                "depth={depth}, work={samples:?}"
+            );
+        }
+    }
+}
