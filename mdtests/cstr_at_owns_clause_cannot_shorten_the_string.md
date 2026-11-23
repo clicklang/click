@@ -28,7 +28,7 @@ void cut(uint8* s, uint64 n) {
     have forall (k: uint64) { 0u64 <= k and k < 0u64 implies s[k] != '\0' } by {
         intro();
         intro();
-        contradiction(false);
+        contradiction();
     }
     have s[0u64] == '\0' by {
         solve();

@@ -2104,7 +2104,12 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     assert!(expanded.contains("apply(ih((n - 1)));"), "{expanded}");
     let guarded_family = source.replace("requires 0 < seed;", "requires to_integer(n) < seed;");
-    let error = verify_click_theorems(&guarded_family).unwrap_err();
+    let error =
+        without_implicit_solve_for_claim("carry_seed_returns_the_same_integer.ensures_0", || {
+            verify_click_theorems(&guarded_family).map_err(|error| error.report())
+        })
+        .err()
+        .expect("cold replay must require the instantiated guard");
     assert!(
         error.to_string().contains("induction hypothesis"),
         "{error}"
@@ -2134,6 +2139,99 @@ fn structural_induction_resolves_local_and_global_calls_after_expansion() {
         })
         .unwrap();
     }
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
+fn induction_application_proves_missing_premises_and_cold_replays() {
+    let (scalar, _) = mdtest_sources("mdtests/scalar_induction_after_helper_facts.md");
+    let scalar = scalar
+        .replace("have 0 <= to_integer(n - 1);", "")
+        .replace("have to_integer(n - 1) < to_integer(n);", "");
+    let (range, _) = mdtest_sources("mdtests/induction_hypothesis_owes_the_range_span.md");
+    let structural = r#"
+        spec enum Chain { Nil, Link(Chain) }
+        function copy(xs: Chain) -> Chain decreases xs {
+            match xs {
+                Chain::Nil => Chain::Nil,
+                Chain::Link(tail) => Chain::Link(copy(tail)),
+            }
+        }
+        theorem structural(xs: Chain, n: Integer) {
+            requires 0 <= n;
+            ensures copy(xs) == xs by {
+                let ih = induct(xs);
+                match xs {
+                    Chain::Nil => { unfold(copy(Chain::Nil)); known(); }
+                    Chain::Link(tail) => {
+                        apply(ih(tail, n + 1));
+                        unfold(copy(Chain::Link(tail)));
+                        rewrite(copy(tail), tail);
+                        known();
+                    }
+                }
+            }
+        }
+    "#;
+    for (source, label, call) in [
+        (
+            scalar.as_str(),
+            "countdown_is_zero.ensures_0",
+            "apply(ih((n - 1)))",
+        ),
+        (structural, "structural.ensures_0", "apply(ih(tail,"),
+        (
+            range.as_str(),
+            "hypothesis_owes_the_range_span.ensures_0",
+            "apply(ih((hi - 1)))",
+        ),
+    ] {
+        assert!(
+            without_implicit_solve_for_claim(label, || {
+                verify_click_theorems(source).map_err(|error| error.report())
+            })
+            .is_err()
+        );
+        let expanded = expand_c_claim_source_by_label(source, &[], label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let (before, _) = expanded
+            .split_once(call)
+            .unwrap_or_else(|| panic!("{expanded}"));
+        assert!(before.contains("have "), "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
+fn established_false_expands_to_empty_contradiction() {
+    let (source, _) =
+        mdtest_sources("mdtests/arithmetic_proves_a_disequality_by_refuting_its_equality.md");
+    let label = "integer_lt_neq_arithmetic.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+    assert!(expanded.contains("contradiction();"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_click_theorems(&expanded).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    let empty =
+        "theorem impossible(x: int32) { requires false; ensures x == 7 by { contradiction(); } }";
+    without_implicit_solve(|| verify_click_theorems(empty)).unwrap();
+    let explicit = empty.replace("contradiction()", "contradiction(false)");
+    without_implicit_solve(|| verify_click_theorems(&explicit)).unwrap();
+    let missing = empty.replace("requires false;", "");
+    let error = verify_click_theorems(&missing).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("requires an established `false` fact"),
+        "{}",
+        error.report()
+    );
 }
 
 #[test]
@@ -25758,8 +25856,10 @@ test_batches! {
         uint64_measure_induction_expands_and_rechecks_without_narrowing,
         scalar_induction_keeps_integer_parameters_and_their_guards,
         structural_induction_resolves_local_and_global_calls_after_expansion,
+        induction_application_proves_missing_premises_and_cold_replays,
     ],
     expansion_batch_03: [
+        established_false_expands_to_empty_contradiction,
         arithmetic_after_fold_rewrites_expands_and_rechecks,
         pointer_word_certificates_keep_address_arithmetic_when_printed,
         numeric_cast_certificates_keep_integer_default_arithmetic_when_printed,

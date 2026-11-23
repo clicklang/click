@@ -6713,6 +6713,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "contradiction-false",
+        syntax: "contradiction()",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "rewrite",
         syntax: "rewrite(from, to)",
         class: "simple",

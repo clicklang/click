@@ -3595,6 +3595,12 @@ impl<'a> Proof<'a> {
         self.state
             .apply_contradiction(&fact)
             .map_err(|error| match error {
+                PropositionCloseError::ContradictionUnavailable { .. }
+                    if matches!(surface, ClickProposition::Value(value)
+                        if bool_literal_value(value) == Some(false)) =>
+                {
+                    self.step_error("`contradiction()` requires an established `false` fact")
+                }
                 PropositionCloseError::ContradictionUnavailable { fact_held } => {
                     let written = crate::surface::diagnostics::describe_click_proposition(surface);
                     let missing = if fact_held {

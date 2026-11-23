@@ -64,7 +64,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     match state.model {
-        SizedTree::Empty => { unfold(state); contradiction(false); },
+        SizedTree::Empty => { unfold(state); contradiction(); },
         SizedTree::Node(identity, ancestor, shade, value, left, right) => {
             have node == identity by {
                 rewrite(node, sized_flip_node(state.model));
@@ -327,7 +327,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             }
             mark stopped;
             match state.model {
-                SizedTree::Empty => { unfold(state); contradiction(false); },
+                SizedTree::Empty => { unfold(state); contradiction(); },
                 SizedTree::Node(stopped_node, stopped_parent, stopped_shade, stopped_value, stopped_left, stopped_right) => {
                     let { focus: focus, path: path } = unfold(state);
                     have root->rb_node == old(root->rb_node) by known();
@@ -377,7 +377,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     match state.model {
-        SizedTree::Empty => { unfold(state); contradiction(false); },
+        SizedTree::Empty => { unfold(state); contradiction(); },
         SizedTree::Node(node_id, parent, shade, value, left, right) => {
             let { focus: focus, path: path } = unfold(state);
             have parent == sized_context_parent(path.model, 0) by known();

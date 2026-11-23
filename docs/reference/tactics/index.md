@@ -78,6 +78,7 @@ remains supported.
 - `rewrite(from, to)`: rewrite the goal with an available equality. See
   [Proposition reasoning](#proposition-reasoning).
 - `contradiction(P)`: close an impossible case from a fact and its negation.
+  Use `contradiction()` when the context already establishes `false`.
   See [Proposition reasoning](#proposition-reasoning).
 
 ## Which to use
@@ -1134,6 +1135,7 @@ step is still checked.
 | `let name = intro()` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
+| `contradiction()` | simple | Core | Close a goal from an established `false`. | [Reference](#contradictions) |
 | `instantiate(F, value, ...)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
 | `apply(fact)` | simple | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
@@ -2699,11 +2701,12 @@ unchanged, and profiling reports that work.
 
 ### Contradictions
 
-**Form:** `contradiction(P)`
+**Forms:** `contradiction()` and `contradiction(P)`.
 
-**Core.** Close the focused branch, whatever its goal, from `P` and its
-negation. Nothing is searched: each check below is an indexed lookup or at most
-one context-free normalization.
+**Core.** `contradiction()` closes the focused branch, whatever its goal,
+when `false` is already established. `contradiction(P)` closes the branch
+from the selected proposition and its negation. Both use indexed lookups
+and context-free checks.
 
 **Accepts** `P` when both halves hold:
 
@@ -2734,9 +2737,10 @@ one context-free normalization.
 
 **Failure, checking, and tools:**
 
-A refusal says which half is missing: "`P` itself is not an available fact", or
-"`P` is available, but neither `not (P)` nor its opposite comparison is".
-Expansion is unchanged, and profiling charges one leaf.
+An empty call without an established `false` is refused. For a selected
+proposition, the refusal names the missing half. `contradiction(false)`
+is also accepted, and expansion prints it as `contradiction()`. Profiling
+charges one leaf for either form.
 
 **Checked examples:** [`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md), [`surface_syntax.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/surface_syntax.rs),
 [`contradiction_opposite_comparison.md`](https://github.com/clicklang/click/blob/master/mdtests/contradiction_opposite_comparison.md),
@@ -3107,8 +3111,8 @@ the arm certificates.
 
 **Form:** `apply(ih(m))`
 
-**Core.** Instantiate the local induction hypothesis when its premises are
-available. For a scalar measure, those premises are `m < n`, `0 <= m` for a
+**Core.** Instantiate the local induction hypothesis and prove its premises.
+For a scalar measure, those premises are `m < n`, `0 <= m` for a
 signed measure, and the theorem's requirements at `m`. Other parameters stay
 fixed. For structural induction, the inducted argument must be a recursive
 field of the current arm, and the requirements are checked at the full
@@ -3116,12 +3120,14 @@ written parameter list.
 
 A premise may be stated in an equivalent order form such as `n > m` for
 `m < n`. Range requirements also owe their span halves. A previously stated
-range supplies those halves where they are available. Use `have` to establish
-missing premises.
+range supplies those halves where they are available. The ordinary implicit
+solver tries any remaining premises, and a preceding `have` can supply a
+premise explicitly.
 
 The application adds the instantiated theorem conclusion and closes the
-focused goal if the conclusion proves it. Expansion keeps the application
-unchanged. A missing premise is named in the refusal.
+focused goal if the conclusion proves it. Expansion retains the premise
+proofs as `have` steps followed by the bare application. A refusal names the
+premise it could not prove.
 
 **Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md), [`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md), [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
 

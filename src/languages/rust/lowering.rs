@@ -921,6 +921,16 @@ fn lower_function(
     } else {
         scalar_type(&f.return_type)?
     };
+    // Instances retain the names of their generic contract. Other bodyless
+    // declarations can take their parameter names from the sidecar head.
+    let instance_of = if f.external {
+        f.instance_of
+            .clone()
+            .or_else(|| super::standard_library::library_generic(f))
+    } else {
+        None
+    };
+    let owner = LocalFunctionId::new(Some(export.logical_source.clone()), f.name.clone());
     let mut parameters = Vec::new();
     let mut kernel_parameters = Vec::new();
     let mut locals = BTreeSet::new();
@@ -928,8 +938,18 @@ fn lower_function(
     let mut shared_scalar_slices = BTreeMap::new();
     let mut arrays = BTreeMap::new();
     let mut references = BTreeMap::new();
-    for p in &f.parameters {
-        let spelling = p.name.source_name().ok_or("unnamed Rust parameter")?;
+    for (position, p) in f.parameters.iter().enumerate() {
+        let spelling = || p.name.source_name().ok_or("unnamed Rust parameter");
+        let binding = match &p.name {
+            MirLocalId::Source(name) => BindingName::from(name.clone()),
+            MirLocalId::PositionalParameter { position: slot }
+                if f.external && instance_of.is_none() && *slot == position =>
+            {
+                let ordinal = u32::try_from(position).map_err(|_| "too many Rust parameters")?;
+                BindingName::from(LocalBindingId::new(owner.clone(), true, ordinal, None))
+            }
+            _ => return Err("unnamed Rust parameter".into()),
+        };
         crate::instrumentation::record_deterministic_work(1);
         if matches!(p.value_type, Type::Array { .. }) {
             return Err("by-value Rust arrays as parameters are not supported".into());
@@ -946,17 +966,17 @@ fn lower_function(
             }
             let layout = layouts.get(name).ok_or("missing parameter record layout")?;
             let parameter =
-                ImportedParameter::new(InterfaceType::UInt8Pointer, spelling.to_owned(), None)
+                ImportedParameter::from_binding(InterfaceType::UInt8Pointer, binding, None)
                     .with_struct_value(name.clone(), layout.clone());
             kernel_parameters.push(parameter.to_kernel_parameter());
             parameters.push(parameter);
             continue;
         }
         if let Type::ByteSlice { mutable } = &p.value_type {
-            let length = BindingName::slice_length(spelling);
+            let length = BindingName::slice_length(spelling()?);
             slices.insert(p.name.clone(), (length.clone(), !mutable));
             parameters.push(
-                ImportedParameter::new(InterfaceType::UInt8Pointer, spelling.to_owned(), None)
+                ImportedParameter::from_binding(InterfaceType::UInt8Pointer, binding.clone(), None)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
@@ -966,7 +986,7 @@ fn lower_function(
                 None,
             ));
             kernel_parameters.push(
-                program_parameter(spelling, ProgramType::UInt8Pointer)
+                program_parameter(binding, ProgramType::UInt8Pointer)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
@@ -977,7 +997,7 @@ fn lower_function(
             if !element.is_integer() {
                 return Err("scalar slice parameters require integer elements".into());
             }
-            let length = BindingName::slice_length(spelling);
+            let length = BindingName::slice_length(spelling()?);
             let pointer = scalar_type(&Type::Reference {
                 mutable: *mutable,
                 pointee: element.clone(),
@@ -987,7 +1007,7 @@ fn lower_function(
                 (length.clone(), scalar_type(element)?.to_kernel_type()),
             );
             parameters.push(
-                ImportedParameter::new(pointer, spelling.to_owned(), None)
+                ImportedParameter::from_binding(pointer, binding.clone(), None)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
@@ -997,7 +1017,7 @@ fn lower_function(
                 None,
             ));
             kernel_parameters.push(
-                program_parameter(spelling, pointer.to_kernel_type())
+                program_parameter(binding, pointer.to_kernel_type())
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
@@ -1010,11 +1030,11 @@ fn lower_function(
         if let Type::FnPointer { .. } = &p.value_type {
             let signature = fn_pointer_signature(&p.value_type)?;
             kernel_parameters.push(program_parameter(
-                spelling,
+                binding,
                 signature.pointer_type().to_kernel_type(),
             ));
             parameters.push(ImportedParameter::function_pointer(
-                spelling.to_owned(),
+                spelling()?.to_owned(),
                 signature,
             ));
             continue;
@@ -1051,11 +1071,11 @@ fn lower_function(
             _ => (None, false),
         };
         let mut parameter =
-            ImportedParameter::new(interface_type, spelling.to_owned(), tag.clone())
+            ImportedParameter::from_binding(interface_type, binding.clone(), tag.clone())
                 .with_pointee_constant(constant);
         // The record's layout is what seeds a whole-record `owns *x` at its
         // fields' widths, so a 64-bit field reads as one cell.
-        let mut kernel_parameter = program_parameter(spelling, interface_type.to_kernel_type())
+        let mut kernel_parameter = program_parameter(binding, interface_type.to_kernel_type())
             .with_pointee_constant(constant);
         if let Some(layout) = tag.as_ref().and_then(|name| layouts.get(name)) {
             parameter = parameter.with_pointee_struct_layout(tag.clone().unwrap(), layout.clone());
@@ -1083,12 +1103,6 @@ fn lower_function(
         if f.mir.is_some() || !f.body.is_empty() {
             return Err("Rust extern function must not carry a body".into());
         }
-        // A core method the Click library states is an instance of its
-        // library generic function.
-        let instance_of = f
-            .instance_of
-            .clone()
-            .or_else(|| super::standard_library::library_generic(f));
         let generic = instance_of.is_some();
         let mut declaration = ImportedFunction::external(return_type, f.name.clone(), parameters)
             .with_generic_instance(instance_of);
@@ -1120,7 +1134,6 @@ fn lower_function(
     // A source name bound more than once is one declaration per binding,
     // spelled as the source spells it; MIR's local order is the
     // declaration order, so a proof's `word` is the innermost live one.
-    let owner = LocalFunctionId::new(Some(export.logical_source.clone()), f.name.clone());
     let bindings = f
         .mir
         .iter()

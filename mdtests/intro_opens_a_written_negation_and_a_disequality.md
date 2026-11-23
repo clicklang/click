@@ -15,7 +15,7 @@ theorem written_negation(n: int32) {
     ensures not (n == 1) by {
         if n == 1 {
             have false by { solve() using { n == 0; n == 1; }; }
-            contradiction(false);
+            contradiction();
         } else {
             known();
         }
@@ -27,7 +27,7 @@ theorem disequality(a: Integer, b: Integer) {
     ensures a != b by {
         if a == b {
             have false by { solve() using { a < b; a == b; }; }
-            contradiction(false);
+            contradiction();
         } else {
             known();
         }

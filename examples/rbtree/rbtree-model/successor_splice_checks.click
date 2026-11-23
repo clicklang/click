@@ -210,7 +210,7 @@ theorem other_successor_cases(successor: struct rb_node*, parent: struct rb_node
         if RbMinimum::Found(successor, Color::Red, RbTree::Empty)
             == RbMinimum::Found(successor, Color::Black, RbTree::Empty) {
             have false by { known(); }
-            contradiction(false);
+            contradiction();
         } else {
             known();
         }
@@ -225,7 +225,7 @@ theorem other_successor_cases(successor: struct rb_node*, parent: struct rb_node
             RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty))
             == RbMinimum::Found(successor, Color::Black, RbTree::Empty) {
             have false by { known(); }
-            contradiction(false);
+            contradiction();
         } else {
             known();
         }
