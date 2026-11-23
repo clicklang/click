@@ -2850,7 +2850,8 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     let Some(kind) = crate::kernel::eval::registered_load_kind_for_variable(load) else {
         return true;
     };
-    let selected_load = MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind);
+    let selected_load =
+        crate::kernel::MachineTerm::read_named(ProgramPoint::at(&memory), pointer, kind);
     let mut pointer_variables = BTreeSet::new();
     collect_bitvector_integer_variables(&selected_load, &mut pointer_variables);
     if pointer_variables.contains(&variable) {

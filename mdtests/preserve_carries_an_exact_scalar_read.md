@@ -20,10 +20,15 @@ void touch(struct Pair* p) {
     owns p->second;
     ensures true;
 } by {
+    apply(click::separation::separate_adjacent_ranges(p as (int32 *), 0, 2, 4));
+    have contains(memory(p->second), memory((&p->second)[0..1])) by { normalize(); }
+    apply(click::separation::contains_refl(memory(p->first)));
+    apply(click::separation::separate_restrict(memory(p->first), memory(p->second),
+        memory(p->first), memory((&p->second)[0..1])));
+    mark before_store;
     step();
-    have separate(memory(p->first), memory((&p->second)[0..1])) by known();
     have separate(statement(0).footprint, memory((&p->second)[0..1])) by {
-        normalize() using { separate(memory(p->first), memory((&p->second)[0..1])); };
+        normalize() using { at(before_store, separate(memory(p->first), memory((&p->second)[0..1]))); };
     }
     have exact(p->second) == old(exact(p->second)) by {
         preserve(memory((&p->second)[0..1]), statement(0));

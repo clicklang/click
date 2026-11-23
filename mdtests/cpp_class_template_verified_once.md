@@ -66,40 +66,31 @@ int round_trip(Cell<int>& small, Cell<unsigned int>& large, int x, unsigned int 
     ensures result == x;
 } by {
     step();
-    have at(region(0).exit, small.value) == x by known();
-    step_until(region(2).entry);
-    have contains(memory(large), region(1).footprint) by known();
-    have contains(memory(small), memory((&small.value)[0..1])) by normalize();
-    have separate(memory(large), memory(small)) by known();
-    apply(click::separation::separate_restrict(memory(large), memory(small), region(1).footprint, memory((&small.value)[0..1])));
-    have at(region(1).exit, small.value) == at(region(1).entry, small.value) by {
+    have small.value == x by { known(); }
+    mark before_large;
+    step();
+    have contains(memory(small.value), memory((&small.value)[0..1])) by { normalize(); }
+    have contains(memory(large), region(1).footprint) by { known(); }
+    have separate(memory(large), memory(small.value)) by { known(); }
+    apply(click::separation::separate_restrict(memory(large), memory(small.value), region(1).footprint, memory((&small.value)[0..1])));
+    have small.value == at(before_large, small.value) by {
         preserve(memory((&small.value)[0..1]), region(1));
     }
-    step_until(region(3).entry);
-    have separate(region(2).footprint, memory((&small.value)[0..1])) by known();
-    have at(region(2).exit, small.value) == at(region(2).entry, small.value) by {
-        preserve(memory((&small.value)[0..1]), region(2));
-    }
-    step_until(region(4).entry);
-    have contains(memory((&out as (uint8 *))[0..4]), region(3).footprint) by known();
-    have separate(memory((&out as (uint8 *))[0..4]), memory((&small.value)[0..1])) by known();
-    apply(click::separation::contains_refl(memory((&small.value)[0..1])));
-    apply(click::separation::separate_restrict(memory((&out as (uint8 *))[0..4]), memory((&small.value)[0..1]), region(3).footprint, memory((&small.value)[0..1])));
-    have at(region(3).exit, small.value) == at(region(3).entry, small.value) by {
-        preserve(memory((&small.value)[0..1]), region(3));
-    }
-    step();
-    step();
-    mark reading;
-    have at(region(3).exit, small.value) == x by {
-        rewrite(at(region(3).exit, small.value), at(region(3).entry, small.value));
-        rewrite(at(region(2).exit, small.value), at(region(2).entry, small.value));
-        rewrite(at(region(1).exit, small.value), at(region(1).entry, small.value));
+    have small.value == x by {
+        rewrite(small.value, at(before_large, small.value));
         known();
     }
-    step_until(function.exit);
-    have result == at(reading, small.value) by known();
-    solve();
+    step();
+    step();
+    step();
+    step();
+    have small.value == x by { known(); }
+    let { result: got } = step();
+    have got == small.value by { known(); }
+    have got == x by { rewrite(got, small.value); known(); }
+    step();
+    have result == got by { known(); }
+    have result == x by { rewrite(result, got); known(); }
 }
 ```
 

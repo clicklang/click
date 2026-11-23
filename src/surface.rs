@@ -8987,20 +8987,6 @@ pub enum ClickErrorKind {
     Internal,
 }
 
-impl ClickErrorKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Syntax => "syntax error",
-            Self::WorkLimitReached => "work limit reached",
-            Self::TimedOut => "timed out",
-            Self::Type => "type error",
-            Self::Proof => "unclassified verification refusal",
-            Self::Unsupported => "unsupported",
-            Self::Internal => "internal error",
-        }
-    }
-}
-
 /// The reason a proof operation was refused, when the verifier can classify it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProofRefusal {
@@ -9011,14 +8997,70 @@ pub enum ProofRefusal {
     Contract,
 }
 
-impl ProofRefusal {
-    fn label(self) -> &'static str {
+/// A concrete failure outcome reported by verification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerificationOutcome {
+    SyntaxError,
+    TypeError,
+    TacticError,
+    UnsuccessfulSearch,
+    IncompleteProof,
+    ContractError,
+    Unsupported,
+    InternalError,
+    WorkLimitReached,
+    TimedOut,
+}
+
+impl VerificationOutcome {
+    pub const ALL: [Self; 10] = [
+        Self::SyntaxError,
+        Self::TypeError,
+        Self::TacticError,
+        Self::UnsuccessfulSearch,
+        Self::IncompleteProof,
+        Self::ContractError,
+        Self::Unsupported,
+        Self::InternalError,
+        Self::WorkLimitReached,
+        Self::TimedOut,
+    ];
+
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Tactic => "tactic error",
-            Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
+            Self::SyntaxError => "syntax error",
+            Self::TypeError => "type error",
+            Self::TacticError => "tactic error",
+            Self::UnsuccessfulSearch => "unsuccessful search",
             Self::IncompleteProof => "incomplete proof",
-            Self::Contract => "contract error",
+            Self::ContractError => "contract error",
+            Self::Unsupported => "unsupported",
+            Self::InternalError => "internal error",
+            Self::WorkLimitReached => "work limit reached",
+            Self::TimedOut => "timed out",
         }
+    }
+}
+
+/// A diagnostic classified before terminal rendering starts.
+pub struct VerificationDiagnostic<'a> {
+    error: &'a ClickError,
+    outcome: VerificationOutcome,
+    missing_classification: bool,
+}
+
+impl<'a> VerificationDiagnostic<'a> {
+    pub fn error(&self) -> &'a ClickError {
+        self.error
+    }
+
+    pub fn outcome(&self) -> VerificationOutcome {
+        self.outcome
+    }
+
+    pub fn concise_report_parts(&self) -> (String, Vec<String>) {
+        self.error
+            .render_concise_parts(self.outcome, self.missing_classification)
     }
 }
 
@@ -10992,6 +11034,14 @@ impl ClickError {
     /// Keeping these separate lets the CLI put source excerpts and trace
     /// instructions in their own readable sections.
     pub fn concise_report_parts(&self) -> (String, Vec<String>) {
+        self.verification_diagnostic().concise_report_parts()
+    }
+
+    fn render_concise_parts(
+        &self,
+        outcome: VerificationOutcome,
+        missing_classification: bool,
+    ) -> (String, Vec<String>) {
         let _accessors = self.report_model_accessor_scope();
         let reason = if self.verification_stopped() {
             self.message.as_str()
@@ -11028,7 +11078,7 @@ impl ClickError {
             (
                 format!(
                     "{} in `{function}` during contract certification:",
-                    self.report_label()
+                    outcome.label()
                 ),
                 obligation.unwrap_or(detail),
                 obligation.is_some(),
@@ -11041,13 +11091,16 @@ impl ClickError {
                 .map(|(function, _)| function)
         {
             (
-                format!("{} in `{function}`:", self.report_label()),
+                format!("{} in `{function}`:", outcome.label()),
                 reason,
                 false,
             )
         } else {
-            (format!("{}:", self.report_label()), reason, false)
+            (format!("{}:", outcome.label()), reason, false)
         };
+        if missing_classification {
+            report.push_str("\n  Click did not classify this verifier failure.");
+        }
         for (nested, line) in concise_reason_lines(reason) {
             report.push_str(if nested { "\n    " } else { "\n  " });
             report.push_str(line);
@@ -11356,14 +11409,45 @@ impl ClickError {
             return None;
         }
         self.proof_refusal.or_else(|| {
-            (self.failed_tactic.is_some() || self.proof_source_tactic_path().is_some())
+            let checked_step = self.diagnostic.as_ref().is_some_and(|diagnostic| {
+                diagnostic.origin.stage == proof_diagnostics::ProofDiagnosticStage::CheckedStep
+            });
+            (self.failed_tactic.is_some()
+                || self.proof_source_tactic_path().is_some()
+                || checked_step)
                 .then_some(ProofRefusal::Tactic)
         })
     }
 
+    pub fn verification_diagnostic(&self) -> VerificationDiagnostic<'_> {
+        let kind = self.kind();
+        let refusal = self.proof_refusal();
+        let outcome = match kind {
+            ClickErrorKind::Syntax => VerificationOutcome::SyntaxError,
+            ClickErrorKind::Type => VerificationOutcome::TypeError,
+            ClickErrorKind::WorkLimitReached => VerificationOutcome::WorkLimitReached,
+            ClickErrorKind::TimedOut => VerificationOutcome::TimedOut,
+            ClickErrorKind::Unsupported => VerificationOutcome::Unsupported,
+            ClickErrorKind::Internal => VerificationOutcome::InternalError,
+            ClickErrorKind::Proof => match refusal {
+                Some(ProofRefusal::Tactic) => VerificationOutcome::TacticError,
+                Some(ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch) => {
+                    VerificationOutcome::UnsuccessfulSearch
+                }
+                Some(ProofRefusal::IncompleteProof) => VerificationOutcome::IncompleteProof,
+                Some(ProofRefusal::Contract) => VerificationOutcome::ContractError,
+                None => VerificationOutcome::InternalError,
+            },
+        };
+        VerificationDiagnostic {
+            error: self,
+            outcome,
+            missing_classification: kind == ClickErrorKind::Proof && refusal.is_none(),
+        }
+    }
+
     fn report_label(&self) -> &'static str {
-        self.proof_refusal()
-            .map_or(self.kind().label(), ProofRefusal::label)
+        self.verification_diagnostic().outcome().label()
     }
 
     pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {

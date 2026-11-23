@@ -7779,11 +7779,23 @@ pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> 
 /// with the sidecar as a C++ library interface is: `fprintf`, declared as the
 /// projected `<stdio.h>` does, `int fprintf(FILE *stream, const char *format,
 /// ...)`, has the contract of `library/c/fprintf.interface.click`.
-pub(crate) fn library_interface_contract(header: &CFunctionHeader) -> Option<&'static str> {
+/// `printf`'s contract names the hosted `stdout`, so it is supplied only
+/// where the unit declares it (`hosted_stdout`).
+pub(crate) fn library_interface_contract(
+    header: &CFunctionHeader,
+    hosted_stdout: bool,
+) -> Option<&'static str> {
     let is_format = |format: &ImportedParameter| {
         matches!(format.interface_type, InterfaceType::CharPointer(_)) && format.pointee_constant
     };
+    let standard = !header.internal_linkage
+        && header.variadic
+        && header.return_type == InterfaceType::Int32
+        && header.name == header.source_name;
     match (header.source_name.as_str(), header.parameters.as_slice()) {
+        ("printf", [format]) if standard && hosted_stdout && is_format(format) => {
+            Some(include_str!("../../../library/c/printf.interface.click"))
+        }
         ("fprintf", [file, format])
             if !header.internal_linkage
                 && header.variadic
@@ -7803,30 +7815,7 @@ pub(crate) fn library_interface_contract(header: &CFunctionHeader) -> Option<&'s
 /// Whether `name` is a C library function whose contract
 /// [`library_interface_contract`] supplies.
 pub(crate) fn is_library_interface_function(name: &str) -> bool {
-    name == "fprintf"
-}
-
-/// Which standard stream writer this declaration denotes, if any.
-fn stream_output_prototype(
-    header: &CFunctionHeader,
-) -> Option<super::formatted_output::FormattedOutput> {
-    use super::formatted_output::FormattedOutput;
-    if header.internal_linkage
-        || !header.variadic
-        || header.return_type != InterfaceType::Int32
-        || header.name != header.source_name
-    {
-        return None;
-    }
-    let is_format = |format: &ImportedParameter| {
-        matches!(format.interface_type, InterfaceType::CharPointer(_)) && format.pointee_constant
-    };
-    // `fprintf` is an ordinary variadic call to its `library/c/stdio.click`
-    // contract.
-    match (header.source_name.as_str(), header.parameters.as_slice()) {
-        ("printf", [format]) if is_format(format) => Some(FormattedOutput::Printf),
-        _ => None,
-    }
+    matches!(name, "fprintf" | "printf")
 }
 
 /// Whether `header` declares the C library's `snprintf`,
@@ -17399,15 +17388,6 @@ impl Parser {
                 )));
             }
             if header.variadic {
-                if self.target == super::target::CTarget::X86_64LinuxUserspace
-                    && self
-                        .globals
-                        .get("stdout")
-                        .is_some_and(|global| global.hosted_stdout)
-                    && let Some(function) = stream_output_prototype(header)
-                {
-                    return self.parse_stream_output_arguments(function);
-                }
                 if formatted_output_prototype(header) {
                     return self.parse_formatted_output_arguments(source_name);
                 }
@@ -17603,35 +17583,6 @@ impl Parser {
             format.truncate(end);
         }
         Ok(format)
-    }
-
-    fn parse_stream_output_arguments(
-        &mut self,
-        function: super::formatted_output::FormattedOutput,
-    ) -> Result<Vec<CExpression>, CSyntaxError> {
-        use super::formatted_output;
-        let source_name = function.source_name();
-        self.expect(Token::LParen)?;
-        let file = { CExpression::Variable(BindingName::from(HOSTED_STDOUT_BINDING)) };
-        let format = self.parse_output_format(source_name)?;
-        formatted_output::stream_output_bytes(function, &format).map_err(|reason| {
-            self.error_at_previous(format!("`{source_name}` format: {reason}"))
-        })?;
-        if self.peek() == Some(&Token::Comma) {
-            return Err(self.error_here(format!(
-                "Click models `{source_name}` with no variadic arguments"
-            )));
-        }
-        self.expect(Token::RParen)?;
-        self.register_formatted_output_call(
-            function.function_name(&format),
-            vec![ImportedParameter::new(
-                InterfaceType::Int32Pointer,
-                "file".to_string(),
-                Some(STDIO_FILE_TAG.to_string()),
-            )],
-        );
-        Ok(vec![file])
     }
 
     /// The arguments of a call to `snprintf` whose format is a string

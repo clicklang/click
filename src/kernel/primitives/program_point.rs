@@ -1539,10 +1539,7 @@ impl Ord for ProgramPoint {
 
 impl ProgramPoint {
     /// A point built from a bare memory state, with no place on a path.
-    #[cfg_attr(test, track_caller)]
     pub fn at(memory: &SharedMemory) -> Self {
-        #[cfg(test)]
-        crate::kernel::mixed_read_names::record_bare_point(memory, std::panic::Location::caller());
         Self {
             memory: memory.clone(),
             path: PathLink::default(),
@@ -1552,7 +1549,6 @@ impl ProgramPoint {
 
     /// The point a `SymbolicMemory` value stands at, interning it first. Callers
     /// that already hold an interned state use [`ProgramPoint::at`].
-    #[cfg_attr(test, track_caller)]
     pub(crate) fn of_memory(memory: &SymbolicMemory) -> Self {
         Self::at(&intern_memory(memory.clone()))
     }
@@ -3142,7 +3138,8 @@ mod tests {
     }
 
     /// One cell at one memory state named by a selected point and by its
-    /// memory is reported once, with the line that built the bare point.
+    /// memory is reported once, with the line that built the memory-named
+    /// read.
     /// A cell named one way, however often, is not.
     #[test]
     fn the_mixed_read_name_audit_reports_a_cell_named_both_ways() {
@@ -3163,6 +3160,7 @@ mod tests {
             observe(&selected);
             observe(&selected);
             let bare = ProgramPoint::at(selected.shared_memory());
+            let _read = MachineTerm::read_named(bare.clone(), cell.clone(), LoadKind::Int32);
             observe(&bare);
             observe(&bare);
         });

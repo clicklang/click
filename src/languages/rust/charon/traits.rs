@@ -253,7 +253,7 @@ impl Adapter<'_> {
                         return Err(unsupported("trait method parameter other than a scalar"));
                     }
                     parameters.push(out::Place {
-                        name: format!("__rust_arg_{}", index + 1),
+                        name: format!("__rust_arg_{}", index + 1).into(),
                         value_type,
                         span: span(binder.item_meta.span),
                     });
@@ -495,12 +495,11 @@ impl BodyAdapter<'_, '_> {
             .map(|argument| self.operand(argument))
             .collect::<Result<_, String>>()?;
         Ok(T::Call {
-            function,
+            function: function.into(),
             arguments,
             owned_arguments: Vec::new(),
             destination: Some(self.local(dest)?),
             target: target.index(),
-            through_pointer: false,
             result: None,
         })
     }
@@ -712,12 +711,11 @@ pub(super) fn wrap_object_coercions(
             T::Goto { target: usize::MAX },
         );
         let call_with = |function: &str, argument: &E, target: usize| T::Call {
-            function: function.to_string(),
+            function: function.into(),
             arguments: vec![argument.clone()],
             owned_arguments: Vec::new(),
             destination: destination.clone(),
             target,
-            through_pointer: false,
             result: None,
         };
         // Blocks in order: packs after the first, the call, the unpacks.
@@ -800,7 +798,7 @@ mod tests {
             .iter()
             .flat_map(|mir| &mir.blocks)
             .filter_map(|block| match &block.terminator {
-                T::Call { function, .. } => Some(function.as_str()),
+                T::Call { function, .. } => function.source_name(),
                 _ => None,
             })
             .collect()
@@ -883,7 +881,7 @@ mod tests {
                     T::Call {
                         function, target, ..
                     } => {
-                        calls.push(display(function));
+                        calls.push(display(function.source_name().unwrap()));
                         block = *target;
                     }
                     T::Goto { target } => block = *target,

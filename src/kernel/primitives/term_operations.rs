@@ -4986,9 +4986,9 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Bits64,
         );
         named_pointer_read(
@@ -5008,9 +5008,9 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Bits64,
         );
         match canonical_pointer_read(&read) {
@@ -5114,9 +5114,9 @@ impl Address {
         }
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
-        let bits = MachineTerm::MemoryLoad(
+        let bits = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Int32,
         );
         Err(Self::loaded(&bits).expect("a pointer read has a structural descriptor"))

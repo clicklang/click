@@ -414,7 +414,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             "loop {loop_index} entry has {} lowered declarations for {} written invariants",
             entry_goals.declarations().len(),
             invariant_items.len(),
-        )));
+        ))
+        .with_proof_refusal(ProofRefusal::Contract));
     }
     let layout = initialize_script_layout(proof, &invariant_items, initialize_source_index);
     let mut phase = Proof::for_fixed_state_frontier_of_list(
@@ -491,7 +492,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 item.title(invariant_index),
                 goals.len(),
                 bodies.len()
-            )));
+            )).with_proof_refusal(ProofRefusal::IncompleteProof));
         }
         // With one body the invariant's goals all run it; the timing label
         // below describes that first body either way.

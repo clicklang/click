@@ -205,9 +205,11 @@ pub(super) enum NameKind {
     ReferenceParameter,
     /// A declaration's type parameter.
     TypeParameter,
+    /// A local callable introduced by `let name = induct(parameter)`.
+    InductionHypothesis,
 }
 
-const KINDS: usize = 9;
+const KINDS: usize = 10;
 
 impl NameKind {
     /// The kinds that bind a value a proposition can read by name, which a
@@ -242,6 +244,7 @@ impl NameKind {
             NameKind::StructArrayParameter => 6,
             NameKind::ReferenceParameter => 7,
             NameKind::TypeParameter => 8,
+            NameKind::InductionHypothesis => 9,
         }
     }
 }

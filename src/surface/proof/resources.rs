@@ -3435,7 +3435,8 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         MachineTerm::constant(1),
     );
     if state.population_body_is_open(&population_name, &population_arguments) {
-        return Err(ClickError::new("population body is already open"));
+        return Err(ClickError::new("population body is already open")
+            .with_proof_refusal(ProofRefusal::Tactic));
     }
     if access == ResourceBodyAccess::Finalize {
         let quantity = requested_quantity;
@@ -4246,6 +4247,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                             "`{claim_label}` path {path_index}: closing `with({})` {message}",
                             describe_resource_clause(resource)
                         ))
+                        .with_proof_refusal(ProofRefusal::IncompleteProof)
                     })?;
                 authority_closing_fact_state = Some(state.clone().with_resource_context(projected));
             } else if composite_body

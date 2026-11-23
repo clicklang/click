@@ -2932,19 +2932,27 @@ pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
     float_bound(proposition).is_some()
 }
 
-/// A true ordered comparison excludes NaN in its operand. Weakening it
-/// needs one cited comparison of the same direction and operand. Exact
-/// binary32-to-binary64 widening carries its operand's ordered bounds.
+/// A true ordered comparison excludes NaN in its operand. Exact widening
+/// preserves the order of a cited bound, and sign negation reverses it.
 pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> bool {
     let (Some(premise), Some(goal)) = (float_bound(premise), float_bound(goal)) else {
         return false;
     };
-    if premise.lower != goal.lower {
-        return false;
-    }
+    let same_direction = premise.lower == goal.lower;
     let (premise_endpoint, goal_operand) = if premise.format == goal.format {
-        (premise.endpoint, goal.operand)
-    } else if premise.format == KernelFloatType::Float32
+        if same_direction {
+            (premise.endpoint, goal.operand)
+        } else if let Some(operand) = goal.operand.negate() {
+            let sign_bit = match goal.format {
+                KernelFloatType::Float32 => 1 << 31,
+                KernelFloatType::Float64 => 1 << 63,
+            };
+            (premise.endpoint ^ sign_bit, operand)
+        } else {
+            return false;
+        }
+    } else if same_direction
+        && premise.format == KernelFloatType::Float32
         && let Some(operand) = goal.operand.widened_float32()
     {
         (

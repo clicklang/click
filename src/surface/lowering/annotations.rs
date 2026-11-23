@@ -1006,7 +1006,10 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
                             Ok(expression) => Ok(SpecExpression::ProgramExpression(expression)),
                             Err(_) => lowerer
                                 .lower_contract_expression_to_spec(argument, &environment)
-                                .map_err(ClickError::new),
+                                .map_err(|message| {
+                                    ClickError::new(message)
+                                        .with_kind(crate::surface::ClickErrorKind::Type)
+                                }),
                         }
                     })
                     .collect::<Result<_, _>>()?,
@@ -4454,7 +4457,8 @@ impl AnnotationLowerer<'_> {
                      earlier state.",
                     crate::surface::verification::termination_measure_source(expression),
                     fixed.spelling()
-                )));
+                ))
+                .with_proof_refusal(crate::surface::ProofRefusal::Contract));
             }
             if written.is_none()
                 && let Ok(program_expression) = resource_argument_to_program_expression(expression)
@@ -4484,7 +4488,8 @@ impl AnnotationLowerer<'_> {
                          structure it walks, name its resource binder (`decreases c;`) or a \
                          function of the binder's model into `Integer` or `Nat`",
                         value_type.name()
-                    )));
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Contract));
                 }
                 let observed = ContractExpression::Call {
                     name: "to_integer".to_string(),
@@ -4589,7 +4594,8 @@ impl AnnotationLowerer<'_> {
                  earlier state.",
                 crate::surface::verification::termination_measure_source(expression),
                 fixed.spelling()
-            )));
+            ))
+            .with_proof_refusal(crate::surface::ProofRefusal::Contract));
         }
         // The carrier is chosen exactly as the loop slot chooses it: an
         // `Integer`-typed measure lowers into the Integer carrier and owes the
@@ -4659,6 +4665,7 @@ impl AnnotationLowerer<'_> {
                             "loop {loop_index} {}: {message}",
                             item.title(item_index)
                         ))
+                        .with_proof_refusal(crate::surface::ProofRefusal::Contract)
                     })?,
                     Some(format!(
                         "loop {loop_index} {} entry",

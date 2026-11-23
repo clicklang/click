@@ -1705,7 +1705,20 @@ fn synthesize_surface_quantified_proposition(
                 ClickType::Program(crate::surface::generics::interface_type_from_program_type(
                     integer_type.program_type(),
                 ));
-            let name = SurfaceBinder::fresh();
+            // The binder keeps the name it was written with when nothing the
+            // body can name is spelled the same; otherwise a generated
+            // binder, which never captures a source name.
+            let written = match proposition {
+                Proposition::ForAll { name, .. } => name.as_str(),
+                Proposition::Exists { name, .. } => Some(name.as_str()),
+                _ => None,
+            }
+            .filter(|name| {
+                quantifier_name_is_free(name, parameter_binding, state, bound_variables)
+            });
+            let name = written
+                .map(|name| SurfaceBinder::Written(name.to_string()))
+                .unwrap_or_else(SurfaceBinder::fresh);
             let _binder =
                 folds::Binding::enter((folds::BinderCarrier::Program, **var), name.clone());
             let body = Box::new(synthesize_surface_proposition_with_bound_variables(
@@ -1732,6 +1745,34 @@ fn synthesize_surface_quantified_proposition(
         }
         _ => unreachable!("non-quantified proposition dispatched to binder synthesis"),
     }
+}
+
+/// Whether a quantifier written `name` can keep that name when raised: no
+/// parameter, local, given or proof binder, or enclosing binder is spelled
+/// the same, so the new binder shadows nothing its body names.
+fn quantifier_name_is_free(
+    name: &str,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> bool {
+    !name.is_empty()
+        && !name.starts_with("__")
+        && !parameter_binding
+            .parameters
+            .iter()
+            .any(|parameter| parameter.name() == name)
+        && state.locals().get(name).is_none()
+        && !bound_variables
+            .values()
+            .any(|binder| binder.written() == Some(name))
+        && !PROOF_BINDER_NAMES.with(|names| {
+            names
+                .borrow()
+                .values()
+                .any(|binder| binder.written() == Some(name))
+        })
+        && !folds::written_name_in_scope(name)
 }
 
 /// `loadable(<base>[0..n])`: the whole named region, its byte count a
@@ -5529,13 +5570,8 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let memory = crate::kernel::intern_memory_ref(state.memory());
     let selected =
         crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
-    (selected == *read).then(|| {
-        MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&memory),
-            pointer.clone(),
-            *kind,
-        )
-    })
+    (selected == *read)
+        .then(|| MachineTerm::memory_read(memory.clone(), pointer.as_ref().clone(), *kind))
 }
 
 // Unsigned division and remainder use the usual C conversion of both

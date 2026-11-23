@@ -2346,6 +2346,10 @@ id = "library.extern.fprintf"
 path = "reference/library/index.md#fprintf"
 
 [[item]]
+id = "library.extern.printf"
+path = "reference/library/index.md#printf"
+
+[[item]]
 id = "library.extern.memcpy"
 path = "reference/library/index.md#memcpy"
 

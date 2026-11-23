@@ -1696,10 +1696,13 @@ A match on a written constructor can close an equality when its selected arm
 builds a constructor from bound fields, literal fields, or captured variables.
 Literals and variables can be machine integers, `Integer`s, or `Bool`s.
 Algebraic result fields can also be constructors that contain these values.
-A constructor passed into a pattern binder can contain literal fields and
-nested constructors. The check follows nested matches on written constructors
-or constructors held by earlier pattern binders. Machine fields retain their
-exact width and signedness.
+A constructor passed into a pattern binder can contain literals, variables,
+and nested constructors. The check reads those variables in the scope where
+the constructor was written. It follows nested matches on written constructors
+or constructors held by earlier pattern binders. A selected arm can return
+a bound or captured algebraic value directly. An equality can compare
+the selected results of two matches, with each side using its own bindings.
+Machine fields retain their exact width and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
@@ -1901,11 +1904,10 @@ list order from the goal's lower endpoint to its upper endpoint. A strict
 goal needs at least one strict link. Replay checks the listed links directly.
 
 A true `float` or `double` comparison against a literal can cite one stronger
-bound in the same direction. The comparison can use the same operand or its
-exact widening from `float` to `double`. The checker widens the cited endpoint
-before comparing it to the goal's endpoint. Equal endpoints require a strict
-premise for a strict goal. A negated comparison can hold for NaN and cannot
-supply an ordered bound.
+bound. Exact widening from `float` to `double` widens the endpoint and preserves
+the direction. Unary float negation negates the endpoint and reverses the
+direction. Equal endpoints require a strict premise for a strict goal. A
+negated comparison can hold for NaN and cannot supply an ordered bound.
 
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
@@ -2764,6 +2766,11 @@ instantiation performs no premise search or guard discharge.
 **Outside it:** a universal not yet established must be proved first with
 `have`. A value of another carrier needs a conversion. The former `using`
 list is rejected; write ordinary guard proofs instead.
+The loop preservation checker currently supports instantiation inside
+`have proposition by { ... }`. Supporting a standalone instantiation in
+`maintain` requires the checker to carry the added fact between execution
+steps.
+
 
 **Failure, checking, and tools:**
 

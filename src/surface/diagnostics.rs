@@ -1356,7 +1356,9 @@ pub(super) fn describe_proof_context(
 /// locals.
 pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::LoopHeadRefusal) -> String {
     let (proposition, context, state) = match refusal {
-        crate::kernel::LoopHeadRefusal::Message(message) => return message.clone(),
+        crate::kernel::LoopHeadRefusal::Message(message)
+        | crate::kernel::LoopHeadRefusal::ResourceEvaluation(message)
+        | crate::kernel::LoopHeadRefusal::GuardEvaluation(message) => return message.clone(),
         crate::kernel::LoopHeadRefusal::UnheldResource { fact, state } => {
             let (parameters, arguments) = local_naming_tables(state);
             return format!(

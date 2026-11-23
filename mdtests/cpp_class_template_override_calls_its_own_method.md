@@ -64,7 +64,7 @@ template<class T> Wrap<T>::~Wrap() {
 
 theorem stored_value(v: int32, x: int32) {
     requires v == x;
-    ensures x == v by { rewrite(x, v); known(); }
+    ensures x == v by { rewrite(v, x); known(); }
 }
 
 int store(Holder<int>& holder, int x) {

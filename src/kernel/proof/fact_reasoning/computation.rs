@@ -900,9 +900,7 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     {
         return Some(true);
     }
-    if constructor_match_forwards_payload(left, right)
-        || constructor_match_forwards_payload(right, left)
-    {
+    if scoped_constructor_matches_equal(left, right) {
         return Some(true);
     }
     let projected_left = constructor_match_projection(left);
@@ -950,13 +948,14 @@ fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
     }
 }
 
-fn is_closed_constructor_payload(field: &AlgebraicValue) -> bool {
+fn is_constructor_payload(field: &AlgebraicValue) -> bool {
     let AlgebraicValue::Algebraic(AlgebraicTerm {
         node: AlgebraicTermNode::Constructor { fields, .. },
         ..
     }) = field
     else {
-        return is_constructor_payload_literal(field);
+        return constructor_payload_variable(field).is_some()
+            || is_constructor_payload_literal(field);
     };
     let mut pending = vec![fields.as_slice()];
     while let Some(fields) = pending.pop() {
@@ -968,7 +967,9 @@ fn is_closed_constructor_payload(field: &AlgebraicValue) -> bool {
             }) = field
             {
                 pending.push(fields);
-            } else if !is_constructor_payload_literal(field) {
+            } else if constructor_payload_variable(field).is_none()
+                && !is_constructor_payload_literal(field)
+            {
                 return false;
             }
         }
@@ -1004,25 +1005,55 @@ fn same_constructor_payload_type(left: &AlgebraicValue, right: &AlgebraicValue) 
     }
 }
 
+#[derive(Clone, Copy)]
+struct ConstructorPayload<'a> {
+    value: &'a AlgebraicValue,
+    scope: usize,
+}
+
+// Each binder is installed once. A payload sees only bindings already in
+// scope where the payload was written.
+type ConstructorBindings<'a> = std::collections::HashMap<Variable, (usize, ConstructorPayload<'a>)>;
+
+impl<'a> ConstructorPayload<'a> {
+    fn resolve(self, bindings: &ConstructorBindings<'a>) -> Self {
+        constructor_payload_variable(self.value)
+            .and_then(|variable| bindings.get(&variable))
+            .filter(|(scope, _)| *scope <= self.scope)
+            .map_or(self, |(_, payload)| *payload)
+    }
+}
+
 fn constructor_result_fields_match(
     result: &[AlgebraicValue],
     expected: &[AlgebraicValue],
-    payloads: &std::collections::HashMap<Variable, &AlgebraicValue>,
+    left: &ConstructorResult<'_>,
+    right: &ConstructorResult<'_>,
 ) -> bool {
-    let mut pending = vec![(result, expected)];
-    while let Some((result, expected)) = pending.pop() {
+    let mut pending = vec![(result, expected, left.scope, right.scope)];
+    while let Some((result, expected, left_scope, right_scope)) = pending.pop() {
         if result.len() != expected.len() {
             return false;
         }
         crate::instrumentation::record_deterministic_work(result.len());
         for (field, expected) in result.iter().zip(expected) {
-            let variable = constructor_payload_variable(field);
-            let payload = variable
-                .and_then(|id| payloads.get(&id).copied())
-                .unwrap_or(field);
-            if !same_constructor_payload_type(payload, field) {
+            let resolved = ConstructorPayload {
+                value: field,
+                scope: left_scope,
+            }
+            .resolve(&left.bindings);
+            let expected_resolved = ConstructorPayload {
+                value: expected,
+                scope: right_scope,
+            }
+            .resolve(&right.bindings);
+            let payload = resolved.value;
+            if !same_constructor_payload_type(payload, field)
+                || !same_constructor_payload_type(expected_resolved.value, expected)
+            {
                 return false;
             }
+            let expected = expected_resolved.value;
             if let (
                 AlgebraicValue::Algebraic(AlgebraicTerm {
                     node: AlgebraicTermNode::Constructor { variant, fields },
@@ -1042,10 +1073,14 @@ fn constructor_result_fields_match(
                 {
                     return false;
                 }
-                // Stored constructor payloads are closed, so their children need
-                // no further lookups. Written result constructors can use binders.
-                pending.push((fields, expected_fields));
-            } else if !(variable.is_some() || is_constructor_payload_literal(payload))
+                pending.push((
+                    fields,
+                    expected_fields,
+                    resolved.scope,
+                    expected_resolved.scope,
+                ));
+            } else if !(constructor_payload_variable(payload).is_some()
+                || is_constructor_payload_literal(payload))
                 || payload != expected
             {
                 return false;
@@ -1055,89 +1090,135 @@ fn constructor_result_fields_match(
     true
 }
 
-/// Follow selected constructor arms that forward payloads into a constructor,
-/// possibly alongside closed fields or captured variables.
-/// Resolve each binding in its scrutinee's scope before checking the result.
-fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
-    let AlgebraicTermNode::Constructor {
-        variant: expected_variant,
-        fields: expected_fields,
-    } = &expected.node
-    else {
-        return false;
-    };
-    if !matches!(matched.node, AlgebraicTermNode::Match { .. }) {
-        return false;
-    }
+struct ConstructorResult<'a> {
+    term: &'a AlgebraicTerm,
+    scope: usize,
+    bindings: ConstructorBindings<'a>,
+}
 
-    let mut payloads = std::collections::HashMap::<Variable, &AlgebraicValue>::new();
+/// Resolve each selected binding in its scrutinee's scope, keeping the
+/// bindings for this side of the equality together with the result.
+fn scoped_constructor_result(term: &AlgebraicTerm) -> Option<ConstructorResult<'_>> {
+    let mut payloads = ConstructorBindings::new();
+    let mut scope = 0;
     let mut bindings = Vec::new();
-    let mut selected = matched;
+    let mut selected = term;
     while let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node {
-        let (scrutinee, fields_are_closed) =
+        let (scrutinee, scrutinee_scope, already_checked) =
             if let AlgebraicTermNode::Variable(variable) = &scrutinee.node {
-                let Some(AlgebraicValue::Algebraic(value)) = payloads.get(variable).copied() else {
-                    return false;
+                let Some((_, payload)) = payloads.get(variable) else {
+                    return None;
+                };
+                let AlgebraicValue::Algebraic(value) = payload.value else {
+                    return None;
                 };
                 if value.algebraic_type != scrutinee.algebraic_type {
-                    return false;
+                    return None;
                 }
-                (value, true)
+                (value, payload.scope, true)
             } else {
-                (scrutinee.as_ref(), false)
+                (scrutinee.as_ref(), scope, false)
             };
         let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
-            return false;
+            return None;
         };
         crate::instrumentation::record_deterministic_work(arms.len() + fields.len());
         let Some(arm) = arms.iter().find(|arm| arm.variant == *variant) else {
-            return false;
+            return None;
         };
         if arm.bindings.len() != fields.len() {
-            return false;
+            return None;
         }
         // The new bindings are in scope in the arm body, but not in its scrutinee.
         for (binder, field) in arm.bindings.iter().zip(fields) {
             let Some(variable) = constructor_payload_variable(binder) else {
-                return false;
+                return None;
             };
-            // A constructor taken from the binder map was checked when it was
-            // first bound, including all its fields.
-            let payload = if fields_are_closed {
-                field
-            } else if let Some(source) = constructor_payload_variable(field) {
-                payloads.get(&source).copied().unwrap_or(field)
-            } else if is_closed_constructor_payload(field) {
-                field
-            } else {
-                return false;
-            };
+            // Previously bound constructors already passed the shape check.
+            if !already_checked && !is_constructor_payload(field) {
+                return None;
+            }
+            let payload = ConstructorPayload {
+                value: field,
+                scope: scrutinee_scope,
+            }
+            .resolve(&payloads);
             if !same_constructor_payload_type(binder, field)
-                || !same_constructor_payload_type(payload, field)
+                || !same_constructor_payload_type(payload.value, field)
             {
-                return false;
+                return None;
             }
             bindings.push((variable, payload));
         }
+        scope += 1;
         for (variable, payload) in bindings.drain(..) {
-            if payloads.insert(variable, payload).is_some() {
-                return false;
+            if payloads.insert(variable, (scope, payload)).is_some() {
+                return None;
             }
         }
         selected = &arm.body;
     }
 
-    let AlgebraicTermNode::Constructor {
-        variant: result_variant,
-        fields: result_fields,
-    } = &selected.node
-    else {
+    let result = if let AlgebraicTermNode::Variable(variable) = &selected.node
+        && let Some((_, payload)) = payloads.get(variable)
+    {
+        let AlgebraicValue::Algebraic(value) = payload.value else {
+            return None;
+        };
+        if value.algebraic_type != selected.algebraic_type {
+            return None;
+        }
+        scope = payload.scope;
+        value
+    } else {
+        selected
+    };
+    Some(ConstructorResult {
+        term: result,
+        scope,
+        bindings: payloads,
+    })
+}
+
+fn scoped_constructor_matches_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
+    if !matches!(left.node, AlgebraicTermNode::Match { .. })
+        && !matches!(right.node, AlgebraicTermNode::Match { .. })
+    {
+        return false;
+    }
+    if ![left, right].iter().all(|term| {
+        matches!(
+            term.node,
+            AlgebraicTermNode::Match { .. }
+                | AlgebraicTermNode::Constructor { .. }
+                | AlgebraicTermNode::Variable(_)
+        )
+    }) {
+        return false;
+    }
+    let (Some(a), Some(b)) = (
+        scoped_constructor_result(left),
+        scoped_constructor_result(right),
+    ) else {
         return false;
     };
-    result_variant == expected_variant
-        && constructor_result_fields_match(result_fields, expected_fields, &payloads)
-        && matched.is_well_formed()
-        && expected.is_well_formed()
+    let equal = match (&a.term.node, &b.term.node) {
+        (
+            AlgebraicTermNode::Constructor { variant, fields },
+            AlgebraicTermNode::Constructor {
+                variant: expected_variant,
+                fields: expected_fields,
+            },
+        ) => {
+            variant == expected_variant
+                && constructor_result_fields_match(fields, expected_fields, &a, &b)
+        }
+        (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Variable(expected)) => {
+            variable == expected
+        }
+        _ => false,
+    };
+    equal && left.is_well_formed() && right.is_well_formed()
 }
 
 /// Select an algebraic field when the match names its constructor and

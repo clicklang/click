@@ -970,14 +970,14 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
 ) -> Option<Proposition> {
     fn erase_term(term: &MachineTerm) -> MachineTerm {
         match term {
-            MachineTerm::MemoryLoad(_, pointer, kind) => MachineTerm::MemoryLoad(
+            MachineTerm::MemoryLoad(_, pointer, kind) => crate::kernel::MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::default())),
                 ),
-                Box::new(Address {
+                Address {
                     base: pointer.base.clone(),
                     offset: erase_offset(&pointer.offset),
-                }),
+                },
                 *kind,
             ),
             binary_term!(Bits32 @ format32, Add, left, right) => {

@@ -29,7 +29,7 @@ pub(super) struct RangeStorage {
 impl Context<'_> {
     pub(super) fn range_storage(
         &mut self,
-        name: &str,
+        name: &MirLocalId,
         element: &Type,
         inclusive: bool,
         owner: &LocalFunctionId,
@@ -46,7 +46,7 @@ impl Context<'_> {
             inclusive,
             bounds: [start.clone(), end.clone()],
         };
-        if self.ranges.insert(name.into(), storage).is_some() {
+        if self.ranges.insert(name.clone(), storage).is_some() {
             return Err("range state identity collision".into());
         }
         Ok(program_seq(
@@ -55,7 +55,7 @@ impl Context<'_> {
         ))
     }
 
-    fn range(&self, name: &str) -> Result<&RangeStorage, String> {
+    fn range(&self, name: &MirLocalId) -> Result<&RangeStorage, String> {
         self.ranges
             .get(name)
             .ok_or_else(|| "unknown Rust range".into())
@@ -63,7 +63,7 @@ impl Context<'_> {
 
     pub(super) fn range_initialize(
         &mut self,
-        target: &str,
+        target: &MirLocalId,
         start: &E,
         end: &E,
     ) -> Result<ProgramStatement, String> {
@@ -78,8 +78,8 @@ impl Context<'_> {
 
     pub(super) fn range_move(
         &self,
-        target: &str,
-        source: &str,
+        target: &MirLocalId,
+        source: &MirLocalId,
     ) -> Result<ProgramStatement, String> {
         use crate::kernel::program_expression::variable;
         let (destination, origin) = (self.range(target)?, self.range(source)?);
@@ -97,7 +97,10 @@ impl Context<'_> {
         ))
     }
 
-    pub(super) fn range_has_next(&self, iterator: &str) -> Result<ProgramExpression, String> {
+    pub(super) fn range_has_next(
+        &self,
+        iterator: &MirLocalId,
+    ) -> Result<ProgramExpression, String> {
         use crate::kernel::program_expression as e;
         let range = self.range(iterator)?;
         let [start, end] = range.bounds.clone().map(e::variable);
@@ -110,10 +113,10 @@ impl Context<'_> {
 
     pub(super) fn range_next(
         &mut self,
-        iterator: &str,
-        option: Option<&str>,
+        iterator: &MirLocalId,
+        option: Option<&MirLocalId>,
         option_type: &str,
-        payload: Option<&str>,
+        payload: Option<&MirLocalId>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
         use crate::kernel::program_expression as e;
@@ -207,7 +210,7 @@ mod tests {
             .find(|local| matches!(local.value_type, Type::Range { .. }))
             .unwrap();
         let colliding = ["start", "end"].map(|field| Place {
-            name: format!("{}_{field}", range.name),
+            name: format!("{}_{field}", range.name).into(),
             value_type: Type::U32,
             span: range.span.clone(),
         });

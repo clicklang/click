@@ -38,13 +38,13 @@ pub(super) struct ChunkOptionFields {
 }
 
 impl Context<'_> {
-    pub(super) fn chunk_iterator(&self, name: &str) -> Result<&ChunkIteratorFields, String> {
+    pub(super) fn chunk_iterator(&self, name: &MirLocalId) -> Result<&ChunkIteratorFields, String> {
         self.mir_chunk_iterators
             .get(name)
             .ok_or_else(|| "unknown Rust chunk iterator".into())
     }
 
-    pub(super) fn chunk_option(&self, name: &str) -> Result<&ChunkOptionFields, String> {
+    pub(super) fn chunk_option(&self, name: &MirLocalId) -> Result<&ChunkOptionFields, String> {
         self.chunk_options
             .get(name)
             .ok_or_else(|| "unknown chunk Option".into())
@@ -52,12 +52,12 @@ impl Context<'_> {
 
     pub(super) fn chunk_storage(
         &mut self,
-        name: &str,
+        name: &MirLocalId,
         option: bool,
         owner: &LocalFunctionId,
         ordinal: u32,
     ) -> Result<ProgramStatement, String> {
-        if !self.locals.insert(name.into()) {
+        if !self.locals.insert(name.clone()) {
             return Err("chunk state identity collision".into());
         }
         if !option {
@@ -91,7 +91,7 @@ impl Context<'_> {
                     ),
                 );
             }
-            self.mir_chunk_iterators.insert(name.into(), fields);
+            self.mir_chunk_iterators.insert(name.clone(), fields);
             return Ok(result);
         }
 
@@ -122,7 +122,7 @@ impl Context<'_> {
             ),
         );
         self.chunk_options.insert(
-            name.into(),
+            name.clone(),
             ChunkOptionFields {
                 tag,
                 pointer,
@@ -137,7 +137,7 @@ impl Context<'_> {
     /// rest.
     pub(super) fn chunk_initialize_mir(
         &mut self,
-        iterator: &str,
+        iterator: &MirLocalId,
         slice: &E,
         size: &E,
     ) -> Result<ProgramStatement, String> {
@@ -180,8 +180,8 @@ impl Context<'_> {
 
     pub(super) fn chunk_move(
         &mut self,
-        target: &str,
-        source: &str,
+        target: &MirLocalId,
+        source: &MirLocalId,
     ) -> Result<ProgramStatement, String> {
         let target_fields = self.mir_chunk_iterators.get(target);
         let source_fields = self.mir_chunk_iterators.get(source);
@@ -198,7 +198,10 @@ impl Context<'_> {
     }
 
     /// Whether the remaining slice contains a full chunk.
-    pub(super) fn chunk_has_next(&self, iterator: &str) -> Result<ProgramExpression, String> {
+    pub(super) fn chunk_has_next(
+        &self,
+        iterator: &MirLocalId,
+    ) -> Result<ProgramExpression, String> {
         Ok(self.chunk_iterator(iterator)?.has_next())
     }
 
@@ -210,9 +213,9 @@ impl Context<'_> {
     /// (`taken`), only that arm runs; the arm that does not yield is nothing.
     pub(super) fn chunk_next(
         &mut self,
-        iterator: &str,
-        option: Option<&str>,
-        payload: Option<&str>,
+        iterator: &MirLocalId,
+        option: Option<&MirLocalId>,
+        payload: Option<&MirLocalId>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
         use crate::kernel::program_expression::int32_literal;
@@ -228,7 +231,7 @@ impl Context<'_> {
                 };
                 some = program_seq(
                     program_assign(
-                        self.binding(payload),
+                        self.binding(payload)?,
                         reference_view(
                             variable(&fields.remaining),
                             ProgramType::UInt8Pointer,
@@ -302,7 +305,7 @@ mod tests {
             .find(|local| local.value_type == Type::ChunkIterator)
             .unwrap();
         let colliding = ["v", "v_len", "rem", "rem_len", "chunk_size"].map(|field| Place {
-            name: format!("{}_{field}", iterator.name),
+            name: format!("{}_{field}", iterator.name).into(),
             value_type: Type::Usize,
             span: iterator.span.clone(),
         });
@@ -339,7 +342,7 @@ mod tests {
 
         // The ordinary importer binds the payload directly. Keep the Option
         // through the match here to exercise its lowering and tag check.
-        let option = "chunk_option".to_string();
+        let option = MirLocalId::from("chunk_option");
         let header = mir
             .blocks
             .iter()

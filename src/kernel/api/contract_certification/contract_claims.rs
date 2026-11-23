@@ -1126,9 +1126,9 @@ fn materialized_load_is_unchanged(
     if !kind.reads_value(value) {
         return false;
     }
-    let right = MachineTerm::MemoryLoad(
+    let right = crate::kernel::MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(symbolic_memory.clone()))),
-        Box::new(pointer.clone()),
+        pointer.clone(),
         kind,
     );
     pointers_proven_equal_for_memory_resolution(load_pointer, pointer, assumptions)
@@ -2568,6 +2568,41 @@ fn bind_contract_exit_value(
     );
 }
 
+/// Failure to prepare the goal for a declared postcondition at an outcome.
+#[derive(Debug)]
+pub(crate) enum EnsureGoalRefusal {
+    MissingClause(usize),
+    MissingExceptionalClause(usize),
+    EntryUnavailable,
+    ExpectedThrow,
+    Stopped(ExecutionLimit),
+    Unavailable(String),
+}
+
+impl std::fmt::Display for EnsureGoalRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingClause(index) => {
+                write!(formatter, "no postcondition at contract index {index}")
+            }
+            Self::MissingExceptionalClause(index) => {
+                write!(
+                    formatter,
+                    "no exceptional postcondition at contract index {index}"
+                )
+            }
+            Self::EntryUnavailable => formatter.write_str("could not reconstruct the entry view"),
+            Self::ExpectedThrow => formatter.write_str("the execution outcome was not a throw"),
+            Self::Stopped(limit) => write!(
+                formatter,
+                "postcondition evaluation stopped at {}",
+                limit.describe()
+            ),
+            Self::Unavailable(reason) => formatter.write_str(reason),
+        }
+    }
+}
+
 /// Entry and exit views prepared for lowering return claims at one fixed
 /// frontier. The producer owns the states and facts; callers discard the
 /// context when the outcome, ambient facts, or resource representation changes.
@@ -2684,7 +2719,10 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         })
     }
 
-    pub(crate) fn goals(&self, contract_index: usize) -> Result<Vec<ContractClaimGoal>, String> {
+    pub(crate) fn goals(
+        &self,
+        contract_index: usize,
+    ) -> Result<Vec<ContractClaimGoal>, EnsureGoalRefusal> {
         let function = self.function;
         let entry_state = &self.entry_state;
         let post_state = &self.post_state;
@@ -2692,7 +2730,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         let ensure = function
             .contract_ensures()
             .get(contract_index)
-            .ok_or_else(|| format!("no postcondition at contract index {contract_index}"))?;
+            .ok_or(EnsureGoalRefusal::MissingClause(contract_index))?;
         let ensure = function
             .predicate_unfoldings()
             .iter()
@@ -2710,9 +2748,19 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             &lowering_assumptions,
             &mut budget,
         )
-        .map_err(|limit| format!("postcondition evaluation stopped at {}", limit.describe()))?;
+        .map_err(|limit| EnsureGoalRefusal::Stopped(retained_lowering_limit(&budget, limit)))?;
+        if paths.is_empty()
+            && budget.dropped_symbolic_pointer_conditional
+            && budget.dropped_runtime_error().is_none()
+        {
+            return Err(EnsureGoalRefusal::Stopped(
+                ExecutionLimit::SymbolicPointerConditional,
+            ));
+        }
         if paths.is_empty() {
-            return Err(no_single_path_message("lowering", &paths, &budget));
+            return Err(EnsureGoalRefusal::Unavailable(no_single_path_message(
+                "lowering", &paths, &budget,
+            )));
         }
         let selected = exactly_selected_spec_proposition_path(&paths, assumptions);
         let paths = match selected {
@@ -2746,9 +2794,10 @@ pub(crate) fn program_function_exceptional_ensure_goals(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
-) -> Option<Vec<ContractClaimGoal>> {
+) -> Result<Vec<ContractClaimGoal>, EnsureGoalRefusal> {
     let mut entry_state = contract_view_of_entry(
-        program_function_entry_state(caller_state, function, arguments)?,
+        program_function_entry_state(caller_state, function, arguments)
+            .ok_or(EnsureGoalRefusal::EntryUnavailable)?,
         function,
         arguments,
     );
@@ -2757,7 +2806,8 @@ pub(crate) fn program_function_exceptional_ensure_goals(
         function.composite_resource_definitions(),
         &entry_state.program_point(),
         assumptions,
-    )?;
+    )
+    .ok_or(EnsureGoalRefusal::EntryUnavailable)?;
     entry_state = entry_state.with_resource_context(expanded_entry_resources);
     exceptional_goals_at_entry(function, contract_index, entry_state, outcome, assumptions)
 }
@@ -2768,7 +2818,7 @@ pub(crate) fn program_function_exceptional_ensure_goals_from_entry(
     entry: &RetainedClosingEntry,
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
-) -> Option<Vec<ContractClaimGoal>> {
+) -> Result<Vec<ContractClaimGoal>, EnsureGoalRefusal> {
     exceptional_goals_at_entry(
         function,
         contract_index,
@@ -2784,14 +2834,17 @@ fn exceptional_goals_at_entry(
     entry_state: ExecutionState,
     outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
-) -> Option<Vec<ContractClaimGoal>> {
-    let ensure = function.exceptional_ensures().get(contract_index)?;
+) -> Result<Vec<ContractClaimGoal>, EnsureGoalRefusal> {
+    let ensure = function
+        .exceptional_ensures()
+        .get(contract_index)
+        .ok_or(EnsureGoalRefusal::MissingExceptionalClause(contract_index))?;
     let FunctionOutcome::Throw {
         value,
         state: throw_state,
     } = outcome
     else {
-        return None;
+        return Err(EnsureGoalRefusal::ExpectedThrow);
     };
     let mut post_state = entry_state
         .clone()
@@ -2815,7 +2868,15 @@ fn exceptional_goals_at_entry(
         &lowering_assumptions,
         &mut budget,
     )
-    .ok()?;
+    .map_err(|limit| EnsureGoalRefusal::Stopped(retained_lowering_limit(&budget, limit)))?;
+    if paths.is_empty()
+        && budget.dropped_symbolic_pointer_conditional
+        && budget.dropped_runtime_error().is_none()
+    {
+        return Err(EnsureGoalRefusal::Stopped(
+            ExecutionLimit::SymbolicPointerConditional,
+        ));
+    }
     if paths.iter().any(|path| {
         path.obligations.iter().any(|obligation| {
             super::program_loadability_obligation_impossible_with_assumptions(
@@ -2824,28 +2885,28 @@ fn exceptional_goals_at_entry(
             )
         })
     }) {
-        return None;
+        return Err(EnsureGoalRefusal::Unavailable(
+            "could not establish read access needed for the exceptional postcondition".into(),
+        ));
     }
     let selected = exactly_selected_spec_proposition_path(&paths, assumptions);
     let paths = match selected {
         Some(path) if paths.len() > 1 => std::slice::from_ref(path),
         _ => paths.as_slice(),
     };
-    Some(
-        paths
-            .iter()
-            .map(|path| ContractClaimGoal {
-                target: FunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index),
-                proposition: path.proposition.clone(),
-                obligations: path.obligations.clone(),
-                facts: path
-                    .facts
-                    .iter()
-                    .map(|fact| fact.proposition().clone())
-                    .collect(),
-            })
-            .collect(),
-    )
+    Ok(paths
+        .iter()
+        .map(|path| ContractClaimGoal {
+            target: FunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index),
+            proposition: path.proposition.clone(),
+            obligations: path.obligations.clone(),
+            facts: path
+                .facts
+                .iter()
+                .map(|fact| fact.proposition().clone())
+                .collect(),
+        })
+        .collect())
 }
 
 /// Whether a lowered ensure folded to a constant truth: the kernel's own
@@ -3535,9 +3596,9 @@ mod materialized_function_load_tests {
     use super::*;
 
     fn callback_load(memory: &SymbolicMemory, address: &Address, kind: LoadKind) -> ProgramValue {
-        let load = MachineTerm::MemoryLoad(
+        let load = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
-            Box::new(address.clone()),
+            address.clone(),
             kind,
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();

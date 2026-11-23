@@ -50,18 +50,18 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     if execution.core.frontier.is_at_function_exit() {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `loop` requires the execution frontier to be at a loop, but execution has reached function exit"
-        )));
+        )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("loop"));
     }
     let statement_index = execution.core.frontier.next_statement_index;
     let source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `loop` could not resolve region({statement_index})"
-        ))
+        )).with_kind(ClickErrorKind::Internal)
     })?;
     let SourceStatementKind::Loop { loop_index } = source_region.kind else {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `loop` requires the execution frontier to be at a loop; current frontier is region({statement_index})"
-        )));
+        )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("loop"));
     };
     // Inside a loop's clauses and phases, `iter` is the iterator that loop
     // advances: each clause reads its own loop's.

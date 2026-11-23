@@ -132,7 +132,7 @@ pub(super) fn select_comparison_identity(
     )
     .unwrap_or(memory);
     (
-        ScalarReadComparisonIdentity(MachineTerm::MemoryLoad(version, pointer, kind)),
+        ScalarReadComparisonIdentity(MachineTerm::read_named(version, pointer, kind)),
         recorded_bytes,
     )
 }

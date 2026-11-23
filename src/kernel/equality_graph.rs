@@ -523,7 +523,11 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> {
     if let Some(read) = value.as_loaded_value() {
         return (read.displacement == AddressOffset::Constant(0)).then(|| {
-            MachineTerm::MemoryLoad(read.point, Box::new(read.defining_address), LoadKind::Int32)
+            crate::kernel::MachineTerm::read_named(
+                read.point,
+                read.defining_address,
+                LoadKind::Int32,
+            )
         });
     }
     let application = LOGICAL_POINTER_READS.with(|reads| {
@@ -547,9 +551,9 @@ pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> 
         };
     };
     let load = application.as_loaded_value()?;
-    Some(MachineTerm::MemoryLoad(
+    Some(crate::kernel::MachineTerm::read_named(
         ProgramPoint::at(&load.defining_memory),
-        Box::new(load.defining_address),
+        load.defining_address,
         LoadKind::Int32,
     ))
 }
@@ -4013,9 +4017,9 @@ mod tests {
             AddressOffset::Constant(8)
         );
         assert!(from_p.has_symbolic_block());
-        let cell_bits = MachineTerm::MemoryLoad(
+        let cell_bits = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&memory),
-            Box::new(p.clone()),
+            p.clone(),
             crate::kernel::LoadKind::Int32,
         );
         // A pointer read of the cell names the typed read, whatever the
@@ -4238,9 +4242,9 @@ mod tests {
             };
             let (memory, address) =
                 crate::kernel::registered_load_origin_for_variable(variable).unwrap();
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(address),
+                address,
                 crate::kernel::LoadKind::Int32,
             )
         };
@@ -4458,9 +4462,9 @@ mod tests {
             &raw.address().offset_by_bytes(24),
             &model.offset_by_bytes(24)
         ));
-        let cell_bits = MachineTerm::MemoryLoad(
+        let cell_bits = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&memory),
-            Box::new(address.clone()),
+            address.clone(),
             crate::kernel::LoadKind::Int32,
         );
         // The pointee width does not enter a read's identity; displacement does.
@@ -4564,9 +4568,9 @@ mod tests {
         let model = Address::symbolic(Variable(51_412));
         let read = |pointer: &Address| {
             crate::kernel::eval::declare_load_access_width(pointer, 4);
-            crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
+            crate::kernel::canonical_term(&crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             ))
         };
