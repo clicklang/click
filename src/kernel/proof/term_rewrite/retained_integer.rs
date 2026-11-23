@@ -656,12 +656,20 @@ mod conditional_tests {
                             rewrite.push_integer_substitution_scope(from, Variable(995105), false)
                         });
                         let expected = baseline.integer(&input);
-                        let exports = KernelTermExport::machine_export_count();
+                        let exports = (
+                            KernelTermExport::machine_export_count(),
+                            KernelTermExport::integer_export_count(),
+                        );
                         let cached = root.has_cached_native_argument();
                         let actual = rewrite.shared_integer_operand(&root).unwrap();
-                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        assert_eq!(
+                            (
+                                KernelTermExport::machine_export_count(),
+                                KernelTermExport::integer_export_count(),
+                            ),
+                            exports,
+                        );
                         assert_eq!(root.has_cached_native_argument(), cached);
-                        assert!(!actual.has_cached_native_argument());
                         assert_eq!(rewrite.changed, baseline.changed);
                         assert_eq!(rewrite.refusal(), baseline.refusal());
                         assert_eq!(

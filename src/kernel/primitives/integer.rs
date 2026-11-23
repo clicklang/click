@@ -2252,17 +2252,41 @@ impl IntegerTerm {
     }
 
     fn truncating_division(left: Self, right: Self, remainder: bool) -> Self {
-        if let (Self::Constant(a), Self::Constant(b)) = (&left, &right)
-            && !b.is_zero()
-        {
-            // Charge before arbitrary precision division. Native wide inputs
-            // are bounded, but these shared representation nodes are not.
-            charge_multiply_bits(a, b);
-            return Self::Constant(if remainder { a % b } else { a / b });
+        if let Some(value) = Self::truncating_division_literal(&left, &right, remainder) {
+            return value;
         }
+        Self::raw_truncating_division(left.into(), right.into(), remainder)
+    }
+
+    pub(crate) fn truncating_division_shared(
+        left: SharedIntegerTerm,
+        right: SharedIntegerTerm,
+        remainder: bool,
+    ) -> Self {
+        if let Some(value) = Self::truncating_division_literal(&left, &right, remainder) {
+            return value;
+        }
+        Self::raw_truncating_division(left, right, remainder)
+    }
+
+    fn truncating_division_literal(left: &Self, right: &Self, remainder: bool) -> Option<Self> {
+        let (Self::Constant(a), Self::Constant(b)) = (left, right) else {
+            return None;
+        };
+        if b.is_zero() {
+            return None;
+        }
+        // Charge before arbitrary precision division.
+        charge_multiply_bits(a, b);
+        Some(Self::Constant(if remainder { a % b } else { a / b }))
+    }
+
+    fn raw_truncating_division(
+        left: SharedIntegerTerm,
+        right: SharedIntegerTerm,
+        remainder: bool,
+    ) -> Self {
         // Do not cancel x/x or simplify 0/x before execution's zero guard.
-        let left = SharedIntegerTerm::intern(left);
-        let right = SharedIntegerTerm::intern(right);
         if remainder {
             Self::TruncatingRemainder(left, right)
         } else {
