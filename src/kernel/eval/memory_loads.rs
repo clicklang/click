@@ -5283,6 +5283,53 @@ pub(crate) mod load_variable_fact_census {
         COUNTS.with(|counts| counts.borrow().is_some())
     }
 
+    /// The census sees a native comparison that holds a load variable, so a
+    /// report of none is not a census that misses them. An Integer
+    /// comparison stated over the same variable does not hold it: its
+    /// shared operand imports the variable as the read it names, and only
+    /// the producer's retained native payload still spells the variable.
+    #[test]
+    fn counts_native_comparisons_holding_a_load_variable() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("cell", 4));
+        let pointer = Address {
+            base: AddressBase::Concrete("cell".into()),
+            offset: AddressOffset::Constant(0),
+        };
+        let variable = load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
+        let native = Proposition::condition_is(
+            ConditionTerm::signed_less_than(
+                MachineTerm::Variable(variable),
+                MachineTerm::constant(5),
+            ),
+            true,
+        );
+        let integer = Proposition::condition_is(
+            ConditionTerm::integer_less_than(
+                crate::kernel::IntegerTerm::from_machine(
+                    MachineIntegerType::Int32,
+                    MachineTerm::Variable(variable),
+                )
+                .unwrap(),
+                crate::kernel::IntegerTerm::constant(5.into()),
+            ),
+            true,
+        );
+        let counts = capture(|| {
+            let _ = PureFactContext::new()
+                .assume_proposition(native)
+                .assume_proposition(integer);
+        });
+        assert!(
+            counts.contains_key("condition: native comparison"),
+            "{counts:?}"
+        );
+        assert!(
+            !counts.contains_key("condition: integer comparison"),
+            "{counts:?}"
+        );
+    }
+
     pub(crate) fn observe(proposition: &Proposition) {
         if !active() || is_load_variable_defining_fact(proposition) {
             return;
@@ -5332,7 +5379,6 @@ pub(crate) mod load_variable_fact_census {
         });
     }
 }
-
 
 /// A test-only audit of one read, one name (`docs/internals/raise-lower-principle.md`):
 /// while [`duplicate_read_names::capture`] runs, each load named at a new
