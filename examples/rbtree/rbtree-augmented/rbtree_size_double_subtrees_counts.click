@@ -96,8 +96,8 @@ theorem sized_double_subtrees_repaired_count(pv: int32, far: SizedTree, middle: 
     requires defined(pv - 1);
     requires defined(pv - 1 - sized_value(other));
     ensures to_integer(pv - 1 - sized_value(other)) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) by {
-        have to_integer(pv - 1) == to_integer(pv) - to_integer(1);
-        have to_integer((pv - 1) - sized_value(other)) == to_integer((pv - 1)) - to_integer(sized_value(other));
+        apply(click::integer::int32_subtract_to_integer(pv, 1));
+        apply(click::integer::int32_subtract_to_integer(pv - 1, sized_value(other)));
         solve() using {
             to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) + to_integer(sized_value(other));
             to_integer(pv - 1) == to_integer(pv) - to_integer(1);
