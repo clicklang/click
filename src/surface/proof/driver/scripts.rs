@@ -459,14 +459,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .cloned()
             .map_or(ProofStep::Intro, ProofStep::IntroBinder);
         let introduced = self.apply_step(step)?;
-        // A written range universal includes its membership guard. The flat
-        // form still takes one kernel step at a time.
-        let range = matches!(
-            parent.surface_goal(),
-            Some(ClickProposition::RangeAll { .. })
-        ) && matches!(parent.goal(), Some(Proposition::ForAll { .. }))
-            && introduced.has_range_intro_guard();
-        let range_opened = range
+        let range_opened = parent
+            .opens_scoped_range(&introduced)
             .then(|| introduced.driver().apply_step(ProofStep::Intro))
             .transpose()?;
         let opened = range_opened.as_ref().unwrap_or(&introduced);

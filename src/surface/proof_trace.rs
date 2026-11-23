@@ -12,9 +12,11 @@ use std::any::Any;
 use std::cell::{Cell, LazyCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
 struct Capture {
     function: String,
+    node_keys: HashMap<usize, Box<dyn Any>>,
     steps: HashMap<usize, TraceStep>,
     branches: HashMap<usize, TraceBranch>,
     joins: HashMap<usize, TraceJoin>,
@@ -433,6 +435,7 @@ pub fn with_proof_trace<R>(function: &str, verify: impl FnOnce() -> R) -> R {
     let prior = CAPTURE.with(|slot| {
         slot.replace(Some(Capture {
             function: function.to_owned(),
+            node_keys: HashMap::new(),
             steps: HashMap::new(),
             branches: HashMap::new(),
             joins: HashMap::new(),
@@ -454,6 +457,22 @@ pub(super) fn enabled_for(claim: &str) -> bool {
                 .is_some_and(|tail| tail.starts_with('.') || tail.is_empty())
         })
     })
+}
+
+/// Keep a recorded node's allocation reserved until the trace ends. A discarded
+/// search candidate can drop its node and ancestors immediately, but a later
+/// checked node must never inherit its observations through address reuse.
+pub(super) fn trace_node_key<T: 'static>(node: &Arc<T>) -> usize {
+    let key = Arc::as_ptr(node) as usize;
+    CAPTURE.with(|slot| {
+        if let Some(capture) = slot.borrow_mut().as_mut() {
+            capture
+                .node_keys
+                .entry(key)
+                .or_insert_with(|| Box::new(Arc::downgrade(node)));
+        }
+    });
+    key
 }
 
 pub(super) fn has_recorded_step(node: usize) -> bool {
@@ -1317,6 +1336,28 @@ fn trace_text(text: &str, max_bytes: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_recorded_node_keeps_its_address_after_the_candidate_is_dropped() {
+        with_proof_trace("f", || {
+            let payload = Arc::new(());
+            let node = Arc::new(payload.clone());
+            let key = trace_node_key(&node);
+            assert_eq!(trace_node_key(&node), key);
+            assert_eq!(Arc::weak_count(&node), 1);
+            drop(node);
+            assert_eq!(Arc::strong_count(&payload), 1);
+            CAPTURE.with(|capture| {
+                let capture = capture.borrow();
+                let reservation = capture.as_ref().unwrap().node_keys[&key]
+                    .downcast_ref::<std::sync::Weak<Arc<()>>>()
+                    .unwrap();
+                assert_eq!(reservation.as_ptr() as usize, key);
+                assert!(reservation.upgrade().is_none());
+            });
+        });
+    }
+
     use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, SymbolicMemory};
 
     #[test]

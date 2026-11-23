@@ -6946,6 +6946,18 @@ fn synthesize_legacy_call_argument(
         crate::kernel::PureFunctionArgument::Algebraic(value) => {
             synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
         }
+        // A pointer's integer address, `address(p)`, or a tag on it,
+        // `address(p) + 1`, is spelled by the integer word it projects to,
+        // which lowering computes from the same pointer. A word that was
+        // passed in or loaded has an identity no spelling of its value keeps.
+        crate::kernel::PureFunctionArgument::Value(
+            value @ ProgramValue::PointerInteger(record),
+        ) if !record.is_opaque_word() => synthesize_legacy_call_argument(
+            &crate::kernel::PureFunctionArgument::Value(value.numeric_value().clone()),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
         // Pointer arrays are imported into ArrayReference before raising.
         _ => return None,
     })

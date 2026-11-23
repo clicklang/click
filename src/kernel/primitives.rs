@@ -3926,6 +3926,15 @@ pub struct PointerIntegerValue {
     pub(in crate::kernel) kind: PointerIntegerKind,
 }
 
+impl PointerIntegerValue {
+    /// Whether this is a complete word that was passed in or loaded, whose
+    /// identity is independent of its numeric value, rather than an address
+    /// (`address(p)`) or a tag on one (`address(p) + 1`) computed from it.
+    pub(crate) fn is_opaque_word(&self) -> bool {
+        matches!(self.kind, PointerIntegerKind::Word { .. })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ProgramValue {
     PointerInteger(PointerIntegerValue),
@@ -15790,11 +15799,11 @@ pub(crate) enum PropositionDerivationRule {
         witness: Variable,
         proof: Box<PropositionDerivation>,
     },
-    /// Prove an existential by selecting the bound variable from an exact
-    /// existential fact and checking the target body under that witness's
-    /// conjuncts.
+    /// Open an exact existential fact and the goal at a fresh witness. The
+    /// opened fact supplies local assumptions to the proof of the goal body.
     ExistsFromFact {
         source: Box<Proposition>,
+        witness: Variable,
         body: Box<PropositionDerivation>,
     },
     /// Prove an existential by selecting a free witness term and checking the

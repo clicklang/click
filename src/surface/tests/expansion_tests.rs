@@ -1,6 +1,43 @@
 use super::*;
 
 #[test]
+fn solve_expands_to_scoped_introductions_for_written_ranges() {
+    let source = r#"
+theorem bounded(lo: int32, hi: int32) {
+    ensures (lo..hi).all(|i| { i < hi }) by solve();
+}
+
+theorem nested(hi: uint64) {
+    ensures (0u64..hi).all(|i| { (0u64..i).all(|j| { j < i }) }) by solve();
+}
+
+theorem projected(lo: int32, hi: int32) {
+    requires (lo..hi).all(|i| { i == 7 and i < hi });
+    ensures (lo..hi).all(|i| { i == 7 }) by solve();
+}
+
+theorem ordinary(hi: int32) {
+    ensures forall (i: int32) { i < hi implies i < hi } by solve();
+}
+"#;
+    for (claim, scopes, flat) in [
+        ("bounded.ensures_0", 1, 0),
+        ("nested.ensures_0", 2, 0),
+        ("projected.ensures_0", 1, 0),
+        ("ordinary.ensures_0", 0, 2),
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert_eq!(expanded.matches("intro() {").count(), scopes, "{expanded}");
+        assert_eq!(expanded.matches("intro();").count(), flat, "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn scoped_introduction_replays_after_expansion() {
     let (source, program) = mdtest_sources("mdtests/scoped_intro.md");
     let program = crate::cli::source_refs(&program);

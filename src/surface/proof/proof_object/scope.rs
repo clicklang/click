@@ -644,7 +644,7 @@ impl<'a> ProofScope<'a> {
                         .site()
                         .path()
                         .unwrap_or_else(|| "checked have".into());
-                    let node = Arc::as_ptr(&successor.node) as usize;
+                    let node = crate::surface::proof_trace::trace_node_key(&successor.node);
                     let fact = successor.checked_trace_fact(kernel);
                     crate::surface::proof_trace::record(
                         node,
@@ -835,14 +835,37 @@ impl<'a> ProofScope<'a> {
 impl<'a> Proof<'a> {
     /// The membership implication must be the next head after opening a
     /// written range binder. Leave any intervening lowering guard explicit.
-    pub(in crate::surface::proof) fn has_range_intro_guard(&self) -> bool {
-        self.proposition_obligation().is_some_and(|goal| {
-            matches!(goal.kernel(), Proposition::Implies(_, _))
-                && matches!(
-                    goal.introductions.head(),
-                    None | Some(crate::kernel::LoweringIntroduction::WrittenImplication)
-                )
-        })
+    pub(in crate::surface::proof) fn opens_scoped_range(&self, introduced: &Self) -> bool {
+        matches!(self.surface_goal(), Some(ClickProposition::RangeAll { .. }))
+            && matches!(self.goal(), Some(Proposition::ForAll { .. }))
+            && introduced.proposition_obligation().is_some_and(|goal| {
+                matches!(goal.kernel(), Proposition::Implies(_, _))
+                    && matches!(
+                        goal.introductions.head(),
+                        None | Some(crate::kernel::LoweringIntroduction::WrittenImplication)
+                    )
+            })
+    }
+
+    /// A solver can close the implication as a whole after opening the
+    /// binder. Compact only a checked continuation that introduced it.
+    pub(in crate::surface::proof) fn finish_generated_range_intro(
+        &self,
+        introduced: &Self,
+        completed: Self,
+    ) -> Result<Self, ClickError> {
+        if !self.opens_scoped_range(introduced) {
+            return Ok(completed);
+        }
+        let continuation = completed.certificate_since(&introduced.checkpoint())?;
+        let [ProofStep::Intro, body @ ..] = continuation.steps() else {
+            return Ok(completed);
+        };
+        self.retain_scoped_intro(
+            introduced,
+            ProofCertificate::from_steps(body.to_vec())?,
+            completed,
+        )
     }
 
     /// Retain a checked binder or premise, its optional range guard, and
@@ -851,6 +874,16 @@ impl<'a> Proof<'a> {
         &self,
         introduced: &Self,
         opened: &Self,
+        completed: Self,
+    ) -> Result<Self, ClickError> {
+        let body = completed.certificate_since(&opened.checkpoint())?;
+        self.retain_scoped_intro(introduced, body, completed)
+    }
+
+    fn retain_scoped_intro(
+        &self,
+        introduced: &Self,
+        body: ProofCertificate,
         mut completed: Self,
     ) -> Result<Self, ClickError> {
         let opening = introduced.certificate_since(&self.checkpoint())?;
@@ -860,7 +893,6 @@ impl<'a> Proof<'a> {
             [ProofStep::IntroBinder(binder)] => Some(binder.clone()),
             _ => return Err(self.step_error("scoped intro did not record its introduction")),
         };
-        let body = completed.certificate_since(&opened.checkpoint())?;
         completed.state = completed.state.with_locals(self.state.locals().clone());
         completed.node = ProofNode::step_child(
             &self.node,

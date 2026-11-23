@@ -144,14 +144,34 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(node->__rb_parent_color, address(p) + (node->__rb_parent_color & 1));
                 rewrite((node->__rb_parent_color & 1), 0); normalize();
             }
+            have p == g->rb_left by known();
+            have p->__rb_parent_color == address(g) + (p->__rb_parent_color & 1) by {
+                rewrite(p, g->rb_left);
+                known();
+            }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by {
+                rewrite(p, g->rb_left);
+                known();
+            }
+            have (p->__rb_parent_color & 1) == color_bit(Color::Red) by {
+                rewrite(p, g->rb_left);
+                known();
+            }
             let initial_parent = fold(context_double_node_frame(p, g), { color: Color::Red, word: p->__rb_parent_color, left: p->rb_left, right: p->rb_right });
             let initial_grandparent = fold(context_double_node_frame(g, above), { color: Color::Black, word: g->__rb_parent_color, left: g->rb_left, right: g->rb_right });
+            have node == g->rb_left->rb_right by known();
+            unfold(n_left); unfold(n_right);
+            have node->rb_left == 0 by {
+                rewrite(node, g->rb_left->rb_right);
+                known();
+            }
+            have node->rb_right == 0 by {
+                rewrite(node, g->rb_left->rb_right);
+                known();
+            }
             step(); step(); step(); step();
             unfold(initial_grandparent);
             unfold(initial_parent);
-            unfold(n_left); unfold(n_right);
-            have node->rb_left == 0 by { known(); }
-            have node->rb_right == 0 by { known(); }
             let n_left = fold(sized_at(0), { model: SizedTree::Empty });
             let n_right = fold(sized_at(0), { model: SizedTree::Empty });
             let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), metadata: n_size, left: n_left, right: n_right });
@@ -471,5 +491,6 @@ void insert::rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.phase == sized_context_double_finish(old(state.phase));
     ensures sized_shape(state.model) == sized_context_double_expected(old(state.phase), node);
 } by {
+    have separate(state, memory(augment->rotate)) by known();
     step(insert::__rb_insert_augmented, { state: state });
 }

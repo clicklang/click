@@ -703,10 +703,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut scope = attempt::search_scope("direct logical closure");
         let mut budget = attempt::AttemptBudget::unbounded();
         let mut proof = search_input.clone();
-        loop {
+        let mut range_openings = Vec::new();
+        let mut closed = 'close: loop {
             if let Some(closed) = Self::try_direct_logical_leaf(&proof, &mut budget)? {
-                scope.succeed();
-                return Ok(Some(closed));
+                break 'close closed;
             }
             // A disjunct that closes directly needs no search through the
             // other side's connected facts. Retain its ordinary `have` proof
@@ -733,8 +733,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if let Some(closed) =
                         attempt::candidate_outcome(joined.driver().apply_step(ProofStep::Known))?
                     {
-                        scope.succeed();
-                        return Ok(Some(closed));
+                        break 'close closed;
                     }
                 }
             }
@@ -764,22 +763,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     }),
                 ))?
             {
-                scope.succeed();
-                return Ok(Some(closed));
+                break 'close closed;
             }
             if let Some(closed) =
                 crate::kernel::search::ProofSearch::try_discharged_consequent_closure(&(proof))?
             {
-                scope.succeed();
-                return Ok(Some(closed));
+                break 'close closed;
             }
             if let Some(closed) =
                 crate::kernel::search::ProofSearch::try_quantified_conjunct_projection_closure(
                     &(proof),
                 )?
             {
-                scope.succeed();
-                return Ok(Some(closed));
+                break 'close closed;
             }
             // The kernel introduces only these outer connectives. An
             // atomic goal cannot take this step; constructing its rejection
@@ -802,7 +798,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 _ => None,
             };
             match attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Intro))? {
-                Some(introduced) => proof = introduced,
+                Some(introduced) => {
+                    if proof.opens_scoped_range(&introduced) {
+                        range_openings.push((proof, introduced.clone()));
+                    }
+                    proof = introduced;
+                }
                 None => return Ok(None),
             }
             if let Some(antecedent) = refuted
@@ -812,10 +813,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .apply_step(ProofStep::Contradiction(antecedent)),
                 )?
             {
-                scope.succeed();
-                return Ok(Some(closed));
+                break 'close closed;
             }
+        };
+        for (parent, introduced) in range_openings.into_iter().rev() {
+            closed = parent.finish_generated_range_intro(&introduced, closed)?;
         }
+        scope.succeed();
+        Ok(Some(closed))
     }
 
     /// Modus ponens as a direct logical step: the goal is the consequent of
@@ -1006,14 +1011,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let mut scope = attempt::search_scope("quantified conjunct projection");
-        let steps =
-            std::iter::repeat_n(ProofStep::Intro, guards + 1).chain([ProofStep::Instantiate {
-                quantified,
-                arguments: vec![ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable((binder).into()),
-                )],
-            }]);
-        let mut proof = search_input.clone();
+        let Some(introduced) =
+            attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Intro))?
+        else {
+            return Ok(None);
+        };
+        let steps = std::iter::repeat_n(ProofStep::Intro, guards).chain([ProofStep::Instantiate {
+            quantified,
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Variable((binder).into()),
+            )],
+        }]);
+        let mut proof = introduced.clone();
         for step in steps {
             let Some(next) = attempt::candidate_outcome(proof.driver().apply_step(step))? else {
                 return Ok(None);
@@ -1031,6 +1040,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !proof.focused_discharged() {
             return Ok(None);
         }
+        let proof = search_input.finish_generated_range_intro(&introduced, proof)?;
         scope.succeed();
         Ok(Some(proof))
     }
@@ -1200,10 +1210,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         match attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Intro))? {
             Some(introduced) => {
-                crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
-                    &(introduced),
-                    quantified,
-                )
+                let closed =
+                    crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
+                        &introduced,
+                        quantified,
+                    )?;
+                closed
+                    .map(|closed| search_input.finish_generated_range_intro(&introduced, closed))
+                    .transpose()
             }
             None => Ok(None),
         }
@@ -3117,6 +3131,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introductions: Default::default(),
                 call_site: None,
                 assertion_condition: None,
+                theorem_source: None,
                 statement_safety: false,
                 surface: None,
             };
@@ -8352,9 +8367,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         match attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Intro))? {
             Some(introduced) => {
                 crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
-                    &(introduced),
+                    &introduced,
                     introduced_surfaces,
-                )
+                )?
+                .map(|closed| search_input.finish_generated_range_intro(&introduced, closed))
+                .transpose()
             }
             None => Ok(None),
         }
@@ -13124,6 +13141,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introductions: Default::default(),
                 call_site: None,
                 assertion_condition: None,
+                theorem_source: None,
                 statement_safety: false,
                 surface: Some(surface),
             };

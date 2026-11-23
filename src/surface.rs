@@ -9095,6 +9095,14 @@ impl<'a> VerificationDiagnostic<'a> {
     }
 }
 
+/// The authored requirement and argument bindings behind a prepared theorem premise.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::surface) struct TheoremRequirementSource {
+    index: usize,
+    clause: ClickProposition,
+    bindings: std::sync::Arc<[(String, ContractExpression)]>,
+}
+
 /// A required kernel verification condition that a checked execution step
 /// could not discharge through its exact routes.
 ///
@@ -9111,6 +9119,7 @@ pub(in crate::surface) struct UnresolvedRequirement {
     /// (`0 == 1`, which holds only where that path is unreachable), the
     /// asserted condition: what a proof at the step's pre-state shows.
     pub(in crate::surface) assertion_condition: Option<crate::kernel::ProgramExpression>,
+    pub(in crate::surface) theorem_source: Option<std::sync::Arc<TheoremRequirementSource>>,
     /// The defined successor of a C operation supplied this safety goal.
     pub(in crate::surface) statement_safety: bool,
     /// The Surface spelling the tactic that owes this requirement gave it
@@ -11788,6 +11797,7 @@ impl ClickError {
             introductions: obligation.introductions().cloned().unwrap_or_default(),
             call_site: obligation.call_requirement_site().cloned(),
             assertion_condition: None,
+            theorem_source: None,
             statement_safety: obligation.is_signed_shift_bound(),
             surface: None,
         }));
@@ -11823,9 +11833,22 @@ impl ClickError {
             introductions: Default::default(),
             call_site: None,
             assertion_condition: None,
+            theorem_source: None,
             statement_safety: false,
             surface: Some(surface),
         }));
+        self
+    }
+
+    pub(in crate::surface) fn with_theorem_requirement_source(
+        mut self,
+        source: TheoremRequirementSource,
+    ) -> Self {
+        let requirement = self
+            .unresolved_requirement
+            .as_mut()
+            .expect("attached theorem premise");
+        std::sync::Arc::make_mut(requirement).theorem_source = Some(std::sync::Arc::new(source));
         self
     }
 
