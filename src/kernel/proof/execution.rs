@@ -11999,6 +11999,12 @@ impl ExecutionProofCore {
             .ok_or("the checked interface join did not report its fresh-variable counter")?;
         self.advance_kernel_variable_mark(join_mark)?;
         let source = parent.source_after_branch(function, &branch)?;
+        self.last_footprint = crate::kernel::RegionFootprint::shared_branch_write(
+            format!("region({}).footprint", parent.frontier.next_statement_index),
+            parent.reached_state(),
+            &joined_state,
+            arms.map(|arm| (arm.reached_state(), arm.last_footprint.as_ref())),
+        );
         let mut trace = parent_trace.clone();
         trace.push(CheckedExecutionEvent::Branch(Box::new(branch)));
         self.execution_evidence = vec![trace].into();
