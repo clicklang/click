@@ -36,12 +36,13 @@ pub struct CertificateConjunct {
     proof: ProofCertificate,
 }
 
-/// One explicit, surface-expressible step in a [`ProofCertificate`].
+/// One checked step in a [`ProofCertificate`].
 ///
 /// Unlike [`ProofTactic`], this representation has no smart-tactic variants.
 /// Structured steps own recursively explicit child certificates, so a
 /// certificate's checkable shape is enforced by the Rust type rather than
-/// recovered later from [`ProofTactic::class`].
+/// recovered later from [`ProofTactic::class`]. Compatibility normalization
+/// is retained for verification and is refused when exporting a proof.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofStep {
     Match {
@@ -121,6 +122,8 @@ pub enum ProofStep {
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
+    /// A compatibility check used in verification. It has no expansion spelling.
+    CompatibilityNormalize(Option<Vec<ClickProposition>>),
     ArithmeticUsing(Vec<ClickProposition>),
 
     Intro,
@@ -795,6 +798,9 @@ impl ProofStep {
             ProofTactic::Known => Self::Known,
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
+            ProofTactic::CompatibilityNormalize(premises) => {
+                Self::CompatibilityNormalize(premises.clone())
+            }
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
 
             ProofTactic::Intro => Self::Intro,
@@ -984,6 +990,9 @@ impl ProofStep {
             Self::Known => ProofTactic::Known,
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
+            Self::CompatibilityNormalize(premises) => {
+                ProofTactic::CompatibilityNormalize(premises.clone())
+            }
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
 
             Self::IntroBlock { binder, body } => ProofTactic::IntroBlock {
@@ -1234,9 +1243,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         | ProofStep::CheckTerminationComponent { .. }
         | ProofStep::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
         ProofStep::Known => TacticClass::Simple(SimpleTactic::Known),
-        ProofStep::Normalize | ProofStep::NormalizeUsing(_) => {
-            TacticClass::Simple(SimpleTactic::Normalize)
-        }
+        ProofStep::Normalize
+        | ProofStep::NormalizeUsing(_)
+        | ProofStep::CompatibilityNormalize(_) => TacticClass::Simple(SimpleTactic::Normalize),
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
         ProofStep::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),

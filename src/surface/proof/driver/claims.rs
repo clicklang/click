@@ -3217,7 +3217,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             if proof_context.constants.grouped_contract
                 && direct_resource_claims.is_empty()
                 && !direct_claims.is_empty()
-                && let Some(closer) = [ProofStep::Known, ProofStep::Normalize]
+                && let Some(closer) = [ProofStep::Known, ProofStep::CompatibilityNormalize(None)]
                     .into_iter()
                     .find(|closer| direct_claims.iter().all(|(index, _, _)| {
                         rewritten_claim_proofs[*index]
@@ -4431,6 +4431,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     | ProofTactic::Enumerate
                                     | ProofTactic::Normalize
                                     | ProofTactic::NormalizeUsing(_)
+                                    | ProofTactic::CompatibilityNormalize(_)
                                     | ProofTactic::ArithmeticUsing(_)
                                     | ProofTactic::Preserve(_)
                             ) | PostExecutionTactic::Both(_)
@@ -4529,6 +4530,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::Leaf(
                                 tactic @ (ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_)),
                             ) => Some(tactic_name(tactic)),
@@ -5088,6 +5090,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | ProofTactic::Enumerate
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_),
                             )
@@ -5114,7 +5117,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                             "a post-execution leaf converts to its checked step",
                                         )
                                     }
-                                    PostExecutionTactic::Both(_) => ProofStep::Normalize,
+                                    PostExecutionTactic::Both(_) => {
+                                        ProofStep::CompatibilityNormalize(None)
+                                    }
                                     _ => unreachable!("matched a closer above"),
                                 };
                                 if let Some(certificate) = continue_outcome_claim_proof(
@@ -5224,7 +5229,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Postconditions are conditional on return.
                                         // The checked execution outcome supplies
                                         // vacuity without a return value or state.
-                                        if matches!(closer_step, ProofStep::NormalizeUsing(_)) {
+                                        if matches!(
+                                            closer_step,
+                                            ProofStep::NormalizeUsing(_)
+                                                | ProofStep::CompatibilityNormalize(Some(_))
+                                        ) {
                                             return Err(ClickError::new(
                                                 "`normalize using` requires a return-state proposition; use `known()` for a divergent path",
                                             ));

@@ -159,8 +159,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let step = match premises {
-            Some(premises) => ProofStep::NormalizeUsing(premises),
-            None => ProofStep::Normalize,
+            Some(premises) => ProofStep::CompatibilityNormalize(Some(premises)),
+            None => ProofStep::CompatibilityNormalize(None),
         };
         search_input.driver().apply_step(step)
     }
@@ -487,7 +487,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )
             .is_ok()
             {
-                Some(ProofStep::NormalizeUsing(premises.to_vec()))
+                Some(ProofStep::CompatibilityNormalize(Some(premises.to_vec())))
             } else {
                 None
             };
@@ -2410,7 +2410,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             } else if let Some(closed) = attempt::candidate_outcome(
                 scope
                     .driver()
-                    .apply_step(ProofStep::NormalizeUsing(vec![lower, upper])),
+                    .apply_step(ProofStep::CompatibilityNormalize(Some(vec![lower, upper]))),
             )? {
                 closed
             } else {
@@ -3512,11 +3512,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(proved) = attempt::candidate_outcome(
-            scope
-                .driver()
-                .apply_step(ProofStep::NormalizeUsing(vec![condition.clone()])),
-        )?
+        let Some(proved) = attempt::candidate_outcome(scope.driver().apply_step(
+            ProofStep::CompatibilityNormalize(Some(vec![condition.clone()])),
+        ))?
         else {
             return Ok(None);
         };
@@ -3604,7 +3602,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(
             proof
                 .driver()
-                .apply_step(ProofStep::NormalizeUsing(surfaces)),
+                .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
         )
     }
 
@@ -3642,7 +3640,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(closed) = attempt::candidate_outcome(
                 scope
                     .driver()
-                    .apply_step(ProofStep::NormalizeUsing(vec![previous])),
+                    .apply_step(ProofStep::CompatibilityNormalize(Some(vec![previous]))),
             )?
             else {
                 return Ok(None);
@@ -3653,7 +3651,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(
             proof
                 .driver()
-                .apply_step(ProofStep::NormalizeUsing(vec![previous])),
+                .apply_step(ProofStep::CompatibilityNormalize(Some(vec![previous]))),
         )
     }
 
@@ -3822,7 +3820,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let Some(closed) = attempt::candidate_outcome(
                 search_input
                     .driver()
-                    .apply_step(ProofStep::NormalizeUsing(surfaces)),
+                    .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
             )? {
                 return Ok(Some(closed));
             }
@@ -3959,11 +3957,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator,
                             right: right.clone(),
                         };
-                        if let Some(proof) = attempt::candidate_outcome(
-                            search_input
-                                .driver()
-                                .apply_step(ProofStep::NormalizeUsing(vec![premise])),
-                        )? {
+                        if let Some(proof) =
+                            attempt::candidate_outcome(search_input.driver().apply_step(
+                                ProofStep::CompatibilityNormalize(Some(vec![premise])),
+                            ))?
+                        {
                             return Ok(Some(proof));
                         }
                     }
@@ -5503,7 +5501,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .driver()
                             .apply_step(super::super::wide_arithmetic::have(
                                 equality.clone(),
-                                vec![ProofStep::NormalizeUsing(vec![guard])],
+                                vec![ProofStep::CompatibilityNormalize(Some(vec![guard]))],
                             ))
                     })
                     .ok()?;
@@ -12656,8 +12654,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // explicitly separated transition at a time towards the goal.
             let mut current = search_input.clone();
             let separation_proof =
-                ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(Vec::new())])
-                    .expect("footprint separation uses an ordinary proof step");
+                ProofCertificate::from_steps(vec![ProofStep::CompatibilityNormalize(Some(
+                    Vec::new(),
+                ))])
+                .expect("footprint separation uses an ordinary proof step");
             for (index, region) in regions.iter().enumerate().rev() {
                 let separation = ClickProposition::Separate {
                     left: ResourceSubject::Footprint(region.clone()),

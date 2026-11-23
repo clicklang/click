@@ -55,6 +55,7 @@ fn source_contract_application(name: &str, arguments: &[ContractExpression]) -> 
 /// Click source that parses back. Every spelling is chosen by its caller;
 /// no output depends on who else is printing.
 /// Diagnostic spelling for a kernel conjunction without complete Surface labels.
+pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
@@ -1205,6 +1206,9 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &format!("apply({});", source_click_proposition(fact)),
         ),
         ProofTactic::Known => line(output, &prefix, "known();"),
+        ProofTactic::CompatibilityNormalize(_) => {
+            line(output, &prefix, COMPATIBILITY_NORMALIZATION)
+        }
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)

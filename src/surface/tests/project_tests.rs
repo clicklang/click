@@ -642,25 +642,12 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
 
     let selected = click_source.find("have owner->data == data by {").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
-    let expanded =
-        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("the state-bridged restricted solve should expand");
-    // The calls explicitly establish equalities between the load states.
-    // Their transitive chain now closes through the trusted offset fragment,
-    // retaining the cited state forms for the simple normalization check.
-    assert!(expanded.contains("normalize() using {"), "{expanded}");
-    for premise in [
-        "owner->data == at(region(3).entry, owner->data);",
-        "at(region(3).entry, owner->data) == at(region(2).entry, owner->data);",
-        "at(region(2).entry, owner->data) == data;",
-    ] {
-        assert!(
-            expanded.contains(premise),
-            "missing checked premise {premise}:\n{expanded}"
-        );
-    }
-    verify_c_sources(&expanded, &sources)
-        .expect("the explicit bridged-premise certificate should check");
+    let error = expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
+        .expect_err("the state-bridged restricted solve has no ordinary certificate yet");
+    assert!(
+        error.message().contains("used legacy normalization"),
+        "{error:?}"
+    );
 }
 
 #[test]

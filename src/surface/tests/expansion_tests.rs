@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
+    let (source, input) = mdtest_sources("mdtests/restricted_solve_pointer_alias_viewability.md");
+    let sources = crate::cli::source_refs(&input);
+    verify_c_sources(&source, &sources).unwrap();
+    let offset = source.find("solve() using").unwrap();
+    let position = expansion::position_at_offset(&source, offset);
+    let claim = "alias_value.contract";
+    let errors = [
+        expand_c_claim_source_by_label(&source, &sources, claim).unwrap_err(),
+        expand_c_tactic_source_at(&source, &sources, position.line, position.column).unwrap_err(),
+        expand_c_tactics_source_at(&source, &sources, &[position]).unwrap_err(),
+    ];
+    for error in errors {
+        assert!(
+            error.message().contains("used legacy normalization"),
+            "{error:?}"
+        );
+    }
+
+    // Writing the compatibility tactic explicitly keeps the proof replayable.
+    let written = source.replacen("solve() using", "normalize() using", 1);
+    let expanded = expand_c_claim_source_by_label(&written, &sources, claim).unwrap();
+    assert_eq!(
+        expanded.matches("normalize() using").count(),
+        1,
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn solve_expands_to_scoped_introductions_for_written_ranges() {
     let source = r#"
 theorem bounded(lo: int32, hi: int32) {
@@ -16154,46 +16188,16 @@ fn outcome_predicate_unfold_evidence_survives_nested_have_expansion() {
         "the nested outcome tree should retain one Proof"
     );
 
-    let expanded = expand_c_claim_source(
+    let error = expand_c_claim_source(
         click_source,
         &sources,
         "sort_three_cells",
         ContractProofClaim::Ensure(0),
     )
-    .expect("the retained nested predicate proof should expand");
+    .expect_err("the nested proof still needs a verification-only fallback");
     assert!(
-        expanded.contains("have permutation::permutation(p, old(p), 0, 3) by {"),
-        "{expanded}"
-    );
-    assert!(expanded.contains("normalize();"), "{expanded}");
-    assert!(
-        expanded.contains("unfold(permutation::permutation("),
-        "{expanded}"
-    );
-    let (reverified, expanded_flat_units) =
-        proof::count_flat_proof_units(|| verify_c_sources(&expanded, &sources));
-    assert_eq!(
-        expanded_flat_units, 1,
-        "the rewritten nested proof should retain one Proof"
-    );
-    reverified.expect("the retained nested predicate proof should check independently");
-
-    let corrupted = expanded.replace("region(1).entry", "region(6).entry");
-    assert_ne!(
-        corrupted, expanded,
-        "the expansion should expose its checked root branch anchor"
-    );
-    let corrupted_result = { verify_c_sources(&corrupted, &sources) };
-    let error = corrupted_result
-        .expect_err("tampering with the nested execution branch anchor must invalidate the proof");
-    assert!(
-        error
-            .message()
-            .contains("expanded execution branch condition does not match the checked C branch")
-            || error
-                .message()
-                .contains("no symbolic state was recorded for `statement(2).entry`"),
-        "the checked Proof split should reject the tamper directly: {error:?}"
+        error.message().contains("used legacy normalization"),
+        "{error:?}"
     );
 }
 
@@ -24261,42 +24265,6 @@ fn void_pointer_helper_selected_view_expands_and_checks() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
-fn tidied_expansion_closers_prove_normalized_claims_in_goal_order() {
-    let original = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n}\n";
-    let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        known();\n    }\n    have r == s by {\n        normalize();\n    }\n    known();\n    known();\n    known();\n    known();\n}\n";
-    assert_eq!(
-        tidy_expansion_closers(original, expanded).as_deref(),
-        Some(
-            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        known();\n    }\n    known();\n    normalize();\n    known();\n    normalize();\n}\n"
-        )
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
-fn tidied_expansion_closers_leave_other_closers_alone() {
-    let original = "f by {\n    step();\n}\n";
-    // Fewer closers than claims.
-    let short = "f by {\n    have a by {\n        normalize();\n    }\n    have b by {\n        normalize();\n    }\n    known();\n}\n";
-    // A closer run that does not end its block.
-    let continued =
-        "f by {\n    have a by {\n        normalize();\n    }\n    known();\n    step();\n}\n";
-    // No claim proved by `normalize();` alone.
-    let simplified = "f by {\n    have a by {\n        solve();\n    }\n    known();\n}\n";
-    for expanded in [short, continued, simplified] {
-        assert_eq!(
-            tidy_expansion_closers(original, expanded),
-            None,
-            "{expanded}"
-        );
-    }
-    // Text the expansion left as it was is never rewritten.
-    let written = "f by {\n    have a by {\n        normalize();\n    }\n    known();\n}\n";
-    assert_eq!(tidy_expansion_closers(written, written), None);
-}
-
-#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original C fixture expansion and checking take 0.9s"]
 fn integer_count_authority_retirement_expands_and_rechecks() {
@@ -26445,8 +26413,6 @@ test_batches! {
         void_pointer_helper_selected_view_expands_and_checks,
     ],
     expansion_batch_83: [
-        tidied_expansion_closers_prove_normalized_claims_in_goal_order,
-        tidied_expansion_closers_leave_other_closers_alone,
         arithmetic_in_each_both_arm_is_selected_at_its_location,
         relinked_node_empty_check_requires_distinct_addresses,
     ],

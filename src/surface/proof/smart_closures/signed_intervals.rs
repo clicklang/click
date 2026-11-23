@@ -318,7 +318,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Ok(closed) = scope.driver().apply_step(ProofStep::Known).or_else(|_| {
             scope
                 .driver()
-                .apply_step(ProofStep::NormalizeUsing(Vec::new()))
+                .apply_step(ProofStep::CompatibilityNormalize(Some(Vec::new())))
         }) {
             return Ok(Some(closed.join()?));
         }
@@ -1025,7 +1025,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let step = if all_available && known {
                     ProofStep::Known
                 } else {
-                    ProofStep::NormalizeUsing(premises.to_vec())
+                    ProofStep::CompatibilityNormalize(Some(premises.to_vec()))
                 };
                 attempt::candidate_outcome(driver.apply_step(step))?
             }

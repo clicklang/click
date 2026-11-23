@@ -211,7 +211,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if let Ok(closed) = scope
             .driver()
-            .apply_step(ProofStep::NormalizeUsing(premises))
+            .apply_step(ProofStep::CompatibilityNormalize(Some(premises)))
             && closed.is_complete()
         {
             return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));

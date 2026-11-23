@@ -518,9 +518,6 @@ fn select_smart_tactic(
     }
 }
 
-/// The expansion to write, verified: its grouped closers shortened
-/// (`tidy_expansion_closers`) when that form verifies, and as generated
-/// otherwise.
 fn verified_expansion(
     project: Option<&ClickProject>,
     click_source: &str,
@@ -530,11 +527,6 @@ fn verified_expansion(
     arguments: &Arguments,
 ) -> Result<String, String> {
     let whole_claim = selects_whole_claim(&arguments.selection, claim);
-    if let Some(tidied) = click::surface::tidy_expansion_closers(click_source, &expanded)
-        && verify_expansion(project, click_source, &tidied, inputs, claim, whole_claim).is_ok()
-    {
-        return Ok(tidied);
-    }
     verify_expansion(project, click_source, &expanded, inputs, claim, whole_claim).map_err(
         |error| {
             let path = arguments.click_path.display();
