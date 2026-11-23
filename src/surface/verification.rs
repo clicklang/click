@@ -927,7 +927,9 @@ fn with_tactic_procedures(
             return Err(ClickError::new(format!(
                 "tactic `{name}` runs no code, so its proof cannot use `{executing}`; a \
                  tactic's proof folds, unfolds, applies, and proves facts at one point"
-            )));
+            ))
+            .with_proof_refusal(ProofRefusal::Tactic)
+            .at_declaration(&name));
         }
         let mut suffix = vec![ProofTactic::Synthetic(Box::new(ProofTactic::Step))];
         suffix.extend(std::iter::repeat_n(
@@ -4485,7 +4487,7 @@ pub(in crate::surface) fn executing_function_names(
                 return Err(ClickError::new(format!(
                     "contracts `{previous}` and `{}` select the same C definition; use one ordinary contract per definition",
                     signature.name()
-                )));
+                )).with_proof_refusal(ProofRefusal::Contract));
             }
             if signature.c_source.is_some() {
                 names.insert(signature.name().to_string(), kernel_name);
@@ -4546,7 +4548,7 @@ pub(in crate::surface) fn function_recursion_resource_requirement(
         ClickError::new(format!(
             "function-level `decreases {measure_name}(...)` in `{}` must exactly match an owned or viewed entry resource",
             function.signature().name()
-        ))
+        )).with_proof_refusal(ProofRefusal::Contract)
     })?;
     Ok(Some(index))
 }
@@ -4732,7 +4734,7 @@ fn parsed_function_for_source_name<'a>(
     if matches.next().is_some() {
         return Err(ClickError::new(format!(
             "source-named inline function `{source_name}` has multiple translation-unit-local definitions"
-        )));
+        )).with_kind(ClickErrorKind::Type));
     }
     Ok(Some(first))
 }
@@ -6229,7 +6231,7 @@ pub(super) fn function_resource_summary_with_entry_ranges(
                         return Err(ClickError::new(format!(
                             "produced view `{}` {problem}; name its input with `views ... as name` and write `from name`",
                             crate::surface::printing::format_resource_target(resource)
-                        )));
+                        )).with_proof_refusal(ProofRefusal::Contract));
                     }
                 };
                 spec = spec.with_view_source(source);

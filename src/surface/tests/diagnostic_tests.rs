@@ -48,7 +48,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
             failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
-                stage: "proof step".into(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location: "tactic 4".into(),
                 source_tactic_path: None,
             },
@@ -3277,7 +3277,9 @@ fn ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full() {
             failing_path: None,
             checks: None,
             origin: proof_diagnostics::ProofDiagnosticOrigin {
-                stage: "simple checking".into(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::Other(
+                    "simple checking",
+                ),
                 location: "資源".repeat(DEFAULT_DIAGNOSTIC_BYTE_LIMIT),
                 source_tactic_path: None,
             },

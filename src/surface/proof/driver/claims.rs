@@ -5436,7 +5436,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let error = ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: {reason}"
-                                    ));
+                                    )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic(closer_name);
                                     return Err(
                                         match failed_known
                                             .and_then(|failure| failure.diagnostic().cloned())

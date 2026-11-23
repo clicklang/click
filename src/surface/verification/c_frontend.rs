@@ -922,6 +922,14 @@ fn c_parse_error_kind(error: &syntax::CSyntaxError) -> ClickErrorKind {
     }
 }
 
+fn c_source_error_kind(error: &crate::languages::c::source::CSourceError) -> ClickErrorKind {
+    use crate::languages::c::source::CSourceErrorKind;
+    match error.kind {
+        CSourceErrorKind::Syntax => ClickErrorKind::Syntax,
+        CSourceErrorKind::Unsupported => ClickErrorKind::Unsupported,
+    }
+}
+
 pub(super) fn parse_c_source_unit(
     source_path: &str,
     c_sources: &ProgramSourceContext<'_>,
@@ -946,6 +954,7 @@ pub(super) fn parse_c_source_unit(
                     ClickError::new(format!(
                         "failed to resolve includes for C source `{source_path}`: {error}"
                     ))
+                    .with_kind(c_source_error_kind(&error))
                 })?;
         for header_path in expanded.dependencies() {
             let header = crate::languages::c::source::expand_includes_for_target(
@@ -957,6 +966,7 @@ pub(super) fn parse_c_source_unit(
                 ClickError::new(format!(
                     "failed to resolve includes for C header `{header_path}`: {error}"
                 ))
+                .with_kind(c_source_error_kind(&error))
             })?;
             let header_line_map = header
                 .line_map()

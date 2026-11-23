@@ -1570,6 +1570,36 @@ int32 check(struct link* node) {
                 "unsupported",
                 "move the operation into `have proposition by { ... }`",
             ),
+            (
+                "named_contract_rejects_unheld_link_read.md",
+                "contract error",
+                "could not address resource clause",
+            ),
+            (
+                "abbreviated_produced_view_ambiguous.md",
+                "contract error",
+                "matches multiple input views",
+            ),
+            (
+                "while_guard_unreadable_operand_rejected.md",
+                "tactic error",
+                "the loop condition could not be evaluated on this path",
+            ),
+            (
+                "a_closer_with_no_open_goal_is_refused.md",
+                "tactic error",
+                "has no goal to close",
+            ),
+            (
+                "c_builtin_limits_conflicting_definition.md",
+                "syntax error",
+                "macro `INT_MAX` is redefined",
+            ),
+            (
+                "conditional_compilation_rejects_expression.md",
+                "unsupported",
+                "unsupported conditional expression",
+            ),
         ] {
             let error = entry([
                 "verify".to_string(),

@@ -1500,7 +1500,7 @@ mod tests {
             failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
-                stage: "proof step".into(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location: "test".into(),
                 source_tactic_path: None,
             },

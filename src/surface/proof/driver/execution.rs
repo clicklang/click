@@ -3932,7 +3932,7 @@ fn advance_execution_match_group<'a>(
         let Some(joined) = proof.try_join_focused_execution_if(&record)? else {
             return Err(ClickError::new(
                 "the arms of this proof `match` do not rejoin: with tactics written after the `match`, every live arm must end at the same program point in the same state",
-            ));
+            ).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("match"));
         };
         return Ok(Ok(joined));
     };

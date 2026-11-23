@@ -11356,7 +11356,12 @@ impl ClickError {
             return None;
         }
         self.proof_refusal.or_else(|| {
-            (self.failed_tactic.is_some() || self.proof_source_tactic_path().is_some())
+            let checked_step = self.diagnostic.as_ref().is_some_and(|diagnostic| {
+                diagnostic.origin.stage == proof_diagnostics::ProofDiagnosticStage::CheckedStep
+            });
+            (self.failed_tactic.is_some()
+                || self.proof_source_tactic_path().is_some()
+                || checked_step)
                 .then_some(ProofRefusal::Tactic)
         })
     }

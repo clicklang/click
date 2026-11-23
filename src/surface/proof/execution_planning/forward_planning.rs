@@ -242,6 +242,9 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         | crate::kernel::LoopHeadRefusal::ResourceEvaluation(_) => {
                             diagnostic.with_proof_refusal(ProofRefusal::IncompleteProof)
                         }
+                        crate::kernel::LoopHeadRefusal::GuardEvaluation(_) => {
+                            diagnostic.with_proof_refusal(ProofRefusal::Tactic)
+                        }
                         crate::kernel::LoopHeadRefusal::Message(_) => diagnostic,
                     }
                 })?;

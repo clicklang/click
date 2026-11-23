@@ -635,7 +635,9 @@ fn prepare_pure_induction_tactics(
     {
         return Err(ClickError::new(
             "structural induction declarations must name the same theorem parameter and hypothesis",
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Tactic)
+        .with_failed_tactic("induct"));
     }
     if !theorem.parameters().iter().any(|candidate| {
         candidate.name() == parameter
@@ -647,7 +649,9 @@ fn prepare_pure_induction_tactics(
     }) {
         return Err(ClickError::new(format!(
             "`induct({parameter})` requires an int32 or uint64 theorem parameter with that name"
-        )));
+        ))
+        .with_proof_refusal(ProofRefusal::Tactic)
+        .with_failed_tactic("induct"));
     }
     let surface_requires = theorem_requirement_propositions(theorem)?;
 

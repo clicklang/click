@@ -1033,6 +1033,8 @@ pub enum LoopHeadRefusal {
     Message(String),
     /// A declared loop resource could not be read at the loop entry.
     ResourceEvaluation(String),
+    /// The loop test did not produce a value on a reachable path.
+    GuardEvaluation(String),
     /// A premise the head's guard owes that the entry context does not
     /// discharge. The invariants owe none here: their side conditions are
     /// invariant content, assumed at the head and owed at entry and at every
@@ -1268,7 +1270,9 @@ pub(crate) fn loop_phase_preservation_contexts(
             // A guard operand this function may not read leaves the head's
             // premises undefined; there is no iteration to describe here.
             if let Some(outcome) = assumption.undecided_outcome() {
-                return Err(undecided_loop_guard_context(outcome).into());
+                return Err(LoopHeadRefusal::GuardEvaluation(
+                    undecided_loop_guard_context(outcome),
+                ));
             }
             let ConditionAssumption {
                 facts, obligations, ..
