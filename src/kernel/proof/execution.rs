@@ -10083,6 +10083,7 @@ impl ExecutionProofCore {
     /// probe against a candidate identity must add the range base back before
     /// comparing: the identities this execution has issued are exactly
     /// `KERNEL_VARIABLE_BASE .. issued_kernel_variable_bound()`.
+    #[cfg(test)]
     pub(crate) fn issued_kernel_variable_bound(&self) -> u64 {
         ExecutionBudget::KERNEL_VARIABLE_BASE + self.next_kernel_variable
     }

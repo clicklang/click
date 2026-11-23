@@ -188,11 +188,11 @@ pub(super) use derivations::*;
 pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;
 pub(super) use resource_algebra::*;
-pub(in crate::kernel) use term_operations::round_right_to_even;
 pub(crate) use term_operations::{
     first_unavailable_connective_side, listed_premise_holds, mirrored_equality,
     proposition_holds_without_facts, single_variable_of_program_value,
 };
+pub(in crate::kernel) use term_operations::{float_binary_bits_at, round_right_to_even};
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_signed_order_by_width_views, int64_subtract_interval_fits,
 };
@@ -412,6 +412,7 @@ impl Variable {
     }
 
     /// Whether this is a specification fold's binder.
+    #[cfg(test)]
     pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
         self.origin == VariableOrigin::SpecFoldBinder
     }
@@ -5249,9 +5250,9 @@ impl AlgebraicTermNode {
         pointer: &Address,
         algebraic_type: &AlgebraicType,
     ) -> MachineTerm {
-        MachineTerm::MemoryLoad(
+        crate::kernel::MachineTerm::read_named(
             point.clone(),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::of_algebraic(algebraic_type),
         )
     }
@@ -9424,6 +9425,7 @@ impl SymbolicMemory {
     /// cells whatever representation each cell store keeps them in
     /// ([`CellStore::same_cells_as`]). Everything but the cell cache's layout
     /// is compared exactly as `==` compares it.
+    #[cfg(test)]
     pub(in crate::kernel) fn same_contents_as(&self, other: &Self) -> bool {
         self == other
             || (self.blocks == other.blocks
@@ -12978,6 +12980,10 @@ impl ResourceBindings {
     /// Binds `binder` to `actual`, a caller resource of the same sort.
     /// Returns `Err` when the sorts differ, and otherwise whether the binder
     /// was already bound.
+    #[expect(
+        clippy::result_unit_err,
+        reason = "callers report the mismatched resource sorts"
+    )]
     pub fn insert(&mut self, binder: ResourceBinder, actual: ResourceBinder) -> Result<bool, ()> {
         match (binder, actual) {
             (ResourceBinder::Instance(binder), ResourceBinder::Instance(actual)) => {

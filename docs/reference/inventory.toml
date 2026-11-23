@@ -2346,6 +2346,10 @@ id = "library.extern.fprintf"
 path = "reference/library/index.md#fprintf"
 
 [[item]]
+id = "library.extern.printf"
+path = "reference/library/index.md#printf"
+
+[[item]]
 id = "library.extern.memcpy"
 path = "reference/library/index.md#memcpy"
 
@@ -2504,6 +2508,10 @@ path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
 [[item]]
 id = "library.rust.Option::unwrap"
 path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
+
+[[item]]
+id = "library.rust.Option::take"
+path = "reference/library/index.md#optiontaket"
 
 [[item]]
 id = "library.rust.Option::unwrap_or"

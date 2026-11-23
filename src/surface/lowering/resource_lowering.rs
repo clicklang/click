@@ -1160,7 +1160,8 @@ pub(in crate::surface) fn check_resource_segment_base_loadability(
     };
     Err(ClickError::new(format!(
         "could not address resource clause `{segment}` ({note}): {message}"
-    )))
+    ))
+    .with_proof_refusal(crate::surface::ProofRefusal::Contract))
 }
 
 /// Checks the loads a segment base performs, innermost first, so a chain

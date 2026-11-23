@@ -13,11 +13,18 @@ use std::sync::Arc;
 
 use crate::source::{SourceOrigin, SourcePosition};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CSourceErrorKind {
+    Syntax,
+    Unsupported,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CSourceError {
     path: String,
     line: usize,
     message: String,
+    pub(crate) kind: CSourceErrorKind,
 }
 
 impl CSourceError {
@@ -26,6 +33,14 @@ impl CSourceError {
             path: path.to_string(),
             line,
             message: message.into(),
+            kind: CSourceErrorKind::Syntax,
+        }
+    }
+
+    fn unsupported(path: &str, line: usize, message: impl Into<String>) -> Self {
+        Self {
+            kind: CSourceErrorKind::Unsupported,
+            ..Self::new(path, line, message)
         }
     }
 }
@@ -428,7 +443,7 @@ fn unsupported_system_header(
             )
         })
         .unwrap_or_default();
-    CSourceError::new(
+    CSourceError::unsupported(
         source_path,
         line_number,
         format!(
@@ -508,7 +523,7 @@ fn expand_source<'a>(
                 if active != ConditionalTruth::False
                     && let Conditional::Unsupported(expression) = condition
                 {
-                    return Err(CSourceError::new(
+                    return Err(CSourceError::unsupported(
                         source_path,
                         line_number,
                         unsupported_condition_message(expression),
@@ -538,7 +553,7 @@ fn expand_source<'a>(
                 {
                     ConditionalTruth::False
                 } else if let Conditional::Unsupported(expression) = condition {
-                    return Err(CSourceError::new(
+                    return Err(CSourceError::unsupported(
                         source_path,
                         line_number,
                         unsupported_condition_message(expression),
@@ -718,7 +733,7 @@ fn expand_source<'a>(
             SourceDirective::MacroUndefine(_) => push_blank_line(expanded, line_map),
             SourceDirective::HeaderGuardDefine(name) if active != ConditionalTruth::False => {
                 if analysis.header_guard_define_line != Some(line_number) {
-                    return Err(CSourceError::new(
+                    return Err(CSourceError::unsupported(
                         source_path,
                         line_number,
                         "only whole-header guards are supported; valueless `#define` is not supported here",
@@ -740,7 +755,7 @@ fn expand_source<'a>(
             }
             SourceDirective::PragmaOnce => push_blank_line(expanded, line_map),
             SourceDirective::Unsupported(message) if active != ConditionalTruth::False => {
-                return Err(CSourceError::new(source_path, line_number, message));
+                return Err(CSourceError::unsupported(source_path, line_number, message));
             }
             SourceDirective::Unsupported(_) => push_blank_line(expanded, line_map),
         }
@@ -767,7 +782,7 @@ fn collect_local_include_paths(
                 if active != ConditionalTruth::False
                     && let Conditional::Unsupported(expression) = condition
                 {
-                    return Err(CSourceError::new(
+                    return Err(CSourceError::unsupported(
                         source_path,
                         line_number,
                         unsupported_condition_message(expression),
@@ -800,7 +815,7 @@ fn collect_local_include_paths(
                 {
                     ConditionalTruth::False
                 } else if let Conditional::Unsupported(expression) = condition {
-                    return Err(CSourceError::new(
+                    return Err(CSourceError::unsupported(
                         source_path,
                         line_number,
                         unsupported_condition_message(expression),
@@ -902,7 +917,7 @@ fn collect_local_include_paths(
             SourceDirective::MacroUndefine(_) => {}
             SourceDirective::HeaderGuardDefine(name) if active == ConditionalTruth::True => {
                 if analysis.header_guard_define_line != Some(line_number) {
-                    return Err(CSourceError::new(
+                    return Err(CSourceError::unsupported(
                         source_path,
                         line_number,
                         "only whole-header guards are supported; valueless `#define` is not supported here",
@@ -913,7 +928,7 @@ fn collect_local_include_paths(
             SourceDirective::HeaderGuardDefine(_) => {}
             SourceDirective::PragmaOnce => {}
             SourceDirective::Unsupported(message) if active != ConditionalTruth::False => {
-                return Err(CSourceError::new(source_path, line_number, message));
+                return Err(CSourceError::unsupported(source_path, line_number, message));
             }
             SourceDirective::Unsupported(_) => {}
         }

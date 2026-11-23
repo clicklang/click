@@ -17,5 +17,5 @@ int32 unbounded(int32 x) {
 ```
 
 ```expect
-fail: unproved obligation: `((to_integer((x as int32)) + 1) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 1) : Integer) >= -2147483648`
+fail: unproved obligation: `(to_integer((x as int32)) + 1) <= 2147483647 and (to_integer((x as int32)) + 1) >= -2147483648`
 ```

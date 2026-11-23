@@ -140,7 +140,7 @@ fn staged_rust_operands_scale_with_captures_and_unrelated_parameters() {
             let template = caller.parameters[0].clone();
             caller.parameters.extend((0..unrelated).map(|index| {
                 let mut parameter = template.clone();
-                parameter.name = format!("unrelated_{index}");
+                parameter.name = format!("unrelated_{index}").into();
                 parameter
             }));
             let (lowered, work) =

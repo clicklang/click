@@ -98,8 +98,8 @@ fn charon_enumerated_loops_bind_their_index_and_element_without_an_option() {
                 );
                 bound += usize::from(index.is_some() || element.is_some());
                 bound_copied_byte |= function.name == "last_index"
-                    && index.as_deref() == Some("i")
-                    && element.as_deref() == Some("_byte");
+                    && index.as_ref().is_some_and(|name| name == "i")
+                    && element.as_ref().is_some_and(|name| name == "_byte");
             }
         }
     }

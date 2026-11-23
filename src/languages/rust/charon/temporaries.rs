@@ -25,12 +25,13 @@
 //! not name that local, since the place's address is unchanged.
 
 use super::super::schema::{
-    Expression as E, MirBlock, MirBody, MirStatement as S, MirTerminator as T, Place, Type,
+    Expression as E, MirBlock, MirBody, MirCallee, MirLocalId, MirStatement as S,
+    MirTerminator as T, Place, Type,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The nullable box tested by a MIR branch for `Some`.
-pub(in crate::languages::rust) fn tested_option_box_local(condition: &E) -> Option<&str> {
+pub(in crate::languages::rust) fn tested_option_box_local(condition: &E) -> Option<&MirLocalId> {
     let E::Binary {
         operator,
         left_type: Type::OptionBox { .. },
@@ -60,12 +61,12 @@ pub(in crate::languages::rust) fn tested_option_box_local(condition: &E) -> Opti
 pub(in crate::languages::rust) fn scalar_expression_operands(
     mir: &MirBody,
     loop_tests: &BTreeSet<usize>,
-) -> BTreeMap<String, super::super::borrow_frontiers::MirPoint> {
+) -> BTreeMap<MirLocalId, super::super::borrow_frontiers::MirPoint> {
     use super::super::borrow_frontiers::MirPoint;
     if mir.unnamed_locals.is_empty() {
         return BTreeMap::new();
     }
-    let is_candidate = |name: &str| mir.unnamed_locals.contains(name);
+    let is_candidate = |name: &MirLocalId| mir.unnamed_locals.contains(name);
     let mut definitions = BTreeMap::<_, Vec<_>>::new();
     let mut reads_by_local = BTreeMap::new();
     let mut excluded = BTreeSet::new();
@@ -86,7 +87,7 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
         if let T::Goto { target }
         | T::Call {
             target,
-            through_pointer: false,
+            function: MirCallee::Direct(_),
             ..
         } = block.terminator
             && index < target
@@ -141,7 +142,7 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                 if matches!(value, E::Call { .. } | E::ClosureInstance { .. }) {
                     excluded.insert(name.clone());
                 } else {
-                    definitions.entry(name.as_str()).or_default().push(point);
+                    definitions.entry(name).or_default().push(point);
                 }
             }
             let mut reads = BTreeMap::new();
@@ -164,7 +165,7 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                     code.terminator,
                     T::ReturnValue { .. }
                         | T::Call {
-                            through_pointer: false,
+                            function: MirCallee::Direct(_),
                             ..
                         }
                 ) || matches!(&code.terminator, T::If { condition, .. }
@@ -202,7 +203,7 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
             if last_read_count != 1 {
                 return None;
             }
-            let producers = definitions.get(name.as_str())?.as_slice();
+            let producers = definitions.get(name)?.as_slice();
             let boxed = matches!(local.value_type, Type::Box { .. } | Type::OptionBox { .. });
             if crosses_fragment.contains(name) {
                 let [producer] = producers else { return None };
@@ -278,15 +279,15 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
 pub(super) fn substitute_pure_values(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
     constant_initializers: &BTreeSet<String>,
 ) {
     // How each temporary is used: read by an expression, or named by a
     // statement or terminator field, which no substitution can reach.
-    let mut reads = BTreeMap::<String, usize>::new();
-    let mut named = BTreeSet::<String>::new();
+    let mut reads = BTreeMap::<MirLocalId, usize>::new();
+    let mut named = BTreeSet::<MirLocalId>::new();
     let mut switch_locals = BTreeSet::new();
-    let mut assignments = BTreeMap::<String, usize>::new();
+    let mut assignments = BTreeMap::<MirLocalId, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
         for statement in &block.statements {
@@ -316,18 +317,18 @@ pub(super) fn substitute_pure_values(
             }
         }
     }
-    let single_read = |name: &str| {
+    let single_read = |name: &MirLocalId| {
         temporaries.contains(name)
             && !named.contains(name)
             && reads.get(name) == Some(&1)
             && assignments.get(name) == Some(&1)
     };
-    let substitutable = |name: &str| single_read(name) && !switch_locals.contains(name);
+    let substitutable = |name: &MirLocalId| single_read(name) && !switch_locals.contains(name);
     let mut removed = BTreeSet::new();
     for block in blocks.iter_mut() {
         // The pure values defined so far in this block whose read is still
         // ahead, with nothing since that could change them.
-        let mut pending = BTreeMap::<String, E>::new();
+        let mut pending = BTreeMap::<MirLocalId, E>::new();
         let mut kept = Vec::with_capacity(block.statements.len());
         // A borrow is the value its one read takes whole: an argument of the
         // block's call, `f(&mut x)`, whose borrow lasts the call, or a local's
@@ -390,7 +391,7 @@ pub(super) fn substitute_pure_values(
             .collect::<BTreeSet<_>>();
         // The pending borrows of a place rooted at a local, by that local:
         // the place's address is the same until a statement names the local.
-        let mut rooted = BTreeMap::<String, String>::new();
+        let mut rooted = BTreeMap::<MirLocalId, MirLocalId>::new();
         for mut statement in std::mem::take(&mut block.statements) {
             for (name, value) in substitute_statement(&mut statement, &mut pending) {
                 removed.remove(&name);
@@ -500,8 +501,8 @@ pub(super) fn substitute_pure_values(
 /// one variant test, so the original load still runs exactly once.
 fn fold_borrowed_enum_switch(
     block: &mut MirBlock,
-    single_read: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    single_read: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     use super::super::schema::SwitchLabel;
 
@@ -552,7 +553,7 @@ fn fold_borrowed_enum_switch(
 pub(super) fn fold_constructor_reborrows(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
     if !blocks
         .iter()
@@ -566,7 +567,7 @@ pub(super) fn fold_constructor_reborrows(
     }
     let mut reads = BTreeMap::new();
     let mut named = BTreeSet::new();
-    let mut writes = BTreeMap::<String, usize>::new();
+    let mut writes = BTreeMap::<MirLocalId, usize>::new();
     for block in blocks.iter() {
         for statement in &block.statements {
             statement_uses(statement, &mut reads, &mut named);
@@ -581,7 +582,7 @@ pub(super) fn fold_constructor_reborrows(
         terminator_uses(&block.terminator, &mut reads, &mut named);
         named.extend(call_destination(&block.terminator).cloned());
     }
-    let substitutable = |name: &str| {
+    let substitutable = |name: &MirLocalId| {
         temporaries.contains(name)
             && !named.contains(name)
             && reads.get(name) == Some(&1)
@@ -613,8 +614,8 @@ pub(super) fn fold_constructor_reborrows(
 /// reference used by the borrow.
 fn fold_constructor_reborrow(
     block: &mut MirBlock,
-    substitutable: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     let mut previous = None;
     let mut before_previous = None;
@@ -657,8 +658,8 @@ fn fold_constructor_reborrow(
 /// for an array coercion, its reference view and mutability.
 fn fold_adjacent_slice_borrows(
     statements: &mut Vec<S>,
-    substitutable: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     let mut statements_iter = std::mem::take(statements).into_iter().peekable();
     while let Some(statement) = statements_iter.next() {
@@ -712,12 +713,12 @@ fn fold_adjacent_slice_borrows(
 /// all other argument preparation.
 fn fold_closure_argument(
     block: &mut MirBlock,
-    substitutable: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     let T::Call {
         arguments,
-        through_pointer: false,
+        function: MirCallee::Direct(_),
         ..
     } = &mut block.terminator
     else {
@@ -745,8 +746,8 @@ fn fold_closure_argument(
 /// immediate consumer: a length read, iterator initialization, or sole call argument.
 fn fold_slice_coercion_operands(
     block: &mut MirBlock,
-    substitutable: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     let mut previous = None;
     for position in 0..block.statements.len() {
@@ -782,7 +783,7 @@ fn fold_slice_coercion_operands(
 
 /// Find the storage used by a local array or a borrowed array place. Field
 /// selections and dereferences can be carried into the consumer unchanged.
-fn array_coercion_root(array: &E) -> Option<&str> {
+fn array_coercion_root(array: &E) -> Option<&MirLocalId> {
     let mut place = match array {
         E::Local { name } => return Some(name),
         E::Borrow {
@@ -806,8 +807,8 @@ fn inline_slice_coercion(
     statements: &[S],
     operand: &mut E,
     shared_only: bool,
-    substitutable: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     let S::Assign {
         target: E::Local { name },
@@ -842,8 +843,8 @@ fn inline_slice_coercion(
 fn fold_slice_iterator_successors(
     blocks: &mut [MirBlock],
     predecessors: &[usize],
-    substitutable: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     for index in 0..blocks.len() {
         let block = &blocks[index];
@@ -930,13 +931,13 @@ fn fold_scalar_successors(
     locals: &[Place],
     blocks: &mut [MirBlock],
     predecessors: &[usize],
-    substitutable: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     let scalars: BTreeSet<_> = locals
         .iter()
         .filter(|local| local.value_type.is_integer() || local.value_type == Type::Bool)
-        .map(|local| local.name.as_str())
+        .map(|local| &local.name)
         .collect();
     for index in 0..blocks.len() {
         let T::Goto { target } = blocks[index].terminator else {
@@ -970,7 +971,7 @@ fn fold_scalar_successors(
             else {
                 continue;
             };
-            let copy = matches!(result, E::Local { name: source } if scalars.contains(name.as_str())
+            let copy = matches!(result, E::Local { name: source } if scalars.contains(name)
                 && length_target != Some(source));
             if !substitutable(name)
                 || !(copy || (length_target.is_none() && is_movable_scalar_intrinsic(result)))
@@ -1035,8 +1036,8 @@ fn fold_scalar_successors(
 /// reader is the branch and no intervening marker changes its storage.
 fn fold_scalar_condition(
     block: &mut MirBlock,
-    substitutable: &impl Fn(&str) -> bool,
-    removed: &mut BTreeSet<String>,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
     let T::If { condition, .. } = &mut block.terminator else {
         return;
@@ -1133,11 +1134,11 @@ fn straight_line_scalar(value: &E) -> bool {
 /// cross only storage markers that are already going away.
 fn fold_constant_remainder_casts(
     statements: &mut [S],
-    substitutable: &impl Fn(&str) -> bool,
+    substitutable: &impl Fn(&MirLocalId) -> bool,
     constant_initializers: &BTreeSet<String>,
-    removed: &mut BTreeSet<String>,
+    removed: &mut BTreeSet<MirLocalId>,
 ) {
-    let mut candidate: Option<(&mut String, &mut E)> = None;
+    let mut candidate: Option<(&mut MirLocalId, &mut E)> = None;
     for statement in statements {
         if let Some((name, remainder)) = candidate.take() {
             match statement {
@@ -1190,7 +1191,7 @@ enum IteratorKind {
 }
 
 /// The iterator `statement` builds, as its kind and the local it builds.
-fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)> {
+fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut MirLocalId)> {
     match statement {
         S::SharedArrayInitialize { target, .. } | S::SharedArrayMove { target, .. } => {
             Some((IteratorKind::SharedArray, target))
@@ -1222,8 +1223,8 @@ fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)>
 pub(super) fn substitute_literals(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
-    parameters: &BTreeMap<String, super::super::schema::Type>,
+    temporaries: &BTreeSet<MirLocalId>,
+    parameters: &BTreeMap<MirLocalId, super::super::schema::Type>,
 ) {
     substitute_invariant_values(locals, blocks, temporaries, parameters, None);
 }
@@ -1233,8 +1234,8 @@ pub(super) fn substitute_literals(
 pub(super) fn bind_copied_enum_scrutinees(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
-    parameters: &BTreeMap<String, Type>,
+    temporaries: &BTreeSet<MirLocalId>,
+    parameters: &BTreeMap<MirLocalId, Type>,
 ) {
     if !parameters
         .values()
@@ -1256,13 +1257,13 @@ pub(super) fn bind_copied_enum_scrutinees(
 fn substitute_invariant_values(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
-    parameters: &BTreeMap<String, Type>,
-    enum_scrutinees: Option<&BTreeSet<String>>,
+    temporaries: &BTreeSet<MirLocalId>,
+    parameters: &BTreeMap<MirLocalId, Type>,
+    enum_scrutinees: Option<&BTreeSet<MirLocalId>>,
 ) {
-    let mut reads = BTreeMap::<String, usize>::new();
-    let mut named = BTreeSet::<String>::new();
-    let mut assignments = BTreeMap::<String, Vec<E>>::new();
+    let mut reads = BTreeMap::<MirLocalId, usize>::new();
+    let mut named = BTreeSet::<MirLocalId>::new();
+    let mut assignments = BTreeMap::<MirLocalId, Vec<E>>::new();
     for block in blocks.iter() {
         for statement in &block.statements {
             statement_uses(statement, &mut reads, &mut named);
@@ -1287,13 +1288,13 @@ fn substitute_invariant_values(
         }
     }
     let unchanged = unchanged_parameters(blocks, parameters);
-    let types: BTreeMap<&String, &super::super::schema::Type> = locals
+    let types: BTreeMap<&MirLocalId, &super::super::schema::Type> = locals
         .iter()
         .map(|local| (&local.name, &local.value_type))
         .chain(parameters.iter())
         .collect();
     // Each temporary assigned once, by its one value.
-    let candidates: BTreeMap<String, E> = assignments
+    let candidates: BTreeMap<MirLocalId, E> = assignments
         .into_iter()
         .filter(|(name, values)| {
             temporaries.contains(name) && !named.contains(name) && values.len() == 1
@@ -1314,8 +1315,8 @@ fn substitute_invariant_values(
     // A candidate's value with the unchanging candidates it reads put back,
     // or `None` when it changes. A reborrow `t = &mut *u` of `u = &mut x` is
     // `&mut x`, so a chain of borrows resolves link by link, each once.
-    let mut resolved = BTreeMap::<String, Option<E>>::new();
-    let names: Vec<String> = candidates.keys().cloned().collect();
+    let mut resolved = BTreeMap::<MirLocalId, Option<E>>::new();
+    let names: Vec<MirLocalId> = candidates.keys().cloned().collect();
     for name in &names {
         resolve(
             name,
@@ -1326,7 +1327,7 @@ fn substitute_invariant_values(
             &mut BTreeSet::new(),
         );
     }
-    let literals: BTreeMap<String, E> = resolved
+    let literals: BTreeMap<MirLocalId, E> = resolved
         .into_iter()
         .filter_map(|(name, value)| Some((name, value?)))
         .collect();
@@ -1364,7 +1365,7 @@ fn substitute_invariant_values(
 
 /// Replaces each read of a local of `values` in `expression` with its value,
 /// and `*&p` with `p`.
-fn put_back(expression: &mut E, values: &BTreeMap<String, E>) {
+fn put_back(expression: &mut E, values: &BTreeMap<MirLocalId, E>) {
     if let E::Local { name } = expression
         && let Some(value) = values.get(name)
     {
@@ -1403,22 +1404,22 @@ fn put_back(expression: &mut E, values: &BTreeMap<String, E>) {
 /// life. A slice is a pointer and a length its readers take apart, so a
 /// slice's borrow stays.
 fn resolve(
-    name: &str,
-    candidates: &BTreeMap<String, E>,
-    unchanged: &BTreeSet<String>,
-    types: &BTreeMap<&String, &super::super::schema::Type>,
-    resolved: &mut BTreeMap<String, Option<E>>,
-    visiting: &mut BTreeSet<String>,
+    name: &MirLocalId,
+    candidates: &BTreeMap<MirLocalId, E>,
+    unchanged: &BTreeSet<MirLocalId>,
+    types: &BTreeMap<&MirLocalId, &super::super::schema::Type>,
+    resolved: &mut BTreeMap<MirLocalId, Option<E>>,
+    visiting: &mut BTreeSet<MirLocalId>,
 ) -> Option<E> {
     if let Some(value) = resolved.get(name) {
         return value.clone();
     }
     let value = candidates.get(name)?;
-    if !visiting.insert(name.to_string()) {
+    if !visiting.insert(name.clone()) {
         return None;
     }
     // Every local the value reads, including a slice a length takes apart.
-    fn locals_in(expression: &E, out: &mut BTreeSet<String>) {
+    fn locals_in(expression: &E, out: &mut BTreeSet<MirLocalId>) {
         if let E::Local { name } = expression {
             out.insert(name.clone());
         }
@@ -1437,7 +1438,7 @@ fn resolve(
     let mut value = value.clone();
     put_back(&mut value, &inner);
     visiting.remove(name);
-    let temporary_type = types.get(&name.to_string()).copied();
+    let temporary_type = types.get(name).copied();
     // A reborrow of an unchanged record reference carries the same object
     // through the call. The original parameter can name that reference.
     if let E::Borrow { place, value_type } = &value
@@ -1494,13 +1495,13 @@ fn resolve(
         value => unchanging_scalar(value, unchanged),
     };
     let result = unchanging.then_some(value);
-    resolved.insert(name.to_string(), result.clone());
+    resolved.insert(name.clone(), result.clone());
     result
 }
 
 /// Whether `value` is the same wherever it is read: a literal, an
 /// `unchanged` parameter, or the length or a conversion of one.
-fn unchanging_scalar(value: &E, unchanged: &BTreeSet<String>) -> bool {
+fn unchanging_scalar(value: &E, unchanged: &BTreeSet<MirLocalId>) -> bool {
     match value {
         E::Integer { .. }
         | E::UnsignedInteger { .. }
@@ -1524,10 +1525,10 @@ fn unchanging_scalar(value: &E, unchanged: &BTreeSet<String>) -> bool {
 /// apart from a shared borrow of a reference or slice.
 fn unchanged_parameters(
     blocks: &[MirBlock],
-    parameters: &BTreeMap<String, super::super::schema::Type>,
-) -> BTreeSet<String> {
+    parameters: &BTreeMap<MirLocalId, super::super::schema::Type>,
+) -> BTreeSet<MirLocalId> {
     // The local a target writes, unless it writes through a reference.
-    fn written(target: &E) -> Option<&String> {
+    fn written(target: &E) -> Option<&MirLocalId> {
         match target {
             E::Local { name } => Some(name),
             E::Field { base, .. } | E::EnumField { base, .. } => written(base),
@@ -1537,7 +1538,7 @@ fn unchanged_parameters(
     }
     // A shared borrow of a reference or a slice cannot change it: the
     // variable holds an address and a length, with no interior mutability.
-    let pointer_like = |name: &String| {
+    let pointer_like = |name: &MirLocalId| {
         matches!(
             parameters.get(name),
             Some(
@@ -1549,8 +1550,8 @@ fn unchanged_parameters(
     };
     fn borrowed(
         expression: &E,
-        out: &mut BTreeSet<String>,
-        pointer_like: &dyn Fn(&String) -> bool,
+        out: &mut BTreeSet<MirLocalId>,
+        pointer_like: &dyn Fn(&MirLocalId) -> bool,
     ) {
         if let E::Borrow { place, value_type } = expression
             && let Some(root) = written(place)
@@ -1618,7 +1619,7 @@ fn unchanged_parameters(
 pub(super) fn remove_unused(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
     let mut used = BTreeSet::new();
     for block in blocks.iter() {
@@ -1654,12 +1655,12 @@ pub(super) fn remove_unused(
         }
     }
     // A `()` call result holds nothing, so being a destination is no use.
-    let unit: BTreeSet<&String> = locals
+    let unit: BTreeSet<&MirLocalId> = locals
         .iter()
         .filter(|local| local.value_type == super::super::schema::Type::Unit)
         .map(|local| &local.name)
         .collect();
-    let unused: BTreeSet<String> = locals
+    let unused: BTreeSet<MirLocalId> = locals
         .iter()
         .map(|local| &local.name)
         .filter(|name| temporaries.contains(*name))
@@ -1685,7 +1686,7 @@ pub(super) fn remove_unused(
 }
 
 /// Whether `name` is named only as a call's destination.
-fn only_destination(blocks: &[MirBlock], name: &str) -> bool {
+fn only_destination(blocks: &[MirBlock], name: &MirLocalId) -> bool {
     blocks.iter().all(|block| {
         let statements = block.statements.iter().all(|statement| {
             matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. })
@@ -1703,7 +1704,7 @@ fn only_destination(blocks: &[MirBlock], name: &str) -> bool {
 pub(super) fn fold_returned_slice_lengths(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
     let slices: BTreeSet<_> = locals
         .iter()
@@ -1711,7 +1712,7 @@ pub(super) fn fold_returned_slice_lengths(
             local.value_type == (Type::ByteSlice { mutable: false })
                 && temporaries.contains(&local.name)
         })
-        .map(|local| local.name.as_str())
+        .map(|local| &local.name)
         .collect();
     if slices.is_empty() {
         return;
@@ -1755,7 +1756,7 @@ pub(super) fn fold_returned_slice_lengths(
             operand => operand,
         };
         let E::Local { name } = operand else { continue };
-        if !slices.contains(name.as_str()) {
+        if !slices.contains(name) {
             continue;
         }
         if let Some(S::Assign {
@@ -1783,7 +1784,7 @@ pub(super) fn fold_returned_slice_lengths(
     if folds.is_empty() {
         return;
     }
-    let mut mentions = BTreeMap::<String, usize>::new();
+    let mut mentions = BTreeMap::<MirLocalId, usize>::new();
     for block in blocks.iter() {
         for statement in &block.statements {
             for name in mentioned_locals(statement) {
@@ -1837,8 +1838,12 @@ pub(super) fn fold_returned_slice_lengths(
 ///
 /// A return place that cleanup follows, that is written more than once, or
 /// that holds a value other than a scalar keeps its local.
-pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock], return_place: &str) {
-    let Some(place) = locals.iter().find(|local| local.name == return_place) else {
+pub(super) fn return_values(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    return_place: &MirLocalId,
+) {
+    let Some(place) = locals.iter().find(|local| &local.name == return_place) else {
         return;
     };
     if !returned_directly(&place.value_type) {
@@ -1942,16 +1947,13 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock], re
         }
         None => {
             let T::Call {
-                function,
-                target,
-                through_pointer,
-                ..
+                function, target, ..
             } = &blocks[block].terminator
             else {
                 unreachable!("the return place's writer is a call")
             };
             // A call through a pointer assigns its destination; it is no step.
-            if *through_pointer {
+            if matches!(function, MirCallee::Pointer { .. }) {
                 return;
             }
             let (function, target) = (function.clone(), *target);
@@ -1995,10 +1997,10 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock], re
             };
         }
     }
-    locals.retain(|local| local.name != return_place);
+    locals.retain(|local| &local.name != return_place);
 }
 
-/// Whether a value of `value_type` is returned as itself, a scalar.
+/// Whether a value of `value_type` is returned as a value without address-backed return storage.
 fn returned_directly(value_type: &super::super::schema::Type) -> bool {
     use super::super::schema::Type;
     matches!(
@@ -2015,6 +2017,7 @@ fn returned_directly(value_type: &super::super::schema::Type) -> bool {
             | Type::Usize
             | Type::Bool
             | Type::Enum { .. }
+            | Type::Vec { .. }
     )
 }
 
@@ -2034,7 +2037,7 @@ enum Yielded {
 /// yields, and what its `Some` arm may read: the element of a slice
 /// iterator, the index and element of an enumeration, the chunk of a chunk
 /// iterator.
-fn split_next(statement: &S) -> Option<(&String, Option<bool>, &'static [Yielded])> {
+fn split_next(statement: &S) -> Option<(&MirLocalId, Option<bool>, &'static [Yielded])> {
     match statement {
         S::SharedArrayNext {
             option: Some(option),
@@ -2056,7 +2059,7 @@ fn split_next(statement: &S) -> Option<(&String, Option<bool>, &'static [Yielded
 }
 
 /// What `value` reads from `option`, when it reads one yielded value.
-fn yielded_read(value: &E, option: &str) -> Option<Yielded> {
+fn yielded_read(value: &E, option: &MirLocalId) -> Option<Yielded> {
     match value {
         E::SharedArrayOptionElement { option: read } if read == option => Some(Yielded::Element),
         E::EnumerateOptionIndex { option: read } if read == option => Some(Yielded::Index),
@@ -2077,7 +2080,7 @@ fn yielded_read(value: &E, option: &str) -> Option<Yielded> {
 pub(super) fn bind_slice_payloads(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
     let transparent = |statement: &S| {
         matches!(
@@ -2086,7 +2089,7 @@ pub(super) fn bind_slice_payloads(
         )
     };
     // A block that tests the `Option`'s tag, which the split replaced.
-    let tests = |block: &MirBlock, option: &str| {
+    let tests = |block: &MirBlock, option: &MirLocalId| {
         matches!(
             &block.terminator,
             T::If {
@@ -2096,7 +2099,7 @@ pub(super) fn bind_slice_payloads(
             } if tested == option
         )
     };
-    let tag_copy = |statement: &S, option: &str| {
+    let tag_copy = |statement: &S, option: &MirLocalId| {
         matches!(
             statement,
             S::Assign {
@@ -2121,7 +2124,7 @@ pub(super) fn bind_slice_payloads(
         }
         // The `Some` arm's leading bindings of what it yields, `x = (opt as
         // Some).0`, each at most once; a `Some(_)` arm binds nothing.
-        let mut bindings = Vec::<(usize, Yielded, String)>::new();
+        let mut bindings = Vec::<(usize, Yielded, MirLocalId)>::new();
         for (position, statement) in blocks[target].statements.iter().enumerate() {
             if transparent(statement) {
                 continue;
@@ -2181,7 +2184,7 @@ pub(super) fn bind_slice_payloads(
             blocks,
             index,
             target,
-            bindings.iter().map(|(_, _, name)| name.as_str()),
+            bindings.iter().map(|(_, _, name)| name),
         );
         let bound = |read: Yielded| {
             bindings
@@ -2257,7 +2260,7 @@ pub(super) fn bind_slice_payloads(
 
 /// The original iterator and reference binding, plus an enumeration's
 /// separate index binding if it yields one.
-fn copied_element_yield(statement: &S) -> Option<(&String, &String, Option<&String>)> {
+fn copied_element_yield(statement: &S) -> Option<(&MirLocalId, &MirLocalId, Option<&MirLocalId>)> {
     match statement {
         S::SharedArrayNext {
             iterator,
@@ -2282,15 +2285,15 @@ fn copied_element_yield(statement: &S) -> Option<(&String, &String, Option<&Stri
 pub(super) fn bind_copied_slice_elements(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
     let types: BTreeMap<_, _> = locals
         .iter()
-        .map(|local| (local.name.as_str(), &local.value_type))
+        .map(|local| (&local.name, &local.value_type))
         .collect();
     let mut reads = BTreeMap::new();
     let mut named = BTreeSet::new();
-    let mut yields = BTreeMap::<String, usize>::new();
+    let mut yields = BTreeMap::<MirLocalId, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
         for statement in &block.statements {
@@ -2342,12 +2345,12 @@ pub(super) fn bind_copied_slice_elements(
             continue;
         }
         let Some(Type::SharedArrayIterator { element } | Type::EnumerateIterator { element }) =
-            types.get(iterator.as_str())
+            types.get(iterator)
         else {
             continue;
         };
         if !element.is_integer()
-            || !matches!(types.get(reference.as_str()),
+            || !matches!(types.get(reference),
                 Some(Type::Reference { mutable: false, pointee }) if pointee == element)
         {
             continue;
@@ -2391,7 +2394,7 @@ pub(super) fn bind_copied_slice_elements(
         let prefix = &blocks[target].statements[..position];
         if temporaries.contains(name)
             || *value_type != **element
-            || types.get(name.as_str()) != Some(&value_type)
+            || types.get(name) != Some(&value_type)
             || !matches!(input.as_ref(), E::Local { name: read } if read == reference)
             || !prefix
                 .iter()
@@ -2404,7 +2407,7 @@ pub(super) fn bind_copied_slice_elements(
         }
         let (reference, name) = (reference.clone(), name.clone());
         blocks[target].statements.remove(position);
-        start_storage_at_next(blocks, index, target, [name.as_str()]);
+        start_storage_at_next(blocks, index, target, [&name]);
         match blocks[index].statements.last_mut() {
             Some(S::SharedArrayNext { payload, .. })
             | Some(S::EnumerateNext {
@@ -2432,7 +2435,7 @@ pub(super) fn bind_copied_slice_elements(
 pub(super) fn bind_split_slice_results(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    anonymous_components: &BTreeSet<String>,
+    anonymous_components: &BTreeSet<MirLocalId>,
 ) {
     if anonymous_components.is_empty() {
         return;
@@ -2440,11 +2443,11 @@ pub(super) fn bind_split_slice_results(
     let slices: BTreeSet<_> = locals
         .iter()
         .filter(|local| local.value_type == (Type::ByteSlice { mutable: false }))
-        .map(|local| local.name.as_str())
+        .map(|local| &local.name)
         .collect();
     let mut reads = BTreeMap::new();
     let mut named = BTreeSet::new();
-    let mut splits = BTreeMap::<String, usize>::new();
+    let mut splits = BTreeMap::<MirLocalId, usize>::new();
     let mut predecessors = vec![0; blocks.len()];
     for block in blocks.iter() {
         for statement in &block.statements {
@@ -2531,7 +2534,7 @@ pub(super) fn bind_split_slice_results(
                 !matches!(statement, S::Site { site: next } if *next == site)
                     && !matches!(statement, S::BeginStorage { .. })
             });
-        let mut take_copy = |output: &str| {
+        let mut take_copy = |output: &MirLocalId| {
             let (
                 position,
                 S::Assign {
@@ -2543,7 +2546,7 @@ pub(super) fn bind_split_slice_results(
                 return None;
             };
             (source == output
-                && slices.contains(destination.as_str())
+                && slices.contains(destination)
                 && !anonymous_components.contains(destination))
             .then_some((position, destination.clone()))
         };
@@ -2605,7 +2608,7 @@ fn start_storage_at_next<'a>(
     blocks: &mut [MirBlock],
     next: usize,
     arm: usize,
-    bound: impl IntoIterator<Item = &'a str>,
+    bound: impl IntoIterator<Item = &'a MirLocalId>,
 ) {
     for name in bound {
         let Some(position) = blocks[arm]
@@ -2638,9 +2641,9 @@ fn start_storage_at_next<'a>(
 pub(super) fn bind_range_payloads(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
-    let mut mentions = BTreeMap::<String, usize>::new();
+    let mut mentions = BTreeMap::<MirLocalId, usize>::new();
     for block in blocks.iter() {
         for statement in &block.statements {
             if matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. }) {
@@ -2711,7 +2714,7 @@ pub(super) fn bind_range_payloads(
         }
         let payload = payload.clone();
         blocks[target].statements.remove(position);
-        start_storage_at_next(blocks, index, target, [payload.as_str()]);
+        start_storage_at_next(blocks, index, target, [&payload]);
         for block in blocks.iter_mut() {
             for statement in &mut block.statements {
                 if let S::RangeNext {
@@ -2720,7 +2723,7 @@ pub(super) fn bind_range_payloads(
                     taken,
                     ..
                 } = statement
-                    && next_option.as_deref() == Some(option.as_str())
+                    && next_option.as_ref() == Some(&option)
                 {
                     *next_option = None;
                     if *taken == Some(true) {
@@ -2748,7 +2751,7 @@ pub(super) fn bind_range_payloads(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
-fn iterator_move(statement: &S) -> Option<(IteratorKind, &String, &String)> {
+fn iterator_move(statement: &S) -> Option<(IteratorKind, &MirLocalId, &MirLocalId)> {
     match statement {
         S::SharedArrayMove { target, source } => Some((IteratorKind::SharedArray, target, source)),
         S::EnumerateMove { target, source } => Some((IteratorKind::Enumerate, target, source)),
@@ -2770,9 +2773,9 @@ fn iterator_move(statement: &S) -> Option<(IteratorKind, &String, &String)> {
 pub(super) fn collapse_iterator_moves(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
-    let mut mentions = BTreeMap::<String, usize>::new();
+    let mut mentions = BTreeMap::<MirLocalId, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
         for statement in &block.statements {
@@ -2897,7 +2900,7 @@ pub(super) fn collapse_iterator_moves(
 }
 
 /// A source drop that moves its argument into a fresh, addressable place.
-pub(in crate::languages::rust) fn moved_drop_operands(mir: &MirBody) -> BTreeMap<&str, u32> {
+pub(in crate::languages::rust) fn moved_drop_operands(mir: &MirBody) -> BTreeMap<&MirLocalId, u32> {
     let mut candidates = BTreeMap::new();
     let mut sites = BTreeMap::<u32, usize>::new();
     for block in &mir.blocks {
@@ -2921,7 +2924,7 @@ pub(in crate::languages::rust) fn moved_drop_operands(mir: &MirBody) -> BTreeMap
             && source != local
             && moved == record
         {
-            candidates.insert(local.as_str(), (site, 0usize));
+            candidates.insert(local, (site, 0usize));
         }
     }
     if candidates.is_empty() {
@@ -2930,7 +2933,7 @@ pub(in crate::languages::rust) fn moved_drop_operands(mir: &MirBody) -> BTreeMap
     for block in &mir.blocks {
         for statement in &block.statements {
             for name in mentioned_locals(statement) {
-                if let Some((_, mentions)) = candidates.get_mut(name.as_str()) {
+                if let Some((_, mentions)) = candidates.get_mut(&name) {
                     *mentions += 1;
                 }
             }
@@ -2941,7 +2944,7 @@ pub(in crate::languages::rust) fn moved_drop_operands(mir: &MirBody) -> BTreeMap
         named.extend(reads.into_keys());
         named.extend(call_destination(&block.terminator).cloned());
         for name in named {
-            if let Some((_, mentions)) = candidates.get_mut(name.as_str()) {
+            if let Some((_, mentions)) = candidates.get_mut(&name) {
                 *mentions += 1;
             }
         }
@@ -2959,7 +2962,7 @@ pub(in crate::languages::rust) fn moved_drop_operands(mir: &MirBody) -> BTreeMap
 pub(super) fn bind_copied_call_arguments(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
     let mut copies = Vec::new();
     for (block_index, block) in blocks.iter().enumerate() {
@@ -3089,7 +3092,7 @@ fn contains_call(expression: &E) -> bool {
         || children(expression).into_iter().any(contains_call)
 }
 
-fn mentioned_in_expression(expression: &E, local: &str) -> bool {
+fn mentioned_in_expression(expression: &E, local: &MirLocalId) -> bool {
     let mut reads = BTreeMap::new();
     let mut named = BTreeSet::new();
     expression_uses(expression, &mut reads, &mut named);
@@ -3102,8 +3105,8 @@ fn mentioned_in_expression(expression: &E, local: &str) -> bool {
 pub(super) fn fold_callback_copies(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
-    parameters: &BTreeMap<String, Type>,
+    temporaries: &BTreeSet<MirLocalId>,
+    parameters: &BTreeMap<MirLocalId, Type>,
 ) {
     if !parameters
         .values()
@@ -3113,9 +3116,9 @@ pub(super) fn fold_callback_copies(
     }
     let mut reads = BTreeMap::new();
     let mut named = BTreeSet::new();
-    let mut writes = BTreeMap::<String, usize>::new();
+    let mut writes = BTreeMap::<MirLocalId, usize>::new();
     let mut copies = BTreeMap::new();
-    let mut callees = BTreeMap::<String, usize>::new();
+    let mut callees = BTreeMap::<MirLocalId, usize>::new();
     let mut predecessors = vec![(None, 0usize); blocks.len()];
     for (index, block) in blocks.iter().enumerate() {
         for statement in &block.statements {
@@ -3142,10 +3145,9 @@ pub(super) fn fold_callback_copies(
             }
         }
         if let T::Call {
-            function,
+            function: MirCallee::Pointer { local: function },
             arguments,
             owned_arguments,
-            through_pointer: true,
             ..
         } = &block.terminator
         {
@@ -3179,8 +3181,7 @@ pub(super) fn fold_callback_copies(
     let mut removed = BTreeSet::new();
     for (index, block) in blocks.iter_mut().enumerate() {
         let T::Call {
-            function,
-            through_pointer: true,
+            function: MirCallee::Pointer { local: function },
             ..
         } = &mut block.terminator
         else {
@@ -3217,7 +3218,7 @@ pub(super) fn fold_callback_copies(
 
 /// The local a call terminator assigns its result to, unless the call is
 /// already a call step.
-fn call_destination(terminator: &T) -> Option<&String> {
+fn call_destination(terminator: &T) -> Option<&MirLocalId> {
     match terminator {
         T::Call {
             destination: Some(destination),
@@ -3234,12 +3235,12 @@ fn call_destination(terminator: &T) -> Option<&String> {
 pub(super) fn call_steps(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
-    let mut reads = BTreeMap::<String, (usize, usize)>::new();
-    let mut named = BTreeSet::<String>::new();
+    let mut reads = BTreeMap::<MirLocalId, (usize, usize)>::new();
+    let mut named = BTreeSet::<MirLocalId>::new();
     let mut pointer_destinations = BTreeSet::new();
-    let mut assigned = BTreeMap::<String, usize>::new();
+    let mut assigned = BTreeMap::<MirLocalId, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
     for (index, block) in blocks.iter().enumerate() {
         let mut block_reads = BTreeMap::new();
@@ -3264,7 +3265,7 @@ pub(super) fn call_steps(
             if matches!(
                 block.terminator,
                 T::Call {
-                    through_pointer: true,
+                    function: MirCallee::Pointer { .. },
                     ..
                 }
             ) {
@@ -3279,7 +3280,7 @@ pub(super) fn call_steps(
     }
     // Each local's mentions apart from storage markers and the call that
     // defines it: a tested-then-read result has exactly its test and its read.
-    let mut mentions = BTreeMap::<String, usize>::new();
+    let mut mentions = BTreeMap::<MirLocalId, usize>::new();
     for block in blocks.iter() {
         for statement in &block.statements {
             if matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. }) {
@@ -3306,7 +3307,7 @@ pub(super) fn call_steps(
     }
     let types: BTreeMap<_, _> = locals
         .iter()
-        .map(|local| (local.name.as_str(), &local.value_type))
+        .map(|local| (&local.name, &local.value_type))
         .collect();
     let mut removed = BTreeSet::new();
     let mut next_step = 0u32;
@@ -3315,7 +3316,6 @@ pub(super) fn call_steps(
             function,
             destination: Some(destination),
             target,
-            through_pointer,
             result: None,
             ..
         } = &blocks[index].terminator
@@ -3326,7 +3326,7 @@ pub(super) fn call_steps(
             function.clone(),
             destination.clone(),
             *target,
-            *through_pointer,
+            matches!(function, MirCallee::Pointer { .. }),
         );
         // A result its successor tests for a variant, then reads once in the
         // arm that variant takes, as a `for` loop's `match` on `next()` does:
@@ -3374,7 +3374,7 @@ pub(super) fn call_steps(
             removed.insert(destination);
             continue;
         }
-        let Some(ty) = types.get(destination.as_str()) else {
+        let Some(ty) = types.get(&destination) else {
             continue;
         };
         if !through_pointer
@@ -3425,7 +3425,7 @@ pub(super) fn call_steps(
             && let T::Call {
                 arguments,
                 owned_arguments,
-                through_pointer: false,
+                function: MirCallee::Direct(_),
                 ..
             } = &mut consumer.terminator
             && let Some(argument) = owned_arguments.iter_mut().find(|argument| {
@@ -3495,7 +3495,7 @@ pub(super) fn call_steps(
                     && target < reader
                     && predecessors.get(reader) == Some(&1)
                     && matches!(blocks[target].terminator,
-                    T::Call { target, through_pointer: false, .. } if target == reader)))
+                    T::Call { target, function: MirCallee::Direct(_), .. } if target == reader)))
         {
             continue;
         }
@@ -3555,7 +3555,7 @@ pub(super) fn call_steps(
 pub(super) fn fold_try_result_aliases(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
-    temporaries: &BTreeSet<String>,
+    temporaries: &BTreeSet<MirLocalId>,
 ) {
     use super::super::schema::SwitchLabel;
     let transparent = |statement: &S| {
@@ -3576,7 +3576,7 @@ pub(super) fn fold_try_result_aliases(
     {
         return;
     }
-    let mut mentions = BTreeMap::<String, usize>::new();
+    let mut mentions = BTreeMap::<MirLocalId, usize>::new();
     let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
         for statement in block.statements.iter().filter(|s| !transparent(s)) {
@@ -3732,15 +3732,15 @@ pub(super) fn fold_try_result_aliases(
 fn fold_nested_enum_call_match(
     blocks: &mut [MirBlock],
     outer: usize,
-    destination: &str,
-    function: &str,
+    destination: &MirLocalId,
+    function: &MirCallee,
     call: u32,
     predecessors: &[usize],
     mentions: usize,
 ) -> bool {
     use super::super::schema::SwitchLabel;
 
-    fn projection_base(mut value: &E) -> Option<&str> {
+    fn projection_base(mut value: &E) -> Option<&MirLocalId> {
         while let E::EnumField { base, .. } = value {
             if let E::Local { name } = base.as_ref() {
                 return Some(name);
@@ -3820,10 +3820,9 @@ fn fold_nested_enum_call_match(
                 value,
             } = statement
                 && projection_base(value) == Some(destination)
+                && payload.replace(position).is_some()
             {
-                if payload.replace(position).is_some() {
-                    return false;
-                }
+                return false;
             }
         }
         reads.extend(payload.map(|position| (leaf, position)));
@@ -3836,10 +3835,10 @@ fn fold_nested_enum_call_match(
         put_back(
             value,
             &BTreeMap::from([(
-                destination.to_string(),
+                destination.clone(),
                 E::CallResult {
                     call,
-                    function: function.to_string(),
+                    function: function.clone(),
                     keeps,
                 },
             )]),
@@ -3864,7 +3863,7 @@ fn fold_nested_enum_call_match(
 /// test, reads its field first.
 fn tested_then_read(
     blocks: &[MirBlock],
-    destination: &str,
+    destination: &MirLocalId,
     dispatch: usize,
     predecessors: &[usize],
 ) -> Option<(usize, usize)> {
@@ -4035,7 +4034,7 @@ fn statement_expressions_mut(statement: &mut S) -> Vec<&mut E> {
 
 /// The locals a statement names by a field rather than reads by an
 /// expression.
-fn statement_named_locals(statement: &S) -> Vec<&String> {
+fn statement_named_locals(statement: &S) -> Vec<&MirLocalId> {
     match statement {
         S::SliceSplit { left, right, .. } => vec![left, right],
         S::SharedArrayInitialize { target, .. }
@@ -4110,7 +4109,7 @@ fn terminator_expressions_mut(terminator: &mut T) -> Vec<&mut E> {
     }
 }
 
-fn terminator_named_locals(terminator: &T) -> Vec<&String> {
+fn terminator_named_locals(terminator: &T) -> Vec<&MirLocalId> {
     match terminator {
         T::Drop { local, .. } | T::BoxFree { local, .. } => vec![local],
         // A call's destination is counted apart, by `call_destination`.
@@ -4119,7 +4118,10 @@ fn terminator_named_locals(terminator: &T) -> Vec<&String> {
             owned_arguments,
             ..
         } => {
-            let mut named = vec![function];
+            let mut named = match function {
+                MirCallee::Direct(_) => Vec::new(),
+                MirCallee::Pointer { local } => vec![local],
+            };
             named.extend(
                 owned_arguments
                     .iter()
@@ -4139,8 +4141,8 @@ fn terminator_named_locals(terminator: &T) -> Vec<&String> {
 
 fn statement_uses(
     statement: &S,
-    reads: &mut BTreeMap<String, usize>,
-    named: &mut BTreeSet<String>,
+    reads: &mut BTreeMap<MirLocalId, usize>,
+    named: &mut BTreeSet<MirLocalId>,
 ) {
     let mut statement = statement.clone();
     if let S::Assign { target, .. } = &statement {
@@ -4155,7 +4157,11 @@ fn statement_uses(
 /// The locals an assignment's target place reads: the reference a `*r`
 /// target writes through and an index; a local written in part, through a
 /// field, is named rather than read, so it never moves.
-fn target_uses(target: &E, reads: &mut BTreeMap<String, usize>, named: &mut BTreeSet<String>) {
+fn target_uses(
+    target: &E,
+    reads: &mut BTreeMap<MirLocalId, usize>,
+    named: &mut BTreeSet<MirLocalId>,
+) {
     match target {
         E::Local { .. } => {}
         E::Field { base, .. } | E::EnumField { base, .. } => match base.as_ref() {
@@ -4188,7 +4194,7 @@ fn substitute_target(target: &mut E, pending: &mut Pending) {
     }
 }
 
-fn enum_switch_local(terminator: &T) -> Option<&String> {
+fn enum_switch_local(terminator: &T) -> Option<&MirLocalId> {
     if let T::Switch {
         scrutinee: E::Local { name },
         cases,
@@ -4209,8 +4215,8 @@ fn enum_switch_local(terminator: &T) -> Option<&String> {
 
 fn terminator_uses(
     terminator: &T,
-    reads: &mut BTreeMap<String, usize>,
-    named: &mut BTreeSet<String>,
+    reads: &mut BTreeMap<MirLocalId, usize>,
+    named: &mut BTreeSet<MirLocalId>,
 ) {
     // A match splits a proof by its scrutinee's variants. This use must
     // continue to name a binding.
@@ -4227,8 +4233,8 @@ fn terminator_uses(
 /// The locals `expression` reads, and those it names by a field.
 fn expression_uses(
     expression: &E,
-    reads: &mut BTreeMap<String, usize>,
-    named: &mut BTreeSet<String>,
+    reads: &mut BTreeMap<MirLocalId, usize>,
+    named: &mut BTreeSet<MirLocalId>,
 ) {
     match expression {
         E::Local { name } => *reads.entry(name.clone()).or_default() += 1,
@@ -4245,11 +4251,7 @@ fn expression_uses(
         | E::ChunkOptionTag { option } => {
             named.insert(option.clone());
         }
-        E::Call {
-            function,
-            arguments,
-        } => {
-            named.insert(function.clone());
+        E::Call { arguments, .. } => {
             for argument in arguments {
                 expression_uses(argument, reads, named);
             }
@@ -4273,7 +4275,7 @@ fn expression_uses(
 /// The local a place of fields is rooted at, `x` of `x.f.g`; `None` for a
 /// place through a reference or an index, whose address a statement can
 /// change.
-fn place_root(place: &E) -> Option<&String> {
+fn place_root(place: &E) -> Option<&MirLocalId> {
     match place {
         E::Local { name } => Some(name),
         E::Field { base, .. } => place_root(base),
@@ -4283,7 +4285,7 @@ fn place_root(place: &E) -> Option<&String> {
 
 /// Every local `statement` names: those it reads, assigns, or names by a
 /// field.
-fn mentioned_locals(statement: &S) -> BTreeSet<String> {
+fn mentioned_locals(statement: &S) -> BTreeSet<MirLocalId> {
     let mut reads = BTreeMap::new();
     let mut named = BTreeSet::new();
     statement_uses(statement, &mut reads, &mut named);
@@ -4300,7 +4302,11 @@ fn mentioned_locals(statement: &S) -> BTreeSet<String> {
 /// or `x[i]`, is the place's storage rather than a value, so it is named and
 /// never moves; the reference a `*r` place goes through and an index are
 /// read.
-fn place_uses(place: &E, reads: &mut BTreeMap<String, usize>, named: &mut BTreeSet<String>) {
+fn place_uses(
+    place: &E,
+    reads: &mut BTreeMap<MirLocalId, usize>,
+    named: &mut BTreeSet<MirLocalId>,
+) {
     match place {
         E::Local { name } => {
             named.insert(name.clone());
@@ -4381,8 +4387,8 @@ fn children_mut(expression: &mut E) -> Vec<&mut E> {
 /// The pending values of a block, and those a read refused, whose
 /// definitions go back just before the statement that reads them.
 struct Pending<'a> {
-    values: &'a mut BTreeMap<String, E>,
-    refused: Vec<(String, E)>,
+    values: &'a mut BTreeMap<MirLocalId, E>,
+    refused: Vec<(MirLocalId, E)>,
 }
 
 /// Whether `value` holds an operation whose panic the lowering checks:
@@ -4412,7 +4418,7 @@ fn checked(value: &E) -> bool {
 /// branch condition, it stays a local.
 fn substitute(expression: &mut E, pending: &mut Pending, prepared: bool) {
     if let E::Local { name } = expression
-        && let Some(value) = pending.values.remove(name.as_str())
+        && let Some(value) = pending.values.remove(name)
     {
         if prepared || !checked(&value) {
             *expression = value;
@@ -4443,7 +4449,10 @@ fn substitute(expression: &mut E, pending: &mut Pending, prepared: bool) {
 
 /// Substitutes into `statement`, and returns the definitions its reads
 /// refused.
-fn substitute_statement(statement: &mut S, values: &mut BTreeMap<String, E>) -> Vec<(String, E)> {
+fn substitute_statement(
+    statement: &mut S,
+    values: &mut BTreeMap<MirLocalId, E>,
+) -> Vec<(MirLocalId, E)> {
     if values.is_empty() {
         return Vec::new();
     }
@@ -4467,7 +4476,10 @@ fn substitute_statement(statement: &mut S, values: &mut BTreeMap<String, E>) -> 
 /// Substitutes into `terminator`, and returns the definitions its reads
 /// refused. Call arguments are prepared; a branch condition and a `match`
 /// scrutinee are not.
-fn substitute_terminator(terminator: &mut T, values: &mut BTreeMap<String, E>) -> Vec<(String, E)> {
+fn substitute_terminator(
+    terminator: &mut T,
+    values: &mut BTreeMap<MirLocalId, E>,
+) -> Vec<(MirLocalId, E)> {
     if values.is_empty() {
         return Vec::new();
     }
@@ -4485,10 +4497,18 @@ fn substitute_terminator(terminator: &mut T, values: &mut BTreeMap<String, E>) -
 #[cfg(test)]
 mod tests {
     use super::super::super::schema::{
-        Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place, Span, SwitchCase,
-        SwitchLabel, Type,
+        Expression as E, MirBlock, MirCallee, MirLocalId, MirStatement as S, MirTerminator as T,
+        Place, Span, SwitchCase, SwitchLabel, Type,
     };
     use std::collections::{BTreeMap, BTreeSet};
+
+    fn callee(name: &str, pointer: bool) -> MirCallee {
+        if pointer {
+            MirCallee::Pointer { local: name.into() }
+        } else {
+            MirCallee::Direct(name.into())
+        }
+    }
 
     fn local(name: &str) -> E {
         E::Local { name: name.into() }
@@ -4543,8 +4563,7 @@ mod tests {
             let mut statements = vec![assign("t1", local("f"))];
             statements.extend(change);
             let call = |function: &str, through_pointer, target| T::Call {
-                function: function.into(),
-                through_pointer,
+                function: callee(function, through_pointer),
                 target,
                 arguments: vec![],
                 owned_arguments: vec![],
@@ -4565,20 +4584,20 @@ mod tests {
             assert_eq!(locals.is_empty(), folded);
             let expected = if folded { "f" } else { "t1" };
             assert!(
-                matches!(&blocks[1].terminator, T::Call { function, .. } if function == expected)
+                matches!(&blocks[1].terminator, T::Call { function, .. } if function.source_name() == Some(expected))
             );
         }
     }
 
     /// Runs the pass over one block with temporaries `t1` and `t2`.
-    fn substituted(statements: Vec<S>, terminator: T) -> (Vec<String>, MirBlock) {
+    fn substituted(statements: Vec<S>, terminator: T) -> (Vec<MirLocalId>, MirBlock) {
         let mut locals = ["a", "b", "x", "t1", "t2"].map(place).to_vec();
         let mut blocks = vec![MirBlock {
             terminator_site: None,
             statements,
             terminator,
         }];
-        let temporaries = BTreeSet::from(["t1".to_string(), "t2".to_string()]);
+        let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
         super::substitute_pure_values(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
         let names = locals.into_iter().map(|local| local.name).collect();
         (names, blocks.pop().unwrap())
@@ -4608,7 +4627,6 @@ mod tests {
                     function: "apply".into(),
                     arguments,
                     owned_arguments: vec![],
-                    through_pointer: false,
                     destination: None,
                     target: 1,
                     result: None,
@@ -4901,7 +4919,7 @@ mod tests {
                 &BTreeSet::from(["modulus".into()]),
                 &mut removed,
             );
-            assert_eq!(removed.contains("t1"), folded);
+            assert_eq!(removed.contains(&MirLocalId::from("t1")), folded);
             assert!(matches!(
                 &statements[2],
                 S::Assign { value: E::Cast { value, .. }, .. }
@@ -4926,7 +4944,7 @@ mod tests {
             ],
             T::Return,
         );
-        assert!(locals.contains(&"t1".to_string()));
+        assert!(locals.contains(&MirLocalId::from("t1")));
         assert!(matches!(
             block.statements.as_slice(),
             [S::Assign { target: E::Local { name }, .. }, _] if name == "t1"
@@ -4944,12 +4962,11 @@ mod tests {
                     terminator_site: None,
                     statements: Vec::new(),
                     terminator: T::Call {
-                        function: "f".into(),
+                        function: callee("f", through_pointer),
                         arguments: vec![local("a")],
                         owned_arguments: Vec::new(),
                         destination: Some("t1".into()),
                         target: 1,
-                        through_pointer,
                         result: None,
                     },
                 },
@@ -4959,21 +4976,21 @@ mod tests {
                     terminator: T::Return,
                 },
             ];
-            let temporaries = BTreeSet::from(["t1".to_string()]);
+            let temporaries = BTreeSet::from(["t1".into()]);
             super::call_steps(&mut locals, &mut blocks, &temporaries);
             assert!(locals.iter().all(|local| local.name != "t1"));
             assert!(matches!(
                 blocks[0].terminator,
                 T::Call {
                     result: Some(0),
-                    through_pointer: retained_kind,
+                    ref function,
                     ..
-                } if retained_kind == through_pointer
+                } if *function == callee("f", through_pointer)
             ));
             assert!(matches!(
                 blocks[1].statements.as_slice(),
                 [S::Assign { value: E::Binary { left, .. }, .. }]
-                    if matches!(left.as_ref(), E::CallResult { call: 0, function, .. } if function == "f")
+                    if matches!(left.as_ref(), E::CallResult { call: 0, function, .. } if function.source_name() == Some("f"))
             ));
         }
     }
@@ -4992,7 +5009,7 @@ mod tests {
             ],
             T::Return,
         );
-        assert!(!locals.contains(&"t1".to_string()));
+        assert!(!locals.contains(&MirLocalId::from("t1")));
         // A constructor's field checks no index, so `a[b]` stays in `t1`.
         let (locals, _) = substituted(
             vec![
@@ -5008,7 +5025,7 @@ mod tests {
             ],
             T::Return,
         );
-        assert!(locals.contains(&"t1".to_string()));
+        assert!(locals.contains(&MirLocalId::from("t1")));
     }
 
     #[test]
@@ -5027,12 +5044,11 @@ mod tests {
                 owned_arguments: Vec::new(),
                 destination: Some("unit".into()),
                 target: 0,
-                through_pointer: false,
                 result: None,
             },
             terminator_site: None,
         }];
-        let temporaries = BTreeSet::from(["t1".to_string()]);
+        let temporaries = BTreeSet::from(["t1".into()]);
         super::substitute_pure_values(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
         assert!(locals.iter().all(|local| local.name != "t1"));
         assert!(blocks[0].statements.is_empty());
@@ -5049,7 +5065,6 @@ mod tests {
             owned_arguments: Vec::new(),
             destination: Some("unit".into()),
             target: 0,
-            through_pointer: false,
             result: None,
         }
     }
@@ -5098,7 +5113,7 @@ mod tests {
             vec![assign("t1", borrow(local("a"))), assign("x", local("a"))],
             call(vec![local("t1")]),
         );
-        assert!(locals.contains(&"t1".to_string()));
+        assert!(locals.contains(&MirLocalId::from("t1")));
     }
 
     #[test]
@@ -5108,7 +5123,7 @@ mod tests {
             vec![assign("t1", borrow(local("a"))), assign("x", local("t1"))],
             T::Return,
         );
-        assert!(!locals.contains(&"t1".to_string()));
+        assert!(!locals.contains(&MirLocalId::from("t1")));
         assert!(matches!(
             block.statements.as_slice(),
             [S::Assign {
@@ -5154,12 +5169,12 @@ mod tests {
                 terminator_site: None,
             },
         ];
-        let temporaries = BTreeSet::from(["t1".to_string(), "t2".to_string()]);
+        let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
         super::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         assert_eq!(
             locals
                 .iter()
-                .map(|local| local.name.as_str())
+                .map(|local| local.name.source_name().unwrap())
                 .collect::<Vec<_>>(),
             ["a", "b"]
         );
@@ -5195,8 +5210,8 @@ mod tests {
                 otherwise: None,
             },
         );
-        assert!(locals.contains(&"t1".to_string()));
-        assert!(locals.contains(&"t2".to_string()));
+        assert!(locals.contains(&MirLocalId::from("t1")));
+        assert!(locals.contains(&MirLocalId::from("t2")));
     }
 
     #[test]
@@ -5317,12 +5332,11 @@ mod tests {
     #[test]
     fn alternative_calls_can_discard_their_shared_result() {
         let call = |function: &str, through_pointer| T::Call {
-            function: function.into(),
+            function: callee(function, through_pointer),
             arguments: vec![],
             owned_arguments: vec![],
             destination: Some("t1".into()),
             target: 3,
-            through_pointer,
             result: None,
         };
         for (pointer_call, other_write) in [(false, false), (true, false), (false, true)] {
@@ -5352,7 +5366,7 @@ mod tests {
             for (block, expected) in blocks[1..3].iter().zip(["f", "g"]) {
                 assert!(
                     matches!(&block.terminator, T::Call { function, destination, result: None, .. }
-                    if function == expected && destination.is_none() == discarded)
+                    if function.source_name() == Some(expected) && destination.is_none() == discarded)
                 );
             }
         }
@@ -5507,9 +5521,9 @@ mod tests {
     }
 
     /// Runs the return-place pass over `blocks`, with locals `_0` and `x`.
-    fn returned(mut blocks: Vec<MirBlock>) -> (Vec<String>, Vec<MirBlock>) {
-        let mut locals = ["__rust_mir_0", "x"].map(place).to_vec();
-        super::return_values(&mut locals, &mut blocks, "__rust_mir_0");
+    fn returned(mut blocks: Vec<MirBlock>) -> (Vec<MirLocalId>, Vec<MirBlock>) {
+        let mut locals = ["result", "x"].map(place).to_vec();
+        super::return_values(&mut locals, &mut blocks, &"result".into());
         (locals.into_iter().map(|local| local.name).collect(), blocks)
     }
 
@@ -5519,7 +5533,7 @@ mod tests {
         let (locals, blocks) = returned(vec![
             block(
                 vec![assign(
-                    "__rust_mir_0",
+                    "result",
                     binary(
                         "add",
                         local("x"),
@@ -5551,9 +5565,8 @@ mod tests {
                     function: "f".into(),
                     arguments: vec![local("x")],
                     owned_arguments: vec![],
-                    destination: Some("__rust_mir_0".into()),
+                    destination: Some("result".into()),
                     target: 1,
-                    through_pointer: false,
                     result: None,
                 },
             ),
@@ -5596,14 +5609,11 @@ mod tests {
                     else_target: 2,
                 },
             ),
-            block(
-                vec![assign("__rust_mir_0", zero.clone())],
-                T::Goto { target: 3 },
-            ),
-            block(vec![assign("__rust_mir_0", zero)], T::Goto { target: 3 }),
+            block(vec![assign("result", zero.clone())], T::Goto { target: 3 }),
+            block(vec![assign("result", zero)], T::Goto { target: 3 }),
             block(vec![], T::Return),
         ]);
-        assert_eq!(locals, ["__rust_mir_0", "x"]);
+        assert_eq!(locals, ["result", "x"]);
         assert!(matches!(blocks[3].terminator, T::Return));
     }
 
@@ -5634,7 +5644,6 @@ mod tests {
                     owned_arguments: vec![],
                     destination: Some("t2".into()),
                     target: 1,
-                    through_pointer: false,
                     result: None,
                 },
             },
@@ -5646,14 +5655,17 @@ mod tests {
         ];
         let temporaries = BTreeSet::from(["t1".into(), "t2".into(), "t3".into()]);
         super::remove_unused(&mut locals, &mut blocks, &temporaries);
-        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        let names: Vec<_> = locals
+            .iter()
+            .map(|local| local.name.source_name().unwrap())
+            .collect();
         assert_eq!(names, ["x", "t3"]);
         assert_eq!(blocks[0].statements.len(), 1);
     }
 
     /// Runs the unchanging-value pass with parameter `p` and temporaries
     /// `t1` and `t2`.
-    fn substituted_everywhere(blocks: Vec<MirBlock>) -> (Vec<String>, Vec<MirBlock>) {
+    fn substituted_everywhere(blocks: Vec<MirBlock>) -> (Vec<MirLocalId>, Vec<MirBlock>) {
         let mut locals = ["x", "t1", "t2"].map(place).to_vec();
         let mut blocks = blocks;
         let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
@@ -5735,7 +5747,6 @@ mod tests {
                 owned_arguments: vec![],
                 destination: None,
                 target,
-                through_pointer: false,
                 result: None,
             };
             let mut locals = vec![Place {
@@ -5786,7 +5797,6 @@ mod tests {
             owned_arguments: vec![],
             destination: Some("unit".into()),
             target,
-            through_pointer: false,
             result: None,
         };
         let mut locals = vec![
@@ -5819,7 +5829,10 @@ mod tests {
         ];
         let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
         super::substitute_literals(&mut locals, &mut blocks, &temporaries, &BTreeMap::new());
-        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        let names: Vec<_> = locals
+            .iter()
+            .map(|local| local.name.source_name().unwrap())
+            .collect();
         assert_eq!(names, ["x"]);
         for block in &blocks[..2] {
             assert!(matches!(
@@ -5897,7 +5910,10 @@ mod tests {
         let temporaries = BTreeSet::from(["t1".into(), "t2".into()]);
         let parameters = BTreeMap::from([("bytes".into(), slice)]);
         super::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameters);
-        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        let names: Vec<_> = locals
+            .iter()
+            .map(|local| local.name.source_name().unwrap())
+            .collect();
         assert_eq!(names, ["x"]);
         assert!(matches!(
             blocks[0].statements.as_slice(),
@@ -5942,7 +5958,7 @@ mod tests {
             vec![assign("t1", repeat), assign("a", local("t1"))],
             T::Return,
         );
-        assert!(names.contains(&"t1".to_string()));
+        assert!(names.contains(&MirLocalId::from("t1")));
     }
 
     #[test]
@@ -5977,7 +5993,10 @@ mod tests {
             &mut blocks,
             &BTreeSet::from(["t1".into(), "t2".into()]),
         );
-        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        let names: Vec<_> = locals
+            .iter()
+            .map(|local| local.name.source_name().unwrap())
+            .collect();
         assert_eq!(names, ["x", "it"]);
         assert!(blocks[0].statements.is_empty());
         assert!(matches!(
@@ -6034,7 +6053,10 @@ mod tests {
             &BTreeSet::from(["t1".into()]),
             &BTreeMap::new(),
         );
-        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        let names: Vec<_> = locals
+            .iter()
+            .map(|local| local.name.source_name().unwrap())
+            .collect();
         assert_eq!(names, ["x", "words"]);
         assert!(matches!(
             blocks[0].statements.as_slice(),

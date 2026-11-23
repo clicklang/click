@@ -32,24 +32,39 @@ fn take(krate: &mut a::TranslatedCrate) -> &mut a::FunDecl {
         .unwrap()
 }
 
-/// `take` is rewritten only for the library's own `Option::take` at its
-/// declared signature: an unsafe, re-signed or regenericized declaration is
-/// refused rather than read as a move.
+/// `take` of an option of a box is rewritten, and of a scalar calls the
+/// library's `Option::take<T>`, only for the library's own `Option::take` at
+/// its declared signature: an unsafe, re-signed or regenericized declaration
+/// is refused rather than read as the library's.
 #[test]
 fn charon_option_take_rejects_forged_library_declarations() {
     let artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
     let export = decode_take(&artifact).unwrap();
+    let library_take = crate::languages::rust::names::qualified_name(["Option", "take"]);
+    let calls = export
+        .functions
+        .iter()
+        .flat_map(|f| f.mir.iter().flat_map(|mir| &mir.blocks))
+        .filter_map(|block| match &block.terminator {
+            T::Call {
+                function: out::MirCallee::Direct(function),
+                ..
+            } => Some(function.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     assert!(
-        export
-            .functions
+        calls
             .iter()
-            .flat_map(|f| f.mir.iter().flat_map(|mir| &mir.blocks))
-            // The box's free names its record's crate, `option_take`.
-            .all(
-                |block| !matches!(&block.terminator, T::Call { function, .. }
-                if function.contains("take") && !function.contains("Box"))
-            ),
-        "`take` leaves no library call"
+            .any(|function| function.starts_with(&library_take)),
+        "a scalar `take` calls the library's contract: {calls:?}"
+    );
+    // The box's free names its record's crate, `option_take`.
+    assert!(
+        calls.iter().all(|function| !function.contains("take")
+            || function.contains("Box")
+            || function.starts_with(&library_take)),
+        "no other `take` call remains: {calls:?}"
     );
     for mutation in 0..4 {
         let mut artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();

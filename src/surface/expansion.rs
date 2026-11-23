@@ -190,7 +190,7 @@ fn declared_c_target(click_source: &str) -> Result<Option<CTarget>, ClickError> 
     }
     CTarget::from_parts(target, mode)
         .map(Some)
-        .map_err(ClickError::new)
+        .map_err(|message| ClickError::new(message).with_kind(ClickErrorKind::Type))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

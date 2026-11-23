@@ -59,7 +59,7 @@ pub(super) fn run(
         targets.len()
     );
     let workers = std::thread::available_parallelism().map_or(1, usize::from);
-    let unexpected = cli::run_parallel(&targets, workers, |target| verify_target(target));
+    let unexpected = cli::run_parallel(&targets, workers, |target| verify_target(target.as_path()));
     let checked = audit.checked();
     audit
         .record_to(None)
@@ -447,11 +447,11 @@ fn headline(audit: LoweringAudit, counts: &Counts, records: &Path) -> String {
 /// Verifies one container on a named verifier thread, so each record names
 /// the container it came from. An outcome its expectation does not predict
 /// is returned as an error.
-fn verify_target(target: &PathBuf) -> Result<(), String> {
+fn verify_target(target: &Path) -> Result<(), String> {
     // The thread's name names the container in each record, as the path a
     // reproduce command takes from where the audit ran.
     let thread = relative_path(target).display().to_string();
-    let path = target.clone();
+    let path = target.to_path_buf();
     let outcome = std::thread::Builder::new()
         .name(thread)
         .stack_size(64 * 1024 * 1024)

@@ -1356,7 +1356,7 @@ pub(super) fn copy_aggregate_fields_from(
                     &memory,
                     &source_field,
                     field.program_type(),
-                    &captured_point,
+                    captured_point,
                 )
                 .map(|value| {
                     (

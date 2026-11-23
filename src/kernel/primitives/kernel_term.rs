@@ -1579,11 +1579,11 @@ mod tests {
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
         let pointer = Pointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
-        let constant = pointer.clone().with_declared_object_class(true.then(|| {
+        let constant = pointer.clone().with_declared_object_class(Some(
             crate::kernel::effective_type::CAccessClass::Scalar(
                 crate::kernel::effective_type::CScalarClass::Int,
-            )
-        }));
+            ),
+        ));
         assert_eq!(
             pointer, constant,
             "the declared class is auxiliary, not pointer identity"

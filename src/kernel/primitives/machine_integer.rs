@@ -517,17 +517,39 @@ impl MachineTerm {
     /// 2026-10-30): the `int8` and `uint8` reads of one byte are two loads,
     /// neither a conversion of the other, related by the 8-bit sign cast
     /// when they read the same byte (R-mem).
+    ///
+    /// The read is named by `memory` itself, the legacy naming: its callers
+    /// are the reads still to move to a point version
+    /// (`design/point-named-reads.md`).
     #[cfg_attr(test, track_caller)]
     pub(crate) fn memory_read(
         memory: crate::kernel::SharedMemory,
         pointer: crate::kernel::Address,
         kind: crate::kernel::LoadKind,
     ) -> Self {
-        Self::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&memory),
-            Box::new(pointer),
+        Self::read_named(crate::kernel::ProgramPoint::at(&memory), pointer, kind)
+    }
+
+    /// The read of `kind` at `pointer` named by `point`, as the caller
+    /// selected it. Every read term is built here or through
+    /// [`Self::memory_read`]; `build_support/read_construction.rs` holds other
+    /// direct constructions to a shrinking count, so a change to how reads
+    /// are named has one place to go (`design/point-named-reads.md`).
+    #[cfg_attr(test, track_caller)]
+    pub(crate) fn read_named(
+        point: crate::kernel::ProgramPoint,
+        pointer: impl Into<Box<crate::kernel::Address>>,
+        kind: crate::kernel::LoadKind,
+    ) -> Self {
+        let pointer = pointer.into();
+        #[cfg(test)]
+        crate::kernel::mixed_read_names::record_producer(
+            &point,
+            &pointer,
             kind,
-        )
+            std::panic::Location::caller(),
+        );
+        Self::MemoryLoad(point, pointer, kind)
     }
 
     /// The `signed char` value of the byte whose `unsigned char` value is

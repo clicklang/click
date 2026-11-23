@@ -63,7 +63,6 @@ it; shrink them if you can, but a report need not wait for that.
   cannot supply what the contract promises, follow the `false-claim` procedure.
   If Click demands something the closing rule does not require, follow the
   `obligation-bug` procedure.
-- `unclassified verification refusal`: investigate the stated cause.
 
 Use `unclear-output` when the available diagnostics lack the detail
 needed to tell whether the proof author or Click maintainers should follow

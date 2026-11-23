@@ -1705,7 +1705,20 @@ fn synthesize_surface_quantified_proposition(
                 ClickType::Program(crate::surface::generics::interface_type_from_program_type(
                     integer_type.program_type(),
                 ));
-            let name = SurfaceBinder::fresh();
+            // The binder keeps the name it was written with when nothing the
+            // body can name is spelled the same; otherwise a generated
+            // binder, which never captures a source name.
+            let written = match proposition {
+                Proposition::ForAll { name, .. } => name.as_str(),
+                Proposition::Exists { name, .. } => Some(name.as_str()),
+                _ => None,
+            }
+            .filter(|name| {
+                quantifier_name_is_free(name, parameter_binding, state, bound_variables)
+            });
+            let name = written
+                .map(|name| SurfaceBinder::Written(name.to_string()))
+                .unwrap_or_else(SurfaceBinder::fresh);
             let _binder =
                 folds::Binding::enter((folds::BinderCarrier::Program, **var), name.clone());
             let body = Box::new(synthesize_surface_proposition_with_bound_variables(
@@ -1732,6 +1745,34 @@ fn synthesize_surface_quantified_proposition(
         }
         _ => unreachable!("non-quantified proposition dispatched to binder synthesis"),
     }
+}
+
+/// Whether a quantifier written `name` can keep that name when raised: no
+/// parameter, local, given or proof binder, or enclosing binder is spelled
+/// the same, so the new binder shadows nothing its body names.
+fn quantifier_name_is_free(
+    name: &str,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> bool {
+    !name.is_empty()
+        && !name.starts_with("__")
+        && !parameter_binding
+            .parameters
+            .iter()
+            .any(|parameter| parameter.name() == name)
+        && state.locals().get(name).is_none()
+        && !bound_variables
+            .values()
+            .any(|binder| binder.written() == Some(name))
+        && !PROOF_BINDER_NAMES.with(|names| {
+            names
+                .borrow()
+                .values()
+                .any(|binder| binder.written() == Some(name))
+        })
+        && !folds::written_name_in_scope(name)
 }
 
 /// `loadable(<base>[0..n])`: the whole named region, its byte count a
@@ -3682,13 +3723,20 @@ fn integer_observation_comparison(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
+    let raised_left = synthesize_surface_integer(left, parameter_binding, state, bound_variables)?;
+    // The comparison is Integer already when either side's spelling is:
+    // `to_integer(a) == n` needs no `(.. : Integer)`. Only a comparison of
+    // two sides neither of which spells an Integer, `3 == n`, takes it, so
+    // that it does not lower as a machine comparison.
+    let spelled_integer = |term: &crate::kernel::SharedIntegerTerm| {
+        spells_integer(&crate::kernel::KernelTermImport::default().integer(term))
+    };
     let comparison = ClickProposition::Comparison {
-        left: integer_typed_expression(synthesize_surface_integer(
-            left,
-            parameter_binding,
-            state,
-            bound_variables,
-        )?),
+        left: if spelled_integer(left) || spelled_integer(right) {
+            raised_left
+        } else {
+            integer_typed_expression(raised_left)
+        },
         operator,
         right: synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
     };
@@ -3697,6 +3745,21 @@ fn integer_observation_comparison(
     } else {
         ClickProposition::Not(Box::new(comparison))
     })
+}
+
+/// Whether an Integer term raises to Click text whose own type is
+/// Integer: an observation, which raises as `to_integer(..)`; an Integer
+/// call such as `length(xs)`; or Integer arithmetic with such an operand.
+/// A literal or a variable does not: alone on both sides it would read as
+/// a machine comparison. One visit per node on the operand's spine.
+fn spells_integer(root: &crate::kernel::KernelTerm) -> bool {
+    use crate::kernel::KernelTermNode as N;
+    match root.node() {
+        N::MachineObservation { .. } => true,
+        N::Call { .. } => matches!(root.ty(), crate::kernel::KernelType::Integer),
+        N::IntegerOperation { arguments, .. } => arguments.iter().any(spells_integer),
+        _ => false,
+    }
 }
 
 fn synthesize_surface_integer(
@@ -5529,13 +5592,8 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let memory = crate::kernel::intern_memory_ref(state.memory());
     let selected =
         crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
-    (selected == *read).then(|| {
-        MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&memory),
-            pointer.clone(),
-            *kind,
-        )
-    })
+    (selected == *read)
+        .then(|| MachineTerm::memory_read(memory.clone(), pointer.as_ref().clone(), *kind))
 }
 
 // Unsigned division and remainder use the usual C conversion of both

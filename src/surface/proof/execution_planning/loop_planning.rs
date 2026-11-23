@@ -414,7 +414,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             "loop {loop_index} entry has {} lowered declarations for {} written invariants",
             entry_goals.declarations().len(),
             invariant_items.len(),
-        )));
+        ))
+        .with_proof_refusal(ProofRefusal::Contract));
     }
     let layout = initialize_script_layout(proof, &invariant_items, initialize_source_index);
     let mut phase = Proof::for_fixed_state_frontier_of_list(
@@ -491,7 +492,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 item.title(invariant_index),
                 goals.len(),
                 bodies.len()
-            )));
+            )).with_proof_refusal(ProofRefusal::IncompleteProof));
         }
         // With one body the invariant's goals all run it; the timing label
         // below describes that first body either way.
@@ -986,7 +987,7 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
         };
         phase = phase.at_source_tactic(index);
         let checkpoint = phase.checkpoint();
-        let (next, conclusion) = check_loop_phase_have(&phase, have, "otherwise", scoped_exits)?;
+        let (next, conclusion) = check_loop_phase_have(&phase, have, "otherwise", true)?;
         phase = next;
         explicit_facts.extend(conclusion);
         if let Some(site) = source.proof_site.as_ref()
@@ -1004,10 +1005,16 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
     let facts = if scoped_exits {
         explicit_facts
     } else {
-        phase
+        let mut introduced = phase
             .facts()
             .introduced_since(&initial_facts)
-            .expect("checked have extends the phase facts")
+            .expect("checked have extends the phase facts");
+        // A checked `have` may use a conclusion already present in the phase.
+        // The exit must still state it for the join to rebind its model.
+        let introduced_set = introduced.iter().collect::<BTreeSet<_>>();
+        explicit_facts.retain(|fact| !introduced_set.contains(fact));
+        introduced.extend(explicit_facts);
+        introduced
     };
     Ok((
         facts.into_iter().map(ExecutionPureFact::new).collect(),

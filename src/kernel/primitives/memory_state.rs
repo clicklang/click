@@ -3476,6 +3476,11 @@ fn call_havoc_keeps_cell(
     kept: Option<&CallKeptOwnership>,
     preserve_local_slots: bool,
 ) -> CallHavocCellRule {
+    // A string literal's storage cannot be modified by any C function
+    // (C11 6.4.5p7), so no call writes it, whoever holds it.
+    if matches!(pointer.base, AddressBase::StringLiteral { .. }) {
+        return CallHavocCellRule::Separate;
+    }
     if preserve_local_slots
         && pointer.base.is_local_block()
         // An opaque pointer may reach a local even when no exact alias has
@@ -8866,9 +8871,9 @@ impl SymbolicMemory {
 
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Address) -> ProgramValue {
-        int32(MachineTerm::MemoryLoad(
+        int32(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Int32,
         ))
     }
@@ -8886,54 +8891,54 @@ impl SymbolicMemory {
 
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Address) -> ProgramValue {
-        int16(MachineTerm::MemoryLoad(
+        int16(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Int16,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Address) -> ProgramValue {
-        uint8(MachineTerm::MemoryLoad(
+        uint8(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::UInt8,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Address) -> ProgramValue {
-        uint16(MachineTerm::MemoryLoad(
+        uint16(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::UInt16,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Address) -> ProgramValue {
-        uint32(MachineTerm::MemoryLoad(
+        uint32(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::UInt32,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Address) -> ProgramValue {
-        ProgramValue::Int64(MachineTerm::MemoryLoad(
+        ProgramValue::Int64(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Bits64,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Address) -> ProgramValue {
-        ProgramValue::UInt64(MachineTerm::MemoryLoad(
+        ProgramValue::UInt64(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Bits64,
         ))
     }
@@ -8947,9 +8952,9 @@ impl SymbolicMemory {
         if ty.format().bits() != 128 {
             return None;
         }
-        let load = MachineTerm::MemoryLoad(
+        let load = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::of_type(ty.program_type())?,
         );
         Some(match ty {
@@ -8960,17 +8965,17 @@ impl SymbolicMemory {
     }
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Address) -> ProgramValue {
-        ProgramValue::Float32(MachineTerm::MemoryLoad(
+        ProgramValue::Float32(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Float32,
         ))
     }
 
     pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Address) -> ProgramValue {
-        ProgramValue::Float64(MachineTerm::MemoryLoad(
+        ProgramValue::Float64(crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Float64,
         ))
     }
@@ -9002,9 +9007,9 @@ impl SymbolicMemory {
         value_type: ProgramType,
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
-        let value = Address::loaded(&MachineTerm::MemoryLoad(
+        let value = Address::loaded(&crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&retained_state),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Int32,
         ))
         .expect("a memory load names its read");
@@ -10173,9 +10178,9 @@ impl ExecutionState {
             }
             components.push((
                 description.clone(),
-                Some(MachineTerm::MemoryLoad(
+                Some(crate::kernel::MachineTerm::read_named(
                     ProgramPoint::at(&(intern_memory_ref(&self.memory))),
-                    Box::new(anchor.clone()),
+                    anchor.clone(),
                     LoadKind::Int32,
                 )),
             ));

@@ -170,7 +170,7 @@ pub(super) fn operand_place(op: &a::Operand) -> Result<&a::Place, String> {
     }
 }
 impl BodyAdapter<'_, '_> {
-    pub(super) fn iterator_root(&self, place: &a::Place) -> Result<String, String> {
+    pub(super) fn iterator_root(&self, place: &a::Place) -> Result<MirLocalId, String> {
         let mut id = local(place)?;
         let mut seen = BTreeSet::new();
         while let Some(source) = self.iterator_refs.get(&id) {
@@ -471,8 +471,8 @@ fn split_range_next(
     blocks: &mut Vec<out::MirBlock>,
     predecessors: &[Vec<usize>],
     header: usize,
-    iterator: &str,
-    option: &str,
+    iterator: &MirLocalId,
+    option: &MirLocalId,
     next: &S,
 ) -> Result<(), String> {
     let T::Goto { target: dispatch } = blocks[header].terminator else {
@@ -521,7 +521,7 @@ fn split_range_next(
     blocks[header].terminator_site = site;
     blocks[header].terminator = T::If {
         condition: E::RangeHasNext {
-            iterator: iterator.into(),
+            iterator: iterator.clone(),
         },
         then_target: first,
         else_target: first + 1,

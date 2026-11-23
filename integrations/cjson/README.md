@@ -7,7 +7,19 @@ GCC in the project's C89 mode and the compiler's native header search path.
 - [Readable type field](cjson-is-number-tag.click) gives exactly the result
   of comparing the low eight bits of the tag with `cJSON_Number` (8).
 
-Both proofs share a compiler import rooted at `cJSON_IsNumber`. The script
+It also verifies the static `parse_string` on its empty-string path:
+
+- [Empty string](cjson-parse-string-empty.click): when the input at `offset`
+  is `""` and `parse_string` returns 1, `input_buffer->offset` has advanced by
+  exactly 2. The proof runs the allocator callback through a named contract,
+  carries `input_buffer->content` across the stores into the new string and
+  the item, and relates the final `input_end - input_buffer->content` to the
+  offset through the address laws. The allocator contract owns the returned
+  bytes as initialized under its null guard, since a guarded resource cannot
+  hold `uninitialized(...)`; the proof only writes them.
+
+The proofs share a compiler import rooted at `cJSON_IsNumber` and
+`parse_string`. The script
 extracts the pinned commit, runs the upstream CMake build, and constructs a
 Click project from the C89, visibility, code-generation, and macro switches
 used here. It supplies GCC's system include directories in their native order.

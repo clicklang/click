@@ -321,9 +321,9 @@ impl KernelTerm {
                     }
                     KernelTermNode::FloatRead(read) => {
                         let (point, address) = read.parts();
-                        format.value(MachineTerm::MemoryLoad(
+                        format.value(crate::kernel::MachineTerm::read_named(
                             point.clone(),
-                            Box::new(address.export().expect("float read address")),
+                            address.export().expect("float read address"),
                             format.load_kind(),
                         ))
                     }

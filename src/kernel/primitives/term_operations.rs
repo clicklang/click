@@ -1677,6 +1677,19 @@ fn divide_decoded_floats(
     )
 }
 
+pub(in crate::kernel) fn float_binary_bits_at(
+    format: crate::kernel::KernelFloatType,
+    left: u64,
+    right: u64,
+    operator: FloatBinaryOperator,
+) -> u64 {
+    let (exponent, fraction) = match format {
+        crate::kernel::KernelFloatType::Float32 => (8, 23),
+        crate::kernel::KernelFloatType::Float64 => (11, 52),
+    };
+    float_binary_bits(left, right, exponent, fraction, operator)
+}
+
 fn float_binary_bits(
     left: u64,
     right: u64,
@@ -4986,9 +4999,9 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Bits64,
         );
         named_pointer_read(
@@ -5008,9 +5021,9 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Bits64,
         );
         match canonical_pointer_read(&read) {
@@ -5114,9 +5127,9 @@ impl Address {
         }
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
-        let bits = MachineTerm::MemoryLoad(
+        let bits = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Int32,
         );
         Err(Self::loaded(&bits).expect("a pointer read has a structural descriptor"))

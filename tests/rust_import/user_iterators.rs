@@ -65,7 +65,7 @@ fn charon_user_iterator_next_result_is_a_call_result() {
             match &block.terminator {
                 MirTerminator::Call {
                     function, result, ..
-                } if function == "Countdown_next" => {
+                } if function.source_name() == Some("Countdown_next") => {
                     assert!(result.is_some(), "{name}: {:?}", block.terminator);
                     steps += 1;
                 }

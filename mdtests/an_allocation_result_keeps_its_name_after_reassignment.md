@@ -1,7 +1,8 @@
 # An allocation identity keeps its name after reassignment
 
 The allocation's source region names the fresh heap identity after its local is
-reassigned. The name is a value observation and does not keep freed memory live.
+reassigned. Casts of the identity and its byte offsets name typed pointers
+and ranges. The name does not keep freed memory live.
 
 ```c filename=allocation.c
 int32 use_allocation() {
@@ -23,6 +24,12 @@ int32 use_allocation() { ensures result == 0; } by {
     branch { true => { step(); } false => {} }
     have statement(1).allocation == p;
     have statement(1).allocation != 0;
+    have (statement(1).allocation as (void *)) as (int32 *) == p by solve();
+    have (byte_offset(statement(1).allocation, 4) as (void *)) as (int32 *) == p + 1 by solve();
+    have contains(
+        memory(p[0..1]),
+        memory(((statement(1).allocation as (void *)) as (int32 *))[0..1])
+    ) by solve();
     step();
     step();
     have statement(1).allocation != 0 by known();

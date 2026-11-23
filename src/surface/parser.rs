@@ -1462,6 +1462,9 @@ impl ProgramLayouts {
             let Some(id) = binding.local_id() else {
                 return;
             };
+            if id.is_return_place() {
+                return;
+            }
             // A same-named local hides a slice parameter even if that
             // local has no length. Resolve through the live binding in proofs.
             if !id.is_parameter()
@@ -8073,9 +8076,22 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 return Ok(subject);
             }
-            let segment = self.parse_current_contract_segment()?;
+            let start = self.position;
+            let subject = match self.parse_current_contract_segment() {
+                Ok(segment) => ResourceSubject::Memory(segment),
+                Err(error) => {
+                    self.position = start;
+                    let Ok(base) = self.parse_contract_primary() else {
+                        return Err(error);
+                    };
+                    if !Self::is_allocation_address(&base) {
+                        return Err(error);
+                    }
+                    self.parse_saved_memory_range(base)?
+                }
+            };
             self.expect(Token::RParen)?;
-            return Ok(ResourceSubject::Memory(segment));
+            return Ok(subject);
         }
 
         let saved = self.position;
@@ -8098,6 +8114,13 @@ impl Parser {
 
     fn parse_saved_memory_subject(&mut self) -> Result<ResourceSubject, ClickError> {
         let base = self.parse_contract_primary()?;
+        self.parse_saved_memory_range(base)
+    }
+
+    fn parse_saved_memory_range(
+        &mut self,
+        base: ContractExpression,
+    ) -> Result<ResourceSubject, ClickError> {
         self.expect(Token::LBracket)?;
         let start = self.parse_contract_expression()?;
         let end = if self.peek() == Some(&Token::DotDot) {
@@ -10058,6 +10081,13 @@ impl Parser {
         expected_name: &str,
     ) -> Result<(String, Vec<ContractExpression>), ClickError> {
         let name = self.expect_reference_name(expected_name)?;
+        let arguments = self.parse_call_argument_list()?;
+        let arguments = self.observe_integer_arguments(&name, arguments);
+        let arguments = self.spread_slice_arguments(&name, arguments)?;
+        Ok((name, arguments))
+    }
+
+    fn parse_call_argument_list(&mut self) -> Result<Vec<ContractExpression>, ClickError> {
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() != Some(&Token::RParen) {
@@ -10076,9 +10106,7 @@ impl Parser {
             }
         }
         self.expect(Token::RParen)?;
-        let arguments = self.observe_integer_arguments(&name, arguments);
-        let arguments = self.spread_slice_arguments(&name, arguments)?;
-        Ok((name, arguments))
+        Ok(arguments)
     }
 
     fn parse_proposition_comparison(&mut self) -> Result<ClickProposition, ClickError> {
@@ -10866,6 +10894,13 @@ impl Parser {
             let parameter = self.expect_ident("induction parameter")?;
             self.expect(Token::RParen)?;
             self.expect(Token::Semicolon)?;
+            if self.names.contains(NameKind::InductionHypothesis, &name) {
+                return Err(
+                    self.error("induction hypothesis was already introduced in this proof scope")
+                );
+            }
+            self.names
+                .set_scoped(NameKind::InductionHypothesis, &name, true);
             return Ok(ProofTactic::Induct {
                 parameter,
                 hypothesis: name,
@@ -11935,9 +11970,12 @@ impl Parser {
             }
             "apply" => {
                 self.expect(Token::LParen)?;
-                // A call remains a theorem application. Other propositions,
-                // including named facts and parenthesized implications, are facts.
+                // Resolve local callable bindings before global theorem names.
+                // Other propositions, including named facts, are implications.
                 let start = self.position;
+                let local = self.peek_ident().is_some_and(|name| {
+                    self.names.contains(NameKind::InductionHypothesis, name)
+                });
                 let application = if self.peek_ident().is_some()
                     && self.peek_next() == Some(&Token::LParen)
                     && !matches!(
@@ -11945,9 +11983,14 @@ impl Parser {
                         Some("at" | "old" | "exact" | "forall" | "exists")
                     )
                 {
-                    let application = self.parse_theorem_application()?;
+                    let call = if local {
+                        let hypothesis = self.expect_ident("induction hypothesis")?;
+                        (hypothesis, self.parse_call_argument_list()?)
+                    } else {
+                        self.parse_call_arguments("theorem name")?
+                    };
                     if self.peek() == Some(&Token::RParen) {
-                        Some(application)
+                        Some(call)
                     } else {
                         self.position = start;
                         None
@@ -11955,7 +11998,7 @@ impl Parser {
                 } else {
                     None
                 };
-                if application.is_none() {
+                let Some((name, arguments)) = application else {
                     let fact = self.parse_proposition()?;
                     self.expect(Token::RParen)?;
                     if self.peek_ident() == Some("using") {
@@ -11965,15 +12008,18 @@ impl Parser {
                     }
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ApplyFact(fact));
-                }
-                let application = application.unwrap();
+                };
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
                     return Err(self.error(
                         "application takes no `using` list; write `apply(name(args))`",
                     ));
                 }
-                ProofTactic::ApplyTheorem(application)
+                if local {
+                    ProofTactic::ApplyInduction { hypothesis: name, arguments }
+                } else {
+                    ProofTactic::ApplyTheorem(TheoremApplication { name, arguments })
+                }
             }
             "observe" => {
                 self.expect(Token::LParen)?;
@@ -12558,11 +12604,6 @@ impl Parser {
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         self.loop_proof_value_names = value_scope;
         result
-    }
-
-    fn parse_theorem_application(&mut self) -> Result<TheoremApplication, ClickError> {
-        let (name, arguments) = self.parse_call_arguments("theorem name")?;
-        Ok(TheoremApplication { name, arguments })
     }
 
     fn parse_declared_resource_call(&mut self) -> Result<ResourceClause, ClickError> {
@@ -15435,6 +15476,23 @@ impl Parser {
         self.lower_qualified_click_cast(target_type, false, false, operand)
     }
 
+    // A recorded allocation names an identity, even if the pointer returned
+    // by the allocator has since been reassigned. Address transformations of
+    // that identity do not read a pointer value from another program state.
+    fn is_allocation_address(expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::RegionAllocation(_) => true,
+            ContractExpression::CUnary { operand, lowered }
+                if matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
+                    || matches!(lowered, ProgramExpression::Cast { target_type, .. }
+                        if target_type.is_pointer()) =>
+            {
+                Self::is_allocation_address(operand)
+            }
+            _ => false,
+        }
+    }
+
     fn lower_qualified_click_cast(
         &mut self,
         target_type: ProgramType,
@@ -15442,8 +15500,10 @@ impl Parser {
         pointee_volatile: bool,
         operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
+        let allocation_address = Self::is_allocation_address(&operand);
         let historical = crate::surface::validation::contains_old_expression(&operand)
-            || crate::surface::validation::contains_at_expression(&operand);
+            || (!allocation_address
+                && crate::surface::validation::contains_at_expression(&operand));
         // Numeric casts consume the value observed by their operand.
         // Pointer casts retain their current-expression validation.
         let numeric_target = matches!(
@@ -15466,7 +15526,7 @@ impl Parser {
         }
         let expression = contract_expression_as_program_expression(&operand)
             .unwrap_or(ProgramExpression::Value(int32(0)));
-        if target_type == ProgramType::VoidPointer {
+        if target_type == ProgramType::VoidPointer && !allocation_address {
             crate::surface::validation::validate_void_pointer_cast_source(
                 &expression,
                 &self.names.program_parameter_types,
@@ -15630,7 +15690,7 @@ impl Parser {
                     source_base,
                     ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
-                        bytes: (*offset_bytes).into(),
+                        bytes: *offset_bytes,
                     },
                 ));
             }
@@ -19778,6 +19838,11 @@ mod tactic_classification_tests {
                         "reference".to_string(),
                     ),
                 );
+                if form.id == "apply-induction" {
+                    parser
+                        .names
+                        .insert(NameKind::InductionHypothesis, "ih".into());
+                }
                 parser.parse_proof_tactic()
             });
             let tactic = match parsed {
@@ -19786,17 +19851,6 @@ mod tactic_classification_tests {
                     failures.push(format!("{}: `{written}` does not parse: {error}", form.id));
                     continue;
                 }
-            };
-            // An induction binding is resolved after parsing the enclosing
-            // proof, so standalone call syntax initially parses as a theorem.
-            let tactic = match (form.id, tactic) {
-                ("apply-induction", ProofTactic::ApplyTheorem(application)) => {
-                    ProofTactic::ApplyInduction {
-                        hypothesis: application.name,
-                        arguments: application.arguments,
-                    }
-                }
-                (_, tactic) => tactic,
             };
             let class = tactic.class();
             classes.insert(form.id, class);

@@ -48,7 +48,7 @@ impl Context<'_> {
     /// stored to its object when it is memory-backed.
     pub(super) fn bind_local(
         &mut self,
-        name: &str,
+        name: &MirLocalId,
         value: ProgramExpression,
     ) -> Result<ProgramStatement, String> {
         if !self.locals.contains(name) {
@@ -56,17 +56,17 @@ impl Context<'_> {
         }
         Ok(match self.memory_values.get(name).copied() {
             Some(value_type) => program_typed_store(
-                self.address(&E::Local { name: name.into() })?,
+                self.address(&E::Local { name: name.clone() })?,
                 value,
                 value_type,
             ),
-            None => program_assign(self.binding(name), value),
+            None => program_assign(self.binding(name)?, value),
         })
     }
 
     pub(super) fn shared_array_iterator(
         &self,
-        name: &str,
+        name: &MirLocalId,
     ) -> Result<&SliceIteratorStorage, String> {
         self.shared_array_iterators
             .get(name)
@@ -75,7 +75,7 @@ impl Context<'_> {
 
     pub(super) fn shared_array_option(
         &self,
-        name: &str,
+        name: &MirLocalId,
     ) -> Result<&SliceIteratorOptionStorage, String> {
         self.shared_array_options
             .get(name)
@@ -84,7 +84,7 @@ impl Context<'_> {
 
     pub(super) fn shared_array_storage(
         &mut self,
-        name: &str,
+        name: &MirLocalId,
         element: &Type,
         option: bool,
         owner: &LocalFunctionId,
@@ -92,7 +92,7 @@ impl Context<'_> {
     ) -> Result<ProgramStatement, String> {
         let pointer_type = pointer_type(element)?;
         let element = scalar_type(element)?.to_kernel_type();
-        if !self.locals.insert(name.into()) {
+        if !self.locals.insert(name.clone()) {
             return Err("shared iterator state identity collision".into());
         }
         if !option {
@@ -100,7 +100,7 @@ impl Context<'_> {
                 LocalBindingId::slice_iterator_fields(owner.clone(), ordinal, pointer_type)
                     .map(BindingName::from);
             self.shared_array_iterators.insert(
-                name.into(),
+                name.clone(),
                 SliceIteratorStorage {
                     element,
                     fields: SliceIteratorFields {
@@ -142,7 +142,7 @@ impl Context<'_> {
             ),
         );
         self.shared_array_options.insert(
-            name.into(),
+            name.clone(),
             SliceIteratorOptionStorage {
                 element,
                 tag,
@@ -155,7 +155,7 @@ impl Context<'_> {
     /// `source.iter()`: the iterator covers the whole slice.
     pub(super) fn shared_array_initialize(
         &mut self,
-        target: &str,
+        target: &MirLocalId,
         source: &E,
     ) -> Result<ProgramStatement, String> {
         let state = self.shared_array_iterator(target)?;
@@ -188,7 +188,7 @@ impl Context<'_> {
     /// Whether `next` yields: the slice it covers is not empty.
     pub(super) fn shared_array_has_next(
         &self,
-        iterator: &str,
+        iterator: &MirLocalId,
     ) -> Result<ProgramExpression, String> {
         let length = self.shared_array_iterator(iterator)?.fields.length.clone();
         Ok(crate::kernel::program_expression::less_than(
@@ -199,8 +199,8 @@ impl Context<'_> {
 
     pub(super) fn shared_array_move(
         &mut self,
-        target: &str,
-        source: &str,
+        target: &MirLocalId,
+        source: &MirLocalId,
     ) -> Result<ProgramStatement, String> {
         use crate::kernel::program_expression::variable;
         let target_fields = self.shared_array_iterators.get(target);
@@ -229,9 +229,9 @@ impl Context<'_> {
     /// (`taken`), only that arm runs; the arm that does not yield is nothing.
     pub(super) fn shared_array_next(
         &mut self,
-        iterator: &str,
-        option: Option<&str>,
-        payload: Option<(&str, &Type)>,
+        iterator: &MirLocalId,
+        option: Option<&MirLocalId>,
+        payload: Option<(&MirLocalId, &Type)>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
         match (option, payload) {
@@ -289,8 +289,8 @@ impl Context<'_> {
     /// before the iterator moves on.
     pub(super) fn shared_array_next_with(
         &self,
-        iterator: &str,
-        option: &str,
+        iterator: &MirLocalId,
+        option: &MirLocalId,
         yielded: ProgramStatement,
     ) -> Result<ProgramStatement, String> {
         let Some((state, destination)) = self
@@ -348,7 +348,7 @@ mod tests {
             .find(|local| matches!(local.value_type, Type::SharedArrayIterator { .. }))
             .unwrap();
         let colliding = ["ptr", "len"].map(|field| Place {
-            name: format!("{}_{field}", iterator.name),
+            name: format!("{}_{field}", iterator.name).into(),
             value_type: Type::Usize,
             span: iterator.span.clone(),
         });
@@ -387,7 +387,7 @@ mod tests {
             }
             // Retain a next result through its tag dispatch. The ordinary
             // importer binds the payload directly in this fixture.
-            let option = "next_option".to_string();
+            let option = MirLocalId::from("next_option");
             let header = mir
                 .blocks
                 .iter()
@@ -421,7 +421,7 @@ mod tests {
             let element = element.clone();
             let span = place.span.clone();
             let option_type = if enumerated {
-                let target = "enumerated_iterator".to_string();
+                let target = MirLocalId::from("enumerated_iterator");
                 mir.locals.push(Place {
                     name: target.clone(),
                     value_type: Type::EnumerateIterator {
@@ -505,7 +505,7 @@ mod tests {
             });
             mir.locals
                 .extend(["some", "pointer", "index"].map(|field| Place {
-                    name: format!("{option}_{field}"),
+                    name: format!("{option}_{field}").into(),
                     value_type: Type::Usize,
                     span: span.clone(),
                 }));

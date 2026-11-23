@@ -5939,6 +5939,32 @@ selects this contract for the projected `<stdio.h>` declaration
 
 **Verified use:** [`mdtests/printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md); a format that converts is refused in [`mdtests/fprintf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/fprintf_refuses_a_format_that_converts.md).
 
+### `printf`
+
+```click
+int32 printf(const uint8* format, ...args) {
+    let n: uint64;
+    views click::c::string::cstr_at(format, n);
+    requires n <= 2147483647u64;
+    requires click::c::stdio::literal_format(format, 0u64, n as int32);
+    owns out: click::c::stdio::stream(stdout);
+    ensures result == click::c::stdio::format_length(format, 0u64, n as int32, 0) or result < 0;
+    ensures out.write_history == List::Cons(
+        WriteAttempt::Attempt(click::c::stdio::format_output(format, 0u64, n as int32), result),
+        old(out.write_history));
+    ensures click::c::stdio::write_requests(out.write_history) == List::Cons(
+        click::c::stdio::format_output(format, 0u64, n as int32),
+        old(click::c::stdio::write_requests(out.write_history)));
+}
+```
+
+**Meaning:** [`fprintf`](#fprintf) with the stream `stdout`, the hosted
+target's standard output, which the contract names as a program global. The
+C front end selects this contract for the projected `<stdio.h>` declaration
+on the hosted target ([formatted output](../language/c.md#formatted-output)).
+
+**Verified use:** [`mdtests/printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md); a format that converts is refused in [`mdtests/printf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_refuses_a_format_that_converts.md).
+
 ### `memcpy`
 
 ```click
@@ -8044,6 +8070,25 @@ every other element unchanged.
 **Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
 
 **Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `exchange`, `swap_bytes` and `reverse_three` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs), and refuses a `swap` index not shown in bounds.
+
+### `Option::take<T>`
+
+```click
+fn Option::take<T>(o: &mut Option<T>) -> Option<T> {
+    owns *o;
+    ensures result == old(*o);
+    ensures *o == Option<T>::None;
+}
+```
+
+**Meaning:** `o.take()` is `mem::replace(o, None)`: it returns the option
+`*o` held and leaves `None` there. The importer declares it at a scalar
+payload, `Option::take<u32>`; an option of a box is still lowered to the move
+the call makes ([Boxes](../rust.md#boxes)).
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `scalar_taken` and `take_param` in [`design/charon-trial/option-take/take.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-take/take.rs) in `charon_option_take_moves_out_and_leaves_none`.
 
 ### `Option<T>` and `Result<T, E>` unwrapping
 

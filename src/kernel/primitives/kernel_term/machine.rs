@@ -868,7 +868,7 @@ impl KernelTermExport {
                 point,
                 address,
                 kind,
-            } => Old::MemoryLoad(point.clone(), Box::new(address.export()?), *kind),
+            } => Old::read_named(point.clone(), address.export()?, *kind),
             Node::BoolCast {
                 destination,
                 operand,

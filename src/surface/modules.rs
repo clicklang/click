@@ -602,7 +602,8 @@ fn visit_theorem(
         return Err(ClickError::new(format!(
             "circular theorem justification: {}",
             bounded_chain(&cycle)
-        )));
+        ))
+        .with_proof_refusal(crate::surface::ProofRefusal::Contract));
     }
     visiting.push(theorem.to_string());
     for dependency in graph.get(theorem).into_iter().flatten() {

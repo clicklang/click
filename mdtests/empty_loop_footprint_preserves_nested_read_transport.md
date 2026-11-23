@@ -137,8 +137,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
                 have arena->occupied == at(opened, arena->occupied) by { known(); }
                 // Select the preserved cell as one complete int32 observation.
                 have contains(at(opened, memory(arena->occupied[k])), at(opened, memory((&arena->occupied[k])[0..1]))) by { normalize(); }
-                have contains(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[i]))) by { transport(at(function.entry, contains(at(opened, memory(load<int32*>(byte_offset(arena, 8))[i])), at(opened, memory(load<int32*>(byte_offset(arena, 8))[i])))), contains(at(opened, memory(load<int32*>(byte_offset(arena, 8))[i])), at(opened, memory(load<int32*>(byte_offset(arena, 8))[i])))) using {
-                    }; }
+                apply(separation::contains_refl(at(opened, memory(arena->occupied[i]))));
                 have separate(at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))) by {
                     apply(separation::separate_restrict(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[k])), at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))));
                 }

@@ -54,7 +54,7 @@ The stream also appears in
 [`hosted_stdout_stream_follows_file_pointer_alias.md`](hosted_stdout_stream_follows_file_pointer_alias.md).
 
 The `stdio::format_output`, `stdio::format_length` and
-`stdio::literal_format` functions state the `fprintf` contract, used by
+`stdio::literal_format` functions state the `fprintf` and `printf` contracts, used by
 [`printf_and_fprintf_share_the_streams_write_history.md`](printf_and_fprintf_share_the_streams_write_history.md).
 
 The `VarArg` datatype, the variable arguments a variadic C call passes, is

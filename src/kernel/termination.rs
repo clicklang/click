@@ -1497,7 +1497,8 @@ fn reject_address_escaped_measure(
         return Err(error(format!(
             "termination measure `{measure}` in `{function_name}` has its address taken; a store \
              through that pointer could change the measure without a ranked update"
-        )));
+        ))
+        .with_invalid_measure(function_name));
     }
     Ok(())
 }
@@ -1589,7 +1590,8 @@ fn reject_address_escaped_ranking_component(
             "the `decreases` component `{source}` in `{function_name}` reads a resource binder's \
              model and also {read}; a measure over a model may read only the loop's resource \
              binders' models and fields, constants, and pure functions of them"
-        )));
+        ))
+        .with_invalid_measure(function_name));
     }
     for variable in reads.variables {
         reject_address_escaped_measure(function_name, &variable, addressed)?;

@@ -34,6 +34,7 @@ pub(in crate::surface) fn theorem_requirement_propositions(
                 ClickError::new(crate::surface::validation::theorem_resource_clause_refusal(
                     theorem.name(),
                 ))
+                .with_proof_refusal(ProofRefusal::Contract)
             })
         })
         .collect()
@@ -372,6 +373,8 @@ impl PureTheoremContext {
     }
 }
 
+/// The checked theorem statement and descent rule for this proof's local
+/// induction hypothesis. Surface calls have already resolved to that binding.
 #[derive(Clone, Debug)]
 pub(super) struct PureInductionSetup {
     pub(super) parameter: String,
@@ -571,57 +574,35 @@ pub(super) fn pure_induction_hypothesis(
     .ok_or_else(|| ClickError::new("the induction hypothesis's quantifier does not close"))
 }
 
-fn prepare_pure_induction_tactics(
+fn prepare_pure_induction_setup(
     theorem: &TheoremDefinition,
     goal: &ClickProposition,
     tactics: &[ProofTactic],
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<(Vec<ProofTactic>, Option<PureInductionSetup>), ClickError> {
+) -> Result<Option<PureInductionSetup>, ClickError> {
     fn declarations<'a>(tactics: &'a [ProofTactic], found: &mut Vec<(&'a String, &'a String)>) {
         for tactic in tactics {
-            match tactic {
-                ProofTactic::Induct {
-                    parameter,
-                    hypothesis,
-                } => found.push((parameter, hypothesis)),
-                ProofTactic::IntroBlock { body, .. } => declarations(body, found),
-                ProofTactic::If(proof_if) => {
-                    declarations(&proof_if.then_tactics, found);
-                    declarations(&proof_if.else_tactics, found);
+            if let ProofTactic::Induct {
+                parameter,
+                hypothesis,
+            } = tactic
+            {
+                found.push((parameter, hypothesis));
+            }
+            for child in tactic.children() {
+                let (TacticChild::Continuing(proof) | TacticChild::Obligation(proof)) = child;
+                if let Some(body) = proof.tactics() {
+                    declarations(body, found);
                 }
-                ProofTactic::All(all) => {
-                    for arm in &all.arms {
-                        declarations(&arm.tactics, found);
-                    }
-                }
-                ProofTactic::Both(both) => {
-                    declarations(&both.left_tactics, found);
-                    declarations(&both.right_tactics, found);
-                }
-                ProofTactic::Cases(cases) => {
-                    for arm in cases.arms() {
-                        declarations(arm.tactics(), found);
-                    }
-                }
-                ProofTactic::Have(have) => {
-                    if let SourceProof::Script(body) = &have.proof {
-                        declarations(body, found);
-                    }
-                }
-                ProofTactic::Match(proof_match) => {
-                    for arm in &proof_match.arms {
-                        declarations(&arm.tactics, found);
-                    }
-                }
-                _ => {}
             }
         }
     }
+
     let mut found = Vec::new();
     declarations(tactics, &mut found);
     let Some(&(parameter, hypothesis)) = found.first() else {
-        return Ok((tactics.to_vec(), None));
+        return Ok(None);
     };
     let structural = theorem
         .parameters()
@@ -634,7 +615,9 @@ fn prepare_pure_induction_tactics(
     {
         return Err(ClickError::new(
             "structural induction declarations must name the same theorem parameter and hypothesis",
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Tactic)
+        .with_failed_tactic("induct"));
     }
     if !theorem.parameters().iter().any(|candidate| {
         candidate.name() == parameter
@@ -646,145 +629,22 @@ fn prepare_pure_induction_tactics(
     }) {
         return Err(ClickError::new(format!(
             "`induct({parameter})` requires an int32 or uint64 theorem parameter with that name"
-        )));
+        ))
+        .with_proof_refusal(ProofRefusal::Tactic)
+        .with_failed_tactic("induct"));
     }
     let surface_requires = theorem_requirement_propositions(theorem)?;
 
-    fn transform(
-        tactics: &[ProofTactic],
-        hypothesis: &str,
-        structural: bool,
-        mut active: bool,
-    ) -> Result<Vec<ProofTactic>, ClickError> {
-        tactics
-            .iter()
-            .map(|tactic| match tactic {
-                ProofTactic::Induct { .. } if structural => {
-                    if active {
-                        return Err(ClickError::new(
-                            "induction hypothesis was already introduced in this proof scope",
-                        ));
-                    }
-                    active = true;
-                    Ok(tactic.clone())
-                }
-                ProofTactic::Induct { .. } => Err(ClickError::new(
-                    "a pure theorem proof may contain only one top-level `induct` tactic",
-                )),
-                ProofTactic::ApplyTheorem(application)
-                    if active && application.name == hypothesis =>
-                {
-                    Ok(ProofTactic::ApplyInduction {
-                        hypothesis: hypothesis.to_string(),
-                        arguments: application.arguments.clone(),
-                    })
-                }
-                ProofTactic::IntroBlock { binder, body } => Ok(ProofTactic::IntroBlock {
-                    binder: binder.clone(),
-                    body: transform(body, hypothesis, structural, active)?,
-                }),
-                ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
-                    condition: proof_if.condition.clone(),
-                    ensuring: proof_if.ensuring.clone(),
-                    then_tactics: transform(
-                        &proof_if.then_tactics,
-                        hypothesis,
-                        structural,
-                        active,
-                    )?,
-                    else_tactics: transform(
-                        &proof_if.else_tactics,
-                        hypothesis,
-                        structural,
-                        active,
-                    )?,
-                })),
-                ProofTactic::All(all) => Ok(ProofTactic::All(ProofAll {
-                    arms: all
-                        .arms
-                        .iter()
-                        .map(|arm| {
-                            Ok(ProofAllArm {
-                                proposition: arm.proposition.clone(),
-                                tactics: transform(&arm.tactics, hypothesis, structural, active)?,
-                            })
-                        })
-                        .collect::<Result<_, ClickError>>()?,
-                })),
-                ProofTactic::Both(both) => Ok(ProofTactic::Both(ProofBoth {
-                    left_tactics: transform(&both.left_tactics, hypothesis, structural, active)?,
-                    right_tactics: transform(&both.right_tactics, hypothesis, structural, active)?,
-                })),
-                ProofTactic::Cases(proof_cases) => {
-                    Ok(ProofTactic::Cases(proof_cases.try_map_tactics(
-                        |tactics| transform(tactics, hypothesis, structural, active),
-                    )?))
-                }
-                // Once declared, the hypothesis is in scope in every nested
-                // proof, a `have` body and a `match` arm included.
-                ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
-                    proposition: have.proposition.clone(),
-                    proof: match &have.proof {
-                        SourceProof::Script(tactics) => {
-                            SourceProof::Script(transform(tactics, hypothesis, structural, active)?)
-                        }
-                        proof => proof.clone(),
-                    },
-                })),
-                ProofTactic::Match(proof_match) => {
-                    Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-                        scrutinee: proof_match.scrutinee.clone(),
-                        ensuring: proof_match.ensuring.clone(),
-                        arms: proof_match
-                            .arms
-                            .iter()
-                            .map(|arm| {
-                                Ok(ProofInductionArm {
-                                    type_name: arm.type_name.clone(),
-                                    variant: arm.variant.clone(),
-                                    bindings: arm.bindings.clone(),
-                                    tactics: transform(
-                                        &arm.tactics,
-                                        hypothesis,
-                                        structural,
-                                        active,
-                                    )?,
-                                })
-                            })
-                            .collect::<Result<_, ClickError>>()?,
-                    })))
-                }
-                ProofTactic::ApplyInduction { .. } => Err(ClickError::new(
-                    "internal induction-application syntax is not accepted directly",
-                )),
-                tactic => Ok(tactic.clone()),
-            })
-            .collect()
+    if !structural
+        && (found.len() != 1
+            || !tactics
+                .iter()
+                .any(|tactic| matches!(tactic, ProofTactic::Induct { .. })))
+    {
+        return Err(ClickError::new(
+            "a pure theorem proof may contain only one top-level `induct` tactic",
+        ));
     }
-
-    // Each branch keeps its own lexical declaration. In particular, expansion
-    // may copy a common declaration into the branches of an earlier `if`.
-    let prepared = if structural {
-        transform(tactics, hypothesis, true, false)?
-    } else {
-        let Some(induction_index) = tactics
-            .iter()
-            .position(|t| matches!(t, ProofTactic::Induct { .. }))
-        else {
-            return Err(ClickError::new(
-                "a pure theorem proof may contain only one top-level `induct` tactic",
-            ));
-        };
-        let mut prepared = transform(&tactics[..induction_index], hypothesis, false, false)?;
-        prepared.push(tactics[induction_index].clone());
-        prepared.extend(transform(
-            &tactics[induction_index + 1..],
-            hypothesis,
-            false,
-            true,
-        )?);
-        prepared
-    };
     let structural_root = if structural {
         let (index, p) = theorem
             .parameters()
@@ -819,22 +679,14 @@ fn prepare_pure_induction_tactics(
     } else {
         None
     };
-    Ok((
-        prepared,
-        Some(PureInductionSetup {
-            parameter: parameter.clone(),
-            hypothesis: hypothesis.clone(),
-            surface_requires,
-            surface_goal: goal.clone(),
-            structural_root,
-            structural_parameters: theorem
-                .parameters()
-                .iter()
-                .find(|p| p.name() == parameter)
-                .filter(|p| matches!(p.click_type(), ClickType::Algebraic(_)))
-                .map(|_| theorem.parameters().to_vec()),
-        }),
-    ))
+    Ok(Some(PureInductionSetup {
+        parameter: parameter.clone(),
+        hypothesis: hypothesis.clone(),
+        surface_requires,
+        surface_goal: goal.clone(),
+        structural_root,
+        structural_parameters: structural.then(|| theorem.parameters().to_vec()),
+    }))
 }
 
 pub(super) fn click_type_from_algebraic_value_type(
@@ -866,21 +718,26 @@ pub(super) fn pure_theorem_context(
     let mut requires = Vec::with_capacity(surface_requires.len());
     let mut requirement_assumptions = PureFactContext::new();
     for proposition in &surface_requires {
-        let (lowered, _) = lower_pure_theorem_proposition_recording_introductions(
-            theorem.name(),
+        let state = ExecutionState::at_point(&point);
+        let (lowered, _, _) = lower_stated_proposition(
             proposition,
-            &requirement_assumptions,
+            &PureFactContext::new(),
             ContractEnvironment::new(&values, &array_refs),
-            &BTreeMap::new(),
-            &integer_values,
-            &point,
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
             spec_definitions,
+            FixedStateLoweringOptions {
+                integer_values: Some(&integer_values),
+                obligation_assumptions: Some(&requirement_assumptions),
+                ..Default::default()
+            },
         )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "theorem `{}` setup failed: could not lower requirement: {message}",
-                theorem.name()
-            ))
+        .map_err(|reason| {
+            let diagnostic = ClickError::new(format!(
+                "theorem `{}` setup failed: could not lower requirement: pure theorem `{}`: {reason}",
+                theorem.name(),
+                theorem.name(),
+            )).at_declaration(theorem.name());
+            theorem_statement_error(diagnostic, reason)
         })?;
         // Guard evidence is available to later requirements, while every
         // principal remains in the exported implication's premise list.
@@ -959,6 +816,34 @@ pub(super) fn pure_theorem_context(
     })
 }
 
+fn theorem_statement_error(
+    diagnostic: ClickError,
+    refusal: StatedPropositionRefusal,
+) -> ClickError {
+    use crate::kernel::ExecutionLimit;
+    match refusal {
+        StatedPropositionRefusal::Elaboration(_) | StatedPropositionRefusal::Evaluation(_) => {
+            diagnostic.with_proof_refusal(ProofRefusal::Contract)
+        }
+        StatedPropositionRefusal::Stopped(
+            ExecutionLimit::GuardedConjunctionTooLong
+            | ExecutionLimit::SymbolicPointerConditional
+            | ExecutionLimit::UnsupportedPureFunctionResult(_),
+            _,
+        ) => diagnostic.with_kind(ClickErrorKind::Unsupported),
+        StatedPropositionRefusal::Stopped(
+            ExecutionLimit::BoolArithmetic
+            | ExecutionLimit::BoolComparedWithInteger
+            | ExecutionLimit::BoolOrdered
+            | ExecutionLimit::MixedBoolArms,
+            _,
+        ) => diagnostic.with_proof_refusal(ProofRefusal::Contract),
+        StatedPropositionRefusal::Stopped(..) | StatedPropositionRefusal::Lowering(_) => {
+            diagnostic.with_kind(ClickErrorKind::Internal)
+        }
+    }
+}
+
 /// Lowers imported or otherwise unselected theorem statements into scoped
 /// certification assumptions. Proof bodies are intentionally ignored.
 pub(in crate::surface) fn assumed_theorem_certification_authorities(
@@ -989,21 +874,27 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                 continue;
             };
             let lowering_assumptions = assumptions_from_propositions(&context.requires);
-            let (conclusion, _) = lower_pure_theorem_proposition_recording_introductions(
-                theorem.name(),
+            let state = ExecutionState::at_point(&context.point);
+            let (conclusion, _, _) = lower_stated_proposition(
                 surface_goal,
-                &lowering_assumptions,
+                &PureFactContext::new(),
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                &BTreeMap::new(),
-                &context.integer_values,
-                &context.point,
+                FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                 spec_definitions,
+                FixedStateLoweringOptions {
+                    integer_values: Some(&context.integer_values),
+                    obligation_assumptions: Some(&lowering_assumptions),
+                    ..Default::default()
+                },
             )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower assumed theorem `{}` conclusion: {message}",
-                    theorem.name()
+            .map_err(|reason| {
+                let diagnostic = ClickError::new(format!(
+                    "could not lower assumed theorem `{}` conclusion: pure theorem `{}`: {reason}",
+                    theorem.name(),
+                    theorem.name(),
                 ))
+                .at_declaration(theorem.name());
+                theorem_statement_error(diagnostic, reason)
             })?;
             let Some(authority) = assume_universally_quantified_pure_implication(
                 context.requires.clone(),
@@ -1453,7 +1344,8 @@ fn verify_theorem_ensure(
     let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
         return Err(ClickError::new(
             crate::surface::validation::theorem_resource_conclusion_refusal(theorem.name()),
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Contract));
     };
     if let Some(verified) = verify_contract_refinement_theorem(
         theorem,
@@ -1471,7 +1363,7 @@ fn verify_theorem_ensure(
     let lowering_assumptions = assumptions_from_propositions(&context.requires);
     let state = ExecutionState::at_point(&context.point);
     let (goal, goal_introductions, _, obligations) =
-        lower_fixed_state_proposition_retaining_requirements(
+        lower_stated_proposition_retaining_requirements(
             surface_goal,
             &PureFactContext::new(),
             ContractEnvironment::new(&context.values, &context.array_refs),
@@ -1483,11 +1375,12 @@ fn verify_theorem_ensure(
                 ..Default::default()
             },
         )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` failed: could not lower conclusion: pure theorem `{}`: {message}",
+        .map_err(|reason| {
+            let diagnostic = ClickError::new(format!(
+                "`{claim_label}` failed: could not lower conclusion: pure theorem `{}`: {reason}",
                 theorem.name()
-            ))
+            ));
+            theorem_statement_error(diagnostic, reason)
         })?;
     // This probe checks only retained requirements, not a proof operation.
     // No unchecked successor or theorem authority is produced here.
@@ -1507,7 +1400,8 @@ fn verify_theorem_ensure(
             )
         });
 
-    entry_check.map_err(ClickError::new)?;
+    entry_check
+        .map_err(|message| ClickError::new(message).with_proof_refusal(ProofRefusal::Contract))?;
 
     if theorem.is_axiom() {
         // A Click library axiom is trusted: it states what the library's
@@ -1602,7 +1496,7 @@ fn verify_theorem_ensure(
                     "`{claim_label}` has an empty explicit proof script"
                 )));
             }
-            let (tactics, setup) = prepare_pure_induction_tactics(
+            let setup = prepare_pure_induction_setup(
                 theorem,
                 surface_goal,
                 tactics,
@@ -1616,7 +1510,7 @@ fn verify_theorem_ensure(
                 &goal,
                 &goal_introductions,
                 &entry_requirements,
-                &tactics,
+                tactics,
                 setup.as_ref(),
                 spec_definitions,
                 theorem_environment,

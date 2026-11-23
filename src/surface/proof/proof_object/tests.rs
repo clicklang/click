@@ -3350,12 +3350,12 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         },
         true,
     );
-    let goal = Proposition::Exists {
-        name: "chosen".to_string(),
-        var: variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(expected),
-    };
+    let goal = crate::kernel::quantifiers::test_exists(
+        "chosen".to_string(),
+        variable,
+        Sort::ProgramInt32,
+        expected,
+    );
     let witness = ProofWitness::single(ContractExpression::ProgramExpression(
         ProgramExpression::Value(int32(7)),
     ));
@@ -3556,11 +3556,11 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let source_variable = Variable(9_200_000);
-    let source_fact = Proposition::Exists {
-        name: "source_value".to_string(),
-        var: source_variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let source_fact = crate::kernel::quantifiers::test_exists(
+        "source_value".to_string(),
+        source_variable,
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3568,14 +3568,14 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
                 right: Box::new(MachineTerm::constant(7)),
             },
             true,
-        )),
-    };
+        ),
+    );
     let goal_variable = Variable(9_200_001);
-    let goal = Proposition::Exists {
-        name: "witness".to_string(),
-        var: goal_variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let goal = crate::kernel::quantifiers::test_exists(
+        "witness".to_string(),
+        goal_variable,
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3583,8 +3583,8 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
                 right: Box::new(MachineTerm::constant(7)),
             },
             true,
-        )),
-    };
+        ),
+    );
 
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = vec![source_fact.clone()];
@@ -4352,12 +4352,12 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             .flat_map(|index| {
                 [
                     indexed_fact(index),
-                    Proposition::ForAll {
-                        name: Default::default(),
-                        var: Variable(9_000_000 + u64::from(index)),
-                        sort: Sort::ProgramInt32,
-                        body: Box::new(indexed_fact(100_000 + index)),
-                    },
+                    crate::kernel::quantifiers::test_forall(
+                        Default::default(),
+                        Variable(9_000_000 + u64::from(index)),
+                        Sort::ProgramInt32,
+                        indexed_fact(100_000 + index),
+                    ),
                 ]
             })
             .collect::<Vec<_>>();

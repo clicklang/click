@@ -239,10 +239,64 @@ pub struct Field {
     pub offset: u32,
     pub value_type: Type,
 }
+/// Function-local identity in the normalized Rust importer.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum MirLocalId {
+    Source(String),
+    Compiler(u32),
+    SliceComponent { slot: u32, component: u8 },
+}
+
+impl MirLocalId {
+    pub fn source_name(&self) -> Option<&str> {
+        match self {
+            Self::Source(name) => Some(name),
+            Self::Compiler(_) | Self::SliceComponent { .. } => None,
+        }
+    }
+}
+
+impl From<String> for MirLocalId {
+    fn from(name: String) -> Self {
+        Self::Source(name)
+    }
+}
+
+impl From<&str> for MirLocalId {
+    fn from(name: &str) -> Self {
+        Self::Source(name.to_owned())
+    }
+}
+
+impl PartialEq<str> for MirLocalId {
+    fn eq(&self, name: &str) -> bool {
+        self.source_name() == Some(name)
+    }
+}
+
+impl PartialEq<&str> for MirLocalId {
+    fn eq(&self, name: &&str) -> bool {
+        self.source_name() == Some(*name)
+    }
+}
+
+impl std::fmt::Display for MirLocalId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Source(name) => f.write_str(name),
+            Self::Compiler(slot) => write!(f, "MIR local {slot}"),
+            Self::SliceComponent { slot, component } => {
+                write!(f, "MIR local {slot}, component {component}")
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Place {
-    pub name: String,
+    pub name: MirLocalId,
     pub value_type: Type,
     pub span: Span,
 }
@@ -297,30 +351,30 @@ pub enum Expression {
         value_type: Type,
     },
     SharedArrayHasNext {
-        iterator: String,
+        iterator: MirLocalId,
     },
     /// The index of the element an enumerated iterator's `Some` holds.
     EnumerateOptionIndex {
-        option: String,
+        option: MirLocalId,
     },
     /// Whether range `iterator` has a next value, `start < end`.
     RangeHasNext {
-        iterator: String,
+        iterator: MirLocalId,
     },
     SharedArrayOptionElement {
-        option: String,
+        option: MirLocalId,
     },
     SharedArrayOptionTag {
-        option: String,
+        option: MirLocalId,
     },
     ChunkHasNext {
-        iterator: String,
+        iterator: MirLocalId,
     },
     ChunkOptionSlice {
-        option: String,
+        option: MirLocalId,
     },
     ChunkOptionTag {
-        option: String,
+        option: MirLocalId,
     },
     /// Whether the enum `value` is its variant `variant`: the test a
     /// `match` on a crate iterator's `next()` makes for `Some`.
@@ -329,14 +383,14 @@ pub enum Expression {
         variant: String,
     },
     ChunkRemainder {
-        iterator: String,
+        iterator: MirLocalId,
     },
     /// The result of the call step `call`, a call to `function` that ran
     /// just before the statement reading it: a value of the source
     /// expression that holds the call, never a local of the program.
     CallResult {
         call: u32,
-        function: String,
+        function: MirCallee,
         /// Whether this read leaves the result for a later read: a `match`'s
         /// test of it, before the arm that reads its payload.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -382,7 +436,7 @@ pub enum Expression {
     /// The `None` of an `Option<Box<R>>`: the null address.
     NoneBox,
     Local {
-        name: String,
+        name: MirLocalId,
     },
     Binary {
         operator: String,
@@ -458,7 +512,7 @@ pub enum Statement {
     },
     // Compiler-resolved slice iterator protocol, not an index-loop rewrite.
     SliceFor {
-        iterator: String,
+        iterator: MirLocalId,
         slice: Expression,
         binding: Place,
         by_reference: bool,
@@ -497,31 +551,76 @@ pub enum Statement {
 pub struct MirBody {
     pub locals: Vec<Place>,
     pub blocks: Vec<MirBlock>,
-    /// The local MIR returns, `_0`, named `result` as contracts name the
-    /// returned value, unless a source local has that name. A function
-    /// whose return the importer reads directly (`ReturnValue`) has none.
-    #[serde(default = "return_place_name")]
-    pub return_place: String,
+    /// MIR's return destination. A body that returns an expression directly
+    /// has no declaration for this ID.
+    #[serde(default = "return_place_id")]
+    pub return_place: MirLocalId,
     /// The locals whose source name is bound more than once in the
     /// function, by their key in `locals`, with that source name. Each is
     /// its own declaration spelled as the source spells it; a proof's
     /// `word` names the innermost live one, as in C.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub spellings: BTreeMap<String, String>,
+    #[serde(
+        default,
+        with = "local_map",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub spellings: BTreeMap<MirLocalId, String>,
     /// Local keys for which the compiler supplied no source spelling.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub unnamed_locals: BTreeSet<String>,
+    pub unnamed_locals: BTreeSet<MirLocalId>,
     /// Materialized aggregate literals, keyed by MIR local, with their source occurrence ordinal.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub compound_literals: BTreeMap<String, u32>,
+    #[serde(
+        default,
+        with = "local_map",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub compound_literals: BTreeMap<MirLocalId, u32>,
     /// Unnamed scalar storage associated with a written borrow occurrence.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub borrowed_scalars: BTreeMap<String, u32>,
+    #[serde(
+        default,
+        with = "local_map",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub borrowed_scalars: BTreeMap<MirLocalId, u32>,
 }
 
-/// The name of a function's return place.
-pub fn return_place_name() -> String {
-    "result".into()
+// JSON object keys erase the distinction between an integer ID and a
+// written spelling. Serialize each key as a value alongside its metadata.
+mod local_map {
+    use super::*;
+
+    pub(super) fn serialize<S, V>(
+        map: &BTreeMap<MirLocalId, V>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+        V: Serialize,
+    {
+        serializer.collect_seq(map.iter())
+    }
+
+    pub(super) fn deserialize<'de, D, V>(
+        deserializer: D,
+    ) -> Result<BTreeMap<MirLocalId, V>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+        V: Deserialize<'de>,
+    {
+        let entries = Vec::<(MirLocalId, V)>::deserialize(deserializer)?;
+        let mut map = BTreeMap::new();
+        for (key, value) in entries {
+            if map.insert(key, value).is_some() {
+                return Err(serde::de::Error::custom("duplicate MIR local identity"));
+            }
+        }
+        Ok(map)
+    }
+}
+
+/// The compiler reserves slot zero for the function's return destination.
+pub fn return_place_id() -> MirLocalId {
+    MirLocalId::Compiler(0)
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -551,26 +650,26 @@ pub enum MirStatement {
     SliceSplit {
         slice: Expression,
         midpoint: Expression,
-        left: String,
-        right: String,
+        left: MirLocalId,
+        right: MirLocalId,
     },
     SharedArrayInitialize {
-        target: String,
+        target: MirLocalId,
         source: Expression,
     },
     SharedArrayMove {
-        target: String,
-        source: String,
+        target: MirLocalId,
+        source: MirLocalId,
     },
     SharedArrayNext {
-        iterator: String,
+        iterator: MirLocalId,
         /// The local the `Option` `next` returns is built in; `None` once
         /// the `for` loop reads only its element, which `payload` binds.
-        option: Option<String>,
+        option: Option<MirLocalId>,
         /// The local bound by the yielding arm. A reference receives the
         /// yielded address, and an integer pattern receives its value.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<String>,
+        payload: Option<MirLocalId>,
         /// Whether the iterator yields, when its `for` header's test already
         /// decided it: the statement is then that arm alone.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -578,24 +677,24 @@ pub enum MirStatement {
     },
     /// `target = source.enumerate()` of a slice iterator.
     EnumerateInitialize {
-        target: String,
-        source: String,
+        target: MirLocalId,
+        source: MirLocalId,
     },
     EnumerateMove {
-        target: String,
-        source: String,
+        target: MirLocalId,
+        source: MirLocalId,
     },
     EnumerateNext {
-        iterator: String,
+        iterator: MirLocalId,
         /// The local the `Option` is built in; `None` once the loop reads only
         /// its index and element, which `index` and `element` bind.
-        option: Option<String>,
+        option: Option<MirLocalId>,
         /// The local the yielded index is bound to.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        index: Option<String>,
+        index: Option<MirLocalId>,
         /// The local bound to the yielded element, by reference or by value.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        element: Option<String>,
+        element: Option<MirLocalId>,
         /// Whether the iterator yields, when its `for` header's test already
         /// decided it: the statement is then that arm alone.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -603,28 +702,28 @@ pub enum MirStatement {
     },
     /// `target = start..end`.
     RangeInitialize {
-        target: String,
+        target: MirLocalId,
         start: Expression,
         end: Expression,
     },
     RangeMove {
-        target: String,
-        source: String,
+        target: MirLocalId,
+        source: MirLocalId,
     },
     /// `option = iterator.next()`: `Some(start)`, advancing `start`, while
     /// `start < end`, else `None`. `option` is a value of the `Option`
     /// enum `option_type`.
     RangeNext {
-        iterator: String,
+        iterator: MirLocalId,
         /// The local the `Option` `next` returns is built in; `None` once
         /// the `for` loop reads only its payload, which `payload` binds.
-        option: Option<String>,
+        option: Option<MirLocalId>,
         option_type: String,
         /// The local the yielded value is bound to, the `for` loop's own
         /// variable, when the `Some` arm's first statement binds it: the
         /// yielding arm assigns it directly and builds no `Option`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<String>,
+        payload: Option<MirLocalId>,
         /// Whether the range yields, when its `for` header's test already
         /// decided it: the statement is then that arm alone. An inclusive
         /// range's arm that yields is `if start < end { start += 1 } else
@@ -633,22 +732,22 @@ pub enum MirStatement {
         taken: Option<bool>,
     },
     ChunkInitialize {
-        target: String,
+        target: MirLocalId,
         slice: Expression,
         size: Expression,
     },
     ChunkMove {
-        target: String,
-        source: String,
+        target: MirLocalId,
+        source: MirLocalId,
     },
     ChunkNext {
-        iterator: String,
+        iterator: MirLocalId,
         /// The local the `Option` is built in; `None` once the loop reads only
         /// its chunk, which `payload` binds.
-        option: Option<String>,
+        option: Option<MirLocalId>,
         /// The slice local the yielded chunk is bound to.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<String>,
+        payload: Option<MirLocalId>,
         /// Whether the iterator yields, when its `for` header's test already
         /// decided it: the statement is then that arm alone.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -659,27 +758,56 @@ pub enum MirStatement {
         value: Expression,
     },
     Initialize {
-        target: String,
+        target: MirLocalId,
         record: String,
         fields: Vec<Expression>,
     },
     Move {
-        target: String,
-        source: String,
+        target: MirLocalId,
+        source: MirLocalId,
         record: String,
     },
     Copy {
-        target: String,
-        source: String,
+        target: MirLocalId,
+        source: MirLocalId,
         record: String,
     },
     BeginStorage {
-        local: String,
+        local: MirLocalId,
     },
     EndStorage {
-        local: String,
+        local: MirLocalId,
     },
 }
+/// A direct symbol or a call through a function-local pointer.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum MirCallee {
+    Direct(String),
+    Pointer { local: MirLocalId },
+}
+
+impl From<String> for MirCallee {
+    fn from(name: String) -> Self {
+        Self::Direct(name)
+    }
+}
+
+impl From<&str> for MirCallee {
+    fn from(name: &str) -> Self {
+        Self::Direct(name.to_owned())
+    }
+}
+
+impl MirCallee {
+    pub fn source_name(&self) -> Option<&str> {
+        match self {
+            Self::Direct(name) => Some(name),
+            Self::Pointer { local } => local.source_name(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MirTerminator {
@@ -692,22 +820,19 @@ pub enum MirTerminator {
         else_target: usize,
     },
     Drop {
-        local: String,
+        local: MirLocalId,
         record: String,
         target: usize,
     },
     Call {
-        function: String,
+        function: MirCallee,
         arguments: Vec<Expression>,
         #[serde(default)]
         owned_arguments: Vec<OwnedArgument>,
         /// A local written by the call, absent for a discarded or retained result.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        destination: Option<String>,
+        destination: Option<MirLocalId>,
         target: usize,
-        /// A call through the function pointer the local `function` holds.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        through_pointer: bool,
         /// The call step whose result an expression reads as `Expression::CallResult`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         result: Option<u32>,
@@ -737,7 +862,7 @@ pub enum MirTerminator {
     /// The drop of the box `local`: run the record's drop `glue`, if it has
     /// one, on a non-null box, then free its allocation.
     BoxFree {
-        local: String,
+        local: MirLocalId,
         record: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         glue: Option<String>,
@@ -770,7 +895,7 @@ pub struct OwnedArgument {
     pub index: usize,
     /// Absent when the operand is a retained call result rather than a place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local: Option<String>,
+    pub local: Option<MirLocalId>,
     pub record: String,
     pub moved: bool,
 }

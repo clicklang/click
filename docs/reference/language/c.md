@@ -2053,40 +2053,46 @@ The contract has `...args` exactly when C declares the function with
 variable argument of another type, such as a pointer or a `double`, is
 refused at the call's line
 (`mdtests/a_variable_argument_of_an_unmodeled_type_is_refused.md`).
-`snprintf`, `printf` and `fprintf` do not use this yet: their calls have
-the per-format contracts of [formatted output](#formatted-output).
+`printf` and `fprintf` have Click contracts over their variable arguments
+([formatted output](#formatted-output)); `snprintf` does not use this yet:
+its calls have per-format contracts.
 
 ## Formatted output
 
-On the hosted target, `printf("literal")` uses `stdout` and
-`fprintf(file, format, ...)` uses its `FILE *` argument. Both use the
-projected `<stdio.h>` and require ownership of `stream(file)` for the target
-handle. The model supports formats of ordinary characters and `%%`. Each
+On the hosted target, `printf(format, ...)` writes to `stdout` and
+`fprintf(file, format, ...)` to its `FILE *` argument. Both use the
+projected `<stdio.h>` and require ownership of the target handle's
+`stream`. The model supports formats of ordinary characters and `%%`. Each
 attempt adds the requested characters and the return value to the front of
 `write_history`. The return is the character count on success or negative
 on error. A failure can produce partial output, and success can leave data
 buffered. The [stdio specification library](../library/index.md#clickcstdio)
 defines `write_requests` for projecting the history onto just the requests.
 
-`fprintf` has one Click contract, `library/c/fprintf.interface.click`, which
-the C front end's name table selects for the projected declaration. It reads
+`fprintf` has one Click contract, `library/c/fprintf.interface.click`, and
+`printf` has the same contract with the stream `stdout`,
+`library/c/printf.interface.click`; the C front end's name table selects each
+for its projected declaration. It reads
 the format as a C string the caller views: it requires
 `click::c::stdio::literal_format` of the format's `n` bytes, and states the
 characters written as `click::c::stdio::format_output` and their count as
-`click::c::stdio::format_length`. The format need not be a literal, and
-arguments it does not convert are ignored (C11 7.21.6.1p2). For a literal
+`click::c::stdio::format_length`. Arguments the format does not convert are
+ignored (C11 7.21.6.1p2). The contract reads any format the caller views,
+but a format other than a string literal also needs the stream's write shown
+separate from the caller's view of it, which the abstract `stream` resource
+cannot yet state; a string literal's storage is separate by construction, so
+in practice the format is a literal. For a literal
 format, `solve` evaluates the three functions one level at a time, so a
 caller's proof states the output it expects with no written steps
 (`mdtests/printf_and_fprintf_share_the_streams_write_history.md`,
 `mdtests/fprintf_ignores_arguments_its_format_does_not_convert.md`). A
 format with a conversion is refused at the precondition
-(`mdtests/fprintf_refuses_a_format_that_converts.md`). `printf` still has a
-contract the front end writes for each literal format, with up to 64
-requested bytes, truncated at the first NUL; it moves to a Click contract
-once an `extern` contract can name `stdout`.
+(`mdtests/fprintf_refuses_a_format_that_converts.md`,
+`mdtests/printf_refuses_a_format_that_converts.md`). A string literal's bytes
+are known after any call, since no C function may modify them, so a hosted
+`main` that prints a literal states its output with no written steps.
 
-`click verify` reports these imported assumptions as `printf: "<format>"`
-and, for `fprintf`, as a C library interface. Hosted `main` may use the original K&R
+`click verify` reports both as C library interfaces. Hosted `main` may use the original K&R
 `main() { ... }` spelling, and reaching the end of a hosted parameterless
 `int main` returns zero. The original example is in
 `examples/hello-world/`.
@@ -2543,6 +2549,17 @@ Click does not execute a synthesized body or treat the declaration as proof
 that an implementation was verified. A caller still has to establish every
 declared precondition. Existing inline `extern` blocks in sidecars still
 describe the same assumption during the migration.
+
+An `extern` contract may name the program's externally linked file-scope
+objects, as a verified function's contract does; a file-scope `static`
+belongs to its own translation unit and is not visible to it. A clause reads
+such an object at the call, as it reads a parameter, so a caller proves a
+requirement on it there
+(`mdtests/an_extern_contract_reads_a_c_global.md`,
+`mdtests/an_extern_contract_requirement_on_a_global_is_checked_at_the_call.md`).
+A contract that owns the object may state the value the call leaves in it
+(`mdtests/an_extern_contract_writes_a_c_global_it_owns.md`). On the hosted
+target this includes `stdout`, which `printf`'s contract names.
 
 An external allocator can describe storage returned through a supported data
 pointer or pointer-array type. For example,

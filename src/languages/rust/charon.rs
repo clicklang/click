@@ -37,7 +37,10 @@ mod user_iterators;
 mod vec_methods;
 
 use super::profile;
-use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
+use super::schema::{
+    self as out, Expression as E, MirCallee, MirLocalId, MirStatement as S, MirTerminator as T,
+    Type,
+};
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 use charon_lib::ast::from_rustc::LangItem;
 use charon_lib::ast::{AstVisitable, TyVisitable};
@@ -307,7 +310,7 @@ impl Adapter<'_> {
                     return Err(unsupported("extern function parameter other than a scalar"));
                 }
                 Ok(out::Place {
-                    name: format!("__rust_arg_{index}"),
+                    name: format!("__rust_arg_{index}").into(),
                     value_type,
                     span: span(f.item_meta.span),
                 })
@@ -1394,11 +1397,11 @@ struct BodyAdapter<'a, 'b> {
     adapter: &'a Adapter<'b>,
     body: &'a u::ExprBody,
     plumbing: closures::ClosurePlumbing,
-    names: BTreeMap<a::LocalId, String>,
+    names: BTreeMap<a::LocalId, MirLocalId>,
     /// The locals whose source name is bound more than once: each one's
     /// storage starts where rustc's does, so its declaration does too.
     spelled: BTreeSet<a::LocalId>,
-    slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
+    slice_pairs: BTreeMap<a::LocalId, [MirLocalId; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
     /// The locals that hold a crate enum's discriminant, `_2 = @discriminant(s)`,
@@ -1625,7 +1628,7 @@ impl BodyAdapter<'_, '_> {
             },
         }))
     }
-    fn local(&self, id: a::LocalId) -> Result<String, String> {
+    fn local(&self, id: a::LocalId) -> Result<MirLocalId, String> {
         self.names
             .get(&id)
             .cloned()
@@ -1832,12 +1835,13 @@ impl BodyAdapter<'_, '_> {
             })
             .collect::<Result<_, String>>()?;
         Ok(T::Call {
-            function: self.local(local)?,
+            function: MirCallee::Pointer {
+                local: self.local(local)?,
+            },
             arguments,
             owned_arguments: Vec::new(),
             destination: Some(self.local(dest)?),
             target: target.index(),
-            through_pointer: true,
             result: None,
         })
     }
@@ -2674,7 +2678,7 @@ impl BodyAdapter<'_, '_> {
                         .box_library_function(super::standard_library::BOX_NEW, &name);
                     let source_local = self.local(*source_local)?;
                     return Ok(T::Call {
-                        function,
+                        function: function.into(),
                         arguments: vec![E::Local {
                             name: source_local.clone(),
                         }],
@@ -2686,7 +2690,6 @@ impl BodyAdapter<'_, '_> {
                         }],
                         destination: Some(self.local(*destination)?),
                         target: target.index(),
-                        through_pointer: false,
                         result: None,
                     });
                 }
@@ -2700,7 +2703,12 @@ impl BodyAdapter<'_, '_> {
                             Some(function) => Some(function),
                             None => match self.adapter.slice_method_call(callee, ptr, call)? {
                                 Some(function) => Some(function),
-                                None => self.adapter.vec_method_call(callee, ptr, call)?,
+                                None => {
+                                    match self.adapter.option_take_method_call(callee, ptr, call)? {
+                                        Some(function) => Some(function),
+                                        None => self.adapter.vec_method_call(callee, ptr, call)?,
+                                    }
+                                }
                             },
                         },
                     },
@@ -2714,7 +2722,7 @@ impl BodyAdapter<'_, '_> {
                         .parameters
                         .len();
                     return Ok(T::Call {
-                        function,
+                        function: function.into(),
                         arguments: call
                             .args
                             .iter()
@@ -2724,7 +2732,6 @@ impl BodyAdapter<'_, '_> {
                         owned_arguments: Vec::new(),
                         destination: Some(self.local(destination)?),
                         target: target.index(),
-                        through_pointer: false,
                         result: None,
                     });
                 }
@@ -2894,12 +2901,11 @@ impl BodyAdapter<'_, '_> {
                             .clone(),
                     };
                     T::Call {
-                        function,
+                        function: function.into(),
                         arguments,
                         owned_arguments,
                         destination: Some(self.local(dest)?),
                         target: target.index(),
-                        through_pointer: false,
                         result: None,
                     }
                 }
@@ -3634,8 +3640,7 @@ pub(super) fn decode_crate(
         let mut locals = Vec::new();
         let mut local_names = BTreeSet::new();
         let mut occurrences = BTreeMap::<&str, usize>::new();
-        let mut reserved = BTreeSet::new();
-        let mut return_place = String::from("result");
+        let return_place = out::return_place_id();
         // The locals the source does not name, apart from the return slot.
         let mut temporaries = BTreeSet::new();
         let mut spellings = BTreeMap::new();
@@ -3643,7 +3648,6 @@ pub(super) fn decode_crate(
         for local in &body.locals.locals {
             if let Some(name) = &local.name {
                 *occurrences.entry(name).or_default() += 1;
-                reserved.insert(name.clone());
             }
         }
         for local in &body.locals.locals {
@@ -3659,31 +3663,24 @@ pub(super) fn decode_crate(
                     .name
                     .clone()
                     .ok_or_else(|| unsupported("unnamed parameter"))?
+                    .into()
             } else if let Some(name) = &local.name
                 && occurrences[name.as_str()] == 1
                 && local.index.index() != 0
             {
-                name.clone()
+                name.clone().into()
             } else if local.index.index() == 0 {
-                // The return place holds the value the function returns,
-                // which contracts call `result`; a source local of that name
-                // keeps it, and the return place takes the next free spelling.
-                let mut name = String::from("result");
-                while !reserved.insert(name.clone()) {
-                    name.push('_');
-                }
-                return_place = name.clone();
-                name
+                return_place.clone()
             } else {
                 // A source name bound more than once, as `word` in two
                 // `Some(word)` arms or `iter` in nested `for` loops, is one
                 // declaration per binding, each spelled as the source spells
                 // it (`spellings`), as C's are. Unnamed locals use their
                 // compiler IDs in a namespace disjoint from source names.
-                let mut generated = format!("__rust_mir_{}", local.index.index());
-                while !reserved.insert(generated.clone()) {
-                    generated.push('_');
-                }
+                let generated = MirLocalId::Compiler(
+                    u32::try_from(local.index.index())
+                        .map_err(|_| unsupported("local index exceeds u32"))?,
+                );
                 match &local.name {
                     Some(name) => {
                         spellings.insert(generated.clone(), name.clone());
@@ -3704,13 +3701,12 @@ pub(super) fn decode_crate(
                     return Err(unsupported("shared slice pair function boundary"));
                 }
                 let mut components = Vec::new();
-                for index in 0..2 {
-                    let mut component = format!("{n}_slice_{index}");
-                    while reserved.contains(&component) || local_names.contains(&component) {
-                        component.push('_');
-                    }
-                    reserved.insert(component.clone());
-                    local_names.insert(component.clone());
+                for component in 0..2 {
+                    let component = MirLocalId::SliceComponent {
+                        slot: u32::try_from(local.index.index())
+                            .map_err(|_| unsupported("local index exceeds u32"))?,
+                        component,
+                    };
                     if local.name.is_none() {
                         anonymous_slice_components.insert(component.clone());
                     }
@@ -3998,13 +3994,13 @@ pub(super) fn decode_crate(
             &temporaries,
             &parameter_types,
         );
-        let kept: BTreeSet<_> = locals.iter().map(|local| local.name.as_str()).collect();
-        spellings.retain(|key, _| kept.contains(key.as_str()));
-        temporaries.retain(|key| kept.contains(key.as_str()));
+        let kept: BTreeSet<_> = locals.iter().map(|local| &local.name).collect();
+        spellings.retain(|key, _| kept.contains(key));
+        temporaries.retain(|key| kept.contains(key));
         let compound_literals = literal_initializers
             .into_iter()
             .filter(|(ordinal, local)| {
-                kept.contains(local.as_str()) && !ambiguous_literals.contains(ordinal)
+                kept.contains(&local) && !ambiguous_literals.contains(ordinal)
             })
             .map(|(ordinal, local)| (local, ordinal))
             .collect();
@@ -4012,8 +4008,7 @@ pub(super) fn decode_crate(
             .into_iter()
             .filter_map(|(local, ordinal)| {
                 let name = b.names.get(&local)?;
-                kept.contains(name.as_str())
-                    .then(|| (name.clone(), ordinal))
+                kept.contains(name).then(|| (name.clone(), ordinal))
             })
             .collect();
         functions.push(out::Function {
@@ -4625,7 +4620,7 @@ mod tests {
             let caller = export.functions.iter().find(|f| f.name == caller).unwrap();
             assert!(
                 caller.mir.as_ref().unwrap().blocks.iter().any(
-                    |b| matches!(&b.terminator, T::Call { function, .. } if function == method)
+                    |b| matches!(&b.terminator, T::Call { function, .. } if function.source_name() == Some(method))
                 )
             );
         }
@@ -5098,15 +5093,14 @@ mod tests {
     }
 
     #[test]
-    fn charon_generated_local_names_do_not_collide_with_source_names() {
+    fn charon_compiler_locals_have_typed_identities_disjoint_from_source_names() {
         let mut artifact: ExtractionArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
         let body = artifact.data.translated.fun_decls.iter_mut().find_map(|function| {
             if !matches!(function.item_meta.name.name.last(), Some(a::PathElem::Ident(name, _)) if name == "nested") { return None; }
             let a::Body::Unstructured(body) = &mut function.body else { return None; };
             Some(body)
         }).unwrap();
-        // A source local named `result` keeps that name; the return place
-        // takes the next free spelling.
+        // A source local named `result` is independent of the return ID.
         body.locals.locals[a::LocalId::from_usize(1)].name = Some("result".into());
         body.locals.locals[a::LocalId::from_usize(7)].name = Some("__rust_mir_8".into());
         let export = decode(
@@ -5130,9 +5124,12 @@ mod tests {
             names.iter().copied().collect::<BTreeSet<_>>().len(),
             names.len()
         );
-        assert!(names.iter().any(|n| n.as_str() == "result"));
-        assert_eq!(function.mir.as_ref().unwrap().return_place, "result_");
-        assert!(names.iter().any(|n| n.as_str() == "__rust_mir_8_"));
+        assert!(names.iter().any(|n| n.source_name() == Some("result")));
+        assert_eq!(
+            function.mir.as_ref().unwrap().return_place,
+            out::return_place_id()
+        );
+        assert!(names.iter().any(|n| **n == MirLocalId::Compiler(8)));
     }
 
     #[test]

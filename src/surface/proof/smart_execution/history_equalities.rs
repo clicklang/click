@@ -135,9 +135,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     {
                         Some(separated)
                     } else if returned || derive_separation {
-                        attempt::candidate_outcome(Self::try_single_memory_write_separation(
+                        attempt::candidate_outcome(Self::try_memory_footprint_separation(
                             &proof,
-                            written,
+                            &footprint,
                             &kept,
                             &separation,
                         ))?
@@ -360,62 +360,67 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Ok(None)
     }
 
-    /// Restrict a separated range to the selected read before checking a
-    /// footprint with one memory member.
-    pub(in crate::surface::proof) fn try_single_memory_write_separation(
+    /// Prove separation for each recorded write before checking separation
+    /// from the complete footprint.
+    pub(in crate::surface::proof) fn try_memory_footprint_separation(
         search_input: &Proof<'a>,
-        written: &Resource,
+        footprint: &crate::kernel::RegionFootprint,
         kept: &ResourceSubject,
         footprint_separation: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_single_memory_write_separation");
-        if !matches!(written, Resource::Memory(_)) {
-            return Ok(None);
-        }
+        crate::kernel::search::record_discovery("try_memory_footprint_separation");
         let Some(view) = search_input.premise_fixed_state_view() else {
             return Ok(None);
         };
         let _recorded_points = super::super::surface_synthesis::SynthesisRecordedPointsScope::enter(
             view.fixed_state.recorded_states,
         );
-        let Some(written) = super::super::surface_synthesis::synthesize_surface_resource_subject(
-            written,
-            view.parameter_binding,
-            view.fixed_state.state,
-            &std::collections::BTreeMap::new(),
-        ) else {
-            return Ok(None);
-        };
-        let separation = ClickProposition::Separate {
-            left: written,
-            right: kept.clone(),
-        };
         let known = ProofCertificate::from_steps(vec![ProofStep::Known])
             .expect("ordinary footprint separation");
-        let proof = match attempt::candidate_outcome(
-            search_input.driver().apply_have_step(&separation, &known),
-        )? {
-            Some(proof) => proof,
-            None => {
-                let Some(goal) = attempt::candidate_outcome(
-                    search_input.driver().open_have(separation.clone()),
-                )?
-                else {
-                    return Ok(None);
-                };
-                let Some(separated) = goal
-                    .driver()
-                    .try_indexed_separation_restriction(&separation)?
-                else {
-                    return Ok(None);
-                };
-                if !separated.is_complete() {
-                    return Ok(None);
-                }
-                separated.join()?
+        let mut proof = search_input.clone();
+        for member in &footprint.members {
+            check_verification_deadline()?;
+            crate::instrumentation::record_deterministic_work(1);
+            if !matches!(member, Resource::Memory(_)) {
+                return Ok(None);
             }
-        };
+            let Some(written) =
+                super::super::surface_synthesis::synthesize_surface_resource_subject(
+                    member,
+                    view.parameter_binding,
+                    view.fixed_state.state,
+                    &std::collections::BTreeMap::new(),
+                )
+            else {
+                return Ok(None);
+            };
+            let separation = ClickProposition::Separate {
+                left: written,
+                right: kept.clone(),
+            };
+            if let Some(checked) =
+                attempt::candidate_outcome(proof.driver().apply_have_step(&separation, &known))?
+            {
+                proof = checked;
+                continue;
+            }
+            let Some(goal) =
+                attempt::candidate_outcome(proof.driver().open_have(separation.clone()))?
+            else {
+                return Ok(None);
+            };
+            let Some(separated) = goal
+                .driver()
+                .try_indexed_separation_restriction(&separation)?
+            else {
+                return Ok(None);
+            };
+            if !separated.is_complete() {
+                return Ok(None);
+            }
+            proof = separated.join()?;
+        }
         attempt::candidate_outcome(proof.driver().apply_have_step(footprint_separation, &known))
     }
 
@@ -467,9 +472,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !footprint.complete || footprint.members.len() != 1 {
             return Ok(None);
         }
-        let Some(written @ Resource::Memory(_)) = footprint.members.front() else {
-            return Ok(None);
-        };
         let observation = Resource::Memory(crate::kernel::MemoryRange::new_with_element_width(
             address.clone(),
             0u32.into(),
@@ -489,7 +491,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             right: kept.clone(),
         };
         let Some(proof) =
-            Self::try_single_memory_write_separation(search_input, written, &kept, &separation)?
+            Self::try_memory_footprint_separation(search_input, &footprint, &kept, &separation)?
         else {
             return Ok(None);
         };

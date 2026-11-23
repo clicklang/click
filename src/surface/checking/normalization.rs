@@ -560,7 +560,7 @@ pub(in crate::surface) fn normalize_bitvector(term: &MachineTerm) -> MachineTerm
             term.clone()
         }
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
-            MachineTerm::MemoryLoad(memory.clone(), pointer.clone(), *kind)
+            MachineTerm::read_named(memory.clone(), pointer.clone(), *kind)
         }
         MachineTerm::IntegerAddress(_, _) => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
@@ -738,19 +738,20 @@ mod tests {
             8,
             &memory,
         );
-        let (target_loaded, _) = crate::kernel::load_variable_for_term(&MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&memory),
-            Box::new(target.clone()),
-            crate::kernel::LoadKind::Int32,
-        ))
-        .expect("the target read has a name");
-        let read_through = |variable| {
-            MachineTerm::MemoryLoad(
+        let (target_loaded, _) =
+            crate::kernel::load_variable_for_term(&crate::kernel::MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Address {
+                target.clone(),
+                crate::kernel::LoadKind::Int32,
+            ))
+            .expect("the target read has a name");
+        let read_through = |variable| {
+            crate::kernel::MachineTerm::read_named(
+                crate::kernel::ProgramPoint::at(&memory),
+                Address {
                     base: AddressBase::Symbolic(variable),
                     offset: AddressOffset::Constant(8),
-                }),
+                },
                 crate::kernel::LoadKind::Int32,
             )
         };
@@ -797,15 +798,15 @@ mod tests {
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(92)), 4),
         };
         let field_load = |base: &Address, displacement| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Address {
+                Address {
                     base: base.base.clone(),
                     offset: AddressOffset::add(
                         base.offset.clone(),
                         AddressOffset::Constant(displacement),
                     ),
-                }),
+                },
                 crate::kernel::LoadKind::Int32,
             )
         };
@@ -910,9 +911,9 @@ mod tests {
             offset,
         };
         let load = |offset| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(pointer(offset)),
+                pointer(offset),
                 crate::kernel::LoadKind::Int32,
             )
         };
@@ -1026,9 +1027,9 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         };
-        let load = MachineTerm::MemoryLoad(
+        let load = crate::kernel::MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
-            Box::new(pointer),
+            pointer,
             crate::kernel::LoadKind::Int32,
         );
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, load.clone())
@@ -1059,12 +1060,12 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("fold", 4));
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Address {
+                Address {
                     base: "fold".into(),
                     offset: AddressOffset::Constant(0),
-                }),
+                },
                 crate::kernel::LoadKind::Int32,
             ),
         ));
@@ -1177,14 +1178,14 @@ mod tests {
             ),
         );
         assert_ne!(first_memory, second_memory);
-        let first_load = MachineTerm::MemoryLoad(
+        let first_load = crate::kernel::MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&first_memory),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             crate::kernel::LoadKind::Int32,
         );
-        let second_load = MachineTerm::MemoryLoad(
+        let second_load = crate::kernel::MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&second_memory),
-            Box::new(pointer),
+            pointer,
             crate::kernel::LoadKind::Int32,
         );
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, second_load)

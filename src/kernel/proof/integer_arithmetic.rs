@@ -7,8 +7,8 @@ use super::integer_affine_atoms::{
 };
 
 use crate::kernel::{
-    ConditionTerm, IntegerComparisonOperator, IntegerTerm, KernelTerm, KernelTermNode, Proposition,
-    SharedIntegerTerm, StoredConditionTerm,
+    ConditionTerm, IntegerComparisonOperator, IntegerTerm, KernelIntegerOperator, KernelTerm,
+    KernelTermNode, Proposition, SharedIntegerTerm, StoredConditionTerm,
 };
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
@@ -187,9 +187,18 @@ fn integer_disequality(
     proposition: &Proposition,
 ) -> Option<(crate::kernel::SharedMachineIntegerTerm, BigInt)> {
     let (condition, _) = affine_condition(proposition)?;
-    if retained_fold_comparison(condition).is_some() {
-        // These operands are folds, literals, or variables. Neither side
-        // observes a machine value whose type endpoint could yield a bound.
+    if let Some((_, arguments)) = retained_integer_comparison(condition)
+        && arguments.iter().all(|operand| {
+            matches!(
+                operand.node(),
+                KernelTermNode::Fold(_)
+                    | KernelTermNode::Variable(_)
+                    | KernelTermNode::IntegerLiteral(_)
+                    | KernelTermNode::IntegerOperation { .. }
+            )
+        })
+    {
+        // A machine type endpoint requires a top-level machine observation.
         return None;
     }
     let readings =
@@ -237,24 +246,28 @@ pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<Integ
     let Some((condition, value)) = affine_condition(proposition) else {
         return Vec::new();
     };
-    let mut context = IntegerAffineCollectionContext::default();
-    if let Some((operator, arguments)) = retained_fold_comparison(condition) {
-        if !matches!(
+    if let Some((operator, _)) = retained_integer_comparison(condition)
+        && !matches!(
             (operator, value),
             (IntegerComparisonOperator::NotEqual, true) | (IntegerComparisonOperator::Equal, false)
-        ) {
-            return Vec::new();
-        }
-        if let Some(difference) =
-            affine_difference(arguments.each_ref(), |operand, weight, terms, constant| {
+        )
+    {
+        return Vec::new();
+    }
+    let mut context = IntegerAffineCollectionContext::default();
+    if let Some((_, arguments)) = retained_fold_comparison(condition)
+        && let Some(difference) =
+            affine_difference(arguments, |operand, weight, terms, constant| {
                 collect_retained_affine_operand(operand, weight, terms, constant, &mut context)
             })
-        {
-            return (!difference.terms.is_empty())
-                .then_some(difference)
-                .into_iter()
-                .collect();
-        }
+    {
+        return (!difference.terms.is_empty())
+            .then_some(difference)
+            .into_iter()
+            .collect();
+    }
+    if crate::instrumentation::deadline_exceeded_with_work(0) {
+        return Vec::new();
     }
     let readings = if condition.operand_view().is_integer_comparison() {
         vec![Proposition::condition_is(condition.clone(), value)]
@@ -330,6 +343,9 @@ pub(crate) fn integer_affine_machine_values(
     };
     if retained_fold_comparison(condition).is_some() {
         // A fold contributes only its opaque atom, even if its body observes machine values.
+        return Vec::new();
+    }
+    if crate::instrumentation::deadline_exceeded_with_work(0) {
         return Vec::new();
     }
     // A native comparison observes the machine values its Integer reading
@@ -507,13 +523,16 @@ fn integer_affine_claim_with_context(
         && let Some(claim) = integer_affine_comparison_claim(
             *operator,
             value,
-            arguments.each_ref(),
+            arguments,
             |operand, weight, terms, constant| {
                 collect_retained_affine_operand(operand, weight, terms, constant, context)
             },
         )
     {
         return claim;
+    }
+    if crate::instrumentation::deadline_exceeded_with_work(0) {
+        return None;
     }
     // A native comparison of machine values holds exactly when the Integer
     // comparison of their exact observations does, so it is that Integer
@@ -561,7 +580,7 @@ fn integer_affine_claim_with_context(
     )?
 }
 
-fn retained_fold_comparison(
+fn retained_integer_comparison(
     condition: &StoredConditionTerm,
 ) -> Option<(&IntegerComparisonOperator, &[KernelTerm; 2])> {
     let KernelTermNode::IntegerCompare {
@@ -571,15 +590,85 @@ fn retained_fold_comparison(
     else {
         return None;
     };
+    Some((operator, arguments))
+}
+
+struct RetainedAffineOperand<'a> {
+    root: &'a KernelTerm,
+    /// Empty for a scalar leaf. Fold bodies remain inside their opaque atoms.
+    postorder: Vec<&'a KernelTerm>,
+}
+
+fn retained_fold_comparison(
+    condition: &StoredConditionTerm,
+) -> Option<(&IntegerComparisonOperator, [RetainedAffineOperand<'_>; 2])> {
+    let (operator, [left, right]) = retained_integer_comparison(condition)?;
     let mut has_fold = false;
-    for operand in arguments {
-        match operand.node() {
-            KernelTermNode::Fold(_) => has_fold = true,
-            KernelTermNode::Variable(_) | KernelTermNode::IntegerLiteral(_) => {}
-            _ => return None,
+    let operands = [
+        retained_affine_operand(left, &mut has_fold)?,
+        retained_affine_operand(right, &mut has_fold)?,
+    ];
+    has_fold.then_some((operator, operands))
+}
+
+fn retained_affine_operand<'a>(
+    root: &'a KernelTerm,
+    has_fold: &mut bool,
+) -> Option<RetainedAffineOperand<'a>> {
+    let mut postorder = Vec::new();
+    match root.node() {
+        KernelTermNode::Fold(_) => *has_fold = true,
+        KernelTermNode::IntegerLiteral(_) | KernelTermNode::Variable(_) => {}
+        KernelTermNode::IntegerOperation { .. } => {
+            let mut pending = vec![(root, false)];
+            let mut seen = HashSet::new();
+            while let Some((term, expanded)) = pending.pop() {
+                if expanded {
+                    postorder.push(term);
+                    continue;
+                }
+                if !seen.insert(term.id()) {
+                    continue;
+                }
+                if crate::instrumentation::deadline_exceeded_with_work(1) {
+                    return None;
+                }
+                pending.push((term, true));
+                match term.node() {
+                    KernelTermNode::Fold(_) => *has_fold = true,
+                    KernelTermNode::IntegerLiteral(_) | KernelTermNode::Variable(_) => {}
+                    KernelTermNode::IntegerOperation {
+                        operator:
+                            KernelIntegerOperator::Add
+                            | KernelIntegerOperator::Subtract
+                            | KernelIntegerOperator::Negate,
+                        arguments,
+                    } => pending.extend(arguments.iter().rev().map(|argument| (argument, false))),
+                    KernelTermNode::IntegerOperation {
+                        operator: KernelIntegerOperator::Multiply,
+                        arguments,
+                    } => {
+                        let (_, child) = retained_literal_factor(arguments)?;
+                        pending.push((child, false));
+                    }
+                    _ => return None,
+                }
+            }
         }
+        _ => return None,
     }
-    has_fold.then_some((operator, arguments))
+    Some(RetainedAffineOperand { root, postorder })
+}
+
+fn retained_literal_factor(arguments: &[KernelTerm]) -> Option<(&BigInt, &KernelTerm)> {
+    let [left, right] = arguments else {
+        return None;
+    };
+    match (left.node(), right.node()) {
+        (KernelTermNode::IntegerLiteral(factor), _) => Some((factor, right)),
+        (_, KernelTermNode::IntegerLiteral(factor)) => Some((factor, left)),
+        _ => None,
+    }
 }
 
 fn affine_condition(proposition: &Proposition) -> Option<(&StoredConditionTerm, bool)> {
@@ -663,6 +752,65 @@ fn integer_affine_comparison_claim<T>(
 }
 
 fn collect_retained_affine_operand(
+    operand: RetainedAffineOperand<'_>,
+    coefficient: &BigInt,
+    terms: &mut BTreeMap<IntegerAffineAtom, BigInt>,
+    constant: &mut BigInt,
+    context: &mut IntegerAffineCollectionContext,
+) -> Option<()> {
+    if operand.postorder.is_empty() {
+        return collect_retained_affine_leaf(operand.root, coefficient, terms, constant, context);
+    }
+
+    // Combine weights before visiting a child, including when two edges
+    // name the same expression. No intermediate affine map is constructed.
+    let mut weights = HashMap::from([(operand.root.id(), coefficient.clone())]);
+    for term in operand.postorder.into_iter().rev() {
+        let Some(weight) = weights.remove(&term.id()) else {
+            continue;
+        };
+        if crate::instrumentation::deadline_exceeded_with_work(weight.bits() as usize + 1) {
+            return None;
+        }
+        match term.node() {
+            KernelTermNode::IntegerOperation {
+                operator,
+                arguments,
+            } => {
+                let ok = match operator {
+                    KernelIntegerOperator::Negate => {
+                        add_weight(&mut weights, arguments[0].id(), -weight)
+                    }
+                    KernelIntegerOperator::Add | KernelIntegerOperator::Subtract => {
+                        add_weight(&mut weights, arguments[0].id(), weight.clone())
+                            && add_weight(
+                                &mut weights,
+                                arguments[1].id(),
+                                if *operator == KernelIntegerOperator::Subtract {
+                                    -weight
+                                } else {
+                                    weight
+                                },
+                            )
+                    }
+                    KernelIntegerOperator::Multiply => {
+                        let (factor, child) = retained_literal_factor(arguments)?;
+                        charge_integer_product(&weight, factor)
+                            && add_weight(&mut weights, child.id(), weight * factor)
+                    }
+                    _ => unreachable!("retained affine operator"),
+                };
+                if !ok {
+                    return None;
+                }
+            }
+            _ => collect_retained_affine_leaf(term, &weight, terms, constant, context)?,
+        }
+    }
+    Some(())
+}
+
+fn collect_retained_affine_leaf(
     operand: &KernelTerm,
     coefficient: &BigInt,
     terms: &mut BTreeMap<IntegerAffineAtom, BigInt>,

@@ -136,7 +136,8 @@ fn algebraic_constructor_payload_check_scales_with_written_fields() {
         let mut fields = (0..size)
             .map(|i| variable(994_300 + i as u64))
             .collect::<Vec<_>>();
-        fields[0] = layer(tag("Red"));
+        // The scrutinee reads this ID before the arm introduces its binding.
+        fields[0] = layer(variable(994_101));
         let bindings = (0..size)
             .map(|i| variable(994_100 + i as u64))
             .collect::<Vec<_>>();
@@ -207,7 +208,11 @@ fn nested_constructor_selection_reuses_closed_payloads() {
     .into();
     for depth in [4_u64, 8, 16] {
         let _session = VerificationSession::enter();
-        let mut scrutinee = KernelMatch::test_scrutinee(vec![field_type.clone()]);
+        let flag = Variable(995_900);
+        let mut scrutinee = KernelMatch::test_scrutinee(vec![
+            field_type.clone(),
+            AlgebraicValueType::Program(ProgramType::Bool),
+        ]);
         let outer = &mut scrutinee.algebraic_type;
         outer.schemas =
             std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([
@@ -219,30 +224,28 @@ fn nested_constructor_selection_reuses_closed_payloads() {
             variant: variant.into(),
             fields,
         };
-        let value = |node| {
-            AlgebraicValue::Algebraic(AlgebraicTerm {
-                algebraic_type: chain.clone(),
-                node,
-            })
+        let value = |node| AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node,
         };
         let end = value(constructor("End", vec![]));
-        let link = |field| value(constructor("Link", vec![field]));
+        let link = |field| value(constructor("Link", vec![AlgebraicValue::Algebraic(field)]));
         let variable = |index| AlgebraicTerm {
             algebraic_type: chain.clone(),
             node: AlgebraicTermNode::Variable(Variable(995_000 + index)),
         };
         let field = (0..depth).fold(end.clone(), |field, _| link(field));
-        scrutinee.node = constructor("Arm", vec![field]);
-        let algebraic_type = scrutinee.algebraic_type.clone();
-        let result = |field| AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: constructor("Arm", vec![field]),
-        };
-        let expected = result(end.clone());
-        let mut body = expected.clone();
+        scrutinee.node = constructor(
+            "Arm",
+            vec![
+                AlgebraicValue::Algebraic(field),
+                AlgebraicValue::Program(ProgramValue::bool_constant(true)),
+            ],
+        );
+        let mut body = variable(depth);
         for index in (0..depth).rev() {
             body = AlgebraicTerm {
-                algebraic_type: algebraic_type.clone(),
+                algebraic_type: chain.clone(),
                 node: AlgebraicTermNode::Match {
                     scrutinee: Box::new(variable(index)),
                     arms: vec![
@@ -250,7 +253,7 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                             variant: "End".into(),
                             binding_names: Default::default(),
                             bindings: vec![],
-                            body: result(link(end.clone())),
+                            body: link(end.clone()),
                         },
                         AlgebraicResultMatchArm {
                             variant: "Link".into(),
@@ -261,17 +264,49 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                     ],
                 },
             };
+            body = value(AlgebraicTermNode::If {
+                condition: Box::new(ConditionTerm::Variable(flag)),
+                then_term: Box::new(body),
+                else_term: Box::new(link(end.clone())),
+            });
         }
         let matched = AlgebraicTerm {
-            algebraic_type,
+            algebraic_type: chain.clone(),
             node: AlgebraicTermNode::Match {
                 scrutinee: Box::new(scrutinee),
                 arms: vec![AlgebraicResultMatchArm {
                     variant: "Arm".into(),
                     binding_names: Default::default(),
-                    bindings: vec![AlgebraicValue::Algebraic(variable(0))],
+                    bindings: vec![
+                        AlgebraicValue::Algebraic(variable(0)),
+                        AlgebraicValue::Program(ProgramValue::of_bool(ConditionTerm::Variable(
+                            flag,
+                        ))),
+                    ],
                     body,
                 }],
+            },
+        };
+        // Reuse a binder ID from the left match. Its right-hand value
+        // comes from this match's own scrutinee.
+        let expected = AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node: AlgebraicTermNode::Match {
+                scrutinee: Box::new(link(end.clone())),
+                arms: vec![
+                    AlgebraicResultMatchArm {
+                        variant: "End".into(),
+                        binding_names: Default::default(),
+                        bindings: vec![],
+                        body: link(end),
+                    },
+                    AlgebraicResultMatchArm {
+                        variant: "Link".into(),
+                        binding_names: Default::default(),
+                        bindings: vec![AlgebraicValue::Algebraic(variable(0))],
+                        body: variable(0),
+                    },
+                ],
             },
         };
         let goal = Proposition::Equal(
@@ -283,7 +318,7 @@ fn nested_constructor_selection_reuses_closed_payloads() {
         assert!(proved);
         let depth = depth as usize;
         assert!(
-            (6 * depth..=6 * depth + 32).contains(&work),
+            (7 * depth..=7 * depth + 32).contains(&work),
             "{depth}: {work}"
         );
     }

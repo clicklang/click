@@ -4853,9 +4853,17 @@ fn execute_verified_function_applications_with_suspension(
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
+        // A consumed allocation named through a pointer proven equal to it,
+        // a contract's `result == p`, retires the storage the call's entry
+        // transfer moved: its unique storage coordinate.
         if let Some(error) = retired_allocations.iter().find_map(|range| {
             post_state
-                .retire_population_storage(&range.base().base)
+                .retire_population_storage(
+                    &effective_assumptions
+                        .equality_graph
+                        .storage_address(range.base())
+                        .base,
+                )
                 .err()
         }) {
             paths.push(FunctionPath::new(

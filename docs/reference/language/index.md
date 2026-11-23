@@ -4194,7 +4194,9 @@ An allocation region also exposes `R.allocation`, the fresh heap identity
 reserved for its successful outcome. For example, `statement(1).allocation`
 keeps this identity distinct from the nullable `statement(1).result`. The
 name is available after the allocation step and survives reassignment and
-`free`. Naming it does not prove that allocation succeeded or grant access
+`free`. Pointer casts and `byte_offset(R.allocation, N)` can use that identity
+to name a typed range in a `memory(...)` descriptor.
+Naming it does not prove that allocation succeeded or grant access
 to freed memory (`mdtests/an_allocation_result_keeps_its_name_after_reassignment.md`,
 `mdtests/an_allocation_name_does_not_keep_freed_memory_readable.md`).
 
