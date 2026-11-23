@@ -8994,7 +8994,7 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     }
 }
 
-fn termination_analysis_error(
+pub(in crate::surface) fn termination_analysis_error(
     error: &crate::kernel::TerminationError,
     message: String,
 ) -> ClickError {
