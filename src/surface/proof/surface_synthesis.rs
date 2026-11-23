@@ -6844,6 +6844,16 @@ fn synthesize_legacy_call_argument(
         crate::kernel::PureFunctionArgument::Algebraic(value) => {
             synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
         }
+        // A pointer's integer address, `address(p)`, is spelled by the
+        // integer word it projects to.
+        crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::PointerInteger(_)) => {
+            synthesize_legacy_call_argument(
+                &crate::kernel::PureFunctionArgument::Value(value.numeric_value().clone()),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?
+        }
         // Pointer arrays are imported into ArrayReference before raising.
         _ => return None,
     })

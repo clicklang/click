@@ -463,6 +463,33 @@ int32 short_sum(int32 seed) {
         );
     }
 
+    #[test]
+    fn a_pointer_address_passed_to_a_spec_function_round_trips() {
+        let source = r#"
+            import click::list;
+            theorem nil_has_no_address(target: uint8*) {
+                ensures not list::contains(List<uint64>::Nil, address(target)) by {
+                    unfold(list::contains(List<uint64>::Nil, address(target)));
+                    known();
+                }
+            }
+        "#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        assert!(
+            lines.iter().any(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields[0] == "same" && fields[6].contains("click::list::contains")
+            }),
+            "{lines:#?}"
+        );
+        assert!(
+            lines.iter().all(|line| !line.starts_with("unraised\t")),
+            "{lines:#?}"
+        );
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
