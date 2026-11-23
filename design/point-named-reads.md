@@ -89,7 +89,7 @@ treatment when a slice reaches them.
 ### P1. One selection function, in one order
 
 ```text
-ProgramPoint::read_name(pointer, value_type) -> ReadName
+A producer names a read in this order; step 2 is ProgramPoint::read_version:
   1. the value the memory holds for the cell (R1), if any
   2. the point indexes' version, if any
   3. the legacy walk (counted by `click audit legacy-walk`)
@@ -169,7 +169,7 @@ Design check
 3. **Coverage slices.** Re-apply the caller-storage suffix version, then
    loaded-pointer and heap storage, as step-2 entries. Exit per slice: the
    harnesses pass and the `click audit legacy-walk` count falls.
-4. **Delete the walk** when step 3 of `read_name` is unreachable on the corpus.
+4. **Delete the walk** when step 3 of `read_version` is unreachable on the corpus.
 
 ## Open questions
 
