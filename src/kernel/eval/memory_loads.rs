@@ -2785,7 +2785,7 @@ pub(crate) fn load_variable_registry_len() -> usize {
 /// Structural: no registry consultation, so the answer is deterministic
 /// and thread-agnostic.
 pub(crate) fn is_load_variable(variable: &Variable) -> bool {
-    LOAD_VARIABLE_RANGE.contains(&variable.0)
+    variable.is_ordinary() && LOAD_VARIABLE_RANGE.contains(&variable.0)
 }
 
 /// Whether a proposition is a load-variable defining equation
