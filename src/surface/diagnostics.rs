@@ -560,8 +560,8 @@ fn describe_context_facts_with_result(
 
 /// How a refusal spells one fact of its proof context when the proof that
 /// failed is at hand: the fact's Click text when it raises to a Surface form
-/// that lowers back to it (`Proof::round_trip_source_text`), else `None`, and
-/// the renderer spells it.
+/// that lowers back to it (`Proof::round_trip_source_text`), else `None`. It
+/// is asked only for a fact the renderer cannot spell exactly.
 pub(crate) type FactSpelling<'a> = &'a dyn Fn(&Proposition) -> Option<String>;
 
 /// No proof at hand: every fact takes the renderer's spelling.
@@ -591,9 +591,15 @@ fn describe_context_facts_labeled(
         }
         total += 1;
         if entries.len() < item_limit {
-            entries.push(spelling(fact).unwrap_or_else(|| {
-                crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels)
-            }));
+            // The renderer's own spelling where it is exact; the fact's
+            // round-tripping Surface form where the renderer would need a
+            // placeholder; the placeholder spelling only when neither exists.
+            use crate::surface::proof_diagnostics::render;
+            let spelled = (!render::renders_exactly(fact, labels))
+                .then(|| spelling(fact))
+                .flatten();
+            entries
+                .push(spelled.unwrap_or_else(|| render::render_proposition_labeled(fact, labels)));
         }
     }
     compact_unspelled_facts(&mut entries);

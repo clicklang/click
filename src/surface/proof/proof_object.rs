@@ -2393,13 +2393,17 @@ impl Proof<'_> {
         &self,
         proposition: &Proposition,
     ) -> String {
-        if let Some(text) = self.round_trip_source_text(proposition) {
-            return text;
-        }
         use crate::surface::proof_diagnostics::ProofDiagnosticState as _;
         use crate::surface::proof_diagnostics::render;
         let mut labels = render::MemoryStateLabels::ambient();
         self.diagnostic_state().register_names(&mut labels);
+        // The renderer's spelling where it is exact; otherwise the fact's
+        // round-tripping Surface form, before any placeholder spelling.
+        if !render::renders_exactly(proposition, &labels)
+            && let Some(text) = self.round_trip_source_text(proposition)
+        {
+            return text;
+        }
         let mut text = render::render_proposition_labeled(proposition, &mut labels);
         text.push_str(&labels.trace_legend());
         text

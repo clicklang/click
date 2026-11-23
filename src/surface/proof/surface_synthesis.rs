@@ -3405,6 +3405,14 @@ fn synthesize_surface_atomic_proposition(
         }
     );
     let operand = |term: &MachineTerm| {
+        // A `uint32` equality's constant is its `uint32` value: the word it
+        // compares is the same either way, but `-56` beside a `uint32`
+        // value would read as a claim it cannot satisfy.
+        if unsigned_word_equality && let Some(bits) = term.constant32() {
+            return Some(ContractExpression::ProgramExpression(
+                crate::kernel::program_expression::uint32_literal(bits),
+            ));
+        }
         // Wide comparisons retain signedness at each read and operation.
         // Reconstruct their shared operands rather than defaulting a Bits64
         // read to int64 before an unsigned operation consumes it.
