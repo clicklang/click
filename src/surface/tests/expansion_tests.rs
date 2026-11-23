@@ -27055,6 +27055,44 @@ fn displaced_native_view_expands_to_rebase_and_restriction() {
 }
 
 #[test]
+fn indexed_read_order_expands_with_preservation() {
+    let c_source = "void keep(int *p, int i, int j, int limit) { p[j] = 10; }";
+    let source = r#"
+        verifying "read_order.c";
+        void keep(int32 *p, int32 i, int32 j, int32 limit) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires i != j;
+            requires p[i] < limit;
+            ensures p[i] < limit;
+        } by {
+            step();
+            have p[i] < limit by { solve(); }
+        }
+    "#;
+    let sources = [("read_order.c", c_source)];
+    let expanded = expand_c_claim_source_by_label(source, &sources, "keep.contract").unwrap();
+    assert!(
+        expanded.contains("preserve(memory(p[i]), region(0))"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("rewrite("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+    let overlapping = expanded.replace("requires i != j;", "");
+    assert_ne!(overlapping, expanded);
+    assert!(
+        without_implicit_solve_for_claim("keep.contract", || {
+            verify_c_sources(&overlapping, &sources).map_err(|error| error.report())
+        })
+        .is_err()
+    );
+}
+
+#[test]
 fn branch_join_expands_returned_read_with_preservation() {
     let (source, sources) = mdtest_sources("mdtests/branch_join_borrow_separation.md");
     let sources = sources
