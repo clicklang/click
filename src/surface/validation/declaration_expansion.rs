@@ -1957,10 +1957,13 @@ fn expand_declared_resource_tactic_with_expressions(
         }
         ProofTactic::Instantiate {
             quantified,
-            argument,
+            arguments,
         } => Ok(ProofTactic::Instantiate {
             quantified: expand_declared_resource_proposition(quantified, resource_definitions)?,
-            argument: expand_declared_resource_expression(argument, resource_definitions)?,
+            arguments: arguments
+                .into_iter()
+                .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
+                .collect::<Result<_, _>>()?,
         }),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }

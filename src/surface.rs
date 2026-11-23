@@ -6264,10 +6264,10 @@ pub enum ProofTactic {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
-    /// Substitute one universal binder, preserving its whole body and guards.
+    /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: ClickProposition,
-        argument: ContractExpression,
+        arguments: Vec<ContractExpression>,
     },
     Solve,
     /// The driver schedules ordinary `solve` for every remaining claim.
@@ -6691,7 +6691,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "instantiate",
-        syntax: "instantiate(F, value)",
+        syntax: "instantiate(F, value, ...)",
         class: "simple",
     },
     PublicTacticForm {

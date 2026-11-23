@@ -481,8 +481,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::Contradiction(surface) => Some(driver_proof.apply_contradiction(surface)),
             ProofStep::Instantiate {
                 quantified,
-                argument,
-            } => Some(driver_proof.apply_fixed_state_instantiate(quantified, argument)),
+                arguments,
+            } => Some(driver_proof.apply_fixed_state_instantiate(quantified, arguments)),
             ProofStep::Mark(name) => Some(driver_proof.apply_execution_mark(name)),
             _ => None,
         };

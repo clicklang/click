@@ -1134,7 +1134,7 @@ step is still checked.
 | `let name = intro()` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
-| `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
+| `instantiate(F, value, ...)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
 | `apply(fact)` | simple | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
@@ -2727,11 +2727,14 @@ Expansion is unchanged, and profiling charges one leaf.
 
 ### Universal instantiation
 
-**Form:** `instantiate(F, value)`
+**Form:** `instantiate(F, value, ...)`
 
-**Specialized.** Substitute one value into an established universal fact and
-add its entire body, including any implication guards. No guard is proved or
-assumed by this operation.
+**Specialized.** Supply a nonempty prefix of values for an established
+universal fact, in binder order. For example, `instantiate(F, x, n)`
+specializes `forall (i: int32) { forall (j: uint64) { B } }` at `x` and
+`n`. Each substitution adds its resulting fact, including any implication
+guards. Supplying fewer values leaves a universal available. Each
+argument must have a remaining outer universal binder.
 
 **Accepts:**
 
@@ -2743,10 +2746,9 @@ assumed by this operation.
   expression such as `to_integer(x)` for `Integer`, and a correctly typed
   pointer for a pointer binder.
 
-The added fact is `B[value/k]`. For a range quantifier it retains the range
-condition. Nested quantifiers remain quantified and can be instantiated one
-binder at a time. The selected value is captured at the operation's state;
-`old` or `at` in the body does not reinterpret that argument at another state.
+A range quantifier retains the range condition. The selected values are
+captured at the operation's program point. Any `old` or `at` in the body
+reads its own state while using those captured values.
 
 For `forall (k: int32) { 0 <= k implies f(k) >= 0 }`, instantiating at `x`
 adds `0 <= x implies f(x) >= 0`. If `0 <= x` is already an exact fact,
@@ -2763,10 +2765,11 @@ list is rejected; write ordinary guard proofs instead.
 
 An unavailable source names the missing quantified fact. A non-universal or
 wrongly typed argument is refused locally. Missing guards do not cause an
-instantiation error: they remain in its resulting implication. If the whole
-instance is the goal, the step closes it; otherwise `known()` can close a
-consequence made available by propagation. Expansion emits bare instantiation
-and retains any needed guard proofs as ordinary `have` blocks. Checking does
+instantiation error: they remain in its resulting implication. After all
+arguments have checked, the step closes the goal if it added that exact
+fact. Use `known()` to close a consequence made available by propagation.
+Expansion retains the argument list and any needed guard proofs as ordinary
+`have` blocks. Checking does
 indexed source lookup and substitution over the selected body, without scans
 of unrelated facts.
 

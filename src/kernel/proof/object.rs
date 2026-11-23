@@ -1671,7 +1671,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         quantified: Proposition,
         argument: super::fact_reasoning::InstanceArgument,
-    ) -> Result<Self, PropositionCloseError> {
+    ) -> Result<(Self, Proposition), PropositionCloseError> {
         let (_, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
@@ -1689,20 +1689,23 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .then(|| conclusion.clone())
             .into_iter()
             .collect::<Vec<_>>();
-        let facts = facts.with_fact(conclusion);
-        Ok(Self::new(
-            ProofState {
-                termination: self.state.termination.clone(),
-                termination_root: self.state.termination_root,
-                locals: self.state.locals.clone(),
-                open_branches: self
-                    .state
-                    .open_branches
-                    .with_facts_at(self.focused_branch, facts),
-                checked_facts: Arc::new(added_facts.clone()),
-                added_facts: Arc::new(added_facts),
-            },
-            self.focused_branch,
+        let facts = facts.with_fact(conclusion.clone());
+        Ok((
+            Self::new(
+                ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
+                    locals: self.state.locals.clone(),
+                    open_branches: self
+                        .state
+                        .open_branches
+                        .with_facts_at(self.focused_branch, facts),
+                    checked_facts: Arc::new(added_facts.clone()),
+                    added_facts: Arc::new(added_facts),
+                },
+                self.focused_branch,
+            ),
+            conclusion,
         ))
     }
 
