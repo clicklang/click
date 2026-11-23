@@ -2682,6 +2682,11 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     if implicit_closer && closures.iter().all(|closure| closure.is_closed()) {
         return Ok(());
     }
+    if crate::surface::proof::implicit_solve_scope::checked_only() {
+        return Err(ClickError::new(format!(
+            "`{proof_label}`: checked-only verification forbids {closer_name}; write its proof steps explicitly"
+        )));
+    }
     // A written solve selects one goal; the implicit tail schedules all goals.
     let main_claim = main_goal_claim(outcome_proof, closures)?;
     let acts_on = |claim_index: usize| implicit_closer || Some(claim_index) == main_claim;

@@ -382,6 +382,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_arithmetic_using");
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            return Err(search_input.step_error("checked-only verification forbids arithmetic search; write its proof steps explicitly"));
+        }
         if let Some(closed) = Self::try_quotient_shift_using(search_input, premises)? {
             return Ok(closed);
         }
@@ -700,6 +703,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_direct_logical_closure");
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            return attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Known));
+        }
         let mut scope = attempt::search_scope("direct logical closure");
         let mut budget = attempt::AttemptBudget::unbounded();
         let mut proof = search_input.clone();
@@ -1236,6 +1242,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_solve_closure");
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            return Err(search_input.step_error(
+                "checked-only verification forbids solve(); write its proof steps explicitly",
+            ));
+        }
         // solve reaches the same failing frame question through several of
         // its strategies and candidates; one closure attempt answers each
         // exact failed question once (`with_closure_failure_memo`).
@@ -3836,6 +3847,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_solve_closure_with_surfaces");
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            return Err(search_input.step_error(
+                "checked-only verification forbids solve(); write its proof steps explicitly",
+            ));
+        }
         let mut scope = attempt::search_scope("solve closure with surfaces");
         // Prefer the whole `known` closure, including computation, before
         // decomposing the goal or searching for another derivation.
@@ -3895,6 +3911,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery(
             "try_solve_closure_after_direct_with_surfaces_and_function_unfold",
         );
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            return Err(search_input.step_error(
+                "checked-only verification forbids implicit solve; write its proof steps explicitly",
+            ));
+        }
         if let Some(proof) =
             Self::try_bounded_arithmetic_closure(search_input, introduced_surfaces)?
         {
@@ -11672,6 +11693,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure");
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            crate::instrumentation::replay_forbids_discovery("solve() using");
+            return None;
+        }
         if let Some(closed) =
             crate::kernel::search::ProofSearch::try_restricted_solve_closure_before_arithmetic(
                 search_input,

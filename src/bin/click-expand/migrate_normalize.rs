@@ -4,7 +4,7 @@ use std::path::Path;
 use click::cli::VerificationInput;
 use click::surface::{
     ClickProject, NormalizeSourceSite, expand_claim_by_label, first_normalize_in_claim,
-    normalize_source_sites, without_implicit_solve_for_claim,
+    normalize_source_sites, without_proof_search_for_claim,
 };
 
 use super::{check_expansion_deadline, verify_proof_unit};
@@ -132,7 +132,7 @@ fn migrate_claim(
         claim,
         "Expanded proof",
     )?;
-    without_implicit_solve_for_claim(claim, || verify(&expanded.source))
+    without_proof_search_for_claim(claim, || verify(&expanded.source))
         .map_err(|error| format!("Strict replay: {error}"))
 }
 

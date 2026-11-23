@@ -34,9 +34,9 @@ use click::surface::{
 };
 
 const USAGE: &str = "\
-usage: click verify [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
-       click verify [--locked] --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
-       click verify [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
+usage: click verify [--checked-only] [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
+       click verify [--checked-only] [--locked] --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
+       click verify [--checked-only] [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
 
 Compiler captures are refreshed when missing or stale. `--locked` uses
@@ -46,6 +46,10 @@ Verifies proofs owned by the selected sidecar, or, when a one-based
 :LINE:COLUMN suffix is supplied, only the proof unit containing that source
 location. Imported declarations and unselected C function contracts are
 assumptions; their proof bodies are not recursively selected.
+
+`--checked-only` verifies with proof search disabled. Write the execution
+steps and every obligation proof explicitly, as in a whole claim emitted by
+`click expand`.
 
 An mdtest is verified from its embedded ```c or ```cpp and ```click blocks,
 prepared exactly as the mdtests gate prepares them. Locations are lines of
@@ -89,6 +93,7 @@ struct Arguments {
     changed_since: Option<String>,
     explain: bool,
     allow_sorry: bool,
+    checked_only: bool,
     trace_proof: Option<String>,
     trace_to: Option<TraceTo>,
 }
@@ -120,6 +125,14 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
     }
     if arguments.trace_to.is_some() && arguments.trace_proof.is_none() {
         return Err("`--trace-to` requires `--trace-proof`".to_string());
+    }
+    if arguments.checked_only {
+        if arguments.allow_sorry || arguments.changed_since.is_some() {
+            return Err("`--checked-only` requires fresh verification without `--allow-sorry` or `--changed-since`".to_string());
+        }
+        if !looks_like_source_location(&arguments.target) {
+            return click::surface::without_proof_search(|| run(arguments));
+        }
     }
     if arguments.allow_sorry {
         // An admission records what an ordinary run did not check, so it
@@ -153,6 +166,7 @@ fn run(arguments: Arguments) -> Result<(), String> {
             column,
             arguments.limits,
             arguments.locked,
+            arguments.checked_only,
         );
     }
     let path = Path::new(&arguments.target);
@@ -178,6 +192,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut changed_since = None;
     let mut explain = false;
     let mut allow_sorry = false;
+    let mut checked_only = false;
     let mut trace_proof = None;
     let mut trace_to = None;
     let mut parse_options = true;
@@ -208,6 +223,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             );
         } else if parse_options && argument == "--explain" {
             explain = true;
+        } else if parse_options && argument == "--checked-only" {
+            checked_only = true;
         } else if parse_options && argument == "--allow-sorry" {
             allow_sorry = true;
         } else if parse_options && argument == "--trace-proof" {
@@ -259,6 +276,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         changed_since,
         explain,
         allow_sorry,
+        checked_only,
         trace_proof,
         trace_to,
     })
@@ -1736,10 +1754,11 @@ fn verify_location(
     column: usize,
     limits: RunLimits,
     locked: bool,
+    checked_only: bool,
 ) -> Result<(), String> {
     // As in `verify_file`, loading is inside the run's limits.
     with_run_limits("click verify", limits, || {
-        verify_location_within_limits(click_path, line, column, locked)
+        verify_location_within_limits(click_path, line, column, locked, checked_only)
     })
 }
 
@@ -1748,6 +1767,7 @@ fn verify_location_within_limits(
     line: usize,
     column: usize,
     locked: bool,
+    checked_only: bool,
 ) -> Result<(), String> {
     let project_root = sidecar_project_root(click_path)?;
     let target = {
@@ -1764,14 +1784,17 @@ fn verify_location_within_limits(
         None => line,
     };
     let LoadedTarget {
-        project, inputs, ..
+        click_source,
+        project,
+        inputs,
+        ..
     } = target;
     let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
         project_summary(&project, &inputs.program_inputs())
             .map_err(|error| located_click_message(error, click_path, &project, line_offset))?
     };
-    let verified = {
+    let verify = || {
         let result = verify_project_at(&project, &inputs.program_inputs(), line, column);
         result.map_err(|error| {
             verification_error_report(
@@ -1784,7 +1807,21 @@ fn verify_location_within_limits(
                 None,
             )
         })
-    }?;
+    };
+    let verified = if checked_only {
+        let selected = click::surface::claim_at(
+            Some(&project),
+            &click_source,
+            &inputs.program_inputs(),
+            line,
+            Some(column),
+            click::surface::ClaimLocationScope::ProofUnit,
+        )
+        .map_err(|error| error.reason)?;
+        click::surface::without_proof_search_for_claim(&selected.label, verify)?
+    } else {
+        verify()?
+    };
     print_assumptions(&summary.assumptions, &verified);
     println!("1 selected proof verified");
     Ok(())
@@ -2566,6 +2603,7 @@ int32 read_first(int32 m) {
                 changed_since: None,
                 explain: false,
                 allow_sorry: true,
+                checked_only: false,
                 trace_proof: None,
                 trace_to: None,
             })
@@ -2592,6 +2630,7 @@ int32 read_first(int32 m) {
                 changed_since: None,
                 explain: false,
                 allow_sorry: false,
+                checked_only: false,
                 trace_proof: None,
                 trace_to: None,
             })
@@ -2612,6 +2651,7 @@ int32 read_first(int32 m) {
                 changed_since: None,
                 explain: false,
                 allow_sorry: false,
+                checked_only: false,
                 trace_proof: None,
                 trace_to: None,
             })
@@ -2632,6 +2672,7 @@ int32 read_first(int32 m) {
                 changed_since: None,
                 explain: false,
                 allow_sorry: false,
+                checked_only: false,
                 trace_proof: None,
                 trace_to: None,
             })
@@ -2658,6 +2699,7 @@ int32 read_first(int32 m) {
                 changed_since: Some("HEAD~1".to_string()),
                 explain: true,
                 allow_sorry: false,
+                checked_only: false,
                 trace_proof: None,
                 trace_to: None,
             })
