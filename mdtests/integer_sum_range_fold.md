@@ -178,16 +178,7 @@ int32 sum(int32 a[], int32 n) {
                 instantiate(forall (j: int32) { 0 <= j and j < n implies defined(old(a[j])) }, i);
                 known();
             }
-            have defined((total + a[i])) by {
-                have defined(total + a[i]);
-                all {
-                    defined(load<int32>((a + i))) => {
-                        known();
-                    }
-                    to_integer(total) + to_integer(a[i]) <= 2147483647 => { known(); }
-                    to_integer(total) + to_integer(a[i]) >= -2147483648 => { known(); }
-                }
-            }
+            have defined(total + a[i]) by { known(); }
             have to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
             have to_integer(total + a[i]) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[i]) by {
                 have to_integer(a[i]) == to_integer(a[i]) by { known(); }
@@ -241,6 +232,10 @@ int32 sum(int32 a[], int32 n) {
             }
             have to_integer(i) == to_integer((at(iter, i) + 1)) by {
                 known();
+            }
+            // The append law captures its body over the saved prefix.
+            have forall (k: int32) { 0 <= k and k < at(iter, i) implies true } by {
+                intro(); intro(); known();
             }
             have (0..(at(iter, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(iter, i)])) by {
                 apply(integer_range_fold_append((0..at(iter, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) })));
