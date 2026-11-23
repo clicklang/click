@@ -6465,17 +6465,31 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             _ => return Ok(None),
         };
-        fn indexed_expression_read(expression: &ContractExpression) -> Option<&ContractExpression> {
-            match expression {
-                ContractExpression::Index(..) => Some(expression),
-                ContractExpression::BitwiseAnd(read, mask)
-                | ContractExpression::BitwiseOr(read, mask)
-                    if matches!(read.as_ref(), ContractExpression::Index(..))
-                        && matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_)) =>
-                {
-                    Some(read.as_ref())
-                }
-                _ => None,
+        fn indexed_expression_read(
+            mut expression: &ContractExpression,
+        ) -> Option<&ContractExpression> {
+            // Follow the only nonliteral operand to a single indexed read.
+            loop {
+                crate::instrumentation::record_deterministic_work(1);
+                expression = match expression {
+                    ContractExpression::Index(..) => return Some(expression),
+                    ContractExpression::BitwiseNot(operand) => operand,
+                    ContractExpression::BitwiseAnd(left, right)
+                    | ContractExpression::BitwiseOr(left, right)
+                    | ContractExpression::BitwiseXor(left, right) => {
+                        match (left.as_ref(), right.as_ref()) {
+                            (operand, ContractExpression::IntegerLiteral(_))
+                            | (ContractExpression::IntegerLiteral(_), operand) => operand,
+                            _ => return None,
+                        }
+                    }
+                    ContractExpression::ShiftRight(operand, count)
+                        if matches!(count.as_ref(), ContractExpression::IntegerLiteral(_)) =>
+                    {
+                        operand
+                    }
+                    _ => return None,
+                };
             }
         }
         let indexed;
