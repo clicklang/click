@@ -34,6 +34,7 @@ pub(in crate::surface) fn theorem_requirement_propositions(
                 ClickError::new(crate::surface::validation::theorem_resource_clause_refusal(
                     theorem.name(),
                 ))
+                .with_proof_refusal(ProofRefusal::Contract)
             })
         })
         .collect()
@@ -1022,21 +1023,27 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                 continue;
             };
             let lowering_assumptions = assumptions_from_propositions(&context.requires);
-            let (conclusion, _) = lower_pure_theorem_proposition_recording_introductions(
-                theorem.name(),
+            let state = ExecutionState::at_point(&context.point);
+            let (conclusion, _, _) = lower_stated_proposition(
                 surface_goal,
-                &lowering_assumptions,
+                &PureFactContext::new(),
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                &BTreeMap::new(),
-                &context.integer_values,
-                &context.point,
+                FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                 spec_definitions,
+                FixedStateLoweringOptions {
+                    integer_values: Some(&context.integer_values),
+                    obligation_assumptions: Some(&lowering_assumptions),
+                    ..Default::default()
+                },
             )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower assumed theorem `{}` conclusion: {message}",
-                    theorem.name()
+            .map_err(|reason| {
+                let diagnostic = ClickError::new(format!(
+                    "could not lower assumed theorem `{}` conclusion: pure theorem `{}`: {reason}",
+                    theorem.name(),
+                    theorem.name(),
                 ))
+                .at_declaration(theorem.name());
+                theorem_statement_error(diagnostic, reason)
             })?;
             let Some(authority) = assume_universally_quantified_pure_implication(
                 context.requires.clone(),
@@ -1486,7 +1493,8 @@ fn verify_theorem_ensure(
     let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
         return Err(ClickError::new(
             crate::surface::validation::theorem_resource_conclusion_refusal(theorem.name()),
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Contract));
     };
     if let Some(verified) = verify_contract_refinement_theorem(
         theorem,
