@@ -58,6 +58,28 @@ theorem rewritten_tag(p: WidePacket, value: uint64) {
         solve();
     }
 }
+
+theorem rewritten_capture(p: WidePacket, value: uint64, other: uint64) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(n) => TaggedOutput::Value(n, other),
+    }) == TaggedOutput::Value(value, other) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
+
+spec enum BoolOutput { Value(uint64, Bool) }
+
+theorem rewritten_bool_tag(p: WidePacket, value: uint64) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(n) => BoolOutput::Value(n, true),
+    }) == BoolOutput::Value(value, true) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
 ```
 
 ```expect
