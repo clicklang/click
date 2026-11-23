@@ -1185,7 +1185,7 @@ impl ContractPathPreparationFailure {
         Self::classified(ContractClosingRefusal::Internal(reason.to_owned()))
     }
 
-    fn stopped(_reason: String, stop: ExecutionLimit) -> Self {
+    fn stopped(stop: ExecutionLimit) -> Self {
         Self::classified(ContractClosingRefusal::from_stop(stop))
     }
 
@@ -1282,10 +1282,7 @@ fn prepare_function_claim_path(
                 });
             }
             Err(limit) => {
-                return Err(ContractPathPreparationFailure::stopped(
-                    format!("the required resource context stopped at {limit}"),
-                    limit,
-                ));
+                return Err(ContractPathPreparationFailure::stopped(limit));
             }
         };
     let expanded_required = {
@@ -1428,10 +1425,7 @@ fn prepare_closing_path(
                 ));
             }
             Err(limit) => {
-                return Err(ContractPathPreparationFailure::stopped(
-                    format!("the deferred conditional contract exit stopped at {limit}"),
-                    limit,
-                ));
+                return Err(ContractPathPreparationFailure::stopped(limit));
             }
         }
     } else {
@@ -1554,10 +1548,7 @@ fn prepare_closing_path(
                     ));
                 }
                 Err(limit) => {
-                    return Err(ContractPathPreparationFailure::stopped(
-                        limit.describe(),
-                        limit,
-                    ));
+                    return Err(ContractPathPreparationFailure::stopped(limit));
                 }
             }
         }
@@ -1576,10 +1567,7 @@ fn prepare_closing_path(
                 ));
             }
             Err(limit) => {
-                return Err(ContractPathPreparationFailure::stopped(
-                    limit.describe(),
-                    limit,
-                ));
+                return Err(ContractPathPreparationFailure::stopped(limit));
             }
         }
     }
