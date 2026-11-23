@@ -64,8 +64,17 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures RotateSizedStructure(&sized_rotate) as {
         structure: structure, source: source, target: target, left: left, right: right
     } by {
+        have rb_old != 0 by known();
+        have rb_new != 0 by known();
+        have rb_old != rb_new by known();
         // The callee's arithmetic guarantees are guarded by definedness.
         apply(size_sum_defined(left.value, right.value));
+        // The cache slot begins after the two child links.
+        apply(click::separation::separate_adjacent_ranges(rb_old as (int32 *), 2, 6, 8));
+        apply(click::separation::separate_symm(
+            memory((rb_old as (int32 *))[2..6]), memory((rb_old as (int32 *))[6..8])));
+        apply(separate_size_write_from_child_links(rb_old as (int32 *),
+            memory((rb_new as (int32 *))[6..8])));
         // Expose each live child's separation facts before applying the call.
         // A null child contributes no metadata range to its write footprint.
         if (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != 0 {
@@ -94,10 +103,32 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { known(); }
                     }
                 }
+                apply(separate_size_write_from_child_links(rb_old as (int32 *),
+                    memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (int32 *))[6..8])));
+                apply(separate_size_write_from_child_links(rb_old as (int32 *),
+                    memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (int32 *))[6..8])));
                 step(sized_rotate, {
                     source: source, target: target, left: left, right: right
-                });
-                solve();
+                }) {
+                    requires rb_old != 0 by known();
+                    requires rb_new != 0 by known();
+                    requires rb_old != rb_new by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != 0 or left.value == 0 by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != rb_old by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 or right.value == 0 by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != rb_old by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory((rb_new as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory((rb_new as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires 0 <= left.value by known();
+                    requires 0 <= right.value by known();
+                    requires right.value <= 2147483646 by known();
+                    requires left.value <= 2147483646 - right.value by known();
+                }
+                known();
             } else {
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
@@ -111,10 +142,30 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { known(); }
                     }
                 }
+                apply(separate_size_write_from_child_links(rb_old as (int32 *),
+                    memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (int32 *))[6..8])));
                 step(sized_rotate, {
                     source: source, target: target, left: left, right: right
-                });
-                solve();
+                }) {
+                    requires rb_old != 0 by known();
+                    requires rb_new != 0 by known();
+                    requires rb_old != rb_new by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != 0 or left.value == 0 by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != rb_old by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 or right.value == 0 by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != rb_old by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory((rb_new as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory((rb_new as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires 0 <= left.value by known();
+                    requires 0 <= right.value by known();
+                    requires right.value <= 2147483646 by known();
+                    requires left.value <= 2147483646 - right.value by known();
+                }
+                known();
             }
         } else {
             if (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 {
@@ -130,15 +181,53 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { known(); }
                     }
                 }
+                apply(separate_size_write_from_child_links(rb_old as (int32 *),
+                    memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (int32 *))[6..8])));
                 step(sized_rotate, {
                     source: source, target: target, left: left, right: right
-                });
-                solve();
+                }) {
+                    requires rb_old != 0 by known();
+                    requires rb_new != 0 by known();
+                    requires rb_old != rb_new by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != 0 or left.value == 0 by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != rb_old by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 or right.value == 0 by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != rb_old by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory((rb_new as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory((rb_new as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires 0 <= left.value by known();
+                    requires 0 <= right.value by known();
+                    requires right.value <= 2147483646 by known();
+                    requires left.value <= 2147483646 - right.value by known();
+                }
+                known();
             } else {
                 step(sized_rotate, {
                     source: source, target: target, left: left, right: right
-                });
-                solve();
+                }) {
+                    requires rb_old != 0 by known();
+                    requires rb_new != 0 by known();
+                    requires rb_old != rb_new by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != 0 or left.value == 0 by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left != rb_old by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 or right.value == 0 by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != rb_old by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 or separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory((rb_new as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory((rb_new as (uint8 *) as (struct sized_node *))->size)) by known();
+                    requires 0 <= left.value by known();
+                    requires 0 <= right.value by known();
+                    requires right.value <= 2147483646 by known();
+                    requires left.value <= 2147483646 - right.value by known();
+                }
+                known();
             }
         }
     }

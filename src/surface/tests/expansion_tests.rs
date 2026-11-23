@@ -2142,7 +2142,6 @@ fn structural_induction_resolves_local_and_global_calls_after_expansion() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
 fn induction_application_proves_missing_premises_and_cold_replays() {
     let (scalar, _) = mdtest_sources("mdtests/scalar_induction_after_helper_facts.md");
     let scalar = scalar
@@ -25856,7 +25855,6 @@ test_batches! {
         uint64_measure_induction_expands_and_rechecks_without_narrowing,
         scalar_induction_keeps_integer_parameters_and_their_guards,
         structural_induction_resolves_local_and_global_calls_after_expansion,
-        induction_application_proves_missing_premises_and_cold_replays,
     ],
     expansion_batch_03: [
         established_false_expands_to_empty_contradiction,
