@@ -261,11 +261,13 @@ fn shared_branch_write_footprint_uses_only_its_arm_endpoints() {
                     .clone()
                     .store(address.clone(), crate::kernel::int32(value)),
             );
-            let effects = vec![ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
-                before: entry.memory().clone(),
-                after: exit.memory().clone(),
-                writes: vec![(address.clone(), crate::kernel::AccessExtent::from(4))],
-            })];
+            let effects = vec![ExecutionPureFact::certified(
+                Proposition::MemoryMutatesOnly {
+                    before: entry.memory().clone(),
+                    after: exit.memory().clone(),
+                    writes: vec![(address.clone(), crate::kernel::AccessExtent::from(4))],
+                },
+            )];
             let footprint = crate::kernel::RegionFootprint::transition(
                 "arm write".into(),
                 &entry,
@@ -286,12 +288,15 @@ fn shared_branch_write_footprint_uses_only_its_arm_endpoints() {
             )
         });
         assert_eq!(joined.unwrap().members, left_effect.members);
-        assert!(crate::kernel::RegionFootprint::shared_branch_write(
-            "branch".into(),
-            &entry,
-            &left,
-            [(&left, Some(&left_effect)), (&other, Some(&other_effect))],
-        ).is_none());
+        assert!(
+            crate::kernel::RegionFootprint::shared_branch_write(
+                "branch".into(),
+                &entry,
+                &left,
+                [(&left, Some(&left_effect)), (&other, Some(&other_effect))],
+            )
+            .is_none()
+        );
         cost
     });
     assert_eq!(costs, [costs[0]; 4]);

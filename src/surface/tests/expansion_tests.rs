@@ -26949,8 +26949,10 @@ fn branch_join_expands_returned_read_with_preservation() {
         "{expanded}"
     );
     assert!(!expanded.contains("transport("), "{expanded}");
-    without_implicit_solve_for_claim("run.contract", || verify_c_sources(&expanded, &sources))
-        .unwrap();
+    without_implicit_solve_for_claim("run.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
