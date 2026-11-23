@@ -372,6 +372,8 @@ impl PureTheoremContext {
     }
 }
 
+/// The checked theorem statement and descent rule for this proof's local
+/// induction hypothesis. Surface calls have already resolved to that binding.
 #[derive(Clone, Debug)]
 pub(super) struct PureInductionSetup {
     pub(super) parameter: String,
@@ -571,57 +573,35 @@ pub(super) fn pure_induction_hypothesis(
     .ok_or_else(|| ClickError::new("the induction hypothesis's quantifier does not close"))
 }
 
-fn prepare_pure_induction_tactics(
+fn prepare_pure_induction_setup(
     theorem: &TheoremDefinition,
     goal: &ClickProposition,
     tactics: &[ProofTactic],
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<(Vec<ProofTactic>, Option<PureInductionSetup>), ClickError> {
+) -> Result<Option<PureInductionSetup>, ClickError> {
     fn declarations<'a>(tactics: &'a [ProofTactic], found: &mut Vec<(&'a String, &'a String)>) {
         for tactic in tactics {
-            match tactic {
-                ProofTactic::Induct {
-                    parameter,
-                    hypothesis,
-                } => found.push((parameter, hypothesis)),
-                ProofTactic::IntroBlock { body, .. } => declarations(body, found),
-                ProofTactic::If(proof_if) => {
-                    declarations(&proof_if.then_tactics, found);
-                    declarations(&proof_if.else_tactics, found);
+            if let ProofTactic::Induct {
+                parameter,
+                hypothesis,
+            } = tactic
+            {
+                found.push((parameter, hypothesis));
+            }
+            for child in tactic.children() {
+                let (TacticChild::Continuing(proof) | TacticChild::Obligation(proof)) = child;
+                if let Some(body) = proof.tactics() {
+                    declarations(body, found);
                 }
-                ProofTactic::All(all) => {
-                    for arm in &all.arms {
-                        declarations(&arm.tactics, found);
-                    }
-                }
-                ProofTactic::Both(both) => {
-                    declarations(&both.left_tactics, found);
-                    declarations(&both.right_tactics, found);
-                }
-                ProofTactic::Cases(cases) => {
-                    for arm in cases.arms() {
-                        declarations(arm.tactics(), found);
-                    }
-                }
-                ProofTactic::Have(have) => {
-                    if let SourceProof::Script(body) = &have.proof {
-                        declarations(body, found);
-                    }
-                }
-                ProofTactic::Match(proof_match) => {
-                    for arm in &proof_match.arms {
-                        declarations(&arm.tactics, found);
-                    }
-                }
-                _ => {}
             }
         }
     }
+
     let mut found = Vec::new();
     declarations(tactics, &mut found);
     let Some(&(parameter, hypothesis)) = found.first() else {
-        return Ok((tactics.to_vec(), None));
+        return Ok(None);
     };
     let structural = theorem
         .parameters()
@@ -650,141 +630,16 @@ fn prepare_pure_induction_tactics(
     }
     let surface_requires = theorem_requirement_propositions(theorem)?;
 
-    fn transform(
-        tactics: &[ProofTactic],
-        hypothesis: &str,
-        structural: bool,
-        mut active: bool,
-    ) -> Result<Vec<ProofTactic>, ClickError> {
-        tactics
-            .iter()
-            .map(|tactic| match tactic {
-                ProofTactic::Induct { .. } if structural => {
-                    if active {
-                        return Err(ClickError::new(
-                            "induction hypothesis was already introduced in this proof scope",
-                        ));
-                    }
-                    active = true;
-                    Ok(tactic.clone())
-                }
-                ProofTactic::Induct { .. } => Err(ClickError::new(
-                    "a pure theorem proof may contain only one top-level `induct` tactic",
-                )),
-                ProofTactic::ApplyTheorem(application)
-                    if active && application.name == hypothesis =>
-                {
-                    Ok(ProofTactic::ApplyInduction {
-                        hypothesis: hypothesis.to_string(),
-                        arguments: application.arguments.clone(),
-                    })
-                }
-                ProofTactic::IntroBlock { binder, body } => Ok(ProofTactic::IntroBlock {
-                    binder: binder.clone(),
-                    body: transform(body, hypothesis, structural, active)?,
-                }),
-                ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
-                    condition: proof_if.condition.clone(),
-                    ensuring: proof_if.ensuring.clone(),
-                    then_tactics: transform(
-                        &proof_if.then_tactics,
-                        hypothesis,
-                        structural,
-                        active,
-                    )?,
-                    else_tactics: transform(
-                        &proof_if.else_tactics,
-                        hypothesis,
-                        structural,
-                        active,
-                    )?,
-                })),
-                ProofTactic::All(all) => Ok(ProofTactic::All(ProofAll {
-                    arms: all
-                        .arms
-                        .iter()
-                        .map(|arm| {
-                            Ok(ProofAllArm {
-                                proposition: arm.proposition.clone(),
-                                tactics: transform(&arm.tactics, hypothesis, structural, active)?,
-                            })
-                        })
-                        .collect::<Result<_, ClickError>>()?,
-                })),
-                ProofTactic::Both(both) => Ok(ProofTactic::Both(ProofBoth {
-                    left_tactics: transform(&both.left_tactics, hypothesis, structural, active)?,
-                    right_tactics: transform(&both.right_tactics, hypothesis, structural, active)?,
-                })),
-                ProofTactic::Cases(proof_cases) => {
-                    Ok(ProofTactic::Cases(proof_cases.try_map_tactics(
-                        |tactics| transform(tactics, hypothesis, structural, active),
-                    )?))
-                }
-                // Once declared, the hypothesis is in scope in every nested
-                // proof, a `have` body and a `match` arm included.
-                ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
-                    proposition: have.proposition.clone(),
-                    proof: match &have.proof {
-                        SourceProof::Script(tactics) => {
-                            SourceProof::Script(transform(tactics, hypothesis, structural, active)?)
-                        }
-                        proof => proof.clone(),
-                    },
-                })),
-                ProofTactic::Match(proof_match) => {
-                    Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-                        scrutinee: proof_match.scrutinee.clone(),
-                        ensuring: proof_match.ensuring.clone(),
-                        arms: proof_match
-                            .arms
-                            .iter()
-                            .map(|arm| {
-                                Ok(ProofInductionArm {
-                                    type_name: arm.type_name.clone(),
-                                    variant: arm.variant.clone(),
-                                    bindings: arm.bindings.clone(),
-                                    tactics: transform(
-                                        &arm.tactics,
-                                        hypothesis,
-                                        structural,
-                                        active,
-                                    )?,
-                                })
-                            })
-                            .collect::<Result<_, ClickError>>()?,
-                    })))
-                }
-                ProofTactic::ApplyInduction { .. } => Err(ClickError::new(
-                    "internal induction-application syntax is not accepted directly",
-                )),
-                tactic => Ok(tactic.clone()),
-            })
-            .collect()
+    if !structural
+        && (found.len() != 1
+            || !tactics
+                .iter()
+                .any(|tactic| matches!(tactic, ProofTactic::Induct { .. })))
+    {
+        return Err(ClickError::new(
+            "a pure theorem proof may contain only one top-level `induct` tactic",
+        ));
     }
-
-    // Each branch keeps its own lexical declaration. In particular, expansion
-    // may copy a common declaration into the branches of an earlier `if`.
-    let prepared = if structural {
-        transform(tactics, hypothesis, true, false)?
-    } else {
-        let Some(induction_index) = tactics
-            .iter()
-            .position(|t| matches!(t, ProofTactic::Induct { .. }))
-        else {
-            return Err(ClickError::new(
-                "a pure theorem proof may contain only one top-level `induct` tactic",
-            ));
-        };
-        let mut prepared = transform(&tactics[..induction_index], hypothesis, false, false)?;
-        prepared.push(tactics[induction_index].clone());
-        prepared.extend(transform(
-            &tactics[induction_index + 1..],
-            hypothesis,
-            false,
-            true,
-        )?);
-        prepared
-    };
     let structural_root = if structural {
         let (index, p) = theorem
             .parameters()
@@ -819,22 +674,14 @@ fn prepare_pure_induction_tactics(
     } else {
         None
     };
-    Ok((
-        prepared,
-        Some(PureInductionSetup {
-            parameter: parameter.clone(),
-            hypothesis: hypothesis.clone(),
-            surface_requires,
-            surface_goal: goal.clone(),
-            structural_root,
-            structural_parameters: theorem
-                .parameters()
-                .iter()
-                .find(|p| p.name() == parameter)
-                .filter(|p| matches!(p.click_type(), ClickType::Algebraic(_)))
-                .map(|_| theorem.parameters().to_vec()),
-        }),
-    ))
+    Ok(Some(PureInductionSetup {
+        parameter: parameter.clone(),
+        hypothesis: hypothesis.clone(),
+        surface_requires,
+        surface_goal: goal.clone(),
+        structural_root,
+        structural_parameters: structural.then(|| theorem.parameters().to_vec()),
+    }))
 }
 
 pub(super) fn click_type_from_algebraic_value_type(
@@ -1602,7 +1449,7 @@ fn verify_theorem_ensure(
                     "`{claim_label}` has an empty explicit proof script"
                 )));
             }
-            let (tactics, setup) = prepare_pure_induction_tactics(
+            let setup = prepare_pure_induction_setup(
                 theorem,
                 surface_goal,
                 tactics,
@@ -1616,7 +1463,7 @@ fn verify_theorem_ensure(
                 &goal,
                 &goal_introductions,
                 &entry_requirements,
-                &tactics,
+                tactics,
                 setup.as_ref(),
                 spec_definitions,
                 theorem_environment,

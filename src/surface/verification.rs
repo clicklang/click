@@ -432,15 +432,8 @@ impl<'a> ProgramSourceContext<'a> {
 }
 
 fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String>) {
-    for (index, tactic) in tactics.iter().enumerate() {
+    for tactic in tactics {
         match tactic {
-            ProofTactic::Induct { hypothesis, .. } => {
-                let mut subsequent = BTreeSet::new();
-                collect_applied_theorems(&tactics[index + 1..], &mut subsequent);
-                subsequent.remove(hypothesis);
-                names.extend(subsequent);
-                break;
-            }
             ProofTactic::ApplyTheorem(application)
             | ProofTactic::ApplyTheoremUsing { application, .. } => {
                 names.insert(application.name.clone());
