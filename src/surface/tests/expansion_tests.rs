@@ -27886,3 +27886,18 @@ fn explicit_produced_view_release_expands_and_reverifies() {
     })
     .expect("replay the explicit view release");
 }
+
+#[test]
+fn conditional_signed_shift_retains_its_checked_requirement_on_return() {
+    let (source, sources) =
+        mdtest_sources("mdtests/arithmetic_expression_conditional_signed_shift.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "shift64.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+    assert!(expanded.contains("step() by {"), "{expanded}");
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+}

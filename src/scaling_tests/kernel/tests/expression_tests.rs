@@ -556,3 +556,73 @@ fn float_cast_refutation_uses_fixed_fact_keys() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn signed_shift_requirement_checks_one_bound_as_facts_grow() {
+    use crate::kernel::program_expression as expr;
+
+    let operand = MachineTerm::Variable(Variable(994_500));
+    let state = ExecutionState::new().with_local("n", ProgramValue::Int32(operand.clone()));
+    let expression = expr::shift_left(expr::variable("n"), expr::int32_literal(1));
+    let fits = ConditionTerm::signed_shift_result_fits(
+        MachineIntegerType::Int32,
+        operand.clone(),
+        MachineTerm::constant(1),
+        false,
+    );
+    for related in [false, true] {
+        let samples = [4u32, 16, 64, 256].map(|size| {
+            let bound = |value, lower| {
+                ConditionTerm::signed_greater_equal(value, MachineTerm::constant(lower))
+            };
+            let facts = (0..size).fold(
+                PureFactContext::new().assume_condition(bound(operand.clone(), 0), true),
+                |facts, index| {
+                    let variable = if related {
+                        operand.clone()
+                    } else {
+                        MachineTerm::Variable(Variable(994_501 + u64::from(index)))
+                    };
+                    facts.assume_condition(bound(variable, !index), true)
+                },
+            );
+            [None, Some(true), Some(false)].map(|decision| {
+                let facts = match decision {
+                    Some(value) => facts.clone().assume_condition(fits.clone(), value),
+                    None => facts.clone(),
+                };
+                let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    evaluate_program_expression_paths(
+                        &state,
+                        &expression,
+                        &facts,
+                        &mut ExecutionBudget::for_program_expression(&expression),
+                    )
+                    .unwrap()
+                });
+                let [path] = paths.as_slice() else {
+                    panic!("expected one shift path, got {paths:?}");
+                };
+                if decision == Some(false) {
+                    assert!(matches!(
+                        path.outcome,
+                        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow)
+                    ));
+                } else {
+                    assert!(matches!(path.outcome, ExpressionOutcome::Value(_)));
+                }
+                assert_eq!(path.obligations.len(), usize::from(decision.is_none()));
+                work
+            })
+        });
+        for sample in &samples[1..] {
+            assert!(
+                sample
+                    .iter()
+                    .zip(samples[0])
+                    .all(|(work, baseline)| *work <= baseline),
+                "{related}: {samples:?}"
+            );
+        }
+    }
+}

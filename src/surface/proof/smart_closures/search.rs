@@ -3575,6 +3575,55 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
+    /// Materialize the selected chain as one checked normalization per
+    /// operation. Each have cites the previous bound, with its own endpoint.
+    fn try_float_literal_bound_chain(
+        input: &Proof<'a>,
+        bounds: &[Proposition],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_literal_bound_chain");
+        let [source, intermediate @ ..] = bounds else {
+            return Ok(None);
+        };
+        let Some((_, mut previous)) = Self::resolve_solve_premises_unmeasured(
+            input,
+            std::slice::from_ref(source),
+            introduced_surfaces,
+        )
+        .and_then(|mut pairs| pairs.pop()) else {
+            return Ok(None);
+        };
+        let mut proof = input.clone();
+        for bound in intermediate {
+            check_verification_deadline()?;
+            let Some(surface) = proof.structural_proposition_candidate(bound) else {
+                return Ok(None);
+            };
+            let Some(scope) =
+                attempt::candidate_outcome(proof.driver().open_have(surface.clone()))?
+            else {
+                return Ok(None);
+            };
+            let Some(closed) = attempt::candidate_outcome(
+                scope
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(vec![previous])),
+            )?
+            else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+            previous = surface;
+        }
+        attempt::candidate_outcome(
+            proof
+                .driver()
+                .apply_step(ProofStep::NormalizeUsing(vec![previous])),
+        )
+    }
+
     /// Close the small domain conjunction as ordinary checked `have` steps.
     /// In particular, `defined(cast)` is written as one term even though
     /// its lowered goal has two ordered bounds.
@@ -3696,6 +3745,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             } else {
                 candidates.push(vec![bound]);
             }
+        }
+        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_literal_bound_chain(
+            search_input.facts().assumptions(),
+            goal,
+        ) && let Some(closed) =
+            Self::try_float_literal_bound_chain(search_input, &bounds, introduced_surfaces)?
+        {
+            return Ok(Some(closed));
         }
         if let Some(bound) = float_compound_bound_operand(goal)
             && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
