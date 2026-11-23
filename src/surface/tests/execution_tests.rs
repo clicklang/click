@@ -2589,6 +2589,62 @@ fn every_mdtest_names_each_read_once() {
     assert!(duplicates.is_empty(), "{duplicates:#?}");
 }
 
+/// Where load variables still reach facts: every C mdtest is verified under
+/// [`crate::kernel::load_variable_fact_census::capture`], and the facts that
+/// entered a context holding a load variable are printed by kind, with the
+/// mdtests that produced the most. A report, not a check: run it by name to
+/// see what removing load variables from facts still has to change.
+#[test]
+#[ignore = "report: verifies every C mdtest under the load-variable fact census"]
+fn report_load_variables_in_facts() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    let mut paths = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "md"))
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut totals = std::collections::BTreeMap::<String, (usize, usize, String)>::new();
+    let mut verified = 0;
+    for path in paths {
+        let Ok(mdtest) = crate::cli::read_mdtest(&path) else {
+            continue;
+        };
+        let (Some(click), Ok(inputs)) = (
+            mdtest.click_source.as_deref(),
+            crate::cli::prepare_mdtest_inputs(&mdtest),
+        ) else {
+            continue;
+        };
+        let crate::cli::VerificationInput::Bundle(sources) = &inputs else {
+            continue;
+        };
+        let sources = sources
+            .iter()
+            .map(|(file, source)| (file.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let project = crate::cli::read_mdtest_project_if_needed(&path, click, &inputs)
+            .ok()
+            .flatten();
+        let counts = crate::kernel::load_variable_fact_census::capture(|| {
+            let _ = match &project {
+                Some(project) => crate::surface::verify_c_project(project, &sources).map(|_| ()),
+                None => verify_c_sources(click, &sources).map(|_| ()),
+            };
+        });
+        verified += 1;
+        for (kind, (count, example)) in counts {
+            let total = totals.entry(kind).or_insert((0, 0, example));
+            total.0 += count;
+            total.1 += 1;
+        }
+    }
+    eprintln!("LOAD-VARIABLE FACTS over {verified} C mdtests:");
+    for (kind, (count, files, example)) in &totals {
+        eprintln!("  {count:>8} facts in {files:>5} mdtests  {kind}\n           e.g. {example}");
+    }
+}
+
 #[cfg(feature = "fast-gate")]
 test_batches! {
     file: "execution_tests.rs",

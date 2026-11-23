@@ -5878,8 +5878,9 @@ pub(super) fn collect_loop_preservation_summary(
 pub(super) struct EvaluatedMemorySegment {
     pub(super) base: Address,
     pub(super) provenance: std::sync::Arc<Address>,
-    pub(super) bounds_owner: Option<std::sync::Arc<Address>>,
-    pub(super) bounds_known: bool,
+    /// The array object of the pointer that names the segment, without
+    /// bounds of its own.
+    pub(super) carrier: crate::kernel::primitives::ArrayObject,
     pub(super) start: MachineTerm,
     pub(super) end: MachineTerm,
     pub(super) element_width: u32,
@@ -5906,7 +5907,7 @@ impl EvaluatedMemorySegment {
         range.formation_coverage = self.formation_coverage;
         range
             .with_provenance(provenance)
-            .with_bounds_owner(self.bounds_owner, self.bounds_known)
+            .with_carrier_array(self.carrier)
             .with_typed_carrier()
     }
 }
@@ -7879,8 +7880,7 @@ pub(super) fn collect_loop_effect_check_obligations(
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
                             provenance: range.provenance.clone(),
-                            bounds_owner: range.bounds_owner.clone(),
-                            bounds_known: range.carrier_bounds_known,
+                            carrier: range.carrier_array().clone(),
                             base: range.base.clone(),
                             start: range.bound_terms().0.clone(),
                             end: range.bound_terms().1.clone(),
@@ -8061,8 +8061,11 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     {
         let evaluated = EvaluatedMemorySegment {
             provenance: std::sync::Arc::new(base_value.provenance().clone()),
-            bounds_owner: base_value.bounds_owner().cloned().map(std::sync::Arc::new),
-            bounds_known: base_value.bounds_are_known(),
+            carrier: crate::kernel::primitives::ArrayObject::from_parts(
+                base_value.bounds_are_known(),
+                None,
+                base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+            ),
             base,
             start,
             end,
@@ -8105,8 +8108,11 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
         provenance: std::sync::Arc::new(base_value.provenance().clone()),
-        bounds_owner: base_value.bounds_owner().cloned().map(std::sync::Arc::new),
-        bounds_known: base_value.bounds_are_known(),
+        carrier: crate::kernel::primitives::ArrayObject::from_parts(
+            base_value.bounds_are_known(),
+            None,
+            base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+        ),
         base,
         start,
         end,

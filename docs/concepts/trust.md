@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 70 `axiom`s, which are trusted, not proved.
+The library also declares 81 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -179,9 +179,9 @@ past one beyond an object is already undefined, so every such address is an
 object address. An empty range is excluded because C allows a null pointer
 with a zero length.
 
-The unsigned address-word library adds twelve elementary word axioms and twenty
-scalar-pointer offset axioms (ten pointee types, with `int32` and `int64`
-indices). They state bitwise identities and guarded low/high mask laws over
+The unsigned address-word library adds thirteen elementary word axioms and thirty
+scalar-pointer offset axioms (ten pointee types, with `int32`, `int64` and
+`uint64` indices). They state bitwise identities and guarded low/high mask laws over
 wrapping `uint64` arithmetic, and the element-width scaling of an address.
 Native additions on their right sides are explicitly cast to `uint64`;
 these laws do not assert an unbounded Integer sum. The parsed word declarations

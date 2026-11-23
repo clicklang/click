@@ -3405,6 +3405,56 @@ fn rewritten_constructor_payload_expands_to_known() {
 }
 
 #[test]
+fn compound_constructor_payloads_expand_to_known() {
+    let (source, _) = mdtest_sources("mdtests/algebraic_match_compound_fields.md");
+    for (theorem, result, wrong_result) in [
+        (
+            "forwarded",
+            "ResultForwarded::Item(Box::Value(7))",
+            "ResultForwarded::Item(Box::Value(8))",
+        ),
+        (
+            "wrapped",
+            "ResultWrapped::Item(Box::Value(value))",
+            "ResultWrapped::Item(Box::Value(other))",
+        ),
+        (
+            "captured",
+            "ResultCaptured::Tagged(value, Box::Value(other))",
+            "ResultCaptured::Tagged(value, Box::Value(value))",
+        ),
+        (
+            "tagged",
+            "ResultTagged::Tagged(value, Box::Value(7))",
+            "ResultTagged::Tagged(value, Box::Value(8))",
+        ),
+        (
+            "mixed",
+            "ResultMixed::Item(Pair::Both(Box::Value(value), Box::Value(other)))",
+            "ResultMixed::Item(Pair::Both(Box::Value(other), Box::Value(value)))",
+        ),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
+        let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
+        let proof = proof.split("\n}").next().unwrap();
+        assert!(proof.contains("known();"), "{expanded}");
+        assert!(!proof.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+        let wrong = expanded.replace(&format!("== {result} by"), &format!("== {wrong_result} by"));
+        assert_ne!(wrong, expanded);
+        let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
+        assert!(
+            error.contains("`known` requires the current goal"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn constant_byte_containment_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/byte_containment_preserves_physical_width.md");
     let label = "last_byte.ensures_0";
@@ -17175,6 +17225,32 @@ fn indexed_reads_in_literal_comparisons_expand_through_store_preservation() {
         assert!(!expanded.contains("transport("), "{claim}: {expanded}");
         assert!(
             expanded.contains(&format!("preserve(memory({cell})")),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed reads through bitwise operators"]
+fn indexed_reads_in_bitwise_expressions_expand_through_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_reads_in_bitwise_expressions.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in [
+        "keep_xor.contract",
+        "keep_complement.contract",
+        "keep_right_shift.contract",
+        "keep_literal_first_mask.contract",
+        "keep_nested_masks.contract",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains("preserve(memory(a[0])"),
             "{claim}: {expanded}"
         );
         without_implicit_solve_for_claim(claim, || {

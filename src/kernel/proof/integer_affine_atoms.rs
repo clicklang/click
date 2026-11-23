@@ -249,7 +249,12 @@ impl IntegerFoldAtomInterner {
 pub(crate) fn intern_integer_fold_atom(
     term: &SharedIntegerTerm,
 ) -> Option<Arc<IntegerFoldAtomRecord>> {
-    let key = integer_fold_alpha_key(term)?;
+    intern_integer_fold_key(integer_fold_alpha_key(term)?)
+}
+
+pub(super) fn intern_integer_fold_key(
+    key: IntegerFoldAlphaKey,
+) -> Option<Arc<IntegerFoldAtomRecord>> {
     interner()
         .lock()
         .expect("Integer affine fold atom interner lock poisoned")

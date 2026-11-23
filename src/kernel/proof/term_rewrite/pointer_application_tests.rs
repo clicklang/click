@@ -422,8 +422,11 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     };
     assert_eq!(range.base(), target.address());
     assert_eq!(range.provenance.as_ref(), source.provenance());
-    assert_eq!(range.bounds_owner.as_deref(), source.bounds_owner());
-    assert!(!range.carrier_bounds_known);
+    assert_eq!(
+        range.carrier_owner().map(|owner| &**owner),
+        source.bounds_owner()
+    );
+    assert!(!range.carrier_known());
 }
 
 #[test]
@@ -472,8 +475,11 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
     };
     assert_eq!(range.base(), target.address());
     assert_eq!(range.provenance.as_ref(), unrelated.provenance());
-    assert_eq!(range.bounds_owner.as_deref(), unrelated.bounds_owner());
-    assert!(!range.carrier_bounds_known);
+    assert_eq!(
+        range.carrier_owner().map(|owner| &**owner),
+        unrelated.bounds_owner()
+    );
+    assert!(!range.carrier_known());
 }
 
 #[test]

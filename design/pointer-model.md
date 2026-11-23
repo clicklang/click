@@ -207,7 +207,12 @@ Each step is one PR, measured with the gate and the raise-lower audit.
      equal allocations, bounds and addresses but not the array object, so a
      `same_allocation` fact and equal addresses made a parameter equal to a
      block pointer though it may point into a member.
-   - 3b, remaining: memory ranges' carriers.
+   - 3b, step 3: a memory range's carrier, and a loop segment's, is the
+     carrying pointer's `ArrayObject` without bounds of its own, in place of
+     the separate `carrier_bounds_known` and `bounds_owner` fields. Range
+     identity still compares the carrier's owner and not whether its bounds
+     are known: a range carried by an opaque pointer and one carried by a
+     member of it hold the same bytes, which either pointer may access.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

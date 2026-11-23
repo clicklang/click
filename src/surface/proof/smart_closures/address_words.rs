@@ -1031,6 +1031,7 @@ mod tests {
                         },
                 } => value(operand, values),
                 E::Add(a, b) => value(a, values).wrapping_add(value(b, values)),
+                E::Subtract(a, b) => value(a, values).wrapping_sub(value(b, values)),
                 E::Multiply(a, b) => value(a, values).wrapping_mul(value(b, values)),
                 E::BitwiseAnd(a, b) => value(a, values) & value(b, values),
                 E::BitwiseOr(a, b) => value(a, values) | value(b, values),
@@ -1095,6 +1096,7 @@ mod tests {
             "uint64_mask_keep",
             "uint64_mask_add_clear",
             "uint64_add_distinct",
+            "uint64_add_subtract_cancel",
             "uint64_mask_subset",
             "uint64_or_masked",
         ] {

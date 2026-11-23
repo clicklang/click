@@ -104,6 +104,7 @@ pub(crate) enum MemoryErasedFloatConditionKey {
 
 mod fold_keys;
 pub(super) use fold_keys::alpha_equivalent as retained_folds_alpha_equivalent;
+pub(super) use fold_keys::integer_key as retained_integer_fold_alpha_key;
 mod match_keys;
 mod memory_operands;
 mod pointer_keys;

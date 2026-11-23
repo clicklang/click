@@ -1,9 +1,15 @@
 //! Affine Integer claims and internal arithmetic search plans.
 //! Plans are expanded into ordinary proof steps; they are not proof objects.
+use super::fact_keys::retained_integer_fold_alpha_key;
 pub(crate) use super::integer_affine_atoms::IntegerAffineAtom;
-use super::integer_affine_atoms::{IntegerFoldAtomRecord, intern_integer_fold_atom};
+use super::integer_affine_atoms::{
+    IntegerFoldAtomRecord, intern_integer_fold_atom, intern_integer_fold_key,
+};
 
-use crate::kernel::{ConditionTerm, IntegerTerm, Proposition};
+use crate::kernel::{
+    ConditionTerm, IntegerComparisonOperator, IntegerTerm, KernelTerm, KernelTermNode, Proposition,
+    SharedIntegerTerm, StoredConditionTerm,
+};
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -327,6 +333,10 @@ pub(crate) fn integer_affine_machine_values(
         },
         _ => return Vec::new(),
     };
+    if retained_fold_comparison(condition).is_some() {
+        // A fold contributes only its opaque atom, even if its body observes machine values.
+        return Vec::new();
+    }
     // A native comparison observes the machine values its Integer reading
     // does, as `integer_affine_claim` reads it.
     if !matches!(
@@ -383,7 +393,8 @@ pub(crate) fn integer_affine_machine_values(
 #[derive(Default)]
 struct IntegerAffineCollectionContext {
     constants: HashMap<u64, Option<BigInt>>,
-    fold_atoms: HashMap<crate::kernel::SharedIntegerTerm, Arc<IntegerFoldAtomRecord>>,
+    fold_atoms: HashMap<SharedIntegerTerm, Arc<IntegerFoldAtomRecord>>,
+    retained_fold_atoms: HashMap<u64, Arc<IntegerFoldAtomRecord>>,
 }
 
 #[cfg(test)]
@@ -434,10 +445,7 @@ fn integer_affine_claims_with_context(
 ) -> Vec<IntegerAffineClaim> {
     let readings = match proposition {
         Proposition::ConditionIs(condition, _)
-            if !matches!(
-                condition.native_compat(),
-                crate::kernel::integer_comparison_condition!(_, _)
-            ) =>
+            if !condition.operand_view().is_integer_comparison() =>
         {
             crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 proposition,
@@ -467,7 +475,9 @@ fn integer_affine_claims_with_context(
 pub(crate) fn written_integer_affine_claim(proposition: &Proposition) -> bool {
     let native = match proposition {
         Proposition::Not(inner) => match inner.as_ref() {
-            Proposition::ConditionIs(condition, value) => {
+            Proposition::ConditionIs(condition, value)
+                if !condition.operand_view().is_integer_comparison() =>
+            {
                 !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                     &Proposition::condition_is(condition.clone(), !value),
                 )
@@ -475,10 +485,15 @@ pub(crate) fn written_integer_affine_claim(proposition: &Proposition) -> bool {
             }
             _ => false,
         },
-        _ => !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-            proposition,
-        )
-        .is_empty(),
+        Proposition::ConditionIs(condition, _)
+            if !condition.operand_view().is_integer_comparison() =>
+        {
+            !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                proposition,
+            )
+            .is_empty()
+        }
+        _ => false,
     };
     !native && integer_affine_claim(proposition).is_some()
 }
@@ -500,6 +515,18 @@ fn integer_affine_claim_with_context(
         },
         _ => return None,
     };
+    if let Some((operator, arguments)) = retained_fold_comparison(condition)
+        && let Some(claim) = integer_affine_comparison_claim(
+            *operator,
+            value,
+            arguments.each_ref(),
+            |operand, weight, terms, constant| {
+                collect_retained_affine_operand(operand, weight, terms, constant, context)
+            },
+        )
+    {
+        return claim;
+    }
     // A native comparison of machine values holds exactly when the Integer
     // comparison of their exact observations does, so it is that Integer
     // claim. One constant-size reading; nothing else is consulted.
@@ -526,91 +553,147 @@ fn integer_affine_claim_with_context(
             },
         });
     }
-    let (left, right, relation, strict) = match condition.native_compat() {
-        ConditionTerm::IntegerLessThan(left, right) if value => {
-            (left, right, IntegerAffineRelation::LessEqual, true)
-        }
-        ConditionTerm::IntegerLessEqual(left, right) if value => {
-            (left, right, IntegerAffineRelation::LessEqual, false)
-        }
-        ConditionTerm::IntegerGreaterThan(left, right) if value => {
-            (right, left, IntegerAffineRelation::LessEqual, true)
-        }
-        ConditionTerm::IntegerGreaterEqual(left, right) if value => {
-            (right, left, IntegerAffineRelation::LessEqual, false)
-        }
-        ConditionTerm::IntegerEqual(left, right) if value => {
-            (left, right, IntegerAffineRelation::Equal, false)
-        }
-        ConditionTerm::IntegerLessThan(left, right) => {
-            (right, left, IntegerAffineRelation::LessEqual, false)
-        }
-        ConditionTerm::IntegerLessEqual(left, right) => {
-            (right, left, IntegerAffineRelation::LessEqual, true)
-        }
-        ConditionTerm::IntegerGreaterThan(left, right) => {
-            (left, right, IntegerAffineRelation::LessEqual, false)
-        }
-        ConditionTerm::IntegerGreaterEqual(left, right) => {
-            (left, right, IntegerAffineRelation::LessEqual, true)
-        }
-        ConditionTerm::IntegerEqual(left, right) => {
-            // Disequality is outside this fragment, except for constants.
-            let mut terms = BTreeMap::new();
-            let mut constant = BigInt::zero();
-            collect_integer_affine_terms(left, &BigInt::one(), &mut terms, &mut constant, context)?;
-            collect_integer_affine_terms(
-                right,
-                &BigInt::from(-1),
-                &mut terms,
-                &mut constant,
-                context,
-            )?;
-            return (terms.is_empty() && !constant.is_zero()).then_some(IntegerAffineClaim {
-                relation: IntegerAffineRelation::LessEqual,
-                terms,
-                constant: BigInt::from(-1),
-            });
-        }
-        ConditionTerm::IntegerNotEqual(left, right) if value => {
-            let mut terms = BTreeMap::new();
-            let mut constant = BigInt::zero();
-            collect_integer_affine_terms(left, &BigInt::one(), &mut terms, &mut constant, context)?;
-            collect_integer_affine_terms(
-                right,
-                &BigInt::from(-1),
-                &mut terms,
-                &mut constant,
-                context,
-            )?;
-            return (terms.is_empty() && !constant.is_zero()).then_some(IntegerAffineClaim {
-                relation: IntegerAffineRelation::LessEqual,
-                terms,
-                constant: BigInt::from(-1),
-            });
-        }
-        ConditionTerm::IntegerNotEqual(left, right) => {
-            // A false disequality is the same affine equality as a true
-            // IntegerEqual, including under a negated branch premise.
-            (left, right, IntegerAffineRelation::Equal, false)
-        }
+    use IntegerComparisonOperator as Op;
+    let (operator, operands) = match condition.native_compat() {
+        ConditionTerm::IntegerLessThan(left, right) => (Op::LessThan, [left, right]),
+        ConditionTerm::IntegerLessEqual(left, right) => (Op::LessEqual, [left, right]),
+        ConditionTerm::IntegerGreaterThan(left, right) => (Op::GreaterThan, [left, right]),
+        ConditionTerm::IntegerGreaterEqual(left, right) => (Op::GreaterEqual, [left, right]),
+        ConditionTerm::IntegerEqual(left, right) => (Op::Equal, [left, right]),
+        ConditionTerm::IntegerNotEqual(left, right) => (Op::NotEqual, [left, right]),
         _ => return None,
+    };
+    integer_affine_comparison_claim(
+        operator,
+        value,
+        operands,
+        |operand, weight, terms, constant| {
+            collect_integer_affine_terms(operand, weight, terms, constant, context)
+        },
+    )?
+}
+
+fn retained_fold_comparison(
+    condition: &StoredConditionTerm,
+) -> Option<(&IntegerComparisonOperator, &[KernelTerm; 2])> {
+    let KernelTermNode::IntegerCompare {
+        operator,
+        arguments,
+    } = condition.root()?.node()
+    else {
+        return None;
+    };
+    let mut has_fold = false;
+    for operand in arguments {
+        match operand.node() {
+            KernelTermNode::Fold(_) => has_fold = true,
+            KernelTermNode::Variable(_) | KernelTermNode::IntegerLiteral(_) => {}
+            _ => return None,
+        }
+    }
+    has_fold.then_some((operator, arguments))
+}
+
+/// The outer option reports whether both operands could be read. The inner
+/// option reports whether the comparison has an affine claim.
+fn integer_affine_comparison_claim<T>(
+    operator: IntegerComparisonOperator,
+    value: bool,
+    [left, right]: [T; 2],
+    mut collect: impl FnMut(
+        T,
+        &BigInt,
+        &mut BTreeMap<IntegerAffineAtom, BigInt>,
+        &mut BigInt,
+    ) -> Option<()>,
+) -> Option<Option<IntegerAffineClaim>> {
+    use IntegerComparisonOperator as Op;
+    let (reverse, strict) = match (operator, value) {
+        (Op::LessThan, true) | (Op::GreaterEqual, false) => (false, true),
+        (Op::GreaterThan, true) | (Op::LessEqual, false) => (true, true),
+        (Op::GreaterEqual, true) | (Op::LessThan, false) => (true, false),
+        _ => (false, false),
     };
     let mut terms = BTreeMap::new();
     let mut constant = BigInt::zero();
-    collect_integer_affine_terms(left, &BigInt::one(), &mut terms, &mut constant, context)?;
-    collect_integer_affine_terms(right, &BigInt::from(-1), &mut terms, &mut constant, context)?;
+    let (left, right) = if reverse {
+        (right, left)
+    } else {
+        (left, right)
+    };
+    collect(left, &BigInt::one(), &mut terms, &mut constant)?;
+    collect(right, &BigInt::from(-1), &mut terms, &mut constant)?;
+
+    let relation = match (operator, value) {
+        (Op::Equal, true) | (Op::NotEqual, false) => IntegerAffineRelation::Equal,
+        (Op::Equal, false) | (Op::NotEqual, true) => {
+            return Some(
+                (terms.is_empty() && !constant.is_zero()).then_some(IntegerAffineClaim {
+                    relation: IntegerAffineRelation::LessEqual,
+                    terms,
+                    constant: BigInt::from(-1),
+                }),
+            );
+        }
+        _ => IntegerAffineRelation::LessEqual,
+    };
     if strict {
         if crate::instrumentation::deadline_exceeded_with_work(constant.bits() as usize + 1) {
             return None;
         }
         constant += BigInt::one();
     }
-    Some(IntegerAffineClaim {
+    Some(Some(IntegerAffineClaim {
         relation,
         terms,
         constant,
-    })
+    }))
+}
+
+fn collect_retained_affine_operand(
+    operand: &KernelTerm,
+    coefficient: &BigInt,
+    terms: &mut BTreeMap<IntegerAffineAtom, BigInt>,
+    constant: &mut BigInt,
+    context: &mut IntegerAffineCollectionContext,
+) -> Option<()> {
+    if crate::instrumentation::deadline_exceeded_with_work(1) {
+        return None;
+    }
+    match operand.node() {
+        KernelTermNode::Fold(fold) => {
+            let atom = if let Some(atom) = context.retained_fold_atoms.get(&operand.id()) {
+                atom.clone()
+            } else {
+                let atom = intern_integer_fold_key(retained_integer_fold_alpha_key(fold)?)?;
+                context
+                    .retained_fold_atoms
+                    .insert(operand.id(), atom.clone());
+                atom
+            };
+            add_atom_weight(terms, IntegerAffineAtom::Fold(atom), coefficient.clone())
+        }
+        KernelTermNode::Variable(variable) => add_atom_weight(
+            terms,
+            IntegerAffineAtom::Variable(*variable),
+            coefficient.clone(),
+        ),
+        KernelTermNode::IntegerLiteral(value) => {
+            if !charge_integer_product(coefficient, value)
+                || crate::instrumentation::deadline_exceeded_with_work(
+                    constant.bits() as usize
+                        + coefficient.bits() as usize
+                        + value.bits() as usize
+                        + 1,
+                )
+            {
+                return None;
+            }
+            *constant += coefficient * value;
+            Some(())
+        }
+        _ => None,
+    }
 }
 
 /// A constant value for checking, with a shallow refusal for symbolic terms.

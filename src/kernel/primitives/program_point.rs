@@ -2030,6 +2030,19 @@ impl ProgramPoint {
         .unwritten_static_scalar_version(pointer, value_type)
     }
 
+    /// The version a read of `pointer` as `value_type` is named at from this
+    /// point, when the point indexes select one. Producers are moving to this
+    /// one question, asked after a value the memory holds for the cell
+    /// (`design/point-named-reads.md`, P1), so that two producers of one cell
+    /// at one point name it alike. Logical integer reads ask it.
+    pub(crate) fn read_version(&self, pointer: &Address, value_type: ProgramType) -> Option<Self> {
+        if MachineIntegerType::from_program_type(value_type).is_none() && !value_type.is_pointer() {
+            return None;
+        }
+        self.ordinary_typed_version(pointer, value_type)
+            .or_else(|| self.entry_cell_version(pointer, value_type))
+    }
+
     pub(crate) fn ordinary_typed_version(
         &self,
         pointer: &Address,

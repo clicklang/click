@@ -89,12 +89,21 @@ fn algebraic_constructor_payload_check_scales_with_written_fields() {
         name: "Color".into(),
         arguments: vec![],
     };
-    let colors: std::sync::Arc<[AlgebraicVariantType]> = ["Red", "Green"]
-        .map(|name| AlgebraicVariantType {
-            name: name.into(),
+    let colors: std::sync::Arc<[AlgebraicVariantType]> = [
+        AlgebraicVariantType {
+            name: "Red".into(),
             fields: vec![],
-        })
-        .into();
+        },
+        AlgebraicVariantType {
+            name: "Green".into(),
+            fields: vec![],
+        },
+        AlgebraicVariantType {
+            name: "Layer".into(),
+            fields: vec![field_type.clone()],
+        },
+    ]
+    .into();
     for size in [8, 32, 128] {
         let _session = VerificationSession::enter();
         let mut scrutinee = KernelMatch::test_scrutinee(vec![field_type.clone(); size]);
@@ -118,10 +127,16 @@ fn algebraic_constructor_payload_check_scales_with_written_fields() {
                 fields: vec![],
             })
         };
+        let layer = |field| {
+            value(AlgebraicTermNode::Constructor {
+                variant: "Layer".into(),
+                fields: vec![field],
+            })
+        };
         let mut fields = (0..size)
             .map(|i| variable(994_300 + i as u64))
             .collect::<Vec<_>>();
-        fields[0] = tag("Red");
+        fields[0] = layer(tag("Red"));
         let bindings = (0..size)
             .map(|i| variable(994_100 + i as u64))
             .collect::<Vec<_>>();
@@ -130,11 +145,16 @@ fn algebraic_constructor_payload_check_scales_with_written_fields() {
             fields,
         };
         scrutinee.node = arm(fields.clone());
-        let mut expected = fields.into_iter().rev().collect::<Vec<_>>();
-        let mut result = bindings.iter().cloned().rev().collect::<Vec<_>>();
+        let mut expected = fields.into_iter().rev().map(layer).collect::<Vec<_>>();
+        let mut result = bindings
+            .iter()
+            .cloned()
+            .rev()
+            .map(layer)
+            .collect::<Vec<_>>();
         for fields in [&mut expected, &mut result] {
-            fields[0] = variable(994_500);
-            fields[1] = tag("Green");
+            fields[0] = layer(variable(994_500));
+            fields[1] = layer(layer(tag("Green")));
         }
         let algebraic_type = scrutinee.algebraic_type.clone();
         let expected = AlgebraicTerm {
@@ -164,7 +184,7 @@ fn algebraic_constructor_payload_check_scales_with_written_fields() {
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
         assert!(proved);
-        assert!((2 * size..=8 * size + 48).contains(&work), "{size}: {work}");
+        assert!((3 * size..=8 * size + 48).contains(&work), "{size}: {work}");
     }
 }
 

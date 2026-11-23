@@ -939,19 +939,41 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     }
 }
 
-fn is_closed_constructor_payload(field: &AlgebraicValue) -> bool {
+fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
     match field {
         AlgebraicValue::Integer(IntegerTerm::Constant(_)) => true,
         AlgebraicValue::Program(ProgramValue::Bool(word)) => word.bool_constant_value().is_some(),
         AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })) => {
             field.value_type() == AlgebraicValueType::Program(format.program_type())
         }
-        AlgebraicValue::Algebraic(AlgebraicTerm {
-            node: AlgebraicTermNode::Constructor { fields, .. },
-            ..
-        }) => fields.is_empty(),
         _ => false,
     }
+}
+
+fn is_closed_constructor_payload(field: &AlgebraicValue) -> bool {
+    let AlgebraicValue::Algebraic(AlgebraicTerm {
+        node: AlgebraicTermNode::Constructor { fields, .. },
+        ..
+    }) = field
+    else {
+        return is_constructor_payload_literal(field);
+    };
+    let mut pending = vec![fields.as_slice()];
+    while let Some(fields) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(fields.len());
+        for field in fields {
+            if let AlgebraicValue::Algebraic(AlgebraicTerm {
+                node: AlgebraicTermNode::Constructor { fields, .. },
+                ..
+            }) = field
+            {
+                pending.push(fields);
+            } else if !is_constructor_payload_literal(field) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn constructor_payload_variable(field: &AlgebraicValue) -> Option<Variable> {
@@ -980,6 +1002,57 @@ fn same_constructor_payload_type(left: &AlgebraicValue, right: &AlgebraicValue) 
         }
         _ => left.value_type() == right.value_type(),
     }
+}
+
+fn constructor_result_fields_match(
+    result: &[AlgebraicValue],
+    expected: &[AlgebraicValue],
+    payloads: &std::collections::HashMap<Variable, &AlgebraicValue>,
+) -> bool {
+    let mut pending = vec![(result, expected)];
+    while let Some((result, expected)) = pending.pop() {
+        if result.len() != expected.len() {
+            return false;
+        }
+        crate::instrumentation::record_deterministic_work(result.len());
+        for (field, expected) in result.iter().zip(expected) {
+            let variable = constructor_payload_variable(field);
+            let payload = variable
+                .and_then(|id| payloads.get(&id).copied())
+                .unwrap_or(field);
+            if !same_constructor_payload_type(payload, field) {
+                return false;
+            }
+            if let (
+                AlgebraicValue::Algebraic(AlgebraicTerm {
+                    node: AlgebraicTermNode::Constructor { variant, fields },
+                    ..
+                }),
+                AlgebraicValue::Algebraic(AlgebraicTerm {
+                    node:
+                        AlgebraicTermNode::Constructor {
+                            variant: expected_variant,
+                            fields: expected_fields,
+                        },
+                    ..
+                }),
+            ) = (payload, expected)
+            {
+                if variant != expected_variant || !same_constructor_payload_type(payload, expected)
+                {
+                    return false;
+                }
+                // Stored constructor payloads are closed, so their children need
+                // no further lookups. Written result constructors can use binders.
+                pending.push((fields, expected_fields));
+            } else if !(variable.is_some() || is_constructor_payload_literal(payload))
+                || payload != expected
+            {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Follow selected constructor arms that forward payloads into a constructor,
@@ -1045,20 +1118,8 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
     else {
         return false;
     };
-    if result_variant != expected_variant || result_fields.len() != expected_fields.len() {
-        return false;
-    }
-    crate::instrumentation::record_deterministic_work(result_fields.len());
-    result_fields
-        .iter()
-        .zip(expected_fields)
-        .all(|(field, expected)| {
-            let Some(variable) = constructor_payload_variable(field) else {
-                return is_closed_constructor_payload(field) && field == expected;
-            };
-            let payload = payloads.get(&variable).copied().unwrap_or(field);
-            same_constructor_payload_type(payload, field) && payload == expected
-        })
+    result_variant == expected_variant
+        && constructor_result_fields_match(result_fields, expected_fields, &payloads)
         && matched.is_well_formed()
         && expected.is_well_formed()
 }

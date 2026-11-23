@@ -1502,7 +1502,7 @@ fn region(
                     *then_target..join,
                     exits,
                 )?;
-                let no = region(
+                let mut no = region(
                     cx,
                     mir,
                     nodes,
@@ -1512,6 +1512,26 @@ fn region(
                     *else_target..join,
                     exits,
                 )?;
+                // The unwrapped payload ends the retained box on the Some
+                // arm. On the None arm it can end immediately after the test.
+                if let Some(name) = super::super::charon::tested_option_box_local(condition)
+                    && cx
+                        .scalar_operands
+                        .get(name)
+                        .is_some_and(|(_, last)| last.block == *then_target)
+                {
+                    let mut operand = cx.expr(&E::Local { name: name.into() })?;
+                    if let ProgramExpression::StepResult { ends, .. } = &mut operand {
+                        *ends = true;
+                    }
+                    no = Sited::unsited(typed_value_step(
+                        Vec::new(),
+                        operand,
+                        ProgramType::Int32Pointer,
+                        false,
+                    ))
+                    .then(no);
+                }
                 cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
                     block,
                     statement: mir.blocks[block].statements.len(),

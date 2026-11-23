@@ -28,32 +28,8 @@ void *fill_range(void *argument) {
 ```click
 target "x86_64-unknown-linux-gnu";
 verifying "fill_range.c";
-
 import click::separation;
-
-theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, lo: int32, hi: int32, i: int32) {
-    requires separate(whole, memory(p[lo..hi]));
-    requires contains(whole, kept);
-    requires 0 <= lo;
-    requires lo <= i;
-    requires i < hi;
-    ensures separate(kept, memory(p[i])) by {
-        have 0 <= i by { solve() using { 0 <= lo; lo <= i; }; }
-        have i <= 2147483646 by { solve() using { i < hi; }; }
-        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < hi; }; }
-        have ((i + 1) as int32) <= hi by { solve() using { 0 <= i; i < hi; }; }
-        have contains(memory(p[lo..hi]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, lo, hi, i, i + 1));
-        }
-        have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[lo..hi]), kept, memory(p[i..i + 1])));
-        }
-        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
-        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
-    }
-}
+import click::integer;
 
 predicate range_filled(job: struct range_job*) {
     forall (k: int32) {
@@ -80,7 +56,7 @@ void *fill_range(void *argument) {
     step();
     step();
     loop fill {
-        decreases job->end - index;
+        decreases to_integer(job->end) - to_integer(index);
         views job->output;
         views job->begin;
         views job->end;
@@ -102,126 +78,144 @@ void *fill_range(void *argument) {
             }
         }
         maintain by {
-            have separate(memory(*job), memory(job->output[job->begin..job->end]));
-            have job->begin <= index;
-            have contains(memory(*job), memory(job->output)) by { normalize(); }
-            have separate(memory(job->output[index]), memory(job->output)) by {
-                apply(selected_array_cell(memory(*job), memory(job->output), job->output, job->begin, job->end, index));
-                apply(separation::separate_symm(memory(job->output), memory(job->output[index])));
-            }
-            have contains(memory(*job), memory(job->begin)) by { normalize(); }
-            have separate(memory(job->output[index]), memory(job->begin)) by {
-                apply(selected_array_cell(memory(*job), memory(job->begin), job->output, job->begin, job->end, index));
-                apply(separation::separate_symm(memory(job->begin), memory(job->output[index])));
-            }
-            have contains(memory(*job), memory(job->end)) by { normalize(); }
-            have separate(memory(job->output[index]), memory(job->end)) by {
-                apply(selected_array_cell(memory(*job), memory(job->end), job->output, job->begin, job->end, index));
-                apply(separation::separate_symm(memory(job->end), memory(job->output[index])));
-            }
-            have contains(memory(*job), memory(job->value)) by { normalize(); }
-            have separate(memory(job->output[index]), memory(job->value)) by {
-                apply(selected_array_cell(memory(*job), memory(job->value), job->output, job->begin, job->end, index));
-                apply(separation::separate_symm(memory(job->value), memory(job->output[index])));
-            }
+            // The output store leaves the range descriptor and earlier cells intact.
+            mark before_write;
+            have separate(memory(*job), memory(job->output[job->begin..job->end])) by { known(); }
             have contains(memory(job->output[job->begin..job->end]), memory(job->output[index])) by {
                 apply(separation::contains_element(job->output, job->begin, job->end, index));
             }
-            have separate(memory(job->output[index]), memory(*job)) by { solve(); }
-            mark iteration;
-            step();
-            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))) by { known(); }
-            have job->output == at(iteration, job->output) by {
-                preserve(at(iteration, memory(job->output)), loop(0).statement(0));
+            apply(separation::contains_refl(memory(*job)));
+            apply(separation::separate_restrict(memory(*job), memory(job->output[job->begin..job->end]),
+                memory(*job), memory(job->output[index])));
+            step() by { known(); }
+
+            have separate(loop(0).statement(0).footprint, at(before_write, memory(*job))) by {
+                normalize() using {
+                    separate(at(before_write, memory(job->output[index])), at(before_write, memory(*job)));
+                };
             }
-            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))) by { known(); }
-            have job->begin == at(iteration, job->begin) by {
-                preserve(at(iteration, memory(job->begin)), loop(0).statement(0));
+            apply(separation::contains_refl(loop(0).statement(0).footprint));
+            have contains(at(before_write, memory(*job)), at(before_write, memory(job->begin))) by { normalize(); }
+            apply(separation::separate_restrict(loop(0).statement(0).footprint, at(before_write, memory(*job)),
+                loop(0).statement(0).footprint, at(before_write, memory(job->begin))));
+            have job->begin == at(before_write, job->begin) by {
+                preserve(at(before_write, memory(job->begin)), loop(0).statement(0));
             }
-            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))) by { known(); }
-            have job->end == at(iteration, job->end) by {
-                preserve(at(iteration, memory(job->end)), loop(0).statement(0));
+            have contains(at(before_write, memory(*job)), at(before_write, memory(job->output))) by { normalize(); }
+            apply(separation::separate_restrict(loop(0).statement(0).footprint, at(before_write, memory(*job)),
+                loop(0).statement(0).footprint, at(before_write, memory(job->output))));
+            have job->output == at(before_write, job->output) by {
+                preserve(at(before_write, memory(job->output)), loop(0).statement(0));
             }
-            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->value))) by { known(); }
-            have job->value == at(iteration, job->value) by { known(); }
-            have forall (k: int32) {
-                job->begin <= k and k <= index implies job->output[k] == job->value
-            } by {
+            have contains(at(before_write, memory(*job)), at(before_write, memory(job->end))) by { normalize(); }
+            apply(separation::separate_restrict(loop(0).statement(0).footprint, at(before_write, memory(*job)),
+                loop(0).statement(0).footprint, at(before_write, memory(job->end))));
+            have job->end == at(before_write, job->end) by {
+                preserve(at(before_write, memory(job->end)), loop(0).statement(0));
+            }
+            have contains(at(before_write, memory(*job)), memory(at(before_write, &job->value)[0])) by { normalize(); }
+            apply(separation::separate_restrict(loop(0).statement(0).footprint, at(before_write, memory(*job)),
+                loop(0).statement(0).footprint, memory(at(before_write, &job->value)[0])));
+            have load<int32>(at(before_write, &job->value)) == at(before_write, load<int32>(&job->value)) by {
+                preserve(memory(at(before_write, &job->value)[0]), loop(0).statement(0));
+            }
+            have job->value == at(before_write, job->value) by { known(); }
+
+            have forall (k: int32) { job->begin <= k and k <= index implies job->output[k] == job->value } by {
                 intro();
                 intro();
                 if k < index {
-                    have job->begin <= k;
-                    instantiate(at(region(5).entry, forall (k: int32) {
+                    instantiate(at(before_write, forall (k: int32) {
                         job->begin <= k and k < index implies job->output[k] == job->value
                     }), k);
-                    have at(iteration, job->output[k]) == at(iteration, job->value) by { known(); }
-                    // The write at index preserves the earlier cell at k.
-                    have k != index;
-                    have at(iteration, separate(memory(job->output[index]), memory(job->output[k]))) by {
-                        apply(separation::separate_elements(at(iteration, job->output), at(iteration, index), k));
-                    }
-                    have contains(at(iteration, memory(job->output[k])), at(iteration, memory((&job->output[k])[0..1]))) by { normalize(); }
-                    apply(separation::contains_refl(at(iteration, memory(job->output[index]))));
-                    have separate(at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1]))) by {
-                        apply(separation::separate_restrict(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[k])), at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1]))));
-                    }
-                    have separate(loop(0).statement(0).footprint, at(iteration, memory((&job->output[k])[0..1]))) by {
+                    have at(before_write, job->begin) <= k and k < at(before_write, index) by {
+                        rewrite(at(before_write, job->begin), job->begin);
                         known();
                     }
-                    have at(loop(0).statement(0).exit, load<int32>(at(iteration, &job->output[k])))
-                        == at(loop(0).statement(0).entry, load<int32>(at(iteration, &job->output[k]))) by {
-                        preserve(at(iteration, memory((&job->output[k])[0..1])), loop(0).statement(0));
+                    apply(at(before_write, job->begin) <= k and k < at(before_write, index) implies
+                        at(before_write, job->output[k]) == at(before_write, job->value));
+                    have k != at(before_write, index) by { solve() using { k < index; }; }
+                    have separate(at(before_write, memory(job->output[k])), at(before_write, memory(job->output[index]))) by {
+                        apply(separation::separate_elements(at(before_write, job->output), k, at(before_write, index)));
                     }
-                    rewrite(job->output, at(iteration, job->output));
+                    have separate(loop(0).statement(0).footprint, at(before_write, memory(job->output[k]))) by {
+                        normalize() using {
+                            separate(at(before_write, memory(job->output[k])), at(before_write, memory(job->output[index])));
+                        };
+                    }
+                    have load<int32>(at(before_write, &job->output[k])) == at(before_write, job->output[k]) by {
+                        preserve(at(before_write, memory(job->output[k])), loop(0).statement(0));
+                    }
+                    rewrite(job->output, at(before_write, job->output));
+                    rewrite(job->value, at(before_write, job->value));
                     known();
                 } else {
-                    have k <= index;
                     have k == index;
                     rewrite(k, index);
                     solve();
                 }
             }
+
+            // The increment moves the inclusive prefix back to the loop invariant.
+            mark after_write;
             step();
-            have 0 <= at(iteration, index);
-            have 0 <= job->end;
-            have 0 - at(iteration, index) + job->end - 1
-                < 0 - at(iteration, index) + job->end by {
-                solve() using {
-                    0 <= at(iteration, index);
-                    0 <= job->end;
-                    at(iteration, index) < at(iteration, job->end);
-                    job->begin <= job->end;
-                };
+            have at(before_write, index) < job->end by {
+                rewrite(job->end, at(before_write, job->end));
+                known();
             }
-            have forall (k: int32) {
-                job->begin <= k and k < index implies job->output[k] == job->value
-            } by {
+            have at(after_write, index) < 2147483647 by {
+                apply(integer::int32_less_than_less_equal_transitive(at(after_write, index), job->end, 2147483647));
+            }
+            apply(integer::int32_increment_below_max_is_defined(at(after_write, index)));
+            have to_integer(index) == to_integer(at(before_write, index)) + 1 by {
+                have to_integer(index) == to_integer(at(after_write, index) + 1) by { known(); }
+                apply(integer::int32_add_to_integer(at(after_write, index), 1));
+                known();
+            }
+            have forall (k: int32) { job->begin <= k and k < index implies job->output[k] == job->value } by {
                 intro();
                 intro();
-                have job->begin <= k;
-                have k < index;
-                have k <= at(iteration, index);
-                have job->begin <= k and k <= index;
-                instantiate(at(region(6).entry, forall (k: int32) {
+                have k <= at(after_write, index) by {
+                    have to_integer(k) < to_integer(index) by { known(); }
+                    apply(integer::lt_le_predecessor(to_integer(k), to_integer(index)));
+                    have to_integer(at(after_write, index)) == to_integer(index) - 1 by {
+                        rewrite(to_integer(index), to_integer(at(before_write, index)) + 1);
+                        known();
+                    }
+                    have to_integer(k) <= to_integer(at(after_write, index)) by {
+                        rewrite(to_integer(at(after_write, index)), to_integer(index) - 1);
+                        known();
+                    }
+                    apply(integer::int32_to_integer_less_equal_implies_less_equal(k, at(after_write, index)));
+                }
+                instantiate(at(after_write, forall (k: int32) {
                     job->begin <= k and k <= index implies job->output[k] == job->value
                 }), k);
-                solve();
+                have at(after_write, job->begin) <= k and k <= at(after_write, index) by { known(); }
+                apply(at(after_write, job->begin) <= k and k <= at(after_write, index) implies
+                    at(after_write, job->output[k]) == at(after_write, job->value));
+                known();
+            }
+            have job->begin <= index by {
+                have at(after_write, job->begin) <= at(after_write, index) by { known(); }
+                apply(integer::int32_increment_lower_bound(at(after_write, index), at(after_write, job->begin), job->end));
+                have to_integer(job->begin) <= to_integer(index) by { known(); }
+                apply(integer::int32_to_integer_less_equal_implies_less_equal(job->begin, index));
+            }
+            have index <= job->end by {
+                apply(integer::int32_increment_upper_bound(at(after_write, index), job->end));
+                have to_integer(index) <= to_integer(job->end) by { known(); }
+                apply(integer::int32_to_integer_less_equal_implies_less_equal(index, job->end));
+            }
+            have 0 <= to_integer(job->end) - to_integer(index) by {
+                solve() using { index <= job->end; };
+            }
+            have to_integer(job->end) - to_integer(index) < at(before_write, to_integer(job->end) - to_integer(index)) by {
+                rewrite(to_integer(index), to_integer(at(before_write, index)) + 1);
+                rewrite(at(before_write, job->end), job->end);
+                known();
             }
             solve();
-        }
-        otherwise {
-            have index == job->end by solve();
-            have forall (k: int32) {
-                job->begin <= k and k < job->end implies job->output[k] == job->value
-            } by {
-                intro();
-                intro();
-                have job->begin <= k and k < index by solve();
-                instantiate(forall (k: int32) {
-                    job->begin <= k and k < index implies job->output[k] == job->value
-                }, k);
-                solve();
-            }
         }
     }
     step();
