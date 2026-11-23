@@ -6455,6 +6455,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ProgramValue::Int32(value),
                 )),
             ) if outcome && value.constant32().is_some() => left,
+            (_, read @ ContractExpression::Index(..), ContractExpression::IntegerLiteral(_))
+            | (_, ContractExpression::IntegerLiteral(_), read @ ContractExpression::Index(..))
+                if *operator != ComparisonOperator::In =>
+            {
+                read
+            }
             (
                 ComparisonOperator::LessEqual,
                 field @ ContractExpression::Field { .. },
@@ -6480,19 +6486,31 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 read.as_ref()
             }
+            ContractExpression::BitwiseOr(read, mask)
+                if matches!(read.as_ref(), ContractExpression::Index(..))
+                    && matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_)) =>
+            {
+                read.as_ref()
+            }
             ContractExpression::If {
                 condition,
                 then_branch,
                 else_branch,
             } if matches!(then_branch.as_ref(), ContractExpression::IntegerLiteral(_))
                 && matches!(else_branch.as_ref(), ContractExpression::IntegerLiteral(_))
-                && let ClickProposition::Comparison {
-                    left: read @ ContractExpression::Index(..),
-                    right: ContractExpression::IntegerLiteral(_),
-                    ..
-                } = condition.as_ref() =>
+                && let ClickProposition::Comparison { left, right, .. } = condition.as_ref() =>
             {
-                read
+                match (left, right) {
+                    (
+                        read @ ContractExpression::Index(..),
+                        ContractExpression::IntegerLiteral(_),
+                    )
+                    | (
+                        ContractExpression::IntegerLiteral(_),
+                        read @ ContractExpression::Index(..),
+                    ) => read,
+                    _ => return Ok(None),
+                }
             }
             _ if outcome => {
                 // A read raised from an outcome goal can be spelled *(a + i).

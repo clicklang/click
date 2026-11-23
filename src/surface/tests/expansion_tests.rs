@@ -17079,6 +17079,9 @@ fn indexed_expressions_expand_through_range_separation() {
     for (claim, cell) in [
         ("keep_low_bit.contract", "a[0]"),
         ("keep_positive_flag.contract", "p[j]"),
+        ("keep_bitwise_or.contract", "a[0]"),
+        ("keep_read_bound.contract", "a[0]"),
+        ("keep_reversed_condition.contract", "p[j]"),
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
         assert!(!expanded.contains("transport("), "{claim}: {expanded}");
