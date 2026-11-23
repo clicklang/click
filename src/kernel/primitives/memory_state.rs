@@ -3476,6 +3476,11 @@ fn call_havoc_keeps_cell(
     kept: Option<&CallKeptOwnership>,
     preserve_local_slots: bool,
 ) -> CallHavocCellRule {
+    // A string literal's storage cannot be modified by any C function
+    // (C11 6.4.5p7), so no call writes it, whoever holds it.
+    if matches!(pointer.base, AddressBase::StringLiteral { .. }) {
+        return CallHavocCellRule::Separate;
+    }
     if preserve_local_slots
         && pointer.base.is_local_block()
         // An opaque pointer may reach a local even when no exact alias has

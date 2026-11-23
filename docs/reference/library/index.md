@@ -5939,6 +5939,32 @@ selects this contract for the projected `<stdio.h>` declaration
 
 **Verified use:** [`mdtests/printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md); a format that converts is refused in [`mdtests/fprintf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/fprintf_refuses_a_format_that_converts.md).
 
+### `printf`
+
+```click
+int32 printf(const uint8* format, ...args) {
+    let n: uint64;
+    views click::c::string::cstr_at(format, n);
+    requires n <= 2147483647u64;
+    requires click::c::stdio::literal_format(format, 0u64, n as int32);
+    owns out: click::c::stdio::stream(stdout);
+    ensures result == click::c::stdio::format_length(format, 0u64, n as int32, 0) or result < 0;
+    ensures out.write_history == List::Cons(
+        WriteAttempt::Attempt(click::c::stdio::format_output(format, 0u64, n as int32), result),
+        old(out.write_history));
+    ensures click::c::stdio::write_requests(out.write_history) == List::Cons(
+        click::c::stdio::format_output(format, 0u64, n as int32),
+        old(click::c::stdio::write_requests(out.write_history)));
+}
+```
+
+**Meaning:** [`fprintf`](#fprintf) with the stream `stdout`, the hosted
+target's standard output, which the contract names as a program global. The
+C front end selects this contract for the projected `<stdio.h>` declaration
+on the hosted target ([formatted output](../language/c.md#formatted-output)).
+
+**Verified use:** [`mdtests/printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md); a format that converts is refused in [`mdtests/printf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_refuses_a_format_that_converts.md).
+
 ### `memcpy`
 
 ```click

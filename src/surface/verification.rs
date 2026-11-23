@@ -3496,8 +3496,6 @@ pub enum ModelFamily {
     Allocator,
     /// The contract the C front end writes for one `snprintf` format.
     Snprintf,
-    /// The contract the C front end writes for a literal `printf`.
-    Printf,
     /// A C++ standard-library catalog contract.
     CppStd,
     /// A Rust core-method contract.
@@ -3510,12 +3508,11 @@ pub enum ModelFamily {
 impl ModelFamily {
     /// Every family a function's assumptions can belong to; the thread
     /// runtime, which a whole verification assumes, is reported apart.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 7] = [
         Self::Extern,
         Self::CLibrary,
         Self::Allocator,
         Self::Snprintf,
-        Self::Printf,
         Self::CppStd,
         Self::RustCore,
         Self::Primitive,
@@ -3528,7 +3525,6 @@ impl ModelFamily {
             Self::CLibrary => "C library",
             Self::Allocator => "allocator",
             Self::Snprintf => "snprintf",
-            Self::Printf => "printf",
             Self::CppStd => "C++ std",
             Self::RustCore => "Rust core",
             Self::Primitive => "primitive",
@@ -3592,7 +3588,6 @@ fn program_assumptions_parsed(
                 use crate::languages::c::formatted_output::FormattedOutput;
                 match function {
                     FormattedOutput::Snprintf => ModelFamily::Snprintf,
-                    FormattedOutput::Printf => ModelFamily::Printf,
                 }
             } else if file.source_language() == crate::languages::SourceLanguage::C
                 && syntax::is_library_interface_function(name)
@@ -5255,6 +5250,56 @@ fn validate_modeled_pthread_calls(
     Ok(())
 }
 
+/// `function`, an `extern` declaration's interface, with the program's
+/// externally linked file-scope objects, which its contract may read as a
+/// verified function's contract reads them. Every defined function is linked
+/// to the same externally visible objects; a file-scope `static` belongs to
+/// its own translation unit, which an `extern` function is not in.
+fn with_linked_globals(
+    function: crate::languages::interface::ImportedFunction,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
+) -> crate::languages::interface::ImportedFunction {
+    let Some((_, defined)) = parsed_sources
+        .values()
+        .find(|(_, defined)| !defined.globals().is_empty() || !defined.global_arrays().is_empty())
+    else {
+        return function;
+    };
+    function
+        .with_globals(
+            defined
+                .globals()
+                .iter()
+                .filter(|(_, object)| !object.is_file_static())
+                .map(|(name, object)| (name.clone(), object.clone()))
+                .collect(),
+        )
+        .with_global_arrays(
+            defined
+                .global_arrays()
+                .iter()
+                .filter(|(_, object)| !object.is_file_static())
+                .map(|(name, object)| (name.clone(), object.clone()))
+                .collect(),
+        )
+        .with_global_aggregates(
+            defined
+                .global_aggregates()
+                .iter()
+                .filter(|(_, object)| !object.is_file_static())
+                .map(|(name, object)| (name.clone(), object.clone()))
+                .collect(),
+        )
+        .with_global_aggregate_arrays(
+            defined
+                .global_aggregate_arrays()
+                .iter()
+                .filter(|(_, object)| !object.is_file_static())
+                .map(|(name, object)| (name.clone(), object.clone()))
+                .collect(),
+        )
+}
+
 pub(in crate::surface) fn external_c_function(
     function_block: &FunctionBlock,
 ) -> crate::languages::interface::ImportedFunction {
@@ -5346,8 +5391,10 @@ pub(in crate::surface) fn build_function_environment(
     let mut environment = ExecutionEnvironment::new();
     for definition in contract_definitions {
         let function_block = definition.function_block();
-        let parsed_function =
-            external_c_function_with_layouts(function_block, resource_environment.struct_layouts());
+        let parsed_function = with_linked_globals(
+            external_c_function_with_layouts(function_block, resource_environment.struct_layouts()),
+            parsed_sources,
+        );
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -5417,8 +5464,10 @@ pub(in crate::surface) fn build_function_environment(
         .filter(|block| block.is_external() && block.signature().has_abstract_types())
     {
         let name = function_block.signature().name();
-        let parsed_function =
-            external_c_function_with_layouts(function_block, resource_environment.struct_layouts());
+        let parsed_function = with_linked_globals(
+            external_c_function_with_layouts(function_block, resource_environment.struct_layouts()),
+            parsed_sources,
+        );
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -5652,9 +5701,12 @@ pub(in crate::surface) fn build_function_environment(
         }
         let parsed_function = match prepared_interfaces.get(name) {
             Some(prepared) => (*prepared).clone(),
-            None => external_c_function_with_layouts(
-                function_block,
-                resource_environment.struct_layouts(),
+            None => with_linked_globals(
+                external_c_function_with_layouts(
+                    function_block,
+                    resource_environment.struct_layouts(),
+                ),
+                parsed_sources,
             ),
         };
         let InitialClaimContext {
