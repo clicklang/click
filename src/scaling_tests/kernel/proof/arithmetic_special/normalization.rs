@@ -40,3 +40,53 @@ fn specialized_normalization_uses_only_selected_inputs_as_related_and_unrelated_
         );
     }
 }
+
+#[test]
+fn shifted_one_uses_one_cited_bound_as_related_and_unrelated_bounds_grow() {
+    let word = |index| MachineTerm::Variable(crate::kernel::Variable(index));
+    let count = word(879001);
+    let bound = |value, limit| {
+        Proposition::condition_is(
+            ConditionTerm::unsigned_less_than(value, MachineTerm::constant(limit)),
+            true,
+        )
+    };
+    let goal = Proposition::condition_is(
+        ConditionTerm::machine_compare(
+            MachineIntegerType::UInt32,
+            CompareRelation::Equal,
+            MachineTerm::uint32_shift_left(MachineTerm::constant(1), count.clone()),
+            MachineTerm::constant(0),
+        ),
+        false,
+    );
+    let selected = [bound(count.clone(), 32)];
+    let wrong = [bound(count.clone(), 33)];
+    for related in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let mut ambient = vec![selected[0].clone(), wrong[0].clone()];
+            for index in 0..size {
+                let value = if related {
+                    count.clone()
+                } else {
+                    word(879010 + u64::from(index))
+                };
+                ambient.push(bound(value, 33 + index));
+            }
+            let facts = PureFactStore::from_ordered(&ambient);
+            let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &selected, &facts)
+            });
+            hit.unwrap();
+            let (miss, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &wrong, &facts)
+            });
+            assert!(miss.is_err());
+            (hit_work, miss_work)
+        });
+        assert!(
+            samples.iter().all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
+            "{related}: {samples:?}"
+        );
+    }
+}
