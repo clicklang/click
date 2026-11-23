@@ -768,7 +768,9 @@ pub enum SwitchLabel {
 #[serde(deny_unknown_fields)]
 pub struct OwnedArgument {
     pub index: usize,
-    pub local: String,
+    /// Absent when the operand is a retained call result rather than a place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<String>,
     pub record: String,
     pub moved: bool,
 }

@@ -1,4 +1,0 @@
-# Existing Rust MIR storage exceptions. Remove a row when lowering gives its slot a supported identity.
-# Source	Function	Line	Column	MIR key
-trial.rs	guarded_increment	23	21	__rust_mir_14
-values.rs	__rust_q_I21_generic_struct_values_I10_swap_pairs	23	12	__rust_mir_8

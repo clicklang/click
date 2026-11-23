@@ -29,7 +29,9 @@ mod split_slices;
 #[cfg(test)]
 mod split_slices_tests;
 mod temporaries;
-pub(super) use temporaries::{scalar_expression_operands, tested_option_box_local};
+pub(super) use temporaries::{
+    moved_drop_operands, scalar_expression_operands, tested_option_box_local,
+};
 mod traits;
 mod user_iterators;
 mod vec_methods;
@@ -2678,7 +2680,7 @@ impl BodyAdapter<'_, '_> {
                         }],
                         owned_arguments: vec![out::OwnedArgument {
                             index: 0,
-                            local: source_local,
+                            local: Some(source_local),
                             record: name,
                             moved: true,
                         }],
@@ -2830,7 +2832,7 @@ impl BodyAdapter<'_, '_> {
                                 let local = self.local(local)?;
                                 owned_arguments.push(out::OwnedArgument {
                                     index,
-                                    local: local.clone(),
+                                    local: Some(local.clone()),
                                     record: name,
                                     moved: matches!(op, a::Operand::Move(_)),
                                 });
