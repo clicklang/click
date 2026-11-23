@@ -324,6 +324,7 @@ struct NodeKeyData {
     node: KernelTermNode,
     shared_machine_operand: bool,
     mathematical_integer: bool,
+    integer_observation_arithmetic: bool,
     literal_integer_arithmetic: bool,
     opaque_observation_boundary: bool,
     machine_conversions: bool,
@@ -640,6 +641,17 @@ impl NodeKey {
                 }
                 _ => false,
             };
+        let integer_observation_arithmetic = ty == KernelType::Integer
+            && match &node {
+                KernelTermNode::IntegerLiteral(_) | KernelTermNode::Variable(_) => true,
+                KernelTermNode::IntegerOperation { arguments, .. } => arguments
+                    .iter()
+                    .all(KernelTerm::is_integer_observation_arithmetic),
+                KernelTermNode::MachineObservation { operand, .. } => {
+                    operand.is_shared_machine_operand()
+                }
+                _ => false,
+            };
         let literal_integer_arithmetic = match &node {
             KernelTermNode::IntegerLiteral(_) => true,
             KernelTermNode::IntegerOperation { arguments, .. } => arguments
@@ -651,6 +663,7 @@ impl NodeKey {
         Self(Arc::new(NodeKeyData {
             machine_constant,
             mathematical_integer,
+            integer_observation_arithmetic,
             literal_integer_arithmetic,
             fingerprint: hash.finish(),
             shared_machine_operand,
@@ -925,6 +938,26 @@ impl KernelTerm {
         self.0.key.0.mathematical_integer
     }
 
+    /// Arithmetic with typed shared machine observations and no internal binders.
+    pub(crate) fn is_integer_observation_arithmetic(&self) -> bool {
+        self.0.key.0.integer_observation_arithmetic
+    }
+
+    /// The exact observation key for a single retained leaf. Keep any native
+    /// spelling already associated with the leaf by the compatibility bridge.
+    pub(crate) fn exact_shared_integer_observation(&self) -> Option<SharedMachineIntegerTerm> {
+        let KernelTermNode::MachineObservation { format, operand } = self.node() else {
+            return None;
+        };
+        if let Some(native) = self.legacy_integer() {
+            let IntegerTerm::Machine(observation) = native.as_ref() else {
+                return None;
+            };
+            return Some(observation.clone());
+        }
+        SharedMachineIntegerTerm::from_shared(*format, operand.clone())
+    }
+
     pub(super) fn is_literal_integer_arithmetic(&self) -> bool {
         self.0.key.0.literal_integer_arithmetic
     }
@@ -942,9 +975,20 @@ impl KernelTerm {
     fn remember_integer(&self, integer: &SharedIntegerTerm) {
         SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow_mut().insert(integer.id()));
         *self.0.integer.lock().expect("term bridge poisoned") = integer.downgrade();
-        // A legacy leaf owns its old value. Caching it on that same value
-        // would create a cycle; only genuinely migrated nodes cache both ways.
-        if !matches!(self.node(), KernelTermNode::Legacy(_)) {
+        let shared_observation = matches!(
+            self.node(),
+            KernelTermNode::MachineObservation { format, operand }
+                if matches!(operand.node(),
+                        KernelTermNode::Variable(_) | KernelTermNode::MachineLiteral(_)
+                            | KernelTermNode::MemoryLoad { .. })
+                    && matches!(integer.as_ref(), IntegerTerm::Machine(value)
+                        if value.ty() == *format && value.shared_operand() == Some(operand))
+        );
+        // Atomic observations can reconstruct the common root from a single
+        // typed operand lookup. Native conversion readers still need the
+        // reverse link, which can return an existing native node.
+        // A legacy leaf owns its old value; a forward link would create a cycle.
+        if !shared_observation && !matches!(self.node(), KernelTermNode::Legacy(_)) {
             integer.remember_kernel_term(self.clone());
         }
     }
@@ -1568,6 +1612,23 @@ mod tests {
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int8, operand).is_none()
             );
         }
+    }
+
+    #[test]
+    fn atomic_shared_observation_needs_no_forward_integer_link() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let operand = KernelTerm::variable(
+            KernelType::Program(format.program_type()),
+            Variable(87654326),
+        );
+        let observation = SharedMachineIntegerTerm::from_shared(format, operand).unwrap();
+        let source: SharedIntegerTerm = IntegerTerm::Machine(observation).into();
+        let common = KernelTermImport::default().integer(&source);
+        let restored = KernelTermExport::default().integer(&common).unwrap();
+        assert_eq!(restored, source);
+        assert!(source.kernel_term().is_none());
+        assert_eq!(KernelTermImport::default().integer(&source), common);
     }
 
     #[test]
