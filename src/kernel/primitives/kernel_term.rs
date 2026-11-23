@@ -977,11 +977,15 @@ impl KernelTerm {
         let shared_observation = matches!(
             self.node(),
             KernelTermNode::MachineObservation { format, operand }
-                if matches!(integer.as_ref(), IntegerTerm::Machine(value)
-                    if value.ty() == *format && value.shared_operand() == Some(operand))
+                if matches!(operand.node(),
+                        KernelTermNode::Variable(_) | KernelTermNode::MachineLiteral(_)
+                            | KernelTermNode::MemoryLoad { .. })
+                    && matches!(integer.as_ref(), IntegerTerm::Machine(value)
+                        if value.ty() == *format && value.shared_operand() == Some(operand))
         );
-        // The typed shared operand and its format already reconstruct this
-        // exact observation. Keep reverse links for native-only payloads.
+        // Reconstruct exact atomic observations directly. Composite
+        // operands still need the reverse link to keep nested conversions
+        // from reopening a previously imported Integer prefix.
         let mut reverse = self.0.integer.lock().expect("term bridge poisoned");
         if shared_observation {
             *reverse = WeakIntegerTerm::default();
@@ -1598,7 +1602,6 @@ mod tests {
             let source: SharedIntegerTerm = IntegerTerm::Machine(observation.clone()).into();
             let common = KernelTermImport::default().integer(&source);
             assert_eq!(common.children()[0], operand);
-            assert!(common.legacy_integer().is_none());
             drop(source);
             clear_integer_bridge_memo();
             let restored = KernelTermExport::default().integer(&common).unwrap();
@@ -1616,6 +1619,22 @@ mod tests {
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int8, operand).is_none()
             );
         }
+    }
+
+    #[test]
+    fn atomic_shared_observation_needs_no_reverse_integer_link() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let operand = KernelTerm::variable(
+            KernelType::Program(format.program_type()),
+            Variable(87654326),
+        );
+        let observation = SharedMachineIntegerTerm::from_shared(format, operand).unwrap();
+        let source: SharedIntegerTerm = IntegerTerm::Machine(observation).into();
+        let common = KernelTermImport::default().integer(&source);
+        let restored = KernelTermExport::default().integer(&common).unwrap();
+        assert_eq!(restored, source);
+        assert!(common.legacy_integer().is_none());
     }
 
     #[test]

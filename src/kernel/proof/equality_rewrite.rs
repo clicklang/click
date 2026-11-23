@@ -1331,6 +1331,28 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ),
         );
     }
+    if let Some((ConditionTerm::IntegerEqual(left, right), true)) = (equality).condition_native() {
+        let mut rewrite = super::term_rewrite::TermRewrite::for_integer_exact(left, right);
+        let rewritten = rewrite.proposition(goal);
+        match rewrite.refusal() {
+            Some(super::term_rewrite::RewriteRefusal::WorkExhausted) => {
+                return Err(
+                    "`rewrite` exhausted its work budget while rewriting Integer terms".into(),
+                );
+            }
+            Some(super::term_rewrite::RewriteRefusal::UnsupportedScope) => {
+                return Err("`rewrite` cannot substitute an Integer equality through an internal fold or match binder".into());
+            }
+            None => {}
+        }
+        if !rewrite.changed {
+            return Err(AtomicRewriteRefusal::Absent(
+                "`rewrite` equality does not occur in the current goal".to_string(),
+            ));
+        }
+        return Ok(rewritten);
+    }
+
     if matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
             _,
             _
@@ -1549,28 +1571,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 rewrite_shared,
             )),
         }
-    }
-
-    if let Some((ConditionTerm::IntegerEqual(left, right), true)) = (equality).condition_native() {
-        let mut rewrite = super::term_rewrite::TermRewrite::for_integer_exact(left, right);
-        let rewritten = rewrite.proposition(goal);
-        match rewrite.refusal() {
-            Some(super::term_rewrite::RewriteRefusal::WorkExhausted) => {
-                return Err(
-                    "`rewrite` exhausted its work budget while rewriting Integer terms".into(),
-                );
-            }
-            Some(super::term_rewrite::RewriteRefusal::UnsupportedScope) => {
-                return Err("`rewrite` cannot substitute an Integer equality through an internal fold or match binder".into());
-            }
-            None => {}
-        }
-        if !rewrite.changed {
-            return Err(AtomicRewriteRefusal::Absent(
-                "`rewrite` equality does not occur in the current goal".to_string(),
-            ));
-        }
-        return Ok(rewritten);
     }
 
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = equality {
