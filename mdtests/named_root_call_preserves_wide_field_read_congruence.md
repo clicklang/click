@@ -1,7 +1,7 @@
 # A named root-link call preserves wide field-read congruence
 
-The helper changes only the root link. Nested modeled children retain their
-pointer identities when the root changes. After the call, `near == rid`
+The helper changes only the root link. The nested child resources stay
+folded through the call and open when the caller reads their fields. After the call, `near == rid`
 implies equal reads of their eight-byte tag in the same current memory.
 The 32-bit counterpart already worked through the int32 equality graph;
 the wide route must preserve all eight bytes and the recorded read states.
@@ -62,23 +62,21 @@ void probe(struct node *p, struct root *root) {
  match bm { Branch::At(nid, lm) => {
  match lm { Leaf::At(rid) => {
   let {child: near_tree} = unfold(b);
-  let {child: far_tree} = unfold(near_tree);
-  unfold(far_tree);
-  have p->right == sid;
-  have sid->left == nid;
-  have nid->right == rid;
+  have p->right == sid by { known(); }
   step(); step(); step(); step(); step(); step();
   let { after: c } = step(helper, { before: c });
   step();
-  have cursor == nid;
-  have cursor->right == rid;
+  let {child: far_tree} = unfold(near_tree);
+  have cursor == nid by { known(); }
   step();
-  have near == rid;
+  unfold(far_tree);
+  have near == rid by { known(); }
   have near->tag == rid->tag by { normalize() using { near == rid; }; }
   step();
   have near->tag == rid->tag by { normalize() using { near == rid; }; }
   have rid->tag == 0u64 by { normalize() using { near == rid; }; }
-  step();
+  step_until(function.exit);
+  known();
  } }
  } }
  } }
