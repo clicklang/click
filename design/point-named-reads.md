@@ -1,6 +1,6 @@
 # Point-named reads: one name, and the relations it needs
 
-Status: proposed (2026-11-23). Nothing here is implemented beyond the audits
+Status: approved (2026-11-23). Nothing here is implemented beyond the audits
 it cites.
 
 ## Problem
