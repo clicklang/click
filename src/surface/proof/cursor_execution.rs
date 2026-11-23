@@ -743,7 +743,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
                     crate::surface::diagnostics::describe_execution_statement_site(),
                 ))
                 .with_kind(runtime_refusal_kind(&error))
-                .with_proof_refusal(crate::surface::ProofRefusal::Execution)
+                .with_proof_refusal(crate::surface::diagnostics::runtime_proof_refusal(&error))
             })?;
         execution
             .presentation
@@ -2856,11 +2856,10 @@ fn execute_step_from_frontier_position_selecting_path(
                     // Construct the obligation from the selected path's delta.
                     // Failure-site diagnostics may re-evaluate expressions;
                     // they do not belong on successful preparation.
-                    let requirement = ProofObligation::verification_condition(goal.clone());
                     crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
                         ClickError::new(format!(
                             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires proof excluding {}{}", kind.description(), crate::surface::diagnostics::describe_execution_statement_site()
-                        )).with_reported_goal(goal.clone()).with_unresolved_requirement(&requirement),
+                        )).with_statement_safety_goal(goal.clone()),
                     )?;
                     transitions.retain(|transition| {
                         matches!(
@@ -2879,6 +2878,8 @@ fn execute_step_from_frontier_position_selecting_path(
                     &kind,
                 );
                 let required = kind.required_goal().cloned();
+                let refusal_kind =
+                    crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind);
                 let outcome = FunctionOutcome::UndefinedBehavior(kind);
                 let error = ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
@@ -2901,7 +2902,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 ));
                 let error = error
                     .with_reported_assertion_goal(required)
-                    .with_proof_refusal(crate::surface::ProofRefusal::Execution);
+                    .with_kind(refusal_kind)
+                    .with_proof_refusal(crate::surface::ProofRefusal::Tactic);
                 let Some(goal) = goal else {
                     return Err(error);
                 };
@@ -2910,9 +2912,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 // obligation, so a `step() by { ... }` body or the implicit
                 // `solve` proves it at the pre-state. Retain that already evaluated
                 // transition instead of executing the statement a second time.
-                let error = error
-                    .with_reported_goal(goal.clone())
-                    .with_unresolved_requirement(&ProofObligation::verification_condition(goal));
+                let error = error.with_statement_safety_goal(goal);
                 crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
                     error.clone(),
                 )?;
@@ -2965,7 +2965,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 ) {
                     return Err(ClickError::new(detail)
                         .with_kind(kind)
-                        .with_proof_refusal(crate::surface::ProofRefusal::Execution));
+                        .with_proof_refusal(crate::surface::ProofRefusal::Tactic));
                 }
                 return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
@@ -2982,7 +2982,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
             .with_kind(kind)
             .with_runtime_missing_resource(error)
-            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
+            .with_proof_refusal(crate::surface::diagnostics::runtime_proof_refusal(error)));
             }
             let path_case_split = statement_successors_are_path_cases(&transitions);
             let split_condition = if path_case_split {
@@ -3317,7 +3317,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         crate::surface::diagnostics::describe_execution_statement_site(),
                     ))
                     .with_kind(runtime_refusal_kind(&error))
-                    .with_proof_refusal(crate::surface::ProofRefusal::Execution)
+                    .with_proof_refusal(crate::surface::diagnostics::runtime_proof_refusal(&error))
                 })?;
             if loop_index.is_none() {
                 execution.core.last_footprint =
@@ -3719,6 +3719,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 &kind,
             );
             let required = kind.required_goal().cloned();
+            let refusal_kind = crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind);
             let outcome = FunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
@@ -3740,7 +3741,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 }
             ))
             .with_reported_assertion_goal(required)
-            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
+            .with_kind(refusal_kind)
+            .with_proof_refusal(crate::surface::ProofRefusal::Tactic));
         }
         StatementOutcome::RuntimeError(error) => {
             let kind = runtime_refusal_kind(&error);
@@ -3782,7 +3784,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ) {
                 return Err(ClickError::new(detail)
                     .with_kind(kind)
-                    .with_proof_refusal(crate::surface::ProofRefusal::Execution));
+                    .with_proof_refusal(crate::surface::ProofRefusal::Tactic));
             }
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
@@ -3799,7 +3801,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
             .with_kind(kind)
             .with_runtime_missing_resource(&error)
-            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
+            .with_proof_refusal(crate::surface::diagnostics::runtime_proof_refusal(&error)));
         }
     }
     execution

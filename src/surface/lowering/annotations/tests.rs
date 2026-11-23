@@ -319,13 +319,19 @@ fn a_fixed_state_anywhere_in_a_measure_is_found() {
 }
 
 #[test]
-fn surface_binder_streams_refuse_before_another_producers_range() {
-    let mut quantifier = SURFACE_QUANTIFIER_VARIABLE_CEILING - 1;
-    assert_eq!(
-        allocate_quantifier_variable(&mut quantifier),
-        Ok(Variable(SURFACE_QUANTIFIER_VARIABLE_CEILING - 1)),
+fn surface_binder_streams_are_their_own_producers() {
+    use crate::kernel::Producer;
+    let mut next = 7;
+    let variable = allocate_quantifier_variable(&mut next, Producer::ProofQuantifier).unwrap();
+    assert_eq!(variable, Variable::produced(Producer::ProofQuantifier, 7));
+    assert_eq!(next, 8);
+    assert_ne!(variable, Variable(7));
+    assert_ne!(
+        variable,
+        Variable::produced(Producer::FunctionQuantifier, 7)
     );
-    assert!(allocate_quantifier_variable(&mut quantifier).is_err());
+    let mut last = u64::MAX;
+    assert!(allocate_quantifier_variable(&mut last, Producer::ProofQuantifier).is_err());
 
     // Algebraic binders have their own origin, so no index reaches another
     // producer's identities.
@@ -335,18 +341,31 @@ fn surface_binder_streams_refuse_before_another_producers_range() {
 }
 
 #[test]
-fn captured_fold_identity_does_not_exhaust_the_surface_quantifier_stream() {
-    let low = Variable(SURFACE_QUANTIFIER_VARIABLE_CEILING - 2);
-    let high = Variable((1 << 43) + 17);
+fn captured_identities_of_other_producers_do_not_move_the_quantifier_stream() {
+    use crate::kernel::Producer;
+    let own = Variable::produced(Producer::ProofQuantifier, 12);
+    let other = Variable::produced(Producer::FunctionQuantifier, 40);
+    let ordinary = Variable((1 << 43) + 17);
+    let term = |variable| {
+        Box::new(crate::kernel::SpecIntegerExpression::Term(
+            crate::kernel::IntegerTerm::var(variable),
+        ))
+    };
     let captured = crate::kernel::SpecIntegerExpression::Add(
-        Box::new(crate::kernel::SpecIntegerExpression::Term(
-            crate::kernel::IntegerTerm::var(low),
-        )),
-        Box::new(crate::kernel::SpecIntegerExpression::Term(
-            crate::kernel::IntegerTerm::var(high),
+        term(own),
+        Box::new(crate::kernel::SpecIntegerExpression::Add(
+            term(other),
+            term(ordinary),
         )),
     );
-    assert_eq!(max_spec_integer_expression_variable(&captured), Some(low));
+    assert_eq!(
+        max_spec_integer_expression_variable(&captured, Producer::ProofQuantifier),
+        Some(own)
+    );
+    assert_eq!(
+        max_spec_integer_expression_variable(&captured, Producer::ResourceQuantifier),
+        None
+    );
 }
 
 #[cfg(test)]

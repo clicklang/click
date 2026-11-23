@@ -239,10 +239,10 @@ impl TermRewrite<'_> {
         } else {
             self.boolean_address(&p.provenance)?
         };
-        let opaque = match &p.bounds_owner {
+        let opaque = match p.array.owner() {
             None => None,
             Some(origin) if replacement.is_some() && origin.syntax_equal(&base) => {
-                replacement.as_ref().unwrap().node().bounds_owner.clone()
+                replacement.as_ref().unwrap().node().array.owner().cloned()
             }
             Some(origin) if selected(origin) => Some(target_identity),
             Some(origin) => Some(self.boolean_address(origin)?),
@@ -253,19 +253,17 @@ impl TermRewrite<'_> {
             .node()
             .clone();
         mapped.provenance = provenance;
-        mapped.bounds_owner = opaque;
-        if !p.qualifiers.as_ref().is_some_and(|q| q.bounds_known)
+        mapped.array = mapped.array.with_owner(opaque);
+        if !p.array.is_known()
             && let Some(replacement) = replacement
+            && replacement.node().array.is_known()
         {
-            let q = replacement.node().qualifiers.as_ref();
-            if q.is_some_and(|q| q.bounds_known) || q.and_then(|q| q.bounds.as_ref()).is_some() {
-                let qualifiers = std::sync::Arc::make_mut(
-                    mapped.qualifiers.get_or_insert_with(Default::default),
-                );
-                qualifiers.bounds = q.and_then(|q| q.bounds.clone());
-                qualifiers.bounds_known = true;
-                mapped.bounds_owner = None;
-            }
+            // An opaque array object replaced by a known one takes its bounds.
+            mapped.array = crate::kernel::primitives::KernelArrayObject::from_parts(
+                true,
+                replacement.node().array.bounds().cloned(),
+                None,
+            );
         }
         // Native condition rewriting canonicalizes addresses after replacing
         // the complete value, without rewriting the retained bounds width.

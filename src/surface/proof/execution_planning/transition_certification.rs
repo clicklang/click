@@ -47,11 +47,12 @@ fn reject_known_undefined_behavior<'a>(
         .find_map(|obligation| obligation.known_undefined_behavior(facts(obligation)))
     {
         return Err(ClickError::new(format!(
-            "{context_label} produced undefined behavior: {}{}",
-            kind.description(),
+            "{context_label} produced {}{}",
+            crate::surface::diagnostics::describe_execution_safety_refusal(&kind),
             crate::surface::diagnostics::describe_execution_statement_site()
         ))
-        .with_proof_refusal(crate::surface::ProofRefusal::Execution));
+        .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+        .with_proof_refusal(crate::surface::ProofRefusal::Tactic));
     }
     Ok(())
 }
@@ -253,7 +254,7 @@ fn proof_condition_runtime_error(
         "{context_label} could not evaluate the C condition: {detail}.{guidance}"
     ))
     .with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))
-    .with_proof_refusal(crate::surface::ProofRefusal::Execution)
+    .with_proof_refusal(crate::surface::diagnostics::runtime_proof_refusal(error))
 }
 
 #[derive(Clone)]
@@ -331,9 +332,16 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 successor_facts = successor_facts.with_kernel_checked_fact(proposition.clone());
                 path_facts.push(proposition);
             }
-            reject_known_undefined_behavior(path.obligations(), |_| successor_facts.assumptions(), context_label)?;
+            reject_known_undefined_behavior(
+                path.obligations(),
+                |_| successor_facts.assumptions(),
+                context_label,
+            )?;
             for obligation in path.obligations() {
-                if !crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(successor_facts.assumptions(), obligation.proposition()) {
+                if !crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(
+                    successor_facts.assumptions(),
+                    obligation.proposition(),
+                ) {
                     return Err(missing_condition_prerequisite_error(
                         context_label,
                         obligation,
@@ -349,8 +357,8 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                     theorem: path.theorem().clone(),
                 }),
                 ConditionOutcome::UndefinedBehavior(kind) => Err(ClickError::new(format!(
-                    "{context_label} could not evaluate the C condition because it has undefined behavior: {}{}{}",
-                    kind.description(),
+                    "{context_label} could not evaluate the C condition: {}{}{}",
+                    crate::surface::diagnostics::describe_execution_safety_refusal(kind),
                     crate::surface::diagnostics::describe_undefined_behavior_site(
                         state,
                         branch_statement,
@@ -358,8 +366,10 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                         kind,
                     ),
                     crate::surface::diagnostics::describe_execution_statement_site()
-                )).with_reported_assertion_goal(kind.required_goal().cloned())
-                .with_proof_refusal(crate::surface::ProofRefusal::Execution)),
+                ))
+                .with_reported_assertion_goal(kind.required_goal().cloned())
+                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+                .with_proof_refusal(crate::surface::ProofRefusal::Tactic)),
                 ConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
                     error,
@@ -442,7 +452,11 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                 // facts, so their context extends the one it carried.
                 None => successor_facts.context(),
             };
-            reject_known_undefined_behavior(path.obligations(), |_| &prerequisite_assumptions, context_label)?;
+            reject_known_undefined_behavior(
+                path.obligations(),
+                |_| &prerequisite_assumptions,
+                context_label,
+            )?;
             for obligation in path.obligations() {
                 match prerequisite_policy {
                     StatementPrerequisitePolicy::Exact => {
@@ -453,26 +467,39 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                             )
                         {
                         } else {
-                            return Err(missing_condition_prerequisite_error(context_label, obligation, state).with_kind(crate::surface::ClickErrorKind::Internal));
+                            return Err(missing_condition_prerequisite_error(
+                                context_label,
+                                obligation,
+                                state,
+                            )
+                            .with_kind(crate::surface::ClickErrorKind::Internal));
                         }
                     }
                     StatementPrerequisitePolicy::Retained | StatementPrerequisitePolicy::Fast => {
-                        if matches!(
-                            prerequisite_policy,
-                            StatementPrerequisitePolicy::Retained
-                        ) && source_backed_requirement_should_intercept(
-                            obligation,
-                            state.memory(),
-                        )? {
-                            return Err(missing_condition_prerequisite_error(context_label, obligation, state));
+                        if matches!(prerequisite_policy, StatementPrerequisitePolicy::Retained)
+                            && source_backed_requirement_should_intercept(
+                                obligation,
+                                state.memory(),
+                            )?
+                        {
+                            return Err(missing_condition_prerequisite_error(
+                                context_label,
+                                obligation,
+                                state,
+                            ));
                         }
                         if exact_fact_is_available(obligation.proposition(), pure_facts)
-                            || prerequisite_assumptions.states_required_goal(obligation.proposition())
+                            || prerequisite_assumptions
+                                .states_required_goal(obligation.proposition())
                         {
                         } else {
                             refuse_or_probe(
                                 prerequisite_policy,
-                                missing_condition_prerequisite_error(context_label, obligation, state),
+                                missing_condition_prerequisite_error(
+                                    context_label,
+                                    obligation,
+                                    state,
+                                ),
                             )?;
                         }
                     }
@@ -497,8 +524,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     outcome: ConditionOutcome::UndefinedBehavior(kind),
                     ..
                 } => Err(ClickError::new(format!(
-                    "{context_label} produced undefined behavior while evaluating the condition: {}{}{}",
-                    kind.description(),
+                    "{context_label} refused while evaluating the condition: {}{}{}",
+                    crate::surface::diagnostics::describe_execution_safety_refusal(kind),
                     crate::surface::diagnostics::describe_undefined_behavior_condition_site(
                         state,
                         condition,
@@ -506,8 +533,10 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         kind,
                     ),
                     crate::surface::diagnostics::describe_execution_statement_site()
-                )).with_reported_assertion_goal(kind.required_goal().cloned())
-                .with_proof_refusal(crate::surface::ProofRefusal::Execution)),
+                ))
+                .with_reported_assertion_goal(kind.required_goal().cloned())
+                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+                .with_proof_refusal(crate::surface::ProofRefusal::Tactic)),
                 Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::RuntimeError(error),
                     ..
@@ -515,8 +544,9 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     "{context_label} could not verify the C condition: {}{}",
                     crate::surface::diagnostics::describe_runtime_error_over_locals(error, state),
                     crate::surface::diagnostics::describe_execution_statement_site(),
-                )).with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))
-    .with_proof_refusal(crate::surface::ProofRefusal::Execution)),
+                ))
+                .with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))
+                .with_proof_refusal(crate::surface::diagnostics::runtime_proof_refusal(error))),
                 proposition => Err(ClickError::new(format!(
                     "{context_label} saw unexpected condition theorem `{}`",
                     crate::surface::proof_diagnostics::render::render_proposition(proposition),

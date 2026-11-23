@@ -520,8 +520,10 @@ a refusal there is not a bug.
 
 **Failure, checking, and tools:**
 
-A prerequisite the context cannot prove, or an unsupported transition, fails at
-that statement with that diagnostic. A refusal printed as `refused
+A direct safety refusal names the C operation, such as a read of an
+uninitialized local. A documented modeling limit reports `unsupported`.
+If Click generates a safety obligation but cannot prepare it for the
+implicit closer, it reports an internal error. A refusal printed as `refused
 by: the implicit closer that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with
@@ -1686,11 +1688,11 @@ decided guard and otherwise bounds both arms. Its arithmetic uses only the
 operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
-builds a constructor directly from its bound fields or captured `Integer`
-variables. The check can follow nested matches on written constructors, keeping
-each selected arm's bindings in scope. The payloads can be machine-integer
-or `Integer` literals and variables. Machine fields retain their exact width
-and signedness.
+builds a constructor from bound fields, literal fields, or captured variables.
+Literal result fields can be machine integers, `Integer`s, or `Bool`s. Captured
+variables and scrutinee fields can be machine integers or `Integer`s. The check
+follows nested matches on written constructors and keeps the selected bindings
+in scope. Machine fields retain their exact width and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check

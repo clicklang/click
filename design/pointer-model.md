@@ -192,7 +192,15 @@ Each step is one PR, measured with the gate and the raise-lower audit.
      Comparisons no longer require equal types or retype both sides first,
      and a rewrite by a pointer equality keeps the replaced occurrence's
      type. A cast still builds a term of the target type.
-   - 3b, remaining: subobject bounds fold into C provenance.
+   - 3b, step 1: a pointer's array object is one value, `ArrayObject`:
+     the allocation, an opaque array object (named by where the pointer
+     came from, or unnamed for a view that may not use that name's
+     coverage), or a member, with the opaque array object it was selected
+     from. It replaces the separate `bounds`, `bounds_known` and
+     `bounds_owner` fields of `Pointer`, `SharedPointer` and `LValue`, and
+     rules out bounds on an opaque array object. Identity is unchanged.
+   - 3b, remaining: one e-graph class for provenance and array object, the
+     comparisons that read only part of it, and memory ranges' carriers.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

@@ -78,8 +78,8 @@ impl TermRewrite<'_> {
         self.shared_integer_operand_in(root, false)
     }
 
-    /// Fold scope already performs the native capture checks. Rewrite the
-    /// arithmetic prefix here and bridge only the other node families.
+    /// Fold scope already performs capture checks. Rewrite arithmetic and
+    /// nested folds here, bridging the remaining node families.
     pub(super) fn shared_fold_integer_child(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         self.shared_integer_operand_in(root, true)
     }
@@ -120,12 +120,20 @@ impl TermRewrite<'_> {
             if memo.borrow().contains_key(&key(&term)) {
                 continue;
             }
+            let retained_fold_if = self.condition_exact.is_none()
+                && matches!(
+                    term.node(),
+                    KernelTermNode::IntegerIf { arguments }
+                        if matches!(arguments[0].node(), KernelTermNode::BoolLiteral(_))
+                );
             if fold_child
+                && !retained_fold_if
                 && !matches!(
                     term.node(),
                     KernelTermNode::IntegerLiteral(_)
                         | KernelTermNode::Variable(_)
                         | KernelTermNode::IntegerOperation { .. }
+                        | KernelTermNode::Fold(_)
                 )
             {
                 let native = self.fold_integer_bridge.integer(&term).ok()?;
@@ -167,6 +175,9 @@ impl TermRewrite<'_> {
                         import.integer(&rewritten.into())
                     }
                 }
+                KernelTermNode::Fold(fold) if fold_child => {
+                    self.retained_fold_in(fold).ok()?.into_term()
+                }
                 KernelTermNode::MachineObservation { format, operand } => {
                     let rewritten = self.shared_machine_operand(operand)?;
                     let changed = rewritten != *operand;
@@ -198,19 +209,35 @@ impl TermRewrite<'_> {
                     }
                 }
                 KernelTermNode::IntegerIf { arguments } => {
-                    if self.collected_conditions.is_some() {
+                    if self.collected_conditions.is_some() && !fold_child {
                         return None;
                     }
                     if !finish {
-                        let preserve = self.integer_variables.is_some()
-                            && crate::kernel::proof::fact_reasoning::is_literal_value_if_guard_root(
-                                &arguments[0],
-                            );
-                        let guard = self.shared_boolean_operand(&arguments[0])?;
-                        let guard = if preserve {
-                            guard
+                        let (guard, preserve) = if fold_child {
+                            // Keep the native guard check and its collection
+                            // rules while the Integer arms stay in the DAG.
+                            let guard = KernelTermExport::condition(&arguments[0]).ok()?;
+                            if let Some(conditions) = &mut self.collected_conditions {
+                                conditions.push(guard.clone());
+                            }
+                            let preserve = self.preserves_closed_value_conditional(&guard);
+                            let guard = self.condition(&guard);
+                            if self.checked_work_exhausted() {
+                                return None;
+                            }
+                            (import.condition(&guard), preserve)
                         } else {
-                            common_boolean::folded_shared_machine_condition(guard)
+                            let preserve = self.integer_variables.is_some()
+                                && crate::kernel::proof::fact_reasoning::is_literal_value_if_guard_root(
+                                    &arguments[0],
+                                );
+                            let guard = self.shared_boolean_operand(&arguments[0])?;
+                            let guard = if preserve {
+                                guard
+                            } else {
+                                common_boolean::folded_shared_machine_condition(guard)
+                            };
+                            (guard, preserve)
                         };
                         guards.insert(term.id(), (guard.clone(), preserve));
                         pending.push((term.clone(), true));

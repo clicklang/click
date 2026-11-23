@@ -3333,6 +3333,21 @@ fn rewritten_constructor_payload_expands_to_known() {
             "WideOutput::Value(value)",
             "WideOutput::Value(8u64)",
         ),
+        (
+            "rewritten_tag",
+            "TaggedOutput::Value(value, 7u64)",
+            "TaggedOutput::Value(value, 8u64)",
+        ),
+        (
+            "rewritten_capture",
+            "TaggedOutput::Value(value, other)",
+            "TaggedOutput::Value(value, value)",
+        ),
+        (
+            "rewritten_bool_tag",
+            "BoolOutput::Value(value, true)",
+            "BoolOutput::Value(value, false)",
+        ),
     ] {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
@@ -11151,7 +11166,7 @@ fn selected_mirrored_disequality_expands_to_known() {
 }
 
 #[test]
-fn signed_order_theorems_check_a_store_prerequisite_without_search() {
+fn signed_order_theorems_check_ordered_stores_without_search() {
     let (source, program) = mdtest_sources("mdtests/stores_to_ordered_indices_keep_each_other.md");
     let program = crate::cli::source_refs(&program);
     let label = "mark.contract";
@@ -11161,6 +11176,8 @@ fn signed_order_theorems_check_a_store_prerequisite_without_search() {
         expanded.contains("int32_less_equal_less_than_transitive"),
         "{expanded}"
     );
+    assert!(expanded.contains("preserve(memory(a[i])"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve_for_claim(label, || {
         verify_c_sources(&expanded, &program).map_err(|error| error.report())
     })

@@ -9010,7 +9010,6 @@ pub enum ProofRefusal {
     IncompleteProof,
     Contract,
     ContractEntry,
-    Execution,
 }
 
 impl ProofRefusal {
@@ -9021,7 +9020,6 @@ impl ProofRefusal {
             Self::IncompleteProof => "incomplete proof",
             Self::Contract => "contract error",
             Self::ContractEntry => "contract entry refused",
-            Self::Execution => "execution refused",
         }
     }
 }
@@ -9042,6 +9040,8 @@ pub(in crate::surface) struct UnresolvedRequirement {
     /// (`0 == 1`, which holds only where that path is unreachable), the
     /// asserted condition: what a proof at the step's pre-state shows.
     pub(in crate::surface) assertion_condition: Option<crate::kernel::ProgramExpression>,
+    /// The defined successor of a C operation supplied this safety goal.
+    pub(in crate::surface) statement_safety: bool,
     /// The Surface spelling the tactic that owes this requirement gave it
     /// where it created it, such as a `fold` body fact with the resource's
     /// arguments substituted. Proofs state the requirement this way.
@@ -11255,7 +11255,7 @@ impl ClickError {
         let diagnostic = self.diagnostic.as_ref()?;
         if !matches!(
             self.kind,
-            ClickErrorKind::Proof | ClickErrorKind::Unsupported
+            ClickErrorKind::Proof | ClickErrorKind::Unsupported | ClickErrorKind::Internal
         ) || !proof_trace::enabled_for(&diagnostic.claim_label)
         {
             return None;
@@ -11372,11 +11372,6 @@ impl ClickError {
         // Preserve the innermost refusal through wrappers. The implicit closer
         // can replace a checked tactic's refusal after searching for its requirement.
         if self.proof_refusal.is_none()
-            || self.proof_refusal == Some(ProofRefusal::Execution)
-                && matches!(
-                    refusal,
-                    ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
-                )
             || self.proof_refusal == Some(ProofRefusal::Tactic)
                 && refusal == ProofRefusal::ImplicitStatementSearch
                 && self.unresolved_requirement.is_some()
@@ -11680,9 +11675,24 @@ impl ClickError {
             introductions: obligation.introductions().cloned().unwrap_or_default(),
             call_site: obligation.call_requirement_site().cloned(),
             assertion_condition: None,
+            statement_safety: false,
             surface: None,
         }));
         self
+    }
+
+    pub(in crate::surface) fn with_statement_safety_goal(self, goal: Proposition) -> Self {
+        let mut error = self
+            .with_reported_goal(goal.clone())
+            .with_unresolved_requirement(&ProofObligation::verification_condition(goal));
+        std::sync::Arc::make_mut(error.unresolved_requirement.as_mut().unwrap()).statement_safety =
+            true;
+        error
+    }
+
+    pub(in crate::surface) fn with_safety_preparation_error(self, detail: &str) -> Self {
+        self.with_rewritten_place(|reason| Some(format!("{detail}\n{reason}")))
+            .with_kind(ClickErrorKind::Internal)
     }
 
     /// Records a simple tactic's requirement that no execution obligation
@@ -11700,6 +11710,7 @@ impl ClickError {
             introductions: Default::default(),
             call_site: None,
             assertion_condition: None,
+            statement_safety: false,
             surface: Some(surface),
         }));
         self

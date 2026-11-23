@@ -31,6 +31,22 @@ validation are in the [migration history][history].
 | Stored values, calls and proposition operands | [Stored values][descriptor-values], [resource fields][resource-fields] and [certification][contract-claims] still expose native output views or exact inputs. Native equality, hashing, diagnostics and selected checker paths use the retained argument and machine caches. | Move live internal expression consumers and delete obsolete caches. Preserve fact and certificate identity, exact argument spellings, and supported refusal behavior. |
 | Final common boundary | [Surface raising][raising] and proof certification still have selected family-specific naming and rewrite adapters. | Check that supported term operands round-trip through the common representation. Keep introducing names and typed frontend ASTs. Retire duplicate expression conversion paths, then remove this roadmap item after validation. |
 
+## Delivery sequence
+
+The planning estimate after #3953 is about 18 further PRs, with a range of
+14–24. Use reviewable slices that retire a live conversion or reader.
+
+1. Move Integer checking and rewriting to retained operands, then delete the
+   paired storage in `SharedIntegerNode` (6–10 PRs). Continue from nested folds
+   through conditional rewrites, then affine arithmetic, fact keys, and
+   substitution. Re-estimate after the paired storage is gone.
+2. Retire generic native expression payloads, including mixed call arguments
+   (3–5 PRs).
+3. Move the remaining pointer, address, and stored-value expression readers
+   (3–6 PRs).
+4. Close the raising and certificate boundaries, validate, and remove this
+   item (2–3 PRs).
+
 ## Validation for closure
 
 - Check exact term round trips, successful and refused proofs, checked expansion

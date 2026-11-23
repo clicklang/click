@@ -221,7 +221,7 @@ pub(crate) enum ContractClosingRefusal {
     Internal(String),
     Incomplete(String),
     InvalidContract(String),
-    Execution(String),
+    UndefinedBehavior(crate::kernel::UndefinedBehavior),
     Claim(FunctionContractClaimKey),
     Runtime(RuntimeError),
     Write(Address),
@@ -690,10 +690,7 @@ impl ContractExitObligations {
                     .into_closing_refusal());
                 }
                 FunctionOutcome::UndefinedBehavior(error) => {
-                    return Err(ContractClosingRefusal::Execution(format!(
-                        "undefined behavior: {}",
-                        error.description()
-                    )));
+                    return Err(ContractClosingRefusal::UndefinedBehavior(error.clone()));
                 }
                 _ => {}
             }

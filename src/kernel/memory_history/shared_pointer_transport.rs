@@ -333,10 +333,7 @@ mod tests {
         let shared = SharedPointer::import(&source);
         let output = transport_pointer(&shared, &after, None).unwrap();
         assert_eq!(output, shared);
-        assert!(Arc::ptr_eq(
-            output.node().qualifiers.as_ref().unwrap(),
-            shared.node().qualifiers.as_ref().unwrap()
-        ));
+        assert!(output.node().array.same_payload(&shared.node().array));
         assert_eq!(
             output.export().unwrap(),
             transport_framed_atomic_pointer_value(&source, &after, None).unwrap()
@@ -379,7 +376,7 @@ mod tests {
             let output = transport_pointer(&shared, &after, None).unwrap();
             assert_eq!(output.export().unwrap(), expected);
             assert_eq!(output.node().provenance, shared.node().provenance);
-            assert_eq!(output.node().bounds_owner, shared.node().bounds_owner);
+            assert_eq!(output.node().array.owner(), shared.node().array.owner());
         }
     }
     #[test]

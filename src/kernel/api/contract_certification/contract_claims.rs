@@ -1520,10 +1520,7 @@ fn prepare_closing_path(
                     "the certified path is not safe: undefined behavior: {}",
                     undefined_behavior.description()
                 ),
-                ContractClosingRefusal::Execution(format!(
-                    "undefined behavior: {}",
-                    undefined_behavior.description(),
-                )),
+                ContractClosingRefusal::UndefinedBehavior(undefined_behavior.clone()),
             ));
         }
         FunctionOutcome::RuntimeError(error) => {
@@ -1540,7 +1537,7 @@ fn prepare_closing_path(
                 "the return path throws an exception the function's signature does not permit";
             return Err(ContractPathPreparationFailure::classified(
                 reason,
-                ContractClosingRefusal::Execution(reason.into()),
+                ContractClosingRefusal::InvalidContract(reason.into()),
             ));
         }
         FunctionOutcome::VerificationDiverges => {

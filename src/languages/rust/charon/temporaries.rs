@@ -3164,7 +3164,7 @@ pub(super) fn call_steps(
         let Some(&(1, reader)) = reads.get(&destination) else {
             continue;
         };
-        let boxed = matches!(ty, Type::Box { .. });
+        let boxed = matches!(ty, Type::Box { .. } | Type::OptionBox { .. });
         if !(ty.is_scalar() || matches!(ty, Type::Enum { .. }) || boxed)
             || (through_pointer && (!ty.is_scalar() || reader != target))
             || target == index
@@ -3174,7 +3174,7 @@ pub(super) fn call_steps(
         }
         // In `[f(), g()]` the first result is read after the second call.
         // Each edge in this continuation must be forward and single-entry.
-        // Box results are retained only to the immediate continuation.
+        // Box and optional-box results are retained only to the immediate continuation.
         if reader != target
             && (boxed
                 || !(index < target
