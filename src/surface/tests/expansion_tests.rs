@@ -17185,6 +17185,32 @@ fn indexed_reads_in_literal_comparisons_expand_through_store_preservation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed reads through bitwise operators"]
+fn indexed_reads_in_bitwise_expressions_expand_through_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_reads_in_bitwise_expressions.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in [
+        "keep_xor.contract",
+        "keep_complement.contract",
+        "keep_right_shift.contract",
+        "keep_literal_first_mask.contract",
+        "keep_nested_masks.contract",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains("preserve(memory(a[0])"),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn masked_64_bit_field_expands_through_explicit_store_preservation() {
     for fixture in [
         "mdtests/int64_read_survives_store_and_resource_call.md",
