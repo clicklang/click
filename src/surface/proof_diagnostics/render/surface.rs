@@ -323,6 +323,7 @@ impl Printer<'_> {
     /// A placeholder in source mode; a refusal in the exact modes.
     fn placeholder(&mut self, text: impl FnOnce(&mut Self) -> String) -> Option<Spelled> {
         if self.source_mode() {
+            self.labels.count_placeholder();
             Some(atom(text(self)))
         } else {
             None

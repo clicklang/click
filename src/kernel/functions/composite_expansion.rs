@@ -1,6 +1,7 @@
 //! Expanding composite resources into their member facts and instantiating composite and population propositions at a state.
 
 use super::*;
+use crate::kernel::ContractEntryRefusal;
 
 /// Whether a composite fact names the base of `pointer` among its pointer
 /// arguments by structure: the same pointer, or one that `pointer` is a
@@ -26,7 +27,7 @@ pub(super) fn expand_composite_resource_context(
     definitions: &[CompositeResourceDefinition],
     at: &ProgramPoint,
     assumptions: &PureFactContext,
-) -> Option<(ResourceContext, Vec<ResourceFact>)> {
+) -> Result<(ResourceContext, Vec<ResourceFact>), ContractEntryRefusal> {
     let mut expanded = context.clone();
     let mut composites = Vec::new();
     let roots = context.composite_facts().cloned().collect::<Vec<_>>();
@@ -41,7 +42,7 @@ pub(super) fn expand_composite_resource_context(
             &mut composites,
         )?;
     }
-    Some((expanded, composites))
+    Ok((expanded, composites))
 }
 
 pub(super) fn expand_composite_resource_tree(
@@ -52,23 +53,25 @@ pub(super) fn expand_composite_resource_tree(
     assumptions: &PureFactContext,
     ancestors: &[String],
     composites: &mut Vec<ResourceFact>,
-) -> Option<ResourceContext> {
+) -> Result<ResourceContext, ContractEntryRefusal> {
     if !context.facts().contains(composite) {
-        return Some(context.clone());
+        return Ok(context.clone());
     }
     let Resource::Composite { name, .. } = composite.resource() else {
-        return Some(context.clone());
+        return Ok(context.clone());
     };
     let definition = &definitions[definitions
         .binary_search_by(|definition| {
             crate::instrumentation::record_deterministic_work(1);
             definition.name().cmp(name)
         })
-        .ok()?];
+        .map_err(|_| {
+            ContractEntryRefusal::Internal(format!("missing definition of composite `{name}`"))
+        })?];
     if definition.is_recursive() && ancestors.iter().any(|ancestor| ancestor == name) {
-        return Some(context.clone());
+        return Ok(context.clone());
     }
-    let (mut expanded, children, _) = expand_composite_resource_fact_with_children(
+    let (mut expanded, children, _) = checked_expand_composite_resource_fact_with_children(
         context,
         composite,
         definitions,
@@ -76,7 +79,7 @@ pub(super) fn expand_composite_resource_tree(
         assumptions,
     )?;
     if expanded.facts().contains(composite) {
-        return Some(expanded);
+        return Ok(expanded);
     }
     composites.push(composite.clone());
     let mut child_ancestors = ancestors.to_vec();
@@ -94,7 +97,7 @@ pub(super) fn expand_composite_resource_tree(
             )?;
         }
     }
-    Some(expanded)
+    Ok(expanded)
 }
 
 pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at_state(
@@ -103,6 +106,21 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
+    checked_expand_all_composite_resource_facts_and_propositions_at_state(
+        context,
+        definitions,
+        state,
+        assumptions,
+    )
+    .ok()
+}
+
+pub(in crate::kernel) fn checked_expand_all_composite_resource_facts_and_propositions_at_state(
+    context: &ResourceContext,
+    definitions: &[CompositeResourceDefinition],
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> Result<(ResourceContext, Vec<Proposition>), ContractEntryRefusal> {
     let at = state.program_point();
     let (prepared, mut controls) =
         expand_checked_authority_controls(context, definitions, state, assumptions)?;
@@ -116,6 +134,16 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
     let mut fact_assumptions = assumptions.clone();
     let mut extended = 0;
     for composite in controls {
+        let name = match composite.resource() {
+            Resource::Composite { name, .. } => name,
+            _ => {
+                return Err(ContractEntryRefusal::Internal(
+                    "expected an opened composite".into(),
+                ));
+            }
+        };
+        let internal =
+            |detail| ContractEntryRefusal::Internal(format!("composite `{name}`: {detail}"));
         // Preserve the bounds of each declared leaf before adjacent resources
         // normalize into a larger range. The proof can cite either slice.
         let loadable = evaluate_composite_resource_loadable_propositions(
@@ -123,7 +151,8 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
             definitions,
             &at,
             assumptions,
-        )?;
+        )
+        .ok_or_else(|| internal("could not establish the loadability of its declared members"))?;
         propositions.extend(loadable);
         let relations = if let Resource::Composite { name, .. } = composite.resource()
             && let Some(definition) = definitions
@@ -136,13 +165,17 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
         {
             let (children, _) = state
                 .checked_authority_wrapper_body(&composite, definition, assumptions)
-                .ok()?;
+                .map_err(|reason| {
+                    ContractEntryRefusal::Internal(format!(
+                        "could not read the authority carried by composite `{name}`: {reason}",
+                    ))
+                })?;
             let child_context = ResourceContext::new_with_equalities(assumptions)
                 .install_established_partition(
                     coalesce_written_resource_descriptions(children.clone(), assumptions),
                     assumptions,
                 )
-                .ok()?
+                .map_err(|_| internal("could not compose the checked authority members"))?
                 .0;
             let mut relations = vec![Proposition::ResourceComposition(child_context)];
             for child in children {
@@ -160,7 +193,8 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
                 definitions,
                 &at,
                 assumptions,
-            )?
+            )
+            .ok_or_else(|| internal("could not establish its declared member relationships"))?
         };
         propositions.extend(relations);
         fact_assumptions =
@@ -173,10 +207,11 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
             state.clone(),
             &expanded,
             &fact_assumptions,
-        )?;
+        )
+        .ok_or_else(|| internal("could not evaluate a declared fact over its checked body"))?;
         propositions.extend(instantiated.propositions);
     }
-    Some((expanded, propositions))
+    Ok((expanded, propositions))
 }
 
 pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
@@ -185,6 +220,16 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
+    checked_evaluate_resource_population_fact_propositions(context, definitions, state, assumptions)
+        .ok()
+}
+
+pub(in crate::kernel) fn checked_evaluate_resource_population_fact_propositions(
+    context: &ResourceContext,
+    definitions: &[CompositeResourceDefinition],
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> Result<Vec<Proposition>, ContractEntryRefusal> {
     let mut populations = BTreeSet::<(String, ResourceArguments)>::new();
     for fact in context.facts() {
         let (name, arguments) = match fact.resource() {
@@ -216,8 +261,12 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
         else {
             continue;
         };
+        let internal =
+            |detail| ContractEntryRefusal::Internal(format!("population of `{name}`: {detail}"));
         if definition.parameters().len() != arguments.len() {
-            return None;
+            return Err(internal(
+                "the number of arguments differs from the definition",
+            ));
         }
         // Resource expansion checks ownership relations, but a composite's
         // declared pure facts must also be checked from the kernel-side body
@@ -229,9 +278,11 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
         let body_active = {
             let mut population_state = state.clone();
             for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-                let argument = argument.as_program_value()?;
+                let argument = argument
+                    .as_program_value()
+                    .ok_or_else(|| internal("an argument is not a program value"))?;
                 if parameter.program_type() != argument.program_type() {
-                    return None;
+                    return Err(internal("an argument has the wrong type"));
                 }
                 population_state.locals.set_typed(
                     parameter.binding_name().clone(),
@@ -244,7 +295,8 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 &arguments.native_values(),
                 &mut population_state,
                 assumptions,
-            )?;
+            )
+            .ok_or_else(|| internal("could not bind the resource witnesses"))?;
             let mut budget = ExecutionBudget::beside_live_state();
             let evaluation_assumptions = assumptions
                 .clone()
@@ -265,9 +317,11 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
         };
         let mut population_state = state.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-            let argument = argument.as_program_value()?;
+            let argument = argument
+                .as_program_value()
+                .ok_or_else(|| internal("an argument is not a program value"))?;
             if parameter.program_type() != argument.program_type() {
-                return None;
+                return Err(internal("an argument has the wrong type"));
             }
             population_state.locals.set_typed(
                 parameter.binding_name().clone(),
@@ -280,7 +334,8 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
             &arguments.native_values(),
             &mut population_state,
             assumptions,
-        )?;
+        )
+        .ok_or_else(|| internal("could not bind the resource witnesses"))?;
         let mut budget = ExecutionBudget::beside_live_state();
         let evaluation_assumptions = assumptions
             .clone()
@@ -305,25 +360,40 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 name: name.clone(),
                 arguments: arguments.clone(),
             });
-            let (projected, _) = match population_state.checked_authority_wrapper_projection(
-                &head,
-                definition,
-                &evaluation_assumptions,
-            ) {
-                Ok(projected) => projected,
-                Err(_) => return None,
-            };
+            let (projected, _) = population_state
+                .checked_authority_wrapper_projection(&head, definition, &evaluation_assumptions)
+                .map_err(|reason| {
+                    ContractEntryRefusal::Internal(format!(
+                        "could not project the population of `{name}`: {reason}",
+                    ))
+                })?;
             population_state.resources = projected;
         } else {
-            for contained in definition.contains() {
+            for (index, contained) in definition.contains().iter().enumerate() {
                 let body_resource = evaluate_function_resource_spec(
                     &population_state,
                     contained,
                     &evaluation_assumptions,
                     &mut budget,
                 )
-                .ok()?
-                .ok()?;
+                .map_err(|limit| {
+                    ContractEntryRefusal::from_limit(
+                        &format!(
+                            "could not lower member {} of population `{name}`",
+                            index + 1
+                        ),
+                        limit,
+                    )
+                })?
+                .map_err(|error| {
+                    ContractEntryRefusal::from_resource_error(
+                        &format!(
+                            "could not evaluate member {} of population `{name}`",
+                            index + 1
+                        ),
+                        &error,
+                    )
+                })?;
                 if !population_state
                     .resources
                     .satisfies_fact(&body_resource, &evaluation_assumptions)
@@ -331,7 +401,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     population_state.resources = population_state
                         .resources
                         .install_established_partition([body_resource], &evaluation_assumptions)
-                        .ok()?
+                        .map_err(|_| internal("could not compose a checked population member"))?
                         .0;
                 }
             }
@@ -353,15 +423,22 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 // their owning range supplies the concrete validity check when
                 // the resource is used. Do not turn an unconstrained summary
                 // endpoint into a failed definition during population setup.
-                let Ok(paths) = lower_spec_proposition_at_state_without_range_guards(
+                let paths = lower_spec_proposition_at_state_without_range_guards(
                     &population_state,
                     population_fact,
                     None,
                     &evaluation_assumptions,
                     &mut budget,
-                ) else {
-                    return None;
-                };
+                )
+                .map_err(|limit| {
+                    ContractEntryRefusal::from_limit(
+                        &format!(
+                            "could not lower fact {} of population `{name}`",
+                            fact_index + 1
+                        ),
+                        limit,
+                    )
+                })?;
                 let [path] = paths.as_slice() else {
                     next_pending.push((fact_index, population_fact));
                     continue;
@@ -417,12 +494,14 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 made_progress = true;
             }
             if !made_progress {
-                return None;
+                return Err(internal(
+                    "could not evaluate its declared facts over the checked body",
+                ));
             }
             pending = next_pending;
         }
     }
-    Some(propositions)
+    Ok(propositions)
 }
 
 pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(

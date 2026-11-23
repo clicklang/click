@@ -4077,39 +4077,49 @@ fn requirement_proposition_and_facts_with_assumptions(
         spec_definitions,
     )
     .map_err(ClickError::new)?;
-    let (lowered, facts, obligations) = crate::kernel::program_lower_spec_proposition_at_state(
-        lowering_state,
-        &spec,
-        None,
-        assumptions,
-    )
-    .map_err(|message| {
-        ClickError::new(format!(
-            "could not lower requirement `{}`: {message}",
-            crate::surface::diagnostics::describe_click_proposition(proposition)
-        ))
-    })?;
+    let (lowered, facts, obligations, _) =
+        crate::kernel::program_lower_spec_proposition_with_checked_obligations(
+            lowering_state,
+            &spec,
+            None,
+            assumptions,
+        )
+        .map_err(|error| {
+            let clause = crate::surface::diagnostics::describe_click_proposition(proposition);
+            let refusal = match error.limit {
+                Some(limit) => crate::kernel::ContractEntryRefusal::from_limit(
+                    &format!("could not lower requirement `{clause}`"),
+                    limit,
+                ),
+                None => crate::kernel::ContractEntryRefusal::Internal(format!(
+                    "could not lower requirement `{clause}`: {}",
+                    error.message,
+                )),
+            };
+            crate::surface::proof::contract_entry_refusal(refusal)
+        })?;
     // A requirement may read only memory the function's entry justifies:
     // cells the entry holds, a resource it views or owns, or a loadability
     // the requirements state.
     if let Some(obligation) = obligations.iter().find(|obligation| {
         !crate::kernel::execution_state_justifies_loadability_obligation(
             lowering_state,
-            obligation,
+            obligation.proposition(),
             assumptions,
         )
     }) {
         return Err(ClickError::new(format!(
             "{}{}",
             crate::surface::diagnostics::describe_missing_pure_fact(
-                obligation,
+                obligation.proposition(),
                 &[],
                 &[],
                 parameter_binding,
                 &[],
             ),
             folded_matched_instance_note(lowering_state, parameter_binding, assumptions)
-        )));
+        ))
+        .with_proof_refusal(crate::surface::ProofRefusal::Contract));
     }
     // The kernel selected this lowering path, and every outstanding read
     // obligation was checked above. Its auxiliary facts include the checked

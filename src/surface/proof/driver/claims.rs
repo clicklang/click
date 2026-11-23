@@ -53,6 +53,16 @@ struct ContractClosingInput {
     specification: Arc<crate::kernel::PublishedFunctionOutcome>,
 }
 
+// Entry runs before the proof starts. Preserve typed refusals from the
+// producers above it and report an unexplained setup failure as a Click defect.
+fn classify_contract_entry_error(error: ClickError) -> ClickError {
+    if error.kind() == ClickErrorKind::Proof && error.proof_refusal().is_none() {
+        error.with_kind(ClickErrorKind::Internal)
+    } else {
+        error
+    }
+}
+
 fn contract_closing_input(
     root: Option<&Proof<'_>>,
     execution: &CheckedFunctionExecution,
@@ -770,9 +780,7 @@ fn prove_claims_by_checked_tactics(
             )
         })
         .map_err(|error| {
-            error
-                .at_declaration(function_block.signature().name())
-                .with_proof_refusal(crate::surface::ProofRefusal::ContractEntry)
+            classify_contract_entry_error(error.at_declaration(function_block.signature().name()))
         })?;
     // A shared context was built for an earlier claim; name this function's
     // parameters for diagnostics as building it would have.
@@ -826,14 +834,7 @@ fn prove_claims_by_checked_tactics(
                         ParameterBinding::new(parsed_function.parameters(), &arguments),
                     ),
                 ));
-                if matches!(
-                    error,
-                    crate::kernel::RuntimeError::ContractEntryInvariant(_)
-                ) {
-                    diagnostic.with_kind(ClickErrorKind::Internal)
-                } else {
-                    diagnostic.with_proof_refusal(contract_entry_resource_refusal(&error))
-                }
+                contract_entry_runtime_refusal(diagnostic, &error)
             })?;
             entry
                 .open_contract_root(function_source_registry.program())
@@ -844,7 +845,7 @@ fn prove_claims_by_checked_tactics(
                     .with_kind(ClickErrorKind::Internal)
                 })
         })
-        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractEntry))?;
+        .map_err(classify_contract_entry_error)?;
     // Every clause uses the function produced by this generative entry.
     // Re-lowering a sibling clause can allocate different binder identities.
     let function = opened_entry.function().clone();
@@ -2135,6 +2136,7 @@ fn close_claim_directly_from_outcome<'a>(
         resource_facts,
         native_result.as_deref(),
         &mut labels,
+        &|fact| proof.round_trip_source_text(fact),
     );
     // A read of a cell a store dropped after the store search missed names
     // that store and the fact that keeps the cell.

@@ -1482,7 +1482,8 @@ impl ConstructedReturnBodies {
             Some(selected),
             admission.as_mut(),
             CompositeBodySource::Description,
-        )?;
+        )
+        .ok()?;
         if !body.opened {
             folded.push((support.clone(), parent));
             return Some((body.expanded, Vec::new(), Vec::new()));
