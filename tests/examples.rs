@@ -575,7 +575,10 @@ fn registry_trace_labels_record_every_state_origin() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stdout}{stderr}");
-    assert!(stdout.contains("have counters[0]->value > -1000"), "{stdout}");
+    assert!(
+        stdout.contains("have counters[0]->value > -1000"),
+        "{stdout}"
+    );
     assert!(stdout.contains("read<Bits32>(state#"), "{stdout}");
     assert!(
         stdout.contains("at(statement(2).call(record_beta, 0).entry, counters[1]->value)"),
