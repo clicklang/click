@@ -26937,6 +26937,23 @@ fn displaced_native_view_expands_to_rebase_and_restriction() {
 }
 
 #[test]
+fn branch_join_expands_returned_read_with_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/branch_join_borrow_separation.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "run.contract").unwrap();
+    assert!(
+        expanded.contains("preserve(memory(input[0]), region(0))"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("run.contract", || verify_c_sources(&expanded, &sources))
+        .unwrap();
+}
+
+#[test]
 fn instantiated_indexed_read_expands_without_transport() {
     let c_source = "void keep(int32 p[], int32 n, int32 *q) { *q = 9; }";
     let source = r#"

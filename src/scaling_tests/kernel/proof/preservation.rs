@@ -242,6 +242,62 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
 }
 
 #[test]
+fn shared_branch_write_footprint_uses_only_its_arm_endpoints() {
+    let costs = [4, 16, 64, 256].map(|history| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut memory = SymbolicMemory::new();
+        for index in 0..history {
+            memory = memory.store(
+                Address::symbolic(Variable(8_541_000 + index)),
+                crate::kernel::int32(0),
+            );
+        }
+        let entry = ExecutionState::new().with_memory(memory);
+        let target = Address::symbolic(Variable(8_540_000));
+        let arm = |address: &Address, value| {
+            let exit = entry.clone().with_memory(
+                entry
+                    .memory()
+                    .clone()
+                    .store(address.clone(), crate::kernel::int32(value)),
+            );
+            let effects = vec![ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
+                before: entry.memory().clone(),
+                after: exit.memory().clone(),
+                writes: vec![(address.clone(), crate::kernel::AccessExtent::from(4))],
+            })];
+            let footprint = crate::kernel::RegionFootprint::transition(
+                "arm write".into(),
+                &entry,
+                &exit,
+                &effects,
+            );
+            (exit, footprint)
+        };
+        let (left, left_effect) = arm(&target, 1);
+        let (right, right_effect) = arm(&target, 2);
+        let (other, other_effect) = arm(&Address::symbolic(Variable(8_540_001)), 2);
+        let (joined, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::RegionFootprint::shared_branch_write(
+                "branch".into(),
+                &entry,
+                &left,
+                [(&left, Some(&left_effect)), (&right, Some(&right_effect))],
+            )
+        });
+        assert_eq!(joined.unwrap().members, left_effect.members);
+        assert!(crate::kernel::RegionFootprint::shared_branch_write(
+            "branch".into(),
+            &entry,
+            &left,
+            [(&left, Some(&left_effect)), (&other, Some(&other_effect))],
+        ).is_none());
+        cost
+    });
+    assert_eq!(costs, [costs[0]; 4]);
+}
+
+#[test]
 fn simple_footprint_separation_does_not_walk_a_region_sequence() {
     let costs = [4, 16, 64, 256].map(|length| {
         let _session = crate::kernel::VerificationSession::enter();
