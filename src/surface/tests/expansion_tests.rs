@@ -16922,6 +16922,27 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay the indexed old-value postcondition"]
+fn indexed_old_postcondition_expands_through_distinct_store_preservation() {
+    let (source, sources) =
+        mdtest_sources("mdtests/have_whole_fact_keeps_written_parameter_names.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "mark_one.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(
+        expanded.contains("separation::separate_elements("),
+        "{expanded}"
+    );
+    assert!(expanded.contains("preserve(memory(a[m])"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expand and replay the symbolic indexed read"]
 fn returned_read_expands_by_restricting_range_separation_to_the_cell() {
     let (source, sources) = mdtest_sources("mdtests/separate_symbolic_unwritten_read.md");
@@ -17049,6 +17070,33 @@ fn indexed_reads_in_expressions_expand_through_distinct_store_preservation() {
         );
         assert!(
             expanded.contains("preserve(memory(a[m])"),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed expressions across separated stores"]
+fn indexed_expressions_expand_through_range_separation() {
+    let (source, sources) =
+        mdtest_sources("mdtests/indexed_expressions_survive_separated_stores.md");
+    let sources = crate::cli::source_refs(&sources);
+    for (claim, cell) in [
+        ("keep_low_bit.contract", "a[0]"),
+        ("keep_positive_flag.contract", "p[j]"),
+        ("keep_bitwise_or.contract", "a[0]"),
+        ("keep_read_bound.contract", "a[0]"),
+        ("keep_reversed_condition.contract", "p[j]"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains(&format!("preserve(memory({cell})")),
             "{claim}: {expanded}"
         );
         without_implicit_solve_for_claim(claim, || {
