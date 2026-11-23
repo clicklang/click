@@ -442,10 +442,16 @@ int32 vector_grow(struct vector* owner) {
                                 have at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) by {
                                     known();
                                 }
-                                intro();
-                                solve() using { at(function.entry, owner->cap) < (at(function.entry,
-                                        1073741823) as int32); at(function.entry, owner->cap) == (at(function.entry,
-                                        1073741823) as int32); };
+                                if at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) {
+                                    have false by {
+                                        solve() using { at(function.entry, owner->cap) < (at(function.entry,
+                                                1073741823) as int32); at(function.entry, owner->cap) == (at(function.entry,
+                                                1073741823) as int32); };
+                                    }
+                                    contradiction(false);
+                                } else {
+                                    known();
+                                }
                             }
                             solve() using { (at(function.entry, owner->cap) as int32) < (at(function.entry,
                                     536870910) as int32); (at(function.entry, 1) as int32) <= (at(function.entry,
