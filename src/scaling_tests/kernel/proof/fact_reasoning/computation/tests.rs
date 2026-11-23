@@ -6,6 +6,7 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
     let types = [
         AlgebraicValueType::Program(ProgramType::Int32),
         AlgebraicValueType::Program(ProgramType::UInt64),
+        AlgebraicValueType::Program(ProgramType::Bool),
         AlgebraicValueType::Integer,
     ];
     let sizes = [8, 32, 128];
@@ -20,6 +21,9 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
             let variable = Variable(id);
             match ty {
                 AlgebraicValueType::Integer => AlgebraicValue::Integer(IntegerTerm::var(variable)),
+                AlgebraicValueType::Program(ProgramType::Bool) => AlgebraicValue::Program(
+                    ProgramValue::of_bool(ConditionTerm::Variable(variable)),
+                ),
                 AlgebraicValueType::Program(program_type) => AlgebraicValue::Program(
                     MachineIntegerType::from_program_type(*program_type)
                         .unwrap()
@@ -28,9 +32,12 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
                 _ => unreachable!(),
             }
         };
-        let fields = (0..size)
+        let mut fields = (0..size)
             .map(|i| value(992_300 + i as u64))
             .collect::<Vec<_>>();
+        if *ty == AlgebraicValueType::Program(ProgramType::Bool) {
+            fields[0] = AlgebraicValue::Program(ProgramValue::bool_constant(true));
+        }
         scrutinee.node = constructor(fields.clone());
         let bindings = (0..size)
             .map(|i| value(992_100 + i as u64))

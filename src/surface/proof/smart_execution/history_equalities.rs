@@ -22,6 +22,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        let outcome = search_input.focused_outcome_data().is_some();
         let (current, returned) = match (left, right) {
             (
                 current,
@@ -38,8 +39,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 current,
             ) if current == saved.as_ref() => (current, false),
             (_, ContractExpression::Old(read))
-                if search_input.focused_outcome_data().is_some()
-                    && crate::surface::proposition_names_result(target) =>
+                if outcome && crate::surface::proposition_names_result(target) =>
             {
                 (read.as_ref(), true)
             }
@@ -122,9 +122,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )?;
             let separated = match separated {
                 Some(separated) => Some(separated),
-                None if (returned || derive_separation) && footprint.members.len() == 1 => {
+                None if (outcome || derive_separation) && footprint.members.len() == 1 => {
                     let written = footprint.members.front().expect("one footprint member");
-                    if returned
+                    if outcome
                         && !loop_exit
                         && let Some(separated) = Self::try_distinct_indexed_store_separation(
                             &proof,
@@ -134,7 +134,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )?
                     {
                         Some(separated)
-                    } else {
+                    } else if returned || derive_separation {
                         attempt::candidate_outcome(Self::try_single_memory_write_separation(
                             &proof,
                             written,
@@ -142,6 +142,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             &separation,
                         ))?
                         .flatten()
+                    } else {
+                        None
                     }
                 }
                 None => None,

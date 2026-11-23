@@ -1304,7 +1304,12 @@ fn resolve(
     }
     let unchanging = match &value {
         E::Borrow { place, value_type } => match temporary_type {
-            Some(super::super::schema::Type::Reference { .. }) => place_root(place).is_some(),
+            Some(Type::Reference { .. }) => {
+                place_root(place).is_some()
+                    || matches!(place.as_ref(), E::Field { base, .. }
+                        if matches!(base.as_ref(), E::Deref { reference, value_type: Type::Record { .. } }
+                            if matches!(reference.as_ref(), E::Local { name } if unchanged.contains(name))))
+            }
             // A shared slice borrow of a shared slice local: its pointer
             // and length never change while the borrow lives.
             Some(super::super::schema::Type::ByteSlice { mutable: false }) => {
@@ -2099,6 +2104,27 @@ pub(super) fn bind_slice_payloads(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// The original iterator and reference binding, plus an enumeration's
+/// separate index binding if it yields one.
+fn copied_element_yield(statement: &S) -> Option<(&String, &String, Option<&String>)> {
+    match statement {
+        S::SharedArrayNext {
+            iterator,
+            option: None,
+            payload: Some(reference),
+            taken: Some(true),
+        } => Some((iterator, reference, None)),
+        S::EnumerateNext {
+            iterator,
+            option: None,
+            index,
+            element: Some(reference),
+            taken: Some(true),
+        } => Some((iterator, reference, index.as_ref())),
+        _ => None,
+    }
+}
+
 /// Bind a copied slice element to the written pattern variable. The yielded
 /// shared reference can go when its only use is the matching dereference at
 /// the start of the sole successor, under the same source site.
@@ -2117,15 +2143,10 @@ pub(super) fn bind_copied_slice_elements(
     let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
         for statement in &block.statements {
-            if let S::SharedArrayNext {
-                iterator,
-                option: None,
-                payload: Some(reference),
-                taken: Some(true),
-            } = statement
-            {
+            if let Some((iterator, reference, index)) = copied_element_yield(statement) {
                 *yields.entry(reference.clone()).or_default() += 1;
                 named.insert(iterator.clone());
+                named.extend(index.cloned());
             } else {
                 statement_uses(statement, &mut reads, &mut named);
                 if let S::Assign {
@@ -2149,16 +2170,13 @@ pub(super) fn bind_copied_slice_elements(
     }
     let mut removed = BTreeSet::new();
     for index in 0..blocks.len() {
-        let (
-            Some(S::SharedArrayNext {
-                iterator,
-                option: None,
-                payload: Some(reference),
-                taken: Some(true),
-            }),
-            T::Goto { target },
-        ) = (blocks[index].statements.last(), &blocks[index].terminator)
-        else {
+        let (Some((iterator, reference, _)), T::Goto { target }) = (
+            blocks[index]
+                .statements
+                .last()
+                .and_then(copied_element_yield),
+            &blocks[index].terminator,
+        ) else {
             continue;
         };
         let target = *target;
@@ -2172,7 +2190,9 @@ pub(super) fn bind_copied_slice_elements(
         {
             continue;
         }
-        let Some(Type::SharedArrayIterator { element }) = types.get(iterator.as_str()) else {
+        let Some(Type::SharedArrayIterator { element } | Type::EnumerateIterator { element }) =
+            types.get(iterator.as_str())
+        else {
             continue;
         };
         if !element.is_integer()
@@ -2234,10 +2254,13 @@ pub(super) fn bind_copied_slice_elements(
         let (reference, name) = (reference.clone(), name.clone());
         blocks[target].statements.remove(position);
         start_storage_at_next(blocks, index, target, [name.as_str()]);
-        let Some(S::SharedArrayNext { payload, .. }) = blocks[index].statements.last_mut() else {
-            unreachable!("yield remains the last statement")
-        };
-        *payload = Some(name);
+        match blocks[index].statements.last_mut() {
+            Some(S::SharedArrayNext { payload, .. })
+            | Some(S::EnumerateNext {
+                element: payload, ..
+            }) => *payload = Some(name),
+            _ => unreachable!("yield remains the last statement"),
+        }
         removed.insert(reference);
     }
     if removed.is_empty() {

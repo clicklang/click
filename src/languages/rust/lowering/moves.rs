@@ -752,13 +752,24 @@ pub(super) fn lower(
                     index,
                     element,
                     taken,
-                } => cx.enumerate_next(
-                    iterator,
-                    option.as_deref(),
-                    index.as_deref(),
-                    element.as_deref(),
-                    *taken,
-                )?,
+                } => {
+                    let element = element
+                        .as_deref()
+                        .map(|name| {
+                            local_types
+                                .get(name)
+                                .map(|ty| (name, *ty))
+                                .ok_or("unknown Rust enumerate iterator payload")
+                        })
+                        .transpose()?;
+                    cx.enumerate_next(
+                        iterator,
+                        option.as_deref(),
+                        index.as_deref(),
+                        element,
+                        *taken,
+                    )?
+                }
                 S::RangeInitialize { target, start, end } => {
                     cx.range_initialize(target, start, end)?
                 }

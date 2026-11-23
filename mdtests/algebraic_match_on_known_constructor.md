@@ -80,6 +80,39 @@ theorem rewritten_bool_tag(p: WidePacket, value: uint64) {
         solve();
     }
 }
+
+spec enum BoolPacket { Full(Bool) }
+spec enum Flag { Value(Bool) }
+
+theorem rewritten_bool_field(p: BoolPacket, flag: Bool) {
+    requires p == BoolPacket::Full(flag);
+    ensures (match p {
+        BoolPacket::Full(b) => Flag::Value(b),
+    }) == Flag::Value(flag) by {
+        rewrite(p, BoolPacket::Full(flag));
+        solve();
+    }
+}
+
+theorem rewritten_bool_literal(p: BoolPacket) {
+    requires p == BoolPacket::Full(true);
+    ensures (match p {
+        BoolPacket::Full(b) => Flag::Value(b),
+    }) == Flag::Value(true) by {
+        rewrite(p, BoolPacket::Full(true));
+        solve();
+    }
+}
+
+theorem rewritten_bool_capture(p: WidePacket, value: uint64, flag: Bool) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(n) => BoolOutput::Value(n, flag),
+    }) == BoolOutput::Value(value, flag) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
 ```
 
 ```expect
