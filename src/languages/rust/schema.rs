@@ -520,14 +520,6 @@ pub enum Statement {
         left: Place,
         right: Place,
     },
-    // Compiler-resolved slice iterator protocol, not an index-loop rewrite.
-    SliceFor {
-        iterator: MirLocalId,
-        slice: Expression,
-        binding: Place,
-        by_reference: bool,
-        body: Vec<Self>,
-    },
     While {
         condition: Expression,
         body: Vec<Self>,
