@@ -1,9 +1,7 @@
-# A step after instantiate refutes an introduced universal
+# A single counterexample refutes a universal
 
-`intro()` of `not (forall ...)` leaves the goal `false` with the universal as
-a fact. `instantiate` at the counterexample `1` gives `1 == 0`, and the
-following `contradiction` closes the goal, as it does when the universal is a
-requirement.
+`not (forall ...)` lowers to an existential counterexample. Giving `1` as
+the witness leaves the concrete comparison `1 != 0`.
 
 ```c filename=a_step_after_instantiate_refutes_an_introduced_universal.c
 void unused(void) {}
@@ -14,9 +12,8 @@ verifying "a_step_after_instantiate_refutes_an_introduced_universal.c";
 
 theorem not_all_zero(n: int32) {
     ensures not (forall (x: int32) { x == 0 }) by {
-        intro();
-        instantiate(forall (x: int32) { x == 0 }, 1);
-        contradiction(1 == 0);
+        witness(1);
+        normalize();
     }
 }
 ```

@@ -4,6 +4,9 @@ This checks that loop-invariant spec lowering preserves the element type for
 pure Click functions over `uint8[]` array refs. The loop writes only the tail,
 so the first byte remains equal to its entry-state value.
 
+The back-edge proof uses the store footprint to carry the first byte
+across the write, then re-establishes the pure-function invariant.
+
 ```c filename=uint8_loop_invariant_pure_function.c
 uint8 fill_byte_tail(uint8 p[], int32 n) {
     int32 i;
@@ -36,28 +39,29 @@ uint8 fill_byte_tail(uint8 p[], int32 n) {
         invariant i >= 1 and i <= n;
         invariant first_byte(p) == old(first_byte(p));
         maintain by {
-            mark iteration;
-            have i != 0 by { solve() using { 1 <= i; }; }
-            have separate(memory(p[i]), memory(p[0])) by {
-                apply(click::separation::separate_elements(p, i, 0));
-            }
+            mark before_store;
+            unfold(first_byte(p));
+            have p[0] == old(first_byte(p)) by { known(); }
+            have i != 0 by { solve() using { i >= 1; }; }
+            apply(click::separation::separate_elements(p, i, 0));
             step();
             have separate(loop(0).statement(0).footprint, memory(p[0])) by {
-                normalize() using { at(iteration, separate(memory(p[i]), memory(p[0]))); };
+                normalize() using { at(before_store, separate(memory(p[i]), memory(p[0]))); };
             }
-            have p[0] == at(iteration, p[0]) by {
+            have p[0] == at(before_store, p[0]) by {
                 preserve(memory(p[0]), loop(0).statement(0));
             }
-            step();
-            have separate(loop(0).statement(1).footprint, memory(p[0])) by known();
-            have p[0] == at(loop(0).statement(1).entry, p[0]) by {
-                preserve(memory(p[0]), loop(0).statement(1));
-            }
-            have first_byte(p) == old(first_byte(p)) by {
-                rewrite(old(first_byte(p)), at(iteration, first_byte(p)));
-                unfold(first_byte(p));
+            have p[0] == old(first_byte(p)) by {
+                rewrite(p[0], at(before_store, p[0]));
                 known();
             }
+            step();
+            have first_byte(p) == p[0] by { unfold(first_byte(p)); known(); }
+            have first_byte(p) == old(first_byte(p)) by {
+                rewrite(first_byte(p), p[0]);
+                known();
+            }
+            solve();
         }
         otherwise {
             have first_byte(p) == p[0] by { unfold(first_byte(p)); known(); }

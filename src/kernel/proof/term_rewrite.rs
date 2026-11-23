@@ -2804,7 +2804,9 @@ impl<'a> TermRewrite<'a> {
         // strictly above the maximum.  Keeping the complete source set in
         // `reserved_variables` would add an uncharged linear copy here and
         // would not change any allocation decision.
-        if let Some(last) = variables.iter().next_back() {
+        // The greatest ordinary variable: the allocator mints ordinary
+        // variables, and other origins sort after them.
+        if let Some(last) = variables.range(..Variable::FIRST_NON_ORDINARY).next_back() {
             let Some(next) = last.0.checked_add(1) else {
                 self.integer_work_exhausted = true;
                 return;
@@ -4595,9 +4597,16 @@ impl<'a> TermRewrite<'a> {
         if self.bitvector.is_some() && self.bitvector_replacement_variables.is_none() {
             self.ensure_replacement_carriers();
             if let Some(variables) = &self.replacement_carriers {
-                self.integer_replacement_variable_max = variables.integer.last().map(|v| v.0);
-                self.bitvector_replacement_variable_max =
-                    variables.program_values.last().map(|v| v.0);
+                self.integer_replacement_variable_max = variables
+                    .integer
+                    .range(..Variable::FIRST_NON_ORDINARY)
+                    .next_back()
+                    .map(|v| v.0);
+                self.bitvector_replacement_variable_max = variables
+                    .program_values
+                    .range(..Variable::FIRST_NON_ORDINARY)
+                    .next_back()
+                    .map(|v| v.0);
                 self.integer_replacement_variables = Some(variables.integer.clone());
                 self.bitvector_replacement_variables = Some(variables.program_values.clone());
             }
@@ -6225,11 +6234,7 @@ impl<'a> TermRewrite<'a> {
         } else if self.equality_graph.is_some_and(|graph| match &result {
             ConditionTerm::PointerEqual(left, right) => {
                 let matches = self.pointer_context.map_or_else(
-                    || {
-                        left.provenance() == right.provenance()
-                            && left.bounds() == right.bounds()
-                            && left.bounds_are_known() == right.bounds_are_known()
-                    },
+                    || left.same_provenance_as(right),
                     |context| context.pointer_provenance_match(left, right),
                 );
                 matches && graph.are_equal(left.address(), right.address())

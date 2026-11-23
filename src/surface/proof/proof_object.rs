@@ -3902,7 +3902,10 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 
-        ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_) => "intro()",
+        ProofStep::Intro
+        | ProofStep::IntroAs(_)
+        | ProofStep::IntroBinder(_)
+        | ProofStep::IntroBlock { .. } => "intro()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step
         | ProofStep::StepBind(_)

@@ -470,7 +470,12 @@ This solving is smart and may miss; for example, it can prove a callee's
 `requires a > 0` from `requires x == 5 or x == 7`.
 
 Arithmetic evaluation still decides some safety conditions before generating
-an obligation; migrating those decisions is separate remaining work. An emitted
+an obligation; migrating those decisions is separate remaining work. Pointer
+subtraction and relational pointer comparison owe C's same-object
+precondition this way: when the context does not decide it, the step emits
+`same_allocation(left, right)` as an obligation at the operation, named by its
+C rule, rather than a path of undefined behavior
+(`mdtests/an_undecided_pointer_subtraction_owes_same_allocation.md`). An emitted
 definedness requirement states the defined path's condition, such as
 `s >= 0 and s < 32` for `x << s`.
 
@@ -1689,8 +1694,8 @@ operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
 builds a constructor from bound fields, literal fields, or captured variables.
-Literal result fields can be machine integers, `Integer`s, or `Bool`s. Captured
-variables and scrutinee fields can be machine integers or `Integer`s. The check
+Literals and variables can be machine integers, `Integer`s, or `Bool`s.
+Algebraic fields can be variables or constructors with no fields. The check
 follows nested matches on written constructors and keeps the selected bindings
 in scope. Machine fields retain their exact width and signedness.
 
@@ -1699,7 +1704,9 @@ holds a different machine-integer literal of the same type. The check
 visits only the immediate fields and uses their literal values.
 
 Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
-and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
+and `0 | x == x` at a native word's own format, in either operand order. A bitwise
+OR is unequal to zero when either operand is a same-width nonzero literal. The
+rule also applies to the exact `Integer` observation of that word. Intrinsic
 alignment of a null, heap, global or static address reads only that address's
 block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
@@ -2172,14 +2179,15 @@ normalization steps with explicit premises.
 
 A disequality goal `a != b` (or `not (a == b)`) over machine or `Integer`
 operands, which no certificate family reads directly, is proved by refuting
-`a == b`: `intro()` adds the equality and leaves `false`, which arithmetic
-proves from the listed premises and the equality. `k < j` gives `k != j`
+`a == b`. In the equal arm of a proof `if`, arithmetic proves `false` from
+the listed premises and the equality. The other arm has the disequality as a
+fact. `k < j` gives `k != j`
 ([`arithmetic_proves_a_disequality_by_refuting_its_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_proves_a_disequality_by_refuting_its_equality.md));
 `k <= j` does not, and the refusal is the one for the `false` goal
 ([`a_disequality_its_premises_allow_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_disequality_its_premises_allow_is_refused.md)).
 `solve` proves `a < b`, or else `b < a`, by selected-premise arithmetic,
 which a linear refutation of `a == b` always leaves, and refutes the equality
-from it; its expansion writes that `have`, `intro()` and the certificate.
+from it. Expansion writes that `have` and the two arms of the proof `if`.
 
 Arithmetic reads no disequality premise, so a disequality goal that only
 another disequality gives is proved by cases. When every other strategy
@@ -2527,12 +2535,18 @@ charges the affected expression.
 
 ### Introducing a binder or premise
 
-**Form:** `intro()`
+**Forms:** `intro() { ... }` or `intro(name) { ... }` for a named universal binder.
 
-**Core.** For an implication, negation, or universal goal, add the antecedent or
-named binder and continue with the body goal. A universal's variable keeps the
-name its quantifier wrote; if that name is already in scope it shadows the older
-one, which stays readable as `outer.name`. That includes a range quantifier's
+**Core.** For an implication, the block assumes the antecedent and proves
+the consequent. For a universal, it fixes an arbitrary value and proves
+the body at that value. The closing brace discharges the original goal and
+ends the scope of the premise or binder. In a grouped contract proof the
+next tactic can then work on the next claim. The flat forms `intro();` and
+`let name = intro();` are also accepted.
+
+With `intro()`, a universal's variable keeps the name its quantifier wrote.
+An earlier binding of the same name stays readable as `outer.name`. That
+includes a range quantifier's
 variable in a `have` stated between C statements
 ([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)). A known C/C++ record binding named `outer` keeps ordinary `outer.field`
 access in a proof; it is not parsed as the shadowed-binder qualifier.
@@ -2553,20 +2567,11 @@ introduction:
   `k + 1 > 0`, or a path fact. It is introduced as a fact while the written
   goal stays focused, so a written `forall (k: int32) { k + 1 > 0 and k >= 0
   implies k >= 0 }` takes three `intro()`s: binder, guard, antecedent.
-- `not P` whose `P` lowers to a connective or quantifier, such as
-  `not (A and B)` or `not (forall (x: int32) { ... })`: `P` becomes a fact and
-  the goal is `false`, closed by `contradiction`.
-- `not P` for a comparison or `bool` `P`, written as `not`, such as
-  `not (n == 1)` or `not (x >= y)`, though lowering states it as one
-  comparison: `P` becomes a fact and the goal is `false`.
-- A disequality `a != b`, the negation of `a == b`, in every family:
-  `a == b` becomes a fact and the goal is `false`.
-
 **Outside it**, with what to write instead:
 
-- An order comparison not written as `not`, such as `x < y`: `intro` does not
-  turn it into a refutation of `x >= y`. Prove it directly, or split with a
-  proof `if` or `cases` on the complement.
+- A negation or disequality: use a proof `if` on the denied condition. Refute
+  that condition in the first arm and use the complementary fact in the
+  second arm.
 - A conjunction: `all`. A disjunction: prove one disjunct with `have` and
   close with `known()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
@@ -2576,10 +2581,10 @@ introduction:
 **Failure, checking, and tools:**
 
 A refusal names the goal's shape, such as "got a condition fact" or "got a
-conjunction". Click checks the one introduction rule; expansion is unchanged,
-and profiling charges one leaf.
+conjunction". Click checks the introduction and the proof of its body. Expansion preserves
+the written block and expands any smart steps inside it.
 
-**Checked examples:** [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`lowering_guard_before_written_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/lowering_guard_before_written_implication.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
+**Checked examples:** [`scoped_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/scoped_intro.md), [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`lowering_guard_before_written_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/lowering_guard_before_written_implication.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
 
 ### Naming an introduced binder
 

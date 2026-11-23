@@ -3291,6 +3291,9 @@ fn validate_pure_theorem_tactics(
             // state's ambient facts.
              |  ProofTactic::TransportUsing { .. }
              |  ProofTactic::SolveUsing(_) => {}
+            ProofTactic::IntroBlock { body, .. } => {
+                validate_pure_theorem_tactics(theorem_name, body)?;
+            }
             ProofTactic::Match(proof_match) => {
                 for arm in &proof_match.arms {
                     validate_pure_theorem_tactics(theorem_name, &arm.tactics)?;
@@ -3400,7 +3403,10 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Normalize => "normalize",
         ProofTactic::NormalizeUsing(_) => "normalize",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
-        ProofTactic::Intro | ProofTactic::IntroAs(_) | ProofTactic::IntroBinder(_) => "intro",
+        ProofTactic::Intro
+        | ProofTactic::IntroAs(_)
+        | ProofTactic::IntroBinder(_)
+        | ProofTactic::IntroBlock { .. } => "intro",
         ProofTactic::Enumerate => "enumerate",
         ProofTactic::Contradiction(_) => "contradiction",
         ProofTactic::CloseInvariants => "close_invariants",

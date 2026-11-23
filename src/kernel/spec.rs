@@ -1091,7 +1091,7 @@ fn lower_spec_negation_chain_in(
 fn wrap_spec_negation_path(path: SpecPropositionPath) -> SpecPropositionPath {
     // A negated condition is the condition with the other value, as an
     // execution spells the branch it did not take. Only the remaining shape
-    // keeps a `Not` node an introduction can reach.
+    // keeps an explicit `Not` node.
     let (proposition, introductions) = match path.proposition {
         Proposition::ConditionIs(condition, value) => (
             Proposition::condition_is(condition, !value),
@@ -1710,7 +1710,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             .map(|path| {
                 // A negated condition is the condition with the other value,
                 // as an execution spells the branch it did not take. Only the
-                // remaining shape keeps a `Not` node an introduction can reach.
+                // remaining shape keeps an explicit `Not` node.
                 let (proposition, introductions) = match path.proposition {
                     Proposition::ConditionIs(condition, value) => (
                         Proposition::condition_is(condition, !value),

@@ -1152,6 +1152,10 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         },
+        ProofTactic::IntroBlock { binder, body } => ProofTactic::IntroBlock {
+            binder: binder.clone(),
+            body: instantiate_proof_tactics(body, substitution, algebraic_parameters)?,
+        },
         ProofTactic::Have(have) => ProofTactic::Have(ProofHave {
             proposition: proposition(&have.proposition)?,
             proof: instantiate_source_proof(&have.proof, substitution, algebraic_parameters)?,

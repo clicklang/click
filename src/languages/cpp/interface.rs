@@ -584,8 +584,13 @@ fn function_interface(
             }
             pointer @ CppType::Pointer { .. } if super::scalar::record_pointee(pointer).is_some() => {
                 let (_, name) = super::scalar::record_pointee(pointer).unwrap();
+                let carrier_type = if layouts.contains_key(name) {
+                    InterfaceType::Int32Pointer
+                } else {
+                    InterfaceType::VoidPointer
+                };
                 let carrier = crate::languages::interface::ImportedParameter::from_binding(
-                    InterfaceType::Int32Pointer,
+                    carrier_type,
                     carried_name.clone(),
                     Some(name.to_owned()),
                 );

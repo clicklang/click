@@ -78,8 +78,8 @@ impl TermRewrite<'_> {
         self.shared_integer_operand_in(root, false)
     }
 
-    /// Fold scope already performs capture checks. Rewrite arithmetic and
-    /// nested folds here, bridging the remaining node families.
+    /// Fold scope already performs capture checks. Rewrite the supported
+    /// Integer children here, bridging the remaining node families.
     pub(super) fn shared_fold_integer_child(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         self.shared_integer_operand_in(root, true)
     }
@@ -120,12 +120,22 @@ impl TermRewrite<'_> {
             if memo.borrow().contains_key(&key(&term)) {
                 continue;
             }
-            let retained_fold_if = self.condition_exact.is_none()
-                && matches!(
-                    term.node(),
-                    KernelTermNode::IntegerIf { arguments }
-                        if matches!(arguments[0].node(), KernelTermNode::BoolLiteral(_))
-                );
+            let retained_fold_if = match term.node() {
+                KernelTermNode::IntegerIf { arguments } if self.condition_exact.is_none() => {
+                    match arguments[0].node() {
+                        KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => true,
+                        // These guards have a fixed-width native representation.
+                        KernelTermNode::BoolCompare { arguments, .. }
+                        | KernelTermNode::BoolOverflow { arguments, .. } => {
+                            arguments.iter().all(|operand| {
+                                matches!(operand.node(), KernelTermNode::MachineLiteral(_))
+                            })
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
             if fold_child
                 && !retained_fold_if
                 && !matches!(
@@ -222,6 +232,11 @@ impl TermRewrite<'_> {
                             }
                             let preserve = self.preserves_closed_value_conditional(&guard);
                             let guard = self.condition(&guard);
+                            let guard = if preserve {
+                                guard
+                            } else {
+                                folded_machine_condition(guard)
+                            };
                             if self.checked_work_exhausted() {
                                 return None;
                             }
@@ -260,7 +275,19 @@ impl TermRewrite<'_> {
                         let yes = memo.borrow()[&key(&arguments[1])].clone();
                         let no = memo.borrow()[&key(&arguments[2])].clone();
                         crate::instrumentation::record_deterministic_work(1);
-                        if !preserve && yes.integer_native_syntax_equal(&no) {
+                        let equal = !preserve
+                            && if fold_child {
+                                // Native Integer `if` collapses equal arms by
+                                // interned identity. Reuse the fold's bridge
+                                // for differing handles rather than comparing
+                                // those two DAGs afresh at each conditional.
+                                yes == no
+                                    || self.fold_integer_bridge.integer(&yes).ok()?
+                                        == self.fold_integer_bridge.integer(&no).ok()?
+                            } else {
+                                yes.integer_native_syntax_equal(&no)
+                            };
+                        if equal {
                             yes
                         } else {
                             KernelTerm::integer_if_raw([guard, yes, no])

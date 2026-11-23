@@ -786,7 +786,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // would also capture an unused memory-history diagnostic.
             if !matches!(
                 proof.goal(),
-                Some(Proposition::Implies(..) | Proposition::ForAll { .. } | Proposition::Not(_))
+                Some(Proposition::Implies(..) | Proposition::ForAll { .. })
             ) {
                 return Ok(None);
             }
@@ -6445,38 +6445,47 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        if *operator == ComparisonOperator::In {
+            return Ok(None);
+        }
         let field_bound = *operator == ComparisonOperator::LessEqual;
-        let left = match (operator, left, right) {
-            (ComparisonOperator::Equal, left, ContractExpression::IntegerLiteral(_)) => left,
+        let expression = match (left, right) {
+            (expression, ContractExpression::IntegerLiteral(_))
+            | (ContractExpression::IntegerLiteral(_), expression) => expression,
             (
-                ComparisonOperator::Equal,
                 left,
                 ContractExpression::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::Int32(value),
                 )),
-            ) if outcome && value.constant32().is_some() => left,
-            (
-                ComparisonOperator::LessEqual,
-                field @ ContractExpression::Field { .. },
-                ContractExpression::IntegerLiteral(_),
-            )
-            | (
-                ComparisonOperator::LessEqual,
-                ContractExpression::IntegerLiteral(_),
-                field @ ContractExpression::Field { .. },
-            ) => field,
+            ) if outcome
+                && *operator == ComparisonOperator::Equal
+                && value.constant32().is_some() =>
+            {
+                left
+            }
             _ => return Ok(None),
         };
+        fn indexed_expression_read(expression: &ContractExpression) -> Option<&ContractExpression> {
+            match expression {
+                ContractExpression::Index(..) => Some(expression),
+                ContractExpression::BitwiseAnd(read, mask)
+                | ContractExpression::BitwiseOr(read, mask)
+                    if matches!(read.as_ref(), ContractExpression::Index(..))
+                        && matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_)) =>
+                {
+                    Some(read.as_ref())
+                }
+                _ => None,
+            }
+        }
         let indexed;
-        let read = match left {
-            read @ ContractExpression::Index(..) => read,
+        let read = match expression {
             read @ ContractExpression::Field { .. } if field_bound => read,
             ContractExpression::BitwiseAnd(read, mask)
-                if matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
-                    && matches!(
-                        read.as_ref(),
-                        ContractExpression::Field { .. } | ContractExpression::Index(..)
-                    ) =>
+                if *operator == ComparisonOperator::Equal
+                    && matches!(left, ContractExpression::BitwiseAnd(..))
+                    && matches!(mask.as_ref(), ContractExpression::IntegerLiteral(_))
+                    && matches!(read.as_ref(), ContractExpression::Field { .. }) =>
             {
                 read.as_ref()
             }
@@ -6487,17 +6496,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             } if matches!(then_branch.as_ref(), ContractExpression::IntegerLiteral(_))
                 && matches!(else_branch.as_ref(), ContractExpression::IntegerLiteral(_))
                 && let ClickProposition::Comparison {
-                    left: read @ ContractExpression::Index(..),
-                    right: ContractExpression::IntegerLiteral(_),
-                    ..
-                } = condition.as_ref() =>
+                    left,
+                    operator,
+                    right,
+                } = condition.as_ref()
+                && *operator != ComparisonOperator::In =>
             {
+                let operand = match (left, right) {
+                    (operand, ContractExpression::IntegerLiteral(_))
+                    | (ContractExpression::IntegerLiteral(_), operand) => operand,
+                    _ => return Ok(None),
+                };
+                let Some(read) = indexed_expression_read(operand) else {
+                    return Ok(None);
+                };
                 read
             }
-            _ if outcome => {
+            _ if let Some(read) = indexed_expression_read(expression) => read,
+            _ if outcome && *operator == ComparisonOperator::Equal => {
                 // A read raised from an outcome goal can be spelled *(a + i).
                 let Some(ProgramExpression::Load(pointer)) =
-                    contract_expression_as_program_expression(left)
+                    contract_expression_as_program_expression(expression)
                 else {
                     return Ok(None);
                 };
@@ -6663,24 +6682,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ),
             };
             let mut steps = Vec::new();
-            let proof = if matches!(read, ContractExpression::Index(..)) {
-                let Some(proof) = Self::try_distinct_indexed_store_separation(
+            let indexed = matches!(read, ContractExpression::Index(..));
+            let proof = if indexed
+                && let Some(proof) = Self::try_distinct_indexed_store_separation(
                     search_input,
                     written,
                     &kept,
                     &footprint_separation,
-                )?
-                else {
-                    continue;
-                };
+                )? {
                 proof
-            } else if field_bound {
-                let Some(proof) = Self::try_single_memory_write_separation(
-                    search_input,
-                    written,
-                    &kept,
-                    &footprint_separation,
-                )?
+            } else if indexed || field_bound {
+                let Some(proof) =
+                    attempt::candidate_outcome(Self::try_single_memory_write_separation(
+                        search_input,
+                        written,
+                        &kept,
+                        &footprint_separation,
+                    ))?
+                    .flatten()
                 else {
                     continue;
                 };

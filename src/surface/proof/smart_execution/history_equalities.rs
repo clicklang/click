@@ -22,6 +22,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        let outcome = search_input.focused_outcome_data().is_some();
         let (current, returned) = match (left, right) {
             (
                 current,
@@ -38,8 +39,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 current,
             ) if current == saved.as_ref() => (current, false),
             (_, ContractExpression::Old(read))
-                if search_input.focused_outcome_data().is_some()
-                    && crate::surface::proposition_names_result(target) =>
+                if outcome && crate::surface::proposition_names_result(target) =>
             {
                 (read.as_ref(), true)
             }
@@ -122,9 +122,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )?;
             let separated = match separated {
                 Some(separated) => Some(separated),
-                None if (returned || derive_separation) && footprint.members.len() == 1 => {
+                None if (outcome || derive_separation) && footprint.members.len() == 1 => {
                     let written = footprint.members.front().expect("one footprint member");
-                    if returned
+                    if outcome
                         && !loop_exit
                         && let Some(separated) = Self::try_distinct_indexed_store_separation(
                             &proof,
@@ -134,7 +134,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )?
                     {
                         Some(separated)
-                    } else {
+                    } else if returned || derive_separation {
                         attempt::candidate_outcome(Self::try_single_memory_write_separation(
                             &proof,
                             written,
@@ -142,6 +142,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             &separation,
                         ))?
                         .flatten()
+                    } else {
+                        None
                     }
                 }
                 None => None,
@@ -314,9 +316,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_index_disequality_from_order");
         let known =
             ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary order lookup");
-        let refute_order =
-            ProofCertificate::from_steps(vec![ProofStep::Rewrite(equality), ProofStep::Normalize])
-                .expect("ordinary refutation of an irreflexive order");
+        let refute_order = ProofCertificate::from_steps(vec![
+            ProofStep::Rewrite(equality.clone()),
+            ProofStep::Normalize,
+        ])
+        .expect("ordinary refutation of an irreflexive order");
         for order in orders {
             let Some(proof) =
                 attempt::candidate_outcome(search_input.driver().apply_have_step(&order, &known))?
@@ -324,18 +328,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let proof_steps = ProofCertificate::from_steps(vec![
-                ProofStep::Intro,
+            let equal_case = ProofCertificate::from_steps(vec![
                 ProofStep::Have {
                     proposition: ClickProposition::Not(Box::new(order.clone())),
                     proof: Box::new(refute_order.clone()),
                 },
                 ProofStep::Contradiction(order),
             ])
+            .expect("ordinary refutation of equal indices");
+            let proof_steps = ProofCertificate::from_steps(vec![ProofStep::If {
+                condition: equality.clone(),
+                ensuring: None,
+                then_proof: Box::new(equal_case),
+                else_proof: Box::new(known.clone()),
+            }])
             .expect("ordinary index disequality");
-            if let Some(proof) =
-                attempt::candidate_outcome(proof.driver().apply_have_step(distinct, &proof_steps))?
-            {
+            let checked = || {
+                let scope = proof
+                    .driver()
+                    .open_have_with_goal_observations(distinct.clone(), true)?;
+                scope
+                    .driver()
+                    .try_authoritative_linear_script(&proof_steps.to_proof_tactics())?
+                    .map(|done| done.join())
+                    .transpose()
+            };
+            if let Some(Some(proof)) = attempt::candidate_outcome(checked())? {
                 return Ok(Some(proof));
             }
         }

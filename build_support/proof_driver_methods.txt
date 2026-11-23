@@ -1,3 +1,4 @@
+apply_scoped_intro
 apply_bare_statement_step
 apply_all_source
 apply_close_invariants_body

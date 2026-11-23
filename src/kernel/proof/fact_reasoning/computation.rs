@@ -408,6 +408,32 @@ fn stored_uint8_observation(term: &IntegerTerm) -> Option<num_bigint::BigInt> {
     stored_uint8_literal(value.ty(), value.operand_view()).map(|byte| byte.to_integer())
 }
 
+fn literal_word_bits(operand: MachineOperandView<'_>, width: u32) -> Option<u128> {
+    let MachineTerm::Constant { format, bits } = operand.literal()? else {
+        return None;
+    };
+    (format.format().bits() == width).then_some(bits)
+}
+
+/// A same-width OR preserves every set bit of either operand. Only the root
+/// and its immediate operands matter; the other operand can remain opaque.
+fn bitwise_or_has_set_bit(value: MachineOperandView<'_>, width: u32) -> bool {
+    let Some((format, MachineBinaryOp::BitwiseOr, operands)) = value.binary() else {
+        return false;
+    };
+    format.format().bits() == width
+        && operands
+            .into_iter()
+            .any(|operand| literal_word_bits(operand, width).is_some_and(|bits| bits != 0))
+}
+
+fn observed_bitwise_or_has_set_bit(value: &IntegerTerm) -> bool {
+    let IntegerTerm::Machine(value) = value else {
+        return false;
+    };
+    bitwise_or_has_set_bit(value.operand_view(), value.ty().format().bits())
+}
+
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -426,6 +452,16 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                 | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
                 _ => unreachable!(),
             };
+            if matches!(
+                condition,
+                ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..)
+            ) && ((left.as_const().is_some_and(num_traits::Zero::is_zero)
+                && observed_bitwise_or_has_set_bit(right))
+                || (right.as_const().is_some_and(num_traits::Zero::is_zero)
+                    && observed_bitwise_or_has_set_bit(left)))
+            {
+                return Some(matches!(condition, ConditionTerm::IntegerNotEqual(..)));
+            }
             if left == right {
                 return Some(matches!(
                     condition,
@@ -476,6 +512,15 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             left,
             right,
         } => {
+            let a = MachineOperandView::Legacy(left);
+            let b = MachineOperandView::Legacy(right);
+            let width = format.format().bits();
+            if *relation == CompareRelation::Equal
+                && ((literal_word_bits(a, width) == Some(0) && bitwise_or_has_set_bit(b, width))
+                    || (literal_word_bits(b, width) == Some(0) && bitwise_or_has_set_bit(a, width)))
+            {
+                return Some(false);
+            }
             if *format == MachineIntegerType::Int32
                 && *relation == CompareRelation::Equal
                 && (unchanged_machine_folds_equal(left, right)
@@ -484,8 +529,6 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             {
                 return Some(true);
             }
-            let a = MachineOperandView::Legacy(left);
-            let b = MachineOperandView::Legacy(right);
             if *format == MachineIntegerType::Int32
                 && *relation == CompareRelation::Equal
                 && (a.conditional_view().is_some() || b.conditional_view().is_some())
@@ -896,19 +939,51 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     }
 }
 
-fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
+fn is_closed_constructor_payload(field: &AlgebraicValue) -> bool {
     match field {
         AlgebraicValue::Integer(IntegerTerm::Constant(_)) => true,
         AlgebraicValue::Program(ProgramValue::Bool(word)) => word.bool_constant_value().is_some(),
         AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })) => {
             field.value_type() == AlgebraicValueType::Program(format.program_type())
         }
+        AlgebraicValue::Algebraic(AlgebraicTerm {
+            node: AlgebraicTermNode::Constructor { fields, .. },
+            ..
+        }) => fields.is_empty(),
         _ => false,
     }
 }
 
-/// Follow selected constructor arms that forward scalar payloads into a
-/// constructor, possibly alongside literals or captured scalar variables.
+fn constructor_payload_variable(field: &AlgebraicValue) -> Option<Variable> {
+    match field {
+        AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
+        | AlgebraicValue::Integer(IntegerTerm::Variable(variable))
+        | AlgebraicValue::Algebraic(AlgebraicTerm {
+            node: AlgebraicTermNode::Variable(variable),
+            ..
+        }) => Some(*variable),
+        AlgebraicValue::Program(ProgramValue::Bool(MachineTerm::BoolCast {
+            to: MachineIntegerType::UInt8,
+            value,
+        })) => match value.as_ref() {
+            ConditionTerm::Variable(variable) => Some(*variable),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn same_constructor_payload_type(left: &AlgebraicValue, right: &AlgebraicValue) -> bool {
+    match (left, right) {
+        (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+            left.algebraic_type == right.algebraic_type
+        }
+        _ => left.value_type() == right.value_type(),
+    }
+}
+
+/// Follow selected constructor arms that forward payloads into a constructor,
+/// possibly alongside closed fields or captured variables.
 /// Resolve each binding in its scrutinee's scope before checking the result.
 fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
     let AlgebraicTermNode::Constructor {
@@ -938,27 +1013,22 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         }
         // The new bindings are in scope in the arm body, but not in its scrutinee.
         for (binder, field) in arm.bindings.iter().zip(fields) {
-            let (variable, payload) = match (binder, field) {
-                (
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(source))),
-                )
-                | (
-                    AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-                    AlgebraicValue::Integer(IntegerTerm::Variable(source)),
-                ) => (variable, payloads.get(source).copied().unwrap_or(field)),
-                (
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
-                    | AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-                    field,
-                ) if is_constructor_payload_literal(field) => (variable, field),
-                _ => return false,
+            let Some(variable) = constructor_payload_variable(binder) else {
+                return false;
             };
-            let field_type = field.value_type();
-            if binder.value_type() != field_type || payload.value_type() != field_type {
+            let payload = if let Some(source) = constructor_payload_variable(field) {
+                payloads.get(&source).copied().unwrap_or(field)
+            } else if is_closed_constructor_payload(field) {
+                field
+            } else {
+                return false;
+            };
+            if !same_constructor_payload_type(binder, field)
+                || !same_constructor_payload_type(payload, field)
+            {
                 return false;
             }
-            bindings.push((*variable, payload));
+            bindings.push((variable, payload));
         }
         for (variable, payload) in bindings.drain(..) {
             if payloads.insert(variable, payload).is_some() {
@@ -983,13 +1053,11 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         .iter()
         .zip(expected_fields)
         .all(|(field, expected)| {
-            let variable = match field {
-                AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
-                | AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => variable,
-                _ => return is_constructor_payload_literal(field) && field == expected,
+            let Some(variable) = constructor_payload_variable(field) else {
+                return is_closed_constructor_payload(field) && field == expected;
             };
-            let payload = payloads.get(variable).copied().unwrap_or(field);
-            payload.value_type() == field.value_type() && payload == expected
+            let payload = payloads.get(&variable).copied().unwrap_or(field);
+            same_constructor_payload_type(payload, field) && payload == expected
         })
         && matched.is_well_formed()
         && expected.is_well_formed()

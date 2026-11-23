@@ -944,13 +944,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 vec![a.clone(), b.clone(), c.clone(), d.clone()],
                 vec![surface.clone(), compare(c, true, a), compare(d, true, b)],
             );
-            let introduced = input.driver().apply_step(ProofStep::Intro)?;
-            let scope = introduced.driver().open_have(impossible.clone())?;
-            let closed = scope.driver().apply_step(substitution)?;
-            return closed
+            let (proof, split, ids) = input.split_focused_if(equality.clone())?;
+            let marker = proof.checkpoint();
+            let equal_arm = proof.focus_branch(ids[0])?;
+            let scope = equal_arm.driver().open_have(impossible.clone())?;
+            let equal_done = scope
+                .driver()
+                .apply_step(substitution)?
                 .join()?
                 .driver()
-                .apply_step(ProofStep::Contradiction(impossible))
+                .apply_step(ProofStep::Contradiction(impossible))?;
+            let unequal_done = equal_done
+                .focus_branch(ids[1])?
+                .driver()
+                .apply_step(ProofStep::Known)?;
+            return unequal_done
+                .join_focused_if(&marker, split, ids, equality)
                 .map(Some);
         }
         Ok(None)
@@ -1409,13 +1418,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 steps = vec![have(canonical.clone(), steps), ProofStep::Known];
             }
         }
-        if uses_negated_goal {
-            let double_negation = ClickProposition::Not(Box::new(ClickProposition::Not(Box::new(
-                surface_goal.clone(),
-            ))));
-            steps.insert(0, ProofStep::Intro);
-            steps = vec![have(double_negation.clone(), steps), ProofStep::Known];
-        }
         // The theorem's arguments can contain partial native operations.
         // Cite their already established domains explicitly, so the simple
         // using checker sees the same argument evidence during replay.
@@ -1570,32 +1572,50 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             domains.push(domain);
         }
         if !domains.is_empty() {
-            domain_proofs.extend(
-                steps
-                    .into_iter()
-                    .map(|step| with_argument_domains(step, &domains)),
-            );
-            steps = domain_proofs;
+            steps = steps
+                .into_iter()
+                .map(|step| with_argument_domains(step, &domains))
+                .collect();
         }
-        let mut result = prepared;
-        for step in steps {
-            if result.focused_discharged() {
-                break;
-            }
-            let next = match step {
-                ProofStep::Have { proposition, proof } => {
-                    let scope = result.driver().open_have(proposition)?;
-                    run_scope(scope, proof.steps()).and_then(|scope| scope.join())
+        let apply =
+            |mut result: Proof<'a>, steps: Vec<ProofStep>| -> Result<Proof<'a>, ClickError> {
+                for step in steps {
+                    if result.focused_discharged() {
+                        break;
+                    }
+                    let next = match step {
+                        ProofStep::Have { proposition, proof } => {
+                            let scope = result.driver().open_have(proposition)?;
+                            run_scope(scope, proof.steps()).and_then(|scope| scope.join())
+                        }
+                        step => result.driver().apply_step(step),
+                    };
+                    #[cfg(test)]
+                    if let Err(error) = &next {
+                        LAST_FAILURE.with(|failure| {
+                            *failure.borrow_mut() = Some(error.raw_summary().to_owned());
+                        });
+                    }
+                    result = next?;
                 }
-                step => result.driver().apply_step(step),
+                Ok(result)
             };
-            #[cfg(test)]
-            if let Err(error) = &next {
-                LAST_FAILURE
-                    .with(|failure| *failure.borrow_mut() = Some(error.raw_summary().to_owned()));
-            }
-            result = next?;
+        let prepared = apply(prepared, domain_proofs)?;
+        if prepared.focused_discharged() {
+            return Ok(Some(prepared));
         }
+        let result = if uses_negated_goal {
+            let (proof, split, ids) = prepared.split_focused_if(surface_goal.clone())?;
+            let marker = proof.checkpoint();
+            let positive = proof
+                .focus_branch(ids[0])?
+                .driver()
+                .apply_step(ProofStep::Known)?;
+            let negative = apply(positive.focus_branch(ids[1])?, steps)?;
+            negative.join_focused_if(&marker, split, ids, surface_goal.clone())?
+        } else {
+            apply(prepared, steps)?
+        };
         if !result.focused_discharged() {
             return Err(result.step_error("Integer composition did not close the written goal"));
         }

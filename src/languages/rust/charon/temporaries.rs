@@ -501,6 +501,111 @@ fn fold_borrowed_enum_switch(
     }
 }
 
+/// Match constructor operands after earlier passes have simplified the
+/// borrow and copy statements that feed them.
+pub(super) fn fold_constructor_reborrows(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    if !blocks
+        .iter()
+        .flat_map(|block| &block.statements)
+        .any(|statement| {
+            matches!(statement, S::Initialize { fields, .. }
+            if matches!(fields.first(), Some(E::Local { name }) if temporaries.contains(name)))
+        })
+    {
+        return;
+    }
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    let mut writes = BTreeMap::<String, usize>::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            statement_uses(statement, &mut reads, &mut named);
+            if let S::Assign {
+                target: E::Local { name },
+                ..
+            } = statement
+            {
+                *writes.entry(name.clone()).or_default() += 1;
+            }
+        }
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        named.extend(call_destination(&block.terminator).cloned());
+    }
+    let substitutable = |name: &str| {
+        temporaries.contains(name)
+            && !named.contains(name)
+            && reads.get(name) == Some(&1)
+            && writes.get(name) == Some(&1)
+    };
+    let mut removed = BTreeSet::new();
+    for block in blocks.iter_mut() {
+        fold_constructor_reborrow(block, &substitutable, &mut removed);
+    }
+    if removed.is_empty() {
+        return;
+    }
+    for block in blocks {
+        block.statements.retain(|statement| match statement {
+            S::Assign {
+                target: E::Local { name },
+                ..
+            }
+            | S::BeginStorage { local: name }
+            | S::EndStorage { local: name } => !removed.contains(name),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// A constructor can take a reborrow in its first field directly. A local
+/// copy for another field can sit between them, but it cannot rebind the
+/// reference used by the borrow.
+fn fold_constructor_reborrow(
+    block: &mut MirBlock,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let mut previous = None;
+    let mut before_previous = None;
+    for position in 0..block.statements.len() {
+        let (earlier, later) = block.statements.split_at_mut(position);
+        let statement = &mut later[0];
+        if let S::Initialize { fields, .. } = statement
+            && let Some(E::Local { name: read }) = fields.first_mut()
+            && substitutable(read)
+            && let Some(previous) = previous
+        {
+            let producer = match &earlier[previous] {
+                S::Assign {
+                    target: E::Local { name },
+                    value: E::Local { .. },
+                } if name != read => before_previous,
+                _ => Some(previous),
+            };
+            if let Some(S::Assign {
+                target: E::Local { name },
+                value: borrow @ E::Borrow { place, .. },
+            }) = producer.map(|producer| &earlier[producer])
+                && name == read
+                && let E::Deref { reference, .. } = place.as_ref()
+                && let E::Local { name: parent } = reference.as_ref()
+                && !matches!(&earlier[previous], S::Assign { target: E::Local { name }, .. }
+                    if name == parent)
+            {
+                removed.insert(name.clone());
+                fields[0] = borrow.clone();
+            }
+        }
+        before_previous = previous;
+        previous = Some(position);
+    }
+}
+
 /// A borrow consumed by the adjacent slice operation is the operation's
 /// input. Moving it across no statements preserves the borrowed place and,
 /// for an array coercion, its reference view and mutability.
@@ -1304,7 +1409,12 @@ fn resolve(
     }
     let unchanging = match &value {
         E::Borrow { place, value_type } => match temporary_type {
-            Some(super::super::schema::Type::Reference { .. }) => place_root(place).is_some(),
+            Some(Type::Reference { .. }) => {
+                place_root(place).is_some()
+                    || matches!(place.as_ref(), E::Field { base, .. }
+                        if matches!(base.as_ref(), E::Deref { reference, value_type: Type::Record { .. } }
+                            if matches!(reference.as_ref(), E::Local { name } if unchanged.contains(name))))
+            }
             // A shared slice borrow of a shared slice local: its pointer
             // and length never change while the borrow lives.
             Some(super::super::schema::Type::ByteSlice { mutable: false }) => {
@@ -2099,6 +2209,27 @@ pub(super) fn bind_slice_payloads(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// The original iterator and reference binding, plus an enumeration's
+/// separate index binding if it yields one.
+fn copied_element_yield(statement: &S) -> Option<(&String, &String, Option<&String>)> {
+    match statement {
+        S::SharedArrayNext {
+            iterator,
+            option: None,
+            payload: Some(reference),
+            taken: Some(true),
+        } => Some((iterator, reference, None)),
+        S::EnumerateNext {
+            iterator,
+            option: None,
+            index,
+            element: Some(reference),
+            taken: Some(true),
+        } => Some((iterator, reference, index.as_ref())),
+        _ => None,
+    }
+}
+
 /// Bind a copied slice element to the written pattern variable. The yielded
 /// shared reference can go when its only use is the matching dereference at
 /// the start of the sole successor, under the same source site.
@@ -2117,15 +2248,10 @@ pub(super) fn bind_copied_slice_elements(
     let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
         for statement in &block.statements {
-            if let S::SharedArrayNext {
-                iterator,
-                option: None,
-                payload: Some(reference),
-                taken: Some(true),
-            } = statement
-            {
+            if let Some((iterator, reference, index)) = copied_element_yield(statement) {
                 *yields.entry(reference.clone()).or_default() += 1;
                 named.insert(iterator.clone());
+                named.extend(index.cloned());
             } else {
                 statement_uses(statement, &mut reads, &mut named);
                 if let S::Assign {
@@ -2149,16 +2275,13 @@ pub(super) fn bind_copied_slice_elements(
     }
     let mut removed = BTreeSet::new();
     for index in 0..blocks.len() {
-        let (
-            Some(S::SharedArrayNext {
-                iterator,
-                option: None,
-                payload: Some(reference),
-                taken: Some(true),
-            }),
-            T::Goto { target },
-        ) = (blocks[index].statements.last(), &blocks[index].terminator)
-        else {
+        let (Some((iterator, reference, _)), T::Goto { target }) = (
+            blocks[index]
+                .statements
+                .last()
+                .and_then(copied_element_yield),
+            &blocks[index].terminator,
+        ) else {
             continue;
         };
         let target = *target;
@@ -2172,7 +2295,9 @@ pub(super) fn bind_copied_slice_elements(
         {
             continue;
         }
-        let Some(Type::SharedArrayIterator { element }) = types.get(iterator.as_str()) else {
+        let Some(Type::SharedArrayIterator { element } | Type::EnumerateIterator { element }) =
+            types.get(iterator.as_str())
+        else {
             continue;
         };
         if !element.is_integer()
@@ -2234,10 +2359,13 @@ pub(super) fn bind_copied_slice_elements(
         let (reference, name) = (reference.clone(), name.clone());
         blocks[target].statements.remove(position);
         start_storage_at_next(blocks, index, target, [name.as_str()]);
-        let Some(S::SharedArrayNext { payload, .. }) = blocks[index].statements.last_mut() else {
-            unreachable!("yield remains the last statement")
-        };
-        *payload = Some(name);
+        match blocks[index].statements.last_mut() {
+            Some(S::SharedArrayNext { payload, .. })
+            | Some(S::EnumerateNext {
+                element: payload, ..
+            }) => *payload = Some(name),
+            _ => unreachable!("yield remains the last statement"),
+        }
         removed.insert(reference);
     }
     if removed.is_empty() {
@@ -3142,6 +3270,35 @@ pub(super) fn call_steps(
         let Some(ty) = types.get(destination.as_str()) else {
             continue;
         };
+        if !through_pointer
+            && matches!(ty, Type::Enum { .. })
+            && temporaries.contains(&destination)
+            && assigned.get(&destination) == Some(&1)
+            && target > index
+            && predecessors.get(target) == Some(&1)
+            && fold_nested_enum_call_match(
+                blocks,
+                target,
+                &destination,
+                &function,
+                next_step,
+                &predecessors,
+                mentions.get(&destination).copied().unwrap_or_default(),
+            )
+        {
+            if let T::Call {
+                destination: slot,
+                result,
+                ..
+            } = &mut blocks[index].terminator
+            {
+                *slot = None;
+                *result = Some(next_step);
+            }
+            next_step += 1;
+            removed.insert(destination);
+            continue;
+        }
         if !temporaries.contains(&destination) || named.contains(&destination) {
             continue;
         }
@@ -3233,6 +3390,138 @@ pub(super) fn call_steps(
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// Retain a call result through two nested binary enum matches whose leaves
+/// return. The caller's result is the source of each projection, even if
+/// one of the paths returns without reading a payload.
+fn fold_nested_enum_call_match(
+    blocks: &mut [MirBlock],
+    outer: usize,
+    destination: &str,
+    function: &str,
+    call: u32,
+    predecessors: &[usize],
+    mentions: usize,
+) -> bool {
+    use super::super::schema::SwitchLabel;
+
+    fn projection_base(mut value: &E) -> Option<&str> {
+        while let E::EnumField { base, .. } = value {
+            if let E::Local { name } = base.as_ref() {
+                return Some(name);
+            }
+            value = base;
+        }
+        None
+    }
+
+    let targets = |block: &MirBlock| -> Option<[usize; 2]> {
+        let T::Switch {
+            cases, otherwise, ..
+        } = &block.terminator
+        else {
+            return None;
+        };
+        let pair = match (cases.as_slice(), otherwise) {
+            ([first, second], None) if matches!(second.label, SwitchLabel::Variant { .. }) => {
+                (first, second.target)
+            }
+            ([first], Some(otherwise)) => (first, *otherwise),
+            _ => return None,
+        };
+        (matches!(pair.0.label, SwitchLabel::Variant { .. }) && pair.0.target != pair.1)
+            .then_some([pair.0.target, pair.1])
+    };
+    let transparent = |statement: &S| {
+        matches!(
+            statement,
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+        )
+    };
+    if !matches!(&blocks[outer].terminator, T::Switch { scrutinee: E::Local { name }, .. } if name == destination)
+        || !blocks[outer].statements.iter().all(transparent)
+    {
+        return false;
+    }
+    let Some(outer_targets) = targets(&blocks[outer]) else {
+        return false;
+    };
+    let Some(inner) = outer_targets.into_iter().find(|&target| {
+        matches!(&blocks[target].terminator, T::Switch { scrutinee, .. }
+            if projection_base(scrutinee) == Some(destination))
+    }) else {
+        return false;
+    };
+    if inner <= outer
+        || predecessors[inner] != 1
+        || !blocks[inner].statements.iter().all(transparent)
+    {
+        return false;
+    }
+    let Some(inner_targets) = targets(&blocks[inner]) else {
+        return false;
+    };
+    let mut entries = BTreeMap::<usize, usize>::new();
+    for target in outer_targets
+        .into_iter()
+        .filter(|target| *target != inner)
+        .chain(inner_targets)
+    {
+        *entries.entry(target).or_default() += 1;
+    }
+    let mut reads = Vec::new();
+    for (leaf, entries) in entries {
+        if leaf <= outer
+            || leaf == inner
+            || predecessors[leaf] != entries
+            || !matches!(blocks[leaf].terminator, T::Return)
+        {
+            return false;
+        }
+        let mut payload = None;
+        for (position, statement) in blocks[leaf].statements.iter().enumerate() {
+            if let S::Assign {
+                target: E::Local { .. },
+                value,
+            } = statement
+                && projection_base(value) == Some(destination)
+            {
+                if payload.replace(position).is_some() {
+                    return false;
+                }
+            }
+        }
+        reads.extend(payload.map(|position| (leaf, position)));
+    }
+    if mentions != 2 + reads.len() {
+        return false;
+    }
+
+    let substitute = |value: &mut E, keeps| {
+        put_back(
+            value,
+            &BTreeMap::from([(
+                destination.to_string(),
+                E::CallResult {
+                    call,
+                    function: function.to_string(),
+                    keeps,
+                },
+            )]),
+        );
+    };
+    for index in [outer, inner] {
+        if let T::Switch { scrutinee, .. } = &mut blocks[index].terminator {
+            substitute(scrutinee, true);
+        }
+    }
+    for (leaf, position) in reads {
+        if let S::Assign { value, .. } = &mut blocks[leaf].statements[position] {
+            substitute(value, false);
+        }
+    }
+    true
 }
 
 /// The arm a test of `destination`'s variant takes when it holds, and the
@@ -3992,6 +4281,45 @@ mod tests {
                 unreachable!("the call remains in place");
             };
             assert_eq!(matches!(arguments[0], E::ClosureInstance { .. }), folded);
+        }
+    }
+
+    #[test]
+    fn constructor_reborrow_crosses_a_copy_but_not_a_rebinding() {
+        let borrow = E::Borrow {
+            place: Box::new(E::Deref {
+                reference: Box::new(local("a")),
+                value_type: Type::U32,
+            }),
+            value_type: Type::Reference {
+                mutable: true,
+                pointee: Box::new(Type::U32),
+            },
+        };
+        for rebind in [false, true] {
+            let copied = if rebind { "a" } else { "t2" };
+            let mut locals = vec![place("t1")];
+            let mut blocks = [block(
+                vec![
+                    assign("t1", borrow.clone()),
+                    assign(copied, local("b")),
+                    S::Initialize {
+                        target: "guard".into(),
+                        record: "Guard".into(),
+                        fields: vec![local("t1"), local(copied)],
+                    },
+                ],
+                T::Return,
+            )];
+            super::fold_constructor_reborrows(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+            );
+            assert_eq!(locals.is_empty(), !rebind);
+            assert!(matches!(&blocks[0].statements.last(),
+                Some(S::Initialize { fields, .. })
+                    if matches!(fields[0], E::Borrow { .. }) != rebind));
         }
     }
 

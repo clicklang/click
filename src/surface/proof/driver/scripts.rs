@@ -448,6 +448,27 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         Ok(Some((right.join_focused_both(&marker, split, ids)?, None)))
     }
 
+    pub(in crate::surface::proof) fn apply_scoped_intro(
+        &self,
+        binder: Option<&SurfaceBinder>,
+        body: &[ProofTactic],
+        implicit_tail: bool,
+    ) -> Result<Proof<'a>, ClickError> {
+        let parent = self.proof;
+        let step = binder
+            .cloned()
+            .map_or(ProofStep::Intro, ProofStep::IntroBinder);
+        let opened = self.apply_step(step)?;
+        let sites = (0..body.len())
+            .map(|index| parent.site().in_arm(0, "intro", index))
+            .collect::<Vec<_>>();
+        let completed = opened
+            .driver()
+            .run_addressed_linear_script(body, &sites, &mut None, None, implicit_tail)?
+            .ok_or_else(|| parent.step_error("the `intro` block must prove its opened goal"))?;
+        parent.finish_scoped_intro(&opened, completed)
+    }
+
     pub(in crate::surface::proof) fn run_addressed_linear_script(
         &self,
         tactics: &[ProofTactic],
@@ -585,6 +606,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
+                ProofTactic::IntroBlock { binder, body } => {
+                    proof =
+                        proof
+                            .driver()
+                            .apply_scoped_intro(binder.as_ref(), body, implicit_tail)?;
+                }
                 ProofTactic::ApplyFact(fact) => {
                     proof = proof.driver().apply_fact_application(fact)?;
                 }

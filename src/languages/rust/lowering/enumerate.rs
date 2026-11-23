@@ -80,7 +80,7 @@ impl Context<'_> {
     /// counts the element.
     /// `next` of an enumerated slice iterator: the `Option` built in
     /// `option`, or, once the loop reads only what it yields, the index
-    /// assigned to `index` and the element's reference to `element`. When the
+    /// assigned to `index` and the element or its reference to `element`. When the
     /// `for` header's test decided whether it yields (`taken`), only that arm
     /// runs; the arm that does not yield is nothing.
     pub(super) fn enumerate_next(
@@ -88,7 +88,7 @@ impl Context<'_> {
         iterator: &str,
         option: Option<&str>,
         index: Option<&str>,
-        element: Option<&str>,
+        element: Option<(&str, &Type)>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
         use crate::kernel::program_expression::{add, uint64_literal, variable};
@@ -97,7 +97,9 @@ impl Context<'_> {
             if taken == Some(false) {
                 return Ok(program_skip());
             }
-            let fields = self.shared_array_iterator(iterator)?.fields.clone();
+            let state = self.shared_array_iterator(iterator)?;
+            let fields = state.fields.clone();
+            let element_type = state.element;
             let mut some = program_skip();
             if let Some(index) = index {
                 some = program_seq(some, self.bind_local(index, variable(count.clone()))?);
@@ -106,11 +108,13 @@ impl Context<'_> {
                 some,
                 program_assign(count.clone(), add(variable(count), uint64_literal(1))),
             );
-            if let Some(element) = element {
-                some = program_seq(
-                    some,
-                    self.bind_local(element, variable(fields.pointer.clone()))?,
-                );
+            if let Some((name, payload_type)) = element {
+                let value = self.shared_array_yielded_value(
+                    variable(fields.pointer.clone()),
+                    element_type,
+                    payload_type,
+                )?;
+                some = program_seq(some, self.bind_local(name, value)?);
             }
             some = program_seq(some, shared_arrays::advance(&fields));
             return Ok(match taken {

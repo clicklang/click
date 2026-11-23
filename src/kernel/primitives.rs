@@ -213,10 +213,15 @@ pub(crate) const HEAP_ALLOCATION_ALIGNMENT: u64 = 16;
 /// constructor below; a kernel-allocated fresh variable carries a private
 /// origin as well, so even a caller-constructed variable with the same number
 /// cannot capture it. Names in source text are separate from this identity.
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Variable {
-    number: (u64,),
+    // The origin comes first, so variables order by producer: ordinary
+    // variables keep their numeric order ahead of every other origin, and
+    // each other origin is one contiguous run after them. A query for the
+    // greatest ordinary variable must bound itself by
+    // `Variable::FIRST_NON_ORDINARY` rather than read a set's last element.
     origin: VariableOrigin,
+    number: (u64,),
 }
 
 /// A quantifier's bound variable. Only closing a body over a free variable
@@ -300,6 +305,16 @@ pub(crate) enum Producer {
     AlgebraicBinder,
 }
 
+// Hash the number before the origin, as before the fields were reordered for
+// `Ord`: hashing does not need the order, and keeping it leaves every hashed
+// collection of variables laid out as it was.
+impl std::hash::Hash for Variable {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.number.hash(state);
+        self.origin.hash(state);
+    }
+}
+
 impl std::fmt::Debug for Variable {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.origin {
@@ -360,6 +375,19 @@ impl Variable {
             number: (number,),
             origin: VariableOrigin::Opening,
         }
+    }
+
+    /// The least variable of any origin other than `Ordinary`: every
+    /// ordinary variable orders before it and every other variable at or
+    /// after it.
+    pub(crate) const FIRST_NON_ORDINARY: Self = Self {
+        number: (0,),
+        origin: VariableOrigin::KernelFresh,
+    };
+
+    /// Whether this is an ordinary numbered variable, `Variable(n)`.
+    pub(crate) fn is_ordinary(&self) -> bool {
+        self.origin == VariableOrigin::Ordinary
     }
 
     /// Whether this is a quantifier's bound variable.
@@ -630,9 +658,10 @@ impl LazyReservedVariables {
     }
 
     fn contains(&self, variable: &Variable) -> bool {
-        let execution_range = (crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
-            ..crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING)
-            .contains(&variable.0);
+        let execution_range = variable.is_ordinary()
+            && (crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+                ..crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING)
+                .contains(&variable.0);
         if execution_range && self.execution_bound.is_none_or(|bound| *variable > bound) {
             #[cfg(debug_assertions)]
             if crate::instrumentation::lazy_reservation_cross_checks_enabled() {
@@ -3232,6 +3261,19 @@ impl Pointer {
             },
             self.bounds(),
         )
+    }
+}
+
+impl Pointer {
+    /// Whether the two have one C provenance, as identity compares it: the
+    /// same allocation and the same array object.
+    pub(crate) fn same_provenance_as(&self, other: &Self) -> bool {
+        let (_, provenance, known, owner, bounds) = self.identity();
+        let (_, other_provenance, other_known, other_owner, other_bounds) = other.identity();
+        provenance == other_provenance
+            && known == other_known
+            && owner == other_owner
+            && bounds == other_bounds
     }
 }
 

@@ -1540,31 +1540,52 @@ fn expand_declared_resource_proof_of(
             ProofTactic::Intro => Some(None),
             ProofTactic::IntroAs(name) => Some(Some(SurfaceBinder::from(name))),
             ProofTactic::IntroBinder(name) => Some(Some(name.clone())),
+            ProofTactic::IntroBlock { binder, .. } => Some(binder.clone()),
             _ => None,
         };
-        match expand_declared_resource_tactic(tactic, resource_definitions) {
-            Ok(tactic) => expanded.push(tactic),
+        let scoped = matches!(tactic, ProofTactic::IntroBlock { .. });
+        let introduces = introduced.is_some();
+        let (inner_goal, binding) =
+            match introduced.and_then(|rename| goal.take().map(|goal| (rename, goal))) {
+                Some((
+                    rename,
+                    ClickProposition::ForAll {
+                        click_type,
+                        name,
+                        body,
+                        ..
+                    },
+                )) => (
+                    Some(*body),
+                    Some(constructors.bind(&rename.unwrap_or(name), Some(click_type))),
+                ),
+                Some((_, ClickProposition::Implies(_, consequent))) => (Some(*consequent), None),
+                _ => (None, None),
+            };
+        let tactic = match tactic {
+            ProofTactic::IntroBlock { binder, body } => {
+                expand_declared_intro_block(binder, body, inner_goal.as_ref(), resource_definitions)
+            }
+            tactic => expand_declared_resource_tactic(tactic, resource_definitions),
+        };
+        if let Some(binding) = binding {
+            if scoped {
+                constructors.restore(binding);
+            } else {
+                bound.push(binding);
+            }
+        }
+        match tactic {
+            Ok(tactic) => {
+                if introduces && !scoped {
+                    goal = inner_goal;
+                }
+                expanded.push(tactic);
+            }
             Err(error) => {
                 result = Err(error);
                 break;
             }
-        }
-        if let Some(rename) = introduced {
-            goal = match goal.take() {
-                Some(ClickProposition::ForAll {
-                    click_type,
-                    name,
-                    written_name,
-                    body,
-                }) => {
-                    let _ = written_name;
-                    let name = rename.unwrap_or(name);
-                    bound.push(constructors.bind(&name, Some(click_type)));
-                    Some(*body)
-                }
-                Some(ClickProposition::Implies(_, consequent)) => Some(*consequent),
-                _ => None,
-            };
         }
     }
     if let Some(first) = bound.first() {
@@ -1645,7 +1666,8 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Iterated(_)) => {
             expand_declared_resource_tactic_with_resources(tactic, resource_definitions)
         }
-        tactic @ (ProofTactic::Have(_)
+        tactic @ (ProofTactic::IntroBlock { .. }
+        | ProofTactic::Have(_)
         | ProofTactic::Open(_)
         | ProofTactic::If(_)
         | ProofTactic::Match(_)
@@ -1762,6 +1784,7 @@ fn expand_declared_resource_tactic_with_plain_scripts(
                             | ProofTactic::Intro
                             | ProofTactic::IntroAs(_)
                             | ProofTactic::IntroBinder(_)
+                            | ProofTactic::IntroBlock { .. }
                     )
                 }) {
                     let SourceProof::Script(tactics) = expand_declared_resource_proof_of(
@@ -2061,11 +2084,30 @@ fn expand_declared_resource_script(
     Ok(expanded)
 }
 
+fn expand_declared_intro_block(
+    binder: Option<SurfaceBinder>,
+    body: Vec<ProofTactic>,
+    goal: Option<&ClickProposition>,
+    resource_definitions: &DeclaredResourceScope,
+) -> Result<ProofTactic, ClickError> {
+    let alternatives = resource_definitions.begin_alternatives();
+    let proof = resource_definitions.arm(&alternatives, || {
+        expand_declared_resource_proof_of(SourceProof::Script(body), goal, resource_definitions)
+    })?;
+    let SourceProof::Script(body) = proof else {
+        unreachable!("expansion retains proof scripts");
+    };
+    Ok(ProofTactic::IntroBlock { binder, body })
+}
+
 fn expand_declared_resource_tactic_with_nested_proofs(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
     match tactic {
+        ProofTactic::IntroBlock { binder, body } => {
+            expand_declared_intro_block(binder, body, None, resource_definitions)
+        }
         ProofTactic::Have(have) => {
             let proposition =
                 expand_declared_resource_proposition(have.proposition, resource_definitions)?;

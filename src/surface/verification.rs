@@ -457,7 +457,9 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
                 collect_applied_theorems(&proof_if.then_tactics, names);
                 collect_applied_theorems(&proof_if.else_tactics, names);
             }
-            ProofTactic::CloseInvariantsBy(body) => collect_applied_theorems(body, names),
+            ProofTactic::IntroBlock { body, .. } | ProofTactic::CloseInvariantsBy(body) => {
+                collect_applied_theorems(body, names);
+            }
             ProofTactic::StepProved { proof, .. } => match proof {
                 StepProof::By(body) => collect_applied_theorems(body, names),
                 StepProof::Requires(entries) => {
