@@ -38,7 +38,7 @@ fn charon_slice_into_iter_many_slice_parameters_lower_with_linear_charged_work()
         let parameter = function.parameters[0].clone();
         for index in 0..count {
             let mut parameter = parameter.clone();
-            parameter.name = format!("extra_{index}");
+            parameter.name = format!("extra_{index}").into();
             function.parameters.push(parameter);
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {

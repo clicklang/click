@@ -1560,19 +1560,19 @@ borrow of a reference or slice parameter does not change it.
 from its storage markers and its writes of pure values, and a `()` temporary
 that is only a call's destination, which the call never writes.
 
-The importer can use numbered keys to connect MIR producers and readers.
-Those keys belong to frontend bookkeeping. Surface terms, including terms
-raised from proof facts, use source names, source expressions, or selectors
+The importer connects MIR producers and readers with typed local identities.
+Compiler slots carry numbers. A repeated source name records its spelling
+separately from the slot that identifies each declaration. Surface terms,
+including those raised from proof facts, use source names, expressions, or selectors
 rooted in the source program. An unnamed local that survives normalization must
 lower through a supported representation, such as a scalar operand result,
 iterator state, or typed storage for a written literal or borrow. An
 immediately consumed plain record return feeds the by-value parameter as
 a retained call result. A record moved into an explicit drop has separate
-argument storage identified by the source drop site. If lowering
-would declare a program variable using the raw MIR key, it reports an
-unsupported Rust construct at the local's source location. The check uses the
-importer's unnamed-local metadata, so source identifiers remain valid
-regardless of spelling.
+argument storage identified by the source drop site. Binding lookup takes a
+written name or an explicitly assigned typed binding. An unnamed slot with
+no supported representation produces an unsupported Rust construct error at
+the local's source location.
 
 ### Paths and outcomes
 

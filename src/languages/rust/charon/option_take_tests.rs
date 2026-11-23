@@ -47,7 +47,7 @@ fn charon_option_take_rejects_forged_library_declarations() {
             // The box's free names its record's crate, `option_take`.
             .all(
                 |block| !matches!(&block.terminator, T::Call { function, .. }
-                if function.contains("take") && !function.contains("Box"))
+                if function.source_name().is_some_and(|name| name.contains("take") && !name.contains("Box")))
             ),
         "`take` leaves no library call"
     );

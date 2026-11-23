@@ -56,14 +56,14 @@ pub(super) fn header_condition(
     mir: &MirBody,
     headers: &[usize],
     condition: &E,
-    scalar_names: &BTreeSet<String>,
-    metadata_names: &BTreeSet<String>,
+    scalar_names: &BTreeSet<MirLocalId>,
+    metadata_names: &BTreeSet<MirLocalId>,
 ) -> Result<E, String> {
-    let scalar = |name: &str| scalar_names.contains(name) || metadata_names.contains(name);
+    let scalar = |name: &MirLocalId| scalar_names.contains(name) || metadata_names.contains(name);
     fn substitute(
         value: &E,
-        definitions: &BTreeMap<String, E>,
-        scalar: &impl Fn(&str) -> bool,
+        definitions: &BTreeMap<MirLocalId, E>,
+        scalar: &impl Fn(&MirLocalId) -> bool,
         remaining: &mut usize,
     ) -> Result<E, String> {
         if *remaining == 0 {
@@ -169,8 +169,8 @@ pub(super) struct Flow {
     /// than one arm; the paths through it are the executor's anyway.
     pub exit_tails: Vec<bool>,
     pub loops: BTreeMap<usize, While>,
-    pub scalar_names: BTreeSet<String>,
-    pub metadata_names: BTreeSet<String>,
+    pub scalar_names: BTreeSet<MirLocalId>,
+    pub metadata_names: BTreeSet<MirLocalId>,
 }
 impl Flow {
     pub fn analyze(function: &Function, mir: &MirBody) -> Result<Self, String> {
@@ -572,7 +572,6 @@ mod tests {
                     owned_arguments: vec![],
                     destination: Some("marker".into()),
                     target: 1,
-                    through_pointer: false,
                     result: None,
                 }),
                 block(branch(2, 3)),
@@ -587,7 +586,6 @@ mod tests {
                     owned_arguments: vec![],
                     destination: Some("marker".into()),
                     target: 1,
-                    through_pointer: false,
                     result: Some(0),
                 }),
                 block(branch(2, 3)),
@@ -898,7 +896,7 @@ mod tests {
         };
         let names = ["i", "m", "b"]
             .into_iter()
-            .map(str::to_string)
+            .map(MirLocalId::from)
             .collect::<BTreeSet<_>>();
         let mut mir = MirBody {
             return_place: "__rust_mir_0".into(),
@@ -926,7 +924,7 @@ mod tests {
         let mut names = BTreeSet::from(["t0".into()]);
         mir.blocks[0].statements.clear();
         for i in 1..20 {
-            names.insert(format!("t{i}"));
+            names.insert(MirLocalId::from(format!("t{i}")));
             let previous = local(&format!("t{}", i - 1));
             mir.blocks[0].statements.push(assign(
                 &format!("t{i}"),

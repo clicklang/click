@@ -162,7 +162,7 @@ impl BodyAdapter<'_, '_> {
 pub(super) fn test_user_next_results(blocks: &mut [out::MirBlock], nexts: &BTreeSet<String>) {
     for index in 0..blocks.len() {
         let T::Call {
-            function,
+            function: MirCallee::Direct(function),
             destination: Some(destination),
             target,
             ..
