@@ -41,6 +41,7 @@ this page covers each form's full rules and edge cases.
 | `forall (k: int32) { P }`, `(lo..hi).all(\|k\| { P })` | Quantified propositions; the range form guards memory reads | [Propositions](#propositions) |
 | `Integer`, `to_integer(x)` | Unbounded mathematical integers | [Mathematical integers](#mathematical-integers) |
 | `true`, `false`, `-> Bool`, `ensures p(x);` | The logical sort `Bool`; a `Bool` value written alone is the claim that it holds | [Booleans](#booleans) |
+| `Pointer`, `load<Pointer>(a)`, `p as Pointer` | Click's untyped pointer: an address and a provenance with no pointee type | [Untyped pointers](#untyped-pointers) |
 | `function f(x: int32) -> int32 { ... }` | A pure Click function | [Pure Click functions](#pure-click-functions) |
 | `predicate p(...) { ... }` | A named proposition, possibly over resources | [Predicates](#predicates) |
 | `theorem t() { requires P; ensures Q; }` | A pure theorem | [Pure theorems](#pure-theorems) |
@@ -220,7 +221,8 @@ A cast is written after its operand, `e as T`. A numeric target is bare:
 parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 `p as (const struct node *)`. The targets are the ten machine integer types
 `int8` to `uint128`, `float`, `double`, `void *`, a pointer to one of them,
-and a pointer to a struct. Native pointer targets may add `const`, `volatile`,
+a pointer to a struct, and Click's untyped pointer, bare like a numeric
+target: `p as Pointer` ([Untyped pointers](#untyped-pointers)). Native pointer targets may add `const`, `volatile`,
 or both before the pointee type, such as `p as (const uint8 *)`; struct pointer
 targets support `const`. An unqualified byte view inherits its source's const
 qualification. Casting a pointer from a non-character type, including
@@ -3715,6 +3717,41 @@ theorem three_is_in_range() {
   ([Rust](../rust.md#signatures-in-rust-syntax)). In a C or C++ sidecar
   that operand is refused
   (`mdtests/a_parenthesized_comparison_is_a_value_only_in_rust.md`).
+
+## Untyped pointers
+
+`Pointer` is Click's untyped pointer, written capitalized like `Bool` and
+`Integer`: an address and a provenance with no pointee type, like LLVM's
+opaque `ptr`. A type belongs to the operation that uses a pointer, not to
+the pointer. It is a type of Click's own positions (parameters, results,
+binders, `let`, `load<T>`, casts); a function head writes its language's
+type, and `Pointer *` is not a type.
+
+<!-- verified-example: mdtests/untyped_pointer_load_of_a_pointer_field.md -->
+```click
+int32 *next_of(struct node *s) {
+    views s->next;
+    ensures load<Pointer>(&s->next) == s->next;
+    ensures result == load<Pointer>(&s->next) as (int32 *);
+}
+```
+
+- **Reads.** `load<Pointer>(a)` reads the pointer cell at `a`, whatever
+  object pointer type the cell was declared with; its value is the pointer
+  stored there.
+- **Conversions.** Every object pointer converts to and from `Pointer`,
+  implicitly at a parameter or binding and explicitly as `p as Pointer` or
+  `q as (T *)`. The conversion keeps the value: it is not a C conversion, so
+  a cast to a character pointer forms no byte view and `void *`'s rules do
+  not apply. Function pointers are not `Pointer`s.
+- **Equality.** `p == q` compares the whole value, address and provenance,
+  also between a `Pointer` and a typed pointer.
+- **No pointee.** `*q`, `q[i]`, `q + k` and `q - k` are refused ("a
+  `Pointer` has no pointee type; cast it to a typed pointer or use
+  `load<T>`"). `byte_offset(q, n)` is the `Pointer` `n` bytes on, and
+  `load<T>(q)` reads a `T` there
+  (`mdtests/untyped_pointer_byte_offset.md`,
+  `mdtests/untyped_pointer_has_no_pointee.md`).
 
 ## Propositions
 

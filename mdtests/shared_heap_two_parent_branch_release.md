@@ -170,10 +170,11 @@ void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
     consumes child_control(p->kid);
-    if to_integer(old(count(child_ref(p->kid)))) > 1 { produces child_control(old(p->kid)); }
+    if old(p->kid->refs) > 1 { produces child_control(old(p->kid)); }
     consumes child_ref(p->kid);
     produces out: parent(old(p));
-    ensures to_integer(count(child_ref(old(p->kid)))) == to_integer(old(count(child_ref(p->kid))) - 1);
+    ensures old(p->kid->refs) > 1 implies
+        to_integer(old(p->kid)->refs) == to_integer(old(p->kid->refs)) - 1;
 } by {
     match link.link {
         ParentLink::Empty => {
@@ -183,8 +184,29 @@ void parent_detach(struct parent* p) {
             unfold(link);
             have old(p->kid) == entry_child by solve();
             if p->kid->refs > 1 {
-                step_until(function.exit);
+                have to_integer(old(p->kid->refs)) == to_integer(old(count(child_ref(p->kid)))) by known();
+                step_until(statement(1).entry);
+                step(child_release);
+                with(child_control(kid)) {
+                    have to_integer(kid->refs) == to_integer(old(p->kid->refs)) - 1 by {
+                        rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
+                        solve();
+                    }
+                    have separate(memory(kid->refs), memory(p->kid)) by solve();
+                }
+                mark before_clear;
+                step();
+                have separate(statement(2).footprint, memory(kid->refs)) by {
+                    normalize() using { at(before_clear, separate(memory(kid->refs), memory(p->kid))); };
+                }
+                have kid->refs == at(before_clear, kid->refs) by { preserve(memory(kid->refs), statement(2)); }
+                have to_integer(old(p->kid)->refs) == to_integer(old(p->kid->refs)) - 1 by {
+                    rewrite(old(p->kid), kid);
+                    rewrite(kid->refs, at(before_clear, kid->refs));
+                    known();
+                }
                 let out = fold(parent(p), { link: ParentLink::Empty });
+                step_until(function.exit);
                 solve();
             } else {
                 step_until(function.exit);
@@ -210,9 +232,19 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
     have count(child_ref(kid)) == 3 by solve();
     step(child_release);
     have to_integer(count(child_ref(kid))) == 2 by solve();
+    unfold(first_link);
+    have first->kid == kid by known();
+    with(child_control(kid)) {
+        have kid->refs > 1 by solve();
+        have first->kid->refs > 1 by { rewrite(first->kid, kid); known(); }
+    }
+    let first_link = fold(parent(first), { link: ParentLink::Linked(kid) });
     let { out: first_out } = step(parent_detach, { link: first_link });
     step();
-    have to_integer(count(child_ref(kid))) == 2 by solve();
+    with(child_control(kid)) {
+        have count(child_ref(kid)) == 1 by solve();
+    }
+    have count(child_ref(kid)) == 2 by solve();
     step(parent_read_payload, { link: second_link });
     let { out: second_out } = step(parent_detach, { link: second_link });
     step();
@@ -221,5 +253,5 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
 ```
 
 ```expect
-fail: could not establish `count(child_ref(kid)) == 2`
+fail: could not establish `to_integer(count(child_ref(kid))) == 2`
 ```

@@ -2142,7 +2142,6 @@ fn structural_induction_resolves_local_and_global_calls_after_expansion() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
 fn induction_application_proves_missing_premises_and_cold_replays() {
     let (scalar, _) = mdtest_sources("mdtests/scalar_induction_after_helper_facts.md");
     let scalar = scalar
@@ -2203,6 +2202,35 @@ fn induction_application_proves_missing_premises_and_cold_replays() {
         })
         .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
     }
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
+fn established_false_expands_to_empty_contradiction() {
+    let (source, _) =
+        mdtest_sources("mdtests/arithmetic_proves_a_disequality_by_refuting_its_equality.md");
+    let label = "integer_lt_neq_arithmetic.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+    assert!(expanded.contains("contradiction();"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_click_theorems(&expanded).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    let empty =
+        "theorem impossible(x: int32) { requires false; ensures x == 7 by { contradiction(); } }";
+    without_implicit_solve(|| verify_click_theorems(empty)).unwrap();
+    let explicit = empty.replace("contradiction()", "contradiction(false)");
+    without_implicit_solve(|| verify_click_theorems(&explicit)).unwrap();
+    let missing = empty.replace("requires false;", "");
+    let error = verify_click_theorems(&missing).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("requires an established `false` fact"),
+        "{}",
+        error.report()
+    );
 }
 
 #[test]
@@ -25827,9 +25855,9 @@ test_batches! {
         uint64_measure_induction_expands_and_rechecks_without_narrowing,
         scalar_induction_keeps_integer_parameters_and_their_guards,
         structural_induction_resolves_local_and_global_calls_after_expansion,
-        induction_application_proves_missing_premises_and_cold_replays,
     ],
     expansion_batch_03: [
+        established_false_expands_to_empty_contradiction,
         arithmetic_after_fold_rewrites_expands_and_rechecks,
         pointer_word_certificates_keep_address_arithmetic_when_printed,
         numeric_cast_certificates_keep_integer_default_arithmetic_when_printed,

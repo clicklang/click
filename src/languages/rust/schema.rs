@@ -239,20 +239,29 @@ pub struct Field {
     pub offset: u32,
     pub value_type: Type,
 }
-/// Function-local identity in the normalized Rust importer.
+/// Local or parameter identity in the normalized Rust importer.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum MirLocalId {
     Source(String),
     Compiler(u32),
-    SliceComponent { slot: u32, component: u8 },
+    SliceComponent {
+        slot: u32,
+        component: u8,
+    },
+    /// A declaration without a body supplies only a parameter's position.
+    PositionalParameter {
+        position: usize,
+    },
 }
 
 impl MirLocalId {
     pub fn source_name(&self) -> Option<&str> {
         match self {
             Self::Source(name) => Some(name),
-            Self::Compiler(_) | Self::SliceComponent { .. } => None,
+            Self::Compiler(_) | Self::SliceComponent { .. } | Self::PositionalParameter { .. } => {
+                None
+            }
         }
     }
 }
@@ -289,6 +298,7 @@ impl std::fmt::Display for MirLocalId {
             Self::SliceComponent { slot, component } => {
                 write!(f, "MIR local {slot}, component {component}")
             }
+            Self::PositionalParameter { position } => write!(f, "parameter at position {position}"),
         }
     }
 }

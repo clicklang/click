@@ -505,7 +505,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         ProgramType::Bool => {
             ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(variable))
         }
-        ProgramType::VoidPointer | ProgramType::VoidPointerPointer => {
+        ProgramType::VoidPointer | ProgramType::VoidPointerPointer | ProgramType::Pointer => {
             ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
         }
         ProgramType::Int8 => ProgramValue::Int8(MachineTerm::Variable(variable)),

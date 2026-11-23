@@ -918,9 +918,13 @@ pub(in crate::kernel) fn cast_program_value_to_type(
 /// was formed from. A conversion between character types keeps the existing
 /// view, and every other conversion, including to `void *`, keeps the value
 /// (`design/pointer-model.md`).
+///
+/// Click's untyped [`ProgramType::Pointer`] is not a C type, so a cast to or
+/// from it is no C conversion: it keeps the value and forms no byte view.
 pub(in crate::kernel) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
-    let forms_byte_view =
-        is_character_pointer(target_type) && !is_character_pointer(pointer.program_type());
+    let forms_byte_view = is_character_pointer(target_type)
+        && !is_character_pointer(pointer.program_type())
+        && pointer.program_type() != ProgramType::Pointer;
     let pointer = pointer.with_type(target_type);
     if forms_byte_view {
         pointer.with_root_bounds()
@@ -2073,7 +2077,10 @@ fn evaluate_program_cast_paths(
                         ProgramValue::Pointer(pointer)
                             if target_type.is_pointer()
                                 && (integer_mode != IntegerCastMode::PointerCoercion
-                                    || target_type != ProgramType::VoidPointer
+                                    || !matches!(
+                                        target_type,
+                                        ProgramType::VoidPointer | ProgramType::Pointer
+                                    )
                                     || pointer.program_type().is_object_pointer()) =>
                         {
                             // Of C's implicit pointer conversions, only one

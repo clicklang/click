@@ -4886,6 +4886,41 @@ impl RecordedStates {
         }
     }
 
+    /// The region a footprint runs across, which `R.footprint` names: the
+    /// region its entry point is recorded as entering, when that region's
+    /// recorded exit is the footprint's end point and its recorded footprint
+    /// is this one. A point can carry several names (a statement and the
+    /// call it makes end together), so the exit is confirmed by its identity
+    /// rather than read from the point's name.
+    pub(in crate::surface) fn footprint_region(
+        &self,
+        footprint: &crate::kernel::RegionFootprint,
+    ) -> Option<CodeRegionRef> {
+        let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region,
+            kind: ProgramPointKind::Entry,
+        }) = self.point_names.get(&footprint.before_point.id()?)?
+        else {
+            return None;
+        };
+        let exit = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region: region.clone(),
+            kind: ProgramPointKind::Exit,
+        });
+        if self.get(&exit)?.observation_point_id() != footprint.after_point.id() {
+            return None;
+        }
+        // A region of several recorded effects has a combined footprint of
+        // its own, which `R.footprint` lowers to; only the region whose
+        // recorded footprint is this one names it.
+        match self.footprint(region) {
+            Ok(crate::kernel::Resource::Footprint(recorded)) if *recorded == *footprint => {
+                Some(region.clone())
+            }
+            _ => None,
+        }
+    }
+
     /// The name of the recorded point a path reached, by that point's
     /// identity.
     #[cfg_attr(not(test), allow(dead_code))]
@@ -6675,6 +6710,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "contradiction",
         syntax: "contradiction(P)",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "contradiction-false",
+        syntax: "contradiction()",
         class: "simple",
     },
     PublicTacticForm {

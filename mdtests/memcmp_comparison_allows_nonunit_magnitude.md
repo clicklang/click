@@ -17,7 +17,7 @@ theorem positive_seven(left: uint8[], right: uint8[]) {
                 unfold(bytes::equal(left, 0u64, right, 0u64, 2u64));
                 instantiate((0u64..2u64).all(|k| { left[0u64 + k] == right[0u64 + k] }), 0u64);
                 have false by { solve(); }
-                contradiction(false);
+                contradiction();
             } else {
                 known();
             }

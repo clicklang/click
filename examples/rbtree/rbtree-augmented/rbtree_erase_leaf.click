@@ -22,11 +22,17 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     ensures rb_inorder(whole.model) == rb_inorder(plug(old(up.model), RbTree::Empty));
 } by {
     step(); // Declare rebalance before its initializer call.
+    with(erase_callbacks(augment)) {
+        have separate(tree, memory(*augment)) by known();
+        have separate(up, memory(*augment)) by known();
+        apply(click::separation::separate_star(tree, up, memory(*augment)));
+    }
     let { hole: hole, remaining: deficit } = step(__rb_erase_augmented, { tree: tree, up: up });
     apply(plug_parent_consistent_transport(deficit.model, RbTree::Empty, 0));
     have rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1 by {
         unfold(rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty))); known();
     }
+    step(); // Assign the returned rebalance pointer.
     if rebalance != 0 {
         have deficit.model != Context::Top;
         have ctx_node_is(deficit.model, rebalance) == 1;
@@ -38,6 +44,7 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         unfold(hole);
         step(); // Select the nonnull rebalance branch.
         with(erase_callbacks(augment)) {
+            have separate(deficit, memory(*augment)) by known();
             mark repair;
             let { whole: whole } = step(__rb_erase_color, { c: deficit });
             have whole.model == erase_flips_red_all_result(at(repair, deficit.model), RbTree::Empty);

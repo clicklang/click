@@ -980,21 +980,21 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     crate::kernel::MachineIntegerType::UInt8,
                     crate::kernel::ConditionTerm::Variable(Variable(index as u64)),
                 )),
-                InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer => {
-                    ProgramValue::typed_pointer(
-                        Address {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
-                                    crate::kernel::Producer::PointerArgument,
-                                    index as u64,
-                                )),
-                                1,
-                            ),
-                        },
-                        interface_type.to_kernel_type(),
-                    )
-                }
+                InterfaceType::VoidPointer
+                | InterfaceType::VoidPointerPointer
+                | InterfaceType::Pointer => ProgramValue::typed_pointer(
+                    Address {
+                        base: AddressBase::ExternalArgument,
+                        offset: scale_int32_offset(
+                            MachineTerm::Variable(Variable::produced(
+                                crate::kernel::Producer::PointerArgument,
+                                index as u64,
+                            )),
+                            1,
+                        ),
+                    },
+                    interface_type.to_kernel_type(),
+                ),
                 InterfaceType::Int8 => {
                     ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64)))
                 }

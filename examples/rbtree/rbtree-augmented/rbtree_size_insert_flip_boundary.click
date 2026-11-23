@@ -59,12 +59,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
     requires sized_flip_color(state.model) == 0;
     produces root->rb_node;
     produces whole: sized_at(old(root->rb_node));
+    requires node->rb_left != node;
+    requires node->rb_right != node;
     ensures root->rb_node == old(root->rb_node);
     ensures whole.model == sized_flip_result(old(state.chain), old(state.model));
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     match state.model {
-        SizedTree::Empty => { unfold(state); contradiction(false); },
+        SizedTree::Empty => { unfold(state); contradiction(); },
         SizedTree::Node(identity, ancestor, shade, value, left, right) => {
             have node == identity by {
                 rewrite(node, sized_flip_node(state.model));
@@ -78,12 +80,19 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             }
             let { focus: focus, path: path } = unfold(state);
             let { metadata: metadata, left: l, right: r } = unfold(focus);
-            have node->__rb_parent_color == address(ancestor) by {
-                rewrite(node->__rb_parent_color, address(ancestor) + (node->__rb_parent_color & 1));
-                rewrite((node->__rb_parent_color & 1), color_bit(shade));
+            have identity->__rb_parent_color == address(ancestor) by {
+                rewrite(identity->__rb_parent_color, address(ancestor) + (identity->__rb_parent_color & 1));
+                rewrite((identity->__rb_parent_color & 1), color_bit(shade));
                 rewrite(color_bit(shade), 0); normalize();
             }
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
+            have node->__rb_parent_color == address(ancestor) by {
+                rewrite(node, identity);
+                known();
+            }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by {
+                rewrite(node, identity);
+                known();
+            }
             have ancestor == sized_context_parent(old(state.context), 0) by known();
             have root->rb_node == old(root->rb_node) by known();
             let initial_root = fold(flip_boundary_root_link(root), { node: old(root->rb_node) });
@@ -327,7 +336,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             }
             mark stopped;
             match state.model {
-                SizedTree::Empty => { unfold(state); contradiction(false); },
+                SizedTree::Empty => { unfold(state); contradiction(); },
                 SizedTree::Node(stopped_node, stopped_parent, stopped_shade, stopped_value, stopped_left, stopped_right) => {
                     let { focus: focus, path: path } = unfold(state);
                     have root->rb_node == old(root->rb_node) by known();
@@ -370,6 +379,8 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     requires state.context == sized_flip_context(state.chain);
     requires node == sized_flip_node(state.model);
     requires sized_flip_color(state.model) == 0;
+    requires node->rb_left != node;
+    requires node->rb_right != node;
     produces root->rb_node;
     produces whole: sized_at(old(root->rb_node));
     ensures root->rb_node == old(root->rb_node);
@@ -377,7 +388,7 @@ void __rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     match state.model {
-        SizedTree::Empty => { unfold(state); contradiction(false); },
+        SizedTree::Empty => { unfold(state); contradiction(); },
         SizedTree::Node(node_id, parent, shade, value, left, right) => {
             let { focus: focus, path: path } = unfold(state);
             have parent == sized_context_parent(path.model, 0) by known();
@@ -403,11 +414,14 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     requires state.context == sized_flip_context(state.chain);
     requires node == sized_flip_node(state.model);
     requires sized_flip_color(state.model) == 0;
+    requires node->rb_left != node;
+    requires node->rb_right != node;
     produces root->rb_node;
     produces whole: sized_at(old(root->rb_node));
     ensures root->rb_node == old(root->rb_node);
     ensures whole.model == sized_flip_result(old(state.chain), old(state.model));
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
+    have separate(state, memory(augment->rotate)) by known();
     let { whole: whole } = step(__rb_insert_augmented, { state: state });
 }
