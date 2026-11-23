@@ -15669,7 +15669,7 @@ impl Parser {
                     source_base,
                     ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
-                        bytes: (*offset_bytes).into(),
+                        bytes: *offset_bytes,
                     },
                 ));
             }

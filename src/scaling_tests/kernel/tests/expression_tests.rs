@@ -506,7 +506,7 @@ fn signed_addition_does_not_walk_the_operands_equality_class() {
             samples.push(work);
         }
     }
-    for sample in samples.chunks_exact(2) {
+    for sample in samples.as_chunks::<2>().0 {
         assert_eq!(sample, &samples[..2], "{samples:?}");
     }
 }

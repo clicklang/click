@@ -682,11 +682,11 @@ mod conditional_tests {
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(
                     pointer
                         .clone()
-                        .with_declared_object_class(constant.then(|| {
+                        .with_declared_object_class(constant.then_some(
                             crate::kernel::effective_type::CAccessClass::Scalar(
                                 crate::kernel::effective_type::CScalarClass::Int,
-                            )
-                        })),
+                            ),
+                        )),
                 ))],
             ))
         });

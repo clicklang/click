@@ -165,11 +165,11 @@ mod tests {
                 let application = SharedPureApplication::intern(
                     "carrier_pointer".into(),
                     vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-                        pointer.with_declared_object_class(qualified.then(|| {
+                        pointer.with_declared_object_class(qualified.then_some(
                             crate::kernel::effective_type::CAccessClass::Scalar(
                                 crate::kernel::effective_type::CScalarClass::Int,
-                            )
-                        })),
+                            ),
+                        )),
                     ))],
                 );
                 let carrier = if exact {

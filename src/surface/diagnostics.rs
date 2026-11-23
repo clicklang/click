@@ -5991,7 +5991,7 @@ pub(super) fn describe_program_value(
         {
             let base = describe_pointer(pointer, parameter_binding);
             let ty = crate::kernel::program_type_spelling(pointer.program_type());
-            format!("({})", click_cast(&base, &format!("{ty}")))
+            format!("({})", click_cast(&base, ty))
         }
         ProgramValue::Pointer(pointer) => describe_pointer(pointer, parameter_binding),
     }

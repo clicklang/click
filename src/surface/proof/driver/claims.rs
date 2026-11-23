@@ -433,7 +433,7 @@ fn next_checked_post_execution_tactic<'a>(
                         ))
                     })?;
                     scope = Some(focused.scope_call_payload(
-                        scope.as_ref().or_else(|| {
+                        scope.as_ref().or({
                             if locals.ends.is_empty() {
                                 None
                             } else {

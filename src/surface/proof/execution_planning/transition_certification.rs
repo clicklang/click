@@ -368,7 +368,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                     crate::surface::diagnostics::describe_execution_statement_site()
                 ))
                 .with_reported_assertion_goal(kind.required_goal().cloned())
-                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(kind))
                 .with_proof_refusal(crate::surface::ProofRefusal::Tactic)),
                 ConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
@@ -535,7 +535,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     crate::surface::diagnostics::describe_execution_statement_site()
                 ))
                 .with_reported_assertion_goal(kind.required_goal().cloned())
-                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(kind))
                 .with_proof_refusal(crate::surface::ProofRefusal::Tactic)),
                 Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::RuntimeError(error),

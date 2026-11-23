@@ -493,7 +493,7 @@ pub(super) fn lower(
                     name: local.clone(),
                 })?;
                 let free = program_call(
-                    &super::super::standard_library::box_function(
+                    super::super::standard_library::box_function(
                         super::super::standard_library::BOX_DROP,
                         record,
                     ),

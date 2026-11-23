@@ -7362,7 +7362,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return Ok(vec![SpecExpressionPath {
                     value: value.clone().into(),
                     facts: Vec::new().into(),
-                    obligations: Vec::new().into(),
+                    obligations: Vec::new(),
                 }]);
             }
             let Some(value) = retained_state
