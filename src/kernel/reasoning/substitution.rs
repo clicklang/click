@@ -6152,7 +6152,7 @@ pub(crate) fn substitute_bitvector_variable(
                 );
                 return crate::kernel::eval::canonical_term(
                     &crate::kernel::MachineTerm::read_named(
-                        ProgramPoint::at(&source),
+                        ProgramPoint::at_read_site(&source, memory),
                         rewritten_pointer,
                         *kind,
                     ),
@@ -6169,8 +6169,8 @@ pub(crate) fn substitute_bitvector_variable(
                     read.bytes,
                 );
             }
-            crate::kernel::eval::scalar_read_for_exact_cell(
-                &rewritten_memory,
+            crate::kernel::eval::scalar_read_for_exact_cell_at(
+                &ProgramPoint::at_read_site(&rewritten_memory, memory),
                 &rewritten_pointer,
                 *kind,
                 read.bytes,

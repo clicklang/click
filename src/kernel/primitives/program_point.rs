@@ -1729,6 +1729,11 @@ impl ProgramPoint {
     /// An exact read keeps the selected point even if another point has equal
     /// memory or supplies the cell's ordinary version.
     pub(in crate::kernel) fn for_exact_read(mut self) -> Self {
+        // A point with no path has no point to keep: an exact selection of it
+        // reads as a legacy one. Keep the legacy read site it recorded.
+        if self.id().is_none() {
+            return self;
+        }
         self.read = ReadSelection::Exact;
         self
     }
@@ -2434,10 +2439,17 @@ mod tests {
                 .is_some_and(|path| path.id() == site.id())
         );
         assert!(
-            bare.with_read_site_of(&site)
+            bare.clone()
+                .with_read_site_of(&site)
                 .read_site()
                 .is_some_and(|path| path.id() == site.id())
         );
+        // A point with no path has no point for an exact selection to keep,
+        // so it keeps its read site, and its term is unchanged.
+        let exact = sited.clone().for_exact_read();
+        assert!(exact.read_site().is_some_and(|path| path.id() == site.id()));
+        assert_eq!(exact.read_key(), bare.read_key());
+        assert!(!exact.is_exact_read());
     }
 
     /// A state set up by steps before its first point begins at the memory
