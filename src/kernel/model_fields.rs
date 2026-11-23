@@ -231,6 +231,18 @@ pub(crate) fn model_field_surface(variable: Variable) -> Option<String> {
     })
 }
 
+/// `old(owner.field)` for a variable minted as a contract's own entry model:
+/// that spelling always denotes it, since the entry model never changes.
+/// `None` for any other variable, including a model a later step replaced,
+/// whose source name depends on the point it is read at.
+pub(crate) fn entry_model_field_surface(variable: Variable) -> Option<String> {
+    let origin = registered_model_field_origin(variable)?;
+    let ModelMint::ContractEntry { owner } = &origin.minted_by else {
+        return None;
+    };
+    Some(format!("old({owner}.{})", origin.field))
+}
+
 /// A population's function-entry count, as a diagnostic spells it: the
 /// family, its anchor pointer, and how many wildcard arguments follow it.
 #[derive(Clone, Debug)]

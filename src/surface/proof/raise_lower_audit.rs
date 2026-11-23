@@ -675,12 +675,12 @@ int32 f(struct holder* h, uint64 n, uint64 k) {
             })
         };
         // The unfolded viewability round-trips, and so does the hidden
-        // record's value: raised with the entry state, it is
-        // `old(pair(p).first.v)`.
+        // record's value: it is the contract's entry model, so both the
+        // diagnostic and the raiser spell it `old(pair(p).first.v)`.
         assert!(
             unfold("same", "viewable((p as (uint8 *))[0..8])"),
             "{lines:#?}"
         );
-        assert!(unfold("same", "<unnamed A> >= 0"), "{lines:#?}");
+        assert!(unfold("same", "old(pair(p).first.v) >= 0"), "{lines:#?}");
     }
 }

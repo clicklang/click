@@ -89,6 +89,8 @@ pub(crate) use memory_loads::load_access_width_or_widest;
 pub(crate) use memory_loads::load_registry_entry_count;
 pub(crate) use memory_loads::load_term_access_width;
 #[cfg(test)]
+pub(crate) use memory_loads::load_variable_fact_census;
+#[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell;
 #[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell_with_origin;

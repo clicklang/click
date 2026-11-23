@@ -5263,6 +5263,135 @@ pub(crate) fn load_variable_for_cell_with_origin(
     mint_load_variable_identity(memory, pointer, kind, origin, bytes)
 }
 
+/// A test-only count of the facts that still hold a load variable when they
+/// enter a `PureFactContext`, by kind of fact, with one example each.
+/// Defining facts are left out: they are what minting a variable adds. The
+/// counts are the work list for removing load variables from facts
+/// (`docs/internals/canonicalization.md`, "Transitional load variables and
+/// shared reads").
+#[cfg(test)]
+pub(crate) mod load_variable_fact_census {
+    use super::*;
+
+    thread_local! {
+        static COUNTS: std::cell::RefCell<
+            Option<std::collections::BTreeMap<String, (usize, String)>>,
+        > = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Runs `run` and returns, per kind of fact, how many admitted facts held
+    /// a load variable and one example.
+    pub(crate) fn capture(
+        run: impl FnOnce(),
+    ) -> std::collections::BTreeMap<String, (usize, String)> {
+        let previous = COUNTS.with(|counts| counts.replace(Some(Default::default())));
+        run();
+        COUNTS
+            .with(|counts| counts.replace(previous))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn active() -> bool {
+        COUNTS.with(|counts| counts.borrow().is_some())
+    }
+
+    /// The census sees a native comparison that holds a load variable, so a
+    /// report of none is not a census that misses them. An Integer
+    /// comparison stated over the same variable does not hold it: its
+    /// shared operand imports the variable as the read it names, and only
+    /// the producer's retained native payload still spells the variable.
+    #[test]
+    fn counts_native_comparisons_holding_a_load_variable() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("cell", 4));
+        let pointer = Address {
+            base: AddressBase::Concrete("cell".into()),
+            offset: AddressOffset::Constant(0),
+        };
+        let variable = load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
+        let native = Proposition::condition_is(
+            ConditionTerm::signed_less_than(
+                MachineTerm::Variable(variable),
+                MachineTerm::constant(5),
+            ),
+            true,
+        );
+        let integer = Proposition::condition_is(
+            ConditionTerm::integer_less_than(
+                crate::kernel::IntegerTerm::from_machine(
+                    MachineIntegerType::Int32,
+                    MachineTerm::Variable(variable),
+                )
+                .unwrap(),
+                crate::kernel::IntegerTerm::constant(5.into()),
+            ),
+            true,
+        );
+        let counts = capture(|| {
+            let _ = PureFactContext::new()
+                .assume_proposition(native)
+                .assume_proposition(integer);
+        });
+        assert!(
+            counts.contains_key("condition: native comparison"),
+            "{counts:?}"
+        );
+        assert!(
+            !counts.contains_key("condition: integer comparison"),
+            "{counts:?}"
+        );
+    }
+
+    pub(crate) fn observe(proposition: &Proposition) {
+        if !active() || is_load_variable_defining_fact(proposition) {
+            return;
+        }
+        let mut variables = std::collections::BTreeSet::new();
+        crate::kernel::reasoning::variable_collection::collect_proposition_variables_for_load_presence(
+            proposition,
+            &mut variables,
+        );
+        if !variables.iter().any(is_load_variable) {
+            return;
+        }
+        let kind = match proposition {
+            Proposition::ConditionIs(condition, _) => match condition.native_compat() {
+                crate::kernel::integer_comparison_condition!(_, _) => {
+                    "condition: integer comparison".to_string()
+                }
+                ConditionTerm::Compare { .. } => "condition: native comparison".to_string(),
+                ConditionTerm::Overflows { .. } => "condition: overflow".to_string(),
+                condition => {
+                    let shown = format!("{condition:?}");
+                    let name = shown
+                        .split(|c: char| !c.is_alphanumeric())
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    format!("condition: {name}")
+                }
+            },
+            proposition => {
+                let shown = format!("{proposition:?}");
+                shown
+                    .split(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            }
+        };
+        COUNTS.with(|counts| {
+            if let Some(counts) = counts.borrow_mut().as_mut() {
+                let entry = counts.entry(kind).or_insert_with(|| {
+                    let shown = format!("{proposition:?}");
+                    (0, shown[..shown.len().min(300)].to_string())
+                });
+                entry.0 += 1;
+            }
+        });
+    }
+}
+
 /// A test-only audit for the program-point migration (`roadmap/smart-tactics.md`,
 /// "Program-point memory migration"): while [`mixed_read_names::capture`]
 /// runs, each integer read the equality graph registers is filed by its

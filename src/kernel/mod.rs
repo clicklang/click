@@ -181,6 +181,8 @@ pub(crate) use eval::load_access_width_at_address_or_widest;
 pub(crate) use eval::load_access_width_or_widest;
 pub(crate) use eval::load_term_access_width;
 #[cfg(test)]
+pub(crate) use eval::load_variable_fact_census;
+#[cfg(test)]
 pub(crate) use eval::load_variable_for_cell_with_origin;
 pub(crate) use eval::load_variable_for_term;
 #[cfg(test)]
