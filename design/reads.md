@@ -79,9 +79,11 @@ part of its value, a pointer's type is not.
   registry. A pointer read's value is the `Pointer` whose address is
   `Read(..) + 0` and whose provenance is opaque, named by the same read
   (`Pointer::from_point_read`, unchanged in meaning).
-- **Function-pointer reads** are pointer reads. Load variables are removed by
-  the session already doing it; this design asks only that their pointer users
-  move to `AddressBase::Read`.
+- **Function-pointer reads** are pointer reads, and move from load variables
+  (`FunctionSymbolic(var)`) to `AddressBase::Read`. No admitted fact holds a
+  load variable today (census `report_load_variables_in_facts`, 6,024 C
+  mdtests): they survive only as internal minting, defining facts and their
+  registry. The scalar tail is removed after the program-point migration.
 - **`Address::loaded_value(memory, cell)`** is a memory-named read
   (`ReadKey::Memory`). It goes when the legacy walk does
   (`point-named-reads.md`, plan step 4). Until then it builds the same
@@ -137,8 +139,9 @@ The order respects `point-named-reads.md`, which owns version selection.
 3. **`AddressBase::Read`.** Replace `LoadedPointer(PointerLoadId)` and the
    registry with the structural, interned base. Every user of
    `registered_pointer_load_point` reads the base instead.
-4. **Load variables**, by the session removing them: function-pointer reads
-   move to `AddressBase::Read`.
+4. **Function-pointer reads** move from load variables to `AddressBase::Read`.
+   Load variables then remain only for scalar reads, removed after the
+   program-point migration.
 5. **`loaded_value`** goes with the legacy walk.
 
 Each step is one PR, measured with the gate harnesses, the raise-lower audit,
