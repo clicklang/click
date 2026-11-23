@@ -4334,6 +4334,19 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     let kernel_goal = lower(&goal_surface);
     let kernel_quantified = lower(&quantified_surface);
 
+    let quantified_prefixes = [2, 4].map(|arity| {
+        let mut surface = quantified_surface.clone();
+        for index in 1..arity {
+            surface = ClickProposition::ForAll {
+                click_type: ClickType::Program(InterfaceType::Int32),
+                name: format!("prefix_{index}").into(),
+                written_name: None,
+                body: Box::new(surface),
+            };
+        }
+        (arity, lower(&surface), surface)
+    });
+
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut available = (0..size)
             .flat_map(|index| {
@@ -4350,6 +4363,11 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             .collect::<Vec<_>>();
         available.push(kernel_premise.clone());
         available.push(kernel_quantified.clone());
+        available.extend(
+            quantified_prefixes
+                .iter()
+                .map(|(_, kernel, _)| kernel.clone()),
+        );
         let root = Proof::for_fixed_state_goal(
             "indexed instantiate",
             0,
@@ -4452,7 +4470,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
 
         let step = ProofStep::Instantiate {
             quantified: quantified_surface.clone(),
-            argument: value(7),
+            arguments: vec![value(7)],
         };
         let unavailable = ProofStep::Instantiate {
             quantified: ClickProposition::Comparison {
@@ -4460,7 +4478,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 operator: ComparisonOperator::Equal,
                 right: value(1),
             },
-            argument: value(7),
+            arguments: vec![value(7)],
         };
         assert!(
             root.driver().apply_step(unavailable).is_err(),
@@ -4493,6 +4511,30 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             instantiated.certificate().steps(),
             std::slice::from_ref(&step)
         );
+        for (arity, _, surface) in &quantified_prefixes {
+            let step = ProofStep::Instantiate {
+                quantified: surface.clone(),
+                arguments: vec![value(7); *arity],
+            };
+            let before = fact_node_allocations();
+            let instantiated = root.driver().apply_step(step.clone()).unwrap();
+            let allocations = fact_node_allocations() - before;
+            assert!(
+                allocations <= arity * allocation_bound,
+                "size {size}, arity {arity}: {allocations} persistent nodes",
+            );
+            assert_eq!(
+                instantiated.certificate().steps(),
+                std::slice::from_ref(&step)
+            );
+            assert!(
+                instantiated
+                    .driver()
+                    .apply_step(ProofStep::Known)
+                    .unwrap()
+                    .is_complete()
+            );
+        }
         assert!(root.certificate().steps().is_empty());
     }
 }
@@ -14764,7 +14806,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         let root = root.with_kernel_state(root.state.with_locals(locals));
         let step = |argument| ProofStep::Instantiate {
             quantified: quantified.clone(),
-            argument,
+            arguments: vec![argument],
         };
         let guarded = root
             .driver()

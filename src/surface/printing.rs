@@ -1275,7 +1275,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         }
         ProofTactic::Instantiate {
             quantified,
-            argument,
+            arguments,
         } => {
             line(
                 output,
@@ -1283,7 +1283,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 &format!(
                     "instantiate({}, {});",
                     source_click_proposition(quantified),
-                    describe_contract_expression(argument)
+                    arguments
+                        .iter()
+                        .map(describe_contract_expression)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             );
         }

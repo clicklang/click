@@ -1420,7 +1420,7 @@ fn tactic_form_inventory_is_bidirectional() {
             "arithmetic-using" => surface == "`solve() using { P; ... }`",
             "transport" => surface == "`transport(P, Q)`",
             "transport-using" => surface == "`transport(P, Q) using { R; ... }`",
-            "instantiate" => surface == "`instantiate(F, value)`",
+            "instantiate" => surface == format!("`{}`", form.syntax),
             "intro" => surface == "`intro()`",
             "solve" => surface == "`solve()`",
             "solve-using" => surface == "`solve() using { P; ... }`",
