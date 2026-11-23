@@ -888,7 +888,7 @@ impl<'a> Proof<'a> {
                 ..proof
             };
             crate::surface::proof_trace::record(
-                Arc::as_ptr(&proof.node) as usize,
+                crate::surface::proof_trace::trace_node_key(&proof.node),
                 crate::surface::proof_trace::TraceStep {
                     header: format!(
                         "{}: match ({}::{} arm)",
@@ -1050,7 +1050,10 @@ impl<'a> Proof<'a> {
             node: ProofNode::step_child(&marker.node, self.focused_branch_id(), Arc::new(step)),
         };
         if let Some(trace) = trace {
-            crate::surface::proof_trace::record_match(Arc::as_ptr(&successor.node) as usize, trace);
+            crate::surface::proof_trace::record_match(
+                crate::surface::proof_trace::trace_node_key(&successor.node),
+                trace,
+            );
         }
         Ok(successor)
     }
@@ -1332,7 +1335,10 @@ impl<'a> Proof<'a> {
                 index,
                 &equation,
             ));
-            crate::surface::proof_trace::record_match(Arc::as_ptr(&entered.node) as usize, trace);
+            crate::surface::proof_trace::record_match(
+                crate::surface::proof_trace::trace_node_key(&entered.node),
+                trace,
+            );
             equation
         });
         Ok((entered, constructor_equation))

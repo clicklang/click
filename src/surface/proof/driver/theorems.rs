@@ -161,11 +161,19 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 surface.clone(),
                 allow_solve,
                 |body| {
-                    body.step_error(format!(
-                        "theorem `{}` has an unproved obligation: `{}`",
+                    let goal = crate::surface::printing::source_click_proposition(&surface);
+                    let mut message = format!(
+                        "theorem `{}` has an unproved obligation: `{goal}`",
                         application.name,
-                        crate::surface::printing::source_click_proposition(&surface)
-                    ))
+                    );
+                    if let Some(source) = &requirement.theorem_source {
+                        let detail = super::super::theorem_application::describe_theorem_requirement_instantiation(
+                            source.index, &source.clause, &source.bindings, &goal,
+                        );
+                        message.push('\n');
+                        message.push_str(&detail);
+                    }
+                    body.step_error(message)
                 },
             )?;
         }

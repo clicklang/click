@@ -3048,7 +3048,7 @@ impl<'a> Proof<'a> {
                 .map(|fact| successor.checked_trace_fact(fact))
                 .collect();
             crate::surface::proof_trace::record_join(
-                Arc::as_ptr(&successor.node) as usize,
+                crate::surface::proof_trace::trace_node_key(&successor.node),
                 crate::surface::proof_trace::TraceJoin {
                     marker: Arc::as_ptr(&marker.node) as usize,
                     arms: [
