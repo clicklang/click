@@ -267,7 +267,32 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                 }],
             },
         };
-        let goal = Proposition::Equal(Term::Algebraic(matched.into()), Term::Algebraic(end.into()));
+        // Reuse a binder ID from the left match. Its right-hand value
+        // comes from this match's own scrutinee.
+        let expected = AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node: AlgebraicTermNode::Match {
+                scrutinee: Box::new(link(end.clone())),
+                arms: vec![
+                    AlgebraicResultMatchArm {
+                        variant: "End".into(),
+                        binding_names: Default::default(),
+                        bindings: vec![],
+                        body: link(end),
+                    },
+                    AlgebraicResultMatchArm {
+                        variant: "Link".into(),
+                        binding_names: Default::default(),
+                        bindings: vec![AlgebraicValue::Algebraic(variable(0))],
+                        body: variable(0),
+                    },
+                ],
+            },
+        };
+        let goal = Proposition::Equal(
+            Term::Algebraic(matched.into()),
+            Term::Algebraic(expected.into()),
+        );
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
         assert!(proved);
