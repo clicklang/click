@@ -1688,11 +1688,11 @@ decided guard and otherwise bounds both arms. Its arithmetic uses only the
 operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
-builds a constructor directly from its bound fields, machine-integer or
-`Integer` literals, or captured `Integer` variables. The check follows nested
-matches on written constructors and keeps the selected bindings in scope. The
-scrutinee's fields can be machine-integer or `Integer` literals and variables.
-Machine fields retain their exact width and signedness.
+builds a constructor from bound fields, literal fields, or captured variables.
+Literal result fields can be machine integers, `Integer`s, or `Bool`s. Captured
+variables and scrutinee fields can be machine integers or `Integer`s. The check
+follows nested matches on written constructors and keeps the selected bindings
+in scope. Machine fields retain their exact width and signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
