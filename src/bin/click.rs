@@ -1560,6 +1560,16 @@ int32 check(struct link* node) {
                 "incomplete proof",
                 "loop declares a resource the enclosing function does not hold",
             ),
+            (
+                "resource_child_pure_arguments_non_c.md",
+                "type error",
+                "does not return a C value",
+            ),
+            (
+                "loop_preserve_bare_instantiate_names_repair.md",
+                "unsupported",
+                "move the operation into `have proposition by { ... }`",
+            ),
         ] {
             let error = entry([
                 "verify".to_string(),

@@ -1006,7 +1006,10 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
                             Ok(expression) => Ok(SpecExpression::ProgramExpression(expression)),
                             Err(_) => lowerer
                                 .lower_contract_expression_to_spec(argument, &environment)
-                                .map_err(ClickError::new),
+                                .map_err(|message| {
+                                    ClickError::new(message)
+                                        .with_kind(crate::surface::ClickErrorKind::Type)
+                                }),
                         }
                     })
                     .collect::<Result<_, _>>()?,
