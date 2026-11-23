@@ -3559,6 +3559,7 @@ pub(in crate::surface) fn describe_interface_type(interface_type: InterfaceType)
         InterfaceType::Void => "void".to_string(),
         InterfaceType::VoidPointer => "void*".to_string(),
         InterfaceType::VoidPointerPointer => "void**".to_string(),
+        InterfaceType::Pointer => "Pointer".to_string(),
         InterfaceType::Int8 => "int8".to_string(),
         InterfaceType::Int16 => "int16".to_string(),
         InterfaceType::Int32 => "int32".to_string(),
@@ -3785,11 +3786,14 @@ pub(in crate::surface) fn click_types_compatible(
             | InterfaceType::UInt16,
             InterfaceType::UInt32,
         ) => true,
+        // `void *` and Click's untyped `Pointer` state no pointee, so each
+        // converts to and from every object pointer type.
         (actual, expected)
             if actual.is_object_pointer()
                 && expected.is_object_pointer()
-                && (actual == InterfaceType::VoidPointer
-                    || expected == InterfaceType::VoidPointer) =>
+                && [actual, expected].iter().any(|ty| {
+                    matches!(ty, InterfaceType::VoidPointer | InterfaceType::Pointer)
+                }) =>
         {
             true
         }
@@ -4016,6 +4020,7 @@ pub(super) fn infer_contract_expression_type(
                 )));
             }
             validate_pointer_cast_operands(expression, variables, context)?;
+            refuse_untyped_pointer_access(expression, variables, context)?;
             Ok(infer_program_expression_type(expression, variables))
         }
         ContractExpression::ArrayIndex { lowered, .. } => {
@@ -4026,6 +4031,7 @@ pub(super) fn infer_contract_expression_type(
                     "`result` is not available in {context}"
                 )));
             }
+            refuse_untyped_pointer_access(lowered, variables, context)?;
             Ok(infer_program_expression_type(lowered, variables))
         }
         ContractExpression::Binding(name) => Ok(variables.get(name).copied()),
@@ -4107,10 +4113,9 @@ pub(super) fn infer_contract_expression_type(
         }
         ContractExpression::Index(base, index) => {
             let _ = infer_contract_expression_type(index, variables, click_functions, context)?;
-            Ok(
-                infer_contract_expression_type(base, variables, click_functions, context)?
-                    .and_then(pointer_element_type),
-            )
+            let base = infer_contract_expression_type(base, variables, click_functions, context)?;
+            refuse_untyped_pointer_operands([base], context)?;
+            Ok(base.and_then(pointer_element_type))
         }
         ContractExpression::If {
             then_branch,
@@ -4303,12 +4308,28 @@ fn validate_pointer_cast_operands(
                     validate_void_pointer_cast_source(operand, variables, context)?;
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
+                // A cast to Click's untyped `Pointer` keeps an object
+                // pointer's value; it is no C conversion.
+                if *target_type == ProgramType::Pointer {
+                    let actual = infer_program_expression_type(operand, variables);
+                    if actual.is_some_and(|ty| !ty.is_object_pointer())
+                        || matches!(**operand, ProgramExpression::FunctionAddress(_))
+                    {
+                        return Err(ClickError::new(format!(
+                            "a cast to `Pointer` in {context} expects an object pointer operand, got {actual:?}"
+                        ))
+                        .with_kind(crate::surface::ClickErrorKind::Type));
+                    }
+                    return validate_pointer_cast_operands(operand, variables, context);
+                }
                 if *target_type == ProgramType::UInt8Pointer && pointee_struct.is_none() {
                     // A `void *` operand converts to the byte view as the C
                     // conversion does (C11 6.3.2.3p7).
                     let actual = infer_program_expression_type(operand, variables);
+                    // A `Pointer` operand keeps its value at the new type.
                     if actual.is_some()
                         && actual != Some(InterfaceType::VoidPointer)
+                        && actual != Some(InterfaceType::Pointer)
                         && !actual.is_some_and(|ty| {
                             ty.to_kernel_type().pointee_type().is_some_and(|element| {
                                 !element.is_pointer() && element.byte_width() > 0
@@ -4326,6 +4347,9 @@ fn validate_pointer_cast_operands(
                 // converting to a character pointer formed (C11 6.3.2.3p7).
                 match infer_program_expression_type(operand, variables) {
                     None | Some(InterfaceType::VoidPointer) => {}
+                    // Click's untyped `Pointer` states no pointee; a cast
+                    // gives it one and keeps the value.
+                    Some(InterfaceType::Pointer) => {}
                     Some(actual) if actual.to_kernel_type() == *target_type => {}
                     Some(actual)
                         if matches!(
@@ -4408,6 +4432,7 @@ fn interface_type_from_program_type(target_type: &ProgramType) -> Option<Interfa
         ProgramType::Float64 => Some(InterfaceType::Float64),
         ProgramType::VoidPointer => Some(InterfaceType::VoidPointer),
         ProgramType::VoidPointerPointer => Some(InterfaceType::VoidPointerPointer),
+        ProgramType::Pointer => Some(InterfaceType::Pointer),
         ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
         ProgramType::Int16Pointer => Some(InterfaceType::Int16Pointer),
         ProgramType::UInt16Pointer => Some(InterfaceType::UInt16Pointer),
@@ -4618,6 +4643,7 @@ pub(in crate::surface) fn infer_program_expression_type(
             ProgramType::Bool => InterfaceType::Bool,
             ProgramType::VoidPointer => InterfaceType::VoidPointer,
             ProgramType::VoidPointerPointer => InterfaceType::VoidPointerPointer,
+            ProgramType::Pointer => InterfaceType::Pointer,
             ProgramType::Int8 => InterfaceType::Int8,
             ProgramType::Int16 => InterfaceType::Int16,
             ProgramType::Int32 => InterfaceType::Int32,
@@ -4693,6 +4719,7 @@ fn infer_add_expression_type(
         [(left_expression, left), (right_expression, right)],
         context,
     )?;
+    refuse_untyped_pointer_operands([left, right], context)?;
     Ok(pointer_arithmetic_type(left, right).or_else(|| arithmetic_result_type(left, right)))
 }
 
@@ -4710,7 +4737,59 @@ fn infer_subtract_expression_type(
         [(left_expression, left), (right_expression, right)],
         context,
     )?;
+    refuse_untyped_pointer_operands([left, right], context)?;
     Ok(subtract_expression_type(left, right))
+}
+
+/// The refusal of a dereference, index or arithmetic step through Click's
+/// untyped `Pointer`: it states no pointee type to read at or step by.
+fn untyped_pointer_access_error(context: &str) -> ClickError {
+    ClickError::new(format!(
+        "a `Pointer` has no pointee type; cast it to a typed pointer or use `load<T>` in {context}"
+    ))
+    .with_kind(crate::surface::ClickErrorKind::Type)
+}
+
+/// Refuses an operand of a dereference, index or pointer arithmetic whose
+/// type is Click's untyped `Pointer`.
+fn refuse_untyped_pointer_operands<const N: usize>(
+    operands: [Option<InterfaceType>; N],
+    context: &str,
+) -> Result<(), ClickError> {
+    if operands.contains(&Some(InterfaceType::Pointer)) {
+        return Err(untyped_pointer_access_error(context));
+    }
+    Ok(())
+}
+
+/// Refuses `*q`, `q[i]`, `q + k` and `q - k` in a lowered C fragment when
+/// `q` is a `Pointer`, through the address operands of reads, casts and byte
+/// offsets, where a `Pointer` is stepped or read through.
+fn refuse_untyped_pointer_access(
+    expression: &ProgramExpression,
+    variables: &BinderMap<InterfaceType>,
+    context: &str,
+) -> Result<(), ClickError> {
+    let operand_type =
+        |operand: &ProgramExpression| infer_program_expression_type(operand, variables);
+    match expression {
+        ProgramExpression::Load(pointer) | ProgramExpression::Index(pointer, _) => {
+            refuse_untyped_pointer_operands([operand_type(pointer)], context)?;
+            refuse_untyped_pointer_access(pointer, variables, context)
+        }
+        ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => {
+            refuse_untyped_pointer_operands([operand_type(left), operand_type(right)], context)?;
+            refuse_untyped_pointer_access(left, variables, context)?;
+            refuse_untyped_pointer_access(right, variables, context)
+        }
+        ProgramExpression::TypedLoad { pointer, .. }
+        | ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Cast {
+            expression: pointer,
+            ..
+        } => refuse_untyped_pointer_access(pointer, variables, context),
+        _ => Ok(()),
+    }
 }
 
 fn infer_c_add_type(

@@ -6134,6 +6134,9 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
             Some(memory.symbolic_pointer_load(pointer, value_type))
         }
         ProgramType::FunctionPointer(_) => Some(memory.symbolic_pointer_load(pointer, value_type)),
+        // Click's untyped pointer reads a pointer-width cell as any pointer
+        // load does; only its type states no pointee.
+        ProgramType::Pointer => Some(memory.symbolic_pointer_load(pointer, value_type)),
         ProgramType::Int8Array(_) => None,
         ProgramType::Int32Array(_)
         | ProgramType::UInt8Array(_)

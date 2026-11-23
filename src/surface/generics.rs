@@ -500,6 +500,7 @@ pub(crate) fn interface_type_from_program_type(interface_type: ProgramType) -> I
         ProgramType::Bool => InterfaceType::Bool,
         ProgramType::VoidPointer => InterfaceType::VoidPointer,
         ProgramType::VoidPointerPointer => InterfaceType::VoidPointerPointer,
+        ProgramType::Pointer => InterfaceType::Pointer,
         ProgramType::Int8 => InterfaceType::Int8,
         ProgramType::Int16 => InterfaceType::Int16,
         ProgramType::Int32 => InterfaceType::Int32,

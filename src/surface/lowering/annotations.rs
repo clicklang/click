@@ -8,8 +8,8 @@ fn typed_let_program_value(
     click_type: Option<&ClickType>,
 ) -> SpecExpression {
     match click_type {
-        Some(ClickType::Program(InterfaceType::VoidPointer)) => {
-            SpecExpression::PointerCoercion(Box::new(value), ProgramType::VoidPointer)
+        Some(ClickType::Program(ty @ (InterfaceType::VoidPointer | InterfaceType::Pointer))) => {
+            SpecExpression::PointerCoercion(Box::new(value), ty.to_kernel_type())
         }
         Some(ClickType::Program(ty)) => value.at_machine_type(ty.to_kernel_type()),
         _ => value,
@@ -6917,6 +6917,7 @@ impl AnnotationLowerer<'_> {
         if let Some(reduced) = lambdas::reduce_head(expression)? {
             return self.lower_contract_expression_to_spec(&reduced, environment);
         }
+        self.refuse_untyped_pointer_access(expression, environment)?;
         let mut operands = Vec::new();
         let mut current = expression;
         while let ContractExpression::Add(left, right) = current {
@@ -7024,6 +7025,9 @@ impl AnnotationLowerer<'_> {
                                     InterfaceType::Int64(_) | InterfaceType::UInt64(_)
                                 ))
                             )
+                            // A `Pointer` states no pointee; the cast keeps
+                            // its value.
+                            && !self.is_untyped_pointer_operand(operand, environment)
                             // A `void *` operand converts to the byte view as
                             // the C conversion does (C11 6.3.2.3p7).
                             && !self.contract_operand_is_void_pointer(operand, environment)
@@ -8151,7 +8155,7 @@ impl AnnotationLowerer<'_> {
                                     .is_some_and(|actual| actual.to_kernel_type() != *interface_type);
                             let value =
                                 self.lower_contract_expression_to_spec(argument, environment)?;
-                            Ok(SpecAlgebraicValue::Program(if *interface_type == ProgramType::VoidPointer {
+                            Ok(SpecAlgebraicValue::Program(if matches!(*interface_type, ProgramType::VoidPointer | ProgramType::Pointer) {
                                 SpecExpression::PointerCoercion(Box::new(value), *interface_type)
                             } else if widens {
                                 SpecExpression::Cast(Box::new(value), *interface_type)
@@ -10669,6 +10673,108 @@ impl AnnotationLowerer<'_> {
             }
             _ => false,
         }
+    }
+
+    /// Whether `operand` is Click's untyped `Pointer`: a cast to it, a
+    /// `load<Pointer>`, a byte offset of one, or a binding, parameter or
+    /// call of that type.
+    fn is_untyped_pointer_operand(
+        &self,
+        operand: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        match operand {
+            ContractExpression::CUnary { operand, lowered } => {
+                self.is_untyped_pointer_program_operand(lowered, environment)
+                    || (matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
+                        && self.is_untyped_pointer_operand(operand, environment))
+            }
+            ContractExpression::ProgramExpression(lowered) => {
+                self.is_untyped_pointer_program_operand(lowered, environment)
+            }
+            ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => self.is_untyped_pointer_operand(inner, environment),
+            _ => matches!(
+                self.contract_expression_click_type(operand, environment),
+                Some(ClickType::Program(InterfaceType::Pointer))
+            ),
+        }
+    }
+
+    /// [`Self::is_untyped_pointer_operand`] for a lowered C fragment.
+    fn is_untyped_pointer_program_operand(
+        &self,
+        operand: &ProgramExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        match operand {
+            ProgramExpression::Cast { target_type, .. } => *target_type == ProgramType::Pointer,
+            ProgramExpression::TypedLoad { value_type, .. } => *value_type == ProgramType::Pointer,
+            ProgramExpression::PointerOffsetBytes { pointer, .. } => {
+                self.is_untyped_pointer_program_operand(pointer, environment)
+            }
+            ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => {
+                self.is_untyped_pointer_program_operand(left, environment)
+                    || self.is_untyped_pointer_program_operand(right, environment)
+            }
+            ProgramExpression::Variable(crate::kernel::BindingName::Named(_)) => matches!(
+                self.contract_expression_click_type(
+                    &ContractExpression::ProgramExpression(operand.clone()),
+                    environment,
+                ),
+                Some(ClickType::Program(InterfaceType::Pointer))
+            ),
+            _ => false,
+        }
+    }
+
+    /// Refuses `*q`, `q[i]`, `q + k` and `q - k` when `q` is a `Pointer`:
+    /// it has no pointee type to read at or step by.
+    fn refuse_untyped_pointer_access(
+        &self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Result<(), String> {
+        let refused_program = |lowered: &ProgramExpression| match lowered {
+            ProgramExpression::Load(pointer) | ProgramExpression::Index(pointer, _) => {
+                self.is_untyped_pointer_program_operand(pointer, environment)
+            }
+            ProgramExpression::Add(..) | ProgramExpression::Subtract(..) => {
+                self.is_untyped_pointer_program_operand(lowered, environment)
+            }
+            _ => false,
+        };
+        let refused = match expression {
+            ContractExpression::CUnary { operand, lowered } => {
+                refused_program(lowered)
+                    || (matches!(
+                        lowered,
+                        ProgramExpression::Load(_) | ProgramExpression::Index(..)
+                    ) && self.is_untyped_pointer_operand(operand, environment))
+            }
+            ContractExpression::ProgramExpression(lowered) => refused_program(lowered),
+            ContractExpression::ArrayIndex { base, lowered, .. } => {
+                refused_program(lowered) || self.is_untyped_pointer_operand(base, environment)
+            }
+            ContractExpression::Index(base, _) => {
+                self.is_untyped_pointer_operand(base, environment)
+            }
+            ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+                self.is_untyped_pointer_operand(left, environment)
+                    || self.is_untyped_pointer_operand(right, environment)
+            }
+            _ => false,
+        };
+        if refused {
+            return Err(
+                "a `Pointer` has no pointee type; cast it to a typed pointer or use `load<T>`"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 
     fn contract_pointer_element_type(

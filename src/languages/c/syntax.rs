@@ -2178,7 +2178,12 @@ impl CAbi {
 
             (Self::Lp64, InterfaceType::Void) => (0, 1),
             (Self::Lp64, InterfaceType::Bool) => (1, 1),
-            (Self::Lp64, InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer) => (8, 8),
+            (
+                Self::Lp64,
+                InterfaceType::VoidPointer
+                | InterfaceType::VoidPointerPointer
+                | InterfaceType::Pointer,
+            ) => (8, 8),
             (Self::Lp64, InterfaceType::Int8) => (1, 1),
             (Self::Lp64, InterfaceType::Int16) => (2, 2),
             (Self::Lp64, InterfaceType::Int32) => (4, 4),
@@ -3909,6 +3914,9 @@ impl InterfaceType {
             Self::Float64 | Self::Float64Array(_) => scalar(CScalarClass::Double),
             Self::VoidPointer => pointer(CPointeeBase::Void, 1),
             Self::VoidPointerPointer => pointer(CPointeeBase::Void, 2),
+            // Click's untyped pointer may access any pointer cell, as `void *`
+            // may (`CAccessClass::VOID_POINTER`).
+            Self::Pointer => pointer(CPointeeBase::Void, 1),
             Self::CharPointer(_) => pointer(CPointeeBase::PlainChar, 1),
             Self::CharPointerPointer(_) => pointer(CPointeeBase::PlainChar, 2),
             Self::Int8Pointer => pointer(CPointeeBase::SignedChar, 1),
@@ -10914,6 +10922,9 @@ impl Parser {
                     return Err(
                         self.error_at_previous("pointers to an abstract type are not supported")
                     );
+                }
+                InterfaceType::Pointer => {
+                    return Err(self.error_at_previous("`Pointer` is a Click type, not a C type"));
                 }
                 InterfaceType::Bool => {
                     return Err(self.error_at_previous(

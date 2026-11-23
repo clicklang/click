@@ -3625,11 +3625,9 @@ pub(in crate::surface) fn pure_function_parameter_argument(
 pub(in crate::surface) fn pure_function_parameter_conversion(
     parameter: &FunctionParameter,
 ) -> Option<(ProgramType, crate::kernel::IntegerCastMode)> {
-    if parameter.click_type().interface_type()?.to_kernel_type() == ProgramType::VoidPointer {
-        Some((
-            ProgramType::VoidPointer,
-            crate::kernel::IntegerCastMode::PointerCoercion,
-        ))
+    let kernel_type = parameter.click_type().interface_type()?.to_kernel_type();
+    if matches!(kernel_type, ProgramType::VoidPointer | ProgramType::Pointer) {
+        Some((kernel_type, crate::kernel::IntegerCastMode::PointerCoercion))
     } else {
         pure_function_parameter_scalar_type(parameter)
             .map(|target| (target, crate::kernel::IntegerCastMode::CConversion))
