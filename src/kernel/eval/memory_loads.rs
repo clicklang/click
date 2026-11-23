@@ -3641,6 +3641,7 @@ pub(in crate::kernel) fn scalar_read_origin_for_cell(
 /// Build an exact read and publish its typed observation. This does not
 /// select a comparison identity or change the supplied memory state. Use
 /// `MachineTerm::memory_read` when no observation needs to be published.
+#[cfg_attr(test, track_caller)]
 pub(crate) fn scalar_read_for_exact_cell(
     memory: &SharedMemory,
     pointer: &Address,
@@ -3650,6 +3651,7 @@ pub(crate) fn scalar_read_for_exact_cell(
     scalar_read_for_exact_cell_at(&ProgramPoint::at(memory), pointer, kind, bytes)
 }
 
+#[cfg_attr(test, track_caller)]
 pub(crate) fn scalar_read_for_exact_cell_at(
     point: &ProgramPoint,
     pointer: &Address,
@@ -5399,9 +5401,10 @@ pub(crate) mod load_variable_fact_census {
 /// named both by a selected program point and by its memory is reported.
 /// Those two terms denote one value, but no rule relates them, so a fact
 /// stated with one does not prove a goal stated with the other. Each report
-/// names the source line that built the memory-named read's bare point
-/// (`ProgramPoint::at`, and the read constructors that wrap it), which is the
-/// producer still to migrate. Two different points with equal memory are not
+/// names the source line that built the memory-named read, as the read
+/// constructor `MachineTerm::read_named` records it through
+/// `#[track_caller]` (the wrappers that build reads pass their callers on),
+/// which is the producer still to migrate. Two different points with equal memory are not
 /// reported: that is the precision the migration adds.
 #[cfg(test)]
 pub(crate) mod mixed_read_names {
@@ -5414,7 +5417,7 @@ pub(crate) mod mixed_read_names {
         point_named: std::collections::HashSet<CellKey>,
         memory_named: std::collections::HashMap<CellKey, String>,
         reported: std::collections::HashSet<CellKey>,
-        origins: std::collections::HashMap<(u32, u32), &'static std::panic::Location<'static>>,
+        producers: std::collections::HashMap<CellKey, &'static std::panic::Location<'static>>,
         reports: Vec<String>,
     }
 
@@ -5432,15 +5435,24 @@ pub(crate) mod mixed_read_names {
             .unwrap_or_default()
     }
 
-    /// Files the source line that built a bare point at `memory`. The first
-    /// builder of a memory state is kept.
-    pub(crate) fn record_bare_point(
-        memory: &SharedMemory,
-        origin: &'static std::panic::Location<'static>,
+    /// Files the source line that built a memory-named read, from the read
+    /// constructor (`MachineTerm::read_named`). The first producer of a read
+    /// is kept.
+    pub(crate) fn record_producer(
+        point: &ProgramPoint,
+        pointer: &Address,
+        kind: LoadKind,
+        producer: &'static std::panic::Location<'static>,
     ) {
+        if point.read_version_id().is_some() {
+            return;
+        }
         CENSUS.with(|census| {
             if let Some(census) = census.borrow_mut().as_mut() {
-                census.origins.entry(memory.arena_id()).or_insert(origin);
+                census
+                    .producers
+                    .entry((point.shared_memory().arena_id(), pointer.clone(), kind))
+                    .or_insert(producer);
             }
         });
     }
@@ -5456,8 +5468,8 @@ pub(crate) mod mixed_read_names {
                 census.point_named.insert(key.clone());
             } else {
                 let origin = census
-                    .origins
-                    .get(&key.0)
+                    .producers
+                    .get(&key)
                     .map_or_else(|| "unrecorded".to_string(), |origin| {
                         format!("{}:{}", origin.file(), origin.line())
                     });
