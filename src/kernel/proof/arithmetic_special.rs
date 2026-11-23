@@ -1257,11 +1257,7 @@ fn pointer_translation(
     goal: &Proposition,
 ) -> bool {
     if let Some((ConditionTerm::PointerEqual(left, right), true)) = (goal).condition_native() {
-        let same_domain = |a: &Pointer, b: &Pointer| {
-            a.provenance() == b.provenance()
-                && a.bounds() == b.bounds()
-                && a.bounds_are_known() == b.bounds_are_known()
-        };
+        let same_domain = |a: &Pointer, b: &Pointer| a.same_provenance_as(b);
         let linked = match relation {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((ConditionTerm::PointerEqual(a, b), _)) =

@@ -7513,9 +7513,13 @@ impl PureFactContext {
                     .admitted
                     .pointer_value_classes
                     .equal(left, right)
-                    || (self.provenance_equal(left.provenance(), right.provenance())
-                        && left.bounds() == right.bounds()
-                        && self.pointers_known_equal(left.address(), right.address()))
+                    // Value equality compares the whole provenance, the
+                    // allocation and the array object, and the address.
+                    || (pointer_checks::origins_match(
+                        pointer_checks::Origins::native(left),
+                        pointer_checks::Origins::native(right),
+                        self,
+                    ) && self.pointers_known_equal(left.address(), right.address()))
             }
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => self
                 .equality_graph

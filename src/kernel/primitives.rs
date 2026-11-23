@@ -3235,6 +3235,19 @@ impl Pointer {
     }
 }
 
+impl Pointer {
+    /// Whether the two have one C provenance, as identity compares it: the
+    /// same allocation and the same array object.
+    pub(crate) fn same_provenance_as(&self, other: &Self) -> bool {
+        let (_, provenance, known, owner, bounds) = self.identity();
+        let (_, other_provenance, other_known, other_owner, other_bounds) = other.identity();
+        provenance == other_provenance
+            && known == other_known
+            && owner == other_owner
+            && bounds == other_bounds
+    }
+}
+
 impl PartialEq for Pointer {
     fn eq(&self, other: &Self) -> bool {
         self.identity() == other.identity()

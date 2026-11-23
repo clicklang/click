@@ -6225,11 +6225,7 @@ impl<'a> TermRewrite<'a> {
         } else if self.equality_graph.is_some_and(|graph| match &result {
             ConditionTerm::PointerEqual(left, right) => {
                 let matches = self.pointer_context.map_or_else(
-                    || {
-                        left.provenance() == right.provenance()
-                            && left.bounds() == right.bounds()
-                            && left.bounds_are_known() == right.bounds_are_known()
-                    },
+                    || left.same_provenance_as(right),
                     |context| context.pointer_provenance_match(left, right),
                 );
                 matches && graph.are_equal(left.address(), right.address())
