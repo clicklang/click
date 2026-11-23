@@ -244,6 +244,22 @@ pub(in crate::kernel) fn function_refines_named_contract(
     object_type_requirements: &ObjectTypeRequirements,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
+    function_refines_named_contract_reporting(
+        contract,
+        function,
+        object_type_requirements,
+        budget,
+        None,
+    )
+}
+
+pub(in crate::kernel) fn function_refines_named_contract_reporting(
+    contract: &FunctionContract,
+    function: &ProgramFunction,
+    object_type_requirements: &ObjectTypeRequirements,
+    budget: &mut ExecutionBudget,
+    unproved_requirement: Option<&mut Option<usize>>,
+) -> ExecutionResult<bool> {
     if object_type_requirements.is_empty() && contract.exactly_matches(function) {
         return Ok(true);
     }
@@ -256,7 +272,14 @@ pub(in crate::kernel) fn function_refines_named_contract(
         return Ok(false);
     };
     context.object_type_requirements = object_type_requirements.clone();
-    function_refines_named_contract_in_case(&context, &[], false, None, budget)
+    function_refines_named_contract_in_case(
+        &context,
+        &[],
+        false,
+        None,
+        budget,
+        unproved_requirement,
+    )
 }
 
 /// Whether `source`, a named contract a fact fixed, implements `contract`.
@@ -286,7 +309,7 @@ pub(super) fn contract_refines_contract(
         return Ok(false);
     };
     context.function_value_arguments = source.value_arguments().to_vec();
-    function_refines_named_contract_in_case(&context, &[], false, Some(caller_facts), budget)
+    function_refines_named_contract_in_case(&context, &[], false, Some(caller_facts), budget, None)
 }
 
 pub(in crate::kernel) fn prepare_function_contract_refinement_context(
@@ -1073,6 +1096,7 @@ pub(super) fn function_refines_named_contract_in_case(
     explicit_case: bool,
     caller_facts: Option<&PureFactContext>,
     budget: &mut ExecutionBudget,
+    unproved_requirement: Option<&mut Option<usize>>,
 ) -> ExecutionResult<bool> {
     let contract = &context.contract;
     let function_interface = &context.function_interface;
@@ -1166,13 +1190,16 @@ pub(super) fn function_refines_named_contract_in_case(
     {
         return Ok(false);
     }
-    if !prove_contract_propositions(
+    if let Some(index) = first_unproved_contract_proposition(
         &function_entry,
         &function_entry,
         function_interface.contract_requires(),
         &mut preconditions,
         budget,
     )? {
+        if let Some(unproved_requirement) = unproved_requirement {
+            *unproved_requirement = Some(index);
+        }
         return Ok(false);
     }
 

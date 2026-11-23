@@ -52,7 +52,9 @@ loop {
 ```
 
 The condition is evaluated at entry, at an arbitrary iteration's start, and
-at each backedge. When it is true, the loop must own the stated resource.
+at each backedge. Write the condition as a scalar comparison over C values,
+independent of the mutex heldness it describes. When it is true, the loop
+must own the stated resource.
 A branch proving the condition may use that ownership; proving the condition
 alone does not create ownership. The next iteration may carry a different
 mutex acquisition, but it must belong to the same initialization.

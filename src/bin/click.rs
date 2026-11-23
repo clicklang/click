@@ -1624,6 +1624,59 @@ int32 check(struct link* node) {
     }
 
     #[test]
+    fn verification_preserves_diagnoses_through_loop_and_contract_wrappers() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, heading, detail) in [
+            (
+                "mutex_guard_contract_rejects_false_unheld.md",
+                "tactic error",
+                "held cannot inspect an opaque contract protocol",
+            ),
+            (
+                "refold_rechecks_the_opened_witness_fact.md",
+                "internal error",
+                "Click could not express the requirement for implicit proof search",
+            ),
+            (
+                "cpp_virtual_override_rejects_narrower_requires.md",
+                "contract error",
+                "`0 <= scale and scale <= 10`",
+            ),
+            (
+                "a_contract_that_cannot_be_applied_names_the_clause_that_refused.md",
+                "type error",
+                "cannot infer type argument T",
+            ),
+            (
+                "exceptional_named_contract_rejects_throwing_implementation.md",
+                "tactic error",
+                "the target may throw, but the named contract promises it cannot throw",
+            ),
+            (
+                "loop_invariant_viewable_range_false_at_entry_is_refused_at_entry.md",
+                "unsuccessful search",
+                "a memory range it states runs backwards",
+            ),
+            (
+                "loop_binder_rejects_ambiguous_instance.md",
+                "tactic error",
+                "matches 2 owned `tag` instances",
+            ),
+        ] {
+            let report = entry([
+                "verify".to_owned(),
+                fixtures.join(name).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(
+                report.starts_with(&format!("{heading}:")),
+                "{name}: {report}"
+            );
+            assert!(report.contains(detail), "{name}: {report}");
+        }
+    }
+
+    #[test]
     fn verification_separates_unprepared_safety_goals_from_unsupported_operations() {
         let fixture = |name: &str| {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

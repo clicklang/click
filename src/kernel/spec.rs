@@ -6489,8 +6489,10 @@ fn invalid_mutex_held_path(
     context: &str,
 ) -> SpecPropositionPath {
     let refusal = super::loops::false_equals_true_proposition();
-    obligations
-        .push(ProofObligation::verification_condition(refusal.clone()).with_context(context));
+    let mut obligation =
+        ProofObligation::verification_condition(refusal.clone()).with_context(context);
+    obligation.invalid_mutex_held_observation = true;
+    obligations.push(obligation);
     SpecPropositionPath {
         introductions: Vec::new(),
         proposition: refusal,

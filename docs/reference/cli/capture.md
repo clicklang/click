@@ -2131,6 +2131,9 @@ Limits:
   none of the object class's, is refused the same way
   (`mdtests/cpp_class_subclass_override_call_through_this_is_refused.md`,
   `mdtests/cpp_class_subclass_memory_method_through_a_reference_is_refused.md`).
+  Supporting these calls requires a checked conversion between the object
+  resource and the class memory or dispatch resource the callee needs,
+  with evidence that the conversion is valid for the receiver's dynamic type.
 - A class whose own fields reuse its base's tail padding is refused by the
   layout profile.
 - A call through the interface inside a larger expression is an expression

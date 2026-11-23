@@ -9,7 +9,9 @@ pub(in crate::surface::proof) struct MissedObligation {
 }
 
 enum RequirementMiss {
-    Unprepared,
+    SearchDisabled,
+    CannotRaise,
+    CannotOpen(String),
     SafetyRaise,
     SafetyOpen(String),
     Search,
@@ -18,7 +20,22 @@ enum RequirementMiss {
 impl MissedObligation {
     fn classify(&self, error: ClickError) -> ClickError {
         match &self.reason {
-            RequirementMiss::Unprepared => error,
+            RequirementMiss::SearchDisabled => error,
+            RequirementMiss::CannotRaise
+                if error.kind() == ClickErrorKind::Proof && error.proof_refusal().is_none() =>
+            {
+                error.with_safety_preparation_error(
+                    "Click could not express the requirement for implicit proof search",
+                )
+            }
+            RequirementMiss::CannotOpen(cause)
+                if error.kind() == ClickErrorKind::Proof && error.proof_refusal().is_none() =>
+            {
+                error.with_safety_preparation_error(&format!(
+                    "Click could not open the requirement for implicit proof search: {cause}"
+                ))
+            }
+            RequirementMiss::CannotRaise | RequirementMiss::CannotOpen(_) => error,
             RequirementMiss::SafetyRaise => error.with_safety_preparation_error(
                 "Click could not raise the generated statement safety obligation",
             ),
@@ -282,7 +299,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     let result = if implicit_solve_disabled() {
                         Err(MissedObligation {
                             index: 0,
-                            reason: RequirementMiss::Unprepared,
+                            reason: RequirementMiss::SearchDisabled,
                         })
                     } else {
                         current
@@ -500,7 +517,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     reason: if requirement.statement_safety {
                         RequirementMiss::SafetyRaise
                     } else {
-                        RequirementMiss::Unprepared
+                        RequirementMiss::CannotRaise
                     },
                 }));
             };
@@ -523,7 +540,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         reason: if requirement.statement_safety {
                             RequirementMiss::SafetyOpen(error.raw_summary().to_owned())
                         } else {
-                            RequirementMiss::Unprepared
+                            RequirementMiss::CannotOpen(error.raw_summary().to_owned())
                         },
                     }));
                 }
@@ -1155,6 +1172,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let driver_proof = self.proof;
         let fast = || without_implicit_solve(|| operation(driver_proof));
         let (probe, recorded) = probe_open_obligations(fast);
+        if probe.is_err()
+            && let Some(refusal) = recorded.terminal_lowering_refusal
+        {
+            return Err(refusal);
+        }
         if recorded.recorded.is_empty() {
             return probe;
         }

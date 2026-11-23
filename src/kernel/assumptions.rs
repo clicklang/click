@@ -10556,6 +10556,7 @@ impl ProofObligation {
             assumable: true,
             evaluation_domain: false,
             assertion_failure: false,
+            invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
             statement_entry_required: false,
@@ -10575,6 +10576,7 @@ impl ProofObligation {
             assumable: false,
             evaluation_domain: false,
             assertion_failure: false,
+            invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
             statement_entry_required: false,
@@ -10593,6 +10595,10 @@ impl ProofObligation {
     pub(in crate::kernel) fn with_assertion_failure(mut self) -> Self {
         self.assertion_failure = true;
         self
+    }
+
+    pub(crate) fn is_invalid_mutex_held_observation(&self) -> bool {
+        self.invalid_mutex_held_observation
     }
 
     pub(crate) fn is_assertion_failure(&self) -> bool {
@@ -10857,6 +10863,7 @@ impl ProofObligation {
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
+            invalid_mutex_held_observation: self.invalid_mutex_held_observation,
             unsigned_divisor: self.unsigned_divisor,
             float_to_integer_bound: self.float_to_integer_bound,
             statement_entry_required: self.statement_entry_required,

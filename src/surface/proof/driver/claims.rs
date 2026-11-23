@@ -932,13 +932,18 @@ fn prove_claims_by_checked_tactics(
     // self-call raise the descent obligations. The opened execution core binds
     // that context before any statements run; outcome completion retains it.
     let anchored_function_environment =
-        crate::kernel::program_execution_environment_with_recursion_anchor(
+        crate::kernel::program_execution_environment_with_recursion_anchor_reporting(
             function_environment.clone(),
             &function,
             &state,
             &arguments,
         )
-        .map_err(|message| ClickError::new(format!("`{proof_label}`: {message}")))?;
+        .map_err(|error| {
+            crate::surface::verification::termination_analysis_error(
+                &error,
+                format!("`{proof_label}`: {error}"),
+            )
+        })?;
     let function_environment = &anchored_function_environment;
     let proof_site = proof_site_for_claims(function_block, claims, grouped);
     let nested_tactic_capture = expansion_capture
