@@ -9980,6 +9980,11 @@ fn join_spec_if_paths_in(
                                 !budget.machine_result_production_disabled,
                             )?
                             else {
+                                if then_path.value.program_type().is_pointer()
+                                    && else_path.value.program_type().is_pointer()
+                                {
+                                    budget.dropped_symbolic_pointer_conditional = true;
+                                }
                                 continue;
                             };
                             branch_paths.push(SpecExpressionPath {

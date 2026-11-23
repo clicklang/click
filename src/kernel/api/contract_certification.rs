@@ -1039,6 +1039,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         | RuntimeError::EnumVariant(message)
         | RuntimeError::FunctionContract(message)
         | RuntimeError::InvalidContractResource(message)
+        | RuntimeError::UnsupportedContractEntry(message)
         | RuntimeError::ContractEntryInvariant(message)
         | RuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()
@@ -1399,21 +1400,20 @@ impl ContractEntry {
     }
 }
 
-/// A rule violation identified while establishing declared resources, or
-/// another reason the verifier could not construct the entry.
+/// Why Click could not construct a function's symbolic entry.
 #[derive(Debug)]
 pub(crate) enum ContractEntryRefusal {
     InvalidResource(String),
     Internal(String),
-    Setup(String),
+    Unsupported(String),
 }
 
 impl ContractEntryRefusal {
     pub(super) fn into_message(self) -> String {
         match self {
-            Self::InvalidResource(message) | Self::Internal(message) | Self::Setup(message) => {
-                message
-            }
+            Self::InvalidResource(message)
+            | Self::Internal(message)
+            | Self::Unsupported(message) => message,
         }
     }
 
@@ -1421,29 +1421,35 @@ impl ContractEntryRefusal {
         match self {
             Self::InvalidResource(message) => RuntimeError::InvalidContractResource(message),
             Self::Internal(message) => RuntimeError::ContractEntryInvariant(message),
-            Self::Setup(message) => RuntimeError::FunctionContract(message),
+            Self::Unsupported(message) => RuntimeError::UnsupportedContractEntry(message),
         }
     }
 
-    pub(super) fn from_resource_error(prefix: &str, error: &RuntimeError) -> Self {
+    pub(in crate::kernel) fn from_resource_error(prefix: &str, error: &RuntimeError) -> Self {
         let message = format!("{prefix}: {}", describe_certification_runtime_error(error));
-        if error.is_contract_entry_resource_error() {
-            Self::InvalidResource(message)
-        } else {
-            Self::Setup(message)
+        match error {
+            RuntimeError::UnsupportedContractEntry(_)
+            | RuntimeError::UnsupportedOpaqueFunctionContract(_) => Self::Unsupported(message),
+            _ if error.is_contract_entry_resource_error() => Self::InvalidResource(message),
+            _ => Self::Internal(message),
         }
     }
-}
 
-impl From<String> for ContractEntryRefusal {
-    fn from(message: String) -> Self {
-        Self::Setup(message)
-    }
-}
-
-impl From<&str> for ContractEntryRefusal {
-    fn from(message: &str) -> Self {
-        Self::Setup(message.to_owned())
+    pub(crate) fn from_limit(prefix: &str, limit: ExecutionLimit) -> Self {
+        use crate::kernel::ExecutionLimit::*;
+        let detail = super::describe_spec_lowering_limit("evaluation", limit);
+        let message = format!("{prefix}: {detail}");
+        match limit {
+            SymbolicPointerConditional
+            | GuardedConjunctionTooLong
+            | UnsupportedPureFunctionResult(_) => Self::Unsupported(message),
+            BoolComparedWithInteger
+            | BoolOrdered
+            | BoolArithmetic
+            | MixedBoolArms
+            | AuthorityCountNeedsOwnership => Self::InvalidResource(message),
+            _ => Self::Internal(message),
+        }
     }
 }
 
@@ -1592,11 +1598,10 @@ fn program_function_contract_entry_facts(
                 ));
             }
             Err(limit) => {
-                return Err(format!(
-                    "building the aggregate contract entry state stopped at {}",
-                    limit.describe()
-                )
-                .into());
+                return Err(ContractEntryRefusal::from_limit(
+                    "could not build the aggregate contract entry state",
+                    limit,
+                ));
             }
         };
     }
@@ -1689,6 +1694,7 @@ fn program_function_contract_entry_facts(
     }
     let mut requirement_obligations = Vec::new();
     for (requirement_index, requirement) in function.contract_requires().iter().enumerate() {
+        budget.dropped_symbolic_pointer_conditional = false;
         let lowering_assumptions = assumptions
             .clone()
             .allow_symbolic_contract_loads()
@@ -1712,15 +1718,28 @@ fn program_function_contract_entry_facts(
                         )),
                     );
                 }
-                return Err(format!(
-                    "lowering `requires` clause {} stopped at {}",
-                    requirement_index + 1,
-                    limit.describe()
-                )
-                .into());
+                return Err(ContractEntryRefusal::from_limit(
+                    &format!(
+                        "could not lower `requires` clause {}",
+                        requirement_index + 1
+                    ),
+                    limit,
+                ));
             }
         };
         let [path] = paths.as_slice() else {
+            if paths.is_empty()
+                && budget.dropped_symbolic_pointer_conditional
+                && budget.dropped_runtime_error().is_none()
+            {
+                return Err(ContractEntryRefusal::from_limit(
+                    &format!(
+                        "could not lower `requires` clause {}",
+                        requirement_index + 1
+                    ),
+                    ExecutionLimit::SymbolicPointerConditional,
+                ));
+            }
             return Err(ContractEntryRefusal::Internal(format!(
                 "could not lower `requires` clause {} to one symbolic proposition ({} lowering results)",
                 requirement_index + 1,
@@ -1760,12 +1779,10 @@ fn program_function_contract_entry_facts(
             ));
         }
         Err(limit) => {
-            return Err(format!(
-                "evaluating the declared resource quantities of the contract entry resources \
-                 stopped at {}",
-                limit.describe()
-            )
-            .into());
+            return Err(ContractEntryRefusal::from_limit(
+                "could not evaluate the declared contract entry resource quantities",
+                limit,
+            ));
         }
     };
     for proposition in quantity_assumptions {
@@ -1800,11 +1817,10 @@ fn program_function_contract_entry_facts(
                 ));
             }
             Err(limit) => {
-                return Err(format!(
-                    "evaluating the contract entry resources stopped at {}",
-                    limit.describe()
-                )
-                .into());
+                return Err(ContractEntryRefusal::from_limit(
+                    "could not evaluate the contract entry resources",
+                    limit,
+                ));
             }
         };
     let required_resources = crate::kernel::admit_declared_entry_resources(
@@ -1876,7 +1892,8 @@ fn program_function_contract_entry_facts(
                 function.contract_interface(),
                 segment,
                 range,
-            )?
+            )
+            .map_err(ContractEntryRefusal::Internal)?
         {
             assumptions = entry_facts.assume(
                 assumptions,
@@ -1936,16 +1953,13 @@ fn program_function_contract_entry_facts(
     }
     // A declared fact may read a tracked population (`count(...)`), which
     // only the entry state holds, so the facts are evaluated at the state.
-    let expanded =
-        super::super::functions::expand_all_composite_resource_facts_and_propositions_at_state(
+    let (expanded_resources, resource_definition_facts) =
+        super::super::functions::checked_expand_all_composite_resource_facts_and_propositions_at_state(
             &required_resources,
             function.composite_resource_definitions(),
             &entry_state,
             &assumptions,
-        );
-    let (expanded_resources, resource_definition_facts) = expanded.ok_or_else(|| {
-        "could not evaluate the composite resource facts required at the contract entry".to_string()
-    })?;
+        )?;
     // A composite's contained ranges are stated ranges too, and their
     // byte-count guards ride with the composite wherever it is held. Install
     // them here as well, so what the certified entry context knows about an
@@ -1977,41 +1991,32 @@ fn program_function_contract_entry_facts(
             proposition,
         );
     }
-    let population_facts = evaluate_resource_population_fact_propositions(
-        &required_resources,
-        function.composite_resource_definitions(),
-        &entry_state,
-        &assumptions,
-    )
-    .ok_or_else(|| {
-        "could not evaluate the tracked populations of the contract entry resources".to_string()
-    })?;
-    for fact in population_facts {
-        assumptions =
-            entry_facts.assume(assumptions, ContractEntryFactOrigin::PopulationFact, fact);
-    }
-    let expanded_required_resources = ({
-        super::super::functions::expand_all_composite_resource_facts_at_state(
+    let population_facts =
+        super::super::functions::checked_evaluate_resource_population_fact_propositions(
             &required_resources,
             function.composite_resource_definitions(),
             &entry_state,
             &assumptions,
-        )
-    })
-    .ok_or_else(|| {
-        "could not expand the composite resource ownership required at the contract entry"
-            .to_string()
-    })?;
-    let mut entry_resources = {
-        super::super::functions::expand_all_composite_resource_facts_at_state(
+        )?;
+    for fact in population_facts {
+        assumptions =
+            entry_facts.assume(assumptions, ContractEntryFactOrigin::PopulationFact, fact);
+    }
+    let expanded_required_resources =
+        super::super::functions::checked_expand_all_composite_resource_facts_at_state(
+            &required_resources,
+            function.composite_resource_definitions(),
+            &entry_state,
+            &assumptions,
+        )?;
+    let mut entry_resources =
+        super::super::functions::checked_expand_all_composite_resource_facts_at_state(
             entry_state.resources(),
             function.composite_resource_definitions(),
             &entry_state,
             &assumptions,
-        )
-        .ok_or("could not project the checked authority control at contract entry")?
-    }
-    .normalized(&assumptions);
+        )?
+        .normalized(&assumptions);
     let mut missing = Vec::new();
     for (index, required) in expanded_required_resources.facts().iter().enumerate() {
         let exposed = expose_composite_resource_fact(
@@ -2096,7 +2101,7 @@ fn program_function_contract_entry_facts(
                 detail.clone(),
             ));
         }
-        return Err(detail.into());
+        return Err(ContractEntryRefusal::Internal(detail));
     }
     // An owned declared resource or authority witnesses its population's
     // count. Expose the count facts the checked ledger derives for it to
@@ -2223,11 +2228,10 @@ fn program_function_contract_entry_facts(
                 "contract entry resources do not certify requirement safety".to_string(),
             ));
         }
-        return Err(
-            "the contract entry resources do not show that every `requires` clause is safe to \
-             evaluate"
+        return Err(ContractEntryRefusal::Internal(
+            "the constructed entry does not justify evaluation of every checked `requires` clause"
                 .into(),
-        );
+        ));
     }
     for obligation in requirement_obligations {
         assumptions = entry_facts.assume(
