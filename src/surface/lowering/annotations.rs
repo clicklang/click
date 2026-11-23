@@ -4009,10 +4009,15 @@ impl AnnotationLowerer<'_> {
                 .pointee_type()
                 .or_else(|| self.result_type.array_element_type());
         }
-        if name.unresolved_name().is_none() {
-            return name
+        // A resolved local carries its declared type when lowering recorded
+        // one; a local named by selector (`f.statement(3).local(word)`) may
+        // not, and then reads its type from the state that declares it.
+        if name.unresolved_name().is_none()
+            && let Some(element) = name
                 .program_type()
-                .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()));
+                .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()))
+        {
+            return Some(element);
         }
         self.local_type_state
             .and_then(|state| {
