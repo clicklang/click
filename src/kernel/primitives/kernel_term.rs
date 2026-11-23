@@ -974,6 +974,7 @@ impl KernelTerm {
     }
     fn remember_integer(&self, integer: &SharedIntegerTerm) {
         SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow_mut().insert(integer.id()));
+        *self.0.integer.lock().expect("term bridge poisoned") = integer.downgrade();
         let shared_observation = matches!(
             self.node(),
             KernelTermNode::MachineObservation { format, operand }
@@ -983,19 +984,11 @@ impl KernelTerm {
                     && matches!(integer.as_ref(), IntegerTerm::Machine(value)
                         if value.ty() == *format && value.shared_operand() == Some(operand))
         );
-        // Reconstruct exact atomic observations directly. Composite
-        // operands still need the reverse link to keep nested conversions
-        // from reopening a previously imported Integer prefix.
-        let mut reverse = self.0.integer.lock().expect("term bridge poisoned");
-        if shared_observation {
-            *reverse = WeakIntegerTerm::default();
-        } else {
-            *reverse = integer.downgrade();
-        }
-        drop(reverse);
-        // A legacy leaf owns its old value. Caching it on that same value
-        // would create a cycle; only genuinely migrated nodes cache both ways.
-        if !matches!(self.node(), KernelTermNode::Legacy(_)) {
+        // Atomic observations can reconstruct the common root from a single
+        // typed operand lookup. Native conversion readers still need the
+        // reverse link, which can return an existing native node.
+        // A legacy leaf owns its old value; a forward link would create a cycle.
+        if !shared_observation && !matches!(self.node(), KernelTermNode::Legacy(_)) {
             integer.remember_kernel_term(self.clone());
         }
     }
@@ -1622,7 +1615,7 @@ mod tests {
     }
 
     #[test]
-    fn atomic_shared_observation_needs_no_reverse_integer_link() {
+    fn atomic_shared_observation_needs_no_forward_integer_link() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
         let operand = KernelTerm::variable(
@@ -1634,7 +1627,8 @@ mod tests {
         let common = KernelTermImport::default().integer(&source);
         let restored = KernelTermExport::default().integer(&common).unwrap();
         assert_eq!(restored, source);
-        assert!(common.legacy_integer().is_none());
+        assert!(source.kernel_term().is_none());
+        assert_eq!(KernelTermImport::default().integer(&source), common);
     }
 
     #[test]
