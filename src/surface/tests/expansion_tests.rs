@@ -3330,6 +3330,21 @@ fn rewritten_constructor_payload_expands_to_known() {
             "BoolOutput::Value(value, true)",
             "BoolOutput::Value(value, false)",
         ),
+        (
+            "rewritten_bool_field",
+            "Flag::Value(flag)",
+            "Flag::Value(false)",
+        ),
+        (
+            "rewritten_bool_literal",
+            "Flag::Value(true)",
+            "Flag::Value(false)",
+        ),
+        (
+            "rewritten_bool_capture",
+            "BoolOutput::Value(value, flag)",
+            "BoolOutput::Value(value, false)",
+        ),
     ] {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
