@@ -118,6 +118,7 @@ fn with_count_width(
                 format,
                 MachineOperandView::Shared(&left),
                 MachineOperandView::Shared(&count),
+                !count_format.format().is_signed(),
             ),
             true,
         ));

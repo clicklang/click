@@ -330,7 +330,7 @@ pub(super) fn apply(
         if op == MachineBinaryOp::ShiftLeft && format.format().is_signed() {
             require_false(compare(left_view, CompareRelation::LessThan, 0));
             domain.push(Proposition::condition_is(
-                ConditionTerm::signed_shift_result_fits_views(format, left_view, right_view),
+                ConditionTerm::signed_shift_result_fits_views(format, left_view, right_view, false),
                 true,
             ));
         }

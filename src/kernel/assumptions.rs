@@ -10607,6 +10607,18 @@ impl ProofObligation {
         obligation
     }
 
+    fn bound_under_exact_guards<'a>(&'a self, facts: &PureFactContext) -> Option<&'a Proposition> {
+        let mut goal = &self.proposition;
+        while let Proposition::Implies(guard, bound) = goal {
+            crate::instrumentation::record_deterministic_work(1);
+            if !facts.contains_assumed_exact(guard) {
+                return None;
+            }
+            goal = bound;
+        }
+        Some(goal)
+    }
+
     /// Use the retained comparison as the key for the same indexed and
     /// intrinsic checks as other execution conditions. An open comparison
     /// stays available to the proof driver as a verification condition.
@@ -10614,7 +10626,10 @@ impl ProofObligation {
         if !self.unsigned_divisor {
             return false;
         }
-        let Some((condition, required)) = self.proposition.condition_native() else {
+        let Some((condition, required)) = self
+            .bound_under_exact_guards(facts)
+            .and_then(Proposition::condition_native)
+        else {
             return false;
         };
         if let Some(truth) = PureFactContext::decide_intrinsically(condition)
@@ -10678,15 +10693,7 @@ impl ProofObligation {
         if !self.float_to_integer_bound {
             return None;
         }
-        let mut goal = &self.proposition;
-        while let Proposition::Implies(guard, bound) = goal {
-            crate::instrumentation::record_deterministic_work(1);
-            if !facts.contains_assumed_exact(guard) {
-                return None;
-            }
-            goal = bound;
-        }
-        let (condition, true) = goal.condition_native()? else {
+        let (condition, true) = self.bound_under_exact_guards(facts)?.condition_native()? else {
             return None;
         };
         if let Some(truth) = facts.known_condition_value(condition) {

@@ -1152,10 +1152,17 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
         || (matches!(premises.len(), 1 | 2)
             && shifted_one_bounds(goal, premises.len() == 2)
                 .is_some_and(|bounds| selected(&bounds)))
-        || (premises.len() == 2
+        || (matches!(premises.len(), 1 | 2)
             && shift_count_mask_requirements(goal).is_some_and(|required| selected(&required)))
         || (matches!(premises.len(), 2 | 3)
             && signed_product_guard_candidates(goal).any(|required| selected(&required)))
+    {
+        return true;
+    }
+    if let [bound, count] = premises
+        && signed_max_shift_count_bound(goal)
+            .is_some_and(|needed| super::fact_reasoning::order_claim_equivalent(count, &needed))
+        && same_signed_max_shift_bound(bound, goal)
     {
         return true;
     }
@@ -2663,8 +2670,8 @@ fn shift_count_mask(
 }
 
 /// In-range counts already fit the low-bit mask. The checker takes the
-/// lower and upper bounds as two explicit premises.
-pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<[Proposition; 2]> {
+/// upper bound. A signed count also needs an explicit nonnegative bound.
+pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<Vec<Proposition>> {
     use crate::kernel::MachineOperandView as View;
     use crate::kernel::machine_integer::comparison::{
         condition_for_operand_views, structural_boolean_comparison_view,
@@ -2673,9 +2680,9 @@ pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<[Propo
         return None;
     };
     let comparison = structural_boolean_comparison_view(condition.operand_view())?;
-    let width @ (MachineIntegerType::Int32 | MachineIntegerType::Int64) = comparison.format else {
+    if !matches!(comparison.format.format().bits(), 32 | 64) {
         return None;
-    };
+    }
     if comparison.relation != CompareRelation::Equal || comparison.negated {
         return None;
     }
@@ -2684,32 +2691,32 @@ pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<[Propo
         .each_ref()
         .map(|operand| operand.operand_view());
     for (masked, plain) in [(left, right), (right, left)] {
+        let Some((width, _, _)) = masked.binary() else {
+            continue;
+        };
+        if width.format().bits() != comparison.format.format().bits() {
+            continue;
+        }
         let Some(count) = shift_count_mask(width, masked) else {
             continue;
         };
         if count.try_retain(width)? != plain.try_retain(width)? {
             continue;
         }
-        let literal = |value: u32| match width {
-            MachineIntegerType::Int32 => MachineTerm::constant(value),
-            _ => MachineTerm::int64_constant(i64::from(value)),
+        let bound = |relation, endpoint: u32| {
+            let literal =
+                crate::kernel::machine_integer::range::constant_word(width, &endpoint.into())?;
+            Some(Proposition::condition_is(
+                condition_for_operand_views(width, relation, [count, View::Legacy(&literal)]),
+                true,
+            ))
         };
-        return Some(
-            [
-                (CompareRelation::GreaterEqual, 0),
-                (CompareRelation::LessThan, width.format().bits()),
-            ]
-            .map(|(relation, endpoint)| {
-                Proposition::condition_is(
-                    condition_for_operand_views(
-                        width,
-                        relation,
-                        [count, View::Legacy(&literal(endpoint))],
-                    ),
-                    true,
-                )
-            }),
-        );
+        let upper = bound(CompareRelation::LessThan, width.format().bits())?;
+        return Some(if width.format().is_signed() {
+            vec![bound(CompareRelation::GreaterEqual, 0)?, upper]
+        } else {
+            vec![upper]
+        });
     }
     None
 }
@@ -2717,9 +2724,25 @@ pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<[Propo
 /// The equality that lets a proof rewrite a signed left-shift bound to
 /// the original count. This is a view of the goal, with no fact queries.
 pub(crate) fn signed_shift_bound_mask_identity(goal: &Proposition) -> Option<Proposition> {
-    use crate::kernel::machine_integer::comparison::{
-        condition_for_operand_views, structural_boolean_comparison_view,
-    };
+    use crate::kernel::machine_integer::comparison::structural_boolean_comparison_view;
+    let (condition, expected) = goal.condition_native()?;
+    if let Some((left, right)) = match (condition, expected) {
+        (ConditionTerm::IntegerLessEqual(left, right), true)
+        | (ConditionTerm::IntegerGreaterThan(left, right), false) => Some((left, right)),
+        (ConditionTerm::IntegerGreaterEqual(left, right), true)
+        | (ConditionTerm::IntegerLessThan(left, right), false) => Some((right, left)),
+        _ => None,
+    } && let (IntegerTerm::Machine(lhs), IntegerTerm::Machine(rhs)) =
+        (left.as_ref(), right.as_ref())
+        && let (
+            MachineIntegerType::Int32 | MachineIntegerType::Int64,
+            unsigned @ (MachineIntegerType::UInt32 | MachineIntegerType::UInt64),
+        ) = (lhs.ty(), rhs.ty())
+        && lhs.ty().format().bits() == unsigned.format().bits()
+    {
+        return signed_shift_bound_mask_identity_view(unsigned, rhs.operand_view());
+    }
+
     let Proposition::ConditionIs(condition, true) = goal else {
         return None;
     };
@@ -2732,12 +2755,19 @@ pub(crate) fn signed_shift_bound_mask_identity(goal: &Proposition) -> Option<Pro
         (CompareRelation::GreaterEqual, false) => &comparison.operands[0],
         _ => return None,
     };
-    let (format, MachineBinaryOp::ShiftRight, [maximum, masked]) = bound.operand_view().binary()?
-    else {
+    signed_shift_bound_mask_identity_view(width, bound.operand_view())
+}
+
+fn signed_shift_bound_mask_identity_view(
+    width: MachineIntegerType,
+    bound: crate::kernel::MachineOperandView<'_>,
+) -> Option<Proposition> {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    let (format, MachineBinaryOp::ShiftRight, [maximum, masked]) = bound.binary()? else {
         return None;
     };
-    let signed_max = match width {
-        MachineIntegerType::Int32 => i64::from(i32::MAX),
+    let signed_max = match width.format().bits() {
+        32 => i64::from(i32::MAX),
         _ => i64::MAX,
     };
     if format != width
@@ -2748,6 +2778,79 @@ pub(crate) fn signed_shift_bound_mask_identity(goal: &Proposition) -> Option<Pro
     let count = shift_count_mask(width, masked)?;
     Some(Proposition::condition_is(
         condition_for_operand_views(width, CompareRelation::Equal, [masked, count]),
+        true,
+    ))
+}
+
+/// Read the positive signed maximum shifted at either signedness of the
+/// same width. In range, sign extension and zero extension give the same word.
+fn signed_max_shift_bound(
+    goal: &Proposition,
+) -> Option<(
+    &crate::kernel::SharedIntegerTerm,
+    MachineIntegerType,
+    crate::kernel::MachineOperandView<'_>,
+)> {
+    let (condition, expected) = goal.condition_native()?;
+    let (left, right) = match (condition, expected) {
+        (ConditionTerm::IntegerLessEqual(left, right), true)
+        | (ConditionTerm::IntegerGreaterThan(left, right), false) => (left, right),
+        (ConditionTerm::IntegerGreaterEqual(left, right), true)
+        | (ConditionTerm::IntegerLessThan(left, right), false) => (right, left),
+        _ => return None,
+    };
+    let IntegerTerm::Machine(bound) = right.value_read() else {
+        return None;
+    };
+    let mut shifted = bound.operand_view();
+    if let Some((_, source, destination, operand)) = shifted.cast()
+        && source.format().bits() == destination.format().bits()
+    {
+        shifted = operand;
+    }
+    let (format, MachineBinaryOp::ShiftRight, [max, count]) = shifted.binary()? else {
+        return None;
+    };
+    let (max_value, unsigned) = match format.format().bits() {
+        32 => (i64::from(i32::MAX), MachineIntegerType::UInt32),
+        64 => (i64::MAX, MachineIntegerType::UInt64),
+        _ => return None,
+    };
+    if format.constant_from_term(&max.literal()?)?.to_integer() != max_value.into() {
+        return None;
+    }
+    Some((left, unsigned, count))
+}
+
+pub(crate) fn same_signed_max_shift_bound(premise: &Proposition, goal: &Proposition) -> bool {
+    let Some((left, format, count)) = signed_max_shift_bound(goal) else {
+        return false;
+    };
+    let Some((premise_left, premise_format, premise_count)) = signed_max_shift_bound(premise)
+    else {
+        return false;
+    };
+    left.value_read() == premise_left.value_read()
+        && format == premise_format
+        && count
+            .try_retain(format)
+            .zip(premise_count.try_retain(format))
+            .is_some_and(|(a, b)| a == b)
+}
+
+pub(crate) fn signed_max_shift_count_bound(goal: &Proposition) -> Option<Proposition> {
+    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::machine_integer::{
+        comparison::condition_for_operand_views, range::constant_word,
+    };
+    let (_, format, count) = signed_max_shift_bound(goal)?;
+    let limit = constant_word(format, &format.format().bits().into())?;
+    Some(Proposition::condition_is(
+        condition_for_operand_views(
+            format,
+            CompareRelation::LessThan,
+            [count, View::Legacy(&limit)],
+        ),
         true,
     ))
 }
@@ -2840,15 +2943,12 @@ pub(crate) fn promoted_right_shift_bounds(goal: &Proposition) -> Option<Vec<Prop
     ])
 }
 
-/// An unsigned shift of one retains its only set bit if the count is
-/// below the width. A nonnegative signed reading is the same count as
-/// the unsigned reading of those bits.
-pub(crate) fn shifted_one_bounds(goal: &Proposition, signed: bool) -> Option<Vec<Proposition>> {
-    use crate::kernel::MachineOperandView as View;
+fn with_shifted_one_count<R>(
+    goal: &Proposition,
+    inspect: impl FnOnce(MachineIntegerType, crate::kernel::MachineOperandView<'_>) -> Option<R>,
+) -> Option<R> {
     use crate::kernel::machine_integer::{
-        bounds::constant_shift_count,
-        comparison::{condition_for_operand_views, structural_boolean_comparison_view},
-        range::constant_word,
+        bounds::constant_shift_count, comparison::structural_boolean_comparison_view,
     };
     let Proposition::ConditionIs(condition, expected) = goal else {
         return None;
@@ -2877,30 +2977,63 @@ pub(crate) fn shifted_one_bounds(goal: &Proposition, signed: bool) -> Option<Vec
         {
             continue;
         }
-        let count_format = match (format, signed) {
-            (MachineIntegerType::UInt32, true) => MachineIntegerType::Int32,
-            (MachineIntegerType::UInt64, true) => MachineIntegerType::Int64,
-            _ => format,
-        };
-        let bound = |relation, endpoint: u32| {
-            let literal = constant_word(count_format, &endpoint.into())?;
-            Some(Proposition::condition_is(
-                condition_for_operand_views(
-                    count_format,
-                    relation,
-                    [count, View::Legacy(&literal)],
-                ),
-                true,
-            ))
-        };
-        let upper = bound(CompareRelation::LessThan, bits)?;
-        return Some(if signed {
-            vec![bound(CompareRelation::GreaterEqual, 0)?, upper]
-        } else {
-            vec![upper]
-        });
+        return inspect(format, count);
     }
     None
+}
+
+/// An unsigned shift of one retains its only set bit if the count is
+/// below the width. A nonnegative signed reading is the same count as
+/// the unsigned reading of those bits.
+pub(crate) fn shifted_one_bounds(goal: &Proposition, signed: bool) -> Option<Vec<Proposition>> {
+    with_shifted_one_count(goal, |format, count| {
+        shifted_one_count_bounds(format, count, signed)
+    })
+}
+
+fn shifted_one_count_bounds(
+    format: MachineIntegerType,
+    count: crate::kernel::MachineOperandView<'_>,
+    signed: bool,
+) -> Option<Vec<Proposition>> {
+    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::machine_integer::{
+        comparison::condition_for_operand_views, range::constant_word,
+    };
+    let bits = format.format().bits();
+    let count_format = match (format, signed) {
+        (MachineIntegerType::UInt32, true) => MachineIntegerType::Int32,
+        (MachineIntegerType::UInt64, true) => MachineIntegerType::Int64,
+        _ => format,
+    };
+    let bound = |relation, endpoint: u32| {
+        let literal = constant_word(count_format, &endpoint.into())?;
+        Some(Proposition::condition_is(
+            condition_for_operand_views(count_format, relation, [count, View::Legacy(&literal)]),
+            true,
+        ))
+    };
+    let upper = bound(CompareRelation::LessThan, bits)?;
+    Some(if signed {
+        vec![bound(CompareRelation::GreaterEqual, 0)?, upper]
+    } else {
+        vec![upper]
+    })
+}
+
+pub(crate) fn computed_shift_divisor_bound(goal: &Proposition) -> Option<Proposition> {
+    with_shifted_one_count(goal, |format, count| {
+        let (operation_format, MachineBinaryOp::ShiftRight, [_, amount]) = count.binary()? else {
+            return None;
+        };
+        if operation_format != format
+            || crate::kernel::machine_integer::bounds::constant_shift_count(amount)?
+                >= format.format().bits()
+        {
+            return None;
+        }
+        shifted_one_count_bounds(format, count, false)?.pop()
+    })
 }
 
 /// Observe a signed native quotient with a positive divisor. Positivity
@@ -3086,17 +3219,22 @@ pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
     float_bound(proposition).is_some()
 }
 
-/// Multiplication by a finite nonzero literal is monotone (decreasing for
-/// a negative factor), including rounding and overflow to infinity.
-fn float_literal_scale(
+/// An IEEE operation with a finite literal and one ordered variable operand.
+/// Nonzero multiplication reverses order exactly when the literal is negative.
+fn float_literal_operation(
     value: FloatOperandView<'_>,
-    same_direction: bool,
-) -> Option<(FloatOperandView<'_>, u64)> {
-    let (crate::kernel::FloatBinaryOperator::Multiply, [a, b]) = value.binary()? else {
+) -> Option<(
+    FloatOperandView<'_>,
+    u64,
+    crate::kernel::FloatBinaryOperator,
+    bool,
+)> {
+    use crate::kernel::FloatBinaryOperator as Op;
+    let (op @ (Op::Add | Op::Multiply), [a, b]) = value.binary()? else {
         return None;
     };
-    let (operand, scale) = if let Some(scale) = b.literal_bits() {
-        (a, scale)
+    let (operand, literal) = if let Some(literal) = b.literal_bits() {
+        (a, literal)
     } else {
         (b, a.literal_bits()?)
     };
@@ -3104,9 +3242,49 @@ fn float_literal_scale(
         KernelFloatType::Float32 => (0x8000_0000, 0x7f80_0000),
         KernelFloatType::Float64 => (0x8000_0000_0000_0000, 0x7ff0_0000_0000_0000),
     };
-    let magnitude = scale & !sign;
-    (magnitude != 0 && magnitude < infinity && (scale & sign == 0) == same_direction)
-        .then_some((operand, scale))
+    let magnitude = literal & !sign;
+    if magnitude >= infinity || (op == Op::Multiply && magnitude == 0) {
+        return None;
+    }
+    Some((operand, literal, op, op == Op::Add || literal & sign == 0))
+}
+
+/// A nested monotone operation can use a cited bound on its immediate
+/// operand. Use the goal endpoint as a candidate, and let the existing
+/// selected-endpoint checker test whether the resulting bound is strong
+/// enough. Every recursive planning goal removes one arithmetic node.
+pub(crate) fn float_compound_bound_operand(goal: &Proposition) -> Option<Proposition> {
+    use crate::kernel::{KernelTerm, KernelTermImport, StoredConditionTerm};
+
+    let goal = float_bound(goal)?;
+    let (operand, _, _, increasing) = float_literal_operation(goal.operand)?;
+    if !increasing || float_literal_operation(operand).is_none() {
+        return None;
+    }
+    let literal = match goal.format {
+        KernelFloatType::Float32 => MachineTerm::constant(goal.endpoint as u32),
+        KernelFloatType::Float64 => MachineTerm::uint64_constant(goal.endpoint),
+    };
+    let mut import = KernelTermImport::default();
+    let operand = match operand {
+        FloatOperandView::Native(format, term) => import.float(format, term),
+        FloatOperandView::Shared(term) => term.clone(),
+    };
+    let operator = if goal.lower {
+        ComparisonOperator::GreaterEqual
+    } else {
+        ComparisonOperator::LessEqual
+    };
+    let condition = KernelTerm::float_compare(
+        goal.format,
+        operator,
+        [operand, import.float(goal.format, &literal)],
+    )
+    .ok()?;
+    Some(Proposition::condition_is(
+        StoredConditionTerm::from_root(condition)?,
+        true,
+    ))
 }
 
 /// A true ordered comparison excludes NaN in its operand. Exact widening
@@ -3132,12 +3310,15 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
                 KernelFloatType::Float64 => 1 << 63,
             };
             (premise.endpoint ^ sign_bit, Some(operand), premise.strict)
-        } else if let Some((operand, scale)) = float_literal_scale(goal.operand, same_direction) {
+        } else if let Some((operand, literal, operation, increasing)) =
+            float_literal_operation(goal.operand)
+            && same_direction == increasing
+        {
             let endpoint = crate::kernel::primitives::float_binary_bits_at(
                 goal.format,
                 premise.endpoint,
-                scale,
-                crate::kernel::FloatBinaryOperator::Multiply,
+                literal,
+                operation,
             );
             // Rounding can map distinct adjacent inputs to the same output.
             (endpoint, Some(operand), false)

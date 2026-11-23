@@ -3502,6 +3502,34 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .map(Some)
     }
 
+    /// A computed count must be in range before the written nonzero
+    /// comparison itself can be opened as a goal.
+    pub(in crate::surface::proof) fn retain_computed_shift_divisor_bound(
+        input: &Proof<'a>,
+        goal: &Proposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("retain_computed_shift_divisor_bound");
+        let Some(bound) =
+            crate::kernel::proof::arithmetic_special::computed_shift_divisor_bound(goal)
+        else {
+            return Ok(None);
+        };
+        if input.facts().listed_premise_available(&bound, &[], false) {
+            return Ok(None);
+        }
+        let Some(surface) = input.structural_proposition_candidate(&bound) else {
+            return Ok(None);
+        };
+        let Some(scope) = attempt::candidate_outcome(input.driver().open_have(surface))? else {
+            return Ok(None);
+        };
+        let Some(closed) = scope.driver().try_solve_closure_with_surfaces(&[])? else {
+            return Ok(None);
+        };
+        closed.join().map(Some)
+    }
+
     /// Prove and cite the fixed premises of a local arithmetic rule.
     /// Each recursive goal is a bound on an operand of the original goal.
     fn try_normalize_after_arithmetic_bounds(
@@ -3557,9 +3585,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            is_float_bound, promoted_right_shift_bounds, shift_count_mask_requirements,
-            shifted_one_bounds, signed_product_guard_candidates,
-            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
+            float_compound_bound_operand, is_float_bound, promoted_right_shift_bounds,
+            shift_count_mask_requirements, shifted_one_bounds, signed_max_shift_count_bound,
+            signed_product_guard_candidates, signed_quotient_bridge_requirement,
+            signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -3597,7 +3626,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .apply_step(ProofStep::Rewrite(equality)),
             )?
         {
-            return attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known));
+            if let Some(closed) =
+                attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(Some(closed));
+            }
+            if rewritten
+                .goal()
+                .is_some_and(|goal| signed_max_shift_count_bound(goal).is_some())
+            {
+                return Self::try_solve_closure_with_surfaces(&rewritten, introduced_surfaces);
+            }
+            return Ok(None);
         }
         if let Proposition::And(left, right) = goal
             && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
@@ -3641,13 +3681,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(Some(closed));
             }
         }
-        if is_float_bound(goal)
-            && let Some(bound) = crate::kernel::search::ProofSearch::select_float_bound(
-                search_input.facts().assumptions(),
-                goal,
-            )
+        if let Some(bound) = crate::kernel::search::ProofSearch::select_arithmetic_bound(
+            search_input.facts().assumptions(),
+            goal,
+        ) {
+            if let Some(count) = signed_max_shift_count_bound(goal) {
+                if let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
+                    search_input,
+                    &[bound, count],
+                    introduced_surfaces,
+                )? {
+                    return Ok(Some(closed));
+                }
+            } else {
+                candidates.push(vec![bound]);
+            }
+        }
+        if let Some(bound) = float_compound_bound_operand(goal)
+            && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
+                search_input,
+                &[bound],
+                introduced_surfaces,
+            )?
         {
-            candidates.push(vec![bound]);
+            return Ok(Some(closed));
         }
         for premises in candidates {
             check_verification_deadline()?;
@@ -4538,7 +4595,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                     | ConditionTerm::Float32(FloatCondition::Classification { .. })
                                     | ConditionTerm::Float64(FloatCondition::Classification { .. }), _))))
                     })
-                    .chain(crate::kernel::search::ProofSearch::select_float_bound(
+                    .chain(crate::kernel::search::ProofSearch::select_arithmetic_bound(
                         search_input.facts().assumptions(),
                         goal,
                     ))

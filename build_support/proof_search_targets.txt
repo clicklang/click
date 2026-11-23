@@ -72,7 +72,7 @@ retry_statement_keeping_store_cells
 rewrite_search
 scalar_equality_goal_is_refuted
 scalar_offset_goal_is_refuted
-select_float_bound
+select_arithmetic_bound
 selected_arithmetic
 selected_solve_derivation
 selected_solve_derivation_plan
@@ -271,6 +271,7 @@ retain_signed_order_bounds
 try_local_viewability_preservation
 try_bounded_arithmetic_closure
 try_normalize_after_arithmetic_bounds
+retain_computed_shift_divisor_bound
 try_distinct_constant_exclusion
 try_store_read_rewrite
 try_memory_footprint_separation
