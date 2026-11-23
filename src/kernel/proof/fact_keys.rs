@@ -861,7 +861,7 @@ pub(crate) fn integer_condition_alpha_key(
             if crate::instrumentation::deadline_exceeded_with_work(0) {
                 return None;
             }
-        } else if !matches!(root.node(), KernelTermNode::LegacyBool(_)) {
+        } else {
             return None;
         }
     }
@@ -895,7 +895,7 @@ pub(crate) fn integer_equality_alpha_key(
         Some(KernelTermNode::IntegerCompare { operator, .. }) => {
             *operator == IntegerComparisonOperator::Equal
         }
-        Some(KernelTermNode::LegacyBool(_)) | None => {
+        None => {
             matches!(condition.native_compat(), ConditionTerm::IntegerEqual(_, _))
         }
         _ => false,

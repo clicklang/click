@@ -129,8 +129,6 @@ pub enum KernelTermNode {
     MachineIf {
         arguments: [KernelTerm; 3],
     },
-    /// Explicit native Boolean observation identity; condition imports are structural.
-    LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
     /// A program-carried abstract value, distinct from a logical algebraic argument.
@@ -435,7 +433,7 @@ impl NodeKey {
             | KernelTermNode::PointerEqual(_)
             | KernelTermNode::AlgebraicRead(_)
             | KernelTermNode::FloatRead(_) => true,
-            KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
+            KernelTermNode::Legacy(value) => {
                 matches!(
                     value.identity,
                     LegacyIdentity::Fresh(_)
@@ -1268,24 +1266,6 @@ impl KernelTerm {
         Self::legacy_at(
             PureFunctionArgument::Value(machine::wrap_exact(format, value)),
             LegacyIdentity::MachineObservation(identity),
-        )
-    }
-
-    pub(crate) fn bool_observation_leaf(
-        condition: ConditionTerm,
-        identity: SharedMachineIntegerTerm,
-    ) -> Self {
-        Self::intern(
-            KernelType::Bool,
-            KernelTermNode::LegacyBool(KernelLegacyTerm {
-                identity: LegacyIdentity::MachineObservation(identity),
-                value: Some(PureFunctionArgument::Value(ProgramValue::Bool(
-                    MachineTerm::BoolCast {
-                        to: MachineIntegerType::UInt8,
-                        value: Box::new(condition),
-                    },
-                ))),
-            }),
         )
     }
 
