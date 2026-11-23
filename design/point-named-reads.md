@@ -75,7 +75,8 @@ rename turns a free equality into a proof obligation, or into search.
 Read identity had no owner: integer read terms were built directly at 69
 non-test sites in 26 files, and the mixed-name census could attribute a read
 only to the first code that built a bare point for its memory, which is not
-always the code that built the read. Every integer read term is now built by
+always the code that built the read. The census now records the producer at
+the constructor. Every integer read term is now built by
 `MachineTerm::read_named(point, pointer, kind)`, or by
 `MachineTerm::memory_read(memory, ..)` for the legacy memory name.
 `build_support/read_construction.rs` holds other direct
