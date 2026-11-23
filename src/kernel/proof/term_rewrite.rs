@@ -6898,11 +6898,13 @@ impl<'a> TermRewrite<'a> {
                         &rewritten,
                         bytes,
                     );
-                    return crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-                        ProgramPoint::at(&source),
-                        Box::new(rewritten),
-                        *kind,
-                    ));
+                    return crate::kernel::eval::canonical_term(
+                        &crate::kernel::MachineTerm::read_named(
+                            ProgramPoint::at(&source),
+                            rewritten,
+                            *kind,
+                        ),
+                    );
                 }
                 let memory = observation
                     .filter(|_| use_origin)
@@ -7801,9 +7803,9 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(crate::kernel::MachineTerm::read_named(
                     crate::kernel::ProgramPoint::of_memory(&memory),
-                    Box::new(pointer.clone()),
+                    pointer.clone(),
                     crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(right),
@@ -9476,9 +9478,9 @@ mod comparison_read_batch_tests {
             (MachineIntegerType::Int64, LoadKind::Bits64),
             (MachineIntegerType::UInt64, LoadKind::Bits64),
         ] {
-            let read = MachineTerm::MemoryLoad(
+            let read = crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address::symbolic(Variable(401_020))),
+                Address::symbolic(Variable(401_020)),
                 kind,
             );
             let literal = |bits| {
@@ -9526,9 +9528,9 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let read = |index| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address::symbolic(Variable(index))),
+                Address::symbolic(Variable(index)),
                 LoadKind::Int32,
             )
         };
@@ -9678,9 +9680,9 @@ mod comparison_read_batch_tests {
         let accumulator = Variable(403_002);
         let pointer = Address::symbolic(binder);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let raw = MachineTerm::MemoryLoad(
+        let raw = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&memory),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Int32,
         );
         let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
@@ -9773,9 +9775,9 @@ mod comparison_read_batch_tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(source)),
         ));
-        let untouched = MachineTerm::MemoryLoad(
+        let untouched = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&memory),
-            Box::new(pointer),
+            pointer,
             LoadKind::Int32,
         );
         let sealed = Resource::MutexGuard(MutexIdentity {

@@ -1126,9 +1126,9 @@ fn materialized_load_is_unchanged(
     if !kind.reads_value(value) {
         return false;
     }
-    let right = MachineTerm::MemoryLoad(
+    let right = crate::kernel::MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(symbolic_memory.clone()))),
-        Box::new(pointer.clone()),
+        pointer.clone(),
         kind,
     );
     pointers_proven_equal_for_memory_resolution(load_pointer, pointer, assumptions)
@@ -3556,9 +3556,9 @@ mod materialized_function_load_tests {
     use super::*;
 
     fn callback_load(memory: &SymbolicMemory, address: &Address, kind: LoadKind) -> ProgramValue {
-        let load = MachineTerm::MemoryLoad(
+        let load = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
-            Box::new(address.clone()),
+            address.clone(),
             kind,
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();

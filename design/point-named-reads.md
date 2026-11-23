@@ -1,7 +1,7 @@
 # Point-named reads: one name, and the relations it needs
 
-Status: approved (2026-11-23). Nothing here is implemented beyond the audits
-it cites.
+Status: approved (2026-11-23). P0 is implemented. P1 has begun: logical
+integer reads ask `ProgramPoint::read_version`.
 
 ## Problem
 
@@ -70,6 +70,22 @@ rename turns a free equality into a proof obligation, or into search.
 
 ## Proposal
 
+### P0. One constructor for read terms (implemented)
+
+Read identity had no owner: integer read terms were built directly at 69
+non-test sites in 26 files, and the mixed-name census could attribute a read
+only to the first code that built a bare point for its memory, which is not
+always the code that built the read. Every integer read term is now built by
+`MachineTerm::read_named(point, pointer, kind)`, or by
+`MachineTerm::memory_read(memory, ..)` for the legacy memory name.
+`build_support/read_construction.rs` holds other direct
+`MachineTerm::MemoryLoad(..)` constructions outside test code to zero, so the
+rule cannot erode. Both constructors take `#[track_caller]` in test builds:
+the census can name the producer exactly, and a change to how reads are named
+has one place to go. The other read representations
+(`AlgebraicTermNode::MemoryLoad`, `KernelTermNode::MemoryLoad`) get the same
+treatment when a slice reaches them.
+
 ### P1. One selection function, in one order
 
 ```text
@@ -87,10 +103,18 @@ most frame steps free. The 20 → 14 result above is the evidence that it
 matters. A slice then changes only step 2's coverage. The legacy walk shrinks
 when step 2 answers more, and is deleted when step 3 is unreachable.
 
-This is a refactor with no intended behavior change for reads that no index
-answers. Its acceptance is the gate harnesses on master behavior plus a falling
-`mixed_read_names` count. Most of the 53 should close, because they are
-order differences.
+This is not behavior-neutral. A producer's order is tied to more than naming:
+- **Definedness.** The C read path's early entry selection refuses a
+  materialized entry view (`entry_integer_version`). Moving it to
+  `read_version`, which accepts one, let an owned but uninitialized cell skip
+  its definedness refusal (two `owns_uninitialized_*` mdtests).
+- **Cost.** Moving that selection after the evaluator's resolution steps kept
+  every mdtest green but raised legacy-walk work on `examples/` by 17%, since
+  those steps run the walk first.
+
+Each producer moves with its checks, and with its legacy-walk work measured
+before and after. Logical integer reads moved first
+(clicklang/click#3982), with no change in walk traffic.
 
 ### P2. R2 for point-named reads: one hop, checked in the querying context
 
@@ -135,9 +159,11 @@ Design check
 
 ## Plan
 
-1. **P1, no new coverage.** Introduce `read_name` and route producers to it,
-   one producer per commit. Exit: both harnesses pass, and `mixed_read_names`
-   on the corpus is at or below 53 and falling.
+0. **P0.** One constructor and the construction ratchet. Then attribute the
+   census at the constructors and recount the corpus.
+1. **P1, no new coverage.** Route producers to `read_version`, one producer
+   per commit. Exit: both harnesses pass, legacy-walk work on `examples/` does
+   not rise, and the census count does not rise.
 2. **P2.** Add the hop, with a scaling test and the `dfs` and `bounded_pool`
    frame steps as regressions. Exit: harnesses pass.
 3. **Coverage slices.** Re-apply the caller-storage suffix version, then

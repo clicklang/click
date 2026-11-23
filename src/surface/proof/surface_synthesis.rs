@@ -5529,13 +5529,8 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let memory = crate::kernel::intern_memory_ref(state.memory());
     let selected =
         crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
-    (selected == *read).then(|| {
-        MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&memory),
-            pointer.clone(),
-            *kind,
-        )
-    })
+    (selected == *read)
+        .then(|| MachineTerm::memory_read(memory.clone(), pointer.as_ref().clone(), *kind))
 }
 
 // Unsigned division and remainder use the usual C conversion of both

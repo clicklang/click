@@ -382,7 +382,7 @@ fn loads_unchanged(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFa
         return false;
     }
     let right_at_left_address =
-        MachineTerm::MemoryLoad(right_memory.clone(), left_pointer.clone(), *right_kind);
+        MachineTerm::read_named(right_memory.clone(), left_pointer.clone(), *right_kind);
     crate::kernel::memory_history::explicit_atomic_equality_from_memory_derivations(
         left,
         &right_at_left_address,
@@ -410,9 +410,9 @@ mod wide_condition_tests {
             ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
         );
         let load = |memory: &SymbolicMemory, kind| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 kind,
             )
         };

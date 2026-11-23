@@ -347,9 +347,9 @@ pub(super) fn pointer_definition(pointer: &Address) -> Option<MachineTerm> {
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::AddressOffset::Constant(0)).then(|| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&read.defining_memory),
-                Box::new(read.defining_address),
+                read.defining_address,
                 crate::kernel::LoadKind::Int32,
             )
         })
@@ -1484,9 +1484,9 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::MemoryLoad(
+                    left: Box::new(crate::kernel::MachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                        Box::new(pointer.clone()),
+                        pointer.clone(),
                         LoadKind::Bits64,
                     )),
                     right: Box::new(MachineTerm::uint64_constant(3)),
@@ -1728,21 +1728,22 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         };
-        let variable = crate::kernel::load_variable_for_term(&MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&memory),
-            Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Int32,
-        ))
-        .unwrap()
-        .0;
+        let variable =
+            crate::kernel::load_variable_for_term(&crate::kernel::MachineTerm::read_named(
+                crate::kernel::ProgramPoint::at(&memory),
+                pointer.clone(),
+                crate::kernel::LoadKind::Int32,
+            ))
+            .unwrap()
+            .0;
         let defining = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::MemoryLoad(
+                right: Box::new(crate::kernel::MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&memory),
-                    Box::new(pointer),
+                    pointer,
                     crate::kernel::LoadKind::Int32,
                 )),
             },

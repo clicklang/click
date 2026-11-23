@@ -3414,8 +3414,8 @@ fn names_of_one_cell_framed(
     pointers_proven_equal_for_memory_resolution(left_pointer, right_pointer, assumptions)
         && [left_pointer, right_pointer].into_iter().any(|pointer| {
             crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &MachineTerm::MemoryLoad(left_memory.clone(), pointer.clone(), *left_kind),
-                &MachineTerm::MemoryLoad(right_memory.clone(), pointer.clone(), *right_kind),
+                &MachineTerm::read_named(left_memory.clone(), pointer.clone(), *left_kind),
+                &MachineTerm::read_named(right_memory.clone(), pointer.clone(), *right_kind),
                 assumptions,
             )
         })
@@ -3499,9 +3499,9 @@ mod shared_contract_operand_tests {
         let load = |memory| {
             SharedMachineIntegerTerm::index(
                 MachineIntegerType::Int32,
-                MachineTerm::MemoryLoad(
+                crate::kernel::MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                    Box::new(pointer.clone()),
+                    pointer.clone(),
                     crate::kernel::LoadKind::Int32,
                 ),
             )
@@ -3542,9 +3542,9 @@ mod shared_contract_operand_tests {
                     pointer.clone(),
                     ProgramValue::Int32(MachineTerm::Variable(Variable(id))),
                 );
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             )
         };

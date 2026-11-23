@@ -5394,8 +5394,9 @@ mod machine_integer_substitution_tests {
         let base = Address::symbolic(Variable(38_551));
         let index = Variable(38_552);
         let value = MachineTerm::Variable(Variable(38_553));
-        let read =
-            |pointer| MachineTerm::MemoryLoad(point.clone(), Box::new(pointer), LoadKind::Int32);
+        let read = |pointer| {
+            crate::kernel::MachineTerm::read_named(point.clone(), pointer, LoadKind::Int32)
+        };
         let equation = |pointer| {
             Proposition::condition_is(
                 ConditionTerm::machine_compare(
@@ -5941,9 +5942,9 @@ fn substitute_through_load_variable(
         );
     }
     Some(crate::kernel::eval::canonical_term(
-        &MachineTerm::MemoryLoad(
+        &crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&substituted_memory),
-            Box::new(substituted_pointer),
+            substituted_pointer,
             kind,
         ),
     ))
@@ -6144,11 +6145,13 @@ pub(crate) fn substitute_bitvector_variable(
                     &rewritten_pointer,
                     read.bytes,
                 );
-                return crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&source),
-                    Box::new(rewritten_pointer),
-                    *kind,
-                ));
+                return crate::kernel::eval::canonical_term(
+                    &crate::kernel::MachineTerm::read_named(
+                        ProgramPoint::at(&source),
+                        rewritten_pointer,
+                        *kind,
+                    ),
+                );
             }
             // Opening a quantifier renames its bound variable in the reads
             // of its body. Record the access at the renamed address, as a
@@ -9604,11 +9607,12 @@ mod integer_range_fold_substitution_tests {
                 ProgramValue::Int32(MachineTerm::constant(7)),
             ));
         crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
-        let original = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-            ProgramPoint::at(&source),
-            Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Int32,
-        ));
+        let original =
+            crate::kernel::eval::canonical_term(&crate::kernel::MachineTerm::read_named(
+                ProgramPoint::at(&source),
+                pointer.clone(),
+                crate::kernel::LoadKind::Int32,
+            ));
         let MachineTerm::MemoryLoad(projected, _, _) = &original else {
             panic!("structural read");
         };
@@ -9625,11 +9629,12 @@ mod integer_range_fold_substitution_tests {
         let actual =
             substitute_bitvector_variable(&original, binder, &MachineTerm::Variable(renamed));
         crate::kernel::eval::record_load_access_width(source.memory(), &renamed_pointer, 4);
-        let expected = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-            ProgramPoint::at(&source),
-            Box::new(renamed_pointer),
-            crate::kernel::LoadKind::Int32,
-        ));
+        let expected =
+            crate::kernel::eval::canonical_term(&crate::kernel::MachineTerm::read_named(
+                ProgramPoint::at(&source),
+                renamed_pointer,
+                crate::kernel::LoadKind::Int32,
+            ));
         assert_eq!(actual, expected);
         assert_eq!(
             crate::kernel::eval::scalar_read_observation(
