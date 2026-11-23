@@ -593,7 +593,7 @@ pub enum MirStatement {
         /// The local the yielded index is bound to.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<String>,
-        /// The local the yielded element's reference is bound to.
+        /// The local bound to the yielded element, by reference or by value.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         element: Option<String>,
         /// Whether the iterator yields, when its `for` header's test already

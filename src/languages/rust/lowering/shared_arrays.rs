@@ -18,7 +18,7 @@ fn pointer_type(element: &Type) -> Result<ProgramType, String> {
 }
 
 pub(super) struct SliceIteratorStorage {
-    element: ProgramType,
+    pub(super) element: ProgramType,
     pub(super) fields: SliceIteratorFields,
 }
 
@@ -245,16 +245,7 @@ impl Context<'_> {
                 }
                 use crate::kernel::program_expression::variable;
                 let pointer = variable(fields.pointer.clone());
-                let value = match payload_type {
-                    Type::Reference {
-                        mutable: false,
-                        pointee,
-                    } if scalar_type(pointee)?.to_kernel_type() == element => pointer,
-                    ty if ty.is_integer() && scalar_type(ty)?.to_kernel_type() == element => {
-                        self.load_with_source(pointer, element, None)?
-                    }
-                    _ => return Err("Rust slice iterator payload type mismatch".into()),
-                };
+                let value = self.shared_array_yielded_value(pointer, element, payload_type)?;
                 let bind = self.bind_local(payload, value)?;
                 let some = program_seq(bind, advance(&fields));
                 Ok(match taken {
@@ -272,6 +263,25 @@ impl Context<'_> {
                 })
             }
             _ => Err("Rust slice next binds neither its Option nor its element".into()),
+        }
+    }
+
+    /// The current element's reference, or its value for a copied pattern.
+    pub(super) fn shared_array_yielded_value(
+        &mut self,
+        pointer: ProgramExpression,
+        element: ProgramType,
+        payload_type: &Type,
+    ) -> Result<ProgramExpression, String> {
+        match payload_type {
+            Type::Reference {
+                mutable: false,
+                pointee,
+            } if scalar_type(pointee)?.to_kernel_type() == element => Ok(pointer),
+            ty if ty.is_integer() && scalar_type(ty)?.to_kernel_type() == element => {
+                self.load_with_source(pointer, element, None)
+            }
+            _ => Err("Rust slice iterator payload type mismatch".into()),
         }
     }
 
