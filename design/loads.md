@@ -79,7 +79,7 @@ on cells, for every type:
 |---|---|
 | version selection | `ProgramPoint::read_version` chooses the point a load names (`point-named-reads.md`) |
 | identity | two loads are one term when their version points and cells are equal |
-| read-over-write | a load of exactly the cell a store wrote, at that store's version, is the store's bytes |
+| read-over-write | a load of exactly the cell a store wrote, at that store's version, is the store's bytes; this is `read_version`'s held-value and indexed-write steps (`point-named-reads.md`, P1 steps 1 and 2), not a third mechanism |
 | overlap | a store that writes part of a cell, or overlaps it, ends the cell's version and answers no load of it |
 | framing | a store, call or loop step proven not to write a cell leaves its version unchanged |
 | separation | whether two cells can overlap, from their addresses and provenance |
@@ -105,6 +105,20 @@ The rule that joins the two halves is generic:
 At another type `U` it decodes to `decode<U>(encode<T>(v))`, which the
 conversions entry relates to `v` where one exists (the 8-bit sign cast,
 a float bit-cast) and which is otherwise just that term.
+
+Conversions are rewrites in checking, keyed by the two formats: the equality
+graph relates `decode<int8>(l)` and `decode<uint8>(l)` by the sign cast with
+no fact for a proof to find, as the `int8`/`uint8` load equality is free
+today. Lowering may build a decoding at each format, which depends only on
+types and so is fact-stable; it never folds the conversion.
+
+Every cross-format decoding raises (`docs/internals/raise-lower-principle.md`):
+
+| Decoding | Surface |
+|---|---|
+| `decode<U>(encode<T>(v))`, integers of one width | the C conversion `(U) v`, exact at equal width |
+| `decode<U>(encode<T>(v))`, integer and float of one width | a bit-cast form, to be added before floats join step 3b |
+| a pointer's bytes decoded as an integer, or the reverse | not supported until abstract bytes (step 5) |
 
 ### Integers and floats
 
@@ -146,7 +160,11 @@ at an abstract type, whose value the kernel treats as opaque.
 ## Terms
 
 - **`Load { point, cell }`**, one Rust type, interned. It is the identity of
-  every load, of every type.
+  every load, of every type. `point` is the selection, not a bare point id:
+  identity is its `read_key()` (`Memory`, `Point` or `View`) and the cell, so
+  a memory-named load is expressible until the legacy walk goes. Interning is
+  keyed by `(read_key, cell)`, never by the whole `ProgramPoint`, whose
+  `IndexedWrite` selection holds a derivation.
 - **Integer and float values** are `decode<format>(load)`. Today that is
   `MachineTerm::MemoryLoad(point, address, kind)`, built only by
   `MachineTerm::read_named` and `MachineTerm::memory_read` (enforced by
@@ -176,6 +194,15 @@ So `ensures *o == 0` answers a later load of `o` by read-over-write, and
 `ensures result == old(*o)` makes the result the load the caller already has
 facts about. Neither needs an equation that a proof must find.
 
+- **The stored value comes from the contract's text**, never from facts
+  admitted after the call: only an `ensures` conjunct of the shape
+  `place == expr` stores `expr`. Every other shape is an unknown store. This
+  keeps the term fact-stable, and in `point-named-reads.md` it is a new
+  coverage slice of `read_version`'s step 2.
+- **`old(*o)` is evaluated through `read_version` at the call's entry point.**
+  If the caller's memory holds a value for `*o`, that value is the result:
+  in acceptance case 1, `x`'s pointer, not a fresh load.
+
 ## Acceptance cases
 
 The Rust `Box` work paused on cases where loads and stores lose precision at a
@@ -199,7 +226,8 @@ design:
    extent (`resource_tracker/step_effect.rs`, `CallHavoc`), and the node's
    two pointer loads are different `LoadedPointer` ids equal only by fact.
    Framing on cells with symbolic sizes, and one load per cell, are what fix
-   it.
+   it. It is also a regression for `point-named-reads.md` P2: framing a
+   symbolic-size cell across a call is where the legacy walk stops.
 
 A store that is recorded must be found by every later load of the same cell
 however its address is spelled: an earlier attempt to replace the call's havoc
@@ -249,10 +277,18 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
 2. **`Load` and `AddressBase::Load`.** Introduce the interned `Load` and use it
    as the pointer base, replacing `LoadedPointer(PointerLoadId)` and the
    registry. Function-pointer loads move from load variables to it.
-3. **Integer and float loads on `Load`.** `MemoryLoad` becomes a decoding of a
-   `Load` at a format. Every width decodes one load, so `Bits64` stops being
-   special. Done with the program-point session, whose constructors and
-   ratchet already gate these terms.
+3. **Integer and float loads on `Load`**, in two PRs, with the program-point
+   session, whose constructors and ratchet gate these terms. Neither overlaps
+   that session's own read-identity changes (its P1 producer moves); the two
+   are scheduled apart so that failures stay attributable.
+   - **3a.** `MemoryLoad` becomes `Load` plus a kind, keeping the kind's
+     signedness in the key. Neutral: both harnesses pass, and the
+     mixed-name census and legacy-walk counts stay flat.
+   - **3b.** One load per cell, decoded at each format; `Bits64` stops being
+     special. The held-value and indexed lookups answer a load at another
+     format of the same width, `decode<U>(encode<T>(v))`, where today they
+     miss and fall to the legacy walk. This changes how terms print, so it is
+     classified on its own.
 4. **Algebraic and abstract loads** become decodings of `Load`.
 5. **Abstract bytes**: uninitialized bytes and provenance fragments.
 6. **`loaded_value`** and the remaining scalar load variables go with the
@@ -293,9 +329,12 @@ Design check
    those loads have no spelling, and that is the defect to fix.
 4. **Exactness.** Integer load equality compares only `read_key()`, so an
    `Exact` and an `IndexedCell` selection of one point are one term; pointer
-   loads should match. Substitution and rewriting keep an exact load's point
-   when they rewrite its address, and `exact-reads.md` E3 makes a pointer
-   load's provenance the same kind of load as its address. Check that
-   `Pointer::from_read`, which names an exact load by the unchanged-bytes
-   source, builds the same point as the version path where they coincide.
+   loads match. Substitution and rewriting keep an exact load's point when
+   they rewrite its address, and `exact-reads.md` E3 makes a pointer load's
+   provenance the same kind of load as its address. `Pointer::from_read`
+   names an exact load by the unchanged-bytes source, a memory-named key;
+   where it coincides with a version-path load that is a mixed name, the
+   pointer form of the 53 integer cases. The mixed-name census
+   (`kernel::mixed_read_names`) extends to pointer loads once step 2 gives
+   them one constructor.
 5. **Interning cost** of `Load`, confirmed by the scaling tests before step 2.
