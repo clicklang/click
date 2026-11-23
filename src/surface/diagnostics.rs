@@ -5087,7 +5087,11 @@ fn describe_source_cell_of_width(
         let spelled = SourceCell {
             object: parameter.name().to_string(),
             index: if bitvector_is_source_spelled(&index, parameter_binding) {
-                CellIndex::Named(describe_bitvector_with_context(&index, parameter_binding))
+                CellIndex::Named(describe_scaled_index(
+                    &index,
+                    scaled_index_signedness(pointer, base.address()),
+                    parameter_binding,
+                ))
             } else {
                 CellIndex::Unnamed
             },
@@ -5783,6 +5787,64 @@ pub(super) fn diagnostic_parameter_element_width(
         | InterfaceType::Float64PointerPointer => 8,
         InterfaceType::FunctionPointer(_) => 8,
         InterfaceType::PointerArray(_, _, _) => 8,
+    }
+}
+
+/// Whether the element offset `pointer` adds to `base` reads a 64-bit index
+/// as unsigned (`Some(true)`) or signed (`Some(false)`); `None` for any other
+/// offset. A 64-bit index term carries no signedness, so `p + k` and
+/// `p + (k as int64)` for a `uint64` `k` share it: only this flag separates
+/// the two addresses.
+fn scaled_index_signedness(pointer: &Address, base: &Address) -> Option<bool> {
+    if pointer.base != base.base {
+        return None;
+    }
+    let extra = if base.offset == AddressOffset::Constant(0) {
+        &pointer.offset
+    } else {
+        match &pointer.offset {
+            AddressOffset::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
+            AddressOffset::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
+            _ => return None,
+        }
+    };
+    match extra {
+        AddressOffset::Int64Scaled { unsigned, .. } => Some(*unsigned),
+        _ => None,
+    }
+}
+
+/// `index` as an element index read with the signedness its offset gives
+/// it. A parameter or local named with a 64-bit type of the other signedness
+/// shows the conversion, `p[k as int64]`; any other index is spelled as is.
+fn describe_scaled_index(
+    index: &MachineTerm,
+    unsigned: Option<bool>,
+    parameter_binding: ParameterBinding<'_>,
+) -> String {
+    let spelled = describe_bitvector_with_context(index, parameter_binding);
+    let Some(unsigned) = unsigned else {
+        return spelled;
+    };
+    let declared = parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+        .find_map(|(parameter, argument)| {
+            let ProgramExpression::Value(value) = argument else {
+                return None;
+            };
+            match value.numeric_value() {
+                ProgramValue::Int64(term) | ProgramValue::UInt64(term) if term == index => {
+                    Some(parameter.interface_type().to_kernel_type())
+                }
+                _ => None,
+            }
+        });
+    match (declared, unsigned) {
+        (Some(crate::kernel::ProgramType::UInt64), false) => format!("{spelled} as int64"),
+        (Some(crate::kernel::ProgramType::Int64), true) => format!("{spelled} as uint64"),
+        _ => spelled,
     }
 }
 
