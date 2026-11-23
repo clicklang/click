@@ -241,17 +241,6 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::AddressOffsetEqual { arguments } => {
                     KernelTerm::address_offset_equal_raw(arguments.each_ref().map(normalize_offset))
                 }
-                KernelTermNode::LegacyBool(_) => {
-                    let condition = KernelTermExport::condition(&term).expect("retained guard");
-                    let identity = SharedMachineIntegerTerm::intern_key(MachineIntegerKey::native(
-                        MachineIntegerType::UInt8,
-                        MachineTerm::BoolCast {
-                            to: MachineIntegerType::UInt8,
-                            value: Box::new(condition.clone()),
-                        },
-                    ));
-                    KernelTerm::bool_observation_leaf(condition, identity)
-                }
                 KernelTermNode::FloatCompare { format, operator, arguments } => KernelTerm::intern(
                     KernelType::Bool,
                     KernelTermNode::FloatCompare { format: *format, operator: *operator, arguments: arguments.each_ref().map(&get) },

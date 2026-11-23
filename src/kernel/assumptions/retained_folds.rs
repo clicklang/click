@@ -92,37 +92,31 @@ pub(super) fn collect_common_memory_loads(
                 pending.push((&fold.arguments[1], endpoint_width));
                 pending.push((&fold.arguments[0], endpoint_width));
             }
-            KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
-                match value.value() {
-                    PureFunctionArgument::Integer(value) => {
-                        collect_integer_memory_loads_with_width(
-                            value,
-                            current_memory,
-                            loads,
-                            width,
-                            seen_integers,
-                        )?
-                    }
-                    PureFunctionArgument::SharedMachine(value) => {
-                        collect_shared_machine_memory_loads(
-                            value,
-                            current_memory,
-                            loads,
-                            width,
-                            seen_integers,
-                        )?
-                    }
-                    PureFunctionArgument::Value(value) => {
-                        collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)?
-                    }
-                    PureFunctionArgument::Algebraic(value) => {
-                        collect_algebraic_memory_loads(value, current_memory, loads, seen_integers)?
-                    }
-                    PureFunctionArgument::ArrayRef { .. } => {
-                        return Err("opaque fold operand may hide a current memory load".into());
-                    }
+            KernelTermNode::Legacy(value) => match value.value() {
+                PureFunctionArgument::Integer(value) => collect_integer_memory_loads_with_width(
+                    value,
+                    current_memory,
+                    loads,
+                    width,
+                    seen_integers,
+                )?,
+                PureFunctionArgument::SharedMachine(value) => collect_shared_machine_memory_loads(
+                    value,
+                    current_memory,
+                    loads,
+                    width,
+                    seen_integers,
+                )?,
+                PureFunctionArgument::Value(value) => {
+                    collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)?
                 }
-            }
+                PureFunctionArgument::Algebraic(value) => {
+                    collect_algebraic_memory_loads(value, current_memory, loads, seen_integers)?
+                }
+                PureFunctionArgument::ArrayRef { .. } => {
+                    return Err("opaque fold operand may hide a current memory load".into());
+                }
+            },
             KernelTermNode::MachineObservation { format, operand } => {
                 pending.push((operand, Some(format.format().byte_width())));
             }

@@ -299,7 +299,6 @@ mod tests {
                         KernelFloatType::Float64 => ConditionTerm::Float64(predicate),
                     };
                     let root = KernelTermImport::default().condition(&native);
-                    assert!(!matches!(root.node(), KernelTermNode::LegacyBool(_)));
                     let before = KernelTermExport::machine_export_count();
                     assert!(
                         BooleanOperandView::Shared(&root)

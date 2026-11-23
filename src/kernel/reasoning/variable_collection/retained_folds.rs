@@ -244,9 +244,7 @@ pub(super) fn common_variables(
             && term.ty() == &KernelType::Bool
             && !matches!(
                 term.node(),
-                KernelTermNode::IntegerCompare { .. }
-                    | KernelTermNode::AlgebraicEqual { .. }
-                    | KernelTermNode::LegacyBool(_)
+                KernelTermNode::IntegerCompare { .. } | KernelTermNode::AlgebraicEqual { .. }
             )
         {
             summaries.insert(term.id(), Variables::default());
@@ -312,7 +310,7 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
-            KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
+            KernelTermNode::Legacy(value) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload
                 // variables before the enclosing body can filter its binders.

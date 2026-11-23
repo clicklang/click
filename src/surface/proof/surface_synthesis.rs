@@ -4615,15 +4615,6 @@ fn raise_kernel_term_dispatch(
             state,
             bound_variables,
         )?,
-        Node::LegacyBool(payload) => {
-            let crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(
-                MachineTerm::BoolCast { value, .. },
-            )) = payload.value()
-            else {
-                return None;
-            };
-            synthesize_surface_bool(value, parameter_binding, state, bound_variables)?
-        }
         Node::PointerEqual(_) | Node::AddressEqual { .. } | Node::AddressOffsetEqual { .. } => {
             raise_pointer_comparison(term, parameter_binding, state, bound_variables)?
         }
