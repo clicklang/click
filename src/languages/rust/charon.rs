@@ -2703,7 +2703,12 @@ impl BodyAdapter<'_, '_> {
                             Some(function) => Some(function),
                             None => match self.adapter.slice_method_call(callee, ptr, call)? {
                                 Some(function) => Some(function),
-                                None => self.adapter.vec_method_call(callee, ptr, call)?,
+                                None => {
+                                    match self.adapter.option_take_method_call(callee, ptr, call)? {
+                                        Some(function) => Some(function),
+                                        None => self.adapter.vec_method_call(callee, ptr, call)?,
+                                    }
+                                }
                             },
                         },
                     },

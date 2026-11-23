@@ -73,6 +73,48 @@ fn written_type_resource(
     (token(at) == Some(&Token::LParen)).then_some((record, optional, at))
 }
 
+/// `Option<Box<R>>::None` or `Option<Box<R>>::Some` at the cursor: whether
+/// it is `Some`, and the index of the variant's name. An option of a box is
+/// the box's address, or null, so `None` is `0` and `Some(b)` is `(b)`.
+fn option_box_variant(source: &[Spanned], index: usize) -> Option<(bool, usize)> {
+    let token = |at: usize| source.get(at).map(|(token, _)| token);
+    if !(is_ident(source.get(index), "Option")
+        && token(index + 1) == Some(&Token::LessThan)
+        && is_ident(source.get(index + 2), "Box")
+        && token(index + 3) == Some(&Token::LessThan))
+    {
+        return None;
+    }
+    // The boxed type may have arguments of its own, `Node<T>`: read to the
+    // `>` that closes `Option`.
+    let mut at = index + 4;
+    let mut depth = 2usize;
+    while depth > 0 {
+        match token(at)? {
+            Token::LessThan => depth += 1,
+            Token::GreaterThan => depth -= 1,
+            Token::ShiftRight => depth = depth.checked_sub(2)?,
+            Token::Ident(_) | Token::ColonColon | Token::Comma => {}
+            _ => return None,
+        }
+        at += 1;
+    }
+    if token(at) != Some(&Token::ColonColon) {
+        return None;
+    }
+    let some = match token(at + 1) {
+        Some(Token::Ident(variant)) if variant == "None" => false,
+        Some(Token::Ident(variant)) if variant == "Some" => {
+            if token(at + 2) != Some(&Token::LParen) {
+                return None;
+            }
+            true
+        }
+        _ => return None,
+    };
+    Some((some, at + 1))
+}
+
 /// Whether the struct `record` holds no box of its own: its box's type
 /// resource is then its allocation and its bytes. A struct that holds a box,
 /// a list's node, needs its own type resource, which is not derived yet.
@@ -167,6 +209,14 @@ pub(super) fn write_type_resources(
                 .map(|(token, _)| token.clone())
                 .collect::<Vec<_>>();
             receiver = path_type_name(&path).map(|name| (name, close));
+        }
+        if let Some((some, variant)) = option_box_variant(&source, index) {
+            if !some {
+                output.push((Token::Number(0), source[index].1.clone()));
+            }
+            // `Some`'s parenthesized payload is kept.
+            index = variant + 1;
+            continue;
         }
         if let Some((record, optional, open)) =
             written_type_resource(&source, index, struct_layouts)

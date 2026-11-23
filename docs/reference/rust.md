@@ -1731,14 +1731,16 @@ and its drop frees a `Some` box (freeing null has no effect).
 verifies `maybe`, which boxes a `Cell` only when asked and matches on the
 option, and `dropped`, whose possibly-`Some` option is dropped at scope end.
 
-`o.take()` is the library's `mem::replace(&mut o, None)`: where the borrow
-the compiler takes for the call serves only the call, the exporter checks the
-callee is the library's own `Option::take` and lowers `t = o.take()` to
-`t = o; o = None`, for an option of a box, an option of a scalar, and the
-referent of a `&mut Option<T>`. The box moves into `t`, so it is freed once,
-with `t`. This rewrite is a
-[departure](../concepts/library-interfaces.md#where-the-implementation-departs-from-this),
-to be replaced by a generic `Option::take<T>` contract.
+`o.take()` is the library's `mem::replace(&mut o, None)`. On an option of a
+scalar, and on the referent of a `&mut Option<T>`, it calls the library's
+[`Option::take<T>`](library/index.md#optiontaket) contract through its
+reference. On an option of a box, where the borrow the compiler takes for the
+call serves only the call, the exporter checks the callee is the library's own
+`Option::take` and lowers `t = o.take()` to `t = o; o = None`: the box moves
+into `t`, so it is freed once, with `t`. That rewrite is a
+[departure](../concepts/library-interfaces.md#where-the-implementation-departs-from-this).
+In a sidecar an option of a box's `None` is null and `Some(b)` is `b`:
+`self.slot == Option<Box<box_fields::Cell>>::None` reads as `self.slot == 0`.
 [`design/charon-trial/option-take`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-take/take.click)
 verifies `taken`, which takes a boxed `Cell` and finds the option `None`
 after, `taken_twice`, whose second `take` finds `None`, `scalar_taken`, and
