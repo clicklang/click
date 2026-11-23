@@ -419,20 +419,20 @@ impl super::ProofSearch<PureFactContext> {
         })
     }
 
-    pub(crate) fn select_float_literal_bound_chain(
+    pub(crate) fn select_float_bound_chain(
         context: &PureFactContext,
         goal: &Proposition,
     ) -> Option<Vec<Proposition>> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("select_float_literal_bound_chain");
+        crate::kernel::search::record_discovery("select_float_bound_chain");
         use crate::kernel::proof::arithmetic_special::{
-            float_literal_bound_chain, is_compound_float_literal_bound,
+            float_bound_chain, is_compound_float_bound,
         };
-        if !is_compound_float_literal_bound(goal) {
+        if !is_compound_float_bound(goal) {
             return None;
         }
         Self::find_connected_arithmetic_bound(context, goal, true, |premise| {
-            float_literal_bound_chain(premise, goal)
+            float_bound_chain(premise, goal)
         })
     }
 

@@ -27913,3 +27913,28 @@ fn conditional_signed_shift_retains_its_checked_requirement_on_return() {
     })
     .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
 }
+
+#[test]
+fn guarded_signed_arithmetic_and_mixed_float_bounds_cold_replay() {
+    for (fixture, claims) in [
+        (
+            "mdtests/arithmetic_expression_guarded_signed_ring.md",
+            ["sum.ensures_0", "product.ensures_0"],
+        ),
+        (
+            "mdtests/arithmetic_expression_float_bound_composition.md",
+            ["negate_scaled.ensures_0", "widen_scaled.ensures_0"],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = crate::cli::source_refs(&sources);
+        for claim in claims {
+            let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+                .unwrap_or_else(|error| panic!("{claim}: {error}"));
+            crate::surface::check_audit_claim(claim, true, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+        }
+    }
+}

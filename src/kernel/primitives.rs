@@ -16453,8 +16453,8 @@ pub struct ProofObligation {
     pub(super) unsigned_divisor: bool,
     /// An ordered range bound for an executed float-to-integer conversion.
     pub(super) float_to_integer_bound: bool,
-    /// A representability bound for an executed signed left shift.
-    pub(super) signed_shift_bound: bool,
+    /// A representability bound for an executed signed operation.
+    pub(super) signed_arithmetic_bound: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
     /// Diagnostic metadata only. The proposition itself carries both ranges.

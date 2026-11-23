@@ -10559,7 +10559,7 @@ impl ProofObligation {
             invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
-            signed_shift_bound: false,
+            signed_arithmetic_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10580,7 +10580,7 @@ impl ProofObligation {
             invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
-            signed_shift_bound: false,
+            signed_arithmetic_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10615,8 +10615,8 @@ impl ProofObligation {
         obligation
     }
 
-    pub(crate) fn is_signed_shift_bound(&self) -> bool {
-        self.signed_shift_bound
+    pub(crate) fn is_signed_arithmetic_bound(&self) -> bool {
+        self.signed_arithmetic_bound
     }
 
     fn bound_under_exact_guards<'a>(&'a self, facts: &PureFactContext) -> Option<&'a Proposition> {
@@ -10872,7 +10872,7 @@ impl ProofObligation {
             invalid_mutex_held_observation: self.invalid_mutex_held_observation,
             unsigned_divisor: self.unsigned_divisor,
             float_to_integer_bound: self.float_to_integer_bound,
-            signed_shift_bound: self.signed_shift_bound,
+            signed_arithmetic_bound: self.signed_arithmetic_bound,
             statement_entry_required: self.statement_entry_required,
             live_view_write: self.live_view_write,
             call_requirement_site: None,

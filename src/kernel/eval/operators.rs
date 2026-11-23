@@ -60,6 +60,11 @@ fn split_on_undefined_behavior(
         }],
         Some(false) => defined(facts, obligations),
         None => {
+            if let Some(requirement) = conditional_signed_overflow_requirement(&undefined) {
+                let mut obligations = obligations;
+                obligations.push(requirement);
+                return defined(facts, obligations);
+            }
             let mut defined_facts = facts.clone();
             add_arithmetic_branch_fact(&mut defined_facts, assumptions, undefined.clone(), false)
                 .expect("an undecided undefined-behavior condition should be consistent");
@@ -75,6 +80,34 @@ fn split_on_undefined_behavior(
             paths
         }
     }
+}
+
+/// Keep the undecided overflow check on the value path of a conditional
+/// operand. A caller that evaluates a branch will prefix its requirement
+/// with the branch facts before merging the paths.
+fn conditional_signed_overflow_requirement(overflow: &ConditionTerm) -> Option<ProofObligation> {
+    if !IN_CONDITIONAL_OPERAND.get() {
+        return None;
+    }
+    let ConditionTerm::Overflows {
+        format,
+        op,
+        left,
+        right,
+    } = overflow
+    else {
+        return None;
+    };
+    let operation = match op {
+        OverflowOperation::Add => MachineBinaryOp::Add,
+        OverflowOperation::Multiply => MachineBinaryOp::Multiply,
+        _ => return None,
+    };
+    let goal = Proposition::signed_arithmetic_domain(*format, operation, left, right);
+    let mut obligation = ProofObligation::verification_condition(goal)
+        .with_context("signed overflow in a conditional operand must be ruled out");
+    obligation.signed_arithmetic_bound = true;
+    Some(obligation)
 }
 
 /// Publish arithmetic branch evidence using ordinary propositions. The old
@@ -4253,6 +4286,15 @@ pub(in crate::kernel) fn apply_program_int32_add(
             obligations,
         }],
         None => {
+            if let Some(requirement) = conditional_signed_overflow_requirement(&overflow) {
+                let mut obligations = obligations;
+                obligations.push(requirement);
+                return vec![ExpressionPath {
+                    outcome: ExpressionOutcome::Value(int32(program_int32_add_value(left, right))),
+                    facts,
+                    obligations,
+                }];
+            }
             let mut normal_facts = facts.clone();
             add_arithmetic_branch_fact(&mut normal_facts, assumptions, overflow.clone(), false)
                 .expect("unknown overflow fact should be consistent");
@@ -5360,7 +5402,7 @@ fn signed_shift_result_path(
                 let mut obligation =
                     ProofObligation::verification_condition(Proposition::condition_is(fits, true))
                         .with_context("signed overflow from a left shift must be ruled out");
-                obligation.signed_shift_bound = true;
+                obligation.signed_arithmetic_bound = true;
                 obligations.push(obligation);
             }
             ExpressionOutcome::Value(result())
@@ -5794,9 +5836,9 @@ pub(in crate::kernel) fn evaluate_program_logical_and_paths(
                         &left_truthiness.facts,
                         &left_truthiness.obligations,
                     );
-                    for mut right_path in
-                        evaluate_program_condition_paths(state, right, &right_assumptions, budget)?
-                    {
+                    for mut right_path in evaluate_conditional_operand(|| {
+                        evaluate_program_condition_paths(state, right, &right_assumptions, budget)
+                    })? {
                         guard_conditional_arithmetic(
                             &left_truthiness.facts,
                             &mut right_path.obligations,
@@ -5896,9 +5938,9 @@ pub(in crate::kernel) fn evaluate_program_logical_or_paths(
                         &left_truthiness.facts,
                         &left_truthiness.obligations,
                     );
-                    for mut right_path in
-                        evaluate_program_condition_paths(state, right, &right_assumptions, budget)?
-                    {
+                    for mut right_path in evaluate_conditional_operand(|| {
+                        evaluate_program_condition_paths(state, right, &right_assumptions, budget)
+                    })? {
                         guard_conditional_arithmetic(
                             &left_truthiness.facts,
                             &mut right_path.obligations,

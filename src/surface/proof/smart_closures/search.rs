@@ -3577,13 +3577,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// Materialize the selected chain as one checked normalization per
     /// operation. Each have cites the previous bound, with its own endpoint.
-    fn try_float_literal_bound_chain(
+    fn try_float_bound_chain(
         input: &Proof<'a>,
         bounds: &[Proposition],
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_float_literal_bound_chain");
+        crate::kernel::search::record_discovery("try_float_bound_chain");
         let [source, intermediate @ ..] = bounds else {
             return Ok(None);
         };
@@ -3746,11 +3746,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 candidates.push(vec![bound]);
             }
         }
-        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_literal_bound_chain(
+        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_bound_chain(
             search_input.facts().assumptions(),
             goal,
         ) && let Some(closed) =
-            Self::try_float_literal_bound_chain(search_input, &bounds, introduced_surfaces)?
+            Self::try_float_bound_chain(search_input, &bounds, introduced_surfaces)?
         {
             return Ok(Some(closed));
         }
