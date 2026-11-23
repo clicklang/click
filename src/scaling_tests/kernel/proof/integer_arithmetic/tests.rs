@@ -146,6 +146,109 @@ fn repeated_fold_atoms_share_scoped_alpha_work() {
 }
 
 #[test]
+fn affine_claims_read_retained_fold_operands_without_export() {
+    use crate::kernel::{
+        KernelFold, KernelFoldIndex, KernelIntegerOperator, KernelTermExport, KernelType,
+        StoredConditionTerm,
+    };
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let fold = |accumulator, end| {
+            let acc = Variable(accumulator);
+            let mut body = KernelTerm::variable(KernelType::Integer, acc);
+            for _ in 0..depth {
+                body = KernelTerm::integer_operation(
+                    KernelIntegerOperator::Add,
+                    vec![body.clone(), body],
+                )
+                .unwrap();
+            }
+            let zero = KernelTerm::integer_literal(0.into());
+            KernelFold::new(
+                KernelFoldIndex::Integer,
+                acc,
+                Variable(accumulator + 1),
+                [
+                    zero.clone(),
+                    KernelTerm::integer_literal(BigInt::from(end)),
+                    zero,
+                    body,
+                ],
+            )
+            .unwrap()
+            .into_term()
+        };
+        let left = fold(90_000, 8);
+        let right = fold(90_002, 8);
+        let different = fold(90_006, 9);
+        let comparison = |operator, right| {
+            KernelTerm::integer_comparison(operator, [left.clone(), right]).unwrap()
+        };
+        let stored = |root| StoredConditionTerm::from_root(root).unwrap();
+        let equal = Proposition::condition_is(
+            stored(comparison(IntegerComparisonOperator::Equal, right.clone())),
+            true,
+        );
+        let works = [0, 16, 64, 256].map(|unrelated| {
+            let mut context = IntegerAffineCollectionContext::default();
+            context
+                .constants
+                .extend((0..unrelated).map(|id| (id, None)));
+            let exports = KernelTermExport::integer_export_count();
+            let (claims, work) = crate::instrumentation::measure_deterministic_work(|| {
+                integer_affine_claims_with_context(&equal, &mut context)
+            });
+            assert_eq!(claims.len(), 1);
+            assert!(claims[0].terms.is_empty());
+            assert!(claims[0].constant.is_zero());
+            assert!(written_integer_affine_claim(&equal));
+            assert!(integer_affine_machine_values(&equal).is_empty());
+            assert_eq!(KernelTermExport::integer_export_count(), exports);
+            work
+        });
+        assert!(
+            works.iter().max().unwrap() - works.iter().min().unwrap() <= 16,
+            "{works:?}"
+        );
+        samples.push(works[0]);
+
+        for operator in [
+            IntegerComparisonOperator::Equal,
+            IntegerComparisonOperator::NotEqual,
+            IntegerComparisonOperator::LessThan,
+            IntegerComparisonOperator::LessEqual,
+            IntegerComparisonOperator::GreaterThan,
+            IntegerComparisonOperator::GreaterEqual,
+        ] {
+            for operand in [
+                right.clone(),
+                different.clone(),
+                KernelTerm::integer_literal(3.into()),
+                KernelTerm::variable(KernelType::Integer, Variable(90_004)),
+            ] {
+                let root = comparison(operator, operand);
+                let native = KernelTermExport::condition(&root).unwrap();
+                for value in [true, false] {
+                    let expected =
+                        integer_affine_claim(&Proposition::condition_is(native.clone(), value));
+                    let exports = KernelTermExport::integer_export_count();
+                    let actual = integer_affine_claim(&Proposition::condition_is(
+                        stored(root.clone()),
+                        value,
+                    ));
+                    assert_eq!(actual, expected, "{operator:?}, {value}");
+                    assert_eq!(KernelTermExport::integer_export_count(), exports);
+                }
+            }
+        }
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= 4 * pair[0] + 64, "{samples:?}");
+    }
+}
+
+#[test]
 fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
     use crate::kernel::SharedIntegerTerm;
     let mut costs = Vec::new();
