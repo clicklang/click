@@ -84,7 +84,11 @@ Where no source name exists, the report uses a placeholder instead of a kernel
 identity: `<unnamed A>` for a value no local, parameter, read, model field or
 recorded point names (a callee's result, say), and `<pointer A>` for an
 address no parameter or local reaches. Placeholders share one identity within a
-report and are not Click proof syntax. Facts with no Click form, such as the
+report and are not Click proof syntax. A fact in a refusal's proof context
+that would need a placeholder is printed instead as its Surface form when that
+form lowers back to the same fact in the failed proof: `*p == 0` rather than
+`at(<state A>, p[0]) == 0` (`mdtests/a_refusal_names_a_fact_its_renderer_cannot_spell.md`).
+A contract's own entry model prints as `old(c.model)`. Facts with no Click form, such as the
 memory a step may have changed, are short descriptions
 in angle brackets, in source terms: `<only p[1] changed between function entry
 and here>`.
