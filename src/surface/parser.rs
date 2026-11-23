@@ -12158,7 +12158,11 @@ impl Parser {
             }
             "contradiction" => {
                 self.expect(Token::LParen)?;
-                let proposition = self.parse_proposition()?;
+                let proposition = if self.peek() == Some(&Token::RParen) {
+                    ClickProposition::Value(bool_literal(false))
+                } else {
+                    self.parse_proposition()?
+                };
                 self.expect(Token::RParen)?;
                 ProofTactic::Contradiction(proposition)
             }
@@ -19726,6 +19730,7 @@ mod tactic_classification_tests {
         ("intro-as", "let name = intro();"),
         ("enumerate", "enumerate();"),
         ("contradiction", "contradiction(x == 1);"),
+        ("contradiction-false", "contradiction();"),
         ("rewrite", "rewrite(x, 1);"),
         ("transport", "transport(x == 1, y == 1);"),
         (
