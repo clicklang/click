@@ -26421,6 +26421,24 @@ fn arithmetic_safety_bounds_expand_to_checked_proofs() {
 }
 
 #[test]
+fn float_negation_cast_bounds_expand_to_selected_normalization() {
+    let (source, sources) = mdtest_sources("mdtests/float_negation_preserves_cast_bounds.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let mut expanded = source;
+    for function in ["cast32", "cast64"] {
+        expanded = expand_function_proof_source(&expanded, &sources, function).unwrap();
+        let claim = format!("{function}.ensures_0");
+        without_implicit_solve_for_claim(&claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn indexed_store_bounds_expand_to_an_explicit_step_proof() {
     let (source, sources) = mdtest_sources("mdtests/indexed_store_exposes_its_bounds.md");
     let implicit = source.replace("step() by { known(); }", "step();");
