@@ -29,7 +29,7 @@ mod split_slices;
 #[cfg(test)]
 mod split_slices_tests;
 mod temporaries;
-pub(super) use temporaries::scalar_expression_operands;
+pub(super) use temporaries::{scalar_expression_operands, tested_option_box_local};
 mod traits;
 mod user_iterators;
 mod vec_methods;
@@ -3987,6 +3987,7 @@ pub(super) fn decode_crate(
         temporaries::bind_copied_call_arguments(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
+        temporaries::fold_try_result_aliases(&mut locals, &mut blocks, &temporaries);
         temporaries::fold_constructor_reborrows(&mut locals, &mut blocks, &temporaries);
         temporaries::fold_returned_slice_lengths(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_copied_enum_scrutinees(

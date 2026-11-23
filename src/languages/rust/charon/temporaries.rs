@@ -29,6 +29,28 @@ use super::super::schema::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The nullable box tested by a MIR branch for `Some`.
+pub(in crate::languages::rust) fn tested_option_box_local(condition: &E) -> Option<&str> {
+    let E::Binary {
+        operator,
+        left_type: Type::OptionBox { .. },
+        right_type: Type::OptionBox { .. },
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    if operator == "ne"
+        && matches!(right.as_ref(), E::NoneBox)
+        && let E::Local { name } = left.as_ref()
+    {
+        Some(name)
+    } else {
+        None
+    }
+}
+
 /// Select scalar expression results with one producer and reads along one
 /// straight-line fragment, or one producer per arm of a two-way branch
 /// followed by reads in its continuation. The final reader ends the result. A slot read
@@ -47,6 +69,7 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
     let mut definitions = BTreeMap::<_, Vec<_>>::new();
     let mut reads_by_local = BTreeMap::new();
     let mut excluded = BTreeSet::new();
+    let mut crosses_fragment = BTreeSet::new();
 
     // A forward goto or direct call into a block with exactly one incoming
     // edge continues the fragment. A call can change what the producer read,
@@ -145,7 +168,7 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                             ..
                         }
                 ) || matches!(&code.terminator, T::If { condition, .. }
-                    if !loop_tests.contains(&block) && straight_line_scalar(condition))
+                    if !loop_tests.contains(&block) && (straight_line_scalar(condition) || tested_option_box_local(condition).is_some()))
             };
             for (name, count) in reads {
                 if !is_candidate(&name) {
@@ -157,12 +180,13 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                 }
                 let uses = reads_by_local
                     .entry(name.clone())
-                    .or_insert((point, point, count));
+                    .or_insert((point, point, count, 0usize));
                 if fragments[uses.0.block] != fragment {
-                    excluded.insert(name);
+                    crosses_fragment.insert(name);
                 }
                 uses.1 = point;
                 uses.2 = count;
+                uses.3 += count;
             }
         }
     }
@@ -174,12 +198,34 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
             if excluded.contains(name) {
                 return None;
             }
-            let &(first, last, last_read_count) = reads_by_local.get(name)?;
+            let &(first, last, last_read_count, total_reads) = reads_by_local.get(name)?;
             if last_read_count != 1 {
                 return None;
             }
             let producers = definitions.get(name.as_str())?.as_slice();
             let boxed = matches!(local.value_type, Type::Box { .. } | Type::OptionBox { .. });
+            if crosses_fragment.contains(name) {
+                let [producer] = producers else { return None };
+                return (matches!(local.value_type, Type::OptionBox { .. })
+                    && total_reads == 2
+                    && *producer < first
+                    && fragments[producer.block] == fragments[first.block]
+                    && first.statement == mir.blocks[first.block].statements.len()
+                    && !loop_tests.contains(&first.block)
+                    && matches!(&mir.blocks[first.block].terminator,
+                        T::If { condition, then_target, else_target }
+                            if tested_option_box_local(condition) == Some(name)
+                                && then_target != else_target
+                                && first.block < *then_target
+                                && *then_target == last.block
+                                && incoming[last.block] == 1)
+                    && matches!(&mir.blocks[producer.block].statements[producer.statement],
+                        S::Assign { value: E::Field { .. } | E::Local { .. }, .. })
+                    && matches!(mir.blocks[last.block].statements.get(last.statement),
+                        Some(S::Assign { target: E::Local { .. }, value: E::Local { name: source } })
+                            if source == name))
+                .then(|| (name.clone(), last));
+            }
             if !local.value_type.is_scalar() {
                 let [producer] = producers else { return None };
                 if !boxed || first != last {
@@ -3384,6 +3430,183 @@ pub(super) fn call_steps(
         removed.insert(destination);
     }
     for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// A `?` carrier relays a call result to the variant test and to one use
+/// in each arm. Keep the call result through the test, then end it on the
+/// path that reads either the success payload or the residual.
+pub(super) fn fold_try_result_aliases(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    use super::super::schema::SwitchLabel;
+    let transparent = |statement: &S| {
+        matches!(
+            statement,
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+        )
+    };
+    if !blocks
+        .iter()
+        .flat_map(|block| &block.statements)
+        .any(|statement| {
+            matches!(statement, S::Assign {
+            target: E::Local { name },
+            value: E::CallResult { .. },
+        } if temporaries.contains(name))
+        })
+    {
+        return;
+    }
+    let mut mentions = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0usize; blocks.len()];
+    for block in blocks.iter() {
+        for statement in block.statements.iter().filter(|s| !transparent(s)) {
+            for name in mentioned_locals(statement) {
+                *mentions.entry(name).or_default() += 1;
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        named.extend(reads.into_keys());
+        named.extend(call_destination(&block.terminator).cloned());
+        for name in named {
+            *mentions.entry(name).or_default() += 1;
+        }
+        for successor in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(successor) {
+                *count += 1;
+            }
+        }
+    }
+    let mut removed = BTreeSet::new();
+    for index in 0..blocks.len() {
+        let block = &blocks[index];
+        let T::Goto { target } = block.terminator else {
+            continue;
+        };
+        if target <= index || predecessors.get(target) != Some(&1) {
+            continue;
+        }
+        let mut statements = block
+            .statements
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| !transparent(s));
+        let Some((
+            definition,
+            S::Assign {
+                target: E::Local { name },
+                value:
+                    E::CallResult {
+                        call,
+                        function,
+                        keeps: false,
+                    },
+            },
+        )) = statements.next()
+        else {
+            continue;
+        };
+        if statements.next().is_some()
+            || !temporaries.contains(name)
+            || mentions.get(name) != Some(&4)
+        {
+            continue;
+        }
+        let test = &blocks[target];
+        let T::Switch {
+            scrutinee: E::Local { name: tested },
+            cases,
+            otherwise: None,
+        } = &test.terminator
+        else {
+            continue;
+        };
+        let [first, second] = cases.as_slice() else {
+            continue;
+        };
+        if tested != name
+            || first.target == second.target
+            || !test.statements.iter().all(transparent)
+        {
+            continue;
+        }
+        let use_in = |case: &super::super::schema::SwitchCase| {
+            let SwitchLabel::Variant { name: variant } = &case.label else {
+                return None;
+            };
+            let arm = case.target;
+            if arm <= target || predecessors.get(arm) != Some(&1) {
+                return None;
+            }
+            let (position, statement) = blocks[arm]
+                .statements
+                .iter()
+                .enumerate()
+                .find(|(_, statement)| !transparent(statement))?;
+            let S::Assign {
+                target: E::Local { .. },
+                value,
+            } = statement
+            else {
+                return None;
+            };
+            match value {
+                E::EnumField {
+                    base,
+                    variant: read,
+                    ..
+                } if read == variant
+                    && matches!(base.as_ref(), E::Local { name: source } if source == name) =>
+                {
+                    Some((position, false))
+                }
+                E::Local { name: source } if source == name => Some((position, true)),
+                _ => None,
+            }
+        };
+        let (Some((first_use, first_whole)), Some((second_use, second_whole))) =
+            (use_in(first), use_in(second))
+        else {
+            continue;
+        };
+        if first_whole == second_whole {
+            continue;
+        }
+        let arms = [(first.target, first_use), (second.target, second_use)];
+        let (name, function, call) = (name.clone(), function.clone(), *call);
+        let result = |keeps| E::CallResult {
+            call,
+            function: function.clone(),
+            keeps,
+        };
+        if let T::Switch { scrutinee, .. } = &mut blocks[target].terminator {
+            *scrutinee = result(true);
+        }
+        for (arm, position) in arms {
+            if let S::Assign { value, .. } = &mut blocks[arm].statements[position] {
+                match value {
+                    E::EnumField { base, .. } => **base = result(false),
+                    _ => *value = result(false),
+                }
+            }
+        }
+        blocks[index].statements.remove(definition);
+        removed.insert(name);
+    }
+    if removed.is_empty() {
+        return;
+    }
+    for block in blocks {
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
             _ => true,
