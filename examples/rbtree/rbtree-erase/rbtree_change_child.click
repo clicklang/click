@@ -447,10 +447,19 @@ tactic attach_erase_links(focus: struct rb_node*, parent: struct rb_node*, root:
             have parent != 0 by known();
             apply(parent != 0 implies parent->__rb_parent_color == tag
                 and ((parent->__rb_parent_color & ~3) as (struct rb_node*)) == above);
+            have parent == identity by known();
+            have parent->rb_right == sibling_ptr by {
+                rewrite(sibling_ptr, link_sibling);
+                known();
+            }
             let updated = fold(ctx_at(focus, root), {
-                model: Context::Left(identity, grandparent, color, sibling_model, outer_model),
+                model: Context::Left(parent, grandparent, color, sibling_model, outer_model),
                 sibling: sibling, up: outer
             });
+            have updated.model == old(frame.model) by {
+                rewrite(parent, identity);
+                known();
+            }
         },
         Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
             have links.model == Context::Right(identity, grandparent, color, sibling_model, outer_model) by known();
@@ -467,10 +476,19 @@ tactic attach_erase_links(focus: struct rb_node*, parent: struct rb_node*, root:
             have parent != 0 by known();
             apply(parent != 0 implies parent->__rb_parent_color == tag
                 and ((parent->__rb_parent_color & ~3) as (struct rb_node*)) == above);
+            have parent == identity by known();
+            have parent->rb_left == sibling_ptr by {
+                rewrite(sibling_ptr, link_sibling);
+                known();
+            }
             let updated = fold(ctx_at(focus, root), {
-                model: Context::Right(identity, grandparent, color, sibling_model, outer_model),
+                model: Context::Right(parent, grandparent, color, sibling_model, outer_model),
                 sibling: sibling, up: outer
             });
+            have updated.model == old(frame.model) by {
+                rewrite(parent, identity);
+                known();
+            }
         },
     }
 }
