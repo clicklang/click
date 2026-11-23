@@ -277,6 +277,14 @@ Version selection stays with `point-named-reads.md` and its owner. Each step
 is one PR, measured with the gate harnesses, the raise-lower audit and
 `click audit legacy-walk`.
 
+0. **Click's untyped `Pointer` type.** Add `ProgramType::Pointer` and the
+   Surface type `Pointer`: `load<Pointer>(a)` reads any pointer cell,
+   `byte_offset` displaces it, casts to and from it keep the value, and
+   `*q`, `q[i]` and `q + k` on it are refused. Additive; it gives step 1 the
+   spelling for a pointer load that no place names. The kernel's pointer
+   types are a flat list (`Int32Pointer`, `UInt8PointerPointer`, ...) that
+   exists to carry pointee types; it shrinks as operations take them over,
+   so step 7 is spread across the migration rather than last.
 1. **Pointer loads by version point, not type.** Drop the value type from
    `PointerLoadId`'s key and registry. In `indexed_typed_version`, a pointer
    load matches a pointer store of the same category, object or function, of
