@@ -189,3 +189,36 @@ fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn opaque_call_slots_scale_with_argument_count() {
+    for count in [16, 64, 256] {
+        let mut samples = Vec::new();
+        for unrelated in [0, 128, 512] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let _other_calls = (0..unrelated)
+                .map(|i| {
+                    SharedPureApplication::intern(format!("unrelated_opaque_call_{i}"), vec![])
+                })
+                .collect::<Vec<_>>();
+            let argument = PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits: 2,
+            }));
+            let application = SharedPureApplication::intern(
+                "many_opaque_arguments".into(),
+                vec![argument; count],
+            );
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTermImport::default().machine_call(MachineIntegerType::Int32, &application)
+            });
+            assert_eq!(root.children().len(), count);
+            assert!(work <= 8 * count + 64, "count={count}, work={work}");
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "{samples:?}"
+        );
+    }
+}

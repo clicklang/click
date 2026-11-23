@@ -269,9 +269,9 @@ impl SharedPureApplication {
                 .arguments()
                 .iter()
                 .map(|argument| {
-                    let root = import.argument(argument);
-                    (!matches!(root.node(), crate::kernel::KernelTermNode::Legacy(_)))
-                        .then_some(root)
+                    import.structural_argument(argument).filter(|root| {
+                        !matches!(root.node(), crate::kernel::KernelTermNode::Legacy(_))
+                    })
                 })
                 .collect();
             *cached = Some(PreparedApplicationArguments {
