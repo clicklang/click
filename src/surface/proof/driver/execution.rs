@@ -2902,15 +2902,36 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                             proof_site,
                             owning_source_index,
                             Some(claim_label),
-                        )?
-                        .ok()
-                        .filter(|(_, unconsumed)| unconsumed.is_empty());
-                        let Some((advanced, _)) = advanced else {
-                            return Err(ClickError::new(format!(
-                                "`{claim_label}` tactic {}: `{}` did not verify as a checked preservation operation. The preservation driver declined it; this is a proof-shape limitation, not a failed proposition check. For proposition-only work, move the operation into `have proposition by {{ ... }}`.",
+                        )?;
+                        let advanced = match advanced {
+                            Ok((advanced, remaining)) if remaining.is_empty() => advanced,
+                            declined => {
+                                let diagnostic = ClickError::new(format!(
+                                "`{claim_label}` tactic {}: `{}` did not verify as a checked preservation operation",
                                 indexed.index,
                                 tactic_name(&indexed.tactic)
-                            )));
+                                )).with_failed_tactic(tactic_name(&indexed.tactic));
+                                let diagnostic = match declined {
+                                    Err(Decline::ShortOfExit) => diagnostic
+                                        .with_proof_refusal(ProofRefusal::IncompleteProof),
+                                    Err(Decline::RegionDepth) => diagnostic
+                                        .with_context(format!(
+                                            "the checked execution region nesting limit is {MAX_CHECKED_EXECUTION_REGION_DEPTH}",
+                                        ))
+                                        .with_kind(ClickErrorKind::Unsupported),
+                                    Ok(_) | Err(Decline::Shape)
+                                        if matches!(indexed.tactic, ProofTactic::Instantiate { .. }) =>
+                                    {
+                                        diagnostic
+                                            .with_context("For proposition-only work, move the operation into `have proposition by { ... }`.")
+                                            .with_kind(ClickErrorKind::Unsupported)
+                                    }
+                                    Ok(_) | Err(Decline::Shape) => {
+                                        diagnostic.with_kind(ClickErrorKind::Internal)
+                                    }
+                                };
+                                return Err(diagnostic);
+                            }
                         };
                         proof = advanced;
                         if matches!(
@@ -3911,7 +3932,7 @@ fn advance_execution_match_group<'a>(
         let Some(joined) = proof.try_join_focused_execution_if(&record)? else {
             return Err(ClickError::new(
                 "the arms of this proof `match` do not rejoin: with tactics written after the `match`, every live arm must end at the same program point in the same state",
-            ));
+            ).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("match"));
         };
         return Ok(Ok(joined));
     };
@@ -4809,7 +4830,7 @@ fn advance_checked_branch_arms<'a>(
             };
             return Err(ClickError::new(format!(
                 "the {name} `branch` arm's {keyword}, so the arms have no common successor to join; write this case as a proof `if` on the C condition, whose arms each reach the loop rule on their own"
-            )));
+            )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("branch"));
         }
     }
     let mut consumed_continuation = false;

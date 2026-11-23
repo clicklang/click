@@ -1566,13 +1566,14 @@ fn contract_closing_goal<'a>(
                 ClickError::new(
                     "contract closing could not construct the postcondition's entry and exit views",
                 )
+                .with_kind(ClickErrorKind::Internal)
             })?
             .goals(*contract_index)
             .map_err(|reason| {
-                ClickError::new(format!(
-                    "contract closing for `{}.ensures_{contract_index}`: {reason}",
-                    function.name(),
-                ))
+                closing_goal_error(
+                    &format!("`{}.ensures_{contract_index}`", function.name()),
+                    reason,
+                )
             })?,
         FunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index) => {
             match retained_entry {
@@ -1592,24 +1593,68 @@ fn contract_closing_goal<'a>(
                     assumptions,
                 ),
             }
-            .ok_or_else(|| {
-                ClickError::new("contract closing could not evaluate the exceptional postcondition")
-            })?
+            .map_err(|reason| closing_goal_error(&claim_label, reason))?
         }
         _ => return Ok(None),
     };
     if goals.is_empty() {
         return Err(ClickError::new(format!(
             "contract closing could not evaluate `{claim_label}` at this outcome",
-        )));
+        ))
+        .with_proof_refusal(ProofRefusal::IncompleteProof));
     }
     if goals.len() != 1 {
         return Err(ClickError::new(format!(
             "contract closing produced {} evaluation paths for `{claim_label}`; establish the selecting condition before closing this claim",
             goals.len(),
-        )));
+        )).with_proof_refusal(ProofRefusal::IncompleteProof));
     }
     Ok(goals.pop())
+}
+
+fn closing_goal_error(claim: &str, reason: crate::kernel::EnsureGoalRefusal) -> ClickError {
+    use crate::kernel::{EnsureGoalRefusal, ExecutionLimit};
+    let diagnostic = ClickError::new(format!("contract closing for {claim}: {reason}"));
+    match reason {
+        EnsureGoalRefusal::MissingClause(_)
+        | EnsureGoalRefusal::MissingExceptionalClause(_)
+        | EnsureGoalRefusal::EntryUnavailable
+        | EnsureGoalRefusal::ExpectedThrow
+        | EnsureGoalRefusal::Stopped(
+            ExecutionLimit::Deadline
+            | ExecutionLimit::ExpressionSteps
+            | ExecutionLimit::StatementSteps
+            | ExecutionLimit::FunctionCalls
+            | ExecutionLimit::LoopUnrolls
+            | ExecutionLimit::KernelVariables { .. }
+            | ExecutionLimit::MatchBinderVariables { .. }
+            | ExecutionLimit::ExecutionIdentityBesideLiveState
+            | ExecutionLimit::QuantifierDoesNotClose,
+        ) => diagnostic.with_kind(ClickErrorKind::Internal),
+        EnsureGoalRefusal::Stopped(
+            ExecutionLimit::GuardedConjunctionTooLong
+            | ExecutionLimit::SymbolicPointerConditional
+            | ExecutionLimit::UnsupportedPureFunctionResult(_),
+        ) => diagnostic.with_kind(ClickErrorKind::Unsupported),
+        EnsureGoalRefusal::Stopped(
+            ExecutionLimit::BoolArithmetic
+            | ExecutionLimit::BoolComparedWithInteger
+            | ExecutionLimit::BoolOrdered
+            | ExecutionLimit::MixedBoolArms
+            | ExecutionLimit::LoopIterationsUnbound,
+        ) => diagnostic.with_proof_refusal(ProofRefusal::Contract),
+        EnsureGoalRefusal::Unavailable(_)
+        | EnsureGoalRefusal::Stopped(
+            ExecutionLimit::Paths
+            | ExecutionLimit::ResourceFieldInstanceUnavailable
+            | ExecutionLimit::AuthorityCountNeedsExactPointer
+            | ExecutionLimit::AuthorityCountNeedsResolvedMember
+            | ExecutionLimit::AuthorityCountNeedsOwnership
+            | ExecutionLimit::AuthorityCountLentToWorker
+            | ExecutionLimit::AuthorityCountPendingLockedWorker
+            | ExecutionLimit::DisjunctionRightUndefined,
+        ) => diagnostic.with_proof_refusal(ProofRefusal::IncompleteProof),
+    }
 }
 
 /// The retained contract judgment for an explicit closer. Definition
@@ -5391,7 +5436,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let error = ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: {reason}"
-                                    ));
+                                    )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic(closer_name);
                                     return Err(
                                         match failed_known
                                             .and_then(|failure| failure.diagnostic().cloned())

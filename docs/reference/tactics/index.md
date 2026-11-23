@@ -2765,6 +2765,11 @@ instantiation performs no premise search or guard discharge.
 **Outside it:** a universal not yet established must be proved first with
 `have`. A value of another carrier needs a conversion. The former `using`
 list is rejected; write ordinary guard proofs instead.
+The loop preservation checker currently supports instantiation inside
+`have proposition by { ... }`. Supporting a standalone instantiation in
+`maintain` requires the checker to carry the added fact between execution
+steps.
+
 
 **Failure, checking, and tools:**
 

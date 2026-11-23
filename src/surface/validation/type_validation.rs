@@ -4273,7 +4273,7 @@ pub(in crate::surface) fn validate_void_pointer_cast_source(
     {
         return Err(ClickError::new(format!(
             "contract void-pointer cast in {context} expects an object pointer operand, got {actual:?}"
-        )));
+        )).with_kind(crate::surface::ClickErrorKind::Type));
     }
     Ok(())
 }

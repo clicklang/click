@@ -2178,7 +2178,9 @@ impl Proof<'_> {
                 failing_path: Some(path_index),
                 checks: None,
                 origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                    stage: "execution path certification".into(),
+                    stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::Other(
+                        "execution path certification",
+                    ),
                     location: format!("{claim} path {path_index}"),
                     source_tactic_path: None,
                 },
@@ -2207,7 +2209,9 @@ impl Proof<'_> {
                 failing_path: None,
                 checks: None,
                 origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                    stage: "return-fold certification".into(),
+                    stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::Other(
+                        "return-fold certification",
+                    ),
                     location: self.claim_label().to_owned(),
                     source_tactic_path: None,
                 },
@@ -3758,7 +3762,7 @@ impl<'a> Proof<'a> {
             failing_path: None,
             checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                stage: "proof step".to_owned(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location,
                 source_tactic_path: self.site.source_tactic_path(),
             },
@@ -3809,7 +3813,7 @@ impl<'a> Proof<'a> {
             failing_path: None,
             checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                stage: "proof step".to_owned(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location,
                 source_tactic_path: self.site.source_tactic_path(),
             },

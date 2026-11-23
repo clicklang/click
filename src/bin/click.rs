@@ -1517,6 +1517,101 @@ int32 check(struct link* node) {
     }
 
     #[test]
+    fn verify_classifies_contract_closing_and_theorem_setup_failures() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, heading, detail) in [
+            (
+                "a_claim_that_cannot_lower_after_step_until_is_refused_with_its_cause.md",
+                "incomplete proof",
+                "requires owning authority",
+            ),
+            (
+                "an_unbounded_variable_tag_does_not_preserve_a_pointer_relationship.md",
+                "incomplete proof",
+                "integer-to-pointer cast requires",
+            ),
+            (
+                "loop_decreases_rejects_a_state_measure.md",
+                "contract error",
+                "a termination measure must be a function of the current state alone",
+            ),
+            (
+                "algebraic_generic_theorem_rejects_cyclic_verification.md",
+                "contract error",
+                "circular theorem justification",
+            ),
+            (
+                "c_contract_executes_signature.md",
+                "contract error",
+                "executes signature does not match",
+            ),
+            (
+                "defined_of_a_match_owes_its_arms_operands_domains.md",
+                "contract error",
+                "condition of its evaluation",
+            ),
+            (
+                "nested_loop_mark_invariant_diagnostic.md",
+                "contract error",
+                "cannot be used in a loop invariant",
+            ),
+            (
+                "loop_entry_memory_capture_short_rejected.md",
+                "incomplete proof",
+                "loop declares a resource the enclosing function does not hold",
+            ),
+            (
+                "resource_child_pure_arguments_non_c.md",
+                "type error",
+                "does not return a C value",
+            ),
+            (
+                "loop_preserve_bare_instantiate_names_repair.md",
+                "unsupported",
+                "move the operation into `have proposition by { ... }`",
+            ),
+            (
+                "named_contract_rejects_unheld_link_read.md",
+                "contract error",
+                "could not address resource clause",
+            ),
+            (
+                "abbreviated_produced_view_ambiguous.md",
+                "contract error",
+                "matches multiple input views",
+            ),
+            (
+                "while_guard_unreadable_operand_rejected.md",
+                "tactic error",
+                "the loop condition could not be evaluated on this path",
+            ),
+            (
+                "a_closer_with_no_open_goal_is_refused.md",
+                "tactic error",
+                "has no goal to close",
+            ),
+            (
+                "c_builtin_limits_conflicting_definition.md",
+                "syntax error",
+                "macro `INT_MAX` is redefined",
+            ),
+            (
+                "conditional_compilation_rejects_expression.md",
+                "unsupported",
+                "unsupported conditional expression",
+            ),
+        ] {
+            let error = entry([
+                "verify".to_string(),
+                fixtures.join(name).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(error.starts_with(&format!("{heading}:")), "{name}: {error}");
+            assert!(error.contains(detail), "{name}: {error}");
+        }
+    }
+
+    #[test]
     fn verification_separates_unprepared_safety_goals_from_unsupported_operations() {
         let fixture = |name: &str| {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

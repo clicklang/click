@@ -6035,6 +6035,7 @@ pub(super) struct LoopHead {
 #[derive(Clone, Debug)]
 pub(super) enum LoopResourceFailure {
     Message(String),
+    Evaluation(String),
     Unheld {
         fact: ResourceFact,
         state: ExecutionState,
@@ -6049,7 +6050,7 @@ impl LoopResourceFailure {
     /// spell the resource; the loop-head refusal carries it instead.
     pub(super) fn context(&self) -> String {
         match self {
-            Self::Message(message) => message.clone(),
+            Self::Message(message) | Self::Evaluation(message) => message.clone(),
             Self::Unheld { .. } => Self::UNHELD.to_string(),
         }
     }
@@ -6925,7 +6926,7 @@ fn loop_declared_and_withheld_resources(
     let declared = match evaluated? {
         Ok(declared) => declared,
         Err(error) => {
-            return Ok(Err(LoopResourceFailure::Message(format!(
+            return Ok(Err(LoopResourceFailure::Evaluation(format!(
                 "loop declares a resource the enclosing function does not hold: {}",
                 super::api::contract_certification::describe_certification_runtime_error(&error)
             ))));
