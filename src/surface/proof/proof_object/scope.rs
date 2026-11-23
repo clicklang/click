@@ -127,8 +127,7 @@ impl<'a> ProofScope<'a> {
                             "reported introductions do not match the nested `have` path",
                         ));
                     };
-                    // Negation introduction adds its body as an assumption;
-                    // it does not expose that body's binders as further goals.
+                    // Negation is the end of the reported head chain.
                     cursor = &contradiction_goal;
                     Ok(introduction)
                 }
@@ -834,6 +833,32 @@ impl<'a> ProofScope<'a> {
 }
 
 impl<'a> Proof<'a> {
+    /// Retain a checked introduction and its body as a single scoped step.
+    pub(in crate::surface::proof) fn finish_scoped_intro(
+        &self,
+        opened: &Self,
+        mut completed: Self,
+    ) -> Result<Self, ClickError> {
+        let opening = opened.certificate_since(&self.checkpoint())?;
+        let binder = match opening.steps() {
+            [ProofStep::Intro] => None,
+            [ProofStep::IntroAs(name)] => Some(SurfaceBinder::Written(name.clone())),
+            [ProofStep::IntroBinder(binder)] => Some(binder.clone()),
+            _ => return Err(self.step_error("scoped intro did not record its introduction")),
+        };
+        let body = completed.certificate_since(&opened.checkpoint())?;
+        completed.state = completed.state.with_locals(self.state.locals().clone());
+        completed.node = ProofNode::step_child(
+            &self.node,
+            self.focused_branch_id(),
+            Arc::new(ProofStep::IntroBlock {
+                binder,
+                body: Box::new(body),
+            }),
+        );
+        Ok(completed)
+    }
+
     /// Retain a completed descendant of this focused proposition goal as a `have`.
     /// The checked descendant supplies the evidence; its certificate is only
     /// serialized evidence and is never executed again.

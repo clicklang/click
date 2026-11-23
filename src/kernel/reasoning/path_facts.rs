@@ -136,8 +136,8 @@ pub enum LoweringIntroduction {
 }
 
 /// The head chain of a lowered proposition, outermost first: one entry per
-/// node a proposition introduction can reach before any other step. A negation
-/// ends the chain: introducing it assumes its body and leaves a false goal.
+/// node reachable through introductions before any other step. A negation
+/// marks the end of that chain.
 pub type LoweringIntroductions = Vec<LoweringIntroduction>;
 
 pub(in crate::kernel) fn wrap_path_context(

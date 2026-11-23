@@ -933,6 +933,7 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             Some(PostExecutionTactic::Apply(application.clone()))
         }
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
+        ProofTactic::IntroBlock { .. } => Some(PostExecutionTactic::Leaf(tactic.clone())),
         ProofTactic::Both(_) | ProofTactic::All(_) => {
             Some(PostExecutionTactic::Both(tactic.clone()))
         }

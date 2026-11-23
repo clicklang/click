@@ -316,9 +316,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_index_disequality_from_order");
         let known =
             ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary order lookup");
-        let refute_order =
-            ProofCertificate::from_steps(vec![ProofStep::Rewrite(equality), ProofStep::Normalize])
-                .expect("ordinary refutation of an irreflexive order");
+        let refute_order = ProofCertificate::from_steps(vec![
+            ProofStep::Rewrite(equality.clone()),
+            ProofStep::Normalize,
+        ])
+        .expect("ordinary refutation of an irreflexive order");
         for order in orders {
             let Some(proof) =
                 attempt::candidate_outcome(search_input.driver().apply_have_step(&order, &known))?
@@ -326,18 +328,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let proof_steps = ProofCertificate::from_steps(vec![
-                ProofStep::Intro,
+            let equal_case = ProofCertificate::from_steps(vec![
                 ProofStep::Have {
                     proposition: ClickProposition::Not(Box::new(order.clone())),
                     proof: Box::new(refute_order.clone()),
                 },
                 ProofStep::Contradiction(order),
             ])
+            .expect("ordinary refutation of equal indices");
+            let proof_steps = ProofCertificate::from_steps(vec![ProofStep::If {
+                condition: equality.clone(),
+                ensuring: None,
+                then_proof: Box::new(equal_case),
+                else_proof: Box::new(known.clone()),
+            }])
             .expect("ordinary index disequality");
-            if let Some(proof) =
-                attempt::candidate_outcome(proof.driver().apply_have_step(distinct, &proof_steps))?
-            {
+            let checked = || {
+                let scope = proof
+                    .driver()
+                    .open_have_with_goal_observations(distinct.clone(), true)?;
+                scope
+                    .driver()
+                    .try_authoritative_linear_script(&proof_steps.to_proof_tactics())?
+                    .map(|done| done.join())
+                    .transpose()
+            };
+            if let Some(Some(proof)) = attempt::candidate_outcome(checked())? {
                 return Ok(Some(proof));
             }
         }

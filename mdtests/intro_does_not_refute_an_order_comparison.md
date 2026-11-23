@@ -20,5 +20,5 @@ theorem order(x: int32, y: int32) {
 ```
 
 ```expect
-fail: `intro` requires an implication, negation, or universal goal
+fail: `intro` requires an implication or universal goal
 ```
