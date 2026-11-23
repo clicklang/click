@@ -98,7 +98,12 @@ fn caller_callback_reads_keep_the_entry_point() {
         let load = pointer.address().as_loaded_value().expect("callback read");
         assert_eq!(load.point.read_version_id(), entry.program_point_id());
         assert_eq!(load.defining_address, address);
-        assert_eq!(load.value_type, Some(ty));
+        // A callback read is a function-pointer load, a different value
+        // from any object-pointer load of the cell.
+        assert_eq!(
+            load.category,
+            Some(crate::kernel::PointerLoadCategory::Function)
+        );
     };
     let assumptions = PureFactContext::new();
     let logical = SpecExpression::MemoryLoad {

@@ -2556,6 +2556,32 @@ pub struct Address {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PointerLoadId(pub(crate) u64);
 
+/// Which decodings of one pointer cell's bytes are one pointer value
+/// (`design/loads.md`, "Pointers"). Every object-pointer type decodes the
+/// same bytes to the same pointer, so the pointee type is no part of a
+/// pointer load's identity. A function pointer is a different value: its
+/// load has no object domain, and a store of one answers no object-pointer
+/// load, nor the reverse.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum PointerLoadCategory {
+    Object,
+    Function,
+}
+
+impl PointerLoadCategory {
+    /// The category of an eight-byte pointer decoded at `value_type`, or
+    /// `None` for a type that is no single pointer cell.
+    pub(crate) fn of_type(value_type: ProgramType) -> Option<Self> {
+        match value_type {
+            ProgramType::FunctionPointer(_) => Some(Self::Function),
+            // An array of pointers is an aggregate, not one pointer cell.
+            ProgramType::PointerArray(_, _) => None,
+            value_type if value_type.is_pointer() => Some(Self::Object),
+            _ => None,
+        }
+    }
+}
+
 /// Semantic decoder for an opaque pointer value read from memory. The
 /// displacement belongs to later pointer arithmetic, not to the identity of
 /// the load or to the storage address that held the value.
@@ -2568,7 +2594,10 @@ pub(crate) struct LoadedPointerView {
     pub(crate) identity: PointerLoadId,
     pub(crate) defining_memory: SharedMemory,
     pub(crate) point: ProgramPoint,
-    pub(crate) value_type: Option<ProgramType>,
+    /// The decoding category of a point-named load; `None` for a load
+    /// named by a memory state's unchanged-bytes source. No pointee type:
+    /// the type belongs to the `Pointer` term that decodes the load.
+    pub(crate) category: Option<PointerLoadCategory>,
     pub(crate) defining_address: Address,
     pub(crate) displacement: AddressOffset,
 }
@@ -2967,7 +2996,7 @@ impl Pointer {
             base: AddressBase::LoadedPointer(crate::kernel::eval::pointer_load_at_point(
                 point,
                 cell,
-                Some(program_type),
+                PointerLoadCategory::of_type(program_type),
             )),
             offset: AddressOffset::Constant(0),
         };

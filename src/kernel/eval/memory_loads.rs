@@ -372,7 +372,9 @@ pub(in crate::kernel) fn evaluate_indexed_read(
             let ProgramValue::Pointer(stored) = store.native().numeric_value() else {
                 unreachable!("indexed pointer store");
             };
-            stored.clone()
+            // A store at another pointee type of the same category answers
+            // this load; the stored value is the read's value at its type.
+            stored.clone().with_type(value_type)
         });
         record_load_access_width(version.memory(), &pointer, value_type.byte_width());
         let read = Pointer::from_point_read(version, value_type, &pointer);
@@ -2859,11 +2861,13 @@ thread_local! {
         imbl::HashMap<(u64, Variable), (ProgramPoint, Address)>,
     > = std::cell::RefCell::new(imbl::HashMap::new());
     /// Separate pointer-valued load names. The defining key is one canonical
-    /// state and address at the fixed eight-byte pointer interpretation;
+    /// state and address at the fixed eight-byte pointer interpretation, and
+    /// the decoding category (object or function) of a point-named load;
     /// neither a scalar load variable nor its mutable maximum access width
-    /// decides membership in this registry.
+    /// decides membership in this registry, nor does the pointee type a
+    /// read decodes the cell at (`design/loads.md`, "Pointers").
     static POINTER_LOAD_REGISTRY: std::cell::RefCell<
-        std::collections::HashMap<PointerLoadId, (ProgramPoint, Address, Option<ProgramType>)>,
+        std::collections::HashMap<PointerLoadId, (ProgramPoint, Address, Option<PointerLoadCategory>)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// The read observation a pointer-load name was first produced from, whose
     /// epoch-scoped live origin answers what existed when the value was read
@@ -2939,8 +2943,10 @@ pub(crate) struct LoadRegistryState {
     wide_observations: imbl::HashMap<(u64, Variable), (ProgramPoint, Address)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     read_observations: read_observations::State,
-    pointers:
-        std::collections::HashMap<PointerLoadId, (ProgramPoint, Address, Option<ProgramType>)>,
+    pointers: std::collections::HashMap<
+        PointerLoadId,
+        (ProgramPoint, Address, Option<PointerLoadCategory>),
+    >,
     pointer_sources: std::collections::HashMap<PointerLoadId, read_observations::Id>,
     widths: std::collections::HashMap<(SharedMemory, Address), u32>,
     widths_at_address: std::collections::HashMap<Address, u32>,
@@ -3374,16 +3380,19 @@ pub(crate) fn pointer_read_over_write_value(pointer: &Address) -> Option<Address
     pointer_read_over_write_program_value(pointer).map(|stored| stored.address().clone())
 }
 
+/// The pointer a recorded store wrote to the cell a pointer load of this
+/// `category` reads. Any store of a pointer of the same category answers
+/// the load, whatever pointee type either names: the stored value keeps its
+/// own type, and a caller that knows the reading term's type retags it.
 fn indexed_pointer_read_value(
     point: &ProgramPoint,
     address: &Address,
-    value_type: Option<ProgramType>,
+    category: Option<PointerLoadCategory>,
 ) -> Option<Pointer> {
     let version;
     let point = if point.is_exact_read() {
-        let value_type = value_type.filter(|ty| ty.is_pointer())?;
         crate::instrumentation::record_deterministic_work(1);
-        version = point.indexed_typed_version(address, value_type)?;
+        version = point.indexed_pointer_version(address, category?)?;
         &version
     } else {
         point
@@ -3404,7 +3413,7 @@ pub(crate) fn pointer_read_over_write_program_value(pointer: &Address) -> Option
     }
 
     if let Some(stored) =
-        indexed_pointer_read_value(&read.point, &read.defining_address, read.value_type)
+        indexed_pointer_read_value(&read.point, &read.defining_address, read.category)
     {
         return Some(stored);
     }
@@ -3706,16 +3715,21 @@ pub(crate) fn pointer_load_identity(memory: &SharedMemory, address: &Address) ->
     pointer_load_at_point(ProgramPoint::at(memory), address, None)
 }
 
+/// Intern a pointer load by its version point and cell, and the decoding
+/// category of a point-named load. A load's identity is never the pointee
+/// type it is decoded at (`design/loads.md`): one version point and one
+/// eight-byte cell is one pointer value whatever object-pointer type reads
+/// it, and the type belongs to the `Pointer` term.
 pub(crate) fn pointer_load_at_point(
     point: ProgramPoint,
     address: &Address,
-    value_type: Option<ProgramType>,
+    category: Option<PointerLoadCategory>,
 ) -> PointerLoadId {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     point.read_key().hash(&mut hasher);
     point.is_exact_read().hash(&mut hasher);
-    value_type.hash(&mut hasher);
+    category.hash(&mut hasher);
     address.hash(&mut hasher);
     let mut slot = hasher.finish() % POINTER_LOAD_ID_RANGE;
     POINTER_LOAD_REGISTRY.with(|registry| {
@@ -3723,10 +3737,10 @@ pub(crate) fn pointer_load_at_point(
         loop {
             let identity = PointerLoadId(slot);
             match registry.get(&identity) {
-                Some((known_point, known_address, known_type))
+                Some((known_point, known_address, known_category))
                     if known_point.read_key() == point.read_key()
                         && known_point.is_exact_read() == point.is_exact_read()
-                        && *known_type == value_type
+                        && *known_category == category
                         && known_address == address =>
                 {
                     return identity;
@@ -3740,7 +3754,7 @@ pub(crate) fn pointer_load_at_point(
                         registry.len() < LOAD_VARIABLE_REGISTRY_CAPACITY,
                         "pointer-load registry capacity exhausted"
                     );
-                    registry.insert(identity, (point, address.clone(), value_type));
+                    registry.insert(identity, (point, address.clone(), category));
                     return identity;
                 }
             }
@@ -3798,8 +3812,8 @@ fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase>
 }
 
 fn stored_pointer_for_load(identity: PointerLoadId) -> Option<Pointer> {
-    let (point, cell, value_type) = registered_pointer_load_point(identity)?;
-    if let Some(stored) = indexed_pointer_read_value(&point, &cell, value_type) {
+    let (point, cell, category) = registered_pointer_load_point(identity)?;
+    if let Some(stored) = indexed_pointer_read_value(&point, &cell, category) {
         return Some(stored);
     }
     let memory = point.shared_memory();
@@ -3829,7 +3843,7 @@ pub(crate) fn registered_pointer_load(identity: PointerLoadId) -> Option<(Shared
 
 pub(crate) fn registered_pointer_load_point(
     identity: PointerLoadId,
-) -> Option<(ProgramPoint, Address, Option<ProgramType>)> {
+) -> Option<(ProgramPoint, Address, Option<PointerLoadCategory>)> {
     POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().get(&identity).cloned())
 }
 
@@ -4095,8 +4109,8 @@ pub(crate) fn record_pointer_load_source(identity: PointerLoadId, read: &Machine
 fn pointer_load_origin(identity: PointerLoadId) -> Option<SharedMemory> {
     if let Some(memory) = POINTER_LOAD_REGISTRY.with(|registry| {
         let registry = registry.borrow();
-        let (point, _, value_type) = registry.get(&identity)?;
-        value_type.is_some().then(|| point.shared_memory().clone())
+        let (point, _, category) = registry.get(&identity)?;
+        category.is_some().then(|| point.shared_memory().clone())
     }) {
         return Some(memory);
     }
@@ -6687,7 +6701,10 @@ mod tests {
             state.program_point_id()
         );
         assert_eq!(defining_read.defining_address, cell);
-        assert_eq!(defining_read.value_type, Some(ty));
+        assert_eq!(
+            defining_read.category,
+            Some(crate::kernel::PointerLoadCategory::Object)
+        );
         assert_eq!(pointer.provenance(), pointer.address());
         assert_eq!(pointer.bounds_owner(), Some(pointer.address()));
     }
@@ -6721,7 +6738,10 @@ mod tests {
         let descriptor = read.address().as_loaded_value().expect("entry read");
         assert_eq!(descriptor.point.read_version_id(), state.program_point_id());
         assert_eq!(descriptor.defining_address, cell);
-        assert_eq!(descriptor.value_type, Some(ty));
+        assert_eq!(
+            descriptor.category,
+            Some(crate::kernel::PointerLoadCategory::Object)
+        );
         assert_eq!(read.provenance(), read.address());
         assert_eq!(read.bounds_owner(), Some(read.address()));
         assert_eq!(point_named_pointer_cell_read(&entry, &cell, ty), Some(read));
@@ -8647,8 +8667,19 @@ mod tests {
             };
             identity
         };
+        // The load's identity is its point and cell, not the pointee type
+        // (`design/loads.md`): the `int32 *` store answers a `uint32 *` read
+        // of the cell, and no function-pointer read of it.
+        assert_eq!(
+            loaded_pointer_stored_address(read(&forgotten, ProgramType::UInt32Pointer)),
+            Some(address.clone())
+        );
         assert!(
-            loaded_pointer_stored_address(read(&forgotten, ProgramType::UInt32Pointer)).is_none()
+            loaded_pointer_stored_address(read(
+                &forgotten,
+                ProgramType::FunctionPointer(crate::kernel::CallbackSignature::UNSPECIFIED)
+            ))
+            .is_none()
         );
 
         let other = SymbolicMemory::local_pointer("unrelated_word");
