@@ -389,6 +389,23 @@ pub(super) fn rewrite_calls(
     let mut index = 0;
     while index < clause.len() {
         old_until.retain(|&close| index <= close);
+        // A replayed projection is already in resource form. In particular,
+        // it cannot mean a model function that happens to have this name.
+        if is_ident(clause.get(index), OBJECT_RESOURCE)
+            && matches!(
+                clause.get(index + 1..index + 5),
+                Some([
+                    (Token::LParen, _),
+                    (Token::Ident(_), _),
+                    (Token::RParen, _),
+                    (Token::Dot, _)
+                ])
+            )
+        {
+            output.extend_from_slice(&clause[index..index + 4]);
+            index += 4;
+            continue;
+        }
         if is_ident(clause.get(index), "old")
             && clause.get(index + 1).map(|(token, _)| token) == Some(&Token::LParen)
             && let Some(close) = matching(clause, index + 1)

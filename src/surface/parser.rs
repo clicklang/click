@@ -8041,6 +8041,22 @@ impl Parser {
             self.position += length;
             return Ok(ResourceSubject::Emp);
         }
+        if let Some((receiver, width)) = self.object_resource_selector() {
+            let name = rust_trait_objects::object_resource_spelling(receiver);
+            if let Some(identity) = self
+                .names
+                .resource_bindings
+                .get(&name)
+                .and_then(|(identity, _)| identity.instance())
+            {
+                self.position += width;
+                return Ok(ResourceSubject::Instance {
+                    name,
+                    identity,
+                    at: None,
+                });
+            }
+        }
         if let Some(name) = self.peek_ident()
             && self.peek_next() != Some(&Token::LParen)
             && let Some(identity) = self
@@ -9640,6 +9656,7 @@ impl Parser {
             )
             && self.peek_next() == Some(&Token::LParen)
             && !self.looks_like_region_result()
+            && self.object_resource_field_selector().is_none()
         {
             if let Some(name) = self.peek_ident()
                 && let Some(value_parameters) = self.contract_value_parameter_names.get(name)
@@ -17424,9 +17441,7 @@ impl Parser {
             return Ok(ContractExpression::ResourceCount(Box::new(resource)));
         }
 
-        if let Some((receiver, width)) = self.object_resource_selector()
-            && self.tokens.get(self.position + width) == Some(&Token::Dot)
-        {
+        if let Some((receiver, width)) = self.object_resource_field_selector() {
             let owner = rust_trait_objects::object_resource_spelling(receiver);
             if let Some((identity, resource_name)) =
                 self.names.resource_bindings.get(&owner).cloned()
@@ -18588,6 +18603,11 @@ impl Parser {
             (Some(Token::Ident(receiver)), Some(Token::RParen)) => Some((Some(receiver), 4)),
             _ => None,
         }
+    }
+
+    fn object_resource_field_selector(&self) -> Option<(Option<&str>, usize)> {
+        self.object_resource_selector()
+            .filter(|(_, width)| self.tokens.get(self.position + width) == Some(&Token::Dot))
     }
 
     fn expect_resource_binder(&mut self, expected: &str) -> Result<String, ClickError> {
