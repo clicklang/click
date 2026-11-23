@@ -338,6 +338,7 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
  ensures first->value == 11;
  ensures second->value == 22;
 } by {
+    have separate(memory(second->value), memory(first->value)) by known();
     step();
     have to_integer(count(item(pool, _))) == 0 by {
         known();
@@ -370,8 +371,18 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
         have first->value == 11;
     }
     with(item(pool, second)) {
+        mark before_second_write;
         step();
-        have first->value == 11;
+        have separate(region(4).footprint, memory(first->value)) by {
+            normalize() using { separate(memory(second->value), memory(first->value)); };
+        }
+        have first->value == at(before_second_write, first->value) by {
+            preserve(memory(first->value), region(4));
+        }
+        have first->value == 11 by {
+            rewrite(first->value, at(before_second_write, first->value));
+            known();
+        }
         have second->value == 22;
     }
     have to_integer(count(item(pool, second))) == 1 by {

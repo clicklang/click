@@ -339,6 +339,10 @@ int through(int x) {
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
+    step_until(call(Stack__int__click_pack__Container__int, 0).entry);
+    let { __object_object: packed } = step(Stack__int__click_pack__Container__int, { state: state });
+    step_until(function.exit);
+    solve();
 }
 ```
 

@@ -107,7 +107,8 @@ template<class T> void Stack<T>::push(T value) {
         List::Cons(top, below) => {
             let { tail: rest } = unfold(state);
             step_until(function.exit);
-            let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below), tail: rest });
+            have this->head->next == old(this->head) by solve();
+            let tail = fold(nodes<T>(old(this->head)), { items: List::Cons(top, below), tail: rest });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)), tail: tail });
         },
     }
