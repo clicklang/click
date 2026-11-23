@@ -680,6 +680,29 @@ int32 f(int32 n) {
     }
 
     #[test]
+    fn invalid_loop_measures_report_contract_errors() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, detail) in [
+            (
+                "c_decreases_rejects_address_escaped_loop_measure.md",
+                "has its address taken",
+            ),
+            (
+                "loop_decreases_model_function_rejects_a_c_local.md",
+                "reads a resource binder's model and also the C variable `n`",
+            ),
+        ] {
+            let report = entry([
+                "verify".to_owned(),
+                fixtures.join(name).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(report.starts_with("contract error:"), "{name}: {report}");
+            assert!(report.contains(detail), "{name}: {report}");
+        }
+    }
+
+    #[test]
     fn source_proof_tails_close_in_their_scope_and_expand_for_explicit_replay() {
         let source = r#"
             function successor(n: int32) -> int32 { n + 1 }

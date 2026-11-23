@@ -141,7 +141,12 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     .loop_source
                     .open_loop_proof(loop_index, statement.clone()),
             }
-            .map_err(|error| ClickError::new(error.message()))?;
+            .map_err(|error| {
+                crate::surface::verification::termination_analysis_error(
+                    &error,
+                    error.message().to_owned(),
+                )
+            })?;
             let loop_clause = environment
                 .function_block
                 .structural_clauses()
