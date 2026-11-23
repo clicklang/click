@@ -1009,9 +1009,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let steps =
             std::iter::repeat_n(ProofStep::Intro, guards + 1).chain([ProofStep::Instantiate {
                 quantified,
-                argument: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    (binder).into(),
-                )),
+                arguments: vec![ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable((binder).into()),
+                )],
             }]);
         let mut proof = search_input.clone();
         for step in steps {
@@ -2820,9 +2820,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ProofStep::Intro,
                     ProofStep::Instantiate {
                         quantified: entry(conjunct),
-                        argument: ContractExpression::ProgramExpression(
+                        arguments: vec![ContractExpression::ProgramExpression(
                             ProgramExpression::Variable((name.clone()).into()),
-                        ),
+                        )],
                     },
                     transport(consequent),
                 ]
@@ -10950,7 +10950,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     tactics.push(ProofTactic::Instantiate {
                         quantified: surface.clone(),
-                        argument: argument.clone(),
+                        arguments: vec![argument.clone()],
                     });
                     let conclusion = current.clone();
                     let close_with_known = &conclusion == goal || read_defined_goal;

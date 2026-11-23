@@ -139,10 +139,10 @@ pub enum ProofStep {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
-    /// Substitute one universal binder, preserving its whole body and guards.
+    /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: ClickProposition,
-        argument: ContractExpression,
+        arguments: Vec<ContractExpression>,
     },
     Have {
         proposition: ClickProposition,
@@ -815,10 +815,10 @@ impl ProofStep {
             },
             ProofTactic::Instantiate {
                 quantified,
-                argument,
+                arguments,
             } => Self::Instantiate {
                 quantified: quantified.clone(),
-                argument: argument.clone(),
+                arguments: arguments.clone(),
             },
             _ => return None,
         })
@@ -1008,10 +1008,10 @@ impl ProofStep {
             },
             Self::Instantiate {
                 quantified,
-                argument,
+                arguments,
             } => ProofTactic::Instantiate {
                 quantified: quantified.clone(),
-                argument: argument.clone(),
+                arguments: arguments.clone(),
             },
             Self::Have { proposition, proof } => ProofTactic::Have(ProofHave {
                 proposition: proposition.clone(),
