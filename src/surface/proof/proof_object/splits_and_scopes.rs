@@ -987,7 +987,7 @@ impl<'a> Proof<'a> {
         if crate::surface::proof_trace::enabled_for(self.claim_label()) {
             let added = successor.state().added_facts();
             crate::surface::proof_trace::record_join(
-                Arc::as_ptr(&successor.node) as usize,
+                crate::surface::proof_trace::trace_node_key(&successor.node),
                 crate::surface::proof_trace::TraceJoin {
                     marker: Arc::as_ptr(&marker.node) as usize,
                     arms: [
