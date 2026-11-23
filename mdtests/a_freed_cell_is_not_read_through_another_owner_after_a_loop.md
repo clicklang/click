@@ -4,15 +4,10 @@ A use after free. `f` saves `h->ptr`, a loop swaps the pointers of two
 holders once, `f` frees `g->ptr`, which is now the saved pointer, and then
 reads through `saved`.
 
-A view of the saved cell that outlived the loop, still attached to
-`holder(h)`, would let the proof unfold `holder(g)`, free its cell and read
-the freed memory through `holder(h)`. The verifier refuses the proof. Today
-it refuses at the `free`: the cell `holder(h)` gives read authority for is
-not shown separate from the allocation being freed.
-
-That refusal is conservative. The two holders are separate owners, so the
-cells they own are distinct, and a version of this function that did not read
-`saved` would be correct C that is refused the same way.
+The loop records which holder points to `saved` before and after the swap.
+Its proof preserves `h->ptr` through the write to `g->ptr` so it can rebuild
+both owners. At the free, `g->ptr == saved` identifies the allocation being
+released. The verifier then rejects the read through `saved`.
 
 ```c filename=a_freed_cell_is_not_read_through_another_owner_after_a_loop.c
 struct holder {
@@ -56,19 +51,43 @@ int32 f(struct holder* h, struct holder* g) {
     step();
     loop {
         decreases 1 - i;
-        invariant i >= 0;
+        invariant 0 <= i and i <= 1;
+        invariant i == 0 implies h->ptr == saved;
+        invariant i == 1 implies g->ptr == saved;
         owns holder(h);
         owns holder(g);
         initialize by solve();
         maintain by {
             unfold(holder(h));
             unfold(holder(g));
-            step(); step(); step(); step();
+            have i == 0 by solve();
+            have h->ptr == saved by known();
+            step();
+            have t == saved by known();
+            mark before_first_store;
+            have separate(memory(h->ptr), memory(g->ptr)) by known();
+            step();
+            have h->ptr == at(before_first_store, g->ptr) by known();
+            mark before_second_store;
+            step();
+            have separate(loop(0).statement(2).footprint, memory(h->ptr)) by {
+                normalize() using { separate(memory(h->ptr), memory(g->ptr)); };
+            }
+            have h->ptr == at(before_second_store, h->ptr) by {
+                preserve(memory(h->ptr), loop(0).statement(2));
+            }
             fold(holder(h));
+            have g->ptr == saved by solve();
             fold(holder(g));
+            step();
+            have i == 1 by solve();
+            have g->ptr == saved by known();
+            solve();
         }
     }
     unfold(holder(g));
+    have i == 1 by solve();
+    have g->ptr == saved by known();
     step();
     step();
     solve();
@@ -76,5 +95,5 @@ int32 f(struct holder* h, struct holder* g) {
 ```
 
 ```expect
-fail: resource would remain usable after its allocation is freed
+fail: invalid memory access
 ```

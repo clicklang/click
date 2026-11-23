@@ -223,6 +223,11 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     have second->kid == kid;
     have observed == kid->payload;
     have observed == second->kid->payload by { rewrite(second->kid, kid); solve(); }
+    have second_link.link == ParentLink::Linked(kid) by { solve(); }
+    have second_link.link != ParentLink::Empty by {
+        rewrite(second_link.link, ParentLink::Linked(kid));
+        normalize();
+    }
     mark detaching;
     let { out: second_out } = step(parent_detach, { link: second_link });
     have at(detaching, second->kid) == kid by known();

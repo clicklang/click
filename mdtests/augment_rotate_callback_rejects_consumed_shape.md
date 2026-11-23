@@ -95,12 +95,50 @@ struct node* rotate_left(
     ensures result->augmented <= 1000;
 } by {
     unfold(shape(node->right));
-    step();
-    step();
-    step();
-    step();
-    step();
-    step();
+    // Carry the untouched link reads across each store before folding.
+    step_until(statement(2).entry);
+    have defined(node->left) by { normalize(); }
+    have separate(memory(node->left), memory(node->right)) by { known(); }
+    have defined(pivot->right) by { normalize(); }
+    have separate(memory(pivot->right), memory(node->right)) by { known(); }
+    mark before_right;
+    step_until(statement(3).entry);
+    have separate(statement(2).footprint, memory(node->left)) by {
+        normalize() using { at(before_right, separate(memory(node->left), memory(node->right))); };
+    }
+    have defined(node->left) by { preserve(memory(node->left), statement(2)); }
+    have separate(statement(2).footprint, memory(pivot->right)) by {
+        normalize() using { at(before_right, separate(memory(pivot->right), memory(node->right))); };
+    }
+    have defined(pivot->right) by { preserve(memory(pivot->right), statement(2)); }
+
+    have separate(memory(node->left), memory(pivot->left)) by { known(); }
+    have defined(node->right) by { normalize(); }
+    have node->right == middle by { normalize(); }
+    have separate(memory(node->right), memory(pivot->left)) by { known(); }
+    have defined(pivot->right) by { normalize(); }
+    have separate(memory(pivot->right), memory(pivot->left)) by { known(); }
+    mark before_left;
+    step_until(statement(4).entry);
+    have separate(statement(3).footprint, memory(node->left)) by {
+        normalize() using { at(before_left, separate(memory(node->left), memory(pivot->left))); };
+    }
+    have defined(node->left) by { preserve(memory(node->left), statement(3)); }
+    have separate(statement(3).footprint, memory(node->right)) by {
+        normalize() using { at(before_left, separate(memory(node->right), memory(pivot->left))); };
+    }
+    have defined(node->right) by { preserve(memory(node->right), statement(3)); }
+    have node->right == at(before_left, node->right) by { preserve(memory(node->right), statement(3)); }
+    have node->right == middle by {
+        rewrite(node->right, at(before_left, node->right));
+        known();
+    }
+    have pivot->left == node by { normalize(); }
+    have separate(statement(3).footprint, memory(pivot->right)) by {
+        normalize() using { at(before_left, separate(memory(pivot->right), memory(pivot->left))); };
+    }
+    have defined(pivot->right) by { preserve(memory(pivot->right), statement(3)); }
+    have defined(pivot->left) by { normalize(); }
     fold(shape(node));
     fold(shape(pivot));
     step();
@@ -125,9 +163,12 @@ struct node* rotate_steal(struct node* node) {
     ensures result == old(node->right);
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
+} by {
+    have AugmentRotate(&steal) by { solve(); }
+    step_until(function.exit);
 }
 ```
 
 ```expect
-fail: function `steal` does not satisfy named contract `AugmentRotate`
+fail: could not establish `AugmentRotate(&steal)`
 ```
