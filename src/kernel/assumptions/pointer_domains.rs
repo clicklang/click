@@ -92,8 +92,8 @@ impl PureFactContext {
             required,
             (
                 &available.provenance,
-                available.bounds_owner.as_deref(),
-                available.carrier_bounds_known,
+                available.carrier_owner().map(|owner| &**owner),
+                available.carrier_known(),
             ),
             self,
         ) {

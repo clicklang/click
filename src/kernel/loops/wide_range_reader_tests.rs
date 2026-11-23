@@ -12,8 +12,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     );
     let segment = EvaluatedMemorySegment {
         provenance: wide.provenance.clone(),
-        bounds_owner: wide.bounds_owner.clone(),
-        bounds_known: wide.carrier_bounds_known,
+        carrier: wide.carrier_array().clone(),
         base: base.clone(),
         start: wide.bound_terms().0.clone(),
         end: wide.bound_terms().1.clone(),

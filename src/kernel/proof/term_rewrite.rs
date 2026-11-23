@@ -3349,8 +3349,8 @@ impl<'a> TermRewrite<'a> {
                 if let Some((from, to)) = self.pointer_value_exact
                     && !self.source_disabled
                     && range.provenance.as_ref() == from.provenance()
-                    && range.bounds_owner.as_deref() == from.bounds_owner()
-                    && range.carrier_bounds_known == from.bounds_are_known()
+                    && range.carrier_owner().map(|owner| &**owner) == from.bounds_owner()
+                    && range.carrier_known() == from.bounds_are_known()
                 {
                     // The footprint already fixed its admitted byte bounds.
                     // A complete equality transports its retained carrier,

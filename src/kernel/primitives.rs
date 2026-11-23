@@ -6463,8 +6463,9 @@ pub struct MemoryRange {
     /// intervals ask only about physical authority; both retain supplier
     /// provenances through resource algebra and subsequent C access checks.
     pub(super) typed_carrier: bool,
-    pub(super) carrier_bounds_known: bool,
-    pub(super) bounds_owner: Option<Arc<Address>>,
+    /// The array object of the pointer that named the range. It has no
+    /// bounds of its own: the range's bytes are its bounds.
+    pub(super) carrier: ArrayObject,
     /// The bounds, in elements. Read them through [`MemoryRange::start`]
     /// and [`MemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`MemoryRange::wide_bounds`]: a term carries no width, so a
@@ -6508,7 +6509,7 @@ impl MemoryRange {
         (
             &self.base,
             &self.provenance,
-            self.bounds_owner.as_deref(),
+            self.carrier.owner().map(|owner| &**owner),
             &self.start_bound,
             &self.end_bound,
             self.element_width,
