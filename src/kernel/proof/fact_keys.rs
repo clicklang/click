@@ -1202,7 +1202,7 @@ struct AlphaRegisteredLoadRecord {
     retained_state: AlphaStateKey,
     pointer: AlphaAddressKey,
     kind: LoadKind,
-    pointer_read_type: Option<(ProgramType, bool)>,
+    pointer_read_category: Option<(crate::kernel::PointerLoadCategory, bool)>,
 }
 
 /// Weak entries by descriptor fingerprint. A record removes its own entry
@@ -1262,13 +1262,13 @@ fn alpha_registered_load_descriptor_fingerprint(
     retained_state: &AlphaStateKey,
     pointer: &AlphaAddressKey,
     kind: LoadKind,
-    pointer_read_type: Option<(ProgramType, bool)>,
+    pointer_read_category: Option<(crate::kernel::PointerLoadCategory, bool)>,
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     retained_state.hash(&mut hasher);
     pointer.hash(&mut hasher);
     kind.hash(&mut hasher);
-    pointer_read_type.hash(&mut hasher);
+    pointer_read_category.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -1277,13 +1277,13 @@ fn intern_alpha_registered_load(
     retained_state: AlphaStateKey,
     pointer: AlphaAddressKey,
     kind: LoadKind,
-    pointer_read_type: Option<(ProgramType, bool)>,
+    pointer_read_category: Option<(crate::kernel::PointerLoadCategory, bool)>,
 ) -> Option<AlphaRegisteredLoadId> {
     let fingerprint = alpha_registered_load_descriptor_fingerprint(
         &retained_state,
         &pointer,
         kind,
-        pointer_read_type,
+        pointer_read_category,
     );
     let mut interner_state = interner.lock().ok()?;
     let bucket = interner_state.buckets.entry(fingerprint).or_default();
@@ -1298,7 +1298,7 @@ fn intern_alpha_registered_load(
         if record.retained_state == retained_state
             && record.pointer == pointer
             && record.kind == kind
-            && record.pointer_read_type == pointer_read_type
+            && record.pointer_read_category == pointer_read_category
         {
             return Some(AlphaRegisteredLoadId(record));
         }
@@ -1317,7 +1317,7 @@ fn intern_alpha_registered_load(
         retained_state,
         pointer,
         kind,
-        pointer_read_type,
+        pointer_read_category,
     });
     bucket.push(Arc::downgrade(&record));
     Some(AlphaRegisteredLoadId(record))
@@ -2163,11 +2163,12 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
         return None;
     }
     let result = (|| {
-        let (point, address, value_type) =
+        let (point, address, category) =
             crate::kernel::eval::registered_pointer_load_point(identity)?;
         let mut retained_state = alpha_retained_state_key(point.shared_memory(), bindings)?;
         retained_state.key = point.read_key();
-        let pointer_read_type = value_type.map(|ty| (ty, point.is_exact_read()));
+        // Keyed like the load itself: its category, never a pointee type.
+        let pointer_read_category = category.map(|category| (category, point.is_exact_read()));
         let address =
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(&address, bindings, next_binder)?;
         let interner = match bindings.load_interner.clone() {
@@ -2184,7 +2185,7 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
             retained_state,
             address,
             LoadKind::Bits64,
-            pointer_read_type,
+            pointer_read_category,
         )?;
         Some((load_id, *next_binder))
     })();

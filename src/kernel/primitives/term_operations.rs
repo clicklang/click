@@ -5053,13 +5053,13 @@ impl Address {
         let AddressBase::LoadedPointer(identity) = self.base else {
             return None;
         };
-        let (point, defining_address, value_type) =
+        let (point, defining_address, category) =
             crate::kernel::eval::registered_pointer_load_point(identity)?;
         Some(LoadedPointerView {
             identity,
             defining_memory: point.shared_memory().clone(),
             point,
-            value_type,
+            category,
             defining_address,
             displacement: self.offset.clone(),
         })

@@ -1186,11 +1186,14 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     )
     .expect("pointer-offset equality should have a surface form");
 
+    // No field or declaration names the loaded cell and a load carries no
+    // pointee type, so it spells at Click's untyped `Pointer`
+    // (`design/loads.md`, "Raising"), never at a guessed `int32 *`.
     assert!(matches!(
         surface,
         ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
-                value_type: ProgramType::Int32Pointer,
+                value_type: ProgramType::Pointer,
                 ..
             }),
             operator: ComparisonOperator::Equal,

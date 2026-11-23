@@ -2353,3 +2353,146 @@ fn narrow_read_selection_ignores_unrelated_wide_observations() {
         "{samples:?}"
     );
 }
+
+/// A pointer load's identity is its version point and cell, never the
+/// pointee type it is decoded at (`design/loads.md`, "Pointers"). Reading
+/// one cell at N object-pointer types interns one `PointerLoadId`, and the
+/// next differently typed read costs the same whatever N is.
+#[test]
+fn differently_typed_reads_of_one_pointer_cell_intern_one_load() {
+    const TYPES: [ProgramType; 8] = [
+        ProgramType::Int32Pointer,
+        ProgramType::UInt8Pointer,
+        ProgramType::VoidPointer,
+        ProgramType::Pointer,
+        ProgramType::Int64Pointer,
+        ProgramType::UInt16Pointer,
+        ProgramType::Float64Pointer,
+        ProgramType::Int32PointerPointer,
+    ];
+    let registry_len = || POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().len());
+    let mut samples = Vec::new();
+    for reads in [4, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let point = entry.program_point();
+        let cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let read = |ty: ProgramType| {
+            let version = point
+                .ordinary_typed_version(&cell, ty)
+                .expect("entry version of the pointer cell");
+            Pointer::from_point_read(version, ty, &cell)
+        };
+        let before = registry_len();
+        let first = read(TYPES[0]);
+        for n in 1..reads {
+            let ty = TYPES[n % TYPES.len()];
+            let value = read(ty);
+            assert_eq!(value.address(), first.address(), "read at {ty:?}");
+            assert_eq!(value.provenance(), first.provenance(), "read at {ty:?}");
+            assert_eq!(value.program_type(), ty, "the term keeps its own type");
+        }
+        assert_eq!(
+            registry_len() - before,
+            1,
+            "one cell at one point is one load"
+        );
+        let (next, work) =
+            crate::instrumentation::measure_deterministic_work(|| read(ProgramType::Int16Pointer));
+        assert_eq!(next.address(), first.address());
+        assert_eq!(registry_len() - before, 1);
+        samples.push(work);
+    }
+    // Interning is one hash probe, charged only on a slot collision, so the
+    // next read's work is the same at every N: the earlier reads at other
+    // types left one entry, not N.
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+/// A store at one object-pointer type answers a load of exactly its cell at
+/// any other, across sibling writes, with selection work flat in their
+/// number. A function-pointer store answers no object-pointer load, nor the
+/// reverse, and a partial store still ends the cell's version.
+#[test]
+fn a_pointer_store_answers_loads_of_its_category_at_any_pointee_type() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let object = slot_cell(0);
+    let callback = slot_cell(8);
+    let sibling = slot_cell(16);
+    let target = Address::symbolic(Variable(983_001));
+    let pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer);
+    let function = Pointer::new(
+        Address::function("callback_target"),
+        ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+    );
+    let start = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block(object.base.clone(), 20));
+    let written = start.clone().with_memory(
+        start
+            .memory()
+            .clone()
+            .store(object.clone(), ProgramValue::Pointer(pointer.clone()))
+            .store(callback.clone(), ProgramValue::Pointer(function.clone())),
+    );
+    let mut samples = Vec::new();
+    for count in [4, 64, 256] {
+        let mut state = written.clone();
+        for value in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                sibling.clone(),
+                ProgramValue::Int32(MachineTerm::constant(value)),
+            ));
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let point = state.program_point();
+            let byte_view = point
+                .indexed_typed_version(&object, ProgramType::UInt8Pointer)
+                .expect("the int32 * store answers a uint8 * load");
+            assert_eq!(byte_view.read_version_id(), written.program_point_id());
+            let read = Pointer::from_point_read(byte_view, ProgramType::UInt8Pointer, &object);
+            let stored = crate::kernel::eval::pointer_read_over_write_program_value(read.address())
+                .expect("the stored pointer");
+            assert_eq!(stored.address(), &target);
+            assert!(
+                point
+                    .indexed_typed_version(&object, function.program_type())
+                    .is_none(),
+                "an object-pointer store answers no function-pointer load"
+            );
+            assert!(
+                point
+                    .indexed_typed_version(&callback, ProgramType::VoidPointer)
+                    .is_none(),
+                "a function-pointer store answers no object-pointer load"
+            );
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+    let partial = written.clone().with_memory(written.memory().clone().store(
+        object.offset_by_bytes(4),
+        ProgramValue::Int32(MachineTerm::constant(0)),
+    ));
+    assert!(
+        partial
+            .program_point()
+            .indexed_typed_version(&object, ProgramType::UInt8Pointer)
+            .is_none()
+    );
+}
+
+fn slot_cell(offset: u32) -> Address {
+    Address {
+        base: "local:pointer-categories".into(),
+        offset: AddressOffset::Constant(i64::from(offset)),
+    }
+}

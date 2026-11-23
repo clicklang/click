@@ -921,6 +921,11 @@ loads across different states.
 
 The kernel has a distinct `PointerLoadId`, `AddressBase::LoadedPointer`,
 and a constructor/decoder pair for `(defining retained_state, address, displacement)`.
+A point-named load's key also records whether it decodes an object or a
+function pointer (`PointerLoadCategory`), never the pointee type: one cell at
+one version point is one pointer at every object-pointer type, and a store at
+one object-pointer type answers a load at another (`design/loads.md`,
+"Pointers"; `mdtests/a_pointer_store_answers_a_load_at_another_pointer_type.md`).
 The equality graph indexes this explicit pointer application without consulting
 the scalar load registry's mutable access width. Ordinary C pointer-load
 producers still create the storage-relative form; their checked path-context
