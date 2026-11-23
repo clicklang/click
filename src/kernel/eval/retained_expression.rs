@@ -593,8 +593,10 @@ fn conditional_paths(
                 &truthiness.facts,
                 &truthiness.obligations,
             );
-            for path in evaluate_expression_value_paths(state, branch, &branch_assumptions, budget)?
+            for mut path in
+                evaluate_expression_value_paths(state, branch, &branch_assumptions, budget)?
             {
+                guard_conditional_cast_bounds(&truthiness.facts, &mut path.obligations);
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &truthiness.facts,
                     &truthiness.obligations,

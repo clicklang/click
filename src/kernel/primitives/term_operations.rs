@@ -1677,6 +1677,19 @@ fn divide_decoded_floats(
     )
 }
 
+pub(in crate::kernel) fn float_binary_bits_at(
+    format: crate::kernel::KernelFloatType,
+    left: u64,
+    right: u64,
+    operator: FloatBinaryOperator,
+) -> u64 {
+    let (exponent, fraction) = match format {
+        crate::kernel::KernelFloatType::Float32 => (8, 23),
+        crate::kernel::KernelFloatType::Float64 => (11, 52),
+    };
+    float_binary_bits(left, right, exponent, fraction, operator)
+}
+
 fn float_binary_bits(
     left: u64,
     right: u64,
