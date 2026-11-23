@@ -26233,6 +26233,28 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
 }
 
 #[test]
+fn arithmetic_safety_bounds_expand_to_checked_proofs() {
+    for (path, function) in [
+        ("mdtests/arithmetic_safety_float_widening.md", "convert"),
+        ("mdtests/arithmetic_safety_right_shift_count.md", "shift32"),
+        ("mdtests/arithmetic_safety_right_shift_count.md", "shift64"),
+    ] {
+        let (source, sources) = mdtest_sources(path);
+        let sources = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, function)
+            .unwrap_or_else(|error| panic!("{path}: {error}"));
+        let claim = format!("{function}.ensures_0");
+        without_implicit_solve_for_claim(&claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{path}: {error}"));
+    }
+}
+
+#[test]
 fn indexed_store_bounds_expand_to_an_explicit_step_proof() {
     let (source, sources) = mdtest_sources("mdtests/indexed_store_exposes_its_bounds.md");
     let implicit = source.replace("step() by { known(); }", "step();");

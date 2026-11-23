@@ -215,6 +215,9 @@ impl ConditionTerm {
         left: MachineOperandView<'_>,
         count: MachineOperandView<'_>,
     ) -> Self {
+        if matches!(left.literal(), Some(MachineTerm::Constant { bits: 0, .. })) {
+            return Self::Constant(true);
+        }
         let constant = |n: u64| {
             KernelTerm::retained_native_machine_operand(
                 format,
@@ -263,6 +266,9 @@ impl ConditionTerm {
         left: MachineTerm,
         count: MachineTerm,
     ) -> Self {
+        if matches!(left, MachineTerm::Constant { bits: 0, .. }) {
+            return Self::Constant(true);
+        }
         let constant = |n: u64| {
             crate::kernel::machine_integer::range::constant_word(format, &n.into())
                 .expect("shift bound fits")

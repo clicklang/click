@@ -46,7 +46,7 @@ pub(in crate::kernel) fn integer_to_float64_bits(negative: bool, magnitude: u128
     integer_to_float_bits(negative, magnitude, 52, 11, 1023, 0x8000_0000_0000_0000)
 }
 
-fn float32_to_float64_bits(bits: u32) -> u64 {
+pub(in crate::kernel) fn float32_to_float64_bits(bits: u32) -> u64 {
     let sign = u64::from(bits & 0x8000_0000) << 32;
     let exponent = (bits >> 23) & 0xff;
     let fraction = bits & 0x007f_ffff;
