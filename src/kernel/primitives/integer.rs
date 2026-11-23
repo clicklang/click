@@ -1246,7 +1246,13 @@ impl MachineIntegerInterner {
 
 /// An immutable Integer node.  Children are interned by shallow identity, so
 /// cloning a shared child never clones its transitive DAG.
-pub struct SharedIntegerTerm(Arc<SharedIntegerNode>);
+pub struct SharedIntegerTerm(SharedIntegerStorage);
+
+#[derive(Clone)]
+enum SharedIntegerStorage {
+    Retained(KernelTerm),
+    Native(Arc<SharedIntegerNode>),
+}
 
 struct SharedIntegerNode {
     id: u64,
@@ -1264,33 +1270,70 @@ struct SharedIntegerNode {
 pub(crate) struct WeakIntegerTerm(Weak<SharedIntegerNode>);
 impl WeakIntegerTerm {
     pub(crate) fn upgrade(&self) -> Option<SharedIntegerTerm> {
-        self.0.upgrade().map(SharedIntegerTerm)
+        self.0
+            .upgrade()
+            .map(|node| SharedIntegerTerm(SharedIntegerStorage::Native(node)))
     }
 }
 
 impl SharedIntegerTerm {
+    pub(super) fn from_mathematical_root(root: KernelTerm) -> Self {
+        debug_assert!(root.is_mathematical_integer());
+        Self(SharedIntegerStorage::Retained(root))
+    }
+
+    pub(crate) fn mathematical_root(&self) -> Option<&KernelTerm> {
+        match &self.0 {
+            SharedIntegerStorage::Retained(root) => Some(root),
+            SharedIntegerStorage::Native(_) => None,
+        }
+    }
+
     pub(crate) fn kernel_term(&self) -> Option<&KernelTerm> {
-        self.0.kernel_term.get()
+        match &self.0 {
+            SharedIntegerStorage::Retained(root) => Some(root),
+            SharedIntegerStorage::Native(node) => node.kernel_term.get(),
+        }
     }
     pub(crate) fn remember_kernel_term(&self, term: KernelTerm) {
-        let _ = self.0.kernel_term.set(term);
+        if let SharedIntegerStorage::Native(node) = &self.0 {
+            let _ = node.kernel_term.set(term);
+        }
     }
     pub(crate) fn downgrade(&self) -> WeakIntegerTerm {
-        WeakIntegerTerm(Arc::downgrade(&self.0))
+        match &self.0 {
+            SharedIntegerStorage::Retained(_) => WeakIntegerTerm::default(),
+            SharedIntegerStorage::Native(node) => WeakIntegerTerm(Arc::downgrade(node)),
+        }
     }
 
     /// Cached from immediate children when the node is introduced. Numeric
     /// checking can leave symbolic nonlinear operands opaque without a walk.
     pub(crate) fn is_literal_arithmetic(&self) -> bool {
-        self.0.literal_arithmetic
+        match &self.0 {
+            SharedIntegerStorage::Retained(root) => root.is_literal_integer_arithmetic(),
+            SharedIntegerStorage::Native(node) => node.literal_arithmetic,
+        }
+    }
+
+    fn mathematical_id(root: &KernelTerm) -> u64 {
+        (1 << 63) | root.id()
     }
 
     pub(crate) fn id(&self) -> u64 {
-        self.0.id
+        match &self.0 {
+            SharedIntegerStorage::Retained(root) => Self::mathematical_id(root),
+            SharedIntegerStorage::Native(node) => node.id,
+        }
     }
 
     pub(crate) fn as_ref(&self) -> &IntegerTerm {
-        &self.0.term
+        match &self.0 {
+            SharedIntegerStorage::Retained(root) => {
+                root.integer_native_compat().expect("mathematical Integer")
+            }
+            SharedIntegerStorage::Native(node) => &node.term,
+        }
     }
 
     /// This term with every machine observation among its arithmetic
@@ -1310,19 +1353,21 @@ impl SharedIntegerTerm {
 
     /// [`Self::read_through`] by reference to the cached reading.
     pub(crate) fn read_through_ref(&self) -> &SharedIntegerTerm {
-        if self.0.read_through.get().is_none() {
+        let SharedIntegerStorage::Native(node) = &self.0 else {
+            return self;
+        };
+        if node.read_through.get().is_none() {
             self.compute_read_through();
         }
-        self.0
-            .read_through
+        node.read_through
             .get()
             .and_then(Option::as_ref)
             .unwrap_or(self)
     }
 
     fn compute_read_through(&self) {
-        let children = |node: &SharedIntegerTerm| -> Vec<SharedIntegerTerm> {
-            match node.as_ref() {
+        let children = |node: &SharedIntegerNode| -> Vec<SharedIntegerTerm> {
+            match &node.term {
                 IntegerTerm::Negate(child) => vec![child.clone()],
                 crate::kernel::binary_integer_term!(left, right) => {
                     vec![left.clone(), right.clone()]
@@ -1331,29 +1376,29 @@ impl SharedIntegerTerm {
             }
         };
         let mut stack = vec![(self.clone(), false)];
-        while let Some((node, expanded)) = stack.pop() {
-            if node.0.read_through.get().is_some() {
+        while let Some((term, expanded)) = stack.pop() {
+            let SharedIntegerStorage::Native(node) = &term.0 else {
+                continue;
+            };
+            if node.read_through.get().is_some() {
                 continue;
             }
             if !expanded {
-                stack.push((node.clone(), true));
+                stack.push((term.clone(), true));
                 stack.extend(
-                    children(&node)
+                    children(node)
                         .into_iter()
-                        .filter(|child| child.0.read_through.get().is_none())
+                        .filter(|child| {
+                            matches!(&child.0, SharedIntegerStorage::Native(node) if node.read_through.get().is_none())
+                        })
                         .map(|child| (child, false)),
                 );
                 continue;
             }
             let read = |child: &SharedIntegerTerm| -> SharedIntegerTerm {
-                child
-                    .0
-                    .read_through
-                    .get()
-                    .and_then(Option::clone)
-                    .unwrap_or_else(|| child.clone())
+                child.read_through_ref().clone()
             };
-            let rebuilt = match node.as_ref() {
+            let rebuilt = match &node.term {
                 IntegerTerm::Machine(machine) => machine
                     .value_reading()
                     .map(|reading| SharedIntegerTerm::intern(reading.clone())),
@@ -1369,7 +1414,7 @@ impl SharedIntegerTerm {
                 | IntegerTerm::TruncatingRemainder(left, right) => {
                     let (left_read, right_read) = (read(left), read(right));
                     (left_read.id() != left.id() || right_read.id() != right.id()).then(|| {
-                        SharedIntegerTerm::intern(match node.as_ref() {
+                        SharedIntegerTerm::intern(match &node.term {
                             IntegerTerm::Add(..) => IntegerTerm::Add(left_read, right_read),
                             IntegerTerm::Subtract(..) => {
                                 IntegerTerm::Subtract(left_read, right_read)
@@ -1388,10 +1433,12 @@ impl SharedIntegerTerm {
             };
             // A reading is its own reading: its children are readings and a
             // read observation has no further relation to read through.
-            if let Some(rebuilt) = &rebuilt {
-                let _ = rebuilt.0.read_through.set(None);
+            if let Some(rebuilt) = &rebuilt
+                && let SharedIntegerStorage::Native(node) = &rebuilt.0
+            {
+                let _ = node.read_through.set(None);
             }
-            let _ = node.0.read_through.set(rebuilt);
+            let _ = node.read_through.set(rebuilt);
         }
     }
 
@@ -1399,11 +1446,15 @@ impl SharedIntegerTerm {
     /// from its children's, which interning computed before: O(1) per new
     /// node, so no later reader walks a term's DAG.
     pub(crate) fn intern(term: IntegerTerm) -> Self {
+        if let Some(root) = term.mathematical_root() {
+            return Self::from_mathematical_root(root);
+        }
         let node = integer_interner()
             .lock()
             .expect("Integer interner lock poisoned")
             .intern(term);
-        if node.0.read_through.get().is_none() {
+        if matches!(&node.0, SharedIntegerStorage::Native(native) if native.read_through.get().is_none())
+        {
             node.compute_read_through();
         }
         node
@@ -1568,7 +1619,7 @@ impl fmt::Display for SharedIntegerTerm {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-enum IntegerShallowKey {
+pub(super) enum IntegerShallowKey {
     Constant(BigInt),
     Variable(Variable),
     Machine(u64),
@@ -1584,7 +1635,50 @@ enum IntegerShallowKey {
         arms: Vec<AlgebraicIntegerMatchArm>,
     },
     If(Box<ConditionTerm>, u64, u64),
-    RangeFold(IntegerRangeFoldIndex, u64, Variable, Variable, u64),
+    RangeFold(IntegerRangeIdentity, u64, Variable, Variable, u64),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(super) enum IntegerRangeIdentity {
+    Int32(u64, u64),
+    UInt64(u64, u64),
+    Integer(u64, u64),
+}
+
+impl IntegerShallowKey {
+    pub(super) fn mathematical(root: &KernelTerm) -> Self {
+        let id = SharedIntegerTerm::mathematical_id;
+        match root.node() {
+            KernelTermNode::IntegerLiteral(value) => Self::Constant(value.clone()),
+            KernelTermNode::Variable(variable) => Self::Variable(*variable),
+            KernelTermNode::IntegerOperation {
+                operator,
+                arguments,
+            } => {
+                let left = id(&arguments[0]);
+                use KernelIntegerOperator as Op;
+                match operator {
+                    Op::Negate => Self::Negate(left),
+                    Op::Add => Self::Add(left, id(&arguments[1])),
+                    Op::Subtract => Self::Subtract(left, id(&arguments[1])),
+                    Op::Multiply => Self::Multiply(left, id(&arguments[1])),
+                    Op::TruncatingQuotient => Self::TruncatingQuotient(left, id(&arguments[1])),
+                    Op::TruncatingRemainder => Self::TruncatingRemainder(left, id(&arguments[1])),
+                }
+            }
+            KernelTermNode::Fold(fold) => {
+                let [start, end, initial, body] = &fold.arguments;
+                Self::RangeFold(
+                    IntegerRangeIdentity::Integer(id(start), id(end)),
+                    id(initial),
+                    fold.accumulator,
+                    fold.item,
+                    id(body),
+                )
+            }
+            _ => unreachable!("mathematical Integer key"),
+        }
+    }
 }
 
 impl IntegerTerm {
@@ -1658,7 +1752,77 @@ impl IntegerTerm {
         }
     }
 
-    fn shallow_key(&self) -> IntegerShallowKey {
+    pub(crate) fn is_mathematical(&self) -> bool {
+        let retained = |value: &SharedIntegerTerm| value.mathematical_root().is_some();
+        match self {
+            Self::Constant(_) | Self::Variable(_) => true,
+            Self::Negate(value) => retained(value),
+            crate::kernel::binary_integer_term!(left, right) => retained(left) && retained(right),
+            Self::RangeFold {
+                index: IntegerRangeFoldIndex::Integer { start, end },
+                initial,
+                body,
+                ..
+            } => [start, end, initial, body].into_iter().all(retained),
+            _ => false,
+        }
+    }
+
+    pub(super) fn mathematical_root(&self) -> Option<KernelTerm> {
+        use KernelIntegerOperator as Op;
+        let fold = |index, accumulator, item, arguments| {
+            KernelFold::new(index, accumulator, item, arguments)
+                .expect("mathematical Integer fold")
+                .into_term()
+        };
+        let operation = |op, left: &SharedIntegerTerm, right: &SharedIntegerTerm| {
+            Some(
+                KernelTerm::integer_operation(
+                    op,
+                    vec![
+                        left.mathematical_root()?.clone(),
+                        right.mathematical_root()?.clone(),
+                    ],
+                )
+                .expect("mathematical Integer operands"),
+            )
+        };
+        match self {
+            Self::Constant(value) => Some(KernelTerm::integer_literal(value.clone())),
+            Self::Variable(variable) => Some(KernelTerm::variable(KernelType::Integer, *variable)),
+            Self::Negate(value) => Some(
+                KernelTerm::integer_operation(Op::Negate, vec![value.mathematical_root()?.clone()])
+                    .expect("mathematical Integer operand"),
+            ),
+            Self::Add(left, right) => operation(Op::Add, left, right),
+            Self::Subtract(left, right) => operation(Op::Subtract, left, right),
+            Self::Multiply(left, right) => operation(Op::Multiply, left, right),
+            Self::TruncatingQuotient(left, right) => operation(Op::TruncatingQuotient, left, right),
+            Self::TruncatingRemainder(left, right) => {
+                operation(Op::TruncatingRemainder, left, right)
+            }
+            Self::RangeFold {
+                index: IntegerRangeFoldIndex::Integer { start, end },
+                initial,
+                accumulator,
+                item,
+                body,
+            } => Some(fold(
+                KernelFoldIndex::Integer,
+                *accumulator,
+                *item,
+                [
+                    start.mathematical_root()?.clone(),
+                    end.mathematical_root()?.clone(),
+                    initial.mathematical_root()?.clone(),
+                    body.mathematical_root()?.clone(),
+                ],
+            )),
+            _ => None,
+        }
+    }
+
+    pub(super) fn shallow_key(&self) -> IntegerShallowKey {
         match self {
             Self::Constant(value) => IntegerShallowKey::Constant(value.clone()),
             Self::Variable(variable) => IntegerShallowKey::Variable(*variable),
@@ -1692,7 +1856,17 @@ impl IntegerTerm {
                 item,
                 body,
             } => IntegerShallowKey::RangeFold(
-                index.clone(),
+                match index {
+                    IntegerRangeFoldIndex::Int32 { start, end } => {
+                        IntegerRangeIdentity::Int32(start.id(), end.id())
+                    }
+                    IntegerRangeFoldIndex::UInt64 { start, end } => {
+                        IntegerRangeIdentity::UInt64(start.id(), end.id())
+                    }
+                    IntegerRangeFoldIndex::Integer { start, end } => {
+                        IntegerRangeIdentity::Integer(start.id(), end.id())
+                    }
+                },
                 initial.id(),
                 *accumulator,
                 *item,
@@ -1835,7 +2009,7 @@ impl IntegerInterner {
                 if candidate == &key
                     && let Some(node) = node.upgrade()
                 {
-                    return SharedIntegerTerm(node);
+                    return SharedIntegerTerm(SharedIntegerStorage::Native(node));
                 }
             }
         }
@@ -1843,7 +2017,8 @@ impl IntegerInterner {
         self.next_id = self
             .next_id
             .checked_add(1)
-            .expect("mathematical Integer node identity exhausted");
+            .filter(|id| *id < (1 << 63))
+            .expect("native Integer node identity exhausted");
         let literal_arithmetic = match &term {
             IntegerTerm::Constant(_) => true,
             IntegerTerm::Machine(value) => value.literal_conversion_value().is_some(),
@@ -1870,7 +2045,7 @@ impl IntegerInterner {
             .push((key, Arc::downgrade(&node)));
         self.cleanup_queue
             .push_back((fingerprint, Arc::as_ptr(&node) as usize));
-        SharedIntegerTerm(node)
+        SharedIntegerTerm(SharedIntegerStorage::Native(node))
     }
 }
 
@@ -2529,8 +2704,13 @@ mod tests {
             cleanup: VecDeque::new(),
             next_id: 0,
         };
-        let child: SharedIntegerTerm = IntegerTerm::var(Variable(790_100)).into();
-        let weak_child = Arc::downgrade(&child.0);
+        let child: SharedIntegerTerm = IntegerTerm::If {
+            condition: Box::new(ConditionTerm::Variable(Variable(790_100))),
+            then_term: IntegerTerm::constant_i64(31).into(),
+            else_term: IntegerTerm::constant_i64(32).into(),
+        }
+        .into();
+        let weak_child = child.downgrade();
         let parent = interner.intern("parent".into(), vec![PureFunctionArgument::Integer(child)]);
         let parent_id = parent.id();
         for _ in 0..16 {

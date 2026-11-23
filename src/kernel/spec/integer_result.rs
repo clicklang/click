@@ -114,6 +114,10 @@ impl KernelTerm {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
+            if left.is_mathematical_integer() && right.is_mathematical_integer() {
+                // Their exact syntax is the common interner key.
+                return false;
+            }
             match (left.node(), right.node()) {
                 (
                     KernelTermNode::IntegerOperation {

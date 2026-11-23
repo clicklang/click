@@ -202,7 +202,11 @@ enum StoredInteger {
 }
 impl From<IntegerTerm> for StoredIntegerTerm {
     fn from(value: IntegerTerm) -> Self {
-        Self(StoredInteger::Input(Arc::new(value)))
+        if let Some(root) = value.mathematical_root() {
+            Self(StoredInteger::Shared(root))
+        } else {
+            Self(StoredInteger::Input(Arc::new(value)))
+        }
     }
 }
 impl StoredIntegerTerm {
@@ -215,6 +219,15 @@ impl StoredIntegerTerm {
             StoredInteger::Shared(root) => Some(root),
         }
     }
+    fn exact_key(&self) -> super::integer::IntegerShallowKey {
+        match self.root() {
+            Some(root) if root.is_mathematical_integer() => {
+                super::integer::IntegerShallowKey::mathematical(root)
+            }
+            _ => self.native_compat().shallow_key(),
+        }
+    }
+
     pub(crate) fn native_compat(&self) -> &IntegerTerm {
         match &self.0 {
             StoredInteger::Input(value) => value,
@@ -455,7 +468,44 @@ macro_rules! native_descriptor_identity {
     };
 }
 native_descriptor_identity!(StoredProgramValue);
-native_descriptor_identity!(StoredIntegerTerm);
+impl std::fmt::Debug for StoredIntegerTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.native_compat().fmt(f)
+    }
+}
+impl PartialEq for StoredIntegerTerm {
+    fn eq(&self, other: &Self) -> bool {
+        if let (Some(left), Some(right)) = (self.root(), other.root()) {
+            if left == right {
+                return true;
+            }
+            if left.is_mathematical_integer() && right.is_mathematical_integer() {
+                return false;
+            }
+        }
+        self.exact_key() == other.exact_key()
+    }
+}
+impl Eq for StoredIntegerTerm {}
+impl PartialOrd for StoredIntegerTerm {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StoredIntegerTerm {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
+            std::cmp::Ordering::Equal
+        } else {
+            self.exact_key().cmp(&other.exact_key())
+        }
+    }
+}
+impl std::hash::Hash for StoredIntegerTerm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.exact_key().hash(state);
+    }
+}
 native_descriptor_identity!(StoredAlgebraicTerm);
 native_descriptor_identity!(StoredConditionTerm);
 native_descriptor_identity!(StoredPointerOffset);
@@ -469,6 +519,31 @@ mod protocol_value_tests {
         value.hash(&mut h);
         h.finish()
     }
+    #[test]
+    fn mathematical_integer_descriptor_identity_uses_retained_children() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = Variable(87654011);
+        let native = IntegerTerm::Add(
+            IntegerTerm::Variable(variable).into(),
+            IntegerTerm::constant_i64(87654012).into(),
+        );
+        let root = KernelTerm::integer_operation(
+            KernelIntegerOperator::Add,
+            vec![
+                KernelTerm::variable(KernelType::Integer, variable),
+                KernelTerm::integer_literal(87654012.into()),
+            ],
+        )
+        .unwrap();
+        let input = StoredIntegerTerm::from(native.clone());
+        let retained = StoredIntegerTerm::from_root(root.clone()).unwrap();
+        assert_eq!(input, retained);
+        assert_eq!(input.cmp(&retained), std::cmp::Ordering::Equal);
+        assert_eq!(hash(&input), hash(&native));
+        assert_eq!(hash(&retained), hash(&native));
+        assert!(!root.has_cached_native_argument());
+    }
+
     #[test]
     fn retained_contract_offset_preserves_written_identity_after_input_drops() {
         let _session = crate::kernel::VerificationSession::enter();
@@ -819,7 +894,11 @@ mod term_payload_contract_tests {
         ];
         for value in &integers {
             let stored = StoredIntegerTerm::from(value.clone());
-            assert!(stored.root().is_none());
+            assert!(
+                stored
+                    .root()
+                    .is_some_and(KernelTerm::is_mathematical_integer)
+            );
             assert_eq!(stored.native_compat(), value);
             assert_eq!(hash(&stored), hash(value));
             assert_eq!(format!("{stored:?}"), format!("{value:?}"));
