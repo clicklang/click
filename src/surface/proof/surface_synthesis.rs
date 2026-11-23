@@ -5121,6 +5121,16 @@ pub(super) fn synthesize_surface_resource_subject(
     if matches!(resource, Resource::Emp) {
         return Some(ResourceSubject::Emp);
     }
+    // A region's footprint is `R.footprint`, for the region whose recorded
+    // entry and exit it runs between; lowering reads that region's footprint
+    // back from the same records.
+    if let Resource::Footprint(footprint) = resource {
+        return SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            Some(ResourceSubject::Footprint(
+                slot.borrow().as_ref()?.footprint_region(footprint)?,
+            ))
+        });
+    }
     // A declared composite or token is its name applied to its arguments,
     // `list(node)` or `slot(&pool, p)`, which lowering reads back to the
     // same resource.
