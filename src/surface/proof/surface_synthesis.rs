@@ -5121,6 +5121,15 @@ pub(super) fn synthesize_surface_resource_subject(
     if matches!(resource, Resource::Emp) {
         return Some(ResourceSubject::Emp);
     }
+    // A theorem's resource parameter is its written name, which lowering
+    // reads back to the parameter at the same position.
+    if let Resource::Parameter(variable) = resource {
+        let name = bound_variables.get(variable)?.written()?.to_owned();
+        return Some(ResourceSubject::Parameter {
+            name,
+            index: usize::try_from(variable.0).ok()?,
+        });
+    }
     // A region's footprint is `R.footprint`, for the region whose recorded
     // entry and exit it runs between; lowering reads that region's footprint
     // back from the same records.
