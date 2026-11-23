@@ -6307,7 +6307,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// predecessor. The latter is the assignment boundary that can connect a
     /// named return local to the increment expression. The two propositions
     /// come only from the atomic derivation's selected requirements; the
-    /// ordinary theorem, nested-`have`, and `known` checkers decide whether
+    /// ordinary arithmetic, `known`, and rewrite checkers decide whether
     /// either constant-size historical application establishes the current
     /// result-aware goal.
     pub(in crate::surface::proof) fn try_outcome_anchored_increment_order(
@@ -6326,7 +6326,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             _ => None,
         };
         let surface_goal = search_input.surface_goal()?.clone();
-        surface_nonstrict_parts(&surface_goal)?;
+        let ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        } = surface_comparison_with_anchored_operands(&surface_goal)
+        else {
+            return None;
+        };
+        let (goal_left, goal_right) = match operator {
+            ComparisonOperator::LessEqual => (left, right),
+            ComparisonOperator::GreaterEqual => (right, left),
+            _ => return None,
+        };
         for anchor in predecessor
             .as_ref()
             .into_iter()
@@ -6376,33 +6388,54 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             Box::new(one.clone()),
                         )],
                     };
+                    let conclusion_left = observed_sum(surface_lower);
+                    let conclusion_right = observed_sum(lower_value);
                     let theorem_conclusion = ClickProposition::Comparison {
-                        left: observed_sum(surface_lower),
+                        left: conclusion_left.clone(),
                         operator: ComparisonOperator::LessEqual,
-                        right: observed_sum(lower_value),
+                        right: conclusion_right.clone(),
                     };
                     let Ok(applied) = search_input.driver().have_by_integer_arithmetic(
-                        theorem_conclusion.clone(),
+                        theorem_conclusion,
                         vec![lower_surface.clone(), upper_surface.clone()],
                     ) else {
                         continue;
                     };
-                    if let Some(closed) = applied
-                        .driver()
-                        .apply_step(ProofStep::TransportUsing {
-                            source: theorem_conclusion,
-                            target: surface_goal.clone(),
-                            premises: Vec::new(),
-                        })
-                        .ok()
-                        .or_else(|| {
-                            crate::kernel::search::ProofSearch::try_direct_logical_closure(
-                                &(applied),
-                            )
-                            .ok()
-                            .flatten()
-                        })
+                    if applied.focused_discharged() {
+                        return Some(applied);
+                    }
+                    let driver = applied.driver();
+                    if let Ok(closed) = driver.apply_step(ProofStep::Known) {
+                        return Some(closed);
+                    }
+                    let mut steps = Vec::new();
+                    for (left, right) in [
+                        (goal_left.clone(), conclusion_left),
+                        (goal_right.clone(), conclusion_right),
+                    ] {
+                        if left == right {
+                            continue;
+                        }
+                        let equality = ClickProposition::Comparison {
+                            left,
+                            operator: ComparisonOperator::Equal,
+                            right,
+                        };
+                        steps.push(ProofStep::Have {
+                            proposition: equality.clone(),
+                            proof: Box::new(
+                                ProofCertificate::from_steps(vec![ProofStep::Known])
+                                    .expect("known is an ordinary certificate"),
+                            ),
+                        });
+                        steps.push(ProofStep::Rewrite(equality));
+                    }
+                    steps.push(ProofStep::Known);
+                    if let Ok(closed) = driver.apply_ordinary_transport_steps(&surface_goal, steps)
                     {
+                        return Some(closed);
+                    }
+                    if let Ok(Some(closed)) = Self::try_direct_logical_closure(&applied) {
                         return Some(closed);
                     }
                 }
