@@ -4717,15 +4717,34 @@ fn source_backed_call_requirement_surface(
                 | ProgramValue::UInt64(term) => term,
                 _ => return None,
             };
-            let local = execution
+            // A local holding the value names it; otherwise one of the
+            // caller's own parameters does, including a value parameter of
+            // its contract, which has no local in the execution state.
+            match execution
                 .core
                 .state
                 .locals()
                 .names_holding_integer(term)
-                .next()?;
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::program_local_source_name(local).to_owned(),
-            ))
+                .next()
+            {
+                Some(local) => ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::program_local_source_name(local).to_owned(),
+                )),
+                None => {
+                    let (parameter, _) = context
+                        .parsed_function
+                        .parameters()
+                        .iter()
+                        .zip(context.arguments.iter())
+                        .find(|(_, argument)| {
+                            matches!(argument, ProgramExpression::Value(held)
+                                if held.numeric_value() == value.numeric_value())
+                        })?;
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        parameter.name().to_owned().into(),
+                    ))
+                }
+            }
         };
         substitutions.insert(name.clone().into(), expression);
     }
