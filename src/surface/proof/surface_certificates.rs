@@ -2303,6 +2303,9 @@ pub(super) fn plan_explicit_loadability_transport(
             );
             continue;
         }
+        if source == goal && surface_source == surface_goal {
+            return Some(vec![ProofTactic::Known]);
+        }
         let mut index = 0;
         while index < selected.len() {
             if selected[index].0 == *source {
@@ -5019,17 +5022,7 @@ mod selected_premise_tests {
                 candidate
             },
         );
-        assert_eq!(
-            candidate,
-            Some(vec![
-                ProofTactic::TransportUsing {
-                    source: surface.clone(),
-                    target: surface.clone(),
-                    premises: vec![surface],
-                },
-                ProofTactic::Known,
-            ])
-        );
+        assert_eq!(candidate, Some(vec![ProofTactic::Known]));
     }
 }
 
