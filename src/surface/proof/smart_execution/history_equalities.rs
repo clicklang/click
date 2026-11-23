@@ -341,9 +341,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 else_proof: Box::new(known.clone()),
             }])
             .expect("ordinary index disequality");
-            if let Some(proof) =
-                attempt::candidate_outcome(proof.driver().apply_have_step(distinct, &proof_steps))?
-            {
+            let checked = || {
+                let scope = proof
+                    .driver()
+                    .open_have_with_goal_observations(distinct.clone(), true)?;
+                scope
+                    .driver()
+                    .try_authoritative_linear_script(&proof_steps.to_proof_tactics())?
+                    .map(|done| done.join())
+                    .transpose()
+            };
+            if let Some(Some(proof)) = attempt::candidate_outcome(checked())? {
                 return Ok(Some(proof));
             }
         }
