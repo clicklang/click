@@ -21,13 +21,30 @@ pub(crate) use undefined_site::{
     UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
 
+thread_local! {
+    static IN_CONDITIONAL_OPERAND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// An unresolved safety check in this operand is owed under the condition
+/// that selected it. The caller attaches those already evaluated conditions.
+fn evaluate_conditional_operand<T>(evaluate: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            IN_CONDITIONAL_OPERAND.set(self.0);
+        }
+    }
+    let _restore = Restore(IN_CONDITIONAL_OPERAND.replace(true));
+    evaluate()
+}
+
 /// A conditional operand owes its arithmetic bounds only when it executes.
 /// The caller supplies the facts just produced by evaluating the condition,
 /// before executing the selected operand. Its result and later facts cannot
 /// justify an earlier operation.
 fn guard_conditional_arithmetic(prefix: &ExecutionFacts, obligations: &mut [ProofObligation]) {
     let is_arithmetic = |bound: &ProofObligation| {
-        bound.float_to_integer_bound || bound.unsigned_divisor || bound.signed_shift_bound
+        bound.float_to_integer_bound || bound.unsigned_divisor || bound.signed_arithmetic_bound
     };
     if prefix.is_empty() || !obligations.iter().any(is_arithmetic) {
         return;

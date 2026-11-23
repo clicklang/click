@@ -45,3 +45,37 @@ fn division_domain_checks_do_not_scan_unrelated_assumptions() {
         );
     }
 }
+
+#[test]
+fn literal_or_zero_check_ignores_related_and_unrelated_bounds() {
+    let format = MachineIntegerType::Int32;
+    let word = MachineTerm::Variable(Variable(972_001));
+    let divisor = MachineTerm::machine_binary(
+        format,
+        MachineBinaryOp::BitwiseOr,
+        word.clone(),
+        MachineTerm::constant(1),
+    );
+    let zero = ConditionTerm::equal(divisor.clone(), MachineTerm::constant(0));
+    for related in [false, true] {
+        let samples = [4u32, 16, 64, 256].map(|size| {
+            let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
+                let value = if related {
+                    word.clone()
+                } else {
+                    MachineTerm::Variable(Variable(972_100 + u64::from(index)))
+                };
+                facts.assume_condition(
+                    ConditionTerm::signed_greater_equal(value, MachineTerm::constant(!index)),
+                    true,
+                )
+            });
+            let (decision, work) = crate::instrumentation::measure_deterministic_work(|| {
+                decide_zero(&divisor, &zero, &facts, &ExecutionFacts::new())
+            });
+            assert_eq!(decision, Some(false));
+            work
+        });
+        assert_eq!(samples, [samples[0]; 4], "{related}: {samples:?}");
+    }
+}

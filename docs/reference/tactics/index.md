@@ -1914,12 +1914,16 @@ goal needs at least one strict link. Replay checks the listed links directly.
 A true `float` or `double` comparison against a literal can cite one stronger
 bound. Exact widening from `float` to `double` widens the endpoint and preserves
 the direction. Unary float negation negates the endpoint and reverses the
-direction. Adding a finite literal or multiplying by a finite nonzero literal
-transforms and rounds the endpoint at the same width. A negative multiplier
-reverses the bound. The rounded endpoint gives a non-strict bound because
+direction. Adding or subtracting a finite literal, subtracting from a finite
+literal, and multiplying or dividing by a finite nonzero literal transform
+and round the endpoint at the same width. Subtraction from a literal and
+multiplication or division by a negative literal reverse the direction.
+The rounded endpoint gives a non-strict bound because
 distinct inputs can round to the same result. An unchanged or exact endpoint
 requires a strict premise for a strict goal with that endpoint. A negated comparison can hold for NaN and cannot
-supply an ordered bound.
+supply an ordered bound. A sum of two float operands can cite one ordered
+bound per operand with finite literal endpoints. Both bounds must point in
+the goal's direction. The rule adds and rounds the endpoints at that width.
 
 For an unsigned left shift of one, citing the count bound proves the result
 is nonzero. For example, `normalize() using { d < 32u32; }` proves

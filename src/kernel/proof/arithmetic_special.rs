@@ -1174,6 +1174,16 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     {
         return true;
     }
+    if let [left, right] = premises
+        && let Some(sum) = FloatSumBound::new(goal)
+        && ([[left, right], [right, left]].into_iter().any(|pair| {
+            sum.operand_endpoint(0, pair[0])
+                .zip(sum.operand_endpoint(1, pair[1]))
+                .is_some_and(|(a, b)| sum.established_by([a, b]))
+        }))
+    {
+        return true;
+    }
     // Reject impossible arities before reading native operands. Convert each
     // explicit input once, shared by the fixed rule family, rather than once
     // per rejected checker (important for long native expression spines).
@@ -3083,13 +3093,14 @@ enum SignedProductSigns {
     Nonnegative,
     NonpositiveLeft,
     NegativeRight,
+    BothNegative,
 }
 
 pub(crate) fn signed_product_guard_candidates(
     goal: &Proposition,
 ) -> impl Iterator<Item = Vec<Proposition>> + '_ {
     use SignedProductSigns::*;
-    [Nonnegative, NonpositiveLeft, NegativeRight]
+    [Nonnegative, NonpositiveLeft, NegativeRight, BothNegative]
         .into_iter()
         .flat_map(|signs| [false, true].into_iter().map(move |swap| (signs, swap)))
         .filter_map(|(signs, swap)| signed_product_guard_requirements(goal, swap, signs))
@@ -3100,6 +3111,8 @@ pub(crate) fn signed_product_guard_candidates(
 /// bound, MAX/y with positive y rounds down and MIN/y with positive y rounds
 /// up. With negative y, MIN/y rounds down and multiplication reverses the
 /// comparison. Requiring y < -1 excludes the overflow of that quotient.
+/// MAX/y with negative y rounds up and is a lower bound on the other
+/// negative factor, again because multiplication reverses the comparison.
 fn signed_product_guard_requirements(
     goal: &Proposition,
     swap: bool,
@@ -3137,12 +3150,13 @@ fn signed_product_guard_requirements(
             ConditionTerm::integer_greater_equal(a.as_ref().clone(), zero())
         }
         NonpositiveLeft => ConditionTerm::integer_less_equal(a.as_ref().clone(), zero()),
+        BothNegative => ConditionTerm::integer_less_than(a.as_ref().clone(), zero()),
     };
     let y_sign = match signs {
         Nonnegative | NonpositiveLeft => {
             ConditionTerm::integer_greater_than(b.as_ref().clone(), zero())
         }
-        NegativeRight => {
+        NegativeRight | BothNegative => {
             ConditionTerm::integer_less_than(b.as_ref().clone(), IntegerTerm::constant_i64(-1))
         }
     };
@@ -3151,7 +3165,7 @@ fn signed_product_guard_requirements(
         Proposition::condition_is(y_sign, true),
     ];
     let needs_quotient_guard = match signs {
-        Nonnegative => upper,
+        Nonnegative | BothNegative => upper,
         NonpositiveLeft | NegativeRight => !upper,
     };
     if needs_quotient_guard {
@@ -3168,7 +3182,7 @@ fn signed_product_guard_requirements(
         let (x, quotient) = (observe(x)?, observe(quotient)?);
         let rejected_branch = match signs {
             Nonnegative | NegativeRight => ConditionTerm::integer_greater_than(x, quotient),
-            NonpositiveLeft => ConditionTerm::integer_less_than(x, quotient),
+            NonpositiveLeft | BothNegative => ConditionTerm::integer_less_than(x, quotient),
         };
         premises.push(Proposition::condition_is(rejected_branch, false));
     }
@@ -3219,42 +3233,118 @@ pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
     float_bound(proposition).is_some()
 }
 
-/// An IEEE operation with a finite literal and one ordered variable operand.
-/// Multiplication and division reverse order exactly when the literal is negative.
+/// The monotone operations for which one selected bound suffices.
+#[derive(Clone, Copy)]
+enum FloatBoundOperation {
+    Binary {
+        operator: crate::kernel::FloatBinaryOperator,
+        literal: u64,
+        literal_on_left: bool,
+        increasing: bool,
+    },
+    Negate,
+    Widen,
+}
+
+impl FloatBoundOperation {
+    fn increasing(self) -> bool {
+        match self {
+            Self::Binary { increasing, .. } => increasing,
+            Self::Negate => false,
+            Self::Widen => true,
+        }
+    }
+
+    fn apply(self, format: KernelFloatType, endpoint: u64, strict: bool) -> (u64, bool) {
+        match self {
+            Self::Binary {
+                operator,
+                literal,
+                literal_on_left,
+                ..
+            } => {
+                let (left, right) = if literal_on_left {
+                    (literal, endpoint)
+                } else {
+                    (endpoint, literal)
+                };
+                // Rounding can map distinct adjacent inputs to the same output.
+                (
+                    crate::kernel::primitives::float_binary_bits_at(format, left, right, operator),
+                    false,
+                )
+            }
+            Self::Negate => (endpoint ^ float_sign_bit(format), strict),
+            Self::Widen => (
+                crate::kernel::primitives::float_conversion::float32_to_float64_bits(
+                    endpoint as u32,
+                ),
+                strict,
+            ),
+        }
+    }
+}
+
+fn float_sign_bit(format: KernelFloatType) -> u64 {
+    match format {
+        KernelFloatType::Float32 => 1 << 31,
+        KernelFloatType::Float64 => 1 << 63,
+    }
+}
+
+fn float_bound_operation(
+    value: FloatOperandView<'_>,
+) -> Option<(FloatOperandView<'_>, FloatBoundOperation)> {
+    if let Some(operand) = value.negate() {
+        return Some((operand, FloatBoundOperation::Negate));
+    }
+    if let Some(operand) = value.widened_float32() {
+        return Some((operand, FloatBoundOperation::Widen));
+    }
+    float_literal_operation(value)
+}
+
 fn float_literal_operation(
     value: FloatOperandView<'_>,
-) -> Option<(
-    FloatOperandView<'_>,
-    u64,
-    crate::kernel::FloatBinaryOperator,
-    bool,
-)> {
+) -> Option<(FloatOperandView<'_>, FloatBoundOperation)> {
     use crate::kernel::FloatBinaryOperator as Op;
-    let (op @ (Op::Add | Op::Multiply | Op::Divide), [a, b]) = value.binary()? else {
-        return None;
-    };
-    let (operand, literal) = if let Some(literal) = b.literal_bits() {
-        (a, literal)
-    } else if op != Op::Divide {
-        (b, a.literal_bits()?)
+    let (operator, [left, right]) = value.binary()?;
+    let (operand, literal, literal_on_left) = if let Some(literal) = right.literal_bits() {
+        (left, literal, false)
+    } else if operator != Op::Divide {
+        (right, left.literal_bits()?, true)
     } else {
         return None;
     };
-    let (sign, infinity) = match value.format() {
-        KernelFloatType::Float32 => (0x8000_0000, 0x7f80_0000),
-        KernelFloatType::Float64 => (0x8000_0000_0000_0000, 0x7ff0_0000_0000_0000),
+    let sign = float_sign_bit(value.format());
+    let infinity = match value.format() {
+        KernelFloatType::Float32 => 0x7f80_0000,
+        KernelFloatType::Float64 => 0x7ff0_0000_0000_0000,
     };
     let magnitude = literal & !sign;
-    if magnitude >= infinity || (op != Op::Add && magnitude == 0) {
+    if magnitude >= infinity || (matches!(operator, Op::Multiply | Op::Divide) && magnitude == 0) {
         return None;
     }
-    Some((operand, literal, op, op == Op::Add || literal & sign == 0))
+    let increasing = match operator {
+        Op::Add => true,
+        Op::Subtract => !literal_on_left,
+        Op::Multiply | Op::Divide => literal & sign == 0,
+    };
+    Some((
+        operand,
+        FloatBoundOperation::Binary {
+            operator,
+            literal,
+            literal_on_left,
+            increasing,
+        },
+    ))
 }
 
-pub(crate) fn is_compound_float_literal_bound(goal: &Proposition) -> bool {
+pub(crate) fn is_compound_float_bound(goal: &Proposition) -> bool {
     float_bound(goal)
-        .and_then(|bound| float_literal_operation(bound.operand))
-        .is_some_and(|(operand, _, _, _)| float_literal_operation(operand).is_some())
+        .and_then(|bound| float_bound_operation(bound.operand))
+        .is_some_and(|(operand, _)| float_bound_operation(operand).is_some())
 }
 
 /// A nested monotone operation can use a cited bound on its immediate
@@ -3263,11 +3353,11 @@ pub(crate) fn is_compound_float_literal_bound(goal: &Proposition) -> bool {
 /// enough. Every recursive planning goal removes one arithmetic node.
 pub(crate) fn float_compound_bound_operand(goal: &Proposition) -> Option<Proposition> {
     let goal = float_bound(goal)?;
-    let (operand, _, _, increasing) = float_literal_operation(goal.operand)?;
-    if !increasing || float_literal_operation(operand).is_none() {
+    let (operand, operation) = float_literal_operation(goal.operand)?;
+    if !operation.increasing() || float_literal_operation(operand).is_none() {
         return None;
     }
-    float_bound_proposition(goal.format, operand, goal.endpoint, goal.lower)
+    float_bound_proposition(goal.format, operand, goal.endpoint, goal.lower, false)
 }
 
 fn float_bound_proposition(
@@ -3275,6 +3365,7 @@ fn float_bound_proposition(
     operand: FloatOperandView<'_>,
     endpoint: u64,
     lower: bool,
+    strict: bool,
 ) -> Option<Proposition> {
     use crate::kernel::{KernelTerm, KernelTermImport, StoredConditionTerm};
 
@@ -3287,10 +3378,11 @@ fn float_bound_proposition(
         FloatOperandView::Native(format, term) => import.float(format, term),
         FloatOperandView::Shared(term) => term.clone(),
     };
-    let operator = if lower {
-        ComparisonOperator::GreaterEqual
-    } else {
-        ComparisonOperator::LessEqual
+    let operator = match (lower, strict) {
+        (true, true) => ComparisonOperator::GreaterThan,
+        (true, false) => ComparisonOperator::GreaterEqual,
+        (false, true) => ComparisonOperator::LessThan,
+        (false, false) => ComparisonOperator::LessEqual,
     };
     let condition =
         KernelTerm::float_compare(format, operator, [operand, import.float(format, &literal)])
@@ -3307,47 +3399,23 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
     let (Some(premise), Some(goal)) = (float_bound(premise), float_bound(goal)) else {
         return false;
     };
-    let same_direction = premise.lower == goal.lower;
-    let (premise_endpoint, goal_operand, premise_strict) = if premise.format == goal.format {
-        if same_direction && same_float_operand(premise.operand, goal.operand) {
-            (premise.endpoint, None, premise.strict)
-        } else if !same_direction && let Some(operand) = goal.operand.negate() {
-            let sign_bit = match goal.format {
-                KernelFloatType::Float32 => 1 << 31,
-                KernelFloatType::Float64 => 1 << 63,
-            };
-            (premise.endpoint ^ sign_bit, Some(operand), premise.strict)
-        } else if let Some((operand, literal, operation, increasing)) =
-            float_literal_operation(goal.operand)
-            && same_direction == increasing
-        {
-            let endpoint = crate::kernel::primitives::float_binary_bits_at(
-                goal.format,
-                premise.endpoint,
-                literal,
-                operation,
-            );
-            // Rounding can map distinct adjacent inputs to the same output.
-            (endpoint, Some(operand), false)
-        } else {
-            return false;
-        }
-    } else if same_direction
-        && premise.format == KernelFloatType::Float32
-        && let Some(operand) = goal.operand.widened_float32()
+    if premise.format == goal.format
+        && premise.lower == goal.lower
+        && same_float_operand(premise.operand, goal.operand)
     {
-        (
-            crate::kernel::primitives::float_conversion::float32_to_float64_bits(
-                premise.endpoint as u32,
-            ),
-            Some(operand),
-            premise.strict,
-        )
-    } else {
+        return float_endpoint_establishes(&goal, premise.endpoint, premise.strict);
+    }
+    let Some((operand, operation)) = float_bound_operation(goal.operand) else {
         return false;
     };
-    goal_operand.is_none_or(|operand| same_float_operand(premise.operand, operand))
-        && float_endpoint_establishes(&goal, premise_endpoint, premise_strict)
+    if premise.format != operand.format()
+        || (premise.lower == goal.lower) != operation.increasing()
+        || !same_float_operand(premise.operand, operand)
+    {
+        return false;
+    }
+    let (endpoint, strict) = operation.apply(goal.format, premise.endpoint, premise.strict);
+    float_endpoint_establishes(&goal, endpoint, strict)
 }
 
 fn same_float_operand(left: FloatOperandView<'_>, right: FloatOperandView<'_>) -> bool {
@@ -3375,7 +3443,16 @@ fn float_endpoint_establishes(
     } else {
         ComparisonOperator::LessThan
     };
-    let comparison = match goal.format {
+    float_endpoint_compare(goal.format, low, high, operator)
+}
+
+fn float_endpoint_compare(
+    format: KernelFloatType,
+    low: u64,
+    high: u64,
+    operator: ComparisonOperator,
+) -> bool {
+    let comparison = match format {
         KernelFloatType::Float32 => ConditionTerm::float32_compare(
             MachineTerm::constant(low as u32),
             MachineTerm::constant(high as u32),
@@ -3390,17 +3467,69 @@ fn float_endpoint_establishes(
     comparison == ConditionTerm::Constant(true)
 }
 
-/// Planning only. Choose the suffix of a literal-operation chain that
-/// starts at a cited operand, then round the endpoint at every operation.
-pub(crate) fn float_literal_bound_chain(
+/// An ordered bound on a sum of two nonliteral operands. The checked rule
+/// takes one finite endpoint per operand, in the goal's direction.
+pub(crate) struct FloatSumBound<'a> {
+    goal: FloatBound<'a>,
+    operands: [FloatOperandView<'a>; 2],
+}
+
+impl<'a> FloatSumBound<'a> {
+    pub(crate) fn new(goal: &'a Proposition) -> Option<Self> {
+        let goal = float_bound(goal)?;
+        let (crate::kernel::FloatBinaryOperator::Add, operands) = goal.operand.binary()? else {
+            return None;
+        };
+        operands
+            .iter()
+            .all(|operand| operand.literal_bits().is_none())
+            .then_some(Self { goal, operands })
+    }
+
+    pub(crate) fn operand_endpoint(&self, index: usize, premise: &Proposition) -> Option<u64> {
+        let premise = float_bound(premise)?;
+        let infinity = match self.goal.format {
+            KernelFloatType::Float32 => 0x7f80_0000,
+            KernelFloatType::Float64 => 0x7ff0_0000_0000_0000,
+        };
+        (premise.format == self.goal.format
+            && premise.lower == self.goal.lower
+            && premise.endpoint & !float_sign_bit(premise.format) < infinity
+            && same_float_operand(premise.operand, self.operands[index]))
+        .then_some(premise.endpoint)
+    }
+
+    pub(crate) fn stronger_endpoint(&self, candidate: u64, previous: u64) -> bool {
+        let operator = if self.goal.lower {
+            ComparisonOperator::GreaterThan
+        } else {
+            ComparisonOperator::LessThan
+        };
+        float_endpoint_compare(self.goal.format, candidate, previous, operator)
+    }
+
+    pub(crate) fn established_by(&self, [left, right]: [u64; 2]) -> bool {
+        // Ordered lower bounds with finite endpoints exclude -infinity;
+        // ordered upper bounds exclude +infinity. Thus the sum cannot pair
+        // opposing infinities, and rounding preserves the non-strict bound.
+        let endpoint = crate::kernel::primitives::float_binary_bits_at(
+            self.goal.format,
+            left,
+            right,
+            crate::kernel::FloatBinaryOperator::Add,
+        );
+        float_endpoint_establishes(&self.goal, endpoint, false)
+    }
+}
+
+/// Planning only. Pick a suffix that starts at the selected bound and
+/// carry its endpoint through each operation at that operation's precision.
+pub(crate) fn float_bound_chain(
     premise: &Proposition,
     goal: &Proposition,
 ) -> Option<Vec<Proposition>> {
     let source = float_bound(premise)?;
     let goal = float_bound(goal)?;
-    if source.format != goal.format {
-        return None;
-    }
     let mut steps = Vec::new();
     let mut operand = goal.operand;
     let mut lower = goal.lower;
@@ -3408,36 +3537,36 @@ pub(crate) fn float_literal_bound_chain(
         if crate::instrumentation::deadline_exceeded_with_work(1) {
             return None;
         }
-        let (input, literal, op, increasing) = float_literal_operation(operand)?;
-        steps.push((operand, literal, op, lower));
+        let (input, operation) = float_bound_operation(operand)?;
+        steps.push((operand, operation, lower));
         operand = input;
-        lower = lower == increasing;
-        if lower == source.lower && same_float_operand(source.operand, operand) {
+        lower = lower == operation.increasing();
+        if operand.format() == source.format
+            && lower == source.lower
+            && same_float_operand(source.operand, operand)
+        {
             break;
         }
     }
     if steps.len() < 2 {
         return None;
     }
-    let mut endpoint = source.endpoint;
+    let (mut endpoint, mut strict) = (source.endpoint, source.strict);
     let mut bounds = vec![premise.clone()];
     let intermediate_count = steps.len() - 1;
-    for (index, (operand, literal, op, lower)) in steps.into_iter().rev().enumerate() {
+    for (index, (operand, operation, lower)) in steps.into_iter().rev().enumerate() {
         if crate::instrumentation::deadline_exceeded_with_work(1) {
             return None;
         }
-        endpoint =
-            crate::kernel::primitives::float_binary_bits_at(goal.format, endpoint, literal, op);
+        let format = operand.format();
+        (endpoint, strict) = operation.apply(format, endpoint, strict);
         if index < intermediate_count {
             bounds.push(float_bound_proposition(
-                goal.format,
-                operand,
-                endpoint,
-                lower,
+                format, operand, endpoint, lower, strict,
             )?);
         }
     }
-    float_endpoint_establishes(&goal, endpoint, false).then_some(bounds)
+    float_endpoint_establishes(&goal, endpoint, strict).then_some(bounds)
 }
 
 fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {

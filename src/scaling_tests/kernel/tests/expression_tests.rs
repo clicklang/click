@@ -626,3 +626,70 @@ fn signed_shift_requirement_checks_one_bound_as_facts_grow() {
         }
     }
 }
+
+#[test]
+fn checked_difference_guard_uses_one_sign_and_one_comparison_as_facts_grow() {
+    use crate::kernel::program_expression as expr;
+
+    let (x, y) = (
+        MachineTerm::Variable(Variable(994_800)),
+        MachineTerm::Variable(Variable(994_801)),
+    );
+    let state = ExecutionState::new()
+        .with_local("x", ProgramValue::Int32(x.clone()))
+        .with_local("y", ProgramValue::Int32(y.clone()));
+    let expression = expr::conditional(
+        expr::less_equal(
+            expr::variable("x"),
+            expr::subtract(expr::int32_literal(i32::MAX as u32), expr::variable("y")),
+        ),
+        expr::int32_literal(1),
+        expr::int32_literal(0),
+    );
+    let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int32, term).unwrap();
+    let exact = ConditionTerm::integer_less_equal(
+        observe(x),
+        IntegerTerm::subtract(
+            IntegerTerm::constant_i64(i64::from(i32::MAX)),
+            observe(y.clone()),
+        ),
+    );
+    let nonnegative = ConditionTerm::signed_greater_equal(y.clone(), MachineTerm::constant(0));
+    for related in [false, true] {
+        let samples = [4u32, 16, 64, 256].map(|size| {
+            let facts = (0..size).fold(
+                PureFactContext::new().assume_condition(nonnegative.clone(), true),
+                |facts, index| {
+                    let value = if related {
+                        y.clone()
+                    } else {
+                        MachineTerm::Variable(Variable(994_810 + u64::from(index)))
+                    };
+                    facts.assume_condition(
+                        ConditionTerm::signed_greater_equal(value, MachineTerm::constant(!index)),
+                        true,
+                    )
+                },
+            );
+            let facts = facts.assume_condition(exact.clone(), false);
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                evaluate_program_expression_paths(
+                    &state,
+                    &expression,
+                    &facts,
+                    &mut ExecutionBudget::for_program_expression(&expression),
+                )
+                .unwrap()
+            });
+            let [path] = paths.as_slice() else {
+                panic!("expected only the false arm, got {paths:?}");
+            };
+            assert_eq!(path.outcome, ExpressionOutcome::Value(int32(0)));
+            work
+        });
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 8),
+            "{related}: {samples:?}"
+        );
+    }
+}

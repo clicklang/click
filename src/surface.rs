@@ -11798,7 +11798,7 @@ impl ClickError {
             call_site: obligation.call_requirement_site().cloned(),
             assertion_condition: None,
             theorem_source: None,
-            statement_safety: obligation.is_signed_shift_bound(),
+            statement_safety: obligation.is_signed_arithmetic_bound(),
             surface: None,
         }));
         self
