@@ -899,14 +899,11 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     let instance_name =
         crate::kernel::model_fields::registered_instance_spelling(instance.identity())
             .ok_or_else(|| ClickError::new("resource body clause instance has no source name"))?;
-    let instance_renames = BTreeMap::from([(
-        "__body".to_owned(),
-        crate::surface::lowering::InstanceRename {
-            name: instance_name.to_string(),
-            identity: crate::kernel::InstanceRef::Body,
-            target_identity: Some(instance.identity()),
-        },
-    )]);
+    let substitutions = crate::surface::lowering::ContractSubstitutions::with_body_instance(
+        &substitutions,
+        instance_name.to_string(),
+        instance.identity(),
+    );
     let mut paired = Vec::with_capacity(records.len());
     for record in records {
         if record.arm.as_deref() != Some(variant) {
@@ -933,14 +930,9 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
                 "resource body clause lost its quantifier binder",
             ));
         }
-        let source = crate::surface::lowering::substitute_click_proposition_in(
-            source,
-            &crate::surface::lowering::ContractSubstitutions::with_instance_renames(
-                &substitutions,
-                &instance_renames,
-            ),
-        )
-        .map_err(ClickError::new)?;
+        let source =
+            crate::surface::lowering::substitute_click_proposition_in(source, &substitutions)
+                .map_err(ClickError::new)?;
         paired.push(ResourceClausePresentation {
             source,
             checked: record.clone(),

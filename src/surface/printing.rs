@@ -856,7 +856,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 )
                 .collect::<Vec<_>>()
                 .join(", ");
-            let result = if binding.name.starts_with('#') {
+            let result = if binding.unnamed {
                 String::new()
             } else {
                 format!("let {} = ", binding.name)
@@ -1387,7 +1387,7 @@ fn write_premise_list(output: &mut String, facts: &[ClickProposition], indent: u
 
 pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> String {
     if let ResourceClause::Named { binding, resource } = resource {
-        return if binding.name.starts_with('#') {
+        return if binding.unnamed {
             format_resource_call(resource)
         } else {
             binding.name.clone()
@@ -1456,7 +1456,7 @@ pub(in crate::surface) fn format_resource_target(resource: &ResourceClause) -> S
             format_resource_target(resource)
         ),
         ResourceClause::Named { binding, resource } => {
-            if binding.name.starts_with('#') {
+            if binding.unnamed {
                 format_resource_target(resource)
             } else {
                 format!("{}: {}", binding.name, format_resource_target(resource))

@@ -3,6 +3,7 @@ use super::*;
 fn target(name: &str, identity: u64, argument: u32) -> ResourceClause {
     ResourceClause::Named {
         binding: ResourceInstanceBinding {
+            unnamed: false,
             name: name.into(),
             identity: crate::kernel::ResourceBinder::Instance(InstanceId::from_variable(Variable(
                 identity,
@@ -33,9 +34,14 @@ fn resource_selectors_are_indexed_and_restore_scoped_placeholders() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
         let mut names = NameTable::default();
-        let selected = target("#pair0", 0, 0);
+        let mut selected = target("pair(0)", 0, 0);
+        let ResourceClause::Named { binding, .. } = &mut selected else {
+            unreachable!()
+        };
+        binding.unnamed = true;
+        let identity = binding.instance().unwrap();
         let call = ResourceTargets::call(&selected).unwrap();
-        names.set_instance_target("#pair0".into(), selected.clone());
+        names.set_unnamed_instance_target(identity, selected.clone());
         for i in 1..=size {
             let name = format!("other{i}");
             names.set_instance_target(name.clone(), target(&name, i as u64, i));
@@ -61,7 +67,7 @@ fn resource_selectors_are_indexed_and_restore_scoped_placeholders() {
             Some(&selected)
         );
         let inner = names.scope();
-        names.set_child_instance_target("#pair0".into(), selected.clone());
+        names.set_unnamed_instance_target(identity, target("pair(1)", 0, 1));
         assert_eq!(names.resource_targets.select(&call).unwrap(), None);
         names.end(inner);
         assert_eq!(

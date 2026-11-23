@@ -487,7 +487,7 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         let (Some(schema), Some(fields)) = (&binding.schema, &binding.fields) else {
             continue;
         };
-        let spelling = if binding.name.starts_with('#') {
+        let spelling = if binding.unnamed {
             let ResourceClause::Declared {
                 name, arguments, ..
             } = resource.as_ref()
