@@ -17427,6 +17427,37 @@ fn indexed_reads_across_two_stores_expand_through_both_footprints() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed reads across a multi-write call"]
+fn indexed_reads_across_calls_expand_through_the_complete_write_footprint() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_reads_across_multi_write_calls.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in [
+        "keep_mask.contract",
+        "keep_xor.contract",
+        "keep_complement.contract",
+        "keep_right_shift.contract",
+        "keep_narrowed_read.contract",
+        "keep_shift_count.contract",
+        "keep_quotient.contract",
+        "keep_remainder.contract",
+        "keep_conditional_read.contract",
+        "keep_upper_bound.contract",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains("preserve(memory(a[0])"),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn masked_64_bit_field_expands_through_explicit_store_preservation() {
     for fixture in [
         "mdtests/int64_read_survives_store_and_resource_call.md",

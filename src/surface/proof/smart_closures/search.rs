@@ -6678,14 +6678,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             if !footprint.complete
-                || footprint.members.len() != 1
+                || footprint.members.is_empty()
+                || (!indexed && footprint.members.len() != 1)
                 || crate::kernel::intern_memory_ref(&footprint.after) != endpoint
             {
                 continue;
             }
-            let Some(written @ Resource::Memory(_)) = footprint.members.front() else {
-                continue;
-            };
             let before = crate::kernel::intern_memory_ref(&footprint.before);
             if before == endpoint {
                 continue;
@@ -6718,6 +6716,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let mut steps = Vec::new();
             let proof = if indexed
+                && footprint.members.len() == 1
+                && let Some(written) = footprint.members.front()
                 && let Some(proof) = Self::try_distinct_indexed_store_separation(
                     &prepared,
                     written,
@@ -6727,9 +6727,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 proof
             } else if indexed || field_bound {
                 let Some(proof) =
-                    attempt::candidate_outcome(Self::try_single_memory_write_separation(
+                    attempt::candidate_outcome(Self::try_memory_footprint_separation(
                         &prepared,
-                        written,
+                        &footprint,
                         &kept,
                         &footprint_separation,
                     ))?
@@ -6739,7 +6739,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 proof
             } else {
-                let Some(written) = spell(written) else {
+                let Some(written) = footprint
+                    .members
+                    .front()
+                    .filter(|member| matches!(member, Resource::Memory(_)))
+                    .and_then(spell)
+                else {
                     continue;
                 };
                 let separate = ClickProposition::Separate {
