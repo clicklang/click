@@ -38,5 +38,5 @@ theorem adds_three_shifts_two(f: int32 (*)(int32)) {
 ```
 
 ```expect
-fail: could not establish `0 <= x and x <= 1000 and (0 <= 2 and 2 <= 1000) implies 0 <= x and x <= 1000 and (0 <= 3 and 3 <= 1000) and (((to_integer((x as int32)) + 3) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 3) : Integer) >= -2147483648 and to_integer(result) == to_integer((x + 3)) implies ((to_integer((x as int32)) + 2) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 2) : Integer) >= -2147483648 and to_integer(result) == to_integer((x + 2)))`
+fail: could not establish `0 <= x and x <= 1000 and (0 <= 2 and 2 <= 1000) implies 0 <= x and x <= 1000 and (0 <= 3 and 3 <= 1000) and ((to_integer((x as int32)) + 3) <= 2147483647 and (to_integer((x as int32)) + 3) >= -2147483648 and to_integer(result) == to_integer((x + 3)) implies (to_integer((x as int32)) + 2) <= 2147483647 and (to_integer((x as int32)) + 2) >= -2147483648 and to_integer(result) == to_integer((x + 2)))`
 ```

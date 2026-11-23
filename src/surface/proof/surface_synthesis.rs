@@ -3723,13 +3723,20 @@ fn integer_observation_comparison(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
+    let raised_left = synthesize_surface_integer(left, parameter_binding, state, bound_variables)?;
+    // The comparison is Integer already when either side's spelling is:
+    // `to_integer(a) == n` needs no `(.. : Integer)`. Only a comparison of
+    // two sides neither of which spells an Integer, `3 == n`, takes it, so
+    // that it does not lower as a machine comparison.
+    let spelled_integer = |term: &crate::kernel::SharedIntegerTerm| {
+        spells_integer(&crate::kernel::KernelTermImport::default().integer(term))
+    };
     let comparison = ClickProposition::Comparison {
-        left: integer_typed_expression(synthesize_surface_integer(
-            left,
-            parameter_binding,
-            state,
-            bound_variables,
-        )?),
+        left: if spelled_integer(left) || spelled_integer(right) {
+            raised_left
+        } else {
+            integer_typed_expression(raised_left)
+        },
         operator,
         right: synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
     };
@@ -3738,6 +3745,21 @@ fn integer_observation_comparison(
     } else {
         ClickProposition::Not(Box::new(comparison))
     })
+}
+
+/// Whether an Integer term raises to Click text whose own type is
+/// Integer: an observation, which raises as `to_integer(..)`; an Integer
+/// call such as `length(xs)`; or Integer arithmetic with such an operand.
+/// A literal or a variable does not: alone on both sides it would read as
+/// a machine comparison. One visit per node on the operand's spine.
+fn spells_integer(root: &crate::kernel::KernelTerm) -> bool {
+    use crate::kernel::KernelTermNode as N;
+    match root.node() {
+        N::MachineObservation { .. } => true,
+        N::Call { .. } => matches!(root.ty(), crate::kernel::KernelType::Integer),
+        N::IntegerOperation { arguments, .. } => arguments.iter().any(spells_integer),
+        _ => false,
+    }
 }
 
 fn synthesize_surface_integer(
