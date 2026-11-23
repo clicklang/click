@@ -11787,7 +11787,7 @@ fn signed_order_theorems_check_ordered_stores_without_search() {
         expanded.contains("int32_less_equal_less_than_transitive"),
         "{expanded}"
     );
-    assert!(expanded.contains("preserve(memory(a[i])"), "{expanded}");
+    assert!(expanded.contains("have a[i] == 1 by"), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve_for_claim(label, || {
         verify_c_sources(&expanded, &program).map_err(|error| error.report())
