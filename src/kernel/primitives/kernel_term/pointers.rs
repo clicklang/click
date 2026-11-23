@@ -527,19 +527,12 @@ impl KernelTermImport {
             .iter()
             .zip(retained)
             .enumerate()
-            .map(|(index, (argument, retained))| {
+            .map(|(index, (_, retained))| {
                 retained.unwrap_or_else(|| {
                     if let Some(root) = application.common_argument(index) {
                         root
                     } else {
-                        KernelTerm::legacy_at(
-                            argument.clone(),
-                            LegacyIdentity::ExactApplicationArgument {
-                                application: application.clone(),
-                                payload: application.payload_id(),
-                                index,
-                            },
-                        )
+                        KernelTerm::native_call_argument(application, index, true)
                     }
                 })
             })

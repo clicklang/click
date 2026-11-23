@@ -237,7 +237,7 @@ pub enum KernelTermNode {
 #[derive(Clone, Debug)]
 pub struct KernelLegacyTerm {
     identity: LegacyIdentity,
-    value: PureFunctionArgument,
+    value: Option<PureFunctionArgument>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum LegacyIdentity {
@@ -281,7 +281,17 @@ impl Hash for KernelLegacyTerm {
 }
 impl KernelLegacyTerm {
     pub fn value(&self) -> &PureFunctionArgument {
-        &self.value
+        if let Some(value) = &self.value {
+            return value;
+        }
+        match &self.identity {
+            LegacyIdentity::ApplicationArgument(application, index)
+            | LegacyIdentity::ExactApplicationArgument {
+                application, index, ..
+            } => &application.arguments()[*index],
+            LegacyIdentity::NativeObservation(argument) => argument,
+            _ => unreachable!("native expression identity without a payload"),
+        }
     }
 }
 
@@ -1269,10 +1279,12 @@ impl KernelTerm {
             KernelType::Bool,
             KernelTermNode::LegacyBool(KernelLegacyTerm {
                 identity: LegacyIdentity::MachineObservation(identity),
-                value: PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
-                    to: MachineIntegerType::UInt8,
-                    value: Box::new(condition),
-                })),
+                value: Some(PureFunctionArgument::Value(ProgramValue::Bool(
+                    MachineTerm::BoolCast {
+                        to: MachineIntegerType::UInt8,
+                        value: Box::new(condition),
+                    },
+                ))),
             }),
         )
     }
@@ -1280,14 +1292,53 @@ impl KernelTerm {
     /// Numeric observation of a selected opaque descriptor. Producer payloads
     /// remain exact; only this observation uses the native equality contract.
     pub(crate) fn native_observation_leaf(argument: PureFunctionArgument) -> Self {
-        Self::legacy_at(
-            argument.clone(),
-            LegacyIdentity::NativeObservation(Box::new(argument)),
+        let ty = Self::native_argument_type(&argument);
+        Self::intern(
+            ty,
+            KernelTermNode::Legacy(KernelLegacyTerm {
+                identity: LegacyIdentity::NativeObservation(Box::new(argument)),
+                value: None,
+            }),
+        )
+    }
+
+    // The application already owns the exact input descriptor. An opaque
+    // child refers to one argument slot instead of copying that descriptor.
+    fn native_call_argument(
+        application: &SharedPureApplication,
+        index: usize,
+        exact_payload: bool,
+    ) -> Self {
+        let identity = if exact_payload {
+            LegacyIdentity::ExactApplicationArgument {
+                application: application.clone(),
+                payload: application.payload_id(),
+                index,
+            }
+        } else {
+            LegacyIdentity::ApplicationArgument(application.clone(), index)
+        };
+        Self::intern(
+            Self::native_argument_type(&application.arguments()[index]),
+            KernelTermNode::Legacy(KernelLegacyTerm {
+                identity,
+                value: None,
+            }),
         )
     }
 
     fn legacy_at(argument: PureFunctionArgument, identity: LegacyIdentity) -> Self {
-        let ty = match &argument {
+        Self::intern(
+            Self::native_argument_type(&argument),
+            KernelTermNode::Legacy(KernelLegacyTerm {
+                identity,
+                value: Some(argument),
+            }),
+        )
+    }
+
+    fn native_argument_type(argument: &PureFunctionArgument) -> KernelType {
+        match argument {
             PureFunctionArgument::Integer(_) => KernelType::Integer,
             PureFunctionArgument::Value(value) => KernelType::Program(value.program_type()),
             PureFunctionArgument::SharedMachine(value) => {
@@ -1299,14 +1350,7 @@ impl KernelTerm {
             PureFunctionArgument::ArrayRef { element_type, .. } => {
                 KernelType::ArrayRef(*element_type)
             }
-        };
-        Self::intern(
-            ty,
-            KernelTermNode::Legacy(KernelLegacyTerm {
-                identity,
-                value: argument,
-            }),
-        )
+        }
     }
 }
 
@@ -1334,7 +1378,15 @@ impl KernelTermImport {
     /// carrier records and out-of-domain inputs; migrated expressions expose
     /// their children through the common nodes.
     pub(crate) fn argument(&mut self, argument: &PureFunctionArgument) -> KernelTerm {
-        match argument {
+        self.structural_argument(argument)
+            .unwrap_or_else(|| KernelTerm::legacy(argument.clone()))
+    }
+
+    pub(super) fn structural_argument(
+        &mut self,
+        argument: &PureFunctionArgument,
+    ) -> Option<KernelTerm> {
+        let root = match argument {
             PureFunctionArgument::Algebraic(value) => self.algebraic(value),
             PureFunctionArgument::Integer(value) => self.integer(value),
             PureFunctionArgument::SharedMachine(value) => value
@@ -1364,7 +1416,7 @@ impl KernelTermImport {
                     }
                     // Other C-word carriers retain their original width and
                     // bits. Importing an argument must not normalize its truth.
-                    _ => KernelTerm::legacy(argument.clone()),
+                    _ => return None,
                 },
                 ProgramValue::Parameter(value) => {
                     KernelTerm::program_parameter(self.algebraic(value))
@@ -1374,9 +1426,7 @@ impl KernelTermImport {
                 }
                 // Void has no expression. A complete pointer/integer record is
                 // the package-7 value descriptor, not its numeric projection.
-                ProgramValue::Void | ProgramValue::PointerInteger(_) => {
-                    KernelTerm::legacy(argument.clone())
-                }
+                ProgramValue::Void | ProgramValue::PointerInteger(_) => return None,
             },
             PureFunctionArgument::ArrayRef {
                 point,
@@ -1390,9 +1440,10 @@ impl KernelTermImport {
                 ),
                 // Preserve the existing refusal boundary for a non-pointer
                 // descriptor rather than inventing an address for it.
-                _ => KernelTerm::legacy(argument.clone()),
+                _ => return None,
             },
-        }
+        };
+        Some(root)
     }
     pub(crate) fn integer(&mut self, term: &SharedIntegerTerm) -> KernelTerm {
         if let Some(root) = term.mathematical_root() {
@@ -1444,15 +1495,10 @@ impl KernelTermImport {
                     .arguments()
                     .iter()
                     .enumerate()
-                    .map(|(index, arg)| {
-                        if let Some(root) = application.common_argument(index) {
-                            root
-                        } else {
-                            KernelTerm::legacy_at(
-                                arg.clone(),
-                                LegacyIdentity::ApplicationArgument(application.clone(), index),
-                            )
-                        }
+                    .map(|(index, _)| {
+                        application.common_argument(index).unwrap_or_else(|| {
+                            KernelTerm::native_call_argument(application, index, false)
+                        })
                     })
                     .collect();
                 KernelTerm::checked_call(KernelType::Integer, application.name().into(), arguments)
