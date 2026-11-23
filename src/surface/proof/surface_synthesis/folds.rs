@@ -38,6 +38,17 @@ pub(in crate::surface::proof) fn scoped_binder_name(
     FOLD_NAMES.with(|slot| slot.borrow().names.get(&(carrier, variable)).cloned())
 }
 
+/// Whether an enclosing binder of this raise is spelled `name`, so a new
+/// binder of that name would shadow it. Bounded by the binder nesting.
+pub(in crate::surface::proof) fn written_name_in_scope(name: &str) -> bool {
+    FOLD_NAMES.with(|slot| {
+        slot.borrow()
+            .names
+            .values()
+            .any(|binder| binder.written() == Some(name))
+    })
+}
+
 pub(in crate::surface::proof) fn marker(_preferred: Option<&str>) -> SurfaceBinder {
     SurfaceBinder::fresh()
 }
