@@ -547,6 +547,13 @@ fn rewrite_with_admitted_equality_reading(
                     };
                     match rewritten {
                         Ok(Proposition::ConditionIs(condition, value)) => {
+                            if matches!(
+                                condition.root().map(KernelTerm::node),
+                                Some(KernelTermNode::IntegerCompare { .. })
+                            ) {
+                                results.push((Proposition::ConditionIs(condition, value), true));
+                                continue;
+                            }
                             let condition = super::term_rewrite::folded_machine_condition(
                                 condition.native_compat().clone(),
                             );

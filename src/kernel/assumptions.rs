@@ -11837,6 +11837,19 @@ fn observation_comparison_form(proposition: &Proposition) -> Proposition {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, value) => {
+            if let Some(KernelTermNode::IntegerCompare { arguments, .. }) =
+                condition.root().map(KernelTerm::node)
+                && arguments.iter().any(|argument| {
+                    matches!(
+                        argument.node(),
+                        KernelTermNode::IntegerOperation { .. } | KernelTermNode::Variable(_)
+                    )
+                })
+            {
+                // A structural machine comparison needs observations or
+                // literals. Arithmetic and variables keep their Integer form.
+                return proposition.clone();
+            }
             match super::machine_integer::comparison::structural_native_comparison_view(
                 condition.native_compat(),
                 *value,

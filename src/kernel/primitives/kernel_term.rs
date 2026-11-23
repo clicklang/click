@@ -324,6 +324,7 @@ struct NodeKeyData {
     node: KernelTermNode,
     shared_machine_operand: bool,
     mathematical_integer: bool,
+    integer_observation_arithmetic: bool,
     literal_integer_arithmetic: bool,
     opaque_observation_boundary: bool,
     machine_conversions: bool,
@@ -640,6 +641,17 @@ impl NodeKey {
                 }
                 _ => false,
             };
+        let integer_observation_arithmetic = ty == KernelType::Integer
+            && match &node {
+                KernelTermNode::IntegerLiteral(_) | KernelTermNode::Variable(_) => true,
+                KernelTermNode::IntegerOperation { arguments, .. } => arguments
+                    .iter()
+                    .all(KernelTerm::is_integer_observation_arithmetic),
+                KernelTermNode::MachineObservation { operand, .. } => {
+                    operand.is_shared_machine_operand()
+                }
+                _ => false,
+            };
         let literal_integer_arithmetic = match &node {
             KernelTermNode::IntegerLiteral(_) => true,
             KernelTermNode::IntegerOperation { arguments, .. } => arguments
@@ -651,6 +663,7 @@ impl NodeKey {
         Self(Arc::new(NodeKeyData {
             machine_constant,
             mathematical_integer,
+            integer_observation_arithmetic,
             literal_integer_arithmetic,
             fingerprint: hash.finish(),
             shared_machine_operand,
@@ -925,6 +938,26 @@ impl KernelTerm {
         self.0.key.0.mathematical_integer
     }
 
+    /// Arithmetic with typed shared machine observations and no internal binders.
+    pub(crate) fn is_integer_observation_arithmetic(&self) -> bool {
+        self.0.key.0.integer_observation_arithmetic
+    }
+
+    /// The exact observation key for a single retained leaf. Keep any native
+    /// spelling already associated with the leaf by the compatibility bridge.
+    pub(crate) fn exact_shared_integer_observation(&self) -> Option<SharedMachineIntegerTerm> {
+        let KernelTermNode::MachineObservation { format, operand } = self.node() else {
+            return None;
+        };
+        if let Some(native) = self.legacy_integer() {
+            let IntegerTerm::Machine(observation) = native.as_ref() else {
+                return None;
+            };
+            return Some(observation.clone());
+        }
+        SharedMachineIntegerTerm::from_shared(*format, operand.clone())
+    }
+
     pub(super) fn is_literal_integer_arithmetic(&self) -> bool {
         self.0.key.0.literal_integer_arithmetic
     }
@@ -941,7 +974,21 @@ impl KernelTerm {
     }
     fn remember_integer(&self, integer: &SharedIntegerTerm) {
         SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow_mut().insert(integer.id()));
-        *self.0.integer.lock().expect("term bridge poisoned") = integer.downgrade();
+        let shared_observation = matches!(
+            self.node(),
+            KernelTermNode::MachineObservation { format, operand }
+                if matches!(integer.as_ref(), IntegerTerm::Machine(value)
+                    if value.ty() == *format && value.shared_operand() == Some(operand))
+        );
+        // The typed shared operand and its format already reconstruct this
+        // exact observation. Keep reverse links for native-only payloads.
+        let mut reverse = self.0.integer.lock().expect("term bridge poisoned");
+        if shared_observation {
+            *reverse = WeakIntegerTerm::default();
+        } else {
+            *reverse = integer.downgrade();
+        }
+        drop(reverse);
         // A legacy leaf owns its old value. Caching it on that same value
         // would create a cycle; only genuinely migrated nodes cache both ways.
         if !matches!(self.node(), KernelTermNode::Legacy(_)) {
@@ -1551,6 +1598,7 @@ mod tests {
             let source: SharedIntegerTerm = IntegerTerm::Machine(observation.clone()).into();
             let common = KernelTermImport::default().integer(&source);
             assert_eq!(common.children()[0], operand);
+            assert!(common.legacy_integer().is_none());
             drop(source);
             clear_integer_bridge_memo();
             let restored = KernelTermExport::default().integer(&common).unwrap();
