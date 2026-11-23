@@ -3345,6 +3345,26 @@ fn rewritten_constructor_payload_expands_to_known() {
             "BoolOutput::Value(value, flag)",
             "BoolOutput::Value(value, false)",
         ),
+        (
+            "rewritten_algebraic_field",
+            "BoxOutput::Item(value)",
+            "BoxOutput::Item(other)",
+        ),
+        (
+            "rewritten_algebraic_capture",
+            "BoxCapture::Item(value, captured)",
+            "BoxCapture::Item(value, other)",
+        ),
+        (
+            "rewritten_nullary_field",
+            "ColorOutput::Item(Color::Red)",
+            "ColorOutput::Item(Color::Green)",
+        ),
+        (
+            "rewritten_nullary_tag",
+            "ColorTag::Item(value, Color::Red)",
+            "ColorTag::Item(value, Color::Green)",
+        ),
     ] {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();

@@ -896,13 +896,17 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     }
 }
 
-fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
+fn is_closed_constructor_payload(field: &AlgebraicValue) -> bool {
     match field {
         AlgebraicValue::Integer(IntegerTerm::Constant(_)) => true,
         AlgebraicValue::Program(ProgramValue::Bool(word)) => word.bool_constant_value().is_some(),
         AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })) => {
             field.value_type() == AlgebraicValueType::Program(format.program_type())
         }
+        AlgebraicValue::Algebraic(AlgebraicTerm {
+            node: AlgebraicTermNode::Constructor { fields, .. },
+            ..
+        }) => fields.is_empty(),
         _ => false,
     }
 }
@@ -910,7 +914,11 @@ fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
 fn constructor_payload_variable(field: &AlgebraicValue) -> Option<Variable> {
     match field {
         AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
-        | AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => Some(*variable),
+        | AlgebraicValue::Integer(IntegerTerm::Variable(variable))
+        | AlgebraicValue::Algebraic(AlgebraicTerm {
+            node: AlgebraicTermNode::Variable(variable),
+            ..
+        }) => Some(*variable),
         AlgebraicValue::Program(ProgramValue::Bool(MachineTerm::BoolCast {
             to: MachineIntegerType::UInt8,
             value,
@@ -922,8 +930,17 @@ fn constructor_payload_variable(field: &AlgebraicValue) -> Option<Variable> {
     }
 }
 
-/// Follow selected constructor arms that forward scalar payloads into a
-/// constructor, possibly alongside literals or captured scalar variables.
+fn same_constructor_payload_type(left: &AlgebraicValue, right: &AlgebraicValue) -> bool {
+    match (left, right) {
+        (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+            left.algebraic_type == right.algebraic_type
+        }
+        _ => left.value_type() == right.value_type(),
+    }
+}
+
+/// Follow selected constructor arms that forward payloads into a constructor,
+/// possibly alongside closed fields or captured variables.
 /// Resolve each binding in its scrutinee's scope before checking the result.
 fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
     let AlgebraicTermNode::Constructor {
@@ -958,13 +975,14 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
             };
             let payload = if let Some(source) = constructor_payload_variable(field) {
                 payloads.get(&source).copied().unwrap_or(field)
-            } else if is_constructor_payload_literal(field) {
+            } else if is_closed_constructor_payload(field) {
                 field
             } else {
                 return false;
             };
-            let field_type = field.value_type();
-            if binder.value_type() != field_type || payload.value_type() != field_type {
+            if !same_constructor_payload_type(binder, field)
+                || !same_constructor_payload_type(payload, field)
+            {
                 return false;
             }
             bindings.push((variable, payload));
@@ -993,10 +1011,10 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         .zip(expected_fields)
         .all(|(field, expected)| {
             let Some(variable) = constructor_payload_variable(field) else {
-                return is_constructor_payload_literal(field) && field == expected;
+                return is_closed_constructor_payload(field) && field == expected;
             };
             let payload = payloads.get(&variable).copied().unwrap_or(field);
-            payload.value_type() == field.value_type() && payload == expected
+            same_constructor_payload_type(payload, field) && payload == expected
         })
         && matched.is_well_formed()
         && expected.is_well_formed()
