@@ -53,7 +53,7 @@ project = {
             "sources": {
                 "cJSON.c": {
                     "projection": "dependency-closure",
-                    "functions": ["cJSON_IsNumber"],
+                    "functions": ["cJSON_IsNumber", "parse_string"],
                 },
             },
         },
@@ -62,7 +62,8 @@ project = {
 (root / "source" / "click.project.json").write_text(json.dumps(project, indent=2) + "\n")
 PY
 
-cp "$integration_dir"/cjson-is-number-*.click "$work_dir/source/"
+cp "$integration_dir"/cjson-*.click "$work_dir/source/"
 "${CLICK:-click}" capture "$work_dir/source/cjson-is-number-null.click"
 "${CLICK:-click}" verify --locked "$work_dir/source/cjson-is-number-null.click"
 "${CLICK:-click}" verify --locked "$work_dir/source/cjson-is-number-tag.click"
+"${CLICK:-click}" verify --locked "$work_dir/source/cjson-parse-string-empty.click"

@@ -371,12 +371,7 @@ impl MemoryStateLabels {
         self.current_state = Some(state.clone());
         // A parameter among the state's locals keeps its source declaration,
         // which the merge below would otherwise replace with a kernel type.
-        let declarations = self
-            .naming
-            .as_deref()
-            .map_or(&[][..], |(parameters, _)| parameters.as_slice());
-        let (names, values) =
-            crate::surface::diagnostics::local_naming_tables_with_declarations(state, declarations);
+        let (names, values) = self.declared_local_naming_tables(state);
         let current = Self::naming(ParameterBinding::new(&names, &values));
         // A reassigned parameter's entry value is not its current value.
         for (variable, name) in &mut self.source_names {
@@ -449,9 +444,20 @@ impl MemoryStateLabels {
         Some(crate::surface::diagnostics::describe_program_point_selector(selector))
     }
 
+    /// `state`'s locals, each a parameter of the registered naming keeping
+    /// that parameter's source declaration, so a struct-pointer parameter
+    /// read at any point still spells its fields: `at(point, b->offset)`.
+    fn declared_local_naming_tables(&self, state: &ExecutionState) -> NamingTables {
+        let declarations = self
+            .naming
+            .as_deref()
+            .map_or(&[][..], |(parameters, _)| parameters.as_slice());
+        crate::surface::diagnostics::local_naming_tables_with_declarations(state, declarations)
+    }
+
     pub(crate) fn source_state(&mut self, state: &ExecutionState, point: String) {
         if self.source_memories.len() < MAX_MEMORY_STATE_LABELS {
-            let tables = crate::surface::diagnostics::local_naming_tables(state);
+            let tables = self.declared_local_naming_tables(state);
             let tables = std::sync::Arc::new(tables);
             if let Some(id) = state.observation_point_id() {
                 self.source_points
@@ -482,7 +488,7 @@ impl MemoryStateLabels {
             return (
                 Some(crate::surface::diagnostics::describe_program_point_selector(selector)),
                 Some(std::sync::Arc::new(
-                    crate::surface::diagnostics::local_naming_tables(state),
+                    self.declared_local_naming_tables(state),
                 )),
             );
         }
