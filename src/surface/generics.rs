@@ -1281,10 +1281,10 @@ fn instantiate_proof_tactic(
         },
         ProofTactic::Instantiate {
             quantified,
-            argument,
+            arguments,
         } => ProofTactic::Instantiate {
             quantified: proposition(quantified)?,
-            argument: expression(argument)?,
+            arguments: arguments.iter().map(expression).collect::<Result<_, _>>()?,
         },
         ProofTactic::SolveUsing(using) => ProofTactic::SolveUsing(ProofSolveUsing {
             premises: using

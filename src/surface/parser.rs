@@ -12173,14 +12173,18 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let quantified = self.parse_proposition()?;
                 self.expect(Token::Comma)?;
-                let argument = self.parse_contract_expression()?;
+                let mut arguments = vec![self.parse_contract_expression()?];
+                while self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                    arguments.push(self.parse_contract_expression()?);
+                }
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
                     return Err(self.error("`instantiate` takes no `using` list; prove guards with ordinary `have` steps"));
                 }
                 ProofTactic::Instantiate {
                     quantified,
-                    argument,
+                    arguments,
                 }
             }
             "solve" => {

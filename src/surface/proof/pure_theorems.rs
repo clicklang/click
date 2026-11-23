@@ -3949,6 +3949,50 @@ mod tests {
     }
 
     #[test]
+    fn multi_argument_instantiation_checks_all_values_and_replays() {
+        let quantified =
+            "forall (i: int32) { forall (j: uint64) { to_integer(i) <= to_integer(j) } }";
+        let intermediate = "forall (j: uint64) { to_integer(x) <= to_integer(j) }";
+        let theorem = |goal: &str, arguments: &str| {
+            format!(
+                "theorem inst(x: int32) {{ requires {quantified}; ensures {goal} by {{ instantiate({quantified}, {arguments}); known(); }} }}"
+            )
+        };
+        for (goal, arguments) in [
+            ("to_integer(x) <= 7", "x, 7u64"),
+            (intermediate, "x, 7u64"),
+            (intermediate, "x"),
+        ] {
+            let source = theorem(goal, arguments);
+            let verified = verify_instantiation_theorem(&source)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+            let certificate = format_proof_certificate(verified.proof.as_ref().unwrap());
+            assert!(
+                certificate.contains(&format!(", {arguments});")),
+                "{certificate}"
+            );
+            let (head, _) = source.split_once(" by {").unwrap();
+            let replay = format!("{head} {certificate} }}");
+            crate::surface::without_implicit_solve(|| verify_instantiation_theorem(&replay))
+                .unwrap_or_else(|error| panic!("{}\n{replay}", error.report()));
+        }
+        let wrong_type = theorem(intermediate, "x, x");
+        let error = verify_instantiation_theorem(&wrong_type).unwrap_err();
+        assert!(
+            error.message().contains("did not evaluate to uint64"),
+            "{error}"
+        );
+        let too_many = theorem(intermediate, "x, 7u64, 0");
+        let error = verify_instantiation_theorem(&too_many).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("argument 3 has no remaining universal binder"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn pure_instantiate_retains_checked_authority_without_recertification() {
         let result = verify_instantiation_theorem(INSTANTIATE_BOUND);
         let verified = result.expect("pure instantiation must produce checked authority");
