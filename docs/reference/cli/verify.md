@@ -177,12 +177,11 @@ Verification reports use these headings:
 | `incomplete proof` | The proof ended with a requirement outstanding, such as a resource the contract promises to return. |
 | `contract error` | Click identified a rule it believes the written contract violates, such as a potentially overflowing resource endpoint or a proven overlap between owned entry resources or between an owned resource and an input view. |
 | `unsupported` | Click detected a documented limitation with a path to supporting it. The diagnostic identifies the unsupported case. |
-| `unclassified verification refusal` | The reported cause comes from a remaining check without a specific classification. |
 | `syntax error` | Input did not parse. |
 | `type error` | The source did not pass checking of names or types. |
 | `work limit reached` | The run hit its `--work-limit` before it finished checking. The report names the phase or tactic that was running when it stopped. |
 | `timed out` | The wall-clock crash-containment bound stopped the run before it gave a verdict. |
-| `internal error` | Click detected a verifier failure, including ordinary checking that exhausts an internal work allowance. |
+| `internal error` | Click detected a verifier failure, including ordinary checking that exhausts an internal work allowance or refuses verification without assigning a diagnostic category. |
 
 A tactic error at an implicit step names that operation in the report, even
 without a proof trace. A direct refusal can name required evidence, such as
