@@ -42,7 +42,7 @@ fn fixture() -> RustExport {
                 });
                 owned_arguments.push(OwnedArgument {
                     index: 0,
-                    local: "input".into(),
+                    local: Some("input".into()),
                     record: record.clone(),
                     moved: true,
                 });
@@ -103,7 +103,7 @@ fn rust_owned_parameters_check_metadata_and_consumption() {
             0 => owned_arguments.clear(),
             1 => owned_arguments[0].index = 1,
             2 => owned_arguments[0].record = "wrong_record".into(),
-            3 => owned_arguments[0].local = "wrong_local".into(),
+            3 => owned_arguments[0].local = Some("wrong_local".into()),
             4 => owned_arguments.push(owned_arguments[0].clone()),
             6 => {
                 owned_arguments[0].moved = false;
