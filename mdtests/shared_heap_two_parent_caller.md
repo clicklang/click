@@ -218,7 +218,14 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     let { link: second_link } = step(parent_attach);
     let { out: first_out } = step(parent_detach, { link: first_link });
     step();
+    mark before_read;
     step(parent_read_payload, { link: second_link });
+    // The read returns a linked parent, which the following detach consumes.
+    have second_link.link == ParentLink::Linked(at(before_read, second->kid)) by { known(); }
+    have second_link.link != ParentLink::Empty by {
+        rewrite(second_link.link, ParentLink::Linked(at(before_read, second->kid)));
+        normalize();
+    }
     step();
     have second->kid == kid;
     have observed == kid->payload;
