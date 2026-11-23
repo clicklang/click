@@ -8041,6 +8041,22 @@ impl Parser {
             self.position += length;
             return Ok(ResourceSubject::Emp);
         }
+        if let Some((receiver, width)) = self.object_resource_selector() {
+            let name = rust_trait_objects::object_resource_spelling(receiver);
+            if let Some(identity) = self
+                .names
+                .resource_bindings
+                .get(&name)
+                .and_then(|(identity, _)| identity.instance())
+            {
+                self.position += width;
+                return Ok(ResourceSubject::Instance {
+                    name,
+                    identity,
+                    at: None,
+                });
+            }
+        }
         if let Some(name) = self.peek_ident()
             && self.peek_next() != Some(&Token::LParen)
             && let Some(identity) = self
@@ -8303,7 +8319,7 @@ impl Parser {
         let mut type_arguments = Vec::new();
         let mut value_arguments = Vec::new();
         while has_map && self.peek() != Some(&Token::RBrace) {
-            let binder = self.expect_ident("callee resource binder")?;
+            let binder = self.expect_resource_binder("callee resource binder")?;
             self.expect(Token::Colon)?;
             if let Some(declaration) = declared.get(&binder)
                 && declaration.kind == CalleeResourceBinderKind::Value
@@ -8896,12 +8912,16 @@ impl Parser {
         &mut self,
         rebinding: bool,
     ) -> Result<ResourceClause, ClickError> {
-        if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::Colon)
-        {
+        let named =
+            matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon);
+        let object = self.object_resource_selector().is_some_and(|(_, width)| {
+            self.tokens.get(self.position + width) == Some(&Token::Colon)
+        });
+        if !named && !object {
             let target = self.parse_owned_resource_target()?;
             return Ok(self.hold_a_hidden_record_unnamed(target));
         }
-        let name = self.expect_ident("resource instance name")?;
+        let name = self.expect_resource_binder("resource instance name")?;
         self.expect(Token::Colon)?;
         let rebound = rebinding
             .then(|| self.names.resource_bindings.get(&name).cloned())
@@ -9097,7 +9117,7 @@ impl Parser {
     }
 
     fn expect_resource_path(&mut self) -> Result<String, ClickError> {
-        let mut name = self.expect_ident("resource instance")?;
+        let mut name = self.expect_resource_binder("resource instance")?;
         while self.peek() == Some(&Token::Dot) {
             self.position += 1;
             name.push('.');
@@ -9636,6 +9656,7 @@ impl Parser {
             )
             && self.peek_next() == Some(&Token::LParen)
             && !self.looks_like_region_result()
+            && self.object_resource_field_selector().is_none()
         {
             if let Some(name) = self.peek_ident()
                 && let Some(value_parameters) = self.contract_value_parameter_names.get(name)
@@ -10810,7 +10831,7 @@ impl Parser {
         self.position += 1;
         let mut bindings = Vec::new();
         while self.peek() != Some(&Token::RBrace) {
-            let binder = self.expect_ident("output binder")?;
+            let binder = self.expect_resource_binder("output binder")?;
             self.expect(Token::Colon)?;
             let name = self.expect_ident("output binding name")?;
             bindings.push((binder, name));
@@ -17420,6 +17441,28 @@ impl Parser {
             return Ok(ContractExpression::ResourceCount(Box::new(resource)));
         }
 
+        if let Some((receiver, width)) = self.object_resource_field_selector() {
+            let owner = rust_trait_objects::object_resource_spelling(receiver);
+            if let Some((identity, resource_name)) =
+                self.names.resource_bindings.get(&owner).cloned()
+            {
+                self.position += width + 1;
+                let field = self.expect_ident("object resource field")?;
+                return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner,
+                    resource_name,
+                    identity: identity
+                        .instance()
+                        .ok_or_else(|| self.error("an object resource must be an instance"))?
+                        .into(),
+                    children: vec![],
+                    field,
+                    field_index: 0,
+                    click_type: None,
+                }));
+            }
+        }
+
         if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::LParen)
         {
             let (name, arguments) = self.parse_call_arguments("function name")?;
@@ -18541,6 +18584,39 @@ impl Parser {
                 format!("expected `{expected}`, got {}", token.describe()),
             )),
             None => Err(self.error_at(at, format!("expected `{expected}`, got end of input"))),
+        }
+    }
+
+    /// A receiver's modeled resource, or the distinguished resource slot in
+    /// the contract of a pack or unpack call.
+    fn object_resource_selector(&self) -> Option<(Option<&str>, usize)> {
+        if self.peek_ident() != Some(rust_trait_objects::OBJECT_RESOURCE)
+            || self.peek_next() != Some(&Token::LParen)
+        {
+            return None;
+        }
+        match (
+            self.tokens.get(self.position + 2),
+            self.tokens.get(self.position + 3),
+        ) {
+            (Some(Token::RParen), _) => Some((None, 3)),
+            (Some(Token::Ident(receiver)), Some(Token::RParen)) => Some((Some(receiver), 4)),
+            _ => None,
+        }
+    }
+
+    fn object_resource_field_selector(&self) -> Option<(Option<&str>, usize)> {
+        self.object_resource_selector()
+            .filter(|(_, width)| self.tokens.get(self.position + width) == Some(&Token::Dot))
+    }
+
+    fn expect_resource_binder(&mut self, expected: &str) -> Result<String, ClickError> {
+        if let Some((receiver, width)) = self.object_resource_selector() {
+            let spelling = rust_trait_objects::object_resource_spelling(receiver);
+            self.position += width;
+            Ok(spelling)
+        } else {
+            self.expect_ident(expected)
         }
     }
 

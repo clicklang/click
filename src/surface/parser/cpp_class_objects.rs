@@ -8,7 +8,7 @@
 //! whose fields are those functions, `Shape__object`:
 //!
 //! - A method of the class, and a parameter `Shape& x`, holds the object:
-//!   its contract owns `__object_this: Shape__object(this)` or `__object_x:
+//!   its contract owns `object_resource(this): Shape__object(this)` or `object_resource(x):
 //!   Shape__object(&x)` and reads `size(x)` as its field `size`. A `const`
 //!   method or reference keeps the fields; a mutable one may change them,
 //!   which its `ensures` read as new and `old(size(x))` as at entry.
@@ -28,8 +28,8 @@
 //! Every other token is kept, with its position.
 
 use super::rust_trait_objects::{
-    Spanned, at, error_at, field_read, handle, ident, is_ident, matching, rename, rewrite_calls,
-    same_tokens, split_clauses,
+    Spanned, at, error_at, field_read, ident, is_ident, matching, object_resource, rename,
+    rewrite_calls, same_tokens, split_clauses,
 };
 use super::*;
 
@@ -1141,8 +1141,8 @@ fn object_parameter<'a>(
     objects.get(root).map(|object| (object, constant))
 }
 
-/// The handle owned for a holder's object: `__object_this:
-/// Shape__object(this)` or `__object_x: Shape__object(&x)`, and, when
+/// The handle owned for a holder's object: `object_resource(this):
+/// Shape__object(this)` or `object_resource(x): Shape__object(&x)`, and, when
 /// `kept`, that it keeps its fields.
 fn object_clauses(
     holder: &str,
@@ -1150,10 +1150,9 @@ fn object_clauses(
     kept: bool,
     position: &SourcePosition,
 ) -> (Vec<Spanned>, Vec<Spanned>) {
-    let mut owns = at(
-        position,
-        vec![ident("owns"), ident(&handle(holder)), Token::Colon],
-    );
+    let mut owns = at(position, vec![ident("owns")]);
+    owns.extend(object_resource(Some(holder), position));
+    owns.push((Token::Colon, position.clone()));
     owns.extend(family_use(object, position));
     owns.push((Token::LParen, position.clone()));
     if holder != "this" {
@@ -1166,12 +1165,12 @@ fn object_clauses(
     let mut keeps = Vec::new();
     for (function, _) in object.functions.iter().filter(|_| kept) {
         keeps.extend(at(position, vec![ident("ensures")]));
-        keeps.extend(field_read(holder, function, position));
+        keeps.extend(field_read(Some(holder), function, position));
         keeps.extend(at(
             position,
             vec![Token::EqualEqual, ident("old"), Token::LParen],
         ));
-        keeps.extend(field_read(holder, function, position));
+        keeps.extend(field_read(Some(holder), function, position));
         keeps.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
     (owns, keeps)
@@ -1276,7 +1275,7 @@ fn rewrite_function(
                     holder,
                     &object.functions,
                     *kept,
-                    &|function, position| field_read(holder, function, position),
+                    &|function, position| field_read(Some(holder), function, position),
                 )
             })
     };
@@ -1493,7 +1492,7 @@ fn rewrite_function(
                 holder,
                 &object.functions,
                 false,
-                &|function, position| field_read(holder, function, position),
+                &|function, position| field_read(Some(holder), function, position),
             )
         },
     );
@@ -1666,7 +1665,6 @@ fn coercion_contracts(
     let class = record_of(class, records);
     let class = class.as_str();
     let receiver = BTreeMap::from([("this".to_string(), "object".to_string())]);
-    let holder = handle("object");
     let head = |name: &str| {
         at(
             position,
@@ -1686,7 +1684,9 @@ fn coercion_contracts(
         )
     };
     let instance = |verb: &str| {
-        let mut tokens = at(position, vec![ident(verb), ident(&holder), Token::Colon]);
+        let mut tokens = at(position, vec![ident(verb)]);
+        tokens.extend(object_resource(None, position));
+        tokens.push((Token::Colon, position.clone()));
         tokens.extend(family_use(object, position));
         tokens.extend(at(
             position,
@@ -1723,7 +1723,7 @@ fn coercion_contracts(
     tokens.extend(instance("produces"));
     for (function, _) in &object.functions {
         tokens.push((ident("ensures"), position.clone()));
-        tokens.extend(field_read("object", function, position));
+        tokens.extend(field_read(None, function, position));
         tokens.extend(at(
             position,
             vec![
@@ -1758,7 +1758,7 @@ fn coercion_contracts(
                 Token::LParen,
             ],
         ));
-        tokens.extend(field_read("object", function, position));
+        tokens.extend(field_read(None, function, position));
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
     tokens.push((Token::RBrace, position.clone()));
@@ -1827,7 +1827,7 @@ fn coercion_contracts(
     };
     for (function, _) in &object.functions {
         tokens.push((ident("ensures"), position.clone()));
-        tokens.extend(field_read("object", function, position));
+        tokens.extend(field_read(None, function, position));
         tokens.push((Token::EqualEqual, position.clone()));
         tokens.extend(at(position, entry.clone()));
         tokens.push((Token::LParen, position.clone()));
@@ -1864,7 +1864,7 @@ fn coercion_contracts(
                     Token::LParen,
                 ],
             ));
-            tokens.extend(field_read("object", function, position));
+            tokens.extend(field_read(None, function, position));
             tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
         }
     }

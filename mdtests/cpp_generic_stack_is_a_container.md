@@ -341,7 +341,7 @@ int through(int x) {
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
     step_until(region(5).entry);
     // Name the object state produced when the stack is lent as a container.
-    let { __object_object: packed } = step(Stack__int__click_pack__Container__int, { state: state });
+    let { object_resource(): packed } = step(Stack__int__click_pack__Container__int, { state: state });
     have packed.items == List<int32>::Nil by { known(); }
     have length(packed.items) < 1000000 by {
         rewrite(packed.items, List<int32>::Nil);

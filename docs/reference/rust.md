@@ -880,6 +880,10 @@ file. The sidecar's
 `impl` blocks define the model functions and verify the methods against
 those contracts.
 
+The same field can be written `object_resource(x).size`. This selects
+the resource already associated with the receiver `x` in the contract.
+Checked certificates can use that form for field reads.
+
 Each `impl` of such a trait defines every function from its type's
 fields, `function size(self) -> i32 { self.side }`; an `impl` that omits
 one is refused. Its methods are stated on the struct's own memory, `owns

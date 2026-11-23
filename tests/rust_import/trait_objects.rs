@@ -177,6 +177,17 @@ fn charon_trait_objects_tools_recheck_expanded_certificates() {
     for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "trait_objects::dynamic.contract",
+            "--in-place",
+        ],
+    );
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    assert!(expanded.contains("object_resource(shape).size"));
     for claim in [
         "__rust_q_I13_trait_objects_I5_total.contract",
         "__rust_q_I13_trait_objects_I11_through_dyn.ensures_0",

@@ -314,7 +314,7 @@ int caller(Stack<int>& stack, int x) {
     ensures result == x;
 } by {
     step_until(call(Stack__int__click_pack__Container__int, 0).entry);
-    let { __object_object: packed } = step(Stack__int__click_pack__Container__int, { state: state });
+    let { object_resource(): packed } = step(Stack__int__click_pack__Container__int, { state: state });
     step_until(function.exit);
     unfold(first_or(List<int>::Cons(x, old(state.items)), 0));
     solve();
@@ -326,7 +326,7 @@ int local_round_trip(int x) {
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     step_until(call(Stack__int__click_pack__Container__int, 0).entry);
-    let { __object_object: packed } = step(Stack__int__click_pack__Container__int, { state: state });
+    let { object_resource(): packed } = step(Stack__int__click_pack__Container__int, { state: state });
     step_until(function.exit);
     unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
     solve();
