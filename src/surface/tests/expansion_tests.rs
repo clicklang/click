@@ -3405,6 +3405,56 @@ fn rewritten_constructor_payload_expands_to_known() {
 }
 
 #[test]
+fn compound_constructor_payloads_expand_to_known() {
+    let (source, _) = mdtest_sources("mdtests/algebraic_match_compound_fields.md");
+    for (theorem, result, wrong_result) in [
+        (
+            "forwarded",
+            "ResultForwarded::Item(Box::Value(7))",
+            "ResultForwarded::Item(Box::Value(8))",
+        ),
+        (
+            "wrapped",
+            "ResultWrapped::Item(Box::Value(value))",
+            "ResultWrapped::Item(Box::Value(other))",
+        ),
+        (
+            "captured",
+            "ResultCaptured::Tagged(value, Box::Value(other))",
+            "ResultCaptured::Tagged(value, Box::Value(value))",
+        ),
+        (
+            "tagged",
+            "ResultTagged::Tagged(value, Box::Value(7))",
+            "ResultTagged::Tagged(value, Box::Value(8))",
+        ),
+        (
+            "mixed",
+            "ResultMixed::Item(Pair::Both(Box::Value(value), Box::Value(other)))",
+            "ResultMixed::Item(Pair::Both(Box::Value(other), Box::Value(value)))",
+        ),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
+        let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
+        let proof = proof.split("\n}").next().unwrap();
+        assert!(proof.contains("known();"), "{expanded}");
+        assert!(!proof.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+        let wrong = expanded.replace(&format!("== {result} by"), &format!("== {wrong_result} by"));
+        assert_ne!(wrong, expanded);
+        let error = verify_c_sources(&wrong, &[]).unwrap_err().report();
+        assert!(
+            error.contains("`known` requires the current goal"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn constant_byte_containment_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/byte_containment_preserves_physical_width.md");
     let label = "last_byte.ensures_0";
