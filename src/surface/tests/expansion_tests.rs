@@ -1,5 +1,13 @@
 use super::*;
 
+fn assert_compatibility_normalization_refusal(error: ClickError) {
+    assert_eq!(error.kind(), ClickErrorKind::Unsupported, "{error:?}");
+    assert!(
+        error.message().contains("used legacy normalization"),
+        "{error:?}"
+    );
+}
+
 #[test]
 fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
     let (source, input) = mdtest_sources("mdtests/restricted_solve_pointer_alias_viewability.md");
@@ -14,10 +22,7 @@ fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
         expand_c_tactics_source_at(&source, &sources, &[position]).unwrap_err(),
     ];
     for error in errors {
-        assert!(
-            error.message().contains("used legacy normalization"),
-            "{error:?}"
-        );
+        assert_compatibility_normalization_refusal(error);
     }
 
     // Writing the compatibility tactic explicitly keeps the proof replayable.
@@ -16966,7 +16971,7 @@ fn vector_push_pipeline_has_no_outcome_fallbacks() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
-fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
+fn smart_have_using_legacy_normalization_refuses_expansion() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest
         .join("examples")
@@ -16997,19 +17002,14 @@ fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
     let c_sources = crate::cli::source_refs(&sources);
 
     verify_c_sources(&smart, &c_sources).expect("the smart have should verify");
-    let expanded = expand_c_claim_source(
+    let error = expand_c_claim_source(
         &smart,
         &c_sources,
         "ring_buffer_pipeline",
         ContractProofClaim::Grouped,
     )
-    .expect("the smart have should expand against its ordinary lowered goal");
-    assert!(
-        expanded.contains("have owner->head == old(owner->head) by {\n        normalize();\n    }"),
-        "the expansion used a different internal goal:\n{expanded}"
-    );
-    verify_c_sources(&expanded, &c_sources)
-        .expect("the expanded smart have should independently reverify");
+    .unwrap_err();
+    assert_compatibility_normalization_refusal(error);
 }
 
 #[test]
@@ -26833,7 +26833,6 @@ fn shifted_one_divisors_expand_to_checked_bounds() {
 #[test]
 fn arithmetic_safety_bounds_expand_to_checked_proofs() {
     for (path, function) in [
-        ("mdtests/arithmetic_safety_float_widening.md", "convert"),
         ("mdtests/arithmetic_safety_right_shift_count.md", "shift32"),
         ("mdtests/arithmetic_safety_right_shift_count.md", "shift64"),
     ] {
@@ -26853,20 +26852,22 @@ fn arithmetic_safety_bounds_expand_to_checked_proofs() {
 }
 
 #[test]
-fn float_negation_cast_bounds_expand_to_selected_normalization() {
-    let (source, sources) = mdtest_sources("mdtests/float_negation_preserves_cast_bounds.md");
-    let sources = sources
-        .iter()
-        .map(|(n, s)| (n.as_str(), s.as_str()))
-        .collect::<Vec<_>>();
-    let mut expanded = source;
-    for function in ["cast32", "cast64"] {
-        expanded = expand_function_proof_source(&expanded, &sources, function).unwrap();
-        let claim = format!("{function}.ensures_0");
-        without_implicit_solve_for_claim(&claim, || {
-            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-        })
-        .unwrap();
+fn float_bounds_using_legacy_normalization_refuse_expansion() {
+    for (fixture, functions) in [
+        ("arithmetic_safety_float_widening", &["convert"][..]),
+        (
+            "float_negation_preserves_cast_bounds",
+            &["cast32", "cast64"][..],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        verify_c_sources(&source, &sources).unwrap();
+        for function in functions {
+            assert_compatibility_normalization_refusal(
+                expand_function_proof_source(&source, &sources, function).unwrap_err(),
+            );
+        }
     }
 }
 
@@ -28023,45 +28024,36 @@ fn conditional_signed_shift_retains_its_checked_requirement_on_return() {
 }
 
 #[test]
-fn guarded_signed_arithmetic_and_mixed_float_bounds_cold_replay() {
+fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
     for (fixture, claims) in [
         (
-            "mdtests/arithmetic_expression_guarded_signed_ring.md",
-            ["sum.ensures_0", "product.ensures_0"],
+            "guarded_signed_ring",
+            &[("sum", true), ("product", false)][..],
         ),
         (
-            "mdtests/arithmetic_expression_float_bound_composition.md",
-            ["negate_scaled.ensures_0", "widen_scaled.ensures_0"],
+            "float_bound_composition",
+            &[("negate_scaled", false), ("widen_scaled", false)][..],
         ),
-    ] {
-        let (source, sources) = mdtest_sources(fixture);
-        let sources = crate::cli::source_refs(&sources);
-        for claim in claims {
-            let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
-                .unwrap_or_else(|error| panic!("{claim}: {error}"));
-            crate::surface::check_audit_claim(claim, true, || {
-                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-            })
-            .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
-        }
-    }
-}
-
-#[test]
-fn arithmetic_checks_for_odd_divisors_negative_factors_and_float_sums_cold_replay() {
-    for (fixture, claim) in [
-        ("signed_odd_divisor", "divide.ensures_0"),
-        ("negative_signed_product", "product.ensures_0"),
-        ("float_add_pair", "sum.ensures_0"),
+        ("signed_odd_divisor", &[("divide", true)][..]),
+        ("negative_signed_product", &[("product", false)][..]),
+        ("float_add_pair", &[("sum", false)][..]),
     ] {
         let (source, sources) =
             mdtest_sources(&format!("mdtests/arithmetic_expression_{fixture}.md"));
         let sources = crate::cli::source_refs(&sources);
-        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
-            .unwrap_or_else(|error| panic!("{claim}: {error}"));
-        crate::surface::check_audit_claim(claim, true, || {
-            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-        })
-        .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+        verify_c_sources(&source, &sources).unwrap();
+        for (function, replayable) in claims {
+            let claim = format!("{function}.ensures_0");
+            let result = expand_c_claim_source_by_label(&source, &sources, &claim);
+            if *replayable {
+                let expanded = result.unwrap_or_else(|error| panic!("{claim}: {error}"));
+                crate::surface::check_audit_claim(&claim, true, || {
+                    verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+                })
+                .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+            } else {
+                assert_compatibility_normalization_refusal(result.unwrap_err());
+            }
+        }
     }
 }

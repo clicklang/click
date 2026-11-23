@@ -281,7 +281,7 @@ pub(super) fn require_surface_expansion(rendered: String) -> Result<String, Clic
     if rendered.contains(printing::COMPATIBILITY_NORMALIZATION) {
         return Err(ClickError::new(
             "proof expansion is unavailable: verification used legacy normalization and no ordinary proof was recorded",
-        ));
+        ).with_kind(ClickErrorKind::Unsupported));
     }
     Ok(rendered)
 }

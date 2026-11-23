@@ -8184,7 +8184,26 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"unsigned.cpp\"; uint64 div64(uint64 a, uint64 b) { requires b > 0u64; ensures result == a / b; }",
+        r#"verifying "unsigned.cpp";
+            uint64 div64(uint64 a, uint64 b) {
+                requires b > 0u64;
+                ensures result == a / b;
+            } by {
+                have b != 0u64 by {
+                    if b == 0u64 {
+                        have not (b > 0u64) by {
+                            rewrite(b, 0u64);
+                            known();
+                        }
+                        contradiction(b > 0u64);
+                    } else {
+                        known();
+                    }
+                }
+                step();
+                solve();
+            }
+        "#,
     );
 }
 

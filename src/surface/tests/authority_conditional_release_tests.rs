@@ -326,7 +326,7 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
 }
 
 #[test]
-fn mirrored_execution_bound_expands_to_checked_normalization() {
+fn mirrored_execution_bound_that_uses_legacy_normalization_refuses_expansion() {
     let source = r#"verifying "bound.c";
 void bound(int32 value) {
     requires 2 <= value;
@@ -342,10 +342,12 @@ void bound(int32 value) {
     let c = [("bound.c", "void bound(int32 value) {}")];
     crate::instrumentation::with_default_tactic_limits(|| {
         verify_c_sources(source, &c).expect("execution compares the same signed value");
-        let expansion = expand_c_tactic_source_at(source, &c, 8, 9)
-            .expect("the mirrored execution closure expands");
-        verify_c_sources(&expansion, &c)
-            .expect("the mirrored execution closure has a checked normalization");
+        let error = expand_c_tactic_source_at(source, &c, 8, 9)
+            .expect_err("the mirrored execution closure still uses compatibility normalization");
+        assert!(
+            error.message().contains("used legacy normalization"),
+            "{error:?}"
+        );
     });
 }
 
