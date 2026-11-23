@@ -645,6 +645,13 @@ fn retained_affine_operand<'a>(
                             | KernelIntegerOperator::Negate,
                         arguments,
                     } => pending.extend(arguments.iter().rev().map(|argument| (argument, false))),
+                    KernelTermNode::IntegerOperation {
+                        operator: KernelIntegerOperator::Multiply,
+                        arguments,
+                    } => {
+                        let (_, child) = retained_literal_factor(arguments)?;
+                        pending.push((child, false));
+                    }
                     _ => return None,
                 }
             }
@@ -652,6 +659,17 @@ fn retained_affine_operand<'a>(
         _ => return None,
     }
     Some(RetainedAffineOperand { root, postorder })
+}
+
+fn retained_literal_factor(arguments: &[KernelTerm]) -> Option<(&BigInt, &KernelTerm)> {
+    let [left, right] = arguments else {
+        return None;
+    };
+    match (left.node(), right.node()) {
+        (KernelTermNode::IntegerLiteral(factor), _) => Some((factor, right)),
+        (_, KernelTermNode::IntegerLiteral(factor)) => Some((factor, left)),
+        _ => None,
+    }
 }
 
 fn affine_condition(proposition: &Proposition) -> Option<(&StoredConditionTerm, bool)> {
@@ -776,7 +794,12 @@ fn collect_retained_affine_operand(
                                 },
                             )
                     }
-                    _ => unreachable!("retained affine additive operator"),
+                    KernelIntegerOperator::Multiply => {
+                        let (factor, child) = retained_literal_factor(arguments)?;
+                        charge_integer_product(&weight, factor)
+                            && add_weight(&mut weights, child.id(), weight * factor)
+                    }
+                    _ => unreachable!("retained affine operator"),
                 };
                 if !ok {
                     return None;
