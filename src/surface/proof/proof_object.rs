@@ -2409,6 +2409,22 @@ impl Proof<'_> {
         text
     }
 
+    /// The renderer's spelling of `proposition` alone, never the raiser's:
+    /// the raise-lower audit shows each kernel fact this way, so its record
+    /// of the original does not depend on what it checks.
+    pub(in crate::surface::proof) fn render_kernel_proposition(
+        &self,
+        proposition: &Proposition,
+    ) -> String {
+        use crate::surface::proof_diagnostics::ProofDiagnosticState as _;
+        use crate::surface::proof_diagnostics::render;
+        let mut labels = render::MemoryStateLabels::ambient();
+        self.diagnostic_state().register_names(&mut labels);
+        let mut text = render::render_proposition_labeled(proposition, &mut labels);
+        text.push_str(&labels.trace_legend());
+        text
+    }
+
     fn diagnostic_state(&self) -> ProofDiagnosticProofState {
         // Pure theorem names have no ExecutionState from which the renderer can
         // recover their signedness. Retain types alongside those names.
