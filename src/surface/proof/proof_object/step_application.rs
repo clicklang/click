@@ -392,7 +392,7 @@ impl<'a> Proof<'a> {
                 &census::kind(fact),
                 self.claim_label(),
                 tactic,
-                &next.render_diagnostic_proposition(fact),
+                &next.render_kernel_proposition(fact),
             );
         }
         if let Some(goal) = next.goal() {
@@ -402,7 +402,7 @@ impl<'a> Proof<'a> {
                 &census::kind(goal),
                 self.claim_label(),
                 tactic,
-                &next.render_diagnostic_proposition(goal),
+                &next.render_kernel_proposition(goal),
             );
         }
     }
@@ -457,7 +457,7 @@ impl<'a> Proof<'a> {
                         RoundTrip::Differs => (
                             RoundTrip::Differs,
                             raised,
-                            next.render_diagnostic_proposition(&lowered),
+                            next.render_kernel_proposition(&lowered),
                         ),
                         outcome => (outcome, raised, String::new()),
                     },
@@ -470,7 +470,7 @@ impl<'a> Proof<'a> {
                 &kind(original),
                 self.claim_label(),
                 tactic,
-                &next.render_diagnostic_proposition(original),
+                &next.render_kernel_proposition(original),
                 &raised,
                 &lowered,
             );
