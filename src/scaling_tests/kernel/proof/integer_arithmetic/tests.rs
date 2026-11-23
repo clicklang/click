@@ -152,6 +152,7 @@ fn affine_claims_read_retained_fold_operands_without_export() {
         StoredConditionTerm,
     };
     let mut samples = Vec::new();
+    let mut disequality_samples = Vec::new();
     for depth in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let fold = |accumulator, end| {
@@ -190,6 +191,22 @@ fn affine_claims_read_retained_fold_operands_without_export() {
             stored(comparison(IntegerComparisonOperator::Equal, right.clone())),
             true,
         );
+        let disequal = Proposition::condition_is(
+            stored(comparison(
+                IntegerComparisonOperator::NotEqual,
+                different.clone(),
+            )),
+            true,
+        );
+        let exports = KernelTermExport::integer_export_count();
+        let (differences, work) = crate::instrumentation::measure_deterministic_work(|| {
+            integer_disequality_claims(&disequal)
+        });
+        assert_eq!(differences.len(), 1);
+        assert_eq!(differences[0].terms.len(), 2);
+        assert!(excluded_type_bound(&disequal).is_none());
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        disequality_samples.push(work);
         let works = [0, 16, 64, 256].map(|unrelated| {
             let mut context = IntegerAffineCollectionContext::default();
             context
@@ -230,21 +247,29 @@ fn affine_claims_read_retained_fold_operands_without_export() {
                 let root = comparison(operator, operand);
                 let native = KernelTermExport::condition(&root).unwrap();
                 for value in [true, false] {
-                    let expected =
-                        integer_affine_claim(&Proposition::condition_is(native.clone(), value));
+                    let native = Proposition::condition_is(native.clone(), value);
+                    let retained = Proposition::condition_is(stored(root.clone()), value);
+                    let expected = integer_affine_claim(&native);
+                    let expected_differences = integer_disequality_claims(&native);
+                    let expected_negated =
+                        integer_disequality_claims(&Proposition::Not(Box::new(native)));
                     let exports = KernelTermExport::integer_export_count();
-                    let actual = integer_affine_claim(&Proposition::condition_is(
-                        stored(root.clone()),
-                        value,
-                    ));
+                    let actual = integer_affine_claim(&retained);
                     assert_eq!(actual, expected, "{operator:?}, {value}");
+                    assert_eq!(integer_disequality_claims(&retained), expected_differences);
+                    assert_eq!(
+                        integer_disequality_claims(&Proposition::Not(Box::new(retained))),
+                        expected_negated
+                    );
                     assert_eq!(KernelTermExport::integer_export_count(), exports);
                 }
             }
         }
     }
-    for pair in samples.windows(2) {
-        assert!(pair[1] <= 4 * pair[0] + 64, "{samples:?}");
+    for samples in [samples, disequality_samples] {
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= 4 * pair[0] + 64, "{samples:?}");
+        }
     }
 }
 

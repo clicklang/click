@@ -2041,15 +2041,14 @@ impl Context<'_> {
             let mut checks = program_skip();
             let mut values = Vec::new();
             if matches!(value_type, Type::Record { .. }) {
-                let E::Local { name } = argument else {
-                    return Err("owned call operand must be a MIR local".into());
+                let value = match argument {
+                    E::Local { name } if self.owned_locals.contains(name) => {
+                        crate::kernel::program_expression::variable(self.binding(name))
+                    }
+                    E::CallResult { keeps: false, .. } => self.expr(argument)?,
+                    _ => return Err("owned call operand has no supported value".into()),
                 };
-                if !self.owned_locals.contains(name) {
-                    return Err("owned call operand has no local storage".into());
-                }
-                values.push(crate::kernel::program_expression::variable(
-                    self.binding(name),
-                ));
+                values.push(value);
                 pieces.push((checks, values, None));
                 continue;
             }

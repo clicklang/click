@@ -98,26 +98,6 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
     }
 }
 
-/// Keep compatibility only for the inventoried slots while migrating them.
-fn allows_legacy_storage(
-    source: &str,
-    function: &str,
-    local: &super::super::schema::Place,
-) -> bool {
-    static EXCEPTIONS: std::sync::LazyLock<BTreeSet<&'static str>> =
-        std::sync::LazyLock::new(|| {
-            include_str!("unnamed_storage_exceptions.tsv")
-                .lines()
-                .filter(|line| !line.is_empty() && !line.starts_with('#'))
-                .collect()
-        });
-    let key = format!(
-        "{source}\t{function}\t{}\t{}\t{}",
-        local.span.line, local.span.column, local.name
-    );
-    EXCEPTIONS.contains(key.as_str())
-}
-
 pub(super) fn lower(
     cx: &mut Context<'_>,
     f: &Function,
@@ -180,6 +160,13 @@ pub(super) fn lower(
             _ => None,
         })
         .collect();
+    let drop_operands = super::super::charon::moved_drop_operands(mir);
+    for (&local, &site) in &drop_operands {
+        cx.bindings.insert(
+            local.to_owned(),
+            LocalBindingId::prepared_argument(owner.clone(), site).into(),
+        );
+    }
     let mut records = BTreeMap::new();
     let mut declarations = program_skip();
     // The declarations of the locals `Context::bindings` spells, which run
@@ -271,8 +258,7 @@ pub(super) fn lower(
             Type::Unit => program_skip(),
             Type::Reference { .. } if iterator_reference(&local.value_type) => program_skip(),
             _ if mir.unnamed_locals.contains(&local.name)
-                && !cx.bindings.contains_key(&local.name)
-                && !allows_legacy_storage(cx.source, &f.name, local) =>
+                && !cx.bindings.contains_key(&local.name) =>
             {
                 return Err(format!(
                     "{}:{}:{}: unsupported Rust construct: an unnamed compiler local requires storage with no supported identity",
@@ -288,7 +274,9 @@ pub(super) fn lower(
                 // Construction grants authority over fresh stack bytes;
                 // source reads cannot observe the kernel's fresh placeholders,
                 // since rustc reads no field before it is written.
-                if storage_starts.contains(local.name.as_str()) && check_copyable(cx, name).is_ok()
+                if !drop_operands.contains_key(local.name.as_str())
+                    && storage_starts.contains(local.name.as_str())
+                    && check_copyable(cx, name).is_ok()
                 {
                     program_skip()
                 } else {
@@ -417,7 +405,8 @@ pub(super) fn lower(
             }
         };
         if cx.bindings.contains_key(&local.name)
-            && !matches!(local.value_type, Type::Record { .. } | Type::Array { .. })
+            && (drop_operands.contains_key(local.name.as_str())
+                || !matches!(local.value_type, Type::Record { .. } | Type::Array { .. }))
             && storage_starts.contains(local.name.as_str())
         {
             scoped.insert(local.name.clone(), statement);
@@ -601,10 +590,10 @@ pub(super) fn lower(
                 let (prefix, arguments_values) = cx.prepared_arguments(function, arguments)?;
                 let mut indices = BTreeSet::new();
                 let mut previous_index = None;
+                let mut aggregate_steps = Vec::new();
                 for argument in owned_arguments {
                     if previous_index.is_some_and(|previous| previous >= argument.index)
                         || !indices.insert(argument.index)
-                        || !matches!(arguments.get(argument.index), Some(E::Local { name }) if name == &argument.local)
                         || callee.parameters.get(argument.index).map(|p| &p.value_type)
                             != Some(&Type::Record {
                                 name: argument.record.clone(),
@@ -613,9 +602,32 @@ pub(super) fn lower(
                         return Err("owned call metadata disagrees with callee and operands".into());
                     }
                     previous_index = Some(argument.index);
-                    check(&argument.local, &argument.record)?;
-                    if !argument.moved {
-                        check_copyable(cx, &argument.record)?;
+                    match (arguments.get(argument.index), &argument.local) {
+                        (Some(E::Local { name }), Some(local)) if name == local => {
+                            check(local, &argument.record)?;
+                            if !argument.moved {
+                                check_copyable(cx, &argument.record)?;
+                            }
+                        }
+                        (
+                            Some(E::CallResult {
+                                call,
+                                function,
+                                keeps: false,
+                            }),
+                            None,
+                        ) if argument.moved
+                            && cx
+                                .functions
+                                .get(function.as_str())
+                                .map(|producer| &producer.return_type)
+                                == Some(&Type::Record {
+                                    name: argument.record.clone(),
+                                }) =>
+                        {
+                            aggregate_steps.push(*call);
+                        }
+                        _ => return Err("owned call metadata disagrees with operand".into()),
                     }
                 }
                 if callee.parameters.iter().enumerate().any(|(index, p)| {
@@ -626,15 +638,31 @@ pub(super) fn lower(
                 let call = if let Some(step) = result {
                     // A call step: its successor reads the result as the
                     // value of the expression that holds the call.
+                    let aggregate_layout = if let Type::Record { name } = &callee.return_type {
+                        check_copyable(cx, name)?;
+                        Some(
+                            cx.layouts
+                                .get(name.as_str())
+                                .ok_or("missing returned record layout")?
+                                .to_kernel_aggregate_layout(),
+                        )
+                    } else {
+                        None
+                    };
                     ProgramStatement::CallResult {
-                        aggregate_layout: None,
+                        aggregate_layout: aggregate_layout.clone().map(|layout| {
+                            crate::kernel::AggregateResultLayout {
+                                layout,
+                                declared_class: None,
+                            }
+                        }),
                         call: *step,
                         function_name: function.clone(),
                         arguments: arguments_values,
                         result_type: scalar_type(&callee.return_type)
                             .ok()
                             .map(|scalar| scalar.to_kernel_type()),
-                        result_aggregate_layout: None,
+                        result_aggregate_layout: aggregate_layout,
                         result_pointee_constant: false,
                         callee: None,
                     }
@@ -668,6 +696,17 @@ pub(super) fn lower(
                     }
                 } else {
                     return Err("missing Rust call destination for a non-scalar result".into());
+                };
+                let call = if aggregate_steps.is_empty() {
+                    call
+                } else {
+                    program_seq(
+                        call,
+                        ProgramStatement::EndAutomaticLifetimes {
+                            names: Vec::new(),
+                            steps: aggregate_steps,
+                        },
+                    )
                 };
                 program_seq(prefix, call)
             }
@@ -979,11 +1018,12 @@ pub(super) fn lower(
                     }
                     copy
                 }
-                // A source name bound more than once is declared where its
-                // storage starts and ends where it does, as a C block's
-                // locals are, so a proof's name is the live binding.
+                // Declare lexically scoped storage at its start. Record the
+                // source declaration only when there is a written binding.
                 S::BeginStorage { local } if scoped.contains_key(local) => {
-                    if let Some(site) = site {
+                    if let Some(site) = site
+                        && !drop_operands.contains_key(local.as_str())
+                    {
                         cx.declaration_sites.push((cx.binding(local), site));
                     }
                     scoped[local].clone()

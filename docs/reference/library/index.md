@@ -8926,6 +8926,16 @@ axiom uint64_add_distinct(base: uint64, a: uint64, b: uint64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint64_add_subtract_cancel`
+
+```click
+axiom uint64_add_subtract_cancel(a: uint64, b: uint64) {
+    ensures ((((a + b) as uint64) - a) as uint64) == b;
+}
+```
+
+**Axiom:** trusted, not proved. Wrapping addition and subtraction cancel for every pair of words.
+
 ### `integer::uint64_or_add_low`
 
 ```click
@@ -8998,6 +9008,16 @@ axiom uint8_pointer_add_address_int64(p: uint8*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint8_pointer_add_address_uint64`
+
+```click
+axiom uint8_pointer_add_address_uint64(p: uint8*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 1u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::int8_pointer_add_address_int32`
 
 ```click
@@ -9017,6 +9037,16 @@ axiom int8_pointer_add_address_int64(p: int8*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::int8_pointer_add_address_uint64`
+
+```click
+axiom int8_pointer_add_address_uint64(p: int8*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 1u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::uint16_pointer_add_address_int32`
 
@@ -9038,6 +9068,16 @@ axiom uint16_pointer_add_address_int64(p: uint16*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint16_pointer_add_address_uint64`
+
+```click
+axiom uint16_pointer_add_address_uint64(p: uint16*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 2u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::int16_pointer_add_address_int32`
 
 ```click
@@ -9057,6 +9097,16 @@ axiom int16_pointer_add_address_int64(p: int16*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::int16_pointer_add_address_uint64`
+
+```click
+axiom int16_pointer_add_address_uint64(p: int16*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 2u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::uint32_pointer_add_address_int32`
 
@@ -9078,6 +9128,16 @@ axiom uint32_pointer_add_address_int64(p: uint32*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint32_pointer_add_address_uint64`
+
+```click
+axiom uint32_pointer_add_address_uint64(p: uint32*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::int32_pointer_add_address_int32`
 
 ```click
@@ -9097,6 +9157,16 @@ axiom int32_pointer_add_address_int64(p: int32*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::int32_pointer_add_address_uint64`
+
+```click
+axiom int32_pointer_add_address_uint64(p: int32*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::uint64_pointer_add_address_int32`
 
@@ -9118,6 +9188,16 @@ axiom uint64_pointer_add_address_int64(p: uint64*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint64_pointer_add_address_uint64`
+
+```click
+axiom uint64_pointer_add_address_uint64(p: uint64*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::int64_pointer_add_address_int32`
 
 ```click
@@ -9137,6 +9217,16 @@ axiom int64_pointer_add_address_int64(p: int64*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::int64_pointer_add_address_uint64`
+
+```click
+axiom int64_pointer_add_address_uint64(p: int64*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::float32_pointer_add_address_int32`
 
@@ -9158,6 +9248,16 @@ axiom float32_pointer_add_address_int64(p: float*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::float32_pointer_add_address_uint64`
+
+```click
+axiom float32_pointer_add_address_uint64(p: float*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::float64_pointer_add_address_int32`
 
 ```click
@@ -9177,6 +9277,16 @@ axiom float64_pointer_add_address_int64(p: double*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::float64_pointer_add_address_uint64`
+
+```click
+axiom float64_pointer_add_address_uint64(p: double*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::nonnegative_remainder_from_reconstruction`
 

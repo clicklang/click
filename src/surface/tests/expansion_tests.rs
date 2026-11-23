@@ -3404,36 +3404,9 @@ fn rewritten_constructor_payload_expands_to_known() {
     }
 }
 
-#[test]
-fn compound_constructor_payloads_expand_to_known() {
-    let (source, _) = mdtest_sources("mdtests/algebraic_match_compound_fields.md");
-    for (theorem, result, wrong_result) in [
-        (
-            "forwarded",
-            "ResultForwarded::Item(Box::Value(7))",
-            "ResultForwarded::Item(Box::Value(8))",
-        ),
-        (
-            "wrapped",
-            "ResultWrapped::Item(Box::Value(value))",
-            "ResultWrapped::Item(Box::Value(other))",
-        ),
-        (
-            "captured",
-            "ResultCaptured::Tagged(value, Box::Value(other))",
-            "ResultCaptured::Tagged(value, Box::Value(value))",
-        ),
-        (
-            "tagged",
-            "ResultTagged::Tagged(value, Box::Value(7))",
-            "ResultTagged::Tagged(value, Box::Value(8))",
-        ),
-        (
-            "mixed",
-            "ResultMixed::Item(Pair::Both(Box::Value(value), Box::Value(other)))",
-            "ResultMixed::Item(Pair::Both(Box::Value(other), Box::Value(value)))",
-        ),
-    ] {
+fn assert_constructor_matches_expand_to_known(fixture: &str, cases: &[(&str, &str, &str)]) {
+    let (source, _) = mdtest_sources(fixture);
+    for &(theorem, result, wrong_result) in cases {
         let label = format!("{theorem}.ensures_0");
         let expanded = expand_c_claim_source_by_label(&source, &[], &label).unwrap();
         let (_, proof) = expanded.split_once(&format!("theorem {theorem}(")).unwrap();
@@ -3452,6 +3425,75 @@ fn compound_constructor_payloads_expand_to_known() {
             "{error}"
         );
     }
+}
+
+#[test]
+fn compound_constructor_payloads_expand_to_known() {
+    assert_constructor_matches_expand_to_known(
+        "mdtests/algebraic_match_compound_fields.md",
+        &[
+            (
+                "forwarded",
+                "ResultForwarded::Item(Box::Value(7))",
+                "ResultForwarded::Item(Box::Value(8))",
+            ),
+            (
+                "wrapped",
+                "ResultWrapped::Item(Box::Value(value))",
+                "ResultWrapped::Item(Box::Value(other))",
+            ),
+            (
+                "captured",
+                "ResultCaptured::Tagged(value, Box::Value(other))",
+                "ResultCaptured::Tagged(value, Box::Value(value))",
+            ),
+            (
+                "tagged",
+                "ResultTagged::Tagged(value, Box::Value(7))",
+                "ResultTagged::Tagged(value, Box::Value(8))",
+            ),
+            (
+                "mixed",
+                "ResultMixed::Item(Pair::Both(Box::Value(value), Box::Value(other)))",
+                "ResultMixed::Item(Pair::Both(Box::Value(other), Box::Value(value)))",
+            ),
+        ],
+    );
+}
+
+#[test]
+fn bound_constructor_matches_expand_to_known() {
+    assert_constructor_matches_expand_to_known(
+        "mdtests/algebraic_match_bound_constructor.md",
+        &[
+            ("select_color", "Chosen::Red", "Chosen::Green"),
+            (
+                "select_number",
+                "NumberResult::Value(7)",
+                "NumberResult::Value(8)",
+            ),
+            (
+                "select_flag",
+                "FlagResult::Value(true)",
+                "FlagResult::Value(false)",
+            ),
+            (
+                "forward_box",
+                "BoxResult::Value(Box::Value(7))",
+                "BoxResult::Value(Box::Value(8))",
+            ),
+            (
+                "select_pair",
+                "PairResult::Value(7, a)",
+                "PairResult::Value(a, 7)",
+            ),
+            (
+                "select_chain",
+                "NumberResult::Value(9)",
+                "NumberResult::Value(8)",
+            ),
+        ],
+    );
 }
 
 #[test]
@@ -17261,6 +17303,35 @@ fn indexed_reads_in_bitwise_expressions_expand_through_store_preservation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expand and replay indexed reads inside shifts, casts, and other expressions"]
+fn indexed_reads_in_wrapped_expressions_expand_through_store_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_reads_in_wrapped_expressions.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in [
+        "keep_masked_left_shift.contract",
+        "keep_left_shift_count.contract",
+        "keep_right_shift_count.contract",
+        "keep_narrowed_read.contract",
+        "keep_unsigned_shift.contract",
+        "keep_quotient.contract",
+        "keep_remainder.contract",
+        "keep_read_in_conditional_arm.contract",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{claim}: {expanded}");
+        assert!(
+            expanded.contains("preserve(memory(a[0])"),
+            "{claim}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn masked_64_bit_field_expands_through_explicit_store_preservation() {
     for fixture in [
         "mdtests/int64_read_survives_store_and_resource_call.md",
@@ -26229,6 +26300,28 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
         let missing = implicit.replace(requirement, "");
         assert_ne!(missing, implicit);
         assert!(verify_c_sources(&missing, &sources).is_err());
+    }
+}
+
+#[test]
+fn arithmetic_safety_bounds_expand_to_checked_proofs() {
+    for (path, function) in [
+        ("mdtests/arithmetic_safety_float_widening.md", "convert"),
+        ("mdtests/arithmetic_safety_right_shift_count.md", "shift32"),
+        ("mdtests/arithmetic_safety_right_shift_count.md", "shift64"),
+    ] {
+        let (source, sources) = mdtest_sources(path);
+        let sources = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, function)
+            .unwrap_or_else(|error| panic!("{path}: {error}"));
+        let claim = format!("{function}.ensures_0");
+        without_implicit_solve_for_claim(&claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{path}: {error}"));
     }
 }
 

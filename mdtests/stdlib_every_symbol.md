@@ -89,7 +89,7 @@ The unsigned address-word laws are checked in
 `integer::uint64_or_zero`, `integer::uint64_or_disjoint`, `integer::uint64_mask_add_low`,
 `integer::uint64_mask_add_high`, `integer::uint64_mask_multiple`,
 `integer::uint64_mask_keep`, `integer::uint64_mask_add_clear`,
-`integer::uint64_add_distinct`, `integer::uint64_or_add_low`, `integer::uint64_mask_subset`,
+`integer::uint64_add_distinct`, `integer::uint64_add_subtract_cancel`, `integer::uint64_or_add_low`, `integer::uint64_mask_subset`,
 `integer::uint64_or_masked`, `integer::uint8_pointer_add_address_int32`,
 `integer::uint8_pointer_add_address_int64`, `integer::int8_pointer_add_address_int32`,
 `integer::int8_pointer_add_address_int64`, `integer::uint16_pointer_add_address_int32`,
@@ -100,7 +100,7 @@ The unsigned address-word laws are checked in
 `integer::uint64_pointer_add_address_int64`, `integer::int64_pointer_add_address_int32`,
 `integer::int64_pointer_add_address_int64`, `integer::float32_pointer_add_address_int32`,
 `integer::float32_pointer_add_address_int64`, `integer::float64_pointer_add_address_int32`,
-`integer::float64_pointer_add_address_int64`.
+`integer::float64_pointer_add_address_int64`, `integer::uint8_pointer_add_address_uint64`, `integer::int8_pointer_add_address_uint64`, `integer::uint16_pointer_add_address_uint64`, `integer::int16_pointer_add_address_uint64`, `integer::uint32_pointer_add_address_uint64`, `integer::int32_pointer_add_address_uint64`, `integer::uint64_pointer_add_address_uint64`, `integer::int64_pointer_add_address_uint64`, `integer::float32_pointer_add_address_uint64`, `integer::float64_pointer_add_address_uint64`.
 
 The scalar-pointer translation and association families are checked by the
 strict scalar-width replay matrix and

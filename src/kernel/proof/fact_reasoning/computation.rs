@@ -1070,10 +1070,22 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
         return false;
     }
 
-    let mut payloads = std::collections::HashMap::new();
+    let mut payloads = std::collections::HashMap::<Variable, &AlgebraicValue>::new();
     let mut bindings = Vec::new();
     let mut selected = matched;
     while let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node {
+        let (scrutinee, fields_are_closed) =
+            if let AlgebraicTermNode::Variable(variable) = &scrutinee.node {
+                let Some(AlgebraicValue::Algebraic(value)) = payloads.get(variable).copied() else {
+                    return false;
+                };
+                if value.algebraic_type != scrutinee.algebraic_type {
+                    return false;
+                }
+                (value, true)
+            } else {
+                (scrutinee.as_ref(), false)
+            };
         let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
             return false;
         };
@@ -1089,7 +1101,11 @@ fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &Algebr
             let Some(variable) = constructor_payload_variable(binder) else {
                 return false;
             };
-            let payload = if let Some(source) = constructor_payload_variable(field) {
+            // A constructor taken from the binder map was checked when it was
+            // first bound, including all its fields.
+            let payload = if fields_are_closed {
+                field
+            } else if let Some(source) = constructor_payload_variable(field) {
                 payloads.get(&source).copied().unwrap_or(field)
             } else if is_closed_constructor_payload(field) {
                 field

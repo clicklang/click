@@ -2933,18 +2933,33 @@ pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
 }
 
 /// A true ordered comparison excludes NaN in its operand. Weakening it
-/// needs one cited comparison of the same width, direction and operand.
+/// needs one cited comparison of the same direction and operand. Exact
+/// binary32-to-binary64 widening carries its operand's ordered bounds.
 pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> bool {
     let (Some(premise), Some(goal)) = (float_bound(premise), float_bound(goal)) else {
         return false;
     };
-    if premise.format != goal.format || premise.lower != goal.lower {
+    if premise.lower != goal.lower {
         return false;
     }
-    let (low, high) = if goal.lower {
-        (goal.endpoint, premise.endpoint)
+    let (premise_endpoint, goal_operand) = if premise.format == goal.format {
+        (premise.endpoint, goal.operand)
+    } else if premise.format == KernelFloatType::Float32
+        && let Some(operand) = goal.operand.widened_float32()
+    {
+        (
+            crate::kernel::primitives::float_conversion::float32_to_float64_bits(
+                premise.endpoint as u32,
+            ),
+            operand,
+        )
     } else {
-        (premise.endpoint, goal.endpoint)
+        return false;
+    };
+    let (low, high) = if goal.lower {
+        (goal.endpoint, premise_endpoint)
+    } else {
+        (premise_endpoint, goal.endpoint)
     };
     let operator = if premise.strict || !goal.strict {
         ComparisonOperator::LessEqual
@@ -2964,7 +2979,7 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
         ),
     };
     comparison == ConditionTerm::Constant(true)
-        && match (premise.operand, goal.operand) {
+        && match (premise.operand, goal_operand) {
             (FloatOperandView::Shared(left), FloatOperandView::Shared(right)) if left == right => {
                 true
             }

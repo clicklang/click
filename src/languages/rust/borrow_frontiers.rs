@@ -746,7 +746,8 @@ pub(super) fn certify_scalar_reference_end<'a>(
                 let mut used = *through_pointer && aliases.contains(function.as_str());
                 used |= owned_arguments
                     .iter()
-                    .any(|arg| aliases.contains(arg.local.as_str()));
+                    .filter_map(|arg| arg.local.as_deref())
+                    .any(|local| aliases.contains(local));
                 for argument in arguments {
                     used |= alias_effect(argument, &aliases)?.0;
                 }
