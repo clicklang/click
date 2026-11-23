@@ -1720,54 +1720,12 @@ fn program_function_contract_entry_facts(
                 .into());
             }
         };
-        let path = if let [path] = paths.as_slice() {
-            path
-        } else {
-            let proposition_matches = paths
-                .iter()
-                .filter(|path| assumptions.proves_exact(&path.proposition))
-                .collect::<Vec<_>>();
-            if let [path] = proposition_matches.as_slice() {
-                *path
-            } else {
-                let consistent = paths
-                    .iter()
-                    .filter(|path| {
-                        !assumptions_with_propositions(
-                            &assumptions,
-                            &path
-                                .facts
-                                .iter()
-                                .map(|fact| fact.proposition().clone())
-                                .collect::<Vec<_>>(),
-                        )
-                        .is_inconsistent()
-                    })
-                    .collect::<Vec<_>>();
-                let [path] = consistent.as_slice() else {
-                    if crate::instrumentation::enabled() {
-                        crate::instrumentation::emit(
-                            crate::instrumentation::VerificationEvent::Diagnostic(format!(
-                                "contract requirement for {} lowered to {} paths; {} are already stated and {} remained consistent",
-                                function.name(),
-                                paths.len(),
-                                proposition_matches.len(),
-                                consistent.len(),
-                            )),
-                        );
-                    }
-                    return Err(format!(
-                        "`requires` clause {} lowered to {} paths, of which {} are already \
-                         stated and {} stayed consistent; the contract entry needs exactly one",
-                        requirement_index + 1,
-                        paths.len(),
-                        proposition_matches.len(),
-                        consistent.len(),
-                    )
-                    .into());
-                };
-                *path
-            }
+        let [path] = paths.as_slice() else {
+            return Err(ContractEntryRefusal::Internal(format!(
+                "could not lower `requires` clause {} to one symbolic proposition ({} lowering results)",
+                requirement_index + 1,
+                paths.len(),
+            )));
         };
         for obligation in &path.obligations {
             if !requirement_obligations.contains(obligation) {
@@ -3662,6 +3620,57 @@ mod scaling_tests {
 #[cfg(test)]
 mod prepared_entry_cases_tests {
     use super::*;
+
+    pub(super) fn ternary_requirement() -> SpecProposition {
+        let expression = ProgramExpression::Ternary {
+            condition: Box::new(crate::kernel::program_expression::variable("flag")),
+            then_branch: Box::new(crate::kernel::program_expression::int32_literal(1)),
+            else_branch: Box::new(crate::kernel::program_expression::variable("y")),
+        };
+        SpecProposition::Comparison {
+            left: SpecExpression::ProgramExpression(expression),
+            operator: ComparisonOperator::Equal,
+            right: SpecExpression::Value(crate::kernel::int32(1u32)),
+        }
+    }
+
+    #[test]
+    fn ternary_requirement_keeps_both_inputs_possible_at_entry() {
+        let function = program_function(
+            ProgramType::Int32,
+            "entry_selector",
+            vec![
+                program_parameter("flag", ProgramType::Int32),
+                program_parameter("y", ProgramType::Int32),
+            ],
+            program_return(crate::kernel::program_expression::int32_literal(0)),
+        )
+        .with_contract(vec![ternary_requirement()], vec![], vec![], vec![], true);
+        let state = ExecutionState::new();
+        let flag = MachineTerm::Variable(Variable(100));
+        let open_entry = |flag, y| {
+            program_function_contract_entry(
+                &state,
+                &function,
+                &[
+                    ProgramExpression::Value(crate::kernel::int32(flag)),
+                    ProgramExpression::Value(crate::kernel::int32(y)),
+                ],
+            )
+        };
+        open_entry(MachineTerm::constant(0), MachineTerm::constant(1))
+            .expect("flag = 0, y = 1 satisfies the precondition");
+        let entry = open_entry(flag.clone(), MachineTerm::Variable(Variable(101)))
+            .expect("a symbolic conditional is a single entry requirement");
+        let flag_is_zero = ConditionTerm::equal(flag.clone(), MachineTerm::constant(0));
+        assert!(!entry.states(&Proposition::condition_is(flag_is_zero.clone(), false)));
+        assert!(!entry.states(&Proposition::condition_is(flag_is_zero, true)));
+        assert!(entry.facts().iter().any(|fact| {
+            fact.origin() == ContractEntryFactOrigin::Requirement(0)
+                && !PureFactContext::new().proves_exact(fact.proposition())
+        }));
+        open_entry(flag, MachineTerm::constant(1)).expect("both possible arms return 1");
+    }
 
     pub(super) fn fixture(
         guards: usize,
