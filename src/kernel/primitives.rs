@@ -3897,6 +3897,15 @@ pub struct PointerIntegerValue {
     pub(in crate::kernel) kind: PointerIntegerKind,
 }
 
+impl PointerIntegerValue {
+    /// Whether this is a complete word that was passed in or loaded, whose
+    /// identity is independent of its numeric value, rather than an address
+    /// (`address(p)`) or a tag on one (`address(p) + 1`) computed from it.
+    pub(crate) fn is_opaque_word(&self) -> bool {
+        matches!(self.kind, PointerIntegerKind::Word { .. })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ProgramValue {
     PointerInteger(PointerIntegerValue),
