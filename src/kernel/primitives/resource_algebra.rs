@@ -8370,7 +8370,8 @@ impl ResourceContext {
     ) -> Option<Self> {
         let range = required.memory_own_range()?;
         let candidates = self.memory_fact_candidates(range, true, assumptions);
-        if let Some(entry) = candidates.entries.single_supplier()
+        let supplier = candidates.entries.single_supplier();
+        if let Some(entry) = supplier
             && self.fact(entry).has_proven_positive_quantity(assumptions)
             && !self
                 .fact(entry)
@@ -8386,13 +8387,13 @@ impl ResourceContext {
         {
             return Some(self);
         }
+        // A constant request can cross a symbolic partition boundary.
         if range.has_symbolic_bounds()
-            || (range.wide_bounds().is_some()
-                && candidates.entries.single_supplier().is_some_and(|entry| {
-                    self.fact(entry)
-                        .memory_own_range()
-                        .is_some_and(MemoryRange::has_symbolic_bounds)
-                }))
+            || supplier.is_some_and(|entry| {
+                self.fact(entry)
+                    .memory_own_range()
+                    .is_some_and(MemoryRange::has_symbolic_bounds)
+            })
         {
             return self.consume_symbolic_partition(required, assumptions, origins);
         }
