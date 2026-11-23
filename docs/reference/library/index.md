@@ -4241,6 +4241,19 @@ function count<T>(p: T*, lo: int32, hi: int32, x: T) -> int32 {
 
 ### `permutation::two_indicator_counts_commute`
 
+```click
+theorem two_indicator_counts_commute(a: Bool, b: Bool) {
+    ensures (0 + (if a { 1 } else { 0 }) + (if b { 1 } else { 0 })) ==
+            (0 + (if b { 1 } else { 0 }) + (if a { 1 } else { 0 })) by {
+        if a {
+            if b { known(); } else { known(); }
+        } else {
+            if b { known(); } else { known(); }
+        }
+    }
+}
+```
+
 Interchanges the two Boolean indicators in the unfolded two-element count.
 The equality keeps the fold's initial zero and uses native `int32` addition.
 Both the integer and byte swap proofs apply it after unfolding the counts.
