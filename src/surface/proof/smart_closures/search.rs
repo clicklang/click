@@ -3099,6 +3099,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introductions: Default::default(),
                 call_site: None,
                 assertion_condition: None,
+                theorem_source: None,
                 statement_safety: false,
                 surface: None,
             };
@@ -13106,6 +13107,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introductions: Default::default(),
                 call_site: None,
                 assertion_condition: None,
+                theorem_source: None,
                 statement_safety: false,
                 surface: Some(surface),
             };

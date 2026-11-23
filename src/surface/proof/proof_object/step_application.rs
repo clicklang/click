@@ -709,7 +709,10 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        crate::surface::proof_trace::record(Arc::as_ptr(&next.node) as usize, detail);
+        crate::surface::proof_trace::record(
+            crate::surface::proof_trace::trace_node_key(&next.node),
+            detail,
+        );
     }
 
     /// Apply exact facts and the selected live-partition separation rule.

@@ -2283,7 +2283,7 @@ impl Proof<'_> {
                 .collect()
         };
         crate::surface::proof_trace::record_branch(
-            Arc::as_ptr(marker) as usize,
+            crate::surface::proof_trace::trace_node_key(marker),
             crate::surface::proof_trace::TraceBranch {
                 header: format!("{location}: {kind}"),
                 source_tactic_path: self.site().source_tactic_path(),
@@ -2328,7 +2328,7 @@ impl Proof<'_> {
                 .collect()
         };
         crate::surface::proof_trace::record_branch(
-            Arc::as_ptr(marker) as usize,
+            crate::surface::proof_trace::trace_node_key(marker),
             crate::surface::proof_trace::TraceBranch {
                 header: format!("{location}: branch"),
                 source_tactic_path: self.site().source_tactic_path(),

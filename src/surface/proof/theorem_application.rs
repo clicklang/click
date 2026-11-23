@@ -236,9 +236,16 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem).map_err(
             |error| theorem_application_error(claim_label, path_index, tactic_index, error.message),
         )?;
-    let prepared_substitutions = preparing_application().then(|| {
-        requirement_source_bindings(&theorem, application)
-            .into_iter()
+    let prepared_bindings = preparing_application().then(|| {
+        Arc::<[(String, ContractExpression)]>::from(requirement_source_bindings(
+            &theorem,
+            application,
+        ))
+    });
+    let prepared_substitutions = prepared_bindings.as_ref().map(|bindings| {
+        bindings
+            .iter()
+            .cloned()
             .zip(theorem.parameters())
             .map(|((name, value), parameter)| {
                 let value = if parameter.click_type() == &ClickType::Integer {
@@ -262,7 +269,8 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                 ),
             )
         })?;
-        if let Some(substitutions) = &prepared_substitutions {
+        if let (Some(bindings), Some(substitutions)) = (&prepared_bindings, &prepared_substitutions)
+        {
             let written =
                 observe_machine_parameters(requirement, theorem.parameters(), substitutions);
             let surface =
@@ -273,7 +281,12 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                         lowered.clone(),
                         surface,
                         format!("theorem `{}` premise", theorem.name()),
-                    ),
+                    )
+                    .with_theorem_requirement_source(TheoremRequirementSource {
+                        index: requirement_index,
+                        clause: requirement.clone(),
+                        bindings: bindings.clone(),
+                    }),
             )?;
             for guard in crate::kernel::stated_loadable_span_guards(&lowered) {
                 crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
@@ -445,33 +458,22 @@ pub(super) fn describe_unavailable_theorem_requirement(
     let instantiation = substitute_click_proposition(&observed, &substitutions)
         .map(|surface| crate::surface::printing::source_click_proposition(&surface))
         .unwrap_or_else(|_| crate::surface::proof_diagnostics::render::render_proposition(lowered));
-    let names = bindings
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.clone(),
-                crate::surface::diagnostics::describe_contract_expression(value),
-            )
-        })
-        .collect::<Vec<_>>();
-    let message = describe_unavailable_theorem_requirement_spelled(
-        theorem_name,
+    let detail = describe_theorem_requirement_instantiation(
         requirement_index,
         requirement,
-        &names,
+        bindings,
         &instantiation,
     );
+    let message =
+        format!("required exact fact for theorem `{theorem_name}` is unavailable: {detail}");
     (message, instantiation)
 }
 
-/// [`describe_unavailable_theorem_requirement`] with the instantiation
-/// already spelled, for a caller that holds the names the proof state gives
-/// the lowered terms.
-pub(super) fn describe_unavailable_theorem_requirement_spelled(
-    theorem_name: &str,
+/// Describe a premise whose instantiated goal is already spelled in the caller's names.
+pub(super) fn describe_theorem_requirement_instantiation(
     requirement_index: usize,
     requirement: &ClickProposition,
-    bindings: &[(String, String)],
+    bindings: &[(String, ContractExpression)],
     instantiation: &str,
 ) -> String {
     let mut referenced = BTreeSet::new();
@@ -482,7 +484,10 @@ pub(super) fn describe_unavailable_theorem_requirement_spelled(
     let bound = bindings
         .iter()
         .filter(|(parameter, _)| referenced.contains(parameter))
-        .map(|(parameter, argument)| format!("{parameter} = {argument}"))
+        .map(|(parameter, argument)| {
+            let argument = crate::surface::diagnostics::describe_contract_expression(argument);
+            format!("{parameter} = {argument}")
+        })
         .collect::<Vec<_>>();
     let bound = if bound.is_empty() {
         String::new()
@@ -490,7 +495,7 @@ pub(super) fn describe_unavailable_theorem_requirement_spelled(
         format!(" with {}", bound.join(", "))
     };
     format!(
-        "required exact fact for theorem `{theorem_name}` is unavailable: requirement {} `{}`{bound} instantiates to {}",
+        "requirement {} `{}`{bound} instantiates to {}",
         requirement_index + 1,
         crate::surface::diagnostics::describe_click_proposition(requirement),
         instantiation
