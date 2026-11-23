@@ -4662,9 +4662,11 @@ fn raise_kernel_term_dispatch(
         }
         Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
+        // An array argument is its pointer, spelled as any pointer argument
+        // is (a proof name, or `0` for null), read at the view's state.
         Node::ArrayReference { point, pointer, .. } => {
             let raise = |selected: &ExecutionState| {
-                raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
+                raise_call_argument(pointer, parameter_binding, selected, bound_variables)
             };
             synthesize_at_read_origin(point, state, raise)?
         }
