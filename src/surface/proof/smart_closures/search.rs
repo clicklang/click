@@ -6449,45 +6449,63 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let field_bound = *operator == ComparisonOperator::LessEqual;
-        let expression = match (left, right) {
-            (expression, ContractExpression::IntegerLiteral(_))
-            | (ContractExpression::IntegerLiteral(_), expression) => expression,
-            (
-                left,
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(value),
-                )),
-            ) if outcome
-                && *operator == ComparisonOperator::Equal
-                && value.constant32().is_some() =>
-            {
-                left
+        fn is_integer_literal(expression: &ContractExpression) -> bool {
+            match expression {
+                ContractExpression::IntegerLiteral(_) => true,
+                ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                    MachineIntegerType::from_program_type(value.program_type())
+                        .is_some_and(|kind| kind.constant_from_value(value).is_some())
+                }
+                _ => false,
             }
-            _ => return Ok(None),
+        }
+        fn operand_against_literal<'e>(
+            left: &'e ContractExpression,
+            right: &'e ContractExpression,
+        ) -> Option<&'e ContractExpression> {
+            if is_integer_literal(right) {
+                Some(left)
+            } else if is_integer_literal(left) {
+                Some(right)
+            } else {
+                None
+            }
+        }
+        let Some(expression) = operand_against_literal(left, right) else {
+            return Ok(None);
         };
         fn indexed_expression_read(
             mut expression: &ContractExpression,
         ) -> Option<&ContractExpression> {
-            // Follow the only nonliteral operand to a single indexed read.
+            // Find one candidate read. The checked rewrite must still close the
+            // original comparison, including any other terms it depends on.
             loop {
                 crate::instrumentation::record_deterministic_work(1);
                 expression = match expression {
                     ContractExpression::Index(..) => return Some(expression),
                     ContractExpression::BitwiseNot(operand) => operand,
+                    ContractExpression::CUnary {
+                        operand,
+                        lowered: ProgramExpression::Cast { target_type, .. },
+                    } if MachineIntegerType::from_program_type(*target_type).is_some() => operand,
                     ContractExpression::BitwiseAnd(left, right)
                     | ContractExpression::BitwiseOr(left, right)
-                    | ContractExpression::BitwiseXor(left, right) => {
-                        match (left.as_ref(), right.as_ref()) {
-                            (operand, ContractExpression::IntegerLiteral(_))
-                            | (ContractExpression::IntegerLiteral(_), operand) => operand,
-                            _ => return None,
-                        }
+                    | ContractExpression::BitwiseXor(left, right)
+                    | ContractExpression::ShiftLeft(left, right)
+                    | ContractExpression::ShiftRight(left, right) => {
+                        operand_against_literal(left, right)?
                     }
-                    ContractExpression::ShiftRight(operand, count)
-                        if matches!(count.as_ref(), ContractExpression::IntegerLiteral(_)) =>
+                    ContractExpression::Divide(dividend, divisor)
+                    | ContractExpression::Remainder(dividend, divisor)
+                        if is_integer_literal(divisor) =>
                     {
-                        operand
+                        dividend
                     }
+                    ContractExpression::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => operand_against_literal(then_branch, else_branch)?,
                     _ => return None,
                 };
             }
@@ -6507,8 +6525,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 condition,
                 then_branch,
                 else_branch,
-            } if matches!(then_branch.as_ref(), ContractExpression::IntegerLiteral(_))
-                && matches!(else_branch.as_ref(), ContractExpression::IntegerLiteral(_))
+            } if is_integer_literal(then_branch)
+                && is_integer_literal(else_branch)
                 && let ClickProposition::Comparison {
                     left,
                     operator,
@@ -6516,12 +6534,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } = condition.as_ref()
                 && *operator != ComparisonOperator::In =>
             {
-                let operand = match (left, right) {
-                    (operand, ContractExpression::IntegerLiteral(_))
-                    | (ContractExpression::IntegerLiteral(_), operand) => operand,
-                    _ => return Ok(None),
-                };
-                let Some(read) = indexed_expression_read(operand) else {
+                let Some(read) =
+                    operand_against_literal(left, right).and_then(indexed_expression_read)
+                else {
                     return Ok(None);
                 };
                 read
