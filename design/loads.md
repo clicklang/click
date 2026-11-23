@@ -148,7 +148,9 @@ base and provenance are both named by the load.
 - A function-pointer load decodes to the function the store wrote. Decoding an
   object pointer's bytes as a function pointer, or the reverse, has no stored
   value to return.
-- The pointer term's type is the type it was decoded at (see open question 2).
+- The pointer term itself is untyped (`pointer-model.md`, "Types belong to
+  terms, not values"): the type is the decoding's, `decode<T *>`, and the
+  decodings at every object-pointer type are one pointer.
 
 ### Aggregates and abstract values
 
@@ -262,8 +264,12 @@ derivation"): `n->next`, `p[i]`, `at(point, place)`, `exact(place)`, or
   `n->next->next`, raises through its place: the field, static slot or
   parameter declaration names it. Any of them names the same load, because
   the type does not change it.
-- A load that no place names raises as `load<T>(address)` at the cell's
-  effective type. Whether every such cell has one is open question 3.
+- A pointer load that no place names raises as `load<Pointer>(address)`, at
+  Click's untyped pointer type. It names the same load whatever type the
+  kernel decoded it at.
+- An integer or float load that no place names raises as `load<T>(address)` at
+  its format. Whether effective-type checking accepts that for every such cell
+  is open question 2.
 
 ## Migration
 
@@ -310,8 +316,8 @@ Design check
   checks that they share one `Load`.
 - Fact-stable: lowering names a load from its version point and cell; the
   type moves to the decoding lowering already builds. No fact is read.
-- Failure: a nested pointer load that no place names, at a cell with no
-  effective type, does not raise; the raise-lower audit reports it.
+- Failure: a load that no place names and that effective-type checking
+  refuses at its own format does not raise; the raise-lower audit reports it.
 ```
 
 ## Open questions
@@ -320,15 +326,13 @@ Design check
    decoded at each format, as `Bits64` is today. That keeps the 2026-10-30
    direction's distinct terms as distinct decodings. Confirm that this, and
    not two loads, is the intended reading.
-2. **Types on pointer terms.** `Pointer` carries its type outside its identity.
-   Whether it should, or whether every type comes from the operation or
-   declaration that uses the pointer, is being decided separately. It does not
-   change loads.
-3. **Effective type of an unnamed cell.** Does every cell that no place names
-   have an effective type that a specification `load<T *>` can use, and does
-   effective-type checking accept a load at another pointer type? If not,
-   those loads have no spelling, and that is the defect to fix.
-4. **Exactness.** Integer load equality compares only `read_key()`, so an
+2. **Effective type of an unnamed cell.** A specification `load<Pointer>`
+   carries no pointee type, so effective-type checking must accept it for any
+   pointer cell. An integer or float `load<T>` that no place names raises at
+   its own format; check that effective-type checking accepts it for every
+   such cell. A refusal leaves that load with no spelling, and is the defect
+   to fix.
+3. **Exactness.** Integer load equality compares only `read_key()`, so an
    `Exact` and an `IndexedCell` selection of one point are one term; pointer
    loads match. Substitution and rewriting keep an exact load's point when
    they rewrite its address, and `exact-reads.md` E3 makes a pointer load's
@@ -338,4 +342,4 @@ Design check
    pointer form of the 53 integer cases. The mixed-name census
    (`kernel::mixed_read_names`) extends to pointer loads once step 2 gives
    them one constructor.
-5. **Interning cost** of `Load`, confirmed by the scaling tests before step 2.
+4. **Interning cost** of `Load`, confirmed by the scaling tests before step 2.
