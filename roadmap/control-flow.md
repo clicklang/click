@@ -20,59 +20,32 @@ audits; file those findings as their own P1 issues or `bugs/` entries when
 they are found. General backward, multi-entry, and irreducible jump graphs
 remain deferred in [`goto.md`](goto.md).
 
-## Relative difficulty
+## Remaining short-circuit gap
 
-These are qualitative implementation sizes, not time estimates.
+Calls in short-circuit operands are delivered:
+`mdtests/calls_in_short_circuit_operands.md` covers selected and unselected
+calls under `&&` and `||`, an unselected callee whose precondition is
+impossible, a selected callee that writes a global, and a call in a loop
+condition. `mdtests/qualified_static_wide_values.md` is not quarantined.
 
-| Slice | Relative size | Tricky part |
-| --- | --- | --- |
-| Calls in short-circuit operands | Medium | Preserve lazy evaluation while carrying call effects, resources, and outcome-specific state only through the selected operand. |
-| Broader `switch` support | Medium, then high for cleanup-heavy cases | Keep case selection, fallthrough, `break`, loop nesting, and cleanup edges aligned as switch nesting grows. |
-| Broader cleanup and unwind edges | High | Extend the checked edge and constructed-object model without guessing language-specific lifetime effects or merging normal and exceptional states. |
+No regression yet nests `&&` and `||` with calls, as in
+`a() && (b() || c())`, where an inner operand is selected or skipped by both
+levels. Add one, with selected and unselected writes and an unselected callee
+whose precondition is impossible, keeping the source unchanged rather than
+rewriting it into `if` or adding proof-only locals.
 
-The first two can build on the existing C execution frontier. The cleanup
-slice can reuse the selected C++ architecture, but each new source shape needs
-an explicit importer profile and a separate trust-boundary decision.
+## Delivered `switch` shape
 
-## Slice A: calls in short-circuit operands
+Integer constant-expression labels in one compound body, fallthrough, and
+nested switches are delivered (`mdtests/c_switch.md`,
+`mdtests/c_unsigned_switch*.md`,
+`mdtests/automatic_scope_exit_nested_switch*.md`): an inner `break` exits the
+innermost switch, fallthrough keeps an inner local alive, a `continue` reaches the innermost
+enclosing loop and retires that local, a scalar `return` reads it before
+cleanup, and a case-local constructed on one dispatch path is retired when
+sibling paths join. Jumping into or across a switch belongs to `goto.md`.
 
-Existing C expressions such as `first() && second()` and `first() || second()`
-must retain C's conditional evaluation. The unselected call must not execute,
-contribute a memory effect, consume a resource, or impose a proof obligation.
-This is a focused lowering problem, but it is not merely expression syntax:
-the selected call can mutate state or have distinct returned and exceptional
-outcomes.
-
-The former standalone issue is folded into this slice. Keep the original C
-regression in `mdtests/qualified_static_wide_values.md`; do not rewrite it
-into an explicit `if` or introduce proof-only locals.
-
-Acceptance requires nested `&&`/`||`, selected and unselected writes, calls
-that would be undefined if evaluated on the unselected path, expansion and
-reverification, and `scripts/check.sh`.
-
-## Slice B: broaden the supported `switch` shape
-
-The implementation now supports integer constant-expression labels in one
-compound body while retaining direct children and the existing checked
-fallthrough model. This was the intended medium-sized parser/lowering slice.
-
-The nested-switch ownership and basic automatic-scope cleanup slice is now
-covered: an inner `break` exits the innermost switch, fallthrough keeps an
-inner local alive, a `continue` reaches the innermost enclosing loop and
-retires that local, and a scalar `return` reads it before cleanup. A case-local
-constructed on only one dispatch path is also retired correctly when sibling
-paths join after the switch; escaped pointers are rejected after each tested
-exit and join. The remaining harder follow-up is broader cleanup and unwind
-behavior across more complex scope and path joins. Jumping into or across a
-switch remains part of `goto.md`, not this slice.
-
-Acceptance should include positive and negative tests for constant labels,
-fallthrough, duplicate labels, nested switch ownership, loop nesting, and
-cleanup on every reachable exit. Expansion and `scripts/check.sh` must agree
-with ordinary verification.
-
-## Slice C: broader cleanup and unwind edges
+## Broader cleanup and unwind edges
 
 The selected C++ profile checks a bounded scalar exception, matching handler,
 and up to two non-throwing destructible guards. It also accepts one guard
@@ -113,8 +86,9 @@ checked certificate.
 
 ## Suggested order
 
-1. Calls in short-circuit operands.
-2. A narrowly motivated cleanup/unwind extension around nested switches.
+1. The nested short-circuit regression above.
+2. A narrowly motivated cleanup/unwind extension, such as one around nested
+   switches.
 
 Revisit general `goto` only after its edge, scope, and termination model is
 designed independently in [`goto.md`](goto.md).

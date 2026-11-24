@@ -7,36 +7,28 @@ documented profile are refused.
 
 ## P1 front end: delivered
 
-The P1 part of this item, a released C++ front end, is complete (user ruling,
-2026-11-13). A user installs Click with `CLICK_LANGUAGES=cpp`, or adds the
-front end with `click add cpp`, describes the project in its
-[project configuration](../docs/reference/cli/capture.md#project-units), and
-runs `click capture` and `click verify`:
+The P1 part of this item, a released C++ front end with projects of several
+translation units, is complete (user ruling, 2026-11-13): `click add cpp`
+installs a checksummed exporter for `x86_64-unknown-linux-gnu` and
+`aarch64-apple-darwin` (`.github/workflows/cpp-frontend.yml`,
+`tests/cpp_release_install.rs`); see
+[project units](../docs/reference/cli/capture.md#project-units) and
+[`click add`](../docs/reference/cli/versions.md#languages). The shared
+front-end design now lives in
+[rust-support.md](rust-support.md#shared-front-end-design).
 
-- Releases ship a static, checksummed exporter for `x86_64-unknown-linux-gnu`
-  and `aarch64-apple-darwin` (`.github/workflows/cpp-frontend.yml`,
-  `tests/cpp_release_install.rs`); other hosts get a diagnostic that says so
-  ([`click add`](../docs/reference/cli/versions.md#languages)).
-- The exporter is found by one resolution order and checked by its
-  `--identity` before it exports
-  ([C++ exporter identity](../docs/reference/cli/capture.md#c-exporter-identity)).
-  A lock records the pinned profile, so equal inputs lock byte-identically on
-  every machine and host.
-- `the_installed_cpp_front_end_reproduces_the_committed_imports` locks
-  `examples/basic-cpp`, `examples/multifile-cpp` and the hermetic `MoneyRange`
-  closure from the installed layout alone.
-- A sidecar links several translation units of one unit, binding each
-  declaration to its definition and checking the one-definition rule
-  ([calls into another translation unit](../docs/reference/cli/capture.md#calls-into-another-translation-unit)).
+Deferred to P2:
 
-Deferred from P1 by the same ruling:
-
-- Exporter bundles for the other release hosts: Linux arm64, macOS x86-64
-  and Windows.
+- Exporter bundles for the other release hosts (Linux musl, Linux AArch64,
+  Windows, macOS x86-64). By the 2026-11-24 ruling these are P2 for both the
+  C++ and the Rust front end, whose launch hosts are the two above.
 - Checking that a project including the host's C++ standard headers
   (`#include <cstdint>`) locks with the installed exporter, and naming a
   missing header package when it does not.
-- A clean-room install of the first tagged release, end to end.
+
+No tagged release exists yet; the first one, installed clean-room on both
+launch hosts, is launch work tracked once in
+[rust-support.md](rust-support.md#today).
 
 ## Coverage toward Bitcoin Core
 
@@ -155,8 +147,8 @@ implementation:
 - **Bounded bytes and serialization.** The selected first cursor is
   Bitcoin's `SpanReader`, which reports malformed input by throwing
   `std::ios_base::failure`; that exception model is
-  [cpp-exceptions.md](cpp-exceptions.md). The selected
-  `ser_readdata32<FixtureReader>` composition is now proved on unchanged
+  [cpp-exceptions.md](cpp-exceptions.md). The fixture-reader
+  `ser_readdata32<FixtureReader>` composition is proved on unchanged
   Bitcoin source, including its nested writable-span temporaries and record
   template argument. Its [serialization witness](../design/object-model-current-audit.md#bitcoin-read32-serialization-composition)
   proves all four copied bytes, the exact `uint32_t` result and both cursor
@@ -174,8 +166,13 @@ implementation:
   proves the copied bytes and cursor advance on success, and the exact exception
   and unchanged cursor on short input. The offline integration test checks
   ordinary verification, expansion, and cold and retained-session replay.
-  The next application step is decoding through this reader, followed by typed
-  catches.
+  Decoding through this reader is delivered:
+  [`SpanReaderRead32.click`](../integrations/bitcoin-core-money-range/SpanReaderRead32.click)
+  proves `ser_readdata32<SpanReader>` returns the four bytes' little-endian
+  value and advances the cursor, and on short input propagates
+  `std::ios_base::failure` with the cursor unchanged. The next steps are
+  typed catches ([cpp-exceptions.md](cpp-exceptions.md)) and
+  `ReadCompactSize`.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

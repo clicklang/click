@@ -212,7 +212,7 @@ Raising visits common machine arithmetic, casts, observations, Boolean
 comparisons/conditionals and Integer conditionals directly. Unmigrated payloads
 still cross explicit legacy boundaries; native result carriers, folds, full
 pointer/algebraic payloads and consolidation of general lowering remain open.
-See the live inventories in `roadmap/raise-lower-principle.md`.
+See the live inventories in `roadmap/kernel-term-split.md`.
 One same-format `int32`/`int64` addition, subtraction or multiplication over
 two available values also constructs a shared node, accompanied by the existing
 ordinary-proposition range obligation. Literal evaluation and held-resource

@@ -47,7 +47,18 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                 }
             }
             let { sibling: sibling, up: outer } = unfold(before);
+            mark before_link_write;
+            have separate(memory(parent->rb_left), memory(identity->__rb_parent_color)) by {
+                rewrite(parent, identity); close();
+            }
             step_until(function.exit);
+            have separate(statement(0).statement(0).statement(0).footprint, memory(identity->__rb_parent_color)) by close();
+            have identity->__rb_parent_color == at(before_link_write, identity->__rb_parent_color) by {
+                preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(0));
+            }
+            have ((identity->__rb_parent_color & ~3) as (struct rb_node *)) == grandparent by {
+                rewrite(identity->__rb_parent_color, at(before_link_write, identity->__rb_parent_color)); close();
+            }
             let after = fold(ctx_at(new, root), {
                 model: Context::Left(identity, grandparent, color, sibling_model, outer_model),
                 up: outer,
@@ -80,8 +91,26 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                             contradiction(old != 0);
                         } else { close(); }
                     }
+                    let sibling = fold(rb_at(0), { model: RbTree::Empty });
+                    mark before_link_write;
+                    have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
+                        rewrite(parent, identity); close();
+                    }
                     step_until(function.exit);
-                    let sibling = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)) by close();
+                    have identity->__rb_parent_color == at(before_link_write, identity->__rb_parent_color) by {
+                        preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
+                    }
+                    have ((identity->__rb_parent_color & ~3) as (struct rb_node *)) == grandparent by {
+                        rewrite(identity->__rb_parent_color, at(before_link_write, identity->__rb_parent_color)); close();
+                    }
+                    have separate(memory(parent->rb_right), memory(identity->rb_left)) by {
+                        rewrite(parent, identity); close();
+                    }
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left)) by close();
+                    have identity->rb_left == at(before_link_write, identity->rb_left) by {
+                        preserve(memory(identity->rb_left), statement(0).statement(0).statement(1));
+                    }
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model),
                         up: outer,
@@ -91,13 +120,32 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                 },
                 RbTree::Node(sid, sp, sc, sl, sr) => {
                     let { left: left, right: right } = unfold(sibling);
-                    step();
-                    step();
-                    let sibling = fold(rb_at(parent->rb_left), {
+                    have separate(memory(identity->rb_left->__rb_parent_color), memory(old->__rb_parent_color)) by close();
+                    have identity->rb_left != old by close();
+                    have parent->rb_left != old by { rewrite(parent, identity); close(); }
+                    let sibling = fold(rb_at(identity->rb_left), {
                         model: RbTree::Node(sid, sp, sc, sl, sr),
                         left: left, right: right
                     });
+                    mark before_link_write;
+                    have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
+                        rewrite(parent, identity); close();
+                    }
                     step_until(function.exit);
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)) by close();
+                    have identity->__rb_parent_color == at(before_link_write, identity->__rb_parent_color) by {
+                        preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
+                    }
+                    have ((identity->__rb_parent_color & ~3) as (struct rb_node *)) == grandparent by {
+                        rewrite(identity->__rb_parent_color, at(before_link_write, identity->__rb_parent_color)); close();
+                    }
+                    have separate(memory(parent->rb_right), memory(identity->rb_left)) by {
+                        rewrite(parent, identity); close();
+                    }
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left)) by close();
+                    have identity->rb_left == at(before_link_write, identity->rb_left) by {
+                        preserve(memory(identity->rb_left), statement(0).statement(0).statement(1));
+                    }
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model),
                         up: outer,
@@ -159,7 +207,8 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     rewrite(old->__rb_parent_color, 1); normalize();
                 }
             }
-            step(); step();
+            step_until(assignment(parent, 0).entry);
+            step();
             have parent == 0;
             have ctx_node_is(d.model, parent) == 1 by { rewrite(d.model, Context::Top); rewrite(parent, 0); unfold(ctx_node_is(Context::Top, 0)); normalize(); }
             step(); step();
@@ -203,7 +252,8 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
-            step(); step();
+            step_until(assignment(parent, 0).entry);
+            step();
             have parent == id;
             have ctx_node_is(d.model, parent) == 1 by { rewrite(d.model, Context::Left(id, above, pc, sibling, up)); rewrite(parent, id); unfold(ctx_node_is(Context::Left(id, above, pc, sibling, up), id)); normalize(); }
             step(); step();
@@ -247,7 +297,8 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
-            step(); step();
+            step_until(assignment(parent, 0).entry);
+            step();
             have parent == id;
             have ctx_node_is(d.model, parent) == 1 by { rewrite(d.model, Context::Right(id, above, pc, sibling, up)); rewrite(parent, id); unfold(ctx_node_is(Context::Right(id, above, pc, sibling, up), id)); normalize(); }
             step(); step();

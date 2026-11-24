@@ -336,9 +336,9 @@ Quantifier domains remain logically unbounded. Finite enumeration is only a
 bounded proof technique. Universal introduction and existential witnesses rename
 height-numbered binders, which cannot capture, preserve carrier identity, and retain any
 definedness obligations in the witness or proposition. Deep repeated universal
-introduction has a known quadratic cost and is deferred for targeted scaling
-work; correctness checks and existing budgets remain in force. See the
-[deep quantifier scaling roadmap item](https://github.com/clicklang/click/blob/master/roadmap/deep-quantifier-scaling.md).
+introduction renames the whole body at each step, a quadratic cost with no
+known workload it blocks and no failing scaling curve, so it is not an open
+roadmap item; correctness checks and existing budgets remain in force.
 
 For an existential witness, definedness remains attached to that same witness.
 It cannot be weakened into an implication whose guard is false, since that

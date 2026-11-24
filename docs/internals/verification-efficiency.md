@@ -15,9 +15,8 @@ resources, simple tactics, certificates) and the slow part (smart tactics and
 search helpers, bounded and expandable), and the rule that a fast-part
 operation does indexed lookups and never scans a growing collection. This
 page gives the formal contract and describes how the main operations meet it.
-The operation inventory in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)
-distinguishes tested routes, source candidates, deferred evidence and coverage
-gaps. The guarantees below apply to their named routes; they do not establish
+The [operation audit ledger](#operation-audit-ledger) below
+distinguishes tested routes, source candidates and coverage gaps. The guarantees below apply to their named routes; they do not establish
 that every checking operation already satisfies the contract.
 
 ## Complexity contract
@@ -360,8 +359,8 @@ Current instances of the rule:
   which files fixed footprints by their scalar base variable. A query whose
   base is open (loaded, compound, constant-base, symbolically bounded) or
   named in a relating fact still retains its whole block; that conservative
-  fallback is a known violation of the fast-part rule (see "Fast-part scans"
-  in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).
+  fallback is a known violation of the fast-part rule (see the
+  [operation audit ledger](#operation-audit-ledger)).
 
 ## Proof size and speed targets
 
@@ -579,8 +578,8 @@ grows both same-base separation facts and aliases at 4, 16, 64, and 256
 entries. Establishing a missing symbolic separation uses ordinary tactics.
 The legacy interval and alias write guard remains test-only.
 
-The following are known violations of the fast-part rule, listed under
-"Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+The following are known violations of the fast-part rule (see also the
+[operation audit ledger](#operation-audit-ledger)).
 Their mechanisms are described here; their cost is not accepted.
 
 - **Uncharged transport contexts.** Explicit transport planning still builds
@@ -703,8 +702,7 @@ and narrow or native bounds. Explicit-separation queries use it to reject
 literal overlap without alias discovery; a separation certificate cannot undo
 that overlap. Unknown bounds or different origins still require other reasoning. Symbolic bounds, incompletely indexed roots, and other related bases
 still enumerate candidates: a known violation of the fast-part rule
-(see "Fast-part scans" in
-[the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).
+(see the [operation audit ledger](#operation-audit-ledger)).
 
 Negative memos over memory-DAG walks key on the derivation generation, which
 advances only when an earlier state receives its edge
@@ -855,8 +853,8 @@ fuel, `DECISION_FUEL_LIMIT` (`with_decision_fuel` in `src/instrumentation.rs`);
 every charged unit spends fuel. A decision that
 exhausts its fuel ends undecided, no memo keeps the answer, and no budget
 fails. The fuel is a safety net against a runaway decision, not a license to
-scan; the decision's remaining scans are listed under "Fast-part scans" in
-[the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+scan; the decision's remaining scans belong in the
+[operation audit ledger](#operation-audit-ledger).
 
 The graph's nodes are `int32`, `uint32`, `int64` and `uint64` values keyed by
 term, and its edges are constraints `x - y <= c`; a constant bound is an edge to
@@ -1014,6 +1012,212 @@ charged to the smart budget). Theorem application retrieves the latest
 recorded source form of its exact matched premise from `SurfacePropositionMap`,
 following one selected fact. A read of a held native range uses the address
 graph's retained wide-index producer rather than a narrow alias's form.
+
+## Memory-history checking boundaries
+
+These boundaries hold now; keep them while the legacy version walk
+(`resource_tracker::last_same_version_point`) is migrated away.
+
+- `Pointer::from_read` (`src/kernel/primitives.rs`) names a complete pointer
+  read through the state's O(1) `unchanged_bytes_source()` link, not the
+  legacy walk. The link crosses cache-only observations, never actual
+  writes. `LoadedPointer`, its registry, and initialization and lifetime
+  checks are separate.
+- Bounded cell-source checking (`resource_tracker/cell_source.rs`) does not
+  consult the path cell-version memo. `MemoryDagHopJustification` has no
+  same-version hop: every retained hop is one actual transition, counted
+  against `max_hops`. A derivation edge named `CellsForgotten` is not by
+  itself an unbounded history search.
+- Complete-pointer equality and provenance comparison look at one immediate
+  predecessor per endpoint. Cold histories include writes to either pointer
+  half, and an undecided comparison refuses equality. Controls in
+  `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`:
+  `adjacent_pointer_frame_checks_have_near_linear_total_work`,
+  `repeated_pointer_frame_queries_have_near_linear_total_work`,
+  `explicit_pointer_frame_composition_has_near_linear_total_work`,
+  `cold_pointer_frame_refusals_do_not_scan_history`, and
+  `fresh_pointer_read_naming_across_store_history_has_near_linear_total_work`;
+  `bounded_cell_source_is_independent_of_history_cache` is in
+  `cell_source.rs`. Neither memoization nor a warmed history cache may hide
+  the cost of a cold query.
+- Statement footprints include their automatic storage cleanup. Loop-exit
+  states name the state before enclosing scope cleanup, so exit facts can
+  refer to the loop's locals. Neither boundary searches back through history.
+- Read-side `CellsForgotten` projections and bulk-write preparation
+  (`SymbolicMemory::prepare_store_cache`) are separate from scalar-store
+  invalidation; changing them must preserve read spelling and branch-scoped
+  alias reasoning. `read_identity` is not initialization or lifetime
+  authority.
+
+The explicit route across a separated transition is `preserve(...)` of the
+complete observation. A numeric word equality does not connect pointer
+provenance. Resource descriptors support `A * B` and `separation::emp`, with
+containment and separation laws in `library/separation.click`. A preserving
+call whose mutable frame comes entirely from full-owned resource inputs
+publishes `contains(bound, region.footprint)` when it has no other effects,
+over the checked caller-side resource identities; consuming calls get the
+same bound over borrowed and consumed inputs, and a produced output does not
+cancel it. Recursive resources stay opaque, with the concrete memory-effect
+projection retained beside the bound. Non-unit quantities, construction,
+runtime effects and multi-transition regions are outside this form;
+arbitrary overlapping sequential effects are not a separating conjunction.
+Expansion/replay controls for this route: `saved_word_equality_expansion_cold_replay`,
+`explicit_pointer_alias_repairs_expand_and_cold_replay`,
+`recursive_witness_pointer_preservation_expands_and_cold_replays`,
+`store_index_separation_expands_and_replays` and
+`store_index_separation_variants_expand_and_replay`
+(`src/surface/tests/expansion_tests.rs`);
+`recursive_call_resource_bound_is_explicit_and_replays`
+(`src/surface/tests/resource_parameters.rs`);
+`destructor_footprint_cleanup_expands_and_replays` and
+`pointer_rejection_prefixes_expand_and_replay`
+(`src/surface/tests/preservation.rs`);
+`charon_stack_transport_repairs_expand_and_replay` (`tests/rust_import.rs`);
+`separation_history_repairs_expand_and_replay` (`tests/examples.rs`).
+
+## Operation audit ledger
+
+This is the inventory of checking operations against the contract above. Rows
+are operations, not bugs; several share helpers, and a row can hold several
+routes. There is no defensible defect count. Categories:
+
+- **Scoped evidence:** named tests cover particular routes and growth axes,
+  not the whole operation.
+- **Source candidate:** a growing traversal exists on an identified path; a
+  complete-operation red curve is required before choosing a fix.
+- **Reachability gap:** a helper scans, but no supported source caller is
+  established.
+- **Coverage gap:** a path or growth axis has not been measured.
+
+The scope is checking called by `step()`, explicit tactics, certificates,
+entry setup, joins and completion. Arithmetic premise discovery in `solve` or
+the implicit closer is search (budgeted, expandable); applying its
+certificate is checking. Trace printing, expansion audits and debug
+cross-checks are not production scans. An index is not by itself a
+complexity argument: enumerating a large bucket, equality class or chain is
+still ambient search, and amortized claims need a total-work argument across
+repeated steps, persistent forks and cold misses. The frozen
+[dependency inventory](https://github.com/clicklang/click/blob/master/build_support/proof_search_edges.tsv)
+and the [caller audit](https://github.com/clicklang/click/blob/master/design/proof-boundary-classification.md)
+record operation/search edges; no operation-to-driver records remain.
+
+Paths are relative to `src/`; test paths to `src/scaling_tests/`.
+[`step_shape_scaling_tests.rs`](https://github.com/clicklang/click/blob/master/src/scaling_tests/surface/tests/step_shape_scaling_tests.rs)
+holds repeated roles to a no-drift rule while varying ambient objects and
+facts; it is integration coverage, not an exhaustive list of shapes.
+
+| Operation and intended cost | Checking entry points | Scoped evidence | Remaining |
+| --- | --- | --- | --- |
+| Prepare selected code and function entry; once per selected declaration and clause | `surface/verification.rs`, `kernel/functions.rs`, `kernel/termination.rs` | `entry_setup_is_linear_in_owned_parameters`; termination call-chain, fan-out and cycle controls | Coverage gap: complete frontend/lowering/termination dependency map. |
+| Execute a scalar statement or access; selected expression and affected storage | `kernel/eval.rs`, `kernel/proof/execution.rs`, `kernel/primitives/memory_state.rs` | `one_store_is_logarithmic_in_unrelated_cells`, `sequential_owned_parameter_stores_ignore_earlier_cached_fields` | M1 below; ownership and borrow checks are part of the whole step. |
+| Admit facts and decide a condition; named terms and justified updates | `kernel/assumptions.rs`, `kernel/equality_graph.rs`, `kernel/difference_graph.rs`, `kernel/assumptions/condition_reasoning/decision.rs` | `equality_class_hits_and_anchored_misses_stay_indexed`, `interval_queries_do_not_walk_symbolic_order_components` | Coverage gap: total admission work across growing shared classes. |
+| Select, consume, fold or unfold ownership; selected pieces and body | `ResourceContext::{satisfies_fact,without_fact_incrementally_impl,consume_unit_owned_memory}`, fold construction | `call_fragment_composition_stops_at_a_fixed_gap`, `constructing_an_instance_fold_pays_for_its_body_once` | R1, R2. |
+| Observe separation or resource facts; selected operands | `surface/proof/proof_object/splits_and_scopes.rs`, `kernel/proof/facts.rs`, `kernel/assumptions/memory_reasoning.rs` | `observing_one_owner_ignores_unused_parameters`, `two_footprints_do_not_expand_into_a_cartesian_product` | F2. |
+| Check a write against borrows; selected evidence | `BorrowLedger::memory_access_requirement` | `borrow_access_requirement_is_retained_and_branch_local`, `stated_symbolic_write_separation_ignores_nearby_facts_and_aliases` | L1. |
+| Apply a modular call; selected contract and effects | `execute_verified_function_applications_with_suspension`, `call_kept_ownership` | `a_call_ignores_unrelated_owned_objects`, `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1, E1. |
+| Split/join branches, enter/exit loops; explicit arms and actual changes | `kernel/api.rs`: `abstract_execution_state_for_interface_join_across`; `kernel/loops.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs` | J1. |
+| Apply an equality, arithmetic or preservation step; written nodes and premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | history-independence and explicit-step controls in `kernel/proof/preservation.rs`; `kernel/proof/integer_arithmetic/tests.rs` | Coverage gap: each Surface certificate driver through lowering, lookup, application and publication. |
+| Introduce binders, apply logical rules, publish results; explicit structure | `ProofObject::apply_intro`, `ProofFacts::freshen_integer_forall_body` | term-rewrite, fact-key and event-publication controls | Q1, E1. |
+
+**R1, fragment selection (reachability gap).** In
+`kernel/primitives/resource_algebra.rs`, `without_fact_incrementally_impl`
+enumerates suppliers outside the view and unit-owned routes, and
+`satisfies_fact` has the matching other-quantity route. Surface validation
+rejects quantities directly on memory. Find a supported producer or remove
+the route; if reachable, fix one footprint and grow rejected suppliers.
+
+**R2, ownership validity and overlap (source candidate).**
+`owned_validity_candidates` and incremental validity checking keep
+symbolic-bound and multiple-coordinate-origin paths; single-block and
+constant-coordinate shortcuts do not settle multi-block alias/root discovery.
+Selected overlap checking uses supplied ranges and indexed endpoint equality.
+A source partial-borrow probe still grows with unrelated aliases. Construction
+routes that already avoid discovery are described in
+[ownership construction](#ownership-construction-and-raw-admission); their
+regressions include `call_borrow_restoration_ignores_ambient_aliases_and_frame`,
+`instance_unfold_ignores_ambient_pointer_aliases`,
+`resource_publication_ignores_unrelated_stated_facts`,
+`prepared_fold_emits_body_obligation_without_indexing_ambient_facts` and
+`raw_ownership_admission_must_not_search_ambient_pointer_aliases`. The ignored
+`legacy_checked_fold_requirements_ignore_unrelated_stated_facts` diagnostic
+grows, but measures a lower-level mode with no known production caller. To
+close R2, hold one inserted owner and neighbor fixed and grow same-block
+owners, blocks, coordinate origins and aliases with symbolic bounds,
+measuring the complete addition including overlap refusal.
+
+**F2, separation observation (coverage gap).** Frontier `have` opening no
+longer builds a composition-only context
+(`have_opening_does_not_copy_ambient_compositions`). Pointer decisions consume
+stated separation. Other observation routes lack composition/member growth
+coverage.
+
+**L1, writes under active borrows (scoped evidence).** Pointee and other
+writes return an ordinary separation obligation against a retained descriptor
+of active borrow backing, kept in a persistent identity trie; the driver's
+`solve` proves it with `separate_star`, `separate_symm` or
+`separate_restrict`. Controls: `one_write_with_a_borrow_does_not_walk_unrelated_aliases`,
+`borrow_access_requirement_is_retained_and_branch_local`. Verified calls
+refuse unnamed write effects under a live memory borrow. The alias-enumerating
+write guard is test-only. Other borrow callers and publication cost are not
+certified.
+
+**C1, modular call framing (scoped evidence).** `call_kept_ownership` selects
+singleton folded owners from indexed address keys and opens only
+argument-direct bodies. Controls: `repeated_writing_calls_ignore_unrelated_folded_owners`,
+`kept_call_reads_do_not_scan_same_block_owners_or_aliases`,
+`call_frame_preparation_must_not_open_unrelated_composites`. Resource-family
+selection and selected-address composite candidates remain.
+
+**Statement exit.** Result publication has a test-build discovery guard;
+condition fact transport is registered as discovery. Cell-map and effect
+queries, ownership validation and composite framing during preparation still
+need scoped checks.
+
+**M1, reads, caches and history (coverage gap).** Fix the read or store while
+growing prior states, cached cells, compact runs and holes independently;
+measure cold misses and repeated reads, and grow overwritten pieces as a
+separate output-sized control. The open legacy-walk work is in
+[the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+
+**J1, branches and loops (coverage gap).**
+`interface_abstraction_work_scales_with_unrelated_locals_and_memory` allows 3x
+work per doubling of stable state: a loose check, not ambient independence.
+`abstract_execution_state_for_interface_join_across` already uses persistent
+differences for parts of the join. Writing loop heads reuse the cache's
+pointer-reachable projection and skip private scalar slots
+(`loop_head_havoc_ignores_private_scalar_slots`). Loop exit reconciliation
+selects changes from persistent differences
+(`a_loop_exit_join_visits_only_changed_bindings_and_cells`,
+`loop_exit_scalar_restatement_keeps_recorded_memory_effects`). The complete
+split/join and loop entry/exit at fixed arms and growing stable state is not
+measured.
+
+**E1 and Q1, evidence lifecycle and binders (coverage gap).** Count executor
+invocations and producer/result comparisons through complete explicit steps,
+rewrites, joins and final publication, including uncharged work; reuse
+checked producer results rather than adding a checker. Step and fold
+preparation do not re-execute
+(`prepared_call_obligations_execute_once_as_contract_and_context_grow`).
+`freshen_integer_forall_body` still collects body variables and substitutes
+on a binder collision; nested `Integer` introduction needs a complete curve
+with and without collisions. `named_unfold_constructs_the_selected_arm_once`
+covers named `unfold` across sibling and selected-arm growth; the arm-size
+cost is not yet traced to its source.
+
+**Arithmetic obligations.** Step preparation retains emitted verification
+conditions and call preconditions, and the driver proves each with a written
+block or `solve`. Executed `uint32`/`uint64` division and remainder retain a
+nonzero-divisor obligation. Other arithmetic operators still decide some
+safety conditions before emitting an obligation; replacing that needs
+round-trippable goals and flat generation cost.
+
+**Prevention coverage.** `kernel::search::SearchPermission` gates ambient
+fact discovery, `build_support/search_boundary.rs` rejects selected
+forbidden calls and iterator patterns, and `CheckingWorkScope` charges work
+inside selected helpers. None of these detects arbitrary Rust iteration,
+allocation, structural comparison or uncharged work, so closing an operation
+needs both a source-boundary argument and complete-operation scaling
+controls.
 
 ## Regression policy
 

@@ -14,7 +14,7 @@ premises. It is not the complete Linux erase proof or a program-startup proof
 that derives those premises for arbitrary external arguments. The callback
 bodies remain no-ops; proving mutation-capable callbacks remains separate work.
 This fixture passes ordinary verification; its candidate stable-borrow failure is
-tracked under rbtree C6 and fix-views, as recorded in `roadmap/global-variables.md`.
+tracked under chunk 14 of `roadmap/rbtree-example.md`.
 
 ```c filename=rb_augment_callbacks_table.c
 struct node {

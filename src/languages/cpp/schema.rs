@@ -495,6 +495,22 @@ pub struct CppVirtual {
 }
 
 impl CppFunction {
+    /// The implicit object parameter exported with the declaration's `@this` identity.
+    pub(super) fn receiver(&self) -> Option<&CppPlace> {
+        if matches!(
+            self.function_kind,
+            CppFunctionKind::Free | CppFunctionKind::StaticMethod { .. }
+        ) {
+            return None;
+        }
+        self.parameters.first().filter(|parameter| {
+            parameter
+                .declaration_id
+                .strip_prefix(self.declaration_id.as_str())
+                == Some("@this")
+        })
+    }
+
     /// Whether the function is only an interface, checked against its
     /// contract: a standard-library axiom or an external project function.
     pub(crate) fn is_interface_only(&self) -> bool {
@@ -2956,6 +2972,7 @@ impl CppFunction {
             ));
         }
         let mut places = ValidationPlaces::new();
+        let receiver = self.receiver();
         for parameter in &self.parameters {
             match &parameter.value_type {
                 CppType::Boolean { .. } => {
@@ -3022,7 +3039,9 @@ impl CppFunction {
                     parameter.declaration_id
                 ));
             }
-            if !places.insert_name(parameter.name.clone()) {
+            if !receiver.is_some_and(|receiver| std::ptr::eq(receiver, parameter))
+                && !places.insert_name(parameter.name.clone())
+            {
                 return Err(format!("duplicate C++ parameter name `{}`", parameter.name));
             }
         }
@@ -3032,11 +3051,10 @@ impl CppFunction {
             is_const,
         } = &self.function_kind
         {
-            let Some(receiver) = self.parameters.first() else {
-                return Err("C++ method is missing its receiver".into());
+            let Some(receiver) = receiver else {
+                return Err("C++ method is missing its receiver declaration".into());
             };
-            if receiver.name != "self"
-                || !matches!(&receiver.value_type,
+            if !matches!(&receiver.value_type,
                 CppType::LvalueReference { pointee } if matches!(pointee.as_ref(),
                     CppType::Record { declaration_id, name, is_const: actual_const }
                     if declaration_id == record_declaration_id && name == record_name && actual_const == is_const))
@@ -3055,23 +3073,21 @@ impl CppFunction {
             record_name,
         } = &self.function_kind
         {
-            let Some(self_parameter) = self.parameters.first() else {
+            let Some(self_parameter) = receiver else {
                 return Err(format!(
                     "C++ object operation `{}` is missing its explicit object parameter",
                     self.name
                 ));
             };
-            if self_parameter.name != "self"
-                || !matches!(
-                    &self_parameter.value_type,
-                    CppType::LvalueReference { pointee }
-                        if matches!(
-                            pointee.as_ref(),
-                            CppType::Record { declaration_id, name, is_const: false }
-                                if declaration_id == record_declaration_id && name == record_name
-                        )
-                )
-            {
+            if !matches!(
+                &self_parameter.value_type,
+                CppType::LvalueReference { pointee }
+                    if matches!(
+                        pointee.as_ref(),
+                        CppType::Record { declaration_id, name, is_const: false }
+                            if declaration_id == record_declaration_id && name == record_name
+                    )
+            ) {
                 return Err(format!(
                     "C++ object operation `{}` has an invalid explicit object parameter",
                     self.name
@@ -9102,7 +9118,7 @@ mod tests {
         };
         let records = RecordIndex::new(BTreeMap::from([("record".into(), &record)]));
         let mut receiver = CppPlace {
-            declaration_id: "self".into(),
+            declaration_id: "method@this".into(),
             name: "self".into(),
             value_type: CppType::LvalueReference {
                 pointee: Box::new(CppType::Record {
@@ -9121,7 +9137,7 @@ mod tests {
         };
         let object = CppPlaceReference {
             projections: Vec::new(),
-            declaration_id: "self".into(),
+            declaration_id: "method@this".into(),
             name: "self".into(),
             span: cleanup_span(),
         };
@@ -9204,7 +9220,7 @@ mod tests {
         let arguments = vec![CppCallArgument::Reference {
             place: CppPlaceReference {
                 projections: Vec::new(),
-                declaration_id: "self".into(),
+                declaration_id: "method@this".into(),
                 name: "self".into(),
                 span: cleanup_span(),
             },

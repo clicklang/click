@@ -17,7 +17,7 @@ maintainability, not a known wrong verdict.
 - The linear execution continuation, a focused execution arm and a loop's
   `maintain` body apply written frontier tactics through one function,
   `apply_frontier_source_tactic`
-  (`src/surface/proof/checked_drivers/proof_execution.rs`). A written
+  (`src/surface/proof/driver/execution.rs`). A written
   `transport` and `step_until` mean the same thing in each.
 - What each context admits as a leaf is declared once, in
   `SourceContext` (`src/surface/proof/source_context.rs`), and
@@ -56,16 +56,19 @@ one source of truth.
 These still interpret written tactics on their own:
 
 - linear `with` scopes (`advance_linear_open_scope` in
-  `src/surface/proof/checked_drivers/proof_execution.rs`);
+  `src/surface/proof/driver/execution.rs`);
 - explicit scripts for pure theorems, claims and smart search
-  (`run_addressed_linear_script` in `src/surface/proof/smart_closures.rs`,
+  (`run_addressed_linear_script` in `src/surface/proof/driver/scripts.rs`,
   reached through `try_authoritative_linear_script`). A nested `have` that
-  misses there is a decline (`LinearScriptDecline::Step`), where the
+  misses there is a decline (`LinearScriptDecline::Step` in
+  `src/surface/proof/smart_closures.rs`), where the
   execution frontier reports it through `solve_nested_have`;
 - loop initialization (`execution_planning/loop_planning.rs`);
 - tactics after execution, through the `PostExecutionTactic` enum
   (`src/surface/proof/execution_state.rs`) and the per-path dispatch in
-  `finish_ordered_proof`.
+  `finish_ordered_proof` (`src/surface/proof/driver/claims.rs`). Its
+  `Transport` variant disappears with transport retirement
+  ([smart tactics](smart-tactics.md#transport-retirement), chunk 32).
 
 `solve` in an execution arm is refused before the function exit, while a
 `maintain` body has its own `solve` handler.

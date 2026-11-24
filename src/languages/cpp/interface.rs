@@ -507,11 +507,10 @@ fn function_interface(
         .parameters
         .iter()
         .zip(lowered.parameters())
-        .enumerate()
-        .map(|(index, (parameter, lowered_parameter))| {
+        .map(|(parameter, lowered_parameter)| {
             crate::instrumentation::record_deterministic_work(1);
-            let is_reference = super::lowering::is_reference_parameter(index, parameter);
             let carried_name = lowered_parameter.binding_name();
+            let is_reference = carried_name.reference_referent().is_some();
             if let Some(kind) = Scalar::mutable_kind(&parameter.value_type) {
                 return Ok(crate::languages::interface::ImportedParameter::from_binding(kind.proof_type(), carried_name.clone(), None));
             }

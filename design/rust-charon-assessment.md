@@ -240,7 +240,7 @@ state results over the full-width specification. See the
 [checked correspondence](adler32/project/checksum-correspondence.md).
 Current borrow-authority coverage and remaining local-reference work belong to
 the [production assessment](rust-borrow-authority-assessment.md), rather than a
-duplicate implementation ledger here. Release hosts and Cargo dependencies
+duplicate implementation ledger here. The two launch hosts and Cargo dependencies
 are launch work in [Rust support](../roadmap/rust-support.md).
 
 The [original context](https://github.com/clicklang/click/blob/2175760b9/design/rust-charon-assessment.md#existing-post-launch-context)

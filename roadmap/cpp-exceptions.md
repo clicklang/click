@@ -2,38 +2,24 @@
 
 Priority: P2.
 
-Status: first slice delivered. The unchanged pinned Bitcoin
-`SpanReader::ignore(size_t)` and a modular caller have checked normal and
-exceptional descriptor and backing-byte guarantees, including expansion,
-cold checking and retained-session replay. `throws int32` and exact opaque
-`throws std::ios_base::failure` admit borrowed memory `owns`/`views` on both
-exits. The selected constructor profile authenticates its declaration and
-records allocation-failure termination as a library assumption.
+Soundness: incomplete. No false acceptance is known. Unsupported exception
+forms are refused at import: handlers other than one by-value
+`catch (int name)`, catch-all and class-typed handlers, user constructors,
+lvalue throws, nontrivial exception classes, resource transitions with
+`throws`, and general unwinding
+([supported C++](../docs/reference/cli/capture.md)). The delivered forms are
+checked on both exits against their declared footprint.
 
-Ordinary user-defined aggregate exceptions now use the `typed` profile and
-resolved `throws T` names. Trivial aggregate prvalues and empty tags propagate
-with opaque payloads; initializer reads and arithmetic remain checked. The
-regressions cover qualified names, exact nominal type separation, borrowed
-memory, expansion and retained checking.
+## Status
 
-`noexcept` definitions now admit checked nonthrowing interfaces: guarded
-throwing calls must have impossible exceptional outcomes, and `throws` cannot
-weaken a `noexcept` declaration. Supported constructors, getters and normal
-cleanup can participate in exception-enabled proofs. `std::terminate` and
-opaque-class unwinding through destructible locals remain outside the model.
-
-The pinned `SpanReader::read` now verifies unchanged, with exact copy and
-cursor guarantees on return and the failure bound and unchanged cursor on throw.
-Its integration test checks ordinary verification and expanded replay.
-
-The pinned `ser_readdata32<SpanReader>` proof composes the reader contract
-with a little-endian word read. On success it returns the four input bytes
-as a `uint32` and advances the cursor by four. On short input it propagates
-the exact exception and preserves the cursor.
-
-Exact and base-class typed catches are still pending. User constructors,
-lvalue throws, nontrivial exception classes, resource transitions and full
-C++ unwinding remain refused. No false acceptance is known.
+Delivered: `throws int32`, exact opaque `throws std::ios_base::failure`, and
+`throws T` for trivial user aggregates, each with borrowed `owns`/`views` on
+both exits; checked `noexcept`; allocation-failure termination as a
+documented trust assumption; and the unchanged Bitcoin `SpanReader::ignore`,
+`SpanReader::read` and `ser_readdata32<SpanReader>` with normal and
+exceptional contracts, expansion and retained-session replay
+(`integrations/bitcoin-core-money-range/`). Remaining: typed handlers,
+design choice 4 below.
 
 ## Motivation
 
@@ -68,8 +54,8 @@ The first slice now supports memory footprints on both exits and an opaque
 [architecture](../docs/internals/architecture.md#selected-control-flow-and-c-cleanup-model)
 and [the language reference](../docs/reference/language/index.md#exceptional-results).
 Handlers still match only `catch (int name)`; Bitcoin callers need
-`const std::ios_base::failure&` or `const std::exception&`. Decoding through
-`read` and those handlers are the remaining application targets below.
+`const std::ios_base::failure&` or `const std::exception&`, which is the
+remaining application target below.
 
 ## Violated invariant
 
@@ -130,15 +116,15 @@ and exceptions crossing threads.
 Through a fixture harness that is identified separately from Bitcoin source,
 the pinned input closure gains `src/streams.h` and its includes. Then:
 
-- `SpanReader::ignore` and `SpanReader::read` verify unchanged with
+- Delivered: `SpanReader::ignore` and `SpanReader::read` verify unchanged with
   contracts for both outcomes. On a normal exit the bytes are copied and the
   cursor advances. On an exceptional exit the exception is exactly
   `std::ios_base::failure`, `old(size) < n`, and the reader and destination
   are unchanged.
-- `ser_readdata32(SpanReader&)` verifies, returning the little-endian value
-  of the four bytes on the pinned x86-64 target and propagating the reader's
-  exception.
-- A Click-checked caller catches `const std::ios_base::failure&`, and another
+- Delivered: `ser_readdata32(SpanReader&)` verifies, returning the
+  little-endian value of the four bytes on the pinned x86-64 target and
+  propagating the reader's exception.
+- Remaining: a Click-checked caller catches `const std::ios_base::failure&`, and another
   catches `const std::exception&`.
 
 ## Acceptance criteria
@@ -152,15 +138,18 @@ the pinned input closure gains `src/streams.h` and its includes. Then:
   proof that reads the opaque payload are each refused.
 - The profile assumption about allocation failure is documented in the trust
   document and recorded in the import profile.
-- Type-matched handlers verify for exact and base-class `catch`. An
-  unmatched exception propagates, an exception escaping `noexcept` is
-  refused, and handler order is respected.
+- Remaining: type-matched handlers verify for exact and base-class
+  `catch (const T&)` and for `catch (...)`. An unmatched exception
+  propagates, an exception escaping `noexcept` is refused, and handler order
+  is respected. [Supported C++](../docs/reference/cli/capture.md) then drops
+  the `catch (int name)`-only restriction.
 - The `SpanReader` regressions above verify, expand and reverify, with
   refusals for an out-of-bounds read claimed to return normally, a missing
   destination ownership, and a false decoded value.
-- Exceptional-exit footprint checks scale linearly with unrelated context;
-  extend the deterministic scaling regression in
-  `src/scaling_tests/surface/tests/scaling_tests.rs`.
+- Done: exceptional-exit footprint checks scale with unrelated context, in
+  `src/scaling_tests/surface/tests/scaling_tests.rs`
+  (`exceptional_borrowed_memory_is_indexed_in_unrelated_context`,
+  `exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context`).
 - [Supported C++](../docs/reference/cli/capture.md) and the language
   reference describe the new boundary, and
   [cpp-support.md](cpp-support.md) points here for the bounded-bytes slice.

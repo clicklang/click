@@ -65,7 +65,7 @@ instead of from what the step changed.
    (`CellStore::pointer_reachable_cells`), caught up by diffing, and a store
    through a `Symbolic` pointer visits only those. `heap_objects` stores now
    cost 135 units at every position at N = 64.
-2. **Composition evidence is a list that only grows.** Every step states
+2. **Mostly fixed: composition evidence is a list that only grows.** Every step states
    about four states of the whole resource context as
    `Proposition::CResourceComposition` facts. Stores no longer read them:
    the write path states the writer's current composition as the store owner
@@ -79,10 +79,12 @@ instead of from what the step changed.
    (`CompositionMemberIndex`), each listed by what it holds beyond an
    earlier admitted composition; that held `heap_objects`' `unfold` tactics,
    which grew about 27 units per earlier object, flat. The set itself is a
-   persistent set, so stating a composition no longer copies it. About
-   twenty other `resource_compositions.iter()` sites, in load resolution and
-   condition reasoning, still scan the whole set; each needs the same
-   argument for which listed compositions can answer it. Filing a
+   persistent set, so stating a composition no longer copies it. No
+   `resource_compositions.iter()` site remains. The whole-set reads left are
+   `scan_for_upkeep()` in `recompute_content_fingerprint`
+   (`src/kernel/assumptions.rs`), which rehashes every held composition, and
+   three debug-only cross-checks in `src/kernel/assumptions/memory_reasoning.rs`
+   that compare an indexed answer against a full scan. Filing a
    composition fact bounded its variables by walking every held fact
    (`proposition_syntax_execution_variable_ceiling`), about four whole
    contexts per step; the bound is now cached on each canonical fact-set
@@ -117,7 +119,7 @@ instead of from what the step changed.
    fold claims are superseded by the retained-result preparation work at
    `c53645952`: step/fold completion no longer reruns a primitive, and selected
    constructor-count/history controls pass. See the
-   [current lifecycle audit](smart-tactics.md#e1-and-q1-logical-steps-and-evidence-lifecycle-deferred-evidencegaps)
+   [current lifecycle audit](../docs/internals/verification-efficiency.md#operation-audit-ledger)
    for the remaining scope; those controls do not certify every evidence path.
    A walk that meets
    an already checked branch or proof-case join no longer walks its arms
@@ -201,8 +203,8 @@ instead of from what the step changed.
    facts mention, and the entry states one loadability fact per object over
    the one entry memory holding every object, so each fact added that whole
    memory's variables again. A fact set now collects each interned memory's
-   variables once (`collecting_each_memory_once`;
-   `facts_over_one_memory_reserve_its_variables_once`: 6,083, 106,895 and
+   variables once (`facts_over_one_memory_reserve_its_variables_once`:
+   6,083, 106,895 and
    2,141,373 units at 16, 64 and 256 facts before; 2,033, 8,993 and 46,803
    after). Against current master, the entry-only shape at N = 128 went
    from 3.66 to 3.52 billion instructions, and `objects_and_calls` from 9.13
@@ -247,8 +249,8 @@ holds the loop bug's clause work flat at five loops.
 ## Acceptance
 
 - Each remaining cause above is fixed in its representation, with a
-  deterministic regression at four or more sizes: the composition scans
-  outside stores and separation (cause 2), calls beside held instances or
+  deterministic regression at four or more sizes: the content fingerprint's
+  rehash of every held composition (cause 2), calls beside held instances or
   composites whose bodies read memory, a condition or a witness (cause 3),
   and evidence checking's premise walk and memory comparisons (cause 4),
   charged once linear work is gone.

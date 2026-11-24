@@ -80,7 +80,7 @@ transport is registered as discovery even though the helper does not construct
 `ProofSearch`. The adversarial guard test rejects that crossing, and an ordinary
 call-assignment proof checks that the result and postcondition remain available.
 This closes this call site, not every search reachable during step preparation.
-See [remaining coverage](../roadmap/smart-tactics.md#statement-exit-fact-transport--boundary-and-remaining-coverage).
+See [remaining coverage](../docs/internals/verification-efficiency.md#operation-audit-ledger).
 
 ## Findings
 
@@ -205,7 +205,7 @@ The 6 `operation` records are not 6 independent slow walks:
 
 At this audit baseline, four kernel bridges mapped to three groups: loan
 aliases and access (L1), ownership candidates (R2), and call framing (C1). The
-[operation ledger](../roadmap/smart-tactics.md) tracks the active work.
+[operation ledger](../docs/internals/verification-efficiency.md#operation-audit-ledger) tracks the active work.
 
 ## Evidence and ownership
 
@@ -219,12 +219,12 @@ aliases and access (L1), ownership candidates (R2), and call framing (C1). The
   fast-checking guarantee; being called from search grants no exemption.
 - **Unmeasured/coverage work:** the three bridge groups, transition checks, declaration validation, and operation-map growth axes.
   An unresolved label is an investigation task, not proof of a bug.
-- **Owned elsewhere:** `roadmap/raise-lower-principle.md` owns the remaining
+- **Owned elsewhere:** `roadmap/kernel-term-split.md` owns the remaining
   shared-term representation boundaries. Its original R1–R7 reproductions are
   closed; use its current closure checklist rather than reopening those groups.
   Representation costs can occur without any `ProofSearch` call; do not duplicate
   their fixes here.
-  Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
+  Memory-history coverage M1 belongs with the program-point memory migration in `roadmap/smart-tactics.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
 The inventory contains 662 reference records, not 662 obligations to remove.

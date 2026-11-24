@@ -2,819 +2,204 @@
 
 Priority: P1.
 
-Soundness: not soundness. This is a checking-cost and search-boundary audit.
-Removing automatic reasoning must preserve ownership, aliasing, initialization,
-width, lifetime and provenance refusals; inability to prove separation is not
+Soundness: incomplete. A cell named once by a selected program point and once
+by its memory state gets two terms no rule relates, so a fact stated with one
+does not prove a goal stated with the other: Click can refuse a true claim.
+No false acceptance is known. Both open items below remove checking routes;
+removing a route must keep ownership, aliasing, initialization, width,
+lifetime and provenance refusals, and an unproved separation is never
 permission to write or preserve a value.
 
-## Goal and audit boundary
+## Goal
 
-A simple checking operation costs its explicit input and necessary state delta,
-up to indexing factors. With those fixed, more ambient facts, owners, aliases,
-borrows, cached observations or execution history must not make it slower.
-Expensive discovery belongs in budgeted, expandable search, whose expanded
-steps satisfy the same checking rule. A fast special case does not establish
-this guarantee for an operation's other routes.
-
-The operation inventory starts from the `c53645952` baseline (2026-11-11,
-PR #2520); the frozen dependency counts below reflect the current interface split.
-It organizes the next measurements; it is not a claim that all checking paths
-have been audited, or that every candidate below is a reproduced defect.
-The interface refactor now exposes discovery through `kernel::search::ProofSearch`
-without changing its behavior. The frozen
-[dependency inventory](../build_support/proof_search_edges.tsv) records existing
-callers and separates operation dependencies from the explicit `ProofDriver`
-and mixed callers classified in the [caller audit](../design/proof-boundary-classification.md). The driver owns proof interpretation and the
-choice between explicit obligation proofs and implicit solving. The
-operation-to-driver migration list is now empty;
-implicit solving by the driver is legitimate expandable work. No new scaling measurements accompany that split.
-Existing test names below identify evidence to retain and inspect, not new
-measurements. The contract lives in [Verifier design](../docs/internals/verifier-design.md)
-and [Verification efficiency](../docs/internals/verification-efficiency.md).
-
-The scope includes checking called by `step()`, explicit tactics, certificates,
-entry setup, joins and completion. The implicit closer is separate from step
-checking even when a bare step invokes it. Arithmetic premise discovery in
-`solve` or that closer is legitimate search if budgeted and expandable;
-applying its explicit certificate is checking. Trace printing, independent
-expansion audits and debug-only cross-checks are distinguished from ordinary
-checking, not counted as production scans merely because they iterate.
-
-An index is not by itself a complexity argument. Enumerating a large bucket,
-equality class or chain can still be ambient search. Nor may an implementation
-justify eager derived facts or cache rebuilding by calling them output: the
-delta must be required by the selected rule. Amortized claims need a total-work
-argument across repeated steps and persistent forks, as well as cold misses.
+A simple checking operation costs its explicit input and necessary state
+delta, up to indexing factors; ambient facts, owners, aliases, cached
+observations and execution history must not make it slower. Discovery belongs
+in budgeted, expandable search whose expanded steps obey the same rule. See
+[Verifier design](../docs/internals/verifier-design.md) and
+[Verification efficiency](../docs/internals/verification-efficiency.md); the
+operation inventory, its scoped evidence and coverage gaps (R1, R2, F2, L1,
+C1, J1, M1, E1, Q1), the prevention mechanisms, and the memory-history
+checking boundaries are in its
+[operation audit ledger](../docs/internals/verification-efficiency.md#operation-audit-ledger)
+and [memory-history checking boundaries](../docs/internals/verification-efficiency.md#memory-history-checking-boundaries).
+That ledger is not a defect list; this item tracks the two concrete open
+pieces of work below.
 
 ## Program-point memory migration
 
+Open item (a): delete the legacy memory-history walk.
+
 Execution history supplies point identities and records the effects between
-them. A memory view exposes what is available at a point in a proof context.
-Naming cells during a proof can extend that view at the same point. An ordinary
-read can select an earlier version point, while an exact read retains its
-selected point. See the [memory model](../docs/concepts/memory-model.md).
+them; a read is named at a version point
+([memory model](../docs/concepts/memory-model.md),
+[point-named reads](../design/point-named-reads.md)). The legacy route instead
+walks back from a memory state: `resource_tracker::last_same_version_point`
+and the entries beside it (`last_same`, `last_same_named_cell`,
+`cell_last_same_version_point`, `block_last_same_version_point` in
+`src/kernel/resource_tracker/mod.rs`). Its production callers are
+`cell_version_point` (`src/kernel/memory_history.rs`),
+`array_ref_argument_point` (`src/kernel/spec.rs`),
+`load_variable_for_cell_with_origin` (`src/kernel/eval/memory_loads.rs`),
+`select_comparison_identity` (`src/kernel/eval/memory_loads/scalar_reads.rs`)
+and `describe_unnamed_cell_addition` (`src/kernel/proof/execution.rs`), plus
+the `last_same` callers.
 
-The work sequence is:
+The walk is deleted, not kept as a fallback. Two defects motivate it:
 
-1. Recheck proof-only materialization after #3424. Reduce an actual disagreement
-   between the point walk and the legacy walk and repair any missing producer
-   evidence.
-2. Thread the caller's point through `materialize_composite_resource_memory`.
-3. Migrate `instantiate_composite_resource_body_resources`, using the caller's
-   point for a held resource and a setup root for standalone validation.
-4. Attach initialized access-segment cells to the function's entry root.
-5. Attach uninitialized ranges to that root and retain the definedness refusal.
-6. Maintain version indexes through straight-line batches of recorded effects.
-7. Carry versions through joins when both arms preserve the selected cell.
-8. Carry versions through calls using their checked effects, starting with a
-   disjoint write footprint.
-9. Construct point-based loop views, starting with one invariant-held cell.
-10. Carry the point selected by an exact read through lowering, keys and raising.
-11. Migrate other fixed-offset scalar reads, starting with Booleans. Check the
-    float lowering rule separately.
-12. Migrate pointer and function-pointer reads with provenance, bounds and
-    callability intact.
-13. Extend address coverage to parameter and heap storage, starting with fixed
-    offsets. Handle symbolic offsets in a separate slice.
-14. Handle reads assembled from bytes and establish their Click spelling.
-15. Migrate the remaining snapshot-keyed equality, observation, preservation and
-    raising paths. Remove each legacy route after its last production caller
-    moves.
+- **Quadratic naming.** For a cell no store wrote, the walk costs the stores
+  into its block since the block's last version, so naming a fresh cell
+  after each of `n` stores costs quadratic total work
+  (`legacy_walk_naming_of_fresh_cells_still_grows_with_same_block_stores`,
+  `src/scaling_tests/kernel/resource_tracker/tests.rs`).
+  `known_legacy_fresh_reads_through_a_loaded_pointer_cost_the_same_at_every_position`
+  (`step_shape_scaling_tests.rs`) is a step shape that still reaches it.
+- **Mixed read naming.** A slice must move every producer of a read kind
+  together, or a cell gets a point-named term and a memory-named term (see
+  the Soundness paragraph). `crate::kernel::mixed_read_names::capture`
+  reports each such cell the equality graph registers, with the line that
+  built the memory-named read; the nightly
+  `every_mdtest_reports_its_mixed_read_names`
+  (`src/surface/tests/execution_tests.rs`) lists them over the mdtests.
 
-For each read slice, test which point it selects, its raise/lower round trip,
-and bounded work as unrelated history grows. Use `cell_version_on_path` for
-diagnostic comparisons in tests. Keep production selection indexed.
+`click audit legacy-walk` (`src/bin/click-audit/lowering.rs`, counting
+through `kernel::resource_tracker::legacy_walk_audit`) counts the queries that
+still reach the walk by calling site, resource and storage class; migrate
+routes in order of that count, and run the mixed-read audit before and after
+each slice.
 
-The legacy snapshot walk (`resource_tracker::last_same_version_point` and
-the entries beside it) is deleted at the end of step 15, not kept as a
-fallback. Its cost for a cell no store wrote is the stores into that block
-since its last version, so `n` such reads cost quadratic work in total
-(`legacy_walk_naming_of_fresh_cells_still_grows_with_same_block_stores`). A
-replacement must keep each step's irreducible work, ignoring obligations,
-within `O(log n)` of the history per read, so `n` steps stay near `n log n`.
-`click audit legacy-walk` counts the queries that still reach the walk, by
-calling site, resource and storage class; migrate the routes in order of
-that count. `known_legacy_fresh_reads_through_a_loaded_pointer_cost_the_same_at_every_position`
-is a step shape that still reaches it.
+Remaining slices, in recorded order (drop a step when it lands):
 
-A slice must move every producer of a read kind together: a cell named by a
-selected point in one place and by its memory in another has two terms no
-rule relates, so a fact stated with one does not prove a goal stated with
-the other. `crate::kernel::mixed_read_names::capture` reports each such cell
-the equality graph registers, with the line that built the memory-named read;
-the nightly `every_mdtest_reports_its_mixed_read_names` lists them over the
-mdtests by producer line. Run it before and after each slice.
-
-Named scalar observations and read congruence use indexed versions where the
-producer has a recorded typed write or one of the supported entry versions.
-Concrete resource cells and compact runs can retain their source point.
-Indexed abstract reads of a directly written local use its typed store in
-equality and raising. Materialized fixed-width opaque resource fields at
-constant offsets in local objects use the same indexed store as logical
-reads. Symbolic-sized fields still use the memory view. Native and shared
-array arguments carry the same source point. External arrays can use function
-entry after disjoint local declarations, stores and checked calls whose write
-ranges all name automatic objects, including when several effects are recorded
-together. The shared caller storage can also name an array by a recorded
-write point and retain that version across local stores and local-only calls.
-Named static arrays retain entry or write points across recorded writes and
-calls confined to named static and automatic objects. Automatic arrays retain
-points from their declarations and writes across those effects. A join keeps
-a common static or automatic array version and names a changed object at the
-join when the incoming indexes share a lineage. Declared predicates share
-the block version selector for array arguments of all admitted element types,
-including when unfolding their bodies or raising a predicate fact. A static
-scalar spanning its block can use the same version when that point ends
-with a complete typed store. Scalar fold instantiation keeps a selected entry point when the substituted index
-still uses the indexed entry selector. Checked
-resource quantities and materialized resource cells share that entry point for
-an `int32` field at a fixed displacement from its external parameter. Computed
-scalar fold endpoints, ordinary checked reads, loop boundaries and iterated
-ownership guards also carry the selected entry point. Generic cells at a
-verified function entry keep that point through individual observations,
-compact runs, and substitution. Entry setup passes its original point through
-declared loadable ranges, resource segments and named composite openings so
-supported scalar fields and compact cells use the same selector. A join retains the entry point when all
-incoming paths establish the same unchanged entry version. Scalar
-canonicalization, congruence and Integer arithmetic retain the point through
-comparison.
-
-Exact pointer reads can recover the complete stored pointer from a typed
-index entry at their selected point, with the value's provenance and bounds.
-Address-only recovery for symbolic layout checks uses that same typed store,
-including after the cache drops the cell. Resource pointer cells, including
-named run slots, can use the same typed store when the source point is
-retained. Raising uses retained point IDs to name array arguments and
-historical reads.
-An indexed read can raise through a certified materialized view of its point.
-
-The remaining memory-state paths have production callers:
+1. Recheck proof-only materialization against the point walk; repair any
+   missing producer evidence.
+2. Thread the caller's point through `materialize_composite_resource_memory`
+   and `instantiate_composite_resource_body_resources`
+   (`src/surface/proof/resources.rs`), using a setup root for standalone
+   validation.
+3. Attach initialized and uninitialized access-segment ranges to the entry
+   root, keeping the definedness refusal.
+4. Carry versions through straight-line effect batches, joins where both arms
+   preserve the cell, calls with checked disjoint write footprints, and
+   point-based loop views.
+5. Carry an exact read's selected point through lowering, keys and raising;
+   migrate other fixed-offset scalar reads (Booleans first; floats checked
+   separately), then pointer and function-pointer reads with provenance,
+   bounds and callability intact.
+6. Extend address coverage to parameter and heap storage (fixed offsets
+   first; symbolic offsets as a separate slice, with checked evidence naming
+   the written storage), and reads assembled from bytes.
+7. Migrate the remaining memory-state paths and remove each legacy route
+   after its last production caller moves:
 
 | Path | Remaining caller |
 | --- | --- |
-| Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for abstract cells supplied by bare memory producers or taken outside the verified entry path. |
-| Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
-| Preservation | `array_ref_argument_point` uses the block version walk for detached and uncertified views. The scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
-| Raising | Detached array arguments still use `synthesize_at_memory`. Detached scalar and abstract reads still use the memory and projection indexes in `RecordedStates::point_reading_load`. |
+| Equality | `parameter_load` (`src/kernel/primitives.rs`) still produces projected-memory reads for abstract cells from bare memory producers or outside the verified entry path. |
+| Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` (`src/kernel/eval/memory_loads.rs`) build memory-state observations for bare memory producers and unsupported indexed types or addresses. |
+| Preservation | `array_ref_argument_point` uses the block walk for detached and uncertified views; the scalar naming walk calls it. `last_same_named_cell` follows recorded memory derivations for unsupported cells. |
+| Raising | Detached array arguments use `synthesize_at_memory` (`src/surface/proof/surface_synthesis.rs`); detached scalar and abstract reads use `point_reading_load` (`src/surface.rs`). |
 
-Give symbolic addresses a separate slice. A loaded or opaque symbolic pointer
-can refer to the same storage as a write. Producers need checked evidence
-identifying that storage before their reads can use the point index. Use the
-same approach for calls with larger or unresolved write sets.
+For each slice, test which point it selects, its raise/lower round trip, and
+bounded work as unrelated history grows. Use `cell_version_on_path` only for
+diagnostic comparisons in tests; production selection stays indexed. Keep the
+[checking boundaries](../docs/internals/verification-efficiency.md#memory-history-checking-boundaries)
+and their expansion/replay controls passing, and keep negative fixtures
+reaching their intended refusals rather than prerequisite failures.
 
-## Reading the inventory
+**Intended regression.** The two legacy-walk tests above flip: per-read work
+stays within `O(log n)` of the history, so `n` fresh reads stay near
+`n log n`, and the loaded-pointer shape no longer reaches the walk.
 
-- **Scoped evidence:** named tests cover particular routes and growth axes;
-  this does not certify the whole operation.
-- **Source candidate:** a growing traversal exists on an identified path;
-  a complete-operation red curve is still required before choosing a fix.
-- **Reachability gap:** a helper scans, but its supported source caller or
-  producer has not been established.
-- **Coverage gap:** a path or growth axis has not been established by this pass.
-- **Deferred evidence:** another roadmap owns a previously identified problem;
-  its old counts are not fresh measurements. Existing priority stays unchanged.
+**Violated invariant.** A read is named by its version point alone; checking
+does not scan execution history, and every producer of a read kind names it
+the same way.
 
-There is no defensible total bug count yet. Rows are operations, not bugs;
-several rows share helpers and a row can contain multiple routes. The previous
-six-group estimate covered only resource/borrow candidates, not the verifier.
+**Acceptance.** `last_same_version_point` and its sibling entries are
+deleted; `click audit legacy-walk` has nothing to count and is removed with
+the walk; `every_mdtest_reports_its_mixed_read_names` reports no cells;
+ordinary fixtures and expansion/replay with implicit solving disabled pass
+without changing C or weakening contracts.
 
-## Reconciled status and ownership
+## Transport retirement
 
-The [frozen inventory](../build_support/proof_search_edges.tsv) tracks
-caller/target pairs. The [caller audit](../design/proof-boundary-classification.md)
-records the original classification and reproductions.
+Open item (b): retire the legacy `transport` tactic, written and generated.
 
-- **Confirmed architectural exceptions:** explicit legacy transport invokes
-  discovery.
-  Its fixed-state route retains uncharged transition-assumption reconstruction. No fresh
-  scaling curve was run for this reconciliation.
-- **Remaining candidates:** raw ownership admission (R2), composite call
-  framing (C1), and the entry-partition alias check (L1) still need
-  caller-specific cost evidence.
-- **Legitimate search:** driver-owned implicit solve and explicit smart
-  planning. Generating obligations is fast work; solving them may be slow and
-  expandable. Have/claim and resource-scope obligation scheduling, step/fold dispatch,
-  and retained step/fold completion are no longer open extractions.
-- **Transport coverage:** the remaining inventory below covers written syntax and
-  retirement. Scalar
-  conjunction selection/regrouping and matching compound/nested implications
-  with scalar leaves have ordinary expansion coverage. They do not settle
-  non-scalar leaves, binders, other proof contexts or legacy retirement.
-- **Separate owners:** the representation split in
-  [unraisable facts](raise-lower-principle.md) owns the remaining shared-term
-  migration boundaries. Its original R1–R7 reproductions are closed; use its
-  current closure checklist for remaining work. Those identifiers are local to
-  that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
-- **Operation guards:** theorem application, scope completion, statement-result
-  publication, prepared-step publication, have opening and contract-claim opening
-  have test-build discovery guards.
-  The production paths formerly using the borrow write guard now use explicit
-  evidence or obligations. Re-probe complete statement preparation for
-  remaining crossings, including ownership validation and composite framing.
-  See the [historical probes](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
-- **Enforcement gap:** lexical dependency freezing and selected work counters
-  do not prohibit every search call during expanded replay or detect arbitrary
-  loops, shared-term export and copying. No global fast-proof guarantee yet.
+Written `transport(source, target)` (bare or `transport ... using`) carries a
+fact across execution. Its fixed-state route rebuilds transition contexts
+with `assume_proposition_uncharged` (`count_uncharged_context_entries`
+counts them), which grows with the path; see "Uncharged transport contexts"
+in [verification efficiency](../docs/internals/verification-efficiency.md#output-sensitive-exceptions).
+The replacement is explicit separation, `preserve(...)`, fact lookup,
+rewriting and theorem application.
 
-Resource-scope completion now reports obligations to the driver, including
-nested opens; function-exit deferral is unchanged. C-branch and proof-case script
-interpretation now also lives in the driver; primitive split/focus/join operations
-do not run arm-script callbacks. No operation-to-driver records remain in the frozen inventory.
-Transport work should target a surviving generated form or a written legacy
-consumer and its retirement criterion, not accumulate already-covered shapes. These are separate
-work items; this reconciliation changes no behavior.
-
-### Remaining obligation generation
-
-Step preparation retains emitted verification conditions and call preconditions,
-and fold preparation retains its body facts, even when already known. The driver
-proves each obligation with a written block or ordinary `solve`. This does not
-finish evaluator migration. Executed uint32 and uint64 division and remainder
-retain their ordinary nonzero-divisor obligation unless an exact indexed guard
-from operand evaluation already proves it. Generation has no ambient
-fact-context parameter. Expansion writes a step proof for open obligations
-that replays without implicit solve. The driver reports division by zero when
-indexed facts refute the obligation. Other arithmetic operators still decide
-some safety conditions before emitting any obligation. Replacing those decisions needs
-round-trippable goals and flat generation/publication costs. The earlier, unlanded arithmetic-migration prototype failed `struct_array_element_expands_with_its_subscript`
-(the initialized-global sum has no round-tripping overflow-goal raising) and
-`straight_line_assignments_cost_the_same_at_every_position` (work grows from
-2765 to 2885 across twelve assignments). These are prototype findings, not
-current failing tests; reproduce them when revisiting that migration. Retain
-those controls for that slice.
-The step/fold preparation migration is complete for the covered named,
-population/authority, operational-wrapper and legacy-outcome routes. Keep its
-no-reexecution, input-obligation and retained-endpoint invariants in
-[the architecture](../docs/internals/architecture.md) and the scoped preparation
-controls in `src/scaling_tests/surface/tests/tactic_tests/statement_steps.rs`.
-Do not reopen those tasks under the broader lifecycle row E1.
-
-Have/claim opening still uses the driver's `with_proved_lowering_requirements`
-probe/reinvoke adapter. Solving belongs to the driver there; any repeated-lowering
-cost needs its own fixed-input/ambient-growth measurement. This is not evidence
-that the removed step/fold retry survives.
-
-Frontier `have` opening shares its parent's fact store and recorded execution
-without replaying the retained effects. Statement transitions publish checked
-footprint containment into the successor's fact store. A written statement
-footprint resolves through the recorded entry and exit. The regression
-`have_at_frontier_shares_the_context_across_call_history` holds the goals fixed
-at 4/16/64/128 calls and checks a named `preserve` proof at each size. The static
-cell-version index now skips the concrete call ranges in that proof. The source
-regression `static_cell_read_steps_skip_same_array_call_history` also checks a
-cold step at those sizes and 32 distinct cold reads after 32 calls.
-
-Load-equality chain discovery for fixed-state goals and execution `have`
-scopes runs under `solve`. Expanded proof steps cite the selected equality
-premises. Explicit `rewrite` substitutes the selected occurrence and checks
-that its printed goal preserves the read identities.
-
-
-## Operation map
-
-Paths in this table are relative to `src/`. Detailed outstanding measurements
-follow it. None of these whole-operation rows is marked complete.
-
-| Operation and intended cost | Checking entry points | Existing scoped evidence | Remaining evidence or candidate |
-| --- | --- | --- | --- |
-| Prepare selected code and function entry; pay once for selected declarations and clauses | `surface/verification.rs`, `kernel/functions.rs`, `kernel/termination.rs` | `surface/tests/step_shape_scaling_tests.rs`: `entry_setup_is_linear_in_owned_parameters`; `kernel/termination/termination_scaling_tests.rs`: call-chain, fan-out and cycle controls | Coverage gap: complete frontend/lowering/termination dependency map; no per-step rebuilding of prepared input. These are setup costs, not constant-size steps. |
-| Execute a scalar statement or access; pay for selected expression and affected storage | `kernel/eval.rs`, `kernel/proof/execution.rs`, `kernel/primitives/memory_state.rs` | `kernel/tests/memory_scaling_tests.rs`: `one_store_is_logarithmic_in_unrelated_cells`, `sequential_owned_parameter_stores_ignore_earlier_cached_fields`; source step-shape tests | Memory/cache candidates M1; ownership and borrow checks below are dependencies of the whole step. A flat store helper alone is insufficient. |
-| Admit facts and decide a condition; pay for named terms and justified incremental updates | `kernel/assumptions.rs`, `kernel/equality_graph.rs`, `kernel/difference_graph.rs`, `kernel/assumptions/condition_reasoning/decision.rs` | `kernel/assumptions/condition_buckets.rs`: `equality_class_hits_and_anchored_misses_stay_indexed`, `interval_queries_do_not_walk_symbolic_order_components`; graph late-merge/fork controls | Pointer distinctness uses explicit separation; ownership discovery is removed. Coverage gap: total admission/propagation work across growing shared classes, beyond covered shapes. |
-| Select, consume, fold or unfold ownership; pay for explicitly selected pieces/body | `ResourceContext::{satisfies_fact,without_fact_incrementally_impl,consume_unit_owned_memory}`, `ExecutionProofCore` fold construction | `kernel/borrows/tests.rs`: `call_fragment_composition_stops_at_a_fixed_gap`; `kernel/proof/execution/tests.rs`: `constructing_an_instance_fold_pays_for_its_body_once`; source fold/unfold controls | R1 reachability gap for other quantities; R2 source candidates for ownership validity, alias/root discovery and overlap. |
-| Observe separation or resource facts; pay for selected operands/evidence | `surface/proof/proof_object/splits_and_scopes.rs`, `kernel/proof/facts.rs`, `kernel/assumptions/memory_reasoning.rs` | source `observing_one_owner_ignores_unused_parameters`; transport footprint tests, including `two_footprints_do_not_expand_into_a_cartesian_product` | F2: composition/member bucket growth remains a coverage gap; frontier opening no longer reconstructs a composition-only context. |
-| Check a write against borrows; pay for the selected evidence | `BorrowLedger::memory_access_requirement` and statement prerequisite checking | `borrow_access_requirement_is_retained_and_branch_local`, `stated_symbolic_write_separation_ignores_nearby_facts_and_aliases` | L1 covers the scoped write path and its evidence lookup. The old alias-enumerating guard is test-only. |
-| Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: resource-family selection and selected-address composite candidates; non-direct member-count preparation is now flat. E1: execution/publication/completion accounting. |
-| Split/join branches and enter/exit loops; pay for explicit arms/interfaces and actual changes | `kernel/api.rs`: `abstract_c_state_for_interface_join_across`; `kernel/loops.rs`; `kernel/proof/execution.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs`; branch availability and interface-join controls | J1 coverage gap: fixed-delta joins across growing stable state; loop-head abstraction uses a different policy. Existing growth allowances do not establish ambient independence. |
-| Apply an explicit equality, arithmetic step or preservation step; pay for written nodes/premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/preservation.rs`: history independence, explicit-step linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
-| Introduce binders, apply logical rules and publish checked results; pay for explicit proof structure | `ProofObject::apply_intro`, `ProofFacts::freshen_integer_forall_body`, proof execution event recording | selected term-rewrite, fact-key and event-publication controls | Q1 deferred nested-quantifier work; E1 deferred/revalidation candidates. A helper's flat lookup says nothing about repeated whole-body copying. |
-
-Test paths in the evidence column are relative to `src/scaling_tests/`.
-The source-level control suite is
-[`step_shape_scaling_tests.rs`](../src/scaling_tests/surface/tests/step_shape_scaling_tests.rs).
-It holds repeated roles to a no-drift rule and varies ambient objects/facts;
-it is valuable integration coverage, not an exhaustive list of statements,
-contracts, or resource shapes.
-
-## Remaining transport expansion inventory
-
-The remaining work is written-proof migration, removal of residual internal
-legacy producers, and syntax/dispatcher retirement. Next, group the remaining
-historical element uses by their explicit separation and preservation argument,
-then migrate one verified family. Check whole proofs and their smart expansions
-separately: replacing a written legacy operation does not establish that all
-producer paths are legacy-free. Counts below are syntax sites, not independent
-slow walks or a claim that every fixture currently verifies.
-
-### Written syntax is a separate migration
-
-A balanced-parenthesis scan of `.click` files and Click fences in Markdown,
-excluding prose and Rust test strings, leaves:
+Written tactic sites (`.click` files, counted with a word-boundary match that
+excludes names such as `plug_parent_consistent_transport`):
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 0 | 0 |
-| `examples/` | 6 | 39 |
+| `examples/` | 5 | 22 |
 | `library/` | 0 | 0 |
-| Total | 6 | 39 |
-
-Positive fixtures also supply exact input text to expansion and mutation tests.
-Migrate those inputs together with their tests and keep the smart proof inputs.
-Verify the full file as well, because selected-tactic expansion checks only a
-prefix. Remaining groups include historical initializedness, computed range
-bounds, loop frames, and call preservation.
-The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
-
-### Migration order
-
-1. **Pure logic.** One pass for equality, conjunction, implication, and
-   same-state alias substitution. Use fact lookup, rewriting, or theorem
-   application. Keep the premise-refusal tests.
-2. **Ownership and viewability.** One PR for facts recovered from owners.
-   Split observation and folded-resource lookup if the proof changes warrant it.
-3. **Reads across writes and calls.** Start with one PR for direct stores and
-   byte-range writes, then one for calls with recorded footprints. Use explicit
-   separation and preservation.
-4. **Loops and trees.** Start with one loop-invariant batch and one tree
-   operation. Pair mirrored cases when they share a proof. Repeat for the
-   remaining invariants and tree operations.
-
-Verify whole affected claims, check that the migrated steps expand without
-legacy transport, and replay with implicit solving disabled where the whole
-claim has been migrated. Track surviving generated uses by producer and fix
-them before removing syntax and dispatcher support.
-
-### Remaining PR-sized chunks
-
-Keep the IDs stable while these chunks are pending; remove rows when they land.
-Aim for one coherent PR per row. A new primitive or verifier defect gets its
-own diagnosis/fix rather than growing a migration PR. Revalidate prepared local
-changes against upstream before publishing. Each migration needs whole-proof
-verification and expansion/replay with implicit search disabled; reject legacy
-output for the migrated family. Investigate chunk 17 early to expose baseline
-risk before the larger tree migrations. Medium confidence means the proof
-pattern is understood but the complete family has not yet been validated.
-
-| ID | Work | Confidence |
-| --- | --- | --- |
-| 11 | Remaining loop-frame mdtests | Medium |
-| 15 | Remaining fold, resource-observation, count mdtests | Medium |
-| 17 | Red-black insertion baseline diagnosis/repair | Uncertain |
-| 18 | Insertion: field and parent-link preservation | Medium |
-| 19 | Insertion: inner/double rotations | Medium |
-| 20 | Insertion: mirrored and remaining paths | Medium |
-| 22 | Deletion: primary color-fixup cases | Medium |
-| 23 | Deletion: mirrored and remaining fixups | Medium |
-| 24 | Augmented trees: basic rotation, model, propagation | Medium |
-| 26 | Augmented trees: single/context rotations | Medium |
-| 27 | Augmented trees: local double rotations | Medium |
-| 28 | Augmented trees: context double/far rotations | Medium |
-| 29 | Augmented trees: middle-subtree double rotations | Medium; split if large |
-| 30 | Reproduce residual internal producers' surviving legacy output | Uncertain; investigation may need no code change |
-| 31 | Migrate producer paths demonstrated by chunk 30 | Uncertain size; may split |
-| 32 | Remove written syntax and dispatcher support; update syntax tests | Clear after migrations |
-| 33 | Delete obsolete transition-context rebuilding implementation | Medium |
-| 34 | Enforce expanded proofs cannot create ProofSearch | Medium |
-
-### Migration blockers to resolve
-
-- The unchanged `rbtree/rbtree-insert` example fails while re-folding its initial
-  node, before its legacy transport calls. Explicit lookups establish the
-  identity, packed parent, color, and child-parent facts needed by that fold.
-  The proof also needs its execution sequence adjusted for separate call-result
-  and assignment steps; the next observed failure concerns `gparent->rb_right`
-  versus `tmp`. Repair and verify the whole baseline before migrating its 106
-  written sites. The partial investigation is not a verified proof repair.
-
-### Excluded or still unconfirmed
-
-Do not count these as additional confirmed generated-output families:
-
-- Computed lower endpoint `p[index + 1..length]`, nested upper endpoint
-  `p[index..index + 1 + 1]`, and native upper endpoint
-  `p[index..index + 1u64]`: the reduced probes fail with both plain and
-  restricted solve. The narrow probes supply `0 <= index` and the appropriate
-  upper bound (`index < length` or `index + 2 <= length`); the wide probe
-  supplies `index < length`; all supply `viewable(p[0..length])`. These are
-  search misses, not successful expansions retaining transport. This does
-  not establish that every spelling of these shapes fails.
-- Bare same-state range `transport` in a C proof, in both narrow and native
-  form, misses its source-only premise search in the tested examples. Bare
-  `transport` is not available in pure theorem proofs. Neither result is
-  evidence of another generated-output family.
-- `bound_universal_outcome_retains_instantiation_and_transport` fails in
-  `bubble_pass3` before expansion, while proving the loop's quantified bound.
-  It is not a current positive regression for its old output assertion.
-- Residual scalar/address variants, logical wrappers beyond these examples,
-  and other proof-context adapters remain source-audit candidates. They get
-  another work item only after a successful expansion demonstrates it.
-
-### Producer paths and retirement boundary
-
-The principal remaining producer anchors are
-`surface/proof/surface_certificates.rs::plan_explicit_universal_conclusion_discharge`
-and `plan_explicit_loadability_transport`,
-`surface/proof/smart_closures/search.rs::try_carry_entry_conjunct`,
-`surface/proof/smart_execution/search.rs::{try_execution_fact_transport,fact_transport_candidate_search}`,
-and `surface/proof/proof_object/execution_statements/search.rs`'s planned
-transport adapters. These construct `TransportUsing`, but the driver can replace
-that construction with ordinary steps. A constructor occurrence alone is not
-an additional surviving expansion.
-
-The legacy fixed-state route still rebuilds transition assumptions with
-`assume_proposition_uncharged`; its source acknowledges path-linear work.
-The endpoint is to make that implementation unreachable from expanded proofs,
-then remove it, including obsolete source/result normalization and
-premise/effect collection. Finish with a boundary test that an expanded proof
-cannot create `ProofSearch`; a text search alone is insufficient.
-
-The next sequence is migration of the remaining written corpus, then syntax
-and dispatcher retirement. Preserve negative fixtures' semantic refusals during
-migration. Missing primitives or newly reproduced output shapes require a new
-design discussion rather than silently expanding a chunk. This inventory does
-not claim exhaustive coverage of all possible source programs or the unrelated
-fast-operation ledger.
-
-## Outstanding measurement ledger
-
-### R1: remaining fragment-selection routes — reachability gap
-
-In [`resource_algebra.rs`](../src/kernel/primitives/resource_algebra.rs),
-`without_fact_incrementally_impl` enumerates/normalizes suppliers outside the
-view and unit-owned routes; `satisfies_fact` has the corresponding other-quantity
-route. Surface validation rejects quantities directly on memory. First identify
-a supported producer and complete fold/transfer caller, or establish that the
-route is unreachable and remove/classify it. If reachable, fix one requested
-footprint and grow rejected suppliers; separately grow genuinely consumed
-pieces. Test symbolic/wide carriers, gaps, ambiguity and persistent parents.
-
-### R2: ownership validity and overlap — source candidates
-
-Entry-state call borrows rejoin their selected residual frame without memory
-alias discovery. A private transfer restores the identities retained at call
-entry. Newly produced ownership, post-state outputs, raw body-return descriptions
-and contract comparisons retain their validating path. The restoration guard and
-`call_borrow_restoration_ignores_ambient_aliases_and_frame` cover this selected
-join, with unrelated aliases, unrelated owners, and repeated forks; they do not
-certify all call preparation or output-description lowering.
-
-Call preparation no longer rebuilds an optional population partition with
-`retained_population_call_partition`. The five affected `memset` proofs use
-explicit separation and single-footprint preservation for both values and
-read definedness. `preserve` requires the exact old definedness fact; it does
-not reconstruct history or infer initialization from ownership. The guarded
-proof expands and replays without implicit solve or legacy transport.
-This removes optional composition inference, not ownership validation.
-
-A source partial-borrow probe still grows with unrelated aliases after the
-removal; deleting this inference cuts a fixed amount of work in that probe,
-not its remaining growth. Keep the complete-call cost separate from the scoped
-composition-retention guard.
-
-`owned_validity_candidates` and incremental validity checking still have
-symbolic-bound and multiple-coordinate-origin paths. Single-block count and
-constant-coordinate neighbor shortcuts do not settle multi-block alias/root
-discovery. Selected overlap checking now uses the supplied ranges and indexed
-base/endpoint equality, without enumerating aliases. Its fixed-query alias
-regression and translated-address refusal controls do not settle the separate
-candidate-selection scan or the cost of a complete ownership insertion.
-
-Instance `unfold` now replaces the exact held parent with its selected body
-through `ResourceContext::unfold_instance_body`, using the framed definitional
-exchange `R * F -> body(R) * F`. It does not search the frame for memory overlap
-or generate a new separation obligation. Exact exclusive-resource checks remain;
-definition, arm, parent ownership and child-identity checks remain in the rewrite.
-The replacement has a test-build discovery guard.
-
-Unfold publishes its justified consequences without querying the caller's
-stated-fact index. Exact duplicates within the output batch are removed locally;
-normal fact admission handles facts the caller already holds. This avoids
-forcing deferred keys for unrelated facts merely to suppress an output.
-Fold body-clause publication and returned-instance body-fact publication follow
-the same rule. `resource_publication_ignores_unrelated_stated_facts` checks a
-fixed matched body whose pure clause is already held, with 4/16/64 unrelated
-pointer equalities. It measures each producer and admission of its output twice.
-
-Written folds already prepare a conditional successor with
-`retaining_required_obligations`, return body clauses to the driver, and require
-explicit proofs or implicit `solve` before completion. The regression
-`prepared_fold_emits_body_obligation_without_indexing_ambient_facts` exercises
-that preparation mode with a cold index and checks the returned obligation:
-33 / 33 / 33 units, including the test's obligation construction.
-
-The ignored `legacy_checked_fold_requirements_ignore_unrelated_stated_facts`
-diagnostic calls the lower-level rewrite without obligation retention. Its
-83 / 155 / 443 units (including obligation construction) do **not** describe ordinary written-fold preparation.
-Identify a production caller using that checked mode before treating it as a
-remaining fast-path violation; do not add a second obligation mechanism.
-
-`instance_unfold_ignores_ambient_pointer_aliases` measures complete kernel unfold,
-the selected replacement, and publication/reinsertion of its facts at 4/16/64
-aliases with one body cell and one retained owner. The caller's stated index is
-left cold. Both adjacent ownership and contradictory memory premises retain
-persistent parents. Complete kernel unfold costs 370 / 370 / 370 work units;
-publication and reinsertion together are also flat (248 units for the adjacent
-case, 190 for the contradictory case). These are bounds for this fixed body,
-not all unfolding routes or Surface materialization.
-
-`raw_ownership_admission_must_not_search_ambient_pointer_aliases` is now an
-active regression. Fresh measurements at `da5639eb1d` are flat at 228 units
-for adjacent constant intervals and 74 for overlap refusal with 4/16/64
-aliases; its former "still grows" annotation was stale for that shape.
-Symbolic return boundaries now use bounded producer-published interval and
-address indexes or an explicit separation premise for the actual frame.
-The automatic ownership-discovery fallback is removed. Active admission
-scaling covers growing owners, aliases, explicit frame proofs, and removed
-owner history; unsupported relationships refuse without discovery. These are
-admission measurements, not a complete source-call curve. See
-[early return-group evidence](../docs/internals/verification-efficiency.md#early-return-group-evidence).
-
-Executed-body returns now construct their group by consuming each output from
-the actual body's remaining ownership, then install that group in the captured
-caller frame. They no longer run early description-group admission or repeat
-the Boolean custody pass afterward. Folded-head post-memory boundary checks
-remain. Summary application now retains a clause-level rule for unchanged flat
-footprints, including parameter bounds, and binds it to the selected entry
-reservation. Justified outputs and checked entry borrows avoid early group
-admission; unmatched and description-only outputs require checked
-admission, with an explicit separation obligation for unsupported boundaries. The executed-body regressions cover alias/body/frame growth,
-selected splits and duplicate refusal; this does not close every raw-admission
-or consumption route.
-
-The retained summary rule now also binds literal/parameter footprints of
-one-level composite children to consumed input clauses. Unguarded parameter-only borrowed
-children keep entry origin; conversions, loads, and unmatched footprints
-retain their boundary checks. Composite scaling grows selected body parts as
-well as retained same-block owners and both alias shapes at 4/16/64.
-Indexed and whole-clause `unfold` construct their exposed ownership from the checked
-hole/guard exchange without admission or block normalization. Their exposure
-regression grows retained owners and aliases and retains occurrence support.
-Whole-clause unfold guard preparation now selects an indexed whole-range equality source
-without enumerating universals or replaying its conclusion. Its regression
-bounds preparation as well as installation while growing aliases, owners and
-same-cell premises with other bounds. Call recovery constructs directly in
-the return residual and carries recovered hold occurrence IDs to publication;
-worker completion retains its checked output group and support metadata, and
-loop-frame exchange retains its admitted successor with the exit identities.
-These constructors still establish missing relationships against their actual
-destination frames; unsupported memory geometry retains compatibility discovery. See the
-caller audit in [verification efficiency](../docs/internals/verification-efficiency.md#iterated-exposure-and-the-remaining-callers).
-
-Hold one inserted owner and one relevant neighbor fixed. Independently grow
-same-block owners, owned blocks, coordinate origins and exact/offset aliases;
-use symbolic bounds and different origins, not just the indexed constant case.
-Measure the complete ownership addition/fold, including successful disjointness
-and overlap refusal. Distinguish this from output-sized explicit composition.
-
-### F2: separation observation — remaining coverage
-
-Frontier `have` opening no longer constructs a composition-only context or
-admits the selected separation from it. Its explicit proof must establish that
-fact. `have_opening_does_not_copy_ambient_compositions` grows unrelated owners
-at 4/16/64 with a fixed selected goal and proof.
-
-Other selected observation routes still need composition/member bucket growth
-coverage. Pointer decisions consume explicitly stated separation instead of
-discovering it through ownership compositions or alias classes. Removing this
-copy does not establish a bound for every separation observation.
-
-### L1: write restrictions from active borrows
-
-The pointee-store route generates a separation obligation without alias
-search. The source write regression is flat at 179 charged units with one borrow
-and 4/16/64 aliases (110 without a borrow); these measurements cover this route,
-not the remaining callers below. Explicit source proofs retain typed subobject
-bounds and provenance. The `contains_element` law supports signed 32-bit and
-unsigned 64-bit interval bounds without wrapping the selected upper endpoint.
-Exact pointer argument spellings use an entry-built index; enclosing recorded
-requirement clauses use the existing conjunct index. Keep the position-drift,
-expanded-replay and negative ownership controls alongside the borrow measurements.
-
-Pointee scalar stores return an ordinary separation obligation against a retained
-resource descriptor of active borrow backing. Opens and closes update a
-persistent fixed-width identity trie. A reborrow whose footprint exactly
-repeats its parent uses the existing descriptor while the parent stays pinned.
-Generating the obligation clones the retained descriptor. The driver
-runs ordinary `solve`, whose conjunction case emits the existing `separate_star`
-and `separate_symm` applications. Restricting a larger separation emits
-containment proofs and `separation::separate_restrict`; candidate selection belongs only
-to `ProofSearch`. The store adds no e-graph facts; the separate
-`contains_element` library axiom supplies explicit interval-to-cell containment.
-`one_write_with_a_borrow_does_not_walk_unrelated_aliases` measures the complete
-source write with one view and 4/16/64 aliases; `borrow_access_requirement_is_retained_and_branch_local`
-covers descriptor generation and persistent closes with 4/16/64/256 borrows.
-These scoped controls do not certify every borrow caller or proof-publication cost.
-
-Scalar and bulk writes, allocation retirement, call and worker effects, loop
-and branch boundaries, mutex writes, and direct and modular construction now
-check retained borrow evidence or emit separation obligations. Automatic storage
-retirement and initialization use the object-identity index. Verified calls
-check each bounded write separately and refuse unnamed write effects with a
-live memory borrow. The [recorded rbtree insertion run](rbtree-example.md#verification-evidence)
-exercised that refusal with a recursive tree and a live callback-table view.
-
-The legacy write guard and its alias search are test-only. Contract entry uses
-checked pointer coordinates to compare its selected owned/viewed ranges.
-Cache retention uses indexed protection evidence to decide which observations
-survive.
-
-### C1: modular call framing
-
-Verified calls, mutex transitions, and publication share the residual's
-resource indexes and the sorted composite definition table in
-`call_kept_ownership`. Kept reads select singleton folded owners from
-indexed address keys, then open only argument-direct bodies. Field-bearing
-instances and other opaque bodies supply no implicit memory ranges.
-
-`repeated_writing_calls_ignore_unrelated_folded_owners` varies call count and
-retained family count. `kept_call_reads_do_not_scan_same_block_owners_or_aliases`
-measures both hits and misses with 4, 16, 64, and 256 owners and aliases.
-`call_frame_preparation_must_not_open_unrelated_composites` covers nested and
-load-dependent bodies. The arena proof uses explicit separation and
-preservation for the retained headers and cells it needs.
-
-### Statement-exit fact transport — boundary and remaining coverage
-
-Statement result publication now has a test-build discovery guard. Condition
-fact transport is registered as discovery, including its formerly unregistered
-"direct" route. Call-result/postcondition integration coverage and an adversarial
-guard test prevent that helper from silently returning to publication. The
-removed adapter's lower-level red diagnostic is retired: it measured a helper
-that publication no longer calls, not the cost of the operation after removal.
-
-The publication guard covers the published result. Cell-map and effect
-queries, transport re-validation, ownership validation, and composite framing
-still need scoped checks during preparation. The driver owns obligation solving
-and expandable fact discovery.
-
-### M1: reads, caches and history — coverage gaps
-
-The [memory-history roadmap](fact-aware-frame-walks.md) names read-side
-`CellsForgotten` projections and bulk-write preparation. Inspect
-`CMemory::prepare_store_cache`, its callers, and bounded cell-source queries
-separately. A derivation edge named `CellsForgotten` does not itself establish
-an unbounded history search: the inspected cell-source route counts real hops
-against `max_hops` and gates its extended bridge.
-
-Keep the read/store/explicit transport fixed while growing prior states,
-cached cells, compact runs and holes independently. Measure cold misses and
-repeated adjacent/non-adjacent reads; grow genuinely overwritten pieces as a
-separate output-sized control. Retain exact typed-read identity, initialization,
-partial overwrite, freed-pointee and provenance refusals. New primitive designs
-belong in the design/build discussion, not this audit pass.
-
-### J1: branches and loops — coverage gap
-
-`interface_abstraction_work_scales_with_unrelated_locals_and_memory` currently
-allows up to 3x charged work when stable state doubles. It is a loose growth
-check, not evidence that a fixed one-local change ignores ambient state.
-`abstract_c_state_for_interface_join_across` already uses persistent differences
-for parts of this operation; do not infer a scan just from the weak assertion.
-The `JoinLocals::Stable` loop-head policy has different traversal behavior.
-
-Writing loop heads reuse the memory cache's pointer-reachable projection.
-Directly assigned scalars get their new head values before havoc. Private
-scalar cells stay in the persistent map without being visited. For selected
-addressable cells the head checks scalar slot membership by block, along
-with the existing borrow check. Stores to private scalar slots advance the
-projection so forks of a warm frame do not each walk the same cells.
-The gate's `loop_head_havoc_ignores_private_scalar_slots` varies initialized
-slots at 4/16/64/128. The nightly source test measures a later fixed loop at
-the same sizes. Addressable memory,
-first-loop annotation, identity reservation, and differing loop exits have
-separate costs.
-
-Measure the complete split/join and loop entry/exit at fixed arms, changed
-locals and interface size, growing stable locals/cells/resources and prior
-joins. Separately grow explicit arms, changed entries and invariant text.
-Classify retained-state traversal against these actual inputs and changes;
-exclude unavoidable explicit path enumeration from the ambient test.
-
-Loop exit reconciliation uses persistent differences to select local
-initialization, local value, and cell changes. The gate's
-`a_loop_exit_join_visits_only_changed_bindings_and_cells` grows both
-shared maps at 4/16/64/256. It checks a full two-exit join with differing
-locals and one-sided cells, and selection of a cell present only on a later
-exit. Residual memory comparison and interning of the reconstructed memories
-use exact differences from shared storage. Restating scalar exit facts keeps
-memory effect summaries at their original states and ranges, including inside
-earlier disjunctions. The gate's
-`loop_exit_scalar_restatement_keeps_recorded_memory_effects` measures one
-renamed scalar at 4/16/64/256 untouched blocks. Other state-bearing facts can
-still require memory substitution.
-
-### E1 and Q1: logical steps and evidence lifecycle — deferred evidence/gaps
-
-[Scaling](scaling.md), cause 4, records repeated execution, result revalidation
-and completion work. That description includes historical fixes and requires
-caller-by-caller reconciliation before it is a current defect list. The completed preparation controls include
-`prepared_call_obligations_execute_once_as_contract_and_context_grow`, named,
-population/authority and return-fold construction, and the former failed/legacy
-retry routes. All twelve selected controls passed at the reconciliation baseline.
-Do not count these as still-unfixed repeated execution; they do not settle
-condition/function theorem contexts, observation producers, or all joins and
-final publication.
-Count executor invocations and producer/result comparisons through complete
-explicit steps, rewrites, joins and final publication, including uncharged
-work. Reuse checked producer results rather than introducing another checker.
-
-[Deep quantifier scaling](deep-quantifier-scaling.md) records repeated nested
-`Integer` binder freshening. `freshen_integer_forall_body` still collects body
-variables and substitutes when a binder collides; its non-collision shortcut
-must be measured separately. Rebuild a complete nested-introduction curve with
-and without ambient binder collisions. Old helper counts are historical, not
-current complete-operation results. Preserve capture avoidance and expansion.
-Both linked items retain their existing deferrals; the general constant-ish
-checking claim must disclose them until resolved.
-
-### Checking outside `step()`
-
-Keep work measured at written tactics separate from execution inside
-`step()`, and measure mandatory work outside tactics at its own phase boundary.
-For each written tactic, fix its selected input and output while growing
-the surrounding context. Then grow what the tactic actually names to check
-the cost per emitted fact, resource or proof node.
-
-- **Named `unfold`.** At `c787479ae`, a written unfold of a fixed matched
-  arm took 1,352 / 1,355 / 1,357 work units with 4 / 16 / 64 disjoint
-  sibling ownership ranges. With 4 / 16 / 64 owned ranges in the selected
-  arm itself and a fixed frame, it took 6,505 / 28,755 / 206,745 units.
-  Reusing the kernel exchange at the same predecessor cuts these to
-  3,832 / 17,466 / 160,024 units. The ownership-footprint preparation
-  events drop from 44 / 176 / 704 to 28 / 112 / 448.
-  `named_unfold_constructs_the_selected_arm_once` exercises both axes and
-  checks how many times the named arm's premises are evaluated. Trace the
-  remaining arm-size cost through body resource evaluation, memory naming,
-  and publication with the same probe. Use
-  `mdtests/loop_ascending_walk_to_root.md` as the real-proof control.
-- **Logical introduction.** The written nested `Integer` introductions at
-  depths 4 / 8 / 16 / 24 / 30 total 226 / 500 / 1,192 / 2,076 / 2,865
-  units on the same baseline. A same-spelled ambient quantifier gives the
-  same curve. Isolate retained-body work and measure a confirmed binder
-  collision separately in [the quantifier tracker](deep-quantifier-scaling.md).
-- **Mandatory work outside tactics.** A fresh dev profile of
-  `examples/ring-buffer` at the same baseline attributed about 1.2 seconds
-  to verifier core and reported zero certification paths. The trace names
-  proof-context and execution-path finishing; their nested timings can
-  overlap. Compare prepared-call, loop-exit and resource-completion
-  invocations at their producer and publication boundaries before assigning
-  that time to repeated work.
-
-## Prevention coverage
-
-`kernel::search::SearchPermission` gates ambient fact discovery, and
-`build_support/search_boundary.rs` rejects selected forbidden calls and
-iterator patterns. These guards cover named APIs/functions, not arbitrary
-Rust iteration, allocation or structural comparison. `CheckingWorkScope`
-attributes charged work inside selected helpers independently of enclosing
-search. It does not establish coverage of every checker or detect uncharged
-work. Operation closure therefore needs both a source-boundary argument and
-complete-operation scaling controls; neither mechanism alone proves the rule.
-
-## Next design/build cycle and completion
-
-The behavior-preserving architectural split is described in
-[Separate proof operations from proof search](../design/proof-operations-and-search.md).
-Use its frozen dependency inventory to remove operation-to-search calls one
-route at a time. Mixed callers now have semantic classifications; no strict search-free
-execution guarantee is claimed. The measurements below feed that migration.
-
-Choose one of these slices for the next design/build cycle; this audit does not
-authorize a new primitive or a verifier behavior change.
-
-| Candidate | First concrete step | What completing it would establish |
-| --- | --- | --- |
-| Boundary enforcement / interface cleanup | Extend the theorem-operation discovery guard to the next audited primitive, identifying existing exceptions before enforcing it. The inventoried search/support adapters have been extracted. | Clear ownership of discovery; guards must distinguish allowed driver solve from search inside primitives, even when invoked by solve. No claim to detect arbitrary loops. |
-| Arithmetic obligation generation | Reduce one operator's inline safety decision; reproduce the spelling and position-drift controls above before designing a retained result plus obligation. | That operator generates and publishes bounded work while the driver alone solves its safety goal; no promise to migrate all arithmetic in one patch. |
-| L1 active-borrow write | Fix one write and owner, grow aliases with one active borrow, then symbolic borrows with fixed aliases. Write the complete-operation red scaling test first. | Evidence of a concrete remaining scan, or a closed coverage gap if flat. Choose an index or explicit-proof repair only after the result. |
-
-F2 and C1 remain subsequent measurement candidates, followed by R2, R1
-reachability, and J1/M1/lifecycle coverage. Declaration-validation search and
-legacy explicit transport remains a separate design track; preparation completion did
-not remove either. The inventoried operation/driver adapters have been extracted. This clears
-that migration list; it does not remove the direct operation/search dependencies
-or prove that all generated operations are fast.
-
-For whichever slice is selected:
-
-1. For each operation, retain source caller, input/delta definition, independent
-   ambient axes, multi-size deterministic results, cold/repeated failures,
-   semantic controls, and the checking/search boundary. Fix a complete route;
-   do not mark the operation done because a common special case is flat.
-2. Add source-level integration controls as well as helper tests. An expanded
-   proof must replay without search. Attribute excessive checking to checking,
-   even inside `solve`; `CheckingWorkScope` currently covers selected helpers,
-   not every operation. Audit uncharged loops and deep comparisons as well as
-   charged counters. No budget increase or warm cache substitutes for a bound.
-3. Reconcile the adjacent roadmap items and fill the operation coverage gaps
-   before claiming the general principle. Removing the named loops alone is
-   insufficient. Keep this document an inventory of remaining evidence/work,
-   not a history of completed PRs; move durable guarantees to the efficiency
-   documentation and retain their tests when rows are resolved.
-
-Persistent branches retain their parent contexts. Proof repairs preserve the
-original C and contracts, using explicit separation and ordinary preservation/equality steps
-at exact footprint entry/exit states. Whole-region preservation must be
-explicit composition, not a hidden transition walk. Inconclusive checking
-cannot establish equality or preservation, and explicit proof application must
-not reconstruct identities or search for intermediate states.
-
+| `tests/` fixtures | 2 | 5 |
+| `integrations/` | 2 | 9 |
+
+`examples/` sites: `rbtree/rbtree-augmented/` 21 (in
+`rbtree_size_rotate_model.click` 8, `rbtree_size_insert_mirrored_double_rotation.click`
+11, `rbtree_size_insert_rotation.click` 1,
+`rbtree_size_insert_mirrored_rotation.click` 1) and
+`owned-vector/vector.click` 1. `rbtree-insert` and `rbtree-erase` have none.
+Click fences in `mdtests/` hold 22 sites, mostly fixtures for transport
+itself (`*_transport_expansion.md`, refusal and diagnostic tests); the
+`c_named_contract_sequence_refinement_*` files declare a theorem named
+`transport` and are not sites. `docs/concepts/own-project.md` has 1.
+`design/` (60 sites in 13 files) is not counted.
+
+Remaining chunks, one coherent PR each. Each migration verifies the whole
+affected claim, expands and replays with implicit search disabled, and
+rejects transport in the migrated family's output. A new primitive or a
+verifier defect gets its own diagnosis rather than growing a chunk.
+
+| ID | Work |
+| --- | --- |
+| 11 | Remaining loop-frame mdtests |
+| 15 | Remaining fold, resource-observation and count mdtests |
+| 24 | Augmented trees: basic rotation, model, propagation |
+| 26 | Augmented trees: single and context rotations |
+| 27 | Augmented trees: local double rotations |
+| 28 | Augmented trees: context double and far rotations |
+| 29 | Augmented trees: middle-subtree double rotations (split if large) |
+| 30 | Reproduce residual internal producers' surviving transport output |
+| 31 | Migrate producer paths chunk 30 demonstrates |
+| 32 | Remove written syntax and dispatcher support, including `PostExecutionTactic::Transport` (`src/surface/proof/execution_state.rs`); update syntax tests and the mdtest fixtures above |
+| 33 | Delete the transition-context rebuilding implementation |
+| 34 | Enforce that an expanded proof cannot create `ProofSearch` (a test, not a text search) |
+
+Producer anchors for chunk 30, which construct `TransportUsing`:
+`plan_explicit_universal_conclusion_discharge` and
+`plan_explicit_loadability_transport`
+(`src/surface/proof/surface_certificates.rs`), `try_carry_entry_conjunct`
+(`src/surface/proof/smart_closures/search.rs`),
+`try_execution_fact_transport` and `fact_transport_candidate_search`
+(`src/surface/proof/smart_execution/search.rs`), and the planned adapters in
+`src/surface/proof/proof_object/execution_statements/search.rs`. A
+constructor occurrence alone is not a surviving expansion.
+
+Not confirmed as further generated-output families: computed or nested range
+endpoints (`p[index + 1..length]`, `p[index..index + 1 + 1]`,
+`p[index..index + 1u64]`) whose reduced probes failed under both plain and
+restricted solve; bare same-state range `transport` missing its source-only
+premise search; and `bound_universal_outcome_retains_instantiation_and_transport`,
+which fails in `bubble_pass3` before expansion. Each needs a successful
+expansion that retains transport before it becomes a chunk.
+
+**Intended regression.** Chunk 34's boundary test, plus syntax tests that
+expect written `transport` to be refused as unknown.
+
+**Violated invariant.** Applying a proof step does not rebuild transition
+contexts or search for premises; expanded proofs contain only ordinary
+checked steps.
+
+**Acceptance.** No written `transport` remains in `examples/`, `library/`,
+`mdtests/`, `tests/` or docs; the parser, dispatcher, `PostExecutionTactic::Transport`
+and the uncharged transition-context route are deleted; negative fixtures
+keep their semantic refusals; the boundary test passes. Coordinate with
+[one tactic interpreter](one-tactic-interpreter.md), whose context-agreement
+tests include `transport`.
