@@ -629,7 +629,7 @@ mod tests {
             "theorem check() { ensures (|i: uint64| -> uint64 { i + 1u64 })(41u64) == 42u64 by close(); }",
             "spec enum Boxed { Value(Integer) } function unpack(b: Boxed) -> Integer { match b { Boxed::Value(value) => value } } theorem check() { ensures unpack(Boxed::Value(42)) == 42 by { unfold(unpack(Boxed::Value(42))); close(); } }",
             "theorem check() { ensures (let value: fn(Integer) -> Integer = |x: Integer| -> Integer { x + 1 }; value(41)) == 42 by close(); }",
-            "theorem check(lo: int32, hi: int32) { requires lo < hi; ensures (lo..hi).all(|i| { i < hi }) by { intro(); intro(); close(); } }",
+            "theorem check(lo: int32, hi: int32) { requires lo < hi; ensures (lo..hi).all(|i| { i < hi }) by { intro() { close(); } } }",
             "function apply(x: Integer, y: Integer) -> Integer { (|y: Integer| -> Integer { x + y })(0) } theorem check(y: Integer) { ensures apply(y, 99) == y by { unfold(apply(y, 99)); close(); } }",
             "theorem check(__click_binder_0: Integer, __lambda_0: Integer, __click_lambda_0: Integer) { ensures (|x: Integer| -> Integer { x + __click_binder_0 })(__lambda_0) == __lambda_0 + __click_binder_0 by close(); }",
         ] {
@@ -640,8 +640,8 @@ mod tests {
     #[test]
     fn generated_binders_expand_and_cold_replay_without_search() {
         for source in [
-            "theorem check() { ensures answer: forall (value: Integer) { value == value } by { intro(); close(); } }",
-            "function every(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).all(p) } theorem check(lo: int32, hi: int32) { requires lo < hi; ensures answer: every(|i: int32| -> Prop { i < hi }, lo, hi) by { intro(); intro(); close(); } }",
+            "theorem check() { ensures answer: forall (value: Integer) { value == value } by { intro() { close(); } } }",
+            "function every(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).all(p) } theorem check(lo: int32, hi: int32) { requires lo < hi; ensures answer: every(|i: int32| -> Prop { i < hi }, lo, hi) by { intro() { intro() { close(); } } } }",
             "theorem check(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures answer: (lo..hi).all(p) by { intro(value) { close(); } } }",
         ] {
             let expanded =

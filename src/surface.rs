@@ -6760,8 +6760,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "intro",
-        syntax: "intro()",
-        class: "simple",
+        syntax: "intro() { ... }",
+        class: "control",
     },
     PublicTacticForm {
         id: "intro-as",

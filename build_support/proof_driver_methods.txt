@@ -1,4 +1,5 @@
 apply_scoped_intro
+apply_scoped_intro_step
 apply_bare_statement_step
 apply_all_source
 apply_close

@@ -623,9 +623,10 @@ int32 shadowed_c(int32 x) {
     ensures forall (x: int32) { x == x };
 } by {
     step_until(function.exit);
-    intro();
-    have outer.x == 0 by { close(); }
-    close();
+    intro() {
+        have outer.x == 0 by { close(); }
+        close();
+    }
 }
 "#;
     let sources = [("shadowed.c", c_source)];
@@ -657,10 +658,12 @@ int32 shadowed_twice_c(int32 x) {
     ensures forall (x: int32) { forall (x: int32) { x == x } };
 } by {
     step_until(function.exit);
-    intro();
-    intro();
-    have outer.outer.x == 0 by { close(); }
-    close();
+    intro() {
+        intro() {
+            have outer.outer.x == 0 by { close(); }
+            close();
+        }
+    }
 }
 "#;
     let sources = [("shadowed.c", c_source)];
@@ -683,10 +686,12 @@ fn tactic_expansion_can_name_two_levels_of_shadowed_binders() {
 theorem shadowed_twice(x: int32) {
     requires x == 0;
     ensures forall (x: int32) { forall (x: int32) { x == x } } by {
-        intro();
-        intro();
-        have outer.outer.x == 0 by { close(); }
-        close();
+        intro() {
+            intro() {
+                have outer.outer.x == 0 by { close(); }
+                close();
+            }
+        }
     }
 }
 "#;

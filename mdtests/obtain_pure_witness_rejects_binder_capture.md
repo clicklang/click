@@ -5,8 +5,9 @@ theorem bound_names(x: int32) {
     requires exists (k: int32) { k == x };
     ensures forall (k: int32) { k == x } by {
         let k = obtain(exists (k: int32) { k == x });
-        intro();
-        close();
+        intro() {
+            close();
+        }
     }
 }
 ```

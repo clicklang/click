@@ -17,9 +17,9 @@ int32 ordered() { ensures result == 1; } by {
     let { result: cmp } = step(memcmp);
     have bytes::equal_range(left, right, 0u64, 0u64) by {
         unfold(bytes::equal_range(left, right, 0u64, 0u64));
-        intro();
-        intro();
-        close();
+        intro() {
+            close();
+        }
     }
     apply(bytes::comparison_positive_after_prefix(left, right, 1u64, 0u64, cmp));
 }

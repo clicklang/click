@@ -118,8 +118,9 @@ theorem ordinary(hi: int32) {
     let source = r#"
 theorem written() {
     ensures forall (x: int32) { x == 0 implies x == 0 } by {
-        intro();
-        close();
+        intro() {
+            close();
+        }
     }
 }
 "#;
@@ -2105,8 +2106,9 @@ fn short_circuit_return_expands_after_an_early_return() {
                     step_until(function.exit);
                     have 2 <= size implies (first as int32) == 67 implies
                         (second as int32) == 75 implies result by {
-                        intro();
-                        contradiction(size < 2);
+                        intro() {
+                            contradiction(size < 2);
+                        }
                     }
                     close();
                 }
@@ -4886,7 +4888,7 @@ fn targeted_termination_assumes_unselected_callees() {
     }
 }
 
-/// A `close()` after `step_until(function.exit); intro(); intro();` closes a claim proof the
+/// A `close()` in nested `intro` blocks after `step_until(function.exit)` closes a claim proof the
 /// `intro`s opened, and expands to only the steps it adds there. It used to
 /// expand to the whole claim's certificate, `have <claim> by { ... };
 /// close();`, and a deferred `normalize()` or `close()` ignored
@@ -4894,14 +4896,14 @@ fn targeted_termination_assumes_unselected_callees() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_12")]
 fn post_execution_closer_continues_the_proof_intros_opened() {
-    let anchor = "intro();\n        close();";
+    let anchor = "intro() {\n                close();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/post_execution_intro_quantified_ensure.md",
         anchor,
-        "intro();\n        ".len(),
+        "intro() {\n                ".len(),
     );
     assert!(
-        expanded.contains("intro();\n        intro();\n        close();"),
+        expanded.contains("intro() {\n            intro() {\n                close();"),
         "{expanded}"
     );
     assert!(!expanded.contains("have forall"), "{expanded}");
@@ -5177,12 +5179,14 @@ theorem fixed_integer_witness(value: int32) {
         witness(0);
         all {
           (0 : Integer) == 0 implies to_integer(value) + 1 <= 2147483647 and to_integer(value) + 1 >= -2147483648 => {
-            intro();
-            close();
+            intro() {
+                close();
+            }
           }
           (0 : Integer) == 0 implies to_integer(value) + 1 <= 2147483647 and to_integer(value) + 1 >= -2147483648 => {
-            intro();
-            close();
+            intro() {
+                close();
+            }
           }
           (0 : Integer) == 0 and to_integer(value + 1) == to_integer(value + 1) => { close(); }
         }
@@ -7507,11 +7511,12 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
             ensures Target(callback) by {
                 unfold(Source(callback));
                 unfold(Target(callback));
-                intro();
-                have result == x implies result >= 0 by {
-                    apply(nonnegative_equal(x, result));
+                intro() {
+                    have result == x implies result >= 0 by {
+                        apply(nonnegative_equal(x, result));
+                    }
+                    close();
                 }
-                close();
             }
         }
     "#;
@@ -9997,9 +10002,11 @@ fn post_execution_restricted_solve_continues_an_introduced_claim() {
         int32 forall_scope() {
             ensures forall (k: int32) { 0 <= k implies 0 <= k } by {
                 step_until(function.exit);
-                intro();
-                intro();
-                close() using { 0 <= k; }
+                intro() {
+                    intro() {
+                        close() using { 0 <= k; }
+                    }
+                }
             }
         }
     "#;
@@ -16378,7 +16385,7 @@ fn outcome_predicate_unfold_evidence_survives_nested_have_expansion() {
         expanded.contains("unfold(permutation::permutation("),
         "{expanded}"
     );
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro() {"), "{expanded}");
     assert!(!expanded.contains("normalize("), "{expanded}");
     crate::surface::check_audit_claim("sort_three_cells.ensures_0", true, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
@@ -17662,9 +17669,11 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
             have forall (k: int32) {
                 0 <= k and k < n implies src[k] == old(src[k])
             } by {
-                intro();
-                intro();
-                close();
+                intro() {
+                    intro() {
+                        close();
+                    }
+                }
             }
             close();
         }
@@ -19766,7 +19775,7 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
         .expect("the expansion keeps the preservation proof");
     assert!(initialize < preserve, "{expanded}");
     assert!(
-        !expanded[initialize..preserve].contains("intro();"),
+        !expanded[initialize..preserve].contains("intro() {"),
         "the initialization certificate must not invent a read guard: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -23174,7 +23183,7 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
     );
     // A line of the phase inside the loop tactic, past its first line.
     assert_eq!(
-        at("intro();", ClaimLocationScope::Innermost).label,
+        at("intro() {", ClaimLocationScope::Innermost).label,
         format!("{function}.loop(0).initialize")
     );
     // The proof unit that checks the phase is the contract proof writing it,
@@ -24964,7 +24973,11 @@ fn scoped_conversion_requirements_expand_before_the_have() {
             requires 0 <= j and j <= 255;
             ensures 0 == 0 by {
                 have forall (k: int32) { k < j implies to_uint8(to_integer(j)) == to_uint8(to_integer(j)) } by {
-                    intro(); intro(); close();
+                    intro() {
+                        intro() {
+                            close();
+                        }
+                    }
                 }
                 close();
             }
@@ -25005,7 +25018,7 @@ fn theorem_entry_type_bounds_discharge_without_search() {
         theorem entry_conversion() {
             ensures forall (k: uint8) {
                 to_uint8(to_integer(k)) == to_uint8(to_integer(k))
-            } by { intro(); close(); }
+            } by { intro() { close(); } }
         }
     "#;
     without_implicit_solve(|| verify_click_theorems(source))
@@ -25724,10 +25737,11 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
                         close();
                     }
                     (a == 0 implies a + 1 == 1) => {
-                        intro();
-                        have a == 0 by { close(); }
-                        have a + 1 == 1 by { rewrite(a, 0); close(); }
-                        close();
+                        intro() {
+                            have a == 0 by { close(); }
+                            have a + 1 == 1 by { rewrite(a, 0); close(); }
+                            close();
+                        }
                     }
                 }
             }
@@ -25756,7 +25770,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} all {{ a == 0 => {{ close(); }} (a == 0 implies a + 1 == 1) => {{ intro(); close(); }} }}
+            {} all {{ a == 0 => {{ close(); }} (a == 0 implies a + 1 == 1) => {{ intro() {{ close(); }} }} }}
             }}
         }}
     "#,

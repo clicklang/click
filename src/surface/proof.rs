@@ -576,8 +576,9 @@ mod certificate_tests {
 
                 theorem implication(x: int32) {
                     ensures (x >= 0) implies (x >= 0) by {
-                        intro();
-                        close();
+                        intro() {
+                            close();
+                        }
                     }
                 }
 
@@ -635,10 +636,11 @@ mod certificate_tests {
                 ProofTactic::Known,
             ]) if application.name == "required"
         ));
-        assert_eq!(
+        assert!(matches!(
             verified[4].proof_tactics().as_deref(),
-            Some([ProofTactic::Intro, ProofTactic::Known].as_slice())
-        );
+            Some([ProofTactic::IntroBlock { binder: None, body }])
+                if matches!(body.as_slice(), [ProofTactic::Known])
+        ));
         assert_eq!(
             verified[5].proof_tactics().as_deref(),
             Some([ProofTactic::Known].as_slice())

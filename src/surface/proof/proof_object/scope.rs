@@ -876,27 +876,35 @@ impl<'a> Proof<'a> {
         completed: Self,
     ) -> Result<Self, ClickError> {
         let range = self.opens_scoped_range(introduced);
-        if !range
-            && !matches!(
-                (self.surface_goal(), self.goal()),
-                (
-                    Some(ClickProposition::ForAll { .. }),
-                    Some(Proposition::ForAll { .. })
-                ) | (
-                    Some(ClickProposition::Implies(..)),
-                    Some(Proposition::Implies(..))
-                )
-            )
-        {
-            return Ok(completed);
-        }
         let continuation = completed.certificate_since(&introduced.checkpoint())?;
         let body = if range {
             match continuation.steps() {
                 [ProofStep::Intro, body @ ..] => ProofCertificate::from_steps(body.to_vec())?,
                 [ProofStep::IntroBlock { binder: None, body }] => body.as_ref().clone(),
-                // Search can prove the membership implication as a whole.
-                _ => return Ok(completed),
+                // If search proved the entire membership implication, retain
+                // that proof as a fact inside the scope opened by the guard.
+                // Recheck the shortened goal before publishing the replacement.
+                _ => {
+                    let Some(proposition) = introduced.surface_goal().cloned() else {
+                        return Ok(completed);
+                    };
+                    let tactics = [
+                        ProofTactic::Have(ProofHave {
+                            proposition: proposition.clone(),
+                            proof: SourceProof::Script(continuation.to_proof_tactics()),
+                        }),
+                        ProofTactic::ApplyFact(proposition),
+                        ProofTactic::Known,
+                    ];
+                    let opened = introduced.driver().apply_step(ProofStep::Intro)?;
+                    let Some(Some(closed)) = attempt::candidate_outcome(
+                        opened.driver().try_generated_linear_script(&tactics),
+                    )?
+                    else {
+                        return Ok(completed);
+                    };
+                    return self.finish_scoped_intro(introduced, &opened, closed);
+                }
             }
         } else {
             continuation

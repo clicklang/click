@@ -41,9 +41,12 @@ void mark_at(int32 *v, int32 *m, int32 n) {
         apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..end])));
     }
     have forall (k: int32) { 0 <= k and k < end implies separate(memory(v[m[0]]), memory(v[k])) } by {
-        intro(); intro();
-        have m[0] != k by { close(); }
-        apply(click::separation::separate_elements(v, m[0], k));
+        intro() {
+            intro() {
+                have m[0] != k by { close(); }
+                apply(click::separation::separate_elements(v, m[0], k));
+            }
+        }
     }
     have contains(memory(v[0..n]), memory(v[m[0]])) by {
         apply(click::separation::contains_element(v, 0, n, m[0]));
@@ -57,12 +60,15 @@ void mark_at(int32 *v, int32 *m, int32 n) {
     step() by { close(); }
     have zeros(at(entry, v), 0, end) == zeros(v, 0, end) by {
         have forall (k: int32) { 0 <= k and k < end implies v[k] == at(entry, v[k]) } by {
-            intro(); intro();
-            instantiate(at(entry, forall (j: int32) { 0 <= j and j < end implies separate(memory(v[m[0]]), memory(v[j])) }), k);
-            have separate(statement(0).footprint, memory(v[k])) by {
-                close() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
+            intro() {
+                intro() {
+                    instantiate(at(entry, forall (j: int32) { 0 <= j and j < end implies separate(memory(v[m[0]]), memory(v[j])) }), k);
+                    have separate(statement(0).footprint, memory(v[k])) by {
+                        close() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
+                    }
+                    preserve(memory(v[k]), statement(0));
+                }
             }
-            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); close(); }
         have viewable(v[0..end]) by {

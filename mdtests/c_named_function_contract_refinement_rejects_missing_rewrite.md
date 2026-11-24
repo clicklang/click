@@ -39,20 +39,22 @@ void decrement(int32* state) {
 theorem decrement_is_decrease() {
     ensures Decrease(&decrement) by {
         unfold(Decrease(&decrement));
-        intro();
-        all {
-            0 < old(cell[0]) => {
-                close();
-            }
-            (to_integer(cell[0]) == to_integer(old(cell[0])) - 1 implies cell[0] < old(cell[0])) => {
-                intro();
-                have *cell == (old(*cell) - 1);
-                all {
-                    cell[0] == old(cell[0]) - 1 => {
-                        close();
-                    }
-                    cell[0] < old(cell[0]) => {
-                        close();
+        intro() {
+            all {
+                0 < old(cell[0]) => {
+                    close();
+                }
+                (to_integer(cell[0]) == to_integer(old(cell[0])) - 1 implies cell[0] < old(cell[0])) => {
+                    intro() {
+                        have *cell == (old(*cell) - 1);
+                        all {
+                            cell[0] == old(cell[0]) - 1 => {
+                                close();
+                            }
+                            cell[0] < old(cell[0]) => {
+                                close();
+                            }
+                        }
                     }
                 }
             }

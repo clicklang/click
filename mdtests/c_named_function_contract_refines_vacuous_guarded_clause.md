@@ -41,29 +41,32 @@ void increment(int32* state) {
 theorem increment_is_guarded_progress() {
     ensures GuardedProgress(&increment) by {
         unfold(GuardedProgress(&increment));
-        intro();
-        all {
-            old(cell[0]) < 1000 => {
-                have 100 <= 1000 by close();
-                apply(click::integer::int32_less_than_less_equal_transitive(old(cell[0]), 100, 1000));
-            }
-            (
-                to_integer(old(cell[0])) + 1 <= 2147483647 and
-                to_integer(old(cell[0])) + 1 >= -2147483648 and
-                to_integer(cell[0]) == to_integer(old(cell[0]) + 1)
-                implies (old(cell[0]) < 0 implies cell[0] == old(cell[0])) and old(cell[0]) < cell[0]
-            ) => {
-                intro();
-                all {
-                    (old(cell[0]) < 0 implies cell[0] == old(cell[0])) => {
-                        have not (old(cell[0]) < 0) by {
-                            close() using { 0 <= old(cell[0]); };
+        intro() {
+            all {
+                old(cell[0]) < 1000 => {
+                    have 100 <= 1000 by close();
+                    apply(click::integer::int32_less_than_less_equal_transitive(old(cell[0]), 100, 1000));
+                }
+                (
+                    to_integer(old(cell[0])) + 1 <= 2147483647 and
+                    to_integer(old(cell[0])) + 1 >= -2147483648 and
+                    to_integer(cell[0]) == to_integer(old(cell[0]) + 1)
+                    implies (old(cell[0]) < 0 implies cell[0] == old(cell[0])) and old(cell[0]) < cell[0]
+                ) => {
+                    intro() {
+                        all {
+                            (old(cell[0]) < 0 implies cell[0] == old(cell[0])) => {
+                                have not (old(cell[0]) < 0) by {
+                                    close() using { 0 <= old(cell[0]); };
+                                }
+                                intro() {
+                                    contradiction(not (old(cell[0]) < 0));
+                                }
+                            }
+                            old(cell[0]) < cell[0] => {
+                                close();
+                            }
                         }
-                        intro();
-                        contradiction(not (old(cell[0]) < 0));
-                    }
-                    old(cell[0]) < cell[0] => {
-                        close();
                     }
                 }
             }

@@ -15,8 +15,9 @@ theorem shadowed_citation(n: int32) {
     requires 0 <= n;
     ensures forall (n: int32) { 0 <= n } by {
         have 0 <= n by close();
-        intro();
-        normalize() using { 0 <= n; };
+        intro() {
+            normalize() using { 0 <= n; };
+        }
     }
 }
 ```

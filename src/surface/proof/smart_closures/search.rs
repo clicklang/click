@@ -874,7 +874,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             // An antecedent that context-free normalization refutes, such as
             // `to_integer(i) == to_integer(i) + 1`, closes the implication
-            // once introduced: `intro(); contradiction(A);`. Only the goal
+            // once introduced: `intro() { contradiction(A); }`. Only the goal
             // is read.
             let refuted = match (proof.goal(), proof.surface_goal()) {
                 (

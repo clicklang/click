@@ -49,29 +49,32 @@ void caller(int32 *v, int32 i, int32 n) {
     step();
     have zeros(v, 0, i) == zeros(at(entry, v), 0, i) by {
         have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
-            intro(); intro();
-            have separate(memory(v[0..i]), memory(v[i..n])) by {
-                apply(click::separation::separate_adjacent_ranges(v, 0, i, n));
+            intro() {
+                intro() {
+                    have separate(memory(v[0..i]), memory(v[i..n])) by {
+                        apply(click::separation::separate_adjacent_ranges(v, 0, i, n));
+                    }
+                    have separate(memory(v[i..n]), memory(v[0..i])) by {
+                        apply(click::separation::separate_symm(memory(v[0..i]), memory(v[i..n])));
+                    }
+                    have contains(memory(v[0..i]), memory(v[k])) by {
+                        apply(click::separation::contains_element(v, 0, i, k));
+                    }
+                    have contains(memory(v[i..n]), memory(v[i..n])) by {
+                        apply(click::separation::contains_refl(memory(v[i..n])));
+                    }
+                    have separate(memory(v[i..n]), memory(v[k])) by {
+                        apply(click::separation::separate_restrict(memory(v[i..n]), memory(v[0..i]), memory(v[i..n]), memory(v[k])));
+                    }
+                    have contains(memory(v[k]), memory(v[k])) by {
+                        apply(click::separation::contains_refl(memory(v[k])));
+                    }
+                    have separate(statement(0).footprint, memory(v[k])) by {
+                        apply(click::separation::separate_restrict(memory(v[i..n]), memory(v[k]), statement(0).footprint, memory(v[k])));
+                    }
+                    preserve(memory(v[k]), statement(0));
+                }
             }
-            have separate(memory(v[i..n]), memory(v[0..i])) by {
-                apply(click::separation::separate_symm(memory(v[0..i]), memory(v[i..n])));
-            }
-            have contains(memory(v[0..i]), memory(v[k])) by {
-                apply(click::separation::contains_element(v, 0, i, k));
-            }
-            have contains(memory(v[i..n]), memory(v[i..n])) by {
-                apply(click::separation::contains_refl(memory(v[i..n])));
-            }
-            have separate(memory(v[i..n]), memory(v[k])) by {
-                apply(click::separation::separate_restrict(memory(v[i..n]), memory(v[0..i]), memory(v[i..n]), memory(v[k])));
-            }
-            have contains(memory(v[k]), memory(v[k])) by {
-                apply(click::separation::contains_refl(memory(v[k])));
-            }
-            have separate(statement(0).footprint, memory(v[k])) by {
-                apply(click::separation::separate_restrict(memory(v[i..n]), memory(v[k]), statement(0).footprint, memory(v[k])));
-            }
-            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..i]) by { observe(v[0..i]); close(); }
         have i <= 1073741823 by { close(); }

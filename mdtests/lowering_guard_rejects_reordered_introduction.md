@@ -8,11 +8,14 @@ theorem guarded_universal_reordered() {
     ensures forall (k: int32) {
         to_integer(k + 1) > 0 and k >= 0 implies k >= 0
     } by {
-        intro();
-        intro();
-        have k >= 0;
-        intro();
-        close();
+        intro() {
+            intro() {
+                have k >= 0;
+                intro() {
+                    close();
+                }
+            }
+        }
     }
 }
 ```

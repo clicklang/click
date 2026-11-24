@@ -453,8 +453,9 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
             theorem false_c(x: int32) {
                 let saved = x;
                 ensures forall (x: int32) { saved == x } by {
-                    intro();
-                    normalize();
+                    intro() {
+                        normalize();
+                    }
                 }
             }
         "#,
@@ -462,8 +463,9 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
             theorem false_integer(x: Integer) {
                 let saved: Integer = x;
                 ensures forall (x: Integer) { saved == x } by {
-                    intro();
-                    normalize();
+                    intro() {
+                        normalize();
+                    }
                 }
             }
         "#,
@@ -528,9 +530,10 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
                 forall (x: Integer) { z == saved }
             } by {
                 witness(x);
-                intro();
-                have x == x by { close(); }
-                close();
+                intro() {
+                    have x == x by { close(); }
+                    close();
+                }
             }
         }
     "#;
@@ -561,10 +564,12 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
                 have forall (k: int32) {
                     (k == k and value == value) implies k == k
                 } by {
-                    intro();
-                    intro();
-                    have k == k by close();
-                    close();
+                    intro() {
+                        intro() {
+                            have k == k by close();
+                            close();
+                        }
+                    }
                 }
                 close();
             }
@@ -2089,8 +2094,9 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
                 close();
             }
             have x == 0 implies x == 0 by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have x <= 0 or x > 0 by {
                 cases {
@@ -2157,8 +2163,9 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
             ensures result == x;
         } by {
             have forall (j: int32) { j == j } by {
-                intro();
-                normalize();
+                intro() {
+                    normalize();
+                }
             }
             have 1 <= x by {
                 have 0 <= 1 and 1 < 2;
@@ -2171,23 +2178,27 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
                 0 <= k and k < 2 implies x <= 5
             } by {
                 have 0 <= 0 and 0 < 2 implies x <= 5 by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have 0 <= 1 and 1 < 2 implies x <= 5 by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 enumerate();
             }
             have (0..2).all(|k| { x <= 5 }) by {
                 have 0 <= 0 and 0 < 2 implies x <= 5 by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have 0 <= 1 and 1 < 2 implies x <= 5 by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 enumerate();
             }
@@ -2490,8 +2501,8 @@ fn enumerate_closes_a_constant_bounded_universal_goal() {
         } by {
             step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < 2 implies x <= 5 } by {
-                have 0 <= 0 and 0 < 2 implies x <= 5 by { intro(); close(); }
-                have 0 <= 1 and 1 < 2 implies x <= 5 by { intro(); close(); }
+                have 0 <= 0 and 0 < 2 implies x <= 5 by { intro() { close(); } }
+                have 0 <= 1 and 1 < 2 implies x <= 5 by { intro() { close(); } }
                 enumerate();
             }
             close();
@@ -2522,7 +2533,7 @@ fn enumerate_requires_each_in_range_instance_as_an_available_fact() {
         } by {
             step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < 2 implies k <= x } by {
-                have 0 <= 1 and 1 < 2 implies 1 <= x by { intro(); close(); }
+                have 0 <= 1 and 1 < 2 implies 1 <= x by { intro() { close(); } }
                 enumerate();
             }
             close();
@@ -3268,7 +3279,7 @@ fn pure_machine_witness_preserves_binder_widths() {
         // Type bounds are supplied by the typed binder's introduction;
         // only the written forall needs an intro, at every machine width.
         let source = format!(
-            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); witness(x); close(); }} }}"
+            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro() {{ witness(x); close(); }} }} }}"
         );
         verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type} universal: {}", error.message()));
@@ -3325,25 +3336,28 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
             theorem captured(p: {ty}) {{
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
-                    intro();
-                    witness(saved);
-                    close();
+                    intro() {
+                        witness(saved);
+                        close();
+                    }
                 }}
             }}
             theorem shadow_alias(p: {ty}) {{
                 let saved{annotation} = p;
                 ensures forall (saved: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
-                    intro();
-                    witness(saved);
-                    close();
+                    intro() {
+                        witness(saved);
+                        close();
+                    }
                 }}
             }}
             theorem nested(p: {ty}) {{
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (saved: {ty}) {{ saved == p }} }} by {{
-                    intro();
-                    witness(p);
-                    close();
+                    intro() {
+                        witness(p);
+                        close();
+                    }
                 }}
             }}
         "#
@@ -3368,9 +3382,10 @@ fn pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies() {
                 requires p == 0;
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == p }} }} by {{
-                    intro();
-                    witness(saved);
-                    normalize();
+                    intro() {{
+                        witness(saved);
+                        normalize();
+                    }}
                 }}
             }}
         "#

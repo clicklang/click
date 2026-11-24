@@ -458,10 +458,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let step = binder
             .cloned()
             .map_or(ProofStep::Intro, ProofStep::IntroBinder);
-        let introduced = self.apply_step(step)?;
+        let introduced = self.apply_scoped_intro_step(step)?;
         let range_opened = parent
             .opens_scoped_range(&introduced)
-            .then(|| introduced.driver().apply_step(ProofStep::Intro))
+            .then(|| {
+                introduced
+                    .driver()
+                    .apply_scoped_intro_step(ProofStep::Intro)
+            })
             .transpose()?;
         let opened = range_opened.as_ref().unwrap_or(&introduced);
         let sites = (0..body.len())

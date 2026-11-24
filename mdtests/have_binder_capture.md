@@ -22,13 +22,16 @@ int32 bad(int32 x) {
             have forall (u: int32) {
                 u == 5 implies forall (z: int32) { z == 5 }
             } by {
-                intro();
-                intro();
-                have forall (w: int32) { w == 5 } by {
-                    intro();
-                    close();
+                intro() {
+                    intro() {
+                        have forall (w: int32) { w == 5 } by {
+                            intro() {
+                                close();
+                            }
+                        }
+                        close();
+                    }
                 }
-                close();
             }
             have x == 5 by {
                 have 5 == 5;
@@ -50,13 +53,16 @@ int32 bad(int32 x) {
             have forall (u: int32) {
                 u == 5 implies forall (z: int32) { z == 5 }
             } by {
-                intro();
-                intro();
-                have forall (w: int32) { w == 5 } by {
-                    intro();
-                    close();
+                intro() {
+                    intro() {
+                        have forall (w: int32) { w == 5 } by {
+                            intro() {
+                                close();
+                            }
+                        }
+                        close();
+                    }
                 }
-                close();
             }
             have x == 5 by {
                 have 5 == 5;

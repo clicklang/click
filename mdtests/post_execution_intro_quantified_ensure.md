@@ -18,9 +18,11 @@ int32 forall_scope(int32 value) {
         (k == k and value == value) implies k == k
     } by {
         step_until(function.exit);
-        intro();
-        intro();
-        close();
+        intro() {
+            intro() {
+                close();
+            }
+        }
     }
 }
 ```

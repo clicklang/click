@@ -1426,7 +1426,7 @@ fn profile_recommendation_expands_a_mixed_have_body() {
     let source = r#"```click
 theorem mixed(x: int32) {
     ensures x == 1 implies x == 1 by {
-        have x == 1 implies x == 1 by { intro(); close(); }
+        have x == 1 implies x == 1 by { intro() { close(); } }
         close();
     }
 }

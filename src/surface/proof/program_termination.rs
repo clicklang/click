@@ -350,7 +350,7 @@ termination by {{
         let source = format!(
             r#"{SOURCE}
 termination by {{
-    have forall (leaf: int32) {{ termination_returns("leaf") }} by {{ intro(); close(); }}
+    have forall (leaf: int32) {{ termination_returns("leaf") }} by {{ intro() {{ close(); }} }}
     close();
 }}
 "#

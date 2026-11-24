@@ -88,20 +88,22 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             have forall (k: int32) {
                 to_integer(i + 1) <= to_integer(k) and k < end implies occupied[k] == 0
             } by {
-                intro();
-                intro();
-                have to_integer(i + 1) <= to_integer(k);
-                have i < i + 1;
-                have i < k;
-                have i <= k;
-                have n <= k by {
-                    rewrite(n, i);
-                    close();
+                intro() {
+                    intro() {
+                        have to_integer(i + 1) <= to_integer(k);
+                        have i < i + 1;
+                        have i < k;
+                        have i <= k;
+                        have n <= k by {
+                            rewrite(n, i);
+                            close();
+                        }
+                        instantiate(forall (k: int32) {
+                            n <= k and k < end implies occupied[k] == 0
+                        }, k);
+                        close();
+                    }
                 }
-                instantiate(forall (k: int32) {
-                    n <= k and k < end implies occupied[k] == 0
-                }, k);
-                close();
             }
             have occupied[i] == 0 by {
                 instantiate(forall (k: int32) {
@@ -119,52 +121,54 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             have forall (k: int32) {
                 to_integer(at(opened, i) + 1) <= to_integer(k) and k < end implies occupied[k] == 0
             } by {
-                intro();
-                intro();
-                have to_integer(at(opened, i) + 1) <= to_integer(k);
-                have at(opened, occupied[k]) == 0 by {
-                    instantiate(forall (k: int32) {
-                        to_integer(at(opened, i) + 1) <= to_integer(k) and k < end implies at(opened, occupied[k]) == 0
-                    }, k);
-                    close();
+                intro() {
+                    intro() {
+                        have to_integer(at(opened, i) + 1) <= to_integer(k);
+                        have at(opened, occupied[k]) == 0 by {
+                            instantiate(forall (k: int32) {
+                                to_integer(at(opened, i) + 1) <= to_integer(k) and k < end implies at(opened, occupied[k]) == 0
+                            }, k);
+                            close();
+                        }
+                        have at(opened, i) < end;
+                        have at(opened, i) < at(opened, i) + 1;
+                        have at(opened, i) < k;
+                        have 0 <= at(opened, i) by close();
+                        have at(opened, i) < capacity by close();
+                        have 0 <= k;
+                        have k < capacity;
+                        have i < k by { close(); }
+                        have i != k by { close() using { i < k; }; }
+                        have separate(memory(occupied[i]), memory(occupied[k])) by {
+                            apply(click::separation::separate_elements(occupied, i, k));
+                        }
+                        have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
+                            close() using { separate(memory(occupied[i]), memory(occupied[k])); };
+                        }
+                        have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
+                            preserve(memory(occupied[k]), loop(0).statement(0));
+                        }
+                        have contains(memory(data[0..capacity]), memory(data[i])) by {
+                            apply(click::separation::contains_element(data, 0, capacity, i));
+                        }
+                        have contains(memory(occupied[0..capacity]), memory(occupied[k])) by {
+                            apply(click::separation::contains_element(occupied, 0, capacity, k));
+                        }
+                        have separate(memory(data[0..capacity]), memory(occupied[0..capacity])) by {
+                            apply(click::separation::separate_symm(memory(occupied[0..capacity]), memory(data[0..capacity])));
+                        }
+                        have separate(memory(data[i]), memory(occupied[k])) by {
+                            apply(click::separation::separate_restrict(memory(data[0..capacity]), memory(occupied[0..capacity]), memory(data[i]), memory(occupied[k])));
+                        }
+                        have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
+                            close() using { separate(memory(data[i]), memory(occupied[k])); };
+                        }
+                        have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
+                            preserve(memory(occupied[k]), loop(0).statement(1));
+                        }
+                        close();
+                    }
                 }
-                have at(opened, i) < end;
-                have at(opened, i) < at(opened, i) + 1;
-                have at(opened, i) < k;
-                have 0 <= at(opened, i) by close();
-                have at(opened, i) < capacity by close();
-                have 0 <= k;
-                have k < capacity;
-                have i < k by { close(); }
-                have i != k by { close() using { i < k; }; }
-                have separate(memory(occupied[i]), memory(occupied[k])) by {
-                    apply(click::separation::separate_elements(occupied, i, k));
-                }
-                have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                    close() using { separate(memory(occupied[i]), memory(occupied[k])); };
-                }
-                have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
-                    preserve(memory(occupied[k]), loop(0).statement(0));
-                }
-                have contains(memory(data[0..capacity]), memory(data[i])) by {
-                    apply(click::separation::contains_element(data, 0, capacity, i));
-                }
-                have contains(memory(occupied[0..capacity]), memory(occupied[k])) by {
-                    apply(click::separation::contains_element(occupied, 0, capacity, k));
-                }
-                have separate(memory(data[0..capacity]), memory(occupied[0..capacity])) by {
-                    apply(click::separation::separate_symm(memory(occupied[0..capacity]), memory(data[0..capacity])));
-                }
-                have separate(memory(data[i]), memory(occupied[k])) by {
-                    apply(click::separation::separate_restrict(memory(data[0..capacity]), memory(occupied[0..capacity]), memory(data[i]), memory(occupied[k])));
-                }
-                have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
-                    close() using { separate(memory(data[i]), memory(occupied[k])); };
-                }
-                have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
-                    preserve(memory(occupied[k]), loop(0).statement(1));
-                }
-                close();
             }
             step();
             let w = fold(arena_window(data, occupied, capacity, start, end), {

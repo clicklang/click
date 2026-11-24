@@ -30,23 +30,26 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
     have forall (k: uint64) {
         to_integer(k) < to_integer(known_len) + 1 implies defined(bytes[k])
     } by {
-        intro(); intro();
-        have to_integer(k) < to_integer(known_len + 1u64) by {
-            close() using {
-                to_integer(k) < to_integer(known_len) + 1;
-                known_len < 18446744073709551615u64;
-            };
+        intro() {
+            intro() {
+                have to_integer(k) < to_integer(known_len + 1u64) by {
+                    close() using {
+                        to_integer(k) < to_integer(known_len) + 1;
+                        known_len < 18446744073709551615u64;
+                    };
+                }
+                have 0u64 <= k by { close(); }
+                instantiate(forall (j: uint64) {
+                    0u64 <= j and to_integer(j) < to_integer(known_len + 1u64) implies defined(old(bytes[j]))
+                }, k);
+                have defined(old(bytes[k])) by { close(); }
+                have separate(memory(length), memory(bytes[k])) by { close(); }
+                have separate(statement(0).footprint, memory(bytes[k])) by {
+                    close();
+                }
+                preserve(memory(bytes[k]), statement(0));
+            }
         }
-        have 0u64 <= k by { close(); }
-        instantiate(forall (j: uint64) {
-            0u64 <= j and to_integer(j) < to_integer(known_len + 1u64) implies defined(old(bytes[j]))
-        }, k);
-        have defined(old(bytes[k])) by { close(); }
-        have separate(memory(length), memory(bytes[k])) by { close(); }
-        have separate(statement(0).footprint, memory(bytes[k])) by {
-            close();
-        }
-        preserve(memory(bytes[k]), statement(0));
     }
     observe(bytes[0..known_len + 1u64]);
     have exists (len: uint64) {

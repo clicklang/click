@@ -25,7 +25,22 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         step: ProofStep,
         origin: Option<ProofStepOrigin>,
     ) -> Result<Proof<'a>, ClickError> {
-        self.observe_step(step, |step| self.apply_step_with_origin_inner(step, origin))
+        self.observe_step(step, false, |step| {
+            self.apply_step_with_origin_inner(step, origin)
+        })
+    }
+
+    /// The checked opening of a source intro block is explicit even when the
+    /// rest of the block contains automation.
+    pub(in crate::surface::proof) fn apply_scoped_intro_step(
+        &self,
+        step: ProofStep,
+    ) -> Result<Proof<'a>, ClickError> {
+        let written = crate::surface::proof::raise_lower_census::enabled()
+            && self.proof.site().written_source_tactic_path().is_some();
+        self.observe_step(step, written, |step| {
+            self.apply_step_with_origin_inner(step, None)
+        })
     }
 
     /// Retain diagnostics, tracing and synchronization for an already prepared
@@ -33,6 +48,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn observe_step(
         &self,
         step: ProofStep,
+        written: bool,
         apply: impl FnOnce(ProofStep) -> Result<Proof<'a>, ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
@@ -113,7 +129,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             && crate::surface::proof::raise_lower_census::enabled()
             && !Arc::ptr_eq(&driver_proof.node, &next.node)
         {
-            driver_proof.record_raise_lower_census(next, tactic);
+            driver_proof.record_raise_lower_census(next, tactic, written);
         }
         if let Ok(next) = &result
             && audits_step
