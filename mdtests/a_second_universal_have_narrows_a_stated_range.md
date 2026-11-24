@@ -39,23 +39,19 @@ void walk(int32 *a, int32 *b, int32 n) {
     have forall (j: int32) {
         0 <= j and j < n implies 0 <= j
     } by {
-        intro() {
-            intro() {
-                close();
-            }
-        }
+        intro();
+        intro();
+        close();
     }
     have forall (k: int32) {
         0 <= k and k < n implies viewable(a[k..k + 1])
     } by {
-        intro() {
-            intro() {
-                have k <= k + 1 by { close() using { 0 <= k; k < n; n <= 1073741823; }; }
-                have k + 1 <= n by { close() using { 0 <= k; k < n; n <= 1073741823; }; }
-                apply(click::separation::contains_subrange(a, 0, n, k, k + 1));
-                apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[k..k + 1])));
-            }
-        }
+        intro();
+        intro();
+        have k <= k + 1 by { close() using { 0 <= k; k < n; n <= 1073741823; }; }
+        have k + 1 <= n by { close() using { 0 <= k; k < n; n <= 1073741823; }; }
+        apply(click::separation::contains_subrange(a, 0, n, k, k + 1));
+        apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[k..k + 1])));
     }
 }
 ```

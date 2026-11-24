@@ -49,25 +49,22 @@ int32 walk(const uint8* p, int32 n) {
  step_until(loop(0).entry);
  // Declaring and initializing total leaves the input bytes defined.
  have forall (j: int32) { 0 <= j and j < n implies defined(p[j]) } by {
-  intro() {
-      intro() {
-          instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(p[k])) }, j);
-          have separate(memory(total), memory(p[j])) by { close(); }
-          have separate(statement(0).region(0).footprint, memory(p[j])) by {
-           close() using { separate(memory(total), memory(p[j])); };
-          }
-          have at(statement(0).region(0).exit, defined(p[j])) by {
-           preserve(memory(p[j]), statement(0).region(0));
-          }
-          have separate(statement(0).region(1).footprint, memory(p[j])) by {
-           close() using { separate(memory(total), memory(p[j])); };
-          }
-          have defined(p[j]) by {
-           preserve(memory(p[j]), statement(0).region(1));
-          }
-          close();
-      }
+  intro(); intro();
+  instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(p[k])) }, j);
+  have separate(memory(total), memory(p[j])) by { close(); }
+  have separate(statement(0).region(0).footprint, memory(p[j])) by {
+   close() using { separate(memory(total), memory(p[j])); };
   }
+  have at(statement(0).region(0).exit, defined(p[j])) by {
+   preserve(memory(p[j]), statement(0).region(0));
+  }
+  have separate(statement(0).region(1).footprint, memory(p[j])) by {
+   close() using { separate(memory(total), memory(p[j])); };
+  }
+  have defined(p[j]) by {
+   preserve(memory(p[j]), statement(0).region(1));
+  }
+  close();
  }
  loop {
   decreases n;
@@ -147,39 +144,36 @@ int32 walk(const uint8* p, int32 n) {
    have total <= 255 * (old(n) - n) by close() using { total == at(before_sum, total) + at(before_pointer, p[0] as int32); at(before_sum, total) <= 255 * (old(n) - at(before_sum, n)); n == at(before_pointer, n) - 1; at(before_sum, n) == at(before_pointer, n); at(before_pointer, p[0] as int32) <= 255; };
    // Byte k at the new cursor is byte k + 1 at the saved cursor.
    have forall (k: int32) { 0 <= k and k < n implies defined(p[k]) } by {
-    intro() {
-        intro() {
-            have k < 2147483647 by { close() using { k < n; n <= old(n); old(n) <= 15; }; }
-            apply(integer::int32_increment_below_max_is_defined(k));
-            apply(integer::int32_add_to_integer(k, 1));
-            have 0 <= to_integer(k) + 1 by { close() using { 0 <= k; }; }
-            have to_integer(k) + 1 < to_integer(at(before_pointer, n)) by {
-             close() using { k < n; n == at(before_pointer, n) - 1; };
-            }
-            have 0 <= (k + 1) and k + 1 < at(before_pointer, n) by {
-             rewrite(to_integer(k + 1), to_integer(k) + 1);
-             close();
-            }
-            instantiate(at(before_pointer, forall (j: int32) { 0 <= j and j < n implies defined(p[j]) }), k + 1);
-            have at(before_pointer, defined(p[k + 1])) by { close(); }
-            have p + 0 == at(before_pointer, p) + 1 by { close(); }
-            have to_integer(k) - 0 == to_integer(k + 1) - to_integer(1) by {
-             rewrite(to_integer(k + 1), to_integer(k) + 1);
-             close();
-            }
-            apply(integer::uint8_pointer_translate_int32(p, at(before_pointer, p), 0, 1, k, k + 1));
-            have &p[k] == at(before_pointer, &p[k + 1]) by { close(); }
-            have separate(memory(total), memory(p[k])) by { close(); }
-            have at(before_sum, defined(p[k])) by {
-             rewrite(&p[k], at(before_pointer, &p[k + 1]));
-             close();
-            }
-            have separate(loop(0).statement(0).region(1).footprint, memory(p[k])) by {
-             close() using { separate(memory(total), memory(p[k])); };
-            }
-            have defined(p[k]) by { preserve(memory(p[k]), loop(0).statement(0).region(1)); }
-        }
+    intro(); intro();
+    have k < 2147483647 by { close() using { k < n; n <= old(n); old(n) <= 15; }; }
+    apply(integer::int32_increment_below_max_is_defined(k));
+    apply(integer::int32_add_to_integer(k, 1));
+    have 0 <= to_integer(k) + 1 by { close() using { 0 <= k; }; }
+    have to_integer(k) + 1 < to_integer(at(before_pointer, n)) by {
+     close() using { k < n; n == at(before_pointer, n) - 1; };
     }
+    have 0 <= (k + 1) and k + 1 < at(before_pointer, n) by {
+     rewrite(to_integer(k + 1), to_integer(k) + 1);
+     close();
+    }
+    instantiate(at(before_pointer, forall (j: int32) { 0 <= j and j < n implies defined(p[j]) }), k + 1);
+    have at(before_pointer, defined(p[k + 1])) by { close(); }
+    have p + 0 == at(before_pointer, p) + 1 by { close(); }
+    have to_integer(k) - 0 == to_integer(k + 1) - to_integer(1) by {
+     rewrite(to_integer(k + 1), to_integer(k) + 1);
+     close();
+    }
+    apply(integer::uint8_pointer_translate_int32(p, at(before_pointer, p), 0, 1, k, k + 1));
+    have &p[k] == at(before_pointer, &p[k + 1]) by { close(); }
+    have separate(memory(total), memory(p[k])) by { close(); }
+    have at(before_sum, defined(p[k])) by {
+     rewrite(&p[k], at(before_pointer, &p[k + 1]));
+     close();
+    }
+    have separate(loop(0).statement(0).region(1).footprint, memory(p[k])) by {
+     close() using { separate(memory(total), memory(p[k])); };
+    }
+    have defined(p[k]) by { preserve(memory(p[k]), loop(0).statement(0).region(1)); }
    }
   }
  }

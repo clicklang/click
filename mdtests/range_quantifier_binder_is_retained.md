@@ -13,10 +13,10 @@ which never mention it.
 ```click
 theorem range_binder_is_retained() {
     ensures (0..3).all(|k| { k < 3 }) by {
-        intro() {
-            have k < 3 by close();
-            close();
-        }
+        intro();
+        intro();
+        have k < 3 by close();
+        close();
     }
 }
 ```

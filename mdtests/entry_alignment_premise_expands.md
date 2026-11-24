@@ -271,15 +271,13 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     have forall (k: int32) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {
-        intro() {
-            intro() {
-                have 0 <= k and k < i;
-                instantiate(forall (j: int32) {
-                    0 <= j and j < i implies occupied[j] == 0
-                }, k);
-                close();
-            }
-        }
+        intro();
+        intro();
+        have 0 <= k and k < i;
+        instantiate(forall (j: int32) {
+            0 <= j and j < i implies occupied[j] == 0
+        }, k);
+        close();
     }
     step();
     step();
@@ -287,17 +285,15 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     have forall (k: int32) {
         0 <= k and k < arena->capacity implies arena->occupied[k] == 0
     } by {
-        intro() {
-            intro() {
-                have k < capacity by {
-                    close();
-                }
-                instantiate(forall (j: int32) {
-                    0 <= j and j < capacity implies occupied[j] == 0
-                }, k);
-                close();
-            }
+        intro();
+        intro();
+        have k < capacity by {
+            close();
         }
+        instantiate(forall (j: int32) {
+            0 <= j and j < capacity implies occupied[j] == 0
+        }, k);
+        close();
     }
     step();
     have result == 1 by {
@@ -310,14 +306,12 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         result == 1 and 0 <= k and k < arena->capacity implies
             arena->occupied[k] == 0
     } by {
-        intro() {
-            intro() {
-                instantiate(forall (j: int32) {
-                    0 <= j and j < arena->capacity implies arena->occupied[j] == 0
-                }, k);
-                close();
-            }
-        }
+        intro();
+        intro();
+        instantiate(forall (j: int32) {
+            0 <= j and j < arena->capacity implies arena->occupied[j] == 0
+        }, k);
+        close();
     }
     fold(arena_initialized_storage(
         arena->data,

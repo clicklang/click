@@ -115,9 +115,8 @@ int32 vector_replace_if(
             step();
             step();
             have replace != 0 implies selected == replacement by {
-                intro() {
-                    contradiction(not replace != 0);
-                }
+                intro();
+                contradiction(not replace != 0);
             }
         }
     }

@@ -10,7 +10,7 @@ theorem machine_written() {
             MachinePacket::Empty => to_integer(0),
             MachinePacket::Full(n) => to_integer(n) + 1,
         }) < 9
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem machine_rewritten(p: MachinePacket) {
@@ -21,10 +21,9 @@ theorem machine_rewritten(p: MachinePacket) {
             MachinePacket::Full(n) => to_integer(n) + 1,
         }) < 9
     } by {
-        intro() {
-            rewrite(p, MachinePacket::Full(7));
-            close();
-        }
+        intro();
+        rewrite(p, MachinePacket::Full(7));
+        close();
     }
 }
 
@@ -34,7 +33,7 @@ theorem integer_written() {
             IntegerPacket::Empty => to_integer(0),
             IntegerPacket::Full(n) => n + 1,
         }) < 9
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem integer_rewritten(p: IntegerPacket) {
@@ -45,10 +44,9 @@ theorem integer_rewritten(p: IntegerPacket) {
             IntegerPacket::Full(n) => n + 1,
         }) < 9
     } by {
-        intro() {
-            rewrite(p, IntegerPacket::Full(7));
-            close();
-        }
+        intro();
+        rewrite(p, IntegerPacket::Full(7));
+        close();
     }
 }
 
@@ -58,7 +56,7 @@ theorem integer_written_le() {
             IntegerPacket::Empty => to_integer(0),
             IntegerPacket::Full(n) => n + 1,
         })
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem integer_written_gt() {
@@ -67,7 +65,7 @@ theorem integer_written_gt() {
             IntegerPacket::Empty => to_integer(0),
             IntegerPacket::Full(n) => n + 1,
         }) > 7
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem machine_empty_ge() {
@@ -76,7 +74,7 @@ theorem machine_empty_ge() {
             MachinePacket::Empty => to_integer(0),
             MachinePacket::Full(n) => to_integer(n) + 1,
         }) >= 0
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 ```
 

@@ -10,7 +10,7 @@ theorem written() {
             Packet::Empty => Output::NoValue,
             Packet::Full(n) => Output::Value(n),
         }) == Output::Value(7)
-    } by { intro() { normalize(); } }
+    } by { intro(); normalize(); }
 }
 
 theorem rewritten(p: Packet) {

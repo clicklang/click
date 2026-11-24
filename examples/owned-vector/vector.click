@@ -131,13 +131,11 @@ int32 vector_copy(
             have 0 <= i;
             have i <= length;
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
-                intro() {
-                    intro() {
-                        have 0 <= k;
-                        have k < i;
-                        contradiction(0 <= k);
-                    }
-                }
+                intro();
+                intro();
+                have 0 <= k;
+                have k < i;
+                contradiction(0 <= k);
             }
         }
         maintain by {
@@ -149,35 +147,33 @@ int32 vector_copy(
             step();
             // Establish the source frame before incrementing the write index.
             have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
-                intro() {
-                    intro() {
-                        have at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length);
-                        instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k);
-                        have at(region(3).entry, src[k]) == src[k] by {
-                            have k < src_capacity by { close() using { k < length; length <= src_capacity; }; }
-                            have contains(memory(dst[i]), memory(dst[i])) by { apply(click::separation::contains_refl(memory(dst[i]))); }
-                            have contains(memory(src[0..src_capacity]), memory(src[k])) by {
-                                apply(separation::contains_element(src, 0, src_capacity, k));
-                            }
-                            have separate(memory(dst[i]), memory(src[k])) by {
-                                apply(separation::separate_restrict(memory(dst[i]), memory(src[0..src_capacity]), memory(dst[i]), memory(src[k])));
-                            }
-                            have separate(loop(0).statement(0).footprint, memory(src[k])) by {
-                                close() using { separate(memory(dst[i]), memory(src[k])); };
-                            }
-                            have at(loop(0).statement(0).exit, src[k]) == at(loop(0).statement(0).entry, src[k]) by {
-                                preserve(memory(src[k]), loop(0).statement(0));
-                            }
-                            close();
-                        }
-                        have src[k] == at(region(3).entry, src[k]) by {
-                            rewrite(at(region(3).entry, src[k]), src[k]);
-                            close();
-                        }
-                        rewrite(src[k], at(region(3).entry, src[k]));
-                        close();
+                intro();
+                intro();
+                have at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length);
+                instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k);
+                have at(region(3).entry, src[k]) == src[k] by {
+                    have k < src_capacity by { close() using { k < length; length <= src_capacity; }; }
+                    have contains(memory(dst[i]), memory(dst[i])) by { apply(click::separation::contains_refl(memory(dst[i]))); }
+                    have contains(memory(src[0..src_capacity]), memory(src[k])) by {
+                        apply(separation::contains_element(src, 0, src_capacity, k));
                     }
+                    have separate(memory(dst[i]), memory(src[k])) by {
+                        apply(separation::separate_restrict(memory(dst[i]), memory(src[0..src_capacity]), memory(dst[i]), memory(src[k])));
+                    }
+                    have separate(loop(0).statement(0).footprint, memory(src[k])) by {
+                        close() using { separate(memory(dst[i]), memory(src[k])); };
+                    }
+                    have at(loop(0).statement(0).exit, src[k]) == at(loop(0).statement(0).entry, src[k]) by {
+                        preserve(memory(src[k]), loop(0).statement(0));
+                    }
+                    close();
                 }
+                have src[k] == at(region(3).entry, src[k]) by {
+                    rewrite(at(region(3).entry, src[k]), src[k]);
+                    close();
+                }
+                rewrite(src[k], at(region(3).entry, src[k]));
+                close();
             }
             step();
             have 0 <= i by {
@@ -187,78 +183,70 @@ int32 vector_copy(
                 close() using { (at(region(3).entry, i) as int32) < (at(region(3).entry, length) as int32); };
             }
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
-                intro() {
-                    intro() {
-                        have 0 <= k;
-                        have k < i;
-                        if at(region(4).entry, k) < at(region(4).entry, (i as int32)) {
-                            have at(region(4).entry, k) != at(region(4).entry, (i as int32)) by {
-                                have at(region(4).entry, k) < at(region(4).entry, (i as int32)) by {
-                                    close();
-                                }
-                                if at(region(4).entry, k) == at(region(4).entry, (i as int32)) {
-                                    have false by {
-                                        close() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
-                                    }
-                                    contradiction();
-                                } else {
-                                    close();
-                                }
-                            }
-                            have 0 <= k and k < i;
-                            instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
-                            have at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))) by {
-                                apply(separation::separate_elements(dst, k, at(region(3).entry, i)));
-                            }
-                            have separate(loop(0).statement(0).footprint, memory(dst[k])) by {
-                                close() using { at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))); };
-                            }
-                            have at(loop(0).statement(0).exit, dst[k]) == at(loop(0).statement(0).entry, dst[k]) by {
-                                preserve(memory(dst[k]), loop(0).statement(0));
-                            }
+                intro();
+                intro();
+                have 0 <= k;
+                have k < i;
+                if at(region(4).entry, k) < at(region(4).entry, (i as int32)) {
+                    have at(region(4).entry, k) != at(region(4).entry, (i as int32)) by {
+                        have at(region(4).entry, k) < at(region(4).entry, (i as int32)) by {
                             close();
-                        } else {
-                            have at(region(4).entry, k) == at(region(4).entry, (i as int32)) by {
-                                have at(region(4).entry, k) <= at(region(4).entry, (i as int32)) by {
-                                    close() using { (at(region(3).entry, i) as int32) < (at(region(3).entry, length) as
-                                            int32); (k as int32) < (i as int32); (at(region(3).entry, 0) as int32) <= (at(region(3).entry, i) as
-                                            int32); (at(function.entry, length) as int32) <= (at(function.entry,
-                                            dst_capacity) as int32); (at(function.entry, dst_capacity) as int32) <= (at(function.entry,
-                                            1073741823) as int32); (at(function.entry, i) as int32) <= (at(function.entry, length) as
-                                            int32); };
-                                }
-                                close() using { at(region(4).entry, k) <= at(region(4).entry, (i as int32)); not k < at(region(3).entry, i); };
+                        }
+                        if at(region(4).entry, k) == at(region(4).entry, (i as int32)) {
+                            have false by {
+                                close() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
                             }
-                            rewrite(at(region(4).entry, k), at(region(4).entry, (i as int32)));
-                            have 0 <= k and k < length;
-                            instantiate(forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }, k);
-                            have 0 <= (at(region(3).entry, i)) and (at(region(3).entry, i)) < length;
-                            instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), at(region(3).entry, i));
+                            contradiction();
+                        } else {
                             close();
                         }
                     }
-                }
-            }
-            have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } implies 0 <= i by {
-                intro() {
+                    have 0 <= k and k < i;
+                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
+                    have at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))) by {
+                        apply(separation::separate_elements(dst, k, at(region(3).entry, i)));
+                    }
+                    have separate(loop(0).statement(0).footprint, memory(dst[k])) by {
+                        close() using { at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))); };
+                    }
+                    have at(loop(0).statement(0).exit, dst[k]) == at(loop(0).statement(0).entry, dst[k]) by {
+                        preserve(memory(dst[k]), loop(0).statement(0));
+                    }
+                    close();
+                } else {
+                    have at(region(4).entry, k) == at(region(4).entry, (i as int32)) by {
+                        have at(region(4).entry, k) <= at(region(4).entry, (i as int32)) by {
+                            close() using { (at(region(3).entry, i) as int32) < (at(region(3).entry, length) as
+                                    int32); (k as int32) < (i as int32); (at(region(3).entry, 0) as int32) <= (at(region(3).entry, i) as
+                                    int32); (at(function.entry, length) as int32) <= (at(function.entry,
+                                    dst_capacity) as int32); (at(function.entry, dst_capacity) as int32) <= (at(function.entry,
+                                    1073741823) as int32); (at(function.entry, i) as int32) <= (at(function.entry, length) as
+                                    int32); };
+                        }
+                        close() using { at(region(4).entry, k) <= at(region(4).entry, (i as int32)); not k < at(region(3).entry, i); };
+                    }
+                    rewrite(at(region(4).entry, k), at(region(4).entry, (i as int32)));
+                    have 0 <= k and k < length;
+                    instantiate(forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }, k);
+                    have 0 <= (at(region(3).entry, i)) and (at(region(3).entry, i)) < length;
+                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), at(region(3).entry, i));
                     close();
                 }
             }
+            have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } implies 0 <= i by {
+                intro();
+                close();
+            }
             have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } implies 0 <= i implies i <= length by {
-                intro() {
-                    intro() {
-                        close();
-                    }
-                }
+                intro();
+                intro();
+                close();
             }
             have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } implies 0 <= i implies i <= length implies forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
-                intro() {
-                    intro() {
-                        intro() {
-                            close();
-                        }
-                    }
-                }
+                intro();
+                intro();
+                intro();
+                close();
             }
             have (let integer_value: Integer = 0; integer_value) <= (to_integer((length as int32)) - to_integer((i as int32))) by {
                 close() using { to_integer((i as int32)) <= to_integer((length as int32)); };
@@ -280,21 +268,16 @@ int32 vector_copy(
     }
     have i == length;
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
-        intro() {
-            intro() {
-                have at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i);
-                instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k);
-                close();
-            }
-        }
+        intro();
+        intro();
+        have at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i);
+        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k);
+        close();
     }
     have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
-        intro() {
-            intro() {
-                instantiate(at(loop(0).exit, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), k);
-                close();
-            }
-        }
+        intro(); intro();
+        instantiate(at(loop(0).exit, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), k);
+        close();
     }
     step();
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
@@ -348,14 +331,12 @@ int32 vector_grow(struct vector* owner) {
         step();
         step();
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-            intro() {
-                intro() {
-                    have 0 <= k;
-                    have k < old(owner->len);
-                    have owner->data[k] == old(owner->data[k]) by { close(); }
-                    close();
-                }
-            }
+            intro();
+            intro();
+            have 0 <= k;
+            have k < old(owner->len);
+            have owner->data[k] == old(owner->data[k]) by { close(); }
+            close();
         }
         fold(allocated_vector(owner));
         have result == 0;
@@ -388,66 +369,64 @@ int32 vector_grow(struct vector* owner) {
         have owner->cap == at(region(9).entry, new_capacity);
         have owner->data == at(region(14).entry, new_data);
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-            intro() {
-                intro() {
-                    have at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len);
-                    instantiate(forall (__click_q0: int32) { at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, __click_q0) and at(statement(10).call(vector_copy, 0).entry, __click_q0) < at(statement(10).call(vector_copy, 0).entry, owner->len) implies at(statement(10).call(vector_copy, 0).exit, new_data[__click_q0]) == at(statement(10).call(vector_copy, 0).entry, old_data[__click_q0]) }, k);
-                    have &owner->data[k] == at(region(14).entry, &new_data[k]) by {
-                        close();
-                    }
-                    have separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
-                    have at(statement(10).call(vector_copy, 0).entry, old_data[k]) == old(owner->data[k]) by { close(); }
-                    have k < new_capacity by { close(); }
-                    have separate(memory(*owner), memory(new_data[0..new_capacity])) by { close(); }
-                    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
-                    have contains(memory(*owner), memory(owner->cap)) by { normalize(); }
-                    have separate(memory(owner->data), memory(new_data[k])) by {
-                        apply(selected_array_cell(memory(*owner), memory(owner->data), new_data, new_capacity, k));
-                    }
-                    have separate(memory(owner->cap), memory(new_data[k])) by {
-                        apply(selected_array_cell(memory(*owner), memory(owner->cap), new_data, new_capacity, k));
-                    }
-                    // Keep the copied cell across the two field writes and old-buffer release.
-                    have separate(statement(11).footprint, memory(new_data[k])) by {
-                        close() using { separate(memory(owner->data), memory(new_data[k])); };
-                    }
-                    have at(statement(11).exit, new_data[k]) == at(statement(11).entry, new_data[k]) by {
-                        preserve(memory(new_data[k]), statement(11));
-                    }
-                    have separate(statement(12).footprint, memory(new_data[k])) by {
-                        close() using { separate(memory(owner->cap), memory(new_data[k])); };
-                    }
-                    have at(statement(12).exit, new_data[k]) == at(statement(12).entry, new_data[k]) by {
-                        preserve(memory(new_data[k]), statement(12));
-                    }
-                    have separate(statement(13).footprint, memory(new_data[k])) by {
-                        close() using { separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)])); owner->data == new_data; };
-                    }
-                    have at(statement(13).exit, new_data[k]) == at(statement(13).entry, new_data[k]) by {
-                        preserve(memory(new_data[k]), statement(13));
-                    }
-                    have owner->data == new_data by { close(); }
-                    have new_data[k] == at(statement(10).call(vector_copy, 0).exit, new_data[k]) by { close(); }
-                    have at(statement(10).call(vector_copy, 0).exit, new_data[k]) == at(statement(10).call(vector_copy, 0).entry, old_data[k]) by {
-                        apply(at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len) implies at(statement(10).call(vector_copy, 0).exit, new_data[k]) == at(statement(10).call(vector_copy, 0).entry, old_data[k]));
-                    }
-                    have new_data[k] == old(owner->data[k]) by {
-                        rewrite(new_data[k], at(statement(10).call(vector_copy, 0).exit, new_data[k]));
-                        rewrite(old(owner->data[k]), at(statement(10).call(vector_copy, 0).entry, old_data[k]));
-                        close();
-                    }
-                    have &owner->data[k] == &new_data[k] by {
-                        close();
-                    }
-                    have owner->data[k] == new_data[k] by {
-                        transport(new_data[k] == new_data[k], owner->data[k] == new_data[k]) using {
-                            &owner->data[k] == &new_data[k];
-                        };
-                    }
-                    rewrite(owner->data[k], new_data[k]);
-                    close();
-                }
+            intro();
+            intro();
+            have at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len);
+            instantiate(forall (__click_q0: int32) { at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, __click_q0) and at(statement(10).call(vector_copy, 0).entry, __click_q0) < at(statement(10).call(vector_copy, 0).entry, owner->len) implies at(statement(10).call(vector_copy, 0).exit, new_data[__click_q0]) == at(statement(10).call(vector_copy, 0).entry, old_data[__click_q0]) }, k);
+            have &owner->data[k] == at(region(14).entry, &new_data[k]) by {
+                close();
             }
+            have separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
+            have at(statement(10).call(vector_copy, 0).entry, old_data[k]) == old(owner->data[k]) by { close(); }
+            have k < new_capacity by { close(); }
+            have separate(memory(*owner), memory(new_data[0..new_capacity])) by { close(); }
+            have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+            have contains(memory(*owner), memory(owner->cap)) by { normalize(); }
+            have separate(memory(owner->data), memory(new_data[k])) by {
+                apply(selected_array_cell(memory(*owner), memory(owner->data), new_data, new_capacity, k));
+            }
+            have separate(memory(owner->cap), memory(new_data[k])) by {
+                apply(selected_array_cell(memory(*owner), memory(owner->cap), new_data, new_capacity, k));
+            }
+            // Keep the copied cell across the two field writes and old-buffer release.
+            have separate(statement(11).footprint, memory(new_data[k])) by {
+                close() using { separate(memory(owner->data), memory(new_data[k])); };
+            }
+            have at(statement(11).exit, new_data[k]) == at(statement(11).entry, new_data[k]) by {
+                preserve(memory(new_data[k]), statement(11));
+            }
+            have separate(statement(12).footprint, memory(new_data[k])) by {
+                close() using { separate(memory(owner->cap), memory(new_data[k])); };
+            }
+            have at(statement(12).exit, new_data[k]) == at(statement(12).entry, new_data[k]) by {
+                preserve(memory(new_data[k]), statement(12));
+            }
+            have separate(statement(13).footprint, memory(new_data[k])) by {
+                close() using { separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)])); owner->data == new_data; };
+            }
+            have at(statement(13).exit, new_data[k]) == at(statement(13).entry, new_data[k]) by {
+                preserve(memory(new_data[k]), statement(13));
+            }
+            have owner->data == new_data by { close(); }
+            have new_data[k] == at(statement(10).call(vector_copy, 0).exit, new_data[k]) by { close(); }
+            have at(statement(10).call(vector_copy, 0).exit, new_data[k]) == at(statement(10).call(vector_copy, 0).entry, old_data[k]) by {
+                apply(at(statement(10).call(vector_copy, 0).entry, 0) <= at(statement(10).call(vector_copy, 0).entry, k) and at(statement(10).call(vector_copy, 0).entry, k) < at(statement(10).call(vector_copy, 0).entry, owner->len) implies at(statement(10).call(vector_copy, 0).exit, new_data[k]) == at(statement(10).call(vector_copy, 0).entry, old_data[k]));
+            }
+            have new_data[k] == old(owner->data[k]) by {
+                rewrite(new_data[k], at(statement(10).call(vector_copy, 0).exit, new_data[k]));
+                rewrite(old(owner->data[k]), at(statement(10).call(vector_copy, 0).entry, old_data[k]));
+                close();
+            }
+            have &owner->data[k] == &new_data[k] by {
+                close();
+            }
+            have owner->data[k] == new_data[k] by {
+                transport(new_data[k] == new_data[k], owner->data[k] == new_data[k]) using {
+                    &owner->data[k] == &new_data[k];
+                };
+            }
+            rewrite(owner->data[k], new_data[k]);
+            close();
         }
         step();
         fold(allocated_vector(owner));
@@ -455,63 +434,62 @@ int32 vector_grow(struct vector* owner) {
         have result == 0 implies owner->data == old(owner->data);
         have result == 1 implies to_integer(owner->cap) == (to_integer(old(owner->cap)) + 1) by {
             have 0 == 0 implies (let integer_value: Integer = to_integer(at(region(7).exit, (new_capacity as int32))); integer_value) == (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
-                intro() {
-                    if at(function.entry, owner->cap < (536870910 as int32)) {
-                        have at(function.entry, owner->cap != (536870910 as int32)) by {
-                            if at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) {
-                                have at(function.entry, owner->cap) != (at(function.entry, 1073741823) as int32) by {
-                                    have at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) by {
-                                        close();
-                                    }
-                                    if at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) {
-                                        have false by {
-                                            close() using { at(function.entry, owner->cap) < (at(function.entry,
-                                                    1073741823) as int32); at(function.entry, owner->cap) == (at(function.entry,
-                                                    1073741823) as int32); };
-                                        }
-                                        contradiction();
-                                    } else {
-                                        close();
-                                    }
+                intro();
+                if at(function.entry, owner->cap < (536870910 as int32)) {
+                    have at(function.entry, owner->cap != (536870910 as int32)) by {
+                        if at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) {
+                            have at(function.entry, owner->cap) != (at(function.entry, 1073741823) as int32) by {
+                                have at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) by {
+                                    close();
                                 }
-                                close() using { (at(function.entry, owner->cap) as int32) < (at(function.entry,
-                                        536870910) as int32); (at(function.entry, 1) as int32) <= (at(function.entry,
-                                        owner->cap) as int32); };
-                            } else {
-                                have at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) by {
-                                    have at(function.entry, owner->cap) <= (at(function.entry, 1073741823) as int32) by {
-                                        close();
+                                if at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) {
+                                    have false by {
+                                        close() using { at(function.entry, owner->cap) < (at(function.entry,
+                                                1073741823) as int32); at(function.entry, owner->cap) == (at(function.entry,
+                                                1073741823) as int32); };
                                     }
-                                    close() using { at(function.entry, owner->cap) <= (at(function.entry,
-                                            1073741823) as int32); not at(function.entry, owner->cap) < at(function.entry,
-                                            1073741823); };
+                                    contradiction();
+                                } else {
+                                    close();
                                 }
-                                rewrite(at(function.entry, owner->cap), (at(function.entry, 1073741823) as int32));
-                                close();
                             }
-                        }
-                        have -2147483648 <= (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
-                            close() using { 0 <= to_integer(at(region(5).exit, (old_capacity as int32))); };
-                        }
-                        have (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <= 2147483647 by {
-                            close() using { to_integer(at(region(5).exit, (old_capacity as int32))) < 536870910; };
-                        }
-                        have to_integer((let integer_value: Integer = to_integer(at(region(7).exit, (new_capacity as int32))); integer_value)) == (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
-                            close() using { -2147483648 <= (to_integer(at(region(5).exit, (old_capacity as
-                                    int32))) + 1); (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <=
-                                    2147483647; };
-                        }
-                        close();
-                    } else {
-                        have at(function.entry, owner->cap == (536870910 as int32)) by {
-                            have at(function.entry, owner->cap <= (536870910 as int32)) by {
-                                close();
+                            close() using { (at(function.entry, owner->cap) as int32) < (at(function.entry,
+                                    536870910) as int32); (at(function.entry, 1) as int32) <= (at(function.entry,
+                                    owner->cap) as int32); };
+                        } else {
+                            have at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) by {
+                                have at(function.entry, owner->cap) <= (at(function.entry, 1073741823) as int32) by {
+                                    close();
+                                }
+                                close() using { at(function.entry, owner->cap) <= (at(function.entry,
+                                        1073741823) as int32); not at(function.entry, owner->cap) < at(function.entry,
+                                        1073741823); };
                             }
-                            close() using { at(function.entry, owner->cap <= (536870910 as int32)); not at(function.entry, owner->cap) < at(function.entry, 536870910); };
+                            rewrite(at(function.entry, owner->cap), (at(function.entry, 1073741823) as int32));
+                            close();
                         }
-                        rewrite(at(function.entry, owner->cap), at(function.entry, (536870910 as int32)));
-                        close();
                     }
+                    have -2147483648 <= (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
+                        close() using { 0 <= to_integer(at(region(5).exit, (old_capacity as int32))); };
+                    }
+                    have (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <= 2147483647 by {
+                        close() using { to_integer(at(region(5).exit, (old_capacity as int32))) < 536870910; };
+                    }
+                    have to_integer((let integer_value: Integer = to_integer(at(region(7).exit, (new_capacity as int32))); integer_value)) == (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
+                        close() using { -2147483648 <= (to_integer(at(region(5).exit, (old_capacity as
+                                int32))) + 1); (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <=
+                                2147483647; };
+                    }
+                    close();
+                } else {
+                    have at(function.entry, owner->cap == (536870910 as int32)) by {
+                        have at(function.entry, owner->cap <= (536870910 as int32)) by {
+                            close();
+                        }
+                        close() using { at(function.entry, owner->cap <= (536870910 as int32)); not at(function.entry, owner->cap) < at(function.entry, 536870910); };
+                    }
+                    rewrite(at(function.entry, owner->cap), at(function.entry, (536870910 as int32)));
+                    close();
                 }
             }
             close();
@@ -547,51 +525,49 @@ int32 vector_push(struct vector* owner, int32 value) {
     step();
     step();
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-        intro() {
-            intro() {
-                have 0 <= k;
-                have k < old(owner->len);
-                // The append writes at the old length, beyond this prefix element.
-                have old(owner->len) != k by {
-                    if old(owner->len) == k {
-                        have not (k < old(owner->len)) by {
-                            rewrite(old(owner->len), k);
-                            close();
-                        }
-                        contradiction(k < old(owner->len));
-                    } else {
-                        close();
-                    }
+        intro();
+        intro();
+        have 0 <= k;
+        have k < old(owner->len);
+        // The append writes at the old length, beyond this prefix element.
+        have old(owner->len) != k by {
+            if old(owner->len) == k {
+                have not (k < old(owner->len)) by {
+                    rewrite(old(owner->len), k);
+                    close();
                 }
-                have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
-                    apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));
-                }
-                have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
-                    close() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
-                }
-                have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
-                    preserve(memory(old(owner->data)[k]), statement(4));
-                }
-                // Restrict the struct/array separation to the length field and element.
-                have k < old(owner->cap) by {
-                    apply(click::integer::int32_less_than_less_equal_transitive(k, old(owner->len), old(owner->cap)));
-                }
-                have contains(memory(*owner), memory(owner->len)) by { normalize(); }
-                have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
-                    apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k));
-                }
-                have separate(memory(owner->len), memory(old(owner->data)[k])) by {
-                    apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k])));
-                }
-                have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
-                    close() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
-                }
-                have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
-                    preserve(memory(old(owner->data)[k]), statement(5));
-                }
+                contradiction(k < old(owner->len));
+            } else {
                 close();
             }
         }
+        have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
+            apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));
+        }
+        have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
+            close() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
+        }
+        have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
+            preserve(memory(old(owner->data)[k]), statement(4));
+        }
+        // Restrict the struct/array separation to the length field and element.
+        have k < old(owner->cap) by {
+            apply(click::integer::int32_less_than_less_equal_transitive(k, old(owner->len), old(owner->cap)));
+        }
+        have contains(memory(*owner), memory(owner->len)) by { normalize(); }
+        have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
+            apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k));
+        }
+        have separate(memory(owner->len), memory(old(owner->data)[k])) by {
+            apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k])));
+        }
+        have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
+            close() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
+        }
+        have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
+            preserve(memory(old(owner->data)[k]), statement(5));
+        }
+        close();
     }
     step();
     have owner->data == old(owner->data) by {
@@ -649,10 +625,9 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             preserve(memory(owner->data), statement(2).statement(0).assignment(grown, 0));
         }
         have program::grown == 0 implies owner->data == at(before_grow, owner->data) by {
-            intro() {
-                have at(after_grow, owner->data) == at(before_grow, owner->data);
-                close();
-            }
+            intro();
+            have at(after_grow, owner->data) == at(before_grow, owner->data);
+            close();
         }
         if program::grown == 0 {
             step();
@@ -668,50 +643,42 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 close();
             }
             have result == 0 implies owner->len == old(owner->len) by {
-                intro() {
-                    have owner->len == old(owner->len) by { close(); }
-                    close();
-                }
+                intro();
+                have owner->len == old(owner->len) by { close(); }
+                close();
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
-                intro() {
-                    have at(region(5).entry, owner->cap) == at(region(3).entry, owner->cap);
-                    close();
-                }
+                intro();
+                have at(region(5).entry, owner->cap) == at(region(3).entry, owner->cap);
+                close();
             }
             have result == 0 implies owner->data == old(owner->data) by {
-                intro() {
-                    have at(region(5).entry, owner->data) == at(region(3).entry, owner->data);
-                    close();
-                }
+                intro();
+                have at(region(5).entry, owner->data) == at(region(3).entry, owner->data);
+                close();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
-                intro() {
-                    contradiction(result == 1);
-                }
+                intro();
+                contradiction(result == 1);
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
-                intro() {
-                    contradiction(result == 1);
-                }
+                intro();
+                contradiction(result == 1);
             }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
                 close();
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
-                intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
-                }
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
             }
             have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
-                intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
-                }
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
             }
             have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
-                intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
-                }
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
             }
             close();
             close();
@@ -801,9 +768,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 close();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
-                intro() {
-                    close();
-                }
+                intro();
+                close();
             }
             have at(statement(3).entry, owner->len) < at(statement(3).entry, owner->cap) by {
                 close();
@@ -823,54 +789,48 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 close();
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
-                intro() {
-                    close();
-                }
+                intro();
+                close();
             }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-                intro() {
-                    intro() {
-                        have 0 <= k;
-                        have k < old(owner->len);
-                        instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(5).entry, owner->data[j]) == old(owner->data[j]) }, k);
-                        have k < at(statement(3).entry, owner->len) by {
-                            rewrite(at(statement(3).entry, owner->len), old(owner->len));
-                            close();
-                        }
-                        instantiate(forall (j: int32) { 0 <= j and j < at(statement(3).entry, owner->len) implies at(statement(3).exit, owner->data[j]) == at(statement(3).entry, owner->data[j]) }, k);
-                        have owner->data[k] == at(statement(3).entry, owner->data[k]) by {
-                            close() using {
-                                at(statement(3).exit, owner->data[k]) == at(statement(3).entry, owner->data[k]);
-                                0 <= k;
-                                k < at(statement(3).entry, owner->len);
-                            };
-                        }
-                        have at(statement(3).entry, owner->data[k]) == old(owner->data[k]) by {
-                            close() using {
-                                at(region(5).entry, owner->data[k]) == old(owner->data[k]);
-                                0 <= k;
-                                k < old(owner->len);
-                            };
-                        }
-                        rewrite(owner->data[k], at(statement(3).entry, owner->data[k]));
-                        close();
-                    }
+                intro();
+                intro();
+                have 0 <= k;
+                have k < old(owner->len);
+                instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(5).entry, owner->data[j]) == old(owner->data[j]) }, k);
+                have k < at(statement(3).entry, owner->len) by {
+                    rewrite(at(statement(3).entry, owner->len), old(owner->len));
+                    close();
                 }
+                instantiate(forall (j: int32) { 0 <= j and j < at(statement(3).entry, owner->len) implies at(statement(3).exit, owner->data[j]) == at(statement(3).entry, owner->data[j]) }, k);
+                have owner->data[k] == at(statement(3).entry, owner->data[k]) by {
+                    close() using {
+                        at(statement(3).exit, owner->data[k]) == at(statement(3).entry, owner->data[k]);
+                        0 <= k;
+                        k < at(statement(3).entry, owner->len);
+                    };
+                }
+                have at(statement(3).entry, owner->data[k]) == old(owner->data[k]) by {
+                    close() using {
+                        at(region(5).entry, owner->data[k]) == old(owner->data[k]);
+                        0 <= k;
+                        k < old(owner->len);
+                    };
+                }
+                rewrite(owner->data[k], at(statement(3).entry, owner->data[k]));
+                close();
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
-                intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
-                }
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
             }
             have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
-                intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
-                }
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
             }
             have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
-                intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
-                }
+                intro();
+                contradiction(old(owner->len) < old(owner->cap));
             }
             close();
             close();
@@ -944,17 +904,15 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             close();
         }
         have result == 1 implies owner->len == (old(owner->len) + 1) by {
-            intro() {
-                close();
-            }
+            intro();
+            close();
         }
         have owner->data[old(owner->len)] == value by {
             close();
         }
         have result == 1 implies owner->data[old(owner->len)] == value by {
-            intro() {
-                close();
-            }
+            intro();
+            close();
         }
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             close();
@@ -966,19 +924,16 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             close();
         }
         have old(owner->len) < old(owner->cap) implies result == 1 by {
-            intro() {
-                close();
-            }
+            intro();
+            close();
         }
         have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
-            intro() {
-                close();
-            }
+            intro();
+            close();
         }
         have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
-            intro() {
-                close();
-            }
+            intro();
+            close();
         }
         close();
         close();
@@ -1153,9 +1108,8 @@ int32 vector_replace_if(
             step();
             step();
             have replace != 0 implies selected == replacement by {
-                intro() {
-                    contradiction(not replace != 0);
-                }
+                intro();
+                contradiction(not replace != 0);
             }
         }
     }

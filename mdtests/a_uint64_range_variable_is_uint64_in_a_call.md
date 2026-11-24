@@ -24,10 +24,10 @@ theorem required(n: uint64, u: uint64) {
 
 theorem ensured(n: uint64) {
     ensures (0u64..n).all(|k| { g(k) == k }) by {
-        intro() {
-            unfold(g(k));
-            close();
-        }
+        intro();
+        intro();
+        unfold(g(k));
+        close();
     }
 }
 ```

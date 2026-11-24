@@ -100,22 +100,19 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
                 close();
             }
             have enabled == 0 implies after.model == WriteOutcome::Skipped by {
-                intro() {
-                    close();
-                }
+                intro();
+                close();
             }
             have enabled == 1 implies after.model == WriteOutcome::Written(
                 selected_index(old(before.shape))
             ) by {
-                intro() {
-                    contradiction(enabled == 1);
-                }
+                intro();
+                contradiction(enabled == 1);
             }
             have enabled == 1 implies
                 result == cells[selected_index(old(before.shape))] by {
-                intro() {
-                    contradiction(enabled == 1);
-                }
+                intro();
+                contradiction(enabled == 1);
             }
             close();
         },
@@ -133,10 +130,9 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
             }
             have enabled == 1 implies
                 result == cells[selected_index(old(before.shape))] by {
-                intro() {
-                    rewrite(selected_index(old(before.shape)), index);
-                    close();
-                }
+                intro();
+                rewrite(selected_index(old(before.shape)), index);
+                close();
             }
             close();
         },

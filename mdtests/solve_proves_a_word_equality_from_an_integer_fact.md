@@ -24,16 +24,14 @@ int32 r(int32 i) {
     ensures true;
 } by {
     have i + 1 == 1 implies i == 0 by {
-        intro() {
-            have i == 0;
-            close();
-        }
+        intro();
+        have i == 0;
+        close();
     }
     have i + 1 == 2 implies i == 1 by {
-        intro() {
-            have i == 1;
-            close();
-        }
+        intro();
+        have i == 1;
+        close();
     }
 }
 ```

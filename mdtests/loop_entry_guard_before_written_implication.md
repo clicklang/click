@@ -44,11 +44,9 @@ int32 loop_entry_guard_before_written_implication(int32 p[3]) {
                 }
             }
             have forall (k: int32) { 0 <= k and k < i implies p[k] == p[k] } by {
-                intro() {
-                    intro() {
-                        close();
-                    }
-                }
+                intro();
+                intro();
+                close();
             }
         }
         maintain by close();

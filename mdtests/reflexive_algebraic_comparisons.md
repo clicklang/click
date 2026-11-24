@@ -5,9 +5,8 @@ spec enum Flag { Up, Down }
 
 theorem written_equal() {
     ensures forall (unused: Integer) { Flag::Up == Flag::Up } by {
-        intro() {
-            close();
-        }
+        intro();
+        close();
     }
 }
 
@@ -21,9 +20,8 @@ theorem rewritten_equal(f: Flag) {
 
 theorem written_not_equal() {
     ensures forall (unused: Integer) { not (Flag::Up != Flag::Up) } by {
-        intro() {
-            close();
-        }
+        intro();
+        close();
     }
 }
 

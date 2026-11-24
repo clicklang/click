@@ -37,11 +37,9 @@ unsigned long walk(unsigned char *p, unsigned long n) {
                 j < n implies
                     slice::from_raw_parts(p + j, 4u64).as_ptr() == p + j
             } by {
-                intro() {
-                    intro() {
-                        close();
-                    }
-                }
+                intro();
+                intro();
+                close();
             }
             close();
         }

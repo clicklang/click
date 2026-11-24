@@ -24,9 +24,8 @@ theorem nat_successor_exists() {
 
 theorem nat_reflexive_forall() {
     ensures forall (value: Nat) { value == value } by {
-        intro() {
-            close();
-        }
+        intro();
+        close();
     }
 }
 ```

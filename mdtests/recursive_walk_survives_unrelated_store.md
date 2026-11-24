@@ -113,33 +113,29 @@ void mark(int32 *next, int32 *visited) {
     have forall (k: int32) {
         0 <= k and k < 1 implies at(entry, next[k]) == next[k]
     } by {
-        intro() {
-            intro() {
-                have k == 0 by { close() using { 0 <= k; k < 1; }; }
-                close() using { k == 0; at(entry, next[0]) == next[0]; };
-            }
-        }
+        intro();
+        intro();
+        have k == 0 by { close() using { 0 <= k; k < 1; }; }
+        close() using { k == 0; at(entry, next[0]) == next[0]; };
     }
     have forall (k: int32) {
         0 <= k and k < 1 implies
             0 <= at(entry, next[k]) and at(entry, next[k]) < 1
     } by {
-        intro() {
-            intro() {
-                have k == 0 by { close() using { 0 <= k; k < 1; }; }
-                have at(entry, next[k]) == 0 by {
-                    rewrite(k, 0);
-                    close();
-                }
-                have 0 <= at(entry, next[k]) by {
-                    close() using { at(entry, next[k]) == 0; };
-                }
-                have at(entry, next[k]) < 1 by {
-                    close() using { at(entry, next[k]) == 0; };
-                }
-                close();
-            }
+        intro();
+        intro();
+        have k == 0 by { close() using { 0 <= k; k < 1; }; }
+        have at(entry, next[k]) == 0 by {
+            rewrite(k, 0);
+            close();
         }
+        have 0 <= at(entry, next[k]) by {
+            close() using { at(entry, next[k]) == 0; };
+        }
+        have at(entry, next[k]) < 1 by {
+            close() using { at(entry, next[k]) == 0; };
+        }
+        close();
     }
     have at(entry, viewable(next[0..1]));
     have viewable(next[0..1]) by { observe(next[0..1]); }

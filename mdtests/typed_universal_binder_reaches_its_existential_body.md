@@ -8,10 +8,9 @@ theorem typed_witness() {
     ensures forall (a: uint8) {
         exists (k: int32) { to_uint8(to_integer(k)) == to_uint8(to_integer(k)) }
     } by {
-        intro() {
-            witness(0);
-            close();
-        }
+        intro();
+        witness(0);
+        close();
     }
 }
 
@@ -19,12 +18,10 @@ theorem typed_witness_under_implication() {
     ensures 0 == 0 implies forall (a: uint8) {
         exists (k: int32) { to_uint8(to_integer(k)) == to_uint8(to_integer(k)) }
     } by {
-        intro() {
-            intro() {
-                witness(0);
-                close();
-            }
-        }
+        intro();
+        intro();
+        witness(0);
+        close();
     }
 }
 

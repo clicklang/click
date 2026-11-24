@@ -12,10 +12,9 @@ theorem retain(p: int32*) {
 theorem capture_outer(n: int32) {
     let saved = n;
     ensures forall (n: int32) { exists (q: int32) { q == saved } } by {
-        intro() {
-            witness(saved);
-            close();
-        }
+        intro();
+        witness(saved);
+        close();
     }
 }
 ```

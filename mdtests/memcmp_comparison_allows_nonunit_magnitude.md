@@ -27,33 +27,31 @@ theorem positive_seven(left: uint8[], right: uint8[]) {
                 (left[k] < right[k] implies 7 < 0) and
                 (right[k] < left[k] implies 7 > 0)
         } by {
-            intro() {
-                intro() {
-                    if k == 0u64 {
-                        rewrite(k, 0u64);
+            intro();
+            intro();
+            if k == 0u64 {
+                rewrite(k, 0u64);
+                close();
+            } else {
+                have 0u64 <= k by {
+                    apply(integer::uint64_to_integer_less_equal_implies_less_equal(0u64, k));
+                }
+                have 0u64 < k by {
+                    if 0u64 < k {
                         close();
                     } else {
-                        have 0u64 <= k by {
-                            apply(integer::uint64_to_integer_less_equal_implies_less_equal(0u64, k));
+                        have 0 <= to_integer(k) by { close(); }
+                        have to_integer(k) <= 0 by {
+                            close();
                         }
-                        have 0u64 < k by {
-                            if 0u64 < k {
-                                close();
-                            } else {
-                                have 0 <= to_integer(k) by { close(); }
-                                have to_integer(k) <= 0 by {
-                                    close();
-                                }
-                                have to_integer(k) == 0 by { close(); }
-                                have k == 0u64 by { close(); }
-                                contradiction(k == 0u64);
-                            }
-                        }
-                        unfold(bytes::equal_range(left, right, 0u64, k));
-                        instantiate((0u64..k).all(|j| { left[j] == right[j] }), 0u64);
-                        close();
+                        have to_integer(k) == 0 by { close(); }
+                        have k == 0u64 by { close(); }
+                        contradiction(k == 0u64);
                     }
                 }
+                unfold(bytes::equal_range(left, right, 0u64, k));
+                instantiate((0u64..k).all(|j| { left[j] == right[j] }), 0u64);
+                close();
             }
         }
         unfold(bytes::comparison(left, right, 2u64, 7));

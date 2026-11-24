@@ -4,23 +4,20 @@
 theorem complement_arm(flag: Bool, x: uint32, z: uint32) {
     requires x == ~z;
     ensures flag implies (if flag { x } else { 3u32 }) == ~z by {
-        intro() {
-            rewrite(x, ~z);
-            close();
-        }
+        intro();
+        rewrite(x, ~z);
+        close();
     }
 }
 
 theorem complement_guard(z: uint64, y: uint64) {
     ensures (~z < y) implies (if ~z < y { z } else { 3u64 }) == z by {
-        intro() {
-            close();
-        }
+        intro();
+        close();
     }
     ensures (not (~z < y)) implies (if ~z < y { z } else { 3u64 }) == 3u64 by {
-        intro() {
-            close();
-        }
+        intro();
+        close();
     }
 }
 ```

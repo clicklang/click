@@ -40,6 +40,6 @@ fn cover(bytes: &[u8]) -> usize {
     step_until(function.exit);
     have forall (k: usize) {
         k < bytes.len() implies bytes[k] == old(bytes[k])
-    } by { intro() { intro() { close(); } } }
+    } by { intro(); intro(); close(); }
     close();
 }

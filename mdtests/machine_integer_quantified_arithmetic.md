@@ -30,20 +30,17 @@ theorem high_word() {
 
 theorem byte_range() {
     ensures forall (x: uint8) { x >= 0 and x <= 255 } by {
-        intro() {
-            all { x >= 0 => { close(); } x <= 255 => { close(); } }
-        }
+        intro();
+        all { x >= 0 => { close(); } x <= 255 => { close(); } }
     }
 }
 
 theorem mixed() {
     ensures forall (x: int64) { forall (y: uint8) { exists (a: int64, b: uint8) { a == x and b == y } } } by {
-        intro() {
-            intro() {
-                witness(x, y);
-                close();
-            }
-        }
+        intro();
+        intro();
+        witness(x, y);
+        close();
     }
 }
 ```

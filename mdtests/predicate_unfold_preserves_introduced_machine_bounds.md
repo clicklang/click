@@ -14,13 +14,11 @@ theorem unequal_prefix(left: uint8[], right: uint8[]) {
         have forall (k: uint64) {
             0u64 < k and bytes::equal_range(left, right, 0u64, k) implies false
         } by {
-            intro() {
-                intro() {
-                    unfold(bytes::equal_range(left, right, 0u64, k));
-                    instantiate((0u64..k).all(|j| { left[j] == right[j] }), 0u64);
-                    close();
-                }
-            }
+            intro();
+            intro();
+            unfold(bytes::equal_range(left, right, 0u64, k));
+            instantiate((0u64..k).all(|j| { left[j] == right[j] }), 0u64);
+            close();
         }
         close();
     }

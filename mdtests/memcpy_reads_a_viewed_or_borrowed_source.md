@@ -34,23 +34,21 @@ void copy_viewed(uint8* dst, const uint8* src) {
         }
         have contains(memory(src[0..4]), memory(src[0u64..4u64])) by { normalize(); }
         have forall (k: uint64) { k < 4u64 implies src[k] == old(src[k]) } by {
-            intro() {
-                intro() {
-                    have contains(memory(src[0u64..4u64]), memory(src[k])) by {
-                        apply(click::separation::contains_element(src, 0u64, 4u64, k));
-                    }
-                    have contains(memory(src[0..4]), memory(src[k])) by {
-                        apply(click::separation::contains_trans(memory(src[0..4]), memory(src[0u64..4u64]), memory(src[k])));
-                    }
-                    have separate(statement(0).footprint, memory(src[k])) by {
-                        apply(click::separation::separate_restrict(statement(0).footprint, memory(src[0..4]), statement(0).footprint, memory(src[k])));
-                    }
-                    have src[k] == at(statement(0).entry, src[k]) by {
-                        preserve(memory(src[k]), statement(0));
-                    }
-                    close();
-                }
+            intro();
+            intro();
+            have contains(memory(src[0u64..4u64]), memory(src[k])) by {
+                apply(click::separation::contains_element(src, 0u64, 4u64, k));
             }
+            have contains(memory(src[0..4]), memory(src[k])) by {
+                apply(click::separation::contains_trans(memory(src[0..4]), memory(src[0u64..4u64]), memory(src[k])));
+            }
+            have separate(statement(0).footprint, memory(src[k])) by {
+                apply(click::separation::separate_restrict(statement(0).footprint, memory(src[0..4]), statement(0).footprint, memory(src[k])));
+            }
+            have src[k] == at(statement(0).entry, src[k]) by {
+                preserve(memory(src[k]), statement(0));
+            }
+            close();
         }
         step();
         unfold(click::bytes::equal(dst, 0u64, old(src), 0u64, 4u64));

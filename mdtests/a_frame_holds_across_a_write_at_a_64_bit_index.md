@@ -75,26 +75,23 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
         close();
     }
     have forall (k: uint64) { k < s->e.v and k != i implies s->p[k] == old(s->p[k]) } by {
-        intro() {
-            intro() {
-                apply(separation::separate_elements(s->p, i, k));
-                have separate(memory(*e), memory(at(statement(1).entry, s->p + k)[0])) by {
-                    rewrite(e, s->p + i);
-                    rewrite(at(statement(1).entry, s->p), s->p);
-                    close();
-                }
-                have separate(statement(1).footprint, memory(at(statement(1).entry, s->p + k)[0])) by {
-                    close();
-                }
-                have (let saved: int32* = at(statement(1).entry, s->p + k); saved[0]) ==
-                    at(statement(1).entry, s->p[k]) by {
-                    preserve(memory(at(statement(1).entry, s->p + k)[0]), statement(1));
-                }
-                have at(statement(1).entry, s->p[k]) == old(s->p[k]) by { close(); }
-                rewrite(s->p, at(statement(1).entry, s->p));
-                close();
-            }
+        intro(); intro();
+        apply(separation::separate_elements(s->p, i, k));
+        have separate(memory(*e), memory(at(statement(1).entry, s->p + k)[0])) by {
+            rewrite(e, s->p + i);
+            rewrite(at(statement(1).entry, s->p), s->p);
+            close();
         }
+        have separate(statement(1).footprint, memory(at(statement(1).entry, s->p + k)[0])) by {
+            close();
+        }
+        have (let saved: int32* = at(statement(1).entry, s->p + k); saved[0]) ==
+            at(statement(1).entry, s->p[k]) by {
+            preserve(memory(at(statement(1).entry, s->p + k)[0]), statement(1));
+        }
+        have at(statement(1).entry, s->p[k]) == old(s->p[k]) by { close(); }
+        rewrite(s->p, at(statement(1).entry, s->p));
+        close();
     }
     step();
     close();

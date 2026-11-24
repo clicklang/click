@@ -29,25 +29,22 @@ void caller(int32 *left, int32 *visited, int32 n) {
     step();
     observe(graph(left, n));
     have forall (k: int32) { 0 <= k and k < n implies old(left[k]) == left[k] } by {
-        intro() {
-            intro() {
-                have 0 <= k; have k < n;
-                have contains(memory(left[0..n]), memory(left[k])) by {
-                    apply(separation::contains_element(left, 0, n, k));
-                }
-                have contains(memory(visited[0..n]), statement(0).footprint) by { close(); }
-                have separate(memory(visited[0..n]), memory(left[0..n])) by {
-                    apply(separation::separate_symm(memory(left[0..n]), memory(visited[0..n])));
-                }
-                have separate(statement(0).footprint, memory(left[k])) by {
-                    apply(separation::separate_restrict(memory(visited[0..n]), memory(left[0..n]), statement(0).footprint, memory(left[k])));
-                }
-                have left[k] == old(left[k]) by {
-                    preserve(memory(left[k]), statement(0));
-                }
-                close();
-            }
+        intro(); intro();
+        have 0 <= k; have k < n;
+        have contains(memory(left[0..n]), memory(left[k])) by {
+            apply(separation::contains_element(left, 0, n, k));
         }
+        have contains(memory(visited[0..n]), statement(0).footprint) by { close(); }
+        have separate(memory(visited[0..n]), memory(left[0..n])) by {
+            apply(separation::separate_symm(memory(left[0..n]), memory(visited[0..n])));
+        }
+        have separate(statement(0).footprint, memory(left[k])) by {
+            apply(separation::separate_restrict(memory(visited[0..n]), memory(left[0..n]), statement(0).footprint, memory(left[k])));
+        }
+        have left[k] == old(left[k]) by {
+            preserve(memory(left[k]), statement(0));
+        }
+        close();
     }
 }
 ```

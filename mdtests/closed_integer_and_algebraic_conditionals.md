@@ -6,19 +6,19 @@ spec enum Choice { Left, Right }
 theorem integer_order(x: Integer, y: Integer) {
     ensures forall (unused: Integer) {
         ((if 1 < 2 { x } else { y }) : Integer) <= x
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem integer_equality(x: Integer, y: Integer) {
     ensures forall (unused: Integer) {
         ((if false { x } else { y }) : Integer) == y
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem algebraic_equality() {
     ensures forall (unused: Integer) {
         (if 1 == 2 { Choice::Left } else { Choice::Right }) == Choice::Right
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem algebraic_disequality() {
@@ -28,7 +28,7 @@ theorem algebraic_disequality() {
 theorem algebraic_argument(a: Choice, b: Choice) {
     ensures forall (unused: Integer) {
         (if true { a } else { b }) == a
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem dead_arm_domain(x: Integer) {

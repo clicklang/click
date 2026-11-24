@@ -23,18 +23,14 @@ void touch(uint8* dst) {
     views dst[0..5];
 } by {
     have forall (k: uint64) { k < 4u64 implies k < 5u64 } by {
-        intro() {
-            intro() {
-                have forall (j: int32) { 0 <= j and j < 5 implies j < 6 } by {
-                    intro() {
-                        intro() {
-                            close();
-                        }
-                    }
-                }
-                close();
-            }
+        intro();
+        intro();
+        have forall (j: int32) { 0 <= j and j < 5 implies j < 6 } by {
+            intro();
+            intro();
+            close();
         }
+        close();
     }
 }
 ```

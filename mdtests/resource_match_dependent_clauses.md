@@ -41,14 +41,12 @@ int32 unchanged(int32* occupied, int32 capacity) {
             have forall (i: int32) {
                 0 <= i and i < prefix implies occupied[i] == 1
             } by {
-                intro() {
-                    intro() {
-                        instantiate(forall (k: int32) {
-                            0 <= k and k < prefix implies occupied[k] == 1
-                        }, i);
-                        close();
-                    }
-                }
+                intro();
+                intro();
+                instantiate(forall (k: int32) {
+                    0 <= k and k < prefix implies occupied[k] == 1
+                }, i);
+                close();
             }
             unfold(part);
             let part = fold(partition(occupied, capacity), {

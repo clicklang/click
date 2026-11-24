@@ -21,9 +21,8 @@ int32 nonnegative_identity(int32 x) {
     ensures result == x;
 } by {
     have x < 0 implies x == 7 by {
-        intro() {
-            contradiction(x < 0);
-        }
+        intro();
+        contradiction(x < 0);
     }
     step();
     close();

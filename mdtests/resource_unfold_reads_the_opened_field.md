@@ -119,82 +119,78 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
     have forall (k: int32) {
         0 <= k and to_integer(k) < to_integer(p + 1) implies occupied[k] == 1
     } by {
-        intro() {
-            intro() {
-                have 0 <= k;
-                have to_integer(k) < to_integer(p + 1);
-                if k < p {
-                    have at(before_store, occupied[k]) == 1 by {
-                        have at(before_store, 0) <= at(before_store, k) and
-                                at(before_store, k) < at(before_store, p);
-                        instantiate(forall (j: int32) {
-                            at(before_store, 0) <= at(before_store, j) and
-                                at(before_store, j) < at(before_store, p) implies
-                                at(before_store, occupied[j]) == at(before_store, 1)
-                        }, k);
-                        close();
-                    }
-                    have k != p;
-                    have k != i by {
-                        rewrite(i, p);
-                        close();
-                    }
-                    have separate(memory(occupied[i]), memory(occupied[k])) by {
-                        apply(click::separation::separate_elements(occupied, i, k));
-                    }
-                    have separate(statement(3).footprint, memory(occupied[k])) by {
-                        normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
-                    }
-                    have occupied[k] == at(before_store, occupied[k]) by {
-                        preserve(memory(occupied[k]), statement(3));
-                    }
-                    close();
-                } else {
-                    have k <= p;
-                    have k == p;
-                    rewrite(k, p);
-                    close();
-                }
+        intro();
+        intro();
+        have 0 <= k;
+        have to_integer(k) < to_integer(p + 1);
+        if k < p {
+            have at(before_store, occupied[k]) == 1 by {
+                have at(before_store, 0) <= at(before_store, k) and
+                        at(before_store, k) < at(before_store, p);
+                instantiate(forall (j: int32) {
+                    at(before_store, 0) <= at(before_store, j) and
+                        at(before_store, j) < at(before_store, p) implies
+                        at(before_store, occupied[j]) == at(before_store, 1)
+                }, k);
+                close();
             }
+            have k != p;
+            have k != i by {
+                rewrite(i, p);
+                close();
+            }
+            have separate(memory(occupied[i]), memory(occupied[k])) by {
+                apply(click::separation::separate_elements(occupied, i, k));
+            }
+            have separate(statement(3).footprint, memory(occupied[k])) by {
+                normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+            }
+            have occupied[k] == at(before_store, occupied[k]) by {
+                preserve(memory(occupied[k]), statement(3));
+            }
+            close();
+        } else {
+            have k <= p;
+            have k == p;
+            rewrite(k, p);
+            close();
         }
     }
     have forall (k: int32) {
         to_integer(p + 1) <= to_integer(k) and k < capacity implies occupied[k] == 0
     } by {
-        intro() {
-            intro() {
-                have to_integer(p + 1) <= to_integer(k);
-                have k < capacity;
-                have p < p + 1;
-                have p < k;
-                have p <= k;
-                have at(before_store, occupied[k]) == 0 by {
-                    have at(before_store, p) <= at(before_store, k) and
-                            at(before_store, k) < at(before_store, capacity);
-                    instantiate(forall (j: int32) {
-                        at(before_store, p) <= at(before_store, j) and
-                            at(before_store, j) < at(before_store, capacity) implies
-                            at(before_store, occupied[j]) == at(before_store, 0)
-                    }, k);
-                    close();
-                }
-                have i < k by {
-                    rewrite(i, p);
-                    close();
-                }
-                have i != k;
-                have separate(memory(occupied[i]), memory(occupied[k])) by {
-                    apply(click::separation::separate_elements(occupied, i, k));
-                }
-                have separate(statement(3).footprint, memory(occupied[k])) by {
-                    normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
-                }
-                have occupied[k] == at(before_store, occupied[k]) by {
-                    preserve(memory(occupied[k]), statement(3));
-                }
-                close();
-            }
+        intro();
+        intro();
+        have to_integer(p + 1) <= to_integer(k);
+        have k < capacity;
+        have p < p + 1;
+        have p < k;
+        have p <= k;
+        have at(before_store, occupied[k]) == 0 by {
+            have at(before_store, p) <= at(before_store, k) and
+                    at(before_store, k) < at(before_store, capacity);
+            instantiate(forall (j: int32) {
+                at(before_store, p) <= at(before_store, j) and
+                    at(before_store, j) < at(before_store, capacity) implies
+                    at(before_store, occupied[j]) == at(before_store, 0)
+            }, k);
+            close();
         }
+        have i < k by {
+            rewrite(i, p);
+            close();
+        }
+        have i != k;
+        have separate(memory(occupied[i]), memory(occupied[k])) by {
+            apply(click::separation::separate_elements(occupied, i, k));
+        }
+        have separate(statement(3).footprint, memory(occupied[k])) by {
+            normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+        }
+        have occupied[k] == at(before_store, occupied[k]) by {
+            preserve(memory(occupied[k]), statement(3));
+        }
+        close();
     }
     let after = fold(claimed_prefix(data, occupied, capacity), { prefix: p + 1 });
     step();

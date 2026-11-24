@@ -30,16 +30,13 @@ int32 failed_allocation_preserves_existing_loads(int32 data[], int32 length) {
 } by {
     step_until(statement(2).entry);
     have forall (k: int32) { 0 <= k and k < length implies data[k] == old(data[k]) } by {
-        intro() {
-            intro() {
-                have separate(statement(1).footprint, memory(data[k])) by { close() using {}; }
-                have data[k] == at(statement(1).entry, data[k]) by {
-                    preserve(memory(data[k]), statement(1));
-                }
-                rewrite(data[k], at(statement(1).entry, data[k]));
-                close();
-            }
+        intro(); intro();
+        have separate(statement(1).footprint, memory(data[k])) by { close() using {}; }
+        have data[k] == at(statement(1).entry, data[k]) by {
+            preserve(memory(data[k]), statement(1));
         }
+        rewrite(data[k], at(statement(1).entry, data[k]));
+        close();
     }
     if fresh == 0 {
         step_until(function.exit);
@@ -49,19 +46,16 @@ int32 failed_allocation_preserves_existing_loads(int32 data[], int32 length) {
         mark before_free;
         step();
         have forall (k: int32) { 0 <= k and k < length implies data[k] == old(data[k]) } by {
-            intro() {
-                intro() {
-                    have separate(statement(3).footprint, memory(data[k])) by {
-                        close() using { separate(memory(fresh[0..length]), memory(data[0..length])); 0 <= k; k < length; };
-                    }
-                    have data[k] == at(before_free, data[k]) by {
-                        preserve(memory(data[k]), statement(3));
-                    }
-                    instantiate(forall (k: int32) { 0 <= k and k < length implies at(before_free, data[k]) == old(data[k]) }, k);
-                    rewrite(data[k], at(before_free, data[k]));
-                    close();
-                }
+            intro(); intro();
+            have separate(statement(3).footprint, memory(data[k])) by {
+                close() using { separate(memory(fresh[0..length]), memory(data[0..length])); 0 <= k; k < length; };
             }
+            have data[k] == at(before_free, data[k]) by {
+                preserve(memory(data[k]), statement(3));
+            }
+            instantiate(forall (k: int32) { 0 <= k and k < length implies at(before_free, data[k]) == old(data[k]) }, k);
+            rewrite(data[k], at(before_free, data[k]));
+            close();
         }
         step_until(function.exit);
     }

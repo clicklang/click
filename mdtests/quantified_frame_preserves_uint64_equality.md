@@ -33,28 +33,26 @@ void mark(uint64 *values, int32 *visited, int32 n, int32 cur, uint64 stamp) {
     }
     step();
     have forall (k: int32) { 0 <= k and k < n implies values[k] == stamp } by {
-        intro() {
-            intro() {
-                have contains(memory(values[0..n]), memory(values[k])) by {
-                    apply(click::separation::contains_element(values, 0, n, k));
-                }
-                have contains(memory(visited[cur]), memory(visited[cur])) by {
-                    apply(click::separation::contains_refl(memory(visited[cur])));
-                }
-                have separate(memory(visited[cur]), memory(values[k])) by {
-                    apply(click::separation::separate_restrict(memory(visited[cur]), memory(values[0..n]), memory(visited[cur]), memory(values[k])));
-                }
-                have separate(statement(0).footprint, memory(values[k])) by {
-                    close() using { separate(memory(visited[cur]), memory(values[k])); };
-                }
-                have values[k] == at(before, values[k]) by {
-                    preserve(memory(values[k]), statement(0));
-                }
-                instantiate(at(before, forall (j: int32) { 0 <= j and j < n implies values[j] == stamp }), k);
-                rewrite(values[k], at(before, values[k]));
-                close();
-            }
+        intro();
+        intro();
+        have contains(memory(values[0..n]), memory(values[k])) by {
+            apply(click::separation::contains_element(values, 0, n, k));
         }
+        have contains(memory(visited[cur]), memory(visited[cur])) by {
+            apply(click::separation::contains_refl(memory(visited[cur])));
+        }
+        have separate(memory(visited[cur]), memory(values[k])) by {
+            apply(click::separation::separate_restrict(memory(visited[cur]), memory(values[0..n]), memory(visited[cur]), memory(values[k])));
+        }
+        have separate(statement(0).footprint, memory(values[k])) by {
+            close() using { separate(memory(visited[cur]), memory(values[k])); };
+        }
+        have values[k] == at(before, values[k]) by {
+            preserve(memory(values[k]), statement(0));
+        }
+        instantiate(at(before, forall (j: int32) { 0 <= j and j < n implies values[j] == stamp }), k);
+        rewrite(values[k], at(before, values[k]));
+        close();
     }
 }
 ```

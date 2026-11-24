@@ -4,14 +4,14 @@
 theorem keeps_concatenation(a: int32, b: int32) {
     ensures forall (unused: Integer) {
         [] ++ [a] ++ [b] == [a, b] ++ []
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem keeps_rewritten_concatenation(a: int32, b: int32) {
     requires a == b;
     ensures forall (unused: Integer) {
         [a] ++ [] == [b]
-    } by { intro() { rewrite(a, b); close(); } }
+    } by { intro(); rewrite(a, b); close(); }
 }
 
 theorem sequence_premise_exposes_elements(a: int32, b: int32, c: int32, d: int32) {

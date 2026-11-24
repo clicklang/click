@@ -45,17 +45,14 @@ int32 outer(const int8* src) {
     }
     have entry_defined: at(region(0).entry, forall (j: uint64) { to_integer(j) < to_integer(n + 1u64) implies defined((src as (uint8 *))[j]) }) by { close(); }
     have forall (j: uint64) { to_integer(j) < to_integer(n + 1u64) implies defined((src as (uint8 *))[j]) } by {
-        intro() {
-            intro() {
-                instantiate(entry_defined, j);
-                have at(region(0).entry, defined((src as (uint8 *))[j])) by { close(); }
-                have separate(region(0).footprint, memory((src as (uint8 *))[j])) by {
-                    have separate(memory(result), memory((src as (uint8 *))[j])) by { close(); }
-                    close() using { separate(memory(result), memory((src as (uint8 *))[j])); };
-                }
-                preserve(memory((src as (uint8 *))[j]), region(0));
-            }
+        intro(); intro();
+        instantiate(entry_defined, j);
+        have at(region(0).entry, defined((src as (uint8 *))[j])) by { close(); }
+        have separate(region(0).footprint, memory((src as (uint8 *))[j])) by {
+            have separate(memory(result), memory((src as (uint8 *))[j])) by { close(); }
+            close() using { separate(memory(result), memory((src as (uint8 *))[j])); };
         }
+        preserve(memory((src as (uint8 *))[j]), region(0));
     }
 
     have n < 18446744073709551615u64 by { close(); }

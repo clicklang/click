@@ -309,36 +309,34 @@ void arena_write(struct region* region, int32 index, int32 value) {
         0 <= k and k < at(w, region->arena->capacity) implies
             at(w, region->arena->occupied[k]) == region->arena->occupied[k]
     } by {
-        intro() {
-            intro() {
-                have 0 <= k;
-                have k < at(w, region->arena->capacity);
-                have k < region->arena->capacity by {
-                    rewrite(region->arena->capacity, at(w, region->arena->capacity));
-                    close();
-                }
-                have contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k])) by {
-                    apply(click::separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k));
-                }
-                have contains(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->data[region->start + index])) by {
-                    apply(click::separation::contains_element(region->arena->data, 0, region->arena->capacity, region->start + index));
-                }
-                have separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])) by {
-                    apply(click::separation::separate_restrict(
-                        memory(region->arena->occupied[0..region->arena->capacity]),
-                        memory(region->arena->data[0..region->arena->capacity]),
-                        memory(region->arena->occupied[k]),
-                        memory(region->arena->data[region->start + index])));
-                }
-                have separate(statement(2).footprint, memory(region->arena->occupied[k])) by {
-                    close() using { separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])); };
-                }
-                have region->arena->occupied[k] == at(before_access, region->arena->occupied[k]) by {
-                    preserve(memory(region->arena->occupied[k]), statement(2));
-                }
-                close();
-            }
+        intro();
+        intro();
+        have 0 <= k;
+        have k < at(w, region->arena->capacity);
+        have k < region->arena->capacity by {
+            rewrite(region->arena->capacity, at(w, region->arena->capacity));
+            close();
         }
+        have contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k])) by {
+            apply(click::separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k));
+        }
+        have contains(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->data[region->start + index])) by {
+            apply(click::separation::contains_element(region->arena->data, 0, region->arena->capacity, region->start + index));
+        }
+        have separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])) by {
+            apply(click::separation::separate_restrict(
+                memory(region->arena->occupied[0..region->arena->capacity]),
+                memory(region->arena->data[0..region->arena->capacity]),
+                memory(region->arena->occupied[k]),
+                memory(region->arena->data[region->start + index])));
+        }
+        have separate(statement(2).footprint, memory(region->arena->occupied[k])) by {
+            close() using { separate(memory(region->arena->occupied[k]), memory(region->arena->data[region->start + index])); };
+        }
+        have region->arena->occupied[k] == at(before_access, region->arena->occupied[k]) by {
+            preserve(memory(region->arena->occupied[k]), statement(2));
+        }
+        close();
     }
     have separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])) by {
         rewrite(region->arena->data, at(w, region->arena->data));

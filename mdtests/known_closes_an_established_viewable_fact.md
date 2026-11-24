@@ -50,18 +50,15 @@ int32 probe(int32 a[], int32 n, int32 k) {
         all { viewable(a[0..k]) => { close(); } 0 <= k => { close(); } }
     }
     have forall (j: int32) { 0 <= j and j <= k implies viewable(a[0..j]) } by {
-        intro() {
-            intro() {
-                have j <= n by { close() using { j <= k; k <= n; }; }
-                have viewable(a[0..j]) by {
-                    have contains(memory(a[0..n]), memory(a[0..j])) by {
-                        apply(click::separation::contains_subrange(a, 0, n, 0, j));
-                    }
-                    apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..j])));
-                }
-                close();
+        intro(); intro();
+        have j <= n by { close() using { j <= k; k <= n; }; }
+        have viewable(a[0..j]) by {
+            have contains(memory(a[0..n]), memory(a[0..j])) by {
+                apply(click::separation::contains_subrange(a, 0, n, 0, j));
             }
+            apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..j])));
         }
+        close();
     }
     close();
 }

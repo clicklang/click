@@ -4,19 +4,19 @@
 theorem signed_words(x: int32, y: int32) {
     ensures forall (unused: Integer) {
         (if 1 == 1 { x } else { y }) == x
-    } by { intro() { normalize(); } }
+    } by { intro(); normalize(); }
     ensures forall (unused: Integer) {
         (if 1 != 1 { x } else { y }) == y
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem unsigned_words() {
     ensures forall (unused: Integer) {
         (if 4294967295u32 == 0u32 { 9u32 } else { 3u32 }) == 3u32
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
     ensures forall (unused: Integer) {
         (if 4294967295u32 != 0u32 { 9u32 } else { 3u32 }) == 9u32
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem dead_arm() {

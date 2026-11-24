@@ -147,36 +147,33 @@ void clear_data(struct region* region) {
                 preserve(at(opened, memory((&arena->capacity)[0..1])), loop(0).statement(0));
             }
             have forall (k: int32) { 0 <= k and k < arena->capacity implies region->arena->occupied[k] == old(region->arena->occupied[k]) } by {
-                intro() {
-                    intro() {
-                        have k < at(opened, arena->capacity) by { close(); }
-                        have contains(at(opened, memory(region->arena->occupied[0..arena->capacity])), at(opened, memory(region->arena->occupied[k]))) by {
-                            apply(click::separation::contains_element(at(opened, region->arena->occupied), 0, at(opened, arena->capacity), k));
-                        }
-                        have separate(at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k]))) by {
-                            apply(click::separation::separate_restrict(at(opened, memory(arena->data[0..arena->capacity])), at(opened, memory(region->arena->occupied[0..arena->capacity])), at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k]))));
-                        }
-                        // Select the preserved cell as one complete int32 observation.
-                        have contains(at(opened, memory(region->arena->occupied[k])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by { normalize(); }
-                        have contains(at(opened, memory(arena->data[i])), at(opened, memory(arena->data[i]))) by { apply(click::separation::contains_refl(at(opened, memory(arena->data[i])))); }
-                        have separate(at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by {
-                            apply(click::separation::separate_restrict(at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k])), at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1]))));
-                        }
-                        have separate(loop(0).statement(0).footprint, at(opened, memory((&region->arena->occupied[k])[0..1]))) by {
-                            close();
-                        }
-                        have at(loop(0).statement(0).exit, load<int32>(at(opened, &region->arena->occupied[k])))
-                                == at(loop(0).statement(0).entry, load<int32>(at(opened, &region->arena->occupied[k]))) by {
-                            preserve(at(opened, memory((&region->arena->occupied[k])[0..1])), loop(0).statement(0));
-                        }
-                        have region->arena->occupied[k] == at(opened, region->arena->occupied[k]) by {
-                            rewrite(region->arena->occupied, at(opened, region->arena->occupied));
-                            close();
-                        }
-                        instantiate(at(opened, forall (j: int32) { 0 <= j and j < arena->capacity implies region->arena->occupied[j] == old(region->arena->occupied[j]) }), k);
-                        close();
-                    }
+                intro(); intro();
+                have k < at(opened, arena->capacity) by { close(); }
+                have contains(at(opened, memory(region->arena->occupied[0..arena->capacity])), at(opened, memory(region->arena->occupied[k]))) by {
+                    apply(click::separation::contains_element(at(opened, region->arena->occupied), 0, at(opened, arena->capacity), k));
                 }
+                have separate(at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k]))) by {
+                    apply(click::separation::separate_restrict(at(opened, memory(arena->data[0..arena->capacity])), at(opened, memory(region->arena->occupied[0..arena->capacity])), at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k]))));
+                }
+                // Select the preserved cell as one complete int32 observation.
+                have contains(at(opened, memory(region->arena->occupied[k])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by { normalize(); }
+                have contains(at(opened, memory(arena->data[i])), at(opened, memory(arena->data[i]))) by { apply(click::separation::contains_refl(at(opened, memory(arena->data[i])))); }
+                have separate(at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by {
+                    apply(click::separation::separate_restrict(at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k])), at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1]))));
+                }
+                have separate(loop(0).statement(0).footprint, at(opened, memory((&region->arena->occupied[k])[0..1]))) by {
+                    close();
+                }
+                have at(loop(0).statement(0).exit, load<int32>(at(opened, &region->arena->occupied[k])))
+                        == at(loop(0).statement(0).entry, load<int32>(at(opened, &region->arena->occupied[k]))) by {
+                    preserve(at(opened, memory((&region->arena->occupied[k])[0..1])), loop(0).statement(0));
+                }
+                have region->arena->occupied[k] == at(opened, region->arena->occupied[k]) by {
+                    rewrite(region->arena->occupied, at(opened, region->arena->occupied));
+                    close();
+                }
+                instantiate(at(opened, forall (j: int32) { 0 <= j and j < arena->capacity implies region->arena->occupied[j] == old(region->arena->occupied[j]) }), k);
+                close();
             }
             step();
             have arena->data == at(loop(0).entry, arena->data) by {

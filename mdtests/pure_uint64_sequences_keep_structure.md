@@ -4,19 +4,19 @@
 theorem wide_sequence_equality(a: uint64, b: uint64) {
     ensures forall (unused: Integer) {
         [] ++ [a] ++ [b] == [a, b] ++ []
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem wide_literal_membership() {
     ensures forall (unused: Integer) {
         18446744073709551615u64 in [] ++ [0u64, 18446744073709551615u64]
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem wide_empty_membership(a: uint64) {
     ensures forall (unused: Integer) {
         not (a in [])
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem wide_rewritten_membership(a: uint64, b: uint64) {

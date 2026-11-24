@@ -196,132 +196,126 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have forall (k: int32) {
                 start <= k and to_integer(k) < to_integer(at(opened, i) + 1) implies arena->occupied[k] == 0
             } by {
-                intro() {
-                    intro() {
-                        have start <= k;
-                        have to_integer(k) < to_integer(at(opened, i) + 1);
-                        if k < at(opened, i) {
-                            have k < m;
-                            have at(opened, arena->occupied[k]) == 0 by {
-                                have at(opened, start) <= at(opened, k) and
-                                        at(opened, k) < at(opened, m);
-                                instantiate(forall (j: int32) {
-                                    at(opened, start) <= at(opened, j) and
-                                        at(opened, j) < at(opened, m) implies
-                                        at(opened, arena->occupied[j]) == at(opened, 0)
-                                }, k);
-                                close();
-                            }
-                            have 0 <= k;
-                            have at(opened, i) != k by { close() using { k < at(opened, i); }; }
-                            have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                                apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                            }
-                            have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                                close();
-                            }
-                            have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
-                                preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
-                            }
-                            have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                                close() using {};
-                            }
-                            have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
-                                preserve(memory(arena->occupied[k]), loop(0).statement(1));
-                            }
-                            close();
-                        } else {
-                            have k <= at(opened, i);
-                            have k == at(opened, i);
-                            rewrite(k, at(opened, i));
-                            close();
-                        }
+                intro();
+                intro();
+                have start <= k;
+                have to_integer(k) < to_integer(at(opened, i) + 1);
+                if k < at(opened, i) {
+                    have k < m;
+                    have at(opened, arena->occupied[k]) == 0 by {
+                        have at(opened, start) <= at(opened, k) and
+                                at(opened, k) < at(opened, m);
+                        instantiate(forall (j: int32) {
+                            at(opened, start) <= at(opened, j) and
+                                at(opened, j) < at(opened, m) implies
+                                at(opened, arena->occupied[j]) == at(opened, 0)
+                        }, k);
+                        close();
                     }
+                    have 0 <= k;
+                    have at(opened, i) != k by { close() using { k < at(opened, i); }; }
+                    have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                    }
+                    have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
+                        close();
+                    }
+                    have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
+                        preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
+                    }
+                    have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
+                        close() using {};
+                    }
+                    have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
+                        preserve(memory(arena->occupied[k]), loop(0).statement(1));
+                    }
+                    close();
+                } else {
+                    have k <= at(opened, i);
+                    have k == at(opened, i);
+                    rewrite(k, at(opened, i));
+                    close();
                 }
             }
             have forall (k: int32) {
                 0 <= k and k < start implies
                     arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
             } by {
-                intro() {
-                    intro() {
-                        have 0 <= k;
-                        have k < start;
-                        have at(opened, arena->occupied[k]) ==
-                            at(clear_occupied.entry, arena->occupied[k]) by {
-                            have at(opened, 0) <= at(opened, k) and
-                                    at(opened, k) < at(opened, start);
-                            instantiate(forall (j: int32) {
-                                at(opened, 0) <= at(opened, j) and
-                                    at(opened, j) < at(opened, start) implies
-                                    at(opened, arena->occupied[j]) ==
-                                        at(clear_occupied.entry, arena->occupied[j])
-                            }, k);
-                            close();
-                        }
-                        have k < at(opened, i);
-                        have at(opened, i) != k by { close() using { k < at(opened, i); }; }
-                        have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                            apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                        }
-                        have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                            close();
-                        }
-                        have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
-                            preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
-                        }
-                        have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                            close() using {};
-                        }
-                        have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
-                            preserve(memory(arena->occupied[k]), loop(0).statement(1));
-                        }
-                        close();
-                    }
+                intro();
+                intro();
+                have 0 <= k;
+                have k < start;
+                have at(opened, arena->occupied[k]) ==
+                    at(clear_occupied.entry, arena->occupied[k]) by {
+                    have at(opened, 0) <= at(opened, k) and
+                            at(opened, k) < at(opened, start);
+                    instantiate(forall (j: int32) {
+                        at(opened, 0) <= at(opened, j) and
+                            at(opened, j) < at(opened, start) implies
+                            at(opened, arena->occupied[j]) ==
+                                at(clear_occupied.entry, arena->occupied[j])
+                    }, k);
+                    close();
                 }
+                have k < at(opened, i);
+                have at(opened, i) != k by { close() using { k < at(opened, i); }; }
+                have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                }
+                have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
+                    close();
+                }
+                have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
+                    preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
+                }
+                have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
+                    close() using {};
+                }
+                have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
+                    preserve(memory(arena->occupied[k]), loop(0).statement(1));
+                }
+                close();
             }
             have forall (k: int32) {
                 end <= k and k < arena->capacity implies
                     arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
             } by {
-                intro() {
-                    intro() {
-                        have end <= k;
-                        have k < arena->capacity;
-                        have at(opened, arena->occupied[k]) ==
-                            at(clear_occupied.entry, arena->occupied[k]) by {
-                            have at(opened, end) <= at(opened, k) and
-                                    at(opened, k) < at(opened, arena->capacity);
-                            instantiate(forall (j: int32) {
-                                at(opened, end) <= at(opened, j) and
-                                    at(opened, j) < at(opened, arena->capacity) implies
-                                    at(opened, arena->occupied[j]) ==
-                                        at(clear_occupied.entry, arena->occupied[j])
-                            }, k);
-                            close();
-                        }
-                        have at(opened, i) < k;
-                        have at(opened, i) <= k;
-                        have 0 <= k;
-                        have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
-                        have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                            apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                        }
-                        have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                            close();
-                        }
-                        have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
-                            preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
-                        }
-                        have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                            close() using {};
-                        }
-                        have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
-                            preserve(memory(arena->occupied[k]), loop(0).statement(1));
-                        }
-                        close();
-                    }
+                intro();
+                intro();
+                have end <= k;
+                have k < arena->capacity;
+                have at(opened, arena->occupied[k]) ==
+                    at(clear_occupied.entry, arena->occupied[k]) by {
+                    have at(opened, end) <= at(opened, k) and
+                            at(opened, k) < at(opened, arena->capacity);
+                    instantiate(forall (j: int32) {
+                        at(opened, end) <= at(opened, j) and
+                            at(opened, j) < at(opened, arena->capacity) implies
+                            at(opened, arena->occupied[j]) ==
+                                at(clear_occupied.entry, arena->occupied[j])
+                    }, k);
+                    close();
                 }
+                have at(opened, i) < k;
+                have at(opened, i) <= k;
+                have 0 <= k;
+                have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
+                have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                }
+                have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
+                    close();
+                }
+                have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
+                    preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
+                }
+                have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
+                    close() using {};
+                }
+                have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
+                    preserve(memory(arena->occupied[k]), loop(0).statement(1));
+                }
+                close();
             }
             have arena->data == old(arena->data);
             have arena->occupied == old(arena->occupied);

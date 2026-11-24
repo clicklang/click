@@ -9,7 +9,7 @@ theorem written() {
             Packet::Empty => 0,
             Packet::Full(n) => n,
         }) < 0
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem rewritten(p: Packet) {
@@ -20,10 +20,9 @@ theorem rewritten(p: Packet) {
             Packet::Full(n) => n,
         }) < 0
     } by {
-        intro() {
-            rewrite(p, Packet::Full(-7));
-            close();
-        }
+        intro();
+        rewrite(p, Packet::Full(-7));
+        close();
     }
 }
 
@@ -33,7 +32,7 @@ theorem right_operand() {
             Packet::Empty => 0,
             Packet::Full(n) => n,
         })
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem both_operands() {
@@ -45,7 +44,7 @@ theorem both_operands() {
             Packet::Empty => 0,
             Packet::Full(n) => n,
         })
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem non_strict() {
@@ -54,7 +53,7 @@ theorem non_strict() {
             Packet::Empty => 0,
             Packet::Full(n) => n,
         }) >= -7
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem from_bound(value: int32) {

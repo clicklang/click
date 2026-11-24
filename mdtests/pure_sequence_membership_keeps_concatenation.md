@@ -4,17 +4,17 @@
 theorem membership_with_concat(a: int32, b: int32) {
     ensures forall (unused: Integer) {
         a in [] ++ ([b] ++ [a])
-    } by { intro() { close(); } }
+    } by { intro(); close(); }
 }
 
 theorem singleton(a: int32) {
     ensures forall (unused: Integer) { a in [a] }
-    by { intro() { close(); } }
+    by { intro(); close(); }
 }
 
 theorem empty(a: int32) {
     ensures forall (unused: Integer) { not (a in []) }
-    by { intro() { close(); } }
+    by { intro(); close(); }
 }
 
 theorem membership_case_split(a: int32) {
