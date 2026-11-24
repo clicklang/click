@@ -28367,7 +28367,7 @@ fn strict_float_bound_weakens_the_same_operand_on_replay() {
     let source = r#"
         theorem bound(x: double) {
             requires float64_from_bits(0x3ff0000000000000u64) < x;
-            ensures float64_from_bits(0x3ff0000000000000u64) <= x by solve();
+            ensures float64_from_bits(0x3ff0000000000000u64) <= x by close();
         }
     "#;
     let claim = "bound.ensures_0";

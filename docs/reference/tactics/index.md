@@ -1770,7 +1770,8 @@ has a range computed from its source width and count, including after a
 signed widening of the result. An unsigned left shift of one is nonzero
 when its count is below the width. A signed count reading also needs a
 nonnegative bound. For a positive literal left operand, a count bound below
-the point where the result would reach the sign bit establishes that the shift fits.
+the point where the result would reach the sign bit establishes that the shift
+fits.
 
 A root conditional equals its selected arm when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared

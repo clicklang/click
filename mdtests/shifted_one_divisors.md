@@ -37,12 +37,12 @@ uint64 remain64(uint64 n, uint64 d) { requires d < 64u64; ensures true; } by {
 
 theorem shifted_one32(d: uint32) {
     requires d < 32u32;
-    ensures (1u32 << d) != 0u32 by known();
+    ensures (1u32 << d) != 0u32 by close();
 }
 
 theorem shifted_one64(d: uint64) {
     requires d < 64u64;
-    ensures (1u64 << d) != 0u64 by known();
+    ensures (1u64 << d) != 0u64 by close();
 }
 ```
 

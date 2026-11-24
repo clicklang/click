@@ -43,7 +43,7 @@ theorem multiply_lower(x: float, y: float) {
         apply(click::float_order::float32_positive_product_lower(
             x, y, float32_from_bits(0x3f800000), float32_from_bits(0x3f800000)
         ));
-        known();
+        close();
     }
 }
 theorem multiply_lower64(x: double, y: double) {
@@ -53,7 +53,7 @@ theorem multiply_lower64(x: double, y: double) {
         apply(click::float_order::float64_positive_product_lower(
             x, y, float64_from_bits(0x3ff0000000000000u64), float64_from_bits(0x3ff0000000000000u64)
         ));
-        known();
+        close();
     }
 }
 

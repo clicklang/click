@@ -26,7 +26,7 @@ theorem rounded_nonstrict(a: double, b: double) {
 
 theorem strict_bound_can_round_to_equality() {
     ensures (float64_from_bits(0x3fefffffffffffffu64) as float) ==
-        float32_from_bits(0x3f800000) by known();
+        float32_from_bits(0x3f800000) by close();
 }
 ```
 

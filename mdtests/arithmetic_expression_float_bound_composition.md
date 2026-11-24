@@ -68,7 +68,7 @@ theorem subtract_from_literal(x: float) {
         apply(click::float_order::float32_sub_upper(
             float32_from_bits(0x40000000), x, float32_from_bits(0x40000000), float32_from_bits(0xc1200000)
         ));
-        known();
+        close();
     }
 }
 

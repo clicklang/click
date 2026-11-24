@@ -63,7 +63,7 @@ theorem product_lower32(x: float, y: float) {
             x, y, float32_from_bits(0xbf800000), float32_from_bits(0x3f800000),
             float32_from_bits(0x3f800000), float32_from_bits(0x40000000), float32_from_bits(0xc0000000)
         ));
-        known();
+        close();
     }
 }
 
@@ -77,7 +77,7 @@ theorem product_upper32(x: float, y: float) {
             x, y, float32_from_bits(0xbf800000), float32_from_bits(0x3f800000),
             float32_from_bits(0x3f800000), float32_from_bits(0x40000000), float32_from_bits(0x40000000)
         ));
-        known();
+        close();
     }
 }
 
@@ -91,7 +91,7 @@ theorem product_lower64(x: double, y: double) {
             x, y, float64_from_bits(0xbff0000000000000u64), float64_from_bits(0x3ff0000000000000u64),
             float64_from_bits(0x3ff0000000000000u64), float64_from_bits(0x4000000000000000u64), float64_from_bits(0xc000000000000000u64)
         ));
-        known();
+        close();
     }
 }
 
@@ -105,7 +105,7 @@ theorem product_upper64(x: double, y: double) {
             x, y, float64_from_bits(0xbff0000000000000u64), float64_from_bits(0x3ff0000000000000u64),
             float64_from_bits(0x3ff0000000000000u64), float64_from_bits(0x4000000000000000u64), float64_from_bits(0x4000000000000000u64)
         ));
-        known();
+        close();
     }
 }
 
