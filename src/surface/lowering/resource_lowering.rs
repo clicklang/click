@@ -3811,6 +3811,13 @@ pub(in crate::surface) fn declared_segment_observation_count(
     }
 }
 
+/// The element type of a contract segment's cells: a field's declared type,
+/// or the pointee of its base as this parameter list or the base's own form
+/// states it. `int32` otherwise, which is not a guess about a pointee-less
+/// base (validation refuses a `void *` or `Pointer` range) but a known gap:
+/// a struct object (`owns *obj`, `&first`) is seeded as `int32` words, and a
+/// base this list does not type, such as a static's address, `*slot` or
+/// `pp[0]`, gets no element type of its own.
 pub(in crate::surface) fn contract_segment_element_type(
     parameters: &[crate::languages::interface::ImportedParameter],
     segment: &ContractSegment,
