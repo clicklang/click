@@ -5802,8 +5802,8 @@ void copy_into(std::span<std::byte> dst, uint64 i) {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: capture the pinned Bitcoin decoder with a throwing span consumer"]
-fn pinned_spanreader_read32_captures_the_exact_instantiation() {
+#[ignore = "nightly: pinned Bitcoin decoder verification and expansion replay"]
+fn pinned_spanreader_read32_verifies_and_replays_both_outcomes_offline() {
     let (root, import) = pinned_streams_selected_fixture(
         "read32",
         "span-probe.cpp",
@@ -5829,6 +5829,26 @@ uint32_t probe(SpanReader& reader) { return ser_readdata32(reader); }
             .iter()
             .any(|function| function.path == ["SpanReader", "read"] && !function.declared_noexcept)
     );
+    let reader = include_str!("../integrations/bitcoin-core-money-range/SpanReaderRead.click");
+    fs::write(root.join("SpanReaderRead.click"), reader).unwrap();
+    let source = include_str!("../integrations/bitcoin-core-money-range/SpanReaderRead32.click");
+    let path = root.join("SpanReaderRead32.click");
+    fs::write(&path, source).unwrap();
+    let project = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&project, &import)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+
+    let decoder = bitcoin_read32_function(&import, "ser_readdata32<SpanReader>");
+    let label = format!("{decoder}.contract");
+    let inputs = ProgramInputs::program(&import);
+    let expanded = expand_project_claim_source_by_label(&project, &inputs, &label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let rewritten = project.with_entry_source(expanded);
+    click::surface::check_audit_claim(&label, true, || {
+        click::surface::verify_project_functions(&rewritten, &inputs, [decoder])
+            .map_err(|error| error.report())
+    })
+    .unwrap();
     fs::remove_dir_all(root).unwrap();
 }
 
