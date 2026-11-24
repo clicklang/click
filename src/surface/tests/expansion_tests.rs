@@ -28090,6 +28090,10 @@ fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
         ("signed_odd_divisor", &[("divide", true)][..]),
         ("negative_signed_product", &[("product", false)][..]),
         ("float_add_pair", &[("sum", false)][..]),
+        (
+            "unsigned_masked_divisor",
+            &[("divide", true), ("remainder", true)][..],
+        ),
     ] {
         let (source, sources) =
             mdtest_sources(&format!("mdtests/arithmetic_expression_{fixture}.md"));

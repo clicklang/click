@@ -3788,7 +3788,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 candidates.push(vec![bound]);
             }
         }
-        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_sum_bounds(
+        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_pair_bounds(
             search_input.facts().assumptions(),
             goal,
         ) {
