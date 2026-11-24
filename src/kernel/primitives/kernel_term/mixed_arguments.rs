@@ -241,10 +241,11 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
         let [child] = call.children() else {
             panic!("one exact argument");
         };
-        let KernelTermNode::CallArgument(payload) = child.node() else {
-            panic!("opaque argument slot");
-        };
-        assert!(std::ptr::eq(payload.value(), &first.arguments()[0]));
+        assert!(matches!(child.node(), KernelTermNode::ImportedScalar(_)));
+        assert!(std::ptr::eq(
+            child.written_argument().unwrap(),
+            &first.arguments()[0],
+        ));
         assert_eq!(
             KernelTermExport::default().argument(child).unwrap(),
             argument
@@ -258,10 +259,11 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let [child] = other.children() else {
         panic!("one exact argument");
     };
-    let KernelTermNode::CallArgument(payload) = child.node() else {
-        panic!("opaque argument slot");
-    };
-    assert!(std::ptr::eq(payload.value(), &second.arguments()[0]));
+    assert!(matches!(child.node(), KernelTermNode::ImportedScalar(_)));
+    assert!(std::ptr::eq(
+        child.written_argument().unwrap(),
+        &second.arguments()[0],
+    ));
     assert_eq!(
         KernelTermExport::default().integer(&integer).unwrap(),
         KernelTermExport::default().integer(&other).unwrap()

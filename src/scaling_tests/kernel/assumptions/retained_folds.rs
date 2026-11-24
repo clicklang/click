@@ -121,7 +121,10 @@ fn imported_scalar_fold_dependencies_use_the_written_carrier_and_read_point() {
     let address = Address::symbolic(Variable(972020));
     let later = current.clone().store(
         address.clone(),
-        ProgramValue::Int8(MachineTerm::constant(1)),
+        ProgramValue::Int8(MachineTerm::Constant {
+            format: MachineIntegerType::Int8,
+            bits: 1,
+        }),
     );
     let read = MachineTerm::read_named(
         ProgramPoint::at(&crate::kernel::intern_memory_ref(&current)),
