@@ -4684,9 +4684,7 @@ fn raise_kernel_term_dispatch(
             if input.format().format().bits() < 32 {
                 return None;
             }
-            synthesize_surface_bitvector(
-                input.value(), parameter_binding, state, bound_variables,
-            )?
+            synthesize_surface_bitvector(input.value(), parameter_binding, state, bound_variables)?
         }
         Node::MachineObservationInput {
             format,

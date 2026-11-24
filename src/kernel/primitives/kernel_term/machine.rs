@@ -356,7 +356,9 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                     _ => None,
                 });
         }
-        KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
+        KernelTermNode::Legacy(_)
+        | KernelTermNode::MachineObservationInput { .. }
+        | KernelTermNode::WrittenMachine(_) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
             // native `If`, instead of exporting the enclosing DAG to read it.

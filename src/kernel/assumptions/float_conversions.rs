@@ -90,7 +90,9 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
                 let scalar = if let MachineOperandView::Shared(root) = operand
                     && matches!(
                         root.node(),
-                        KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_)
+                        KernelTermNode::Legacy(_)
+                            | KernelTermNode::MachineObservationInput { .. }
+                            | KernelTermNode::WrittenMachine(_)
                     ) {
                     operand_fingerprint(MachineOperandView::Legacy(legacy_numeric(root)), policy)
                 } else if let MachineOperandView::Shared(root) = operand
@@ -245,7 +247,9 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
             | KernelTermNode::FloatCall(_)
             | KernelTermNode::Match(_)
             | KernelTermNode::IntegerToMachine { .. } => {}
-            KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
+            KernelTermNode::Legacy(_)
+            | KernelTermNode::MachineObservationInput { .. }
+            | KernelTermNode::WrittenMachine(_) => {
                 let native = legacy_numeric(root);
                 collect_bitvector_memory_load_keys(native, keys);
             }

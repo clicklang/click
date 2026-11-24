@@ -504,10 +504,7 @@ impl NodeKey {
             | KernelTermNode::FloatRead(_) => true,
             KernelTermNode::MachineObservationInput { exact, .. } => *exact,
             KernelTermNode::WrittenMachine(_) | KernelTermNode::CallArgument(_) => true,
-            KernelTermNode::Legacy(value) => matches!(
-                value.identity,
-                LegacyIdentity::Fresh(_)
-            ),
+            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Fresh(_)),
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
@@ -587,7 +584,9 @@ impl NodeKey {
             }
             KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
-            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => true,
+            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
+                true
+            }
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
             }
@@ -608,7 +607,9 @@ impl NodeKey {
             KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::FloatConvert { .. } => shared_machine_operand,
             KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => true,
-            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => true,
+            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
+                true
+            }
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().any(KernelTerm::has_machine_conversions)
             }
@@ -653,7 +654,9 @@ impl NodeKey {
             // Opaque domain leaves can contain conditions (If, folds, calls).
             // Their native walker owns those payloads; do not skip it merely
             // because the surrounding arithmetic now has shared parents.
-            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => true,
+            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
+                true
+            }
             _ => false,
         };
         let machine_conditionals = match &node {
@@ -1460,7 +1463,8 @@ impl KernelTerm {
         if matches!(
             self.node(),
             KernelTermNode::Legacy(_)
-                | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_)
+                | KernelTermNode::MachineObservationInput { .. }
+                | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. }
         ) && rewritten == original
@@ -2140,7 +2144,8 @@ impl KernelTermExport {
     ) -> Result<PureFunctionArgument, &'static str> {
         if let KernelTermNode::WrittenMachine(input) = term.node() {
             return Ok(PureFunctionArgument::Value(machine::wrap_exact(
-                input.format(), input.value().clone(),
+                input.format(),
+                input.value().clone(),
             )));
         }
         if let KernelTermNode::CallArgument(argument) = term.node() {
