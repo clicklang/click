@@ -2969,11 +2969,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        let mut openings = Vec::new();
         for step in steps {
+            let is_intro = matches!(&step, ProofStep::Intro | ProofStep::IntroBinder(_));
             let Some(next) = attempt::candidate_outcome(scope.driver().apply_step(step))? else {
                 return Ok(None);
             };
+            if is_intro {
+                openings.push((scope.body().clone(), next.body().clone()));
+            }
             scope = next;
+        }
+        if scope.is_complete() {
+            for (parent, introduced) in openings.into_iter().rev() {
+                scope = scope.finish_generated_intro(&parent, &introduced)?;
+            }
         }
         attempt::candidate_outcome(scope.join())
     }
@@ -7940,29 +7950,39 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 || search_input
                     .execution_proposition_fixed_state_view()
                     .is_some())
-            && let Some(introduced) = attempt::candidate_outcome(
+            && let Some((binder, introduced)) = attempt::candidate_outcome(
                 search_input
                     .driver()
                     .apply_step(ProofStep::Intro)
-                    .and_then(|proof| proof.driver().apply_step(ProofStep::Intro)),
+                    .and_then(|binder| {
+                        binder
+                            .driver()
+                            .apply_step(ProofStep::Intro)
+                            .map(|introduced| (binder, introduced))
+                    }),
             )?
         {
-            if introduced.is_complete() {
-                return Ok(Some(introduced));
-            }
-            if search_input.focused_outcome_data().is_some()
+            let mut closed = introduced.is_complete().then(|| introduced.clone());
+            if closed.is_none()
+                && search_input.focused_outcome_data().is_some()
                 && let Some(goal) = introduced.surface_goal()
                 && let Some(source) = old_reflexive_transport_source(goal)
-                && let Some(proof) =
-                    Self::try_history_indexed_equalities(&introduced, &source, goal)?
             {
-                return Ok(Some(proof));
+                closed = Self::try_history_indexed_equalities(&introduced, &source, goal)?;
             }
-            if let Some(proof) =
-                Self::try_indexed_read_preservation(&introduced, MAX_TRANSPORT_SOURCE_POINTS, true)?
-                && proof.is_complete()
-            {
-                return Ok(Some(proof));
+            if closed.is_none() {
+                closed = Self::try_indexed_read_preservation(
+                    &introduced,
+                    MAX_TRANSPORT_SOURCE_POINTS,
+                    true,
+                )?
+                .filter(Proof::is_complete);
+            }
+            if let Some(closed) = closed {
+                let closed = binder.finish_generated_intro(&introduced, closed)?;
+                return search_input
+                    .finish_generated_intro(&binder, closed)
+                    .map(Some);
             }
         }
         if let Some(proof) = crate::kernel::search::ProofSearch::try_cell_frame_transport_closure(
@@ -8334,7 +8354,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             introduced
                 .driver()
                 .apply_step(ProofStep::Contradiction(opposite)),
-        )
+        )?
+        .map(|closed| joined.finish_generated_intro(&introduced, closed))
+        .transpose()
     }
 
     // Walk consecutive implication guards without retaining a dispatcher
@@ -11757,6 +11779,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_universal_steps_with_arithmetic");
         let mut proof = search_input.clone();
+        let mut openings = Vec::new();
         for (index, tactic) in tactics.iter().enumerate() {
             if proof.focused_discharged() {
                 if index + 1 == tactics.len() && matches!(tactic, ProofTactic::Known) {
@@ -11802,9 +11825,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             let step = SourceContext::PureGoal.leaf_step(tactic)?;
-            proof = driver.apply_step(step).ok()?;
+            let introduces = matches!(
+                &step,
+                ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_)
+            );
+            let next = driver.apply_step(step).ok()?;
+            if introduces {
+                openings.push((proof, next.clone()));
+            }
+            proof = next;
         }
-        proof.focused_discharged().then_some(proof)
+        if !proof.focused_discharged() {
+            return None;
+        }
+        for (parent, introduced) in openings.into_iter().rev() {
+            proof = parent.finish_generated_intro(&introduced, proof).ok()?;
+        }
+        Some(proof)
     }
 
     /// Tries available universal facts when the atomic decision cannot name
@@ -12261,10 +12298,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_selected_forall_goal");
         let tactics = plan_explicit_forall_goal_from_premises(goal, surface_goal, premise_pairs)?;
-        if tactics
-            .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::Have(_)))
-        {
+        if matches!(tactics.as_slice(), [ProofTactic::IntroBlock { .. }]) {
             search_input
                 .driver()
                 .try_generated_linear_script(&tactics)
@@ -12290,19 +12324,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input.focused_outcome_data()?;
         let mut cursor = surface_goal;
         let mut proof = search_input.clone();
-        let mut introduced_forall = false;
+        let mut openings = Vec::new();
         while let ClickProposition::ForAll { body, .. } = cursor {
-            proof = proof.driver().apply_step(ProofStep::Intro).ok()?;
+            let introduced = proof.driver().apply_step(ProofStep::Intro).ok()?;
+            openings.push((proof, introduced.clone()));
+            proof = introduced;
             cursor = body;
-            introduced_forall = true;
         }
-        if !introduced_forall {
+        if openings.is_empty() {
             return None;
         }
         let ClickProposition::Implies(antecedent, _) = cursor else {
             return None;
         };
-        proof = proof.driver().apply_step(ProofStep::Intro).ok()?;
+        let introduced = proof.driver().apply_step(ProofStep::Intro).ok()?;
+        openings.push((proof, introduced.clone()));
+        proof = introduced;
         let mut guard_surfaces = Vec::new();
         collect_surface_conjunct_leaves(antecedent, &mut guard_surfaces);
         for guard in &guard_surfaces {
@@ -12390,12 +12427,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             Ok(Some(transported)) => transported,
             Ok(None) | Err(_) => return None,
         };
-        if transported.is_complete() {
-            return Some(transported);
+        let mut closed = if transported.is_complete() {
+            transported
+        } else {
+            Self::try_direct_logical_closure(&transported)
+                .ok()
+                .flatten()?
+        };
+        for (parent, introduced) in openings.into_iter().rev() {
+            closed = parent.finish_generated_intro(&introduced, closed).ok()?;
         }
-        crate::kernel::search::ProofSearch::try_direct_logical_closure(&(transported))
-            .ok()
-            .flatten()
+        Some(closed)
     }
 
     pub(in crate::surface::proof) fn try_typed_atomic_solve_closure(

@@ -135,6 +135,37 @@ theorem written() {
 }
 
 #[test]
+fn quantified_memory_preservation_expands_with_scoped_intro() {
+    let c = "void keep(int *p, int j) { p[j] = 10; }";
+    let source = r#"verifying "preserved.c";
+void keep(int32 *p, int32 j) {
+    owns p[0..8];
+    requires 0 <= j and j < 8;
+    ensures forall (k: int32) {
+        0 <= k and k < 8 and k != j implies p[k] == old(p[k])
+    };
+} by {
+    step();
+    step();
+    close();
+}
+"#;
+    let inputs = [("preserved.c", c)];
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &inputs, claim).unwrap();
+    assert_eq!(expanded.matches("intro() {").count(), 2, "{expanded}");
+    assert!(!expanded.contains("intro();"), "{expanded}");
+    assert!(
+        expanded.contains("preserve(memory(p[k]), region(0))"),
+        "{expanded}"
+    );
+    crate::surface::without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &inputs).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn scoped_introduction_replays_after_expansion() {
     let (source, program) = mdtest_sources("mdtests/scoped_intro.md");
     let program = crate::cli::source_refs(&program);
