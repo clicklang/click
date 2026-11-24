@@ -32,7 +32,7 @@ be writable, or the smart step cannot be expanded.
 When a fact has no Surface form, today's code works around it rather than failing:
 
 - a smart tactic declines a route whose premise it cannot cite, even though
-  the kernel holds the premise (`solve`, its arithmetic bridges, the implicit
+  the kernel holds the premise (`close()`, its arithmetic bridges, the implicit
   closer), so a provable goal fails as a bounded miss;
 - a recorded Surface form that does not check is dropped, so later steps cannot
   cite the fact;
@@ -508,7 +508,7 @@ comparisons nested under connectives and binders (so `contradiction(1 == 0)`
 matches a held `false`), in requirement matching, `normalize`, and
 assumption-free normalization. The fact store records a closed comparison
 that holds without indexing it. A closed goal is false or true whatever the
-facts, so `solve` treats a false one like the goal `false` and refutes the
+facts, so `close()` treats a false one like the goal `false` and refutes the
 path. Regressions: `mdtests/closed_machine_order_comparisons.md`,
 `mdtests/closed_machine_equality_comparisons.md`,
 `mdtests/an_infeasible_path_with_a_closed_order_goal_closes.md`, and the
@@ -790,7 +790,7 @@ same form; they do not add tactic-specific fact searches.
   exact lookup also looks up the comparison form of what it looks up.
 - A kernel rule that compares a stated term with one it derives compares
   their comparison forms (identity, cast identity, affine conclusions).
-- `solve` tries a goal that reads stored cells over its stored values first
+- `close()` tries a goal that reads stored cells over its stored values first
   (`try_stored_value_goal`), the search the goal had before reads kept their
   names, and searches over the reads only when that misses.
 
@@ -828,7 +828,7 @@ placeholder, a skipped candidate, or a declining route to work around it.
 
 `click audit raise-lower` (`scripts/audit.sh raise-lower`) measures the
 canonical raiser over every example and mdtest; see above. Tests measure
-premise raising, the route `solve` takes, with the census
+premise raising, the route `close()` takes, with the census
 (`src/surface/proof/raise_lower_census.rs`): under its `capture`, each
 checked step records, for every fact it adds and for the goal it leaves
 focused, whether raising produces a checked Surface form. It separates steps a person wrote from

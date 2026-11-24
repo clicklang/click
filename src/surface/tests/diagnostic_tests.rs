@@ -3279,7 +3279,7 @@ fn loop_certification_refusal_retains_the_loop_frontier_trace() {
                 invariant b->offset <= b->length;
                 maintain by {
                     step();
-                    have b->offset <= b->length by { solve(); }
+                    have b->offset <= b->length by { close(); }
                 }
             }
         }

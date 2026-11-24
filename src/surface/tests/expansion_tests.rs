@@ -2061,12 +2061,12 @@ fn short_circuit_return_expands_after_an_early_return() {
                         intro();
                         contradiction(size < 2);
                     }
-                    solve();
+                    close();
                 }
                 false => {}
             }
             step_until(function.exit);
-            solve();
+            close();
         }"#;
     let claim = "has_header.contract";
     let expanded = expand_c_claim_source_by_label(source, &sources, claim).unwrap();
@@ -27222,7 +27222,7 @@ fn indexed_left_shift_comparison_expands_with_preservation() {
             ensures (p[i] << 1) < limit;
         } by {
             step();
-            have (p[i] << 1) < limit by { solve(); }
+            have (p[i] << 1) < limit by { close(); }
         }
     "#;
     let sources = [("read_order.c", c_source)];

@@ -136,7 +136,7 @@ controls beside the other graph scaling tests.
 
 Checked equalities of algebraic model values enter the same persistent term
 classes as pointer and machine equalities. Both logical equality propositions
-and true algebraic equality conditions admit edges. Ordinary `known` and
+and true algebraic equality conditions admit edges. Direct closure and
 semantic fact lookup can therefore combine a checked tactic postcondition
 `new.model == old.model` with a match-arm fact `new.model == Empty` to establish
 `old.model == Empty`, without repeating the postcondition in source.
@@ -262,7 +262,7 @@ lookup chooses one without scanning older state witnesses. Late address-class
 merges move only the affected buckets. Persistent branches share unchanged
 indexes, and restriction removes unsupported matches. The regressions
 `callback_contract_uses_checked_pointer_equality` and
-`callback_call_uses_checked_pointer_equality` cover `known` closure and dispatch
+`callback_call_uses_checked_pointer_equality` cover direct closure and dispatch
 through an unchanged C callback table.
 
 ## Shared typed pointer reads
@@ -370,7 +370,7 @@ another pointer alias nested in a packed parent/color equation.
 ## Fact availability through congruence
 
 `PureFactContext::contains_known` is the semantic lookup used by proof-fact
-availability and `known`. Exact membership remains a separate operation
+availability and the direct check in `close()`. Exact membership remains a separate operation
 for premise admission and consulted-premise checks. Lookup first checks
 the exact index, then asks the same scoped graph used by equality consumers.
 It performs no unfolding or implication search.
@@ -474,7 +474,7 @@ changing their representation.
 The offset fragment interns whole terms with shallow keys and uses persistent
 union-find weighted by members and parent uses. Its query first recognizes
 exact affine-equivalent byte offsets, including regrouped or reordered sums
-without a premise. `solve` uses that query for same-block pointer conditions,
+without a premise. `close()` uses that query for same-block pointer conditions,
 which lower to offset equality. Addition signatures identify operand classes,
 so equal operands establish equal sums. Indexed parent uses
 propagate late merges through nested additions with an iterative worklist;
@@ -890,7 +890,7 @@ its two operands. A later query can therefore use a read hidden behind another
 class member without first comparing that read directly or searching the
 class for read forms.
 A registration generation distinguishes reasoning memo entries from earlier
-misses, without scanning or rebuilding the proof environment. `solve` can emit
+misses, without scanning or rebuilding the proof environment. `close()` can emit
 `normalize() using {}` to check an equality against this ambient graph.
 The nonrecursive `mdtests/egraph_resource_pointer_load_alias.md` regression
 checks this after an unfold publishes integer address equality.

@@ -181,7 +181,7 @@ comparison of its operands' observations (`integer_affine_claims`). A 64-bit or
 32-bit equality records no signedness, so it has both readings and a
 proof may use either; an order names its signedness, so a `uint32`
 order reads as the `uint32` observations of its operands. The
-special Integer rules read only the premises a node cites. `solve` refutes a
+special Integer rules read only the premises a node cites. `close()` refutes a
 native goal as its Integer reading and raises each cited native fact through
 its written operands, so an expanded proof cites the facts as written
 (`mdtests/solve_observes_an_operation_term_by_term.md`,
@@ -894,7 +894,7 @@ interning key is its condition and its arms' ids. Substitution, variable
 collectors, alpha keys, memory-load and resource-read collectors, narrow
 carrier and fold-read checks, and both printers walk the condition and the
 arms; the Surface form is `if c { a } else { b }`. A rewrite that decides
-the condition (a substitution, `normalize() using`, or `solve`'s known
+the condition (a substitution, `normalize() using`, or the solver’s known
 conditions) leaves the selected arm, and arms a rewrite makes equal leave one,
 also under an exact Integer substitution, since that only deletes a node:
 `rewrite(x, y); normalize();` closes `(if c { x } else { y }) == x`, as for
@@ -1180,7 +1180,7 @@ truncating_quotient(x + d * k, d) == truncating_quotient(x, d) + k
 ```
 
 for a positive constant `d`, `0 <= x` and `0 <= k`. The normalizer checks this
-selected identity from those explicit guards; `solve` can emit that ordinary
+selected identity from those explicit guards; `close()` can emit that ordinary
 step. Both guards matter because truncation can cross zero. No divisibility
 or parity assumption is introduced.
 

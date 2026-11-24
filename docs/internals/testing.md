@@ -1461,7 +1461,7 @@ example, wall time, so its number moves with the corpus.
 `evals/solve.py` measures, for a sample of the hand-written `have`
 statements in the examples, how many the omitted proof `have P;` proves where
 they stand and how many can be deleted with the proof still verifying, against a committed
-baseline. A change to the implicit closer, `solve` or what they rely on quotes its result,
+baseline. A change to the implicit closer, `close()`, or what they rely on quotes its result,
 sites gained and lost, in the pull request. `evals/README.md`
 describes the corpus, the sampling and the baseline.
 
@@ -1871,7 +1871,7 @@ that class to prescribe the next action:
   no successful proof; normally decompose the proof, or write the argument a
   search miss of an elided form names. An interrupted search is a tooling bug
   only when it ignores or badly overshoots its enforced bound. A smart site is
-  a written `solve` or `step_until`, the implicit tail or closer, or a
+  a written `close()` or `step_until`, the implicit tail or closer, or a
   simple tactic written with an elided argument (see
   [`click profile`](../reference/cli/profile.md#report-interpretation)).
 - `SIMPLE` steps are deterministic checked operations. Do not expand them;
