@@ -1409,6 +1409,11 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         {
             return Ok(paths[0].steps().to_vec());
         }
+        if let Some(split) =
+            boolean_return_split(paths.iter().map(|path| (path.boolean_return, path.steps())))
+        {
+            return Ok(vec![split?]);
+        }
         // A return expression can split execution within one leaf of the
         // written proof. Use those choices at that leaf, after the recorded
         // proof cases have routed each sibling to its own return statement.
@@ -1434,11 +1439,6 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
                 })
                 .collect::<Result<Vec<_>, String>>()?;
             return synthesize_surface_cursors(paths);
-        }
-        if let Some(split) =
-            boolean_return_split(paths.iter().map(|path| (path.boolean_return, path.steps())))
-        {
-            return Ok(vec![split?]);
         }
     }
     let first_choice = paths

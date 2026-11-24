@@ -6161,9 +6161,18 @@ pub(super) fn finish_ordered_proof<'a>(
         } else {
             Vec::new()
         };
-        let has_post_execution_choices = surface_post_choices_by_path
+        let has_written_choices = surface_post_choices_by_path
             .iter()
-            .any(|choices| !choices.is_empty())
+            .any(|choices| !choices.is_empty());
+        // Let written cases use their existing routes first. If a leaf
+        // still needs a split, its outcomes can use their return values or
+        // their retained return-expression guards.
+        let unrouted_terminal_choices = if has_written_choices {
+            &[][..]
+        } else {
+            terminal_choices.as_slice()
+        };
+        let has_post_execution_choices = has_written_choices
             || terminal_choices
                 .iter()
                 .any(|choices| !matches!(choices, Ok(choices) if choices.is_empty()));
@@ -6227,7 +6236,7 @@ pub(super) fn finish_ordered_proof<'a>(
                 closers,
                 &surface_post_choices_by_path,
                 &[],
-                &terminal_choices,
+                unrouted_terminal_choices,
             ) {
                 Ok(suffix) => {
                     append_surface_steps_in_order(steps, suffix);
@@ -6258,7 +6267,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     &surface_grouped_closers_by_path,
                     &surface_post_choices_by_path,
                     &[],
-                    &terminal_choices,
+                    unrouted_terminal_choices,
                 ) {
                     Ok(suffix) => {
                         for step in suffix {
@@ -6335,12 +6344,19 @@ pub(super) fn finish_ordered_proof<'a>(
                         &surface_closers_by_claim[claim_index],
                         &surface_post_choices_by_path,
                         &[],
-                        &terminal_choices,
+                        unrouted_terminal_choices,
                     )
                     .map(|suffix| {
                         for step in suffix {
                             append_surface_step_to_leaves(&mut expanded.steps, step);
                         }
+                    })
+                    .or_else(|message| {
+                        append_paths_by_leaf(
+                            &mut expanded.steps,
+                            &surface_closers_by_claim[claim_index],
+                        )
+                        .map_err(|_| message)
                     })
                 } else {
                     append_post_and_closers(
