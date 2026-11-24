@@ -387,6 +387,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfo
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_constructor_evaluation_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_ground_recursion_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_indicator_sum_reordering	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indicator_sum_reordering	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_solve_closure_after_direct_with_surfaces_and_function_unfold	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	apply_normalization_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	available_surface_fact	2

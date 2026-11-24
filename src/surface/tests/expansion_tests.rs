@@ -16304,17 +16304,23 @@ fn outcome_predicate_unfold_evidence_survives_nested_have_expansion() {
         "the nested outcome tree should retain one Proof"
     );
 
-    let error = expand_c_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &sources,
         "sort_three_cells",
         ContractProofClaim::Ensure(0),
     )
-    .expect_err("the nested proof still needs a verification-only fallback");
+    .expect("expand each outcome proof after the branch join");
     assert!(
-        error.message().contains("used legacy normalization"),
-        "{error:?}"
+        expanded.contains("unfold(click::permutation::"),
+        "{expanded}"
     );
+    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    crate::surface::check_audit_claim("sort_three_cells.ensures_0", true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
