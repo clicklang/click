@@ -1135,8 +1135,8 @@ step is still checked.
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
-| `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
-| `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
+| `normalize()` | simple | Compatibility | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
+| `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1913,10 +1913,9 @@ No operand history or ambient facts are read.
 
 **Form:** `normalize() using { P; ... }`
 
-**Expansion output.** `click expand` writes it; by hand, write it only in an
-explicit proof that must evaluate a goal under named conditions without search.
-It decides conditions in the goal from the cited premises and the equality
-graph, then applies `normalize()`'s check (see
+This compatibility form checks a goal under its named premises. Expansion
+retains written calls. The tactic decides conditions in the goal from the cited
+premises and the equality graph, then applies `normalize()`'s check (see
 [Context-free normalization](#context-free-normalization)) to the result.
 
 For a signed `int32` order goal, the cited comparisons can form a chain in
