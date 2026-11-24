@@ -7110,7 +7110,7 @@ impl AnnotationLowerer<'_> {
                     ProgramExpression::Load(_) => Ok(SpecExpression::MemoryLoad {
                         point: environment.current_point.clone(),
                         pointer: Box::new(value),
-                        value_type: self.contract_array_element_type(operand, environment),
+                        value_type: self.contract_array_element_type(operand, environment)?,
                         exact: false,
                     }),
                     ProgramExpression::AddressOf(_)
@@ -10395,7 +10395,7 @@ impl AnnotationLowerer<'_> {
                         environment,
                     )?,
                     element_type: self
-                        .array_ref_element_type_for_name_in_environment(name, environment),
+                        .array_ref_element_type_for_name_in_environment(name, environment)?,
                 })
             }
             ContractExpression::Add(left, right) => {
@@ -10428,7 +10428,7 @@ impl AnnotationLowerer<'_> {
                 Ok(SpecArrayRef {
                     point: environment.current_point.clone(),
                     pointer: self.lower_contract_expression_to_spec(expression, environment)?,
-                    element_type: self.contract_array_element_type(expression, environment),
+                    element_type: self.contract_array_element_type(expression, environment)?,
                 })
             }
             ContractExpression::Subtract(left, right) => {
@@ -10454,7 +10454,7 @@ impl AnnotationLowerer<'_> {
                 Ok(SpecArrayRef {
                     point: environment.current_point.clone(),
                     pointer: self.lower_contract_expression_to_spec(expression, environment)?,
-                    element_type: self.contract_array_element_type(expression, environment),
+                    element_type: self.contract_array_element_type(expression, environment)?,
                 })
             }
             // A pointer-valued pure call steps by its result's pointee:
@@ -10467,7 +10467,7 @@ impl AnnotationLowerer<'_> {
                     .and_then(|result| result.pointee_type())
                 {
                     Some(element_type) => element_type.to_kernel_type(),
-                    None => self.contract_array_element_type(expression, environment),
+                    None => self.contract_array_element_type(expression, environment)?,
                 };
                 let pointer = self.lower_contract_expression_to_spec(expression, environment)?;
                 Ok(SpecArrayRef {
@@ -10479,7 +10479,7 @@ impl AnnotationLowerer<'_> {
             _ => Ok(SpecArrayRef {
                 point: environment.current_point.clone(),
                 pointer: self.lower_contract_expression_to_spec(expression, environment)?,
-                element_type: self.contract_array_element_type(expression, environment),
+                element_type: self.contract_array_element_type(expression, environment)?,
             }),
         }
     }
@@ -10528,21 +10528,43 @@ impl AnnotationLowerer<'_> {
         &self,
         name: &str,
         environment: &SpecElaborationContext,
-    ) -> ProgramType {
+    ) -> Result<ProgramType, String> {
+        if let Some(element_type) =
+            self.array_ref_element_type_for_name_in_environment_opt(name, environment)
+        {
+            return Ok(element_type);
+        }
+        let binding = ContractExpression::Binding(name.to_string());
+        if let Some(spelling) = self.pointee_less_operand(&binding, environment) {
+            return Err(pointee_less_access_message(spelling));
+        }
+        Ok(unrepresented_pointee_placeholder())
+    }
+
+    fn array_ref_element_type_for_name_in_environment_opt(
+        &self,
+        name: &str,
+        environment: &SpecElaborationContext,
+    ) -> Option<ProgramType> {
         if name == "result" && environment.contract_result_in_scope {
-            return self
-                .result_type
-                .pointee_type()
-                .or_else(|| match environment.contract_result.as_deref() {
+            return self.result_type.pointee_type().or_else(|| {
+                match environment.contract_result.as_deref() {
                     Some(SpecExpression::Value(ProgramValue::Pointer(pointer))) => {
                         pointer.program_type().pointee_type()
                     }
                     _ => None,
-                })
-                .unwrap_or(ProgramType::Int32);
+                }
+            });
         }
         self.declared_pointer_element_type(name)
             .or_else(|| self.entry_state.global_array_element_type(name))
+            // A global pointer, such as `uint8 *current`, steps by its
+            // declared pointee.
+            .or_else(|| {
+                self.entry_state
+                    .global_object_type(name)
+                    .and_then(ProgramType::pointee_type)
+            })
             .or_else(|| {
                 environment.values.get(name).and_then(|value| match value {
                     SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
@@ -10551,30 +10573,61 @@ impl AnnotationLowerer<'_> {
                     _ => None,
                 })
             })
-            .unwrap_or(ProgramType::Int32)
     }
 
     fn contract_array_element_type(
         &self,
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
-    ) -> ProgramType {
+    ) -> Result<ProgramType, String> {
+        if let Some(element_type) = self.contract_array_element_type_opt(expression, environment) {
+            return Ok(element_type);
+        }
+        if let Some(spelling) = self.pointee_less_operand(expression, environment) {
+            return Err(pointee_less_access_message(spelling));
+        }
+        Ok(unrepresented_pointee_placeholder())
+    }
+
+    fn contract_array_element_type_opt(
+        &self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Option<ProgramType> {
         match expression {
             ContractExpression::Let {
                 value,
                 body,
                 name,
                 click_type,
-            } if matches!(body.as_ref(), ContractExpression::Binding(binding) if binding == name) => {
-                click_type
-                    .as_ref()
-                    .and_then(ClickType::interface_type)
-                    .and_then(|ty| ty.to_kernel_type().pointee_type())
-                    .unwrap_or_else(|| self.contract_array_element_type(value, environment))
+            } if contract_expression_names_binder(body, name) => click_type
+                .as_ref()
+                .and_then(ClickType::interface_type)
+                .and_then(|ty| ty.to_kernel_type().pointee_type())
+                .or_else(|| self.contract_array_element_type_opt(value, environment)),
+            // A call's result steps by its recorded pointer's pointee:
+            // `statement(0).call(make, 0).result[1]` for a `uint8 *` result
+            // reads the byte at offset 1.
+            ContractExpression::RegionResult(region) => {
+                match self
+                    .retained_states?
+                    .region_result_value_at(region, environment.call_result_point.as_ref())
+                    .ok()?
+                {
+                    ProgramValue::Pointer(pointer) => pointer.program_type().pointee_type(),
+                    _ => None,
+                }
             }
             ContractExpression::ProgramBinding(name) => self
                 .declared_pointer_element_type(name)
                 .or_else(|| self.entry_state.global_array_element_type(name))
+                // A global pointer, such as `uint8 *current`, steps by its
+                // declared pointee.
+                .or_else(|| {
+                    self.entry_state
+                        .global_object_type(name)
+                        .and_then(ProgramType::pointee_type)
+                })
                 .or_else(|| {
                     environment.values.get(name).and_then(|value| match value {
                         SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
@@ -10582,21 +10635,14 @@ impl AnnotationLowerer<'_> {
                         }
                         _ => None,
                     })
-                })
-                .unwrap_or(ProgramType::Int32),
-            ContractExpression::MemoryLoad { value_type, .. } => {
-                value_type.pointee_type().unwrap_or(ProgramType::Int32)
-            }
+                }),
+            ContractExpression::MemoryLoad { value_type, .. } => value_type.pointee_type(),
             ContractExpression::CUnary { operand, lowered } => match lowered {
-                ProgramExpression::Cast { target_type, .. } => {
-                    target_type.pointee_type().unwrap_or(ProgramType::Int32)
-                }
+                ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
                 ProgramExpression::PointerOffsetBytes { .. } => {
-                    self.contract_array_element_type(operand, environment)
+                    self.contract_array_element_type_opt(operand, environment)
                 }
-                _ => self
-                    .program_expression_array_element_type(lowered, environment)
-                    .unwrap_or(ProgramType::Int32),
+                _ => self.program_expression_array_element_type(lowered, environment),
             },
             ContractExpression::Binding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -10605,36 +10651,34 @@ impl AnnotationLowerer<'_> {
                 .array_refs
                 .get(name)
                 .map(|array_ref| array_ref.element_type)
-                .unwrap_or_else(|| {
-                    self.array_ref_element_type_for_name_in_environment(name, environment)
+                .or_else(|| {
+                    self.array_ref_element_type_for_name_in_environment_opt(name, environment)
                 }),
             // A held resource's arguments are substituted as C values. A
             // pointer value carries its own pointee type, which is the
             // element an index steps by; `uint8*` must not read as `int32*`.
-            ContractExpression::ProgramExpression(lowered) => self
-                .program_expression_array_element_type(lowered, environment)
-                .unwrap_or(ProgramType::Int32),
-            ContractExpression::QualifiedC { lowered, .. }
-            | ContractExpression::Field { lowered, .. } => self
-                .program_expression_array_element_type(lowered, environment)
-                .unwrap_or(ProgramType::Int32),
-            ContractExpression::At { expression, .. } => {
-                self.contract_array_element_type(expression, environment)
+            ContractExpression::ProgramExpression(lowered)
+            | ContractExpression::QualifiedC { lowered, .. }
+            | ContractExpression::Field { lowered, .. } => {
+                self.program_expression_array_element_type(lowered, environment)
             }
-            ContractExpression::Old(expression) | ContractExpression::Exact(expression) => {
-                self.contract_array_element_type(expression, environment)
+            ContractExpression::At { expression, .. }
+            | ContractExpression::Old(expression)
+            | ContractExpression::Exact(expression) => {
+                self.contract_array_element_type_opt(expression, environment)
             }
-            ContractExpression::Add(left, right) => {
-                let left_type = self.contract_array_element_type(left, environment);
-                if left_type != ProgramType::Int32 {
-                    return left_type;
-                }
-                self.contract_array_element_type(right, environment)
-            }
+            ContractExpression::Add(left, right) => self
+                .contract_array_element_type_opt(left, environment)
+                .or_else(|| self.contract_array_element_type_opt(right, environment)),
             ContractExpression::Subtract(left, _) => {
-                self.contract_array_element_type(left, environment)
+                self.contract_array_element_type_opt(left, environment)
             }
-            _ => ProgramType::Int32,
+            // `pp[0]` for an `int32 **` `pp` is an `int32 *`, which steps by
+            // `int32`.
+            ContractExpression::Index(base, _) => self
+                .contract_array_element_type_opt(base, environment)?
+                .pointee_type(),
+            _ => None,
         }
     }
 
@@ -10792,6 +10836,19 @@ impl AnnotationLowerer<'_> {
             | ContractExpression::At {
                 expression: inner, ..
             } => self.pointee_less_operand(inner, environment),
+            // A call's recorded `void *` result.
+            ContractExpression::RegionResult(region) => {
+                match self.retained_states.and_then(|states| {
+                    states
+                        .region_result_value_at(region, environment.call_result_point.as_ref())
+                        .ok()
+                }) {
+                    Some(ProgramValue::Pointer(pointer)) => {
+                        pointee_less_pointer_spelling(pointer.program_type())
+                    }
+                    _ => None,
+                }
+            }
             _ => match self.contract_expression_click_type(operand, environment) {
                 Some(ClickType::Program(operand_type)) => {
                     pointee_less_pointer_spelling(operand_type.to_kernel_type())
@@ -11906,4 +11963,30 @@ fn struct_constructor_fields(
         }
         _ => None,
     }
+}
+
+/// Whether `expression` is a reference to `binder`: a written name's
+/// `Binding`, or a generated one's program variable.
+fn contract_expression_names_binder(
+    expression: &ContractExpression,
+    binder: &SurfaceBinder,
+) -> bool {
+    match expression {
+        ContractExpression::Binding(name) => binder == name,
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            *name == binder.kernel_name()
+        }
+        _ => false,
+    }
+}
+
+/// The element type an array reference carries when no `ProgramType` for its
+/// base's pointee is known and the base is not a pointee-less pointer: a
+/// struct pointee (`&job`, a `struct node *` binder), whose fields and widths
+/// come from the declared struct rather than from this type; a typed `let`
+/// binder, whose declared type the elaboration context does not record; or a
+/// string literal substituted for a `uint8[]` parameter, as `printf`'s
+/// format, whose `char` pointee is not the parameter's `uint8`.
+fn unrepresented_pointee_placeholder() -> ProgramType {
+    ProgramType::Int32
 }

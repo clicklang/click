@@ -233,9 +233,11 @@ memory access permission. A `void *` has no pointee type, as in C, so
 `*q` and `q[i]` on one are refused ("a `void *` has no pointee type; cast
 it to a typed pointer or use `load<T>`"); a spec casts first,
 `*(q as (uint8 *))`, or reads `load<T>(q)`
-(`mdtests/void_pointer_spec_dereference_is_refused.md`). `q + k`, `k + q`
-and `q - k` step a `void *` by `k` bytes, as Click's C side does (the GNU
-extension), so `ensures result == q + 1` states a body's `return q + 1;`
+(`mdtests/void_pointer_spec_dereference_is_refused.md`); a call's `void *`
+result is refused the same way, so `statement(0).call(get, 0).result[0]`
+needs a cast (`mdtests/void_pointer_call_result_index_is_refused.md`).
+`q + k`, `k + q` and `q - k` step a `void *` by `k` bytes, as Click's C
+side does (the GNU extension), so `ensures result == q + 1` states a body's `return q + 1;`
 (`mdtests/void_pointer_spec_addition_steps_one_byte.md`,
 `mdtests/void_pointer_spec_step_reads_the_next_byte.md`); the difference of
 two `void *` is refused
@@ -3768,10 +3770,14 @@ int32 *next_of(struct node *s) {
   also between a `Pointer` and a typed pointer.
 - **No pointee.** `*q`, `q[i]`, `q + k` and `q - k` are refused ("a
   `Pointer` has no pointee type; cast it to a typed pointer or use
-  `load<T>`"). `byte_offset(q, n)` is the `Pointer` `n` bytes on, and
-  `load<T>(q)` reads a `T` there
+  `load<T>`"), and so is a `views` or `owns` range `q[a..b]`, which counts
+  elements ("a `Pointer` has no pointee type to count a range in").
+  `byte_offset(q, n)` is the `Pointer` `n` bytes on, and `load<T>(q)`
+  reads a `T` there
   (`mdtests/untyped_pointer_byte_offset.md`,
-  `mdtests/untyped_pointer_has_no_pointee.md`).
+  `mdtests/untyped_pointer_has_no_pointee.md`,
+  `mdtests/untyped_pointer_range_is_refused.md`,
+  `mdtests/untyped_pointer_owned_range_is_refused.md`).
 
 ## Propositions
 
@@ -4201,7 +4207,10 @@ call returned, retained at the region's exit even if the source discards it.
 It still names that result after every local or cell that held it has lost it,
 and a fact the call produced lowers from it exactly
 (`mdtests/a_call_result_is_spelled_by_its_call.md`,
-`mdtests/a_discarded_call_result_keeps_its_call_name.md`). Allocation regions also
+`mdtests/a_discarded_call_result_keeps_its_call_name.md`). A pointer result
+indexes by its pointee, so `R.result[1]` for a `uint8 *` result is its
+second byte (`mdtests/a_byte_call_result_indexes_by_its_byte_pointee.md`);
+a `void *` result has none and is cast first. Allocation regions also
 expose their nullable return through `.result`. In C++, the region that
 reserves storage for a materialized object exposes its address through
 `.result` before construction. Reading a field still requires initialized

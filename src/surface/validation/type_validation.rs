@@ -5082,11 +5082,11 @@ fn validate_contract_segment_expression_types(
     Ok(())
 }
 
-/// Refuses `views q[a..b]` and `owns q[a..b]` for a `void *` `q`: a range
-/// counts elements, and C gives a `void *` no element type, so the range is
-/// not read as cells of an invented type. A cast states the type:
+/// Refuses `views q[a..b]` and `owns q[a..b]` for a `q` with no pointee type,
+/// a `void *` or a `Pointer`: a range counts elements, so the range is not
+/// read as cells of an invented type. A cast states the type:
 /// `(q as (uint8 *))[0..n]`.
-fn refuse_void_pointer_range(
+fn refuse_pointee_less_range(
     segment: &ContractSegment,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -5095,11 +5095,12 @@ fn refuse_void_pointer_range(
     let ContractSegmentSurface::Range { base, .. } = &segment.surface else {
         return Ok(());
     };
-    if let Ok(Some(InterfaceType::VoidPointer)) =
+    if let Ok(Some(base_type)) =
         infer_contract_expression_type(base, variables, click_functions, context)
+        && let Some(spelling) = pointee_less_pointer_spelling(base_type.to_kernel_type())
     {
         return Err(ClickError::new(format!(
-            "a `void *` has no pointee type to count a range in; cast it to a typed pointer, as in `(q as (uint8 *))[0..n]`, in {context}"
+            "a `{spelling}` has no pointee type to count a range in; cast it to a typed pointer, as in `(q as (uint8 *))[0..n]`, in {context}"
         ))
         .with_kind(crate::surface::ClickErrorKind::Type));
     }
@@ -5146,7 +5147,7 @@ pub(super) fn validate_resource_clause(
             context,
         ),
         ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
-            refuse_void_pointer_range(segment, variables, click_function_types, context)
+            refuse_pointee_less_range(segment, variables, click_function_types, context)
         }
         ResourceClause::MemoryAggregate { .. } => Ok(()),
         // The index binder is in scope only inside the clause; the resource
