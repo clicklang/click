@@ -1,7 +1,7 @@
 # Pointers, loads and stores
 
 Status: approved (2026-11-23). Steps 0, 1, 2 and 3a-i of the migration, and
-PRs 1 and 2 of step 3b, are implemented; the rest is not.
+PRs 1, 2 and 3 of step 3b, are implemented; the rest is not.
 
 ## Scope
 
@@ -104,8 +104,8 @@ The rule that joins the two halves is generic:
 > wrote, decodes at `T` to `v`.
 
 At another type `U` it decodes to `decode<U>(encode<T>(v))`, which the
-conversions entry relates to `v` where one exists (the 8-bit sign cast,
-a float bit-cast) and which is otherwise just that term.
+conversions entry relates to `v` where one exists (the sign cast at 8, 16,
+32 and 128 bits, a float bit-cast) and which is otherwise just that term.
 
 Conversions are rewrites in checking, keyed by the two formats: the equality
 graph relates `decode<int8>(l)` and `decode<uint8>(l)` by the sign cast with
@@ -513,7 +513,30 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        expandability census, by the program-point session, once measurement
        shows the selections agree. Until then the bridge stays, and PR 4
        (the `Bits64` split) is parked behind it rather than worked around.
-     - **PR 3** adds the e-graph sign relation at 16 and 128 bits.
+     - **PR 3, the sign relation at 16 and 128 bits.** *Done.* The e-graph
+       relation that joined a byte's `int8` read to `Cast(UInt8 -> Int8)`
+       of its `uint8` read now covers the other two widths whose
+       signednesses are two terms: an `int16` read is
+       `Cast(UInt16 -> Int16)` of its cell's `uint16` read, and an `int128`
+       read the applied generic `Cast(UInt128 -> Int128)` of its `uint128`
+       read, each at the signed read's own read key. The cast nodes are the
+       ones a written conversion interns, so no node kind is added and no
+       raising changes; the relation is an equality in checking, which no
+       fact has to supply and lowering never folds. One queue,
+       `pending_signed_reads` (`enqueue_signed_read`), replaces the byte
+       queue: each signed read costs one entry, one interned unsigned read,
+       one cast node and one union, with no scan (scaling test
+       `registering_a_signed_16_or_128_bit_read_costs_what_its_unsigned_read_costs`,
+       sizes 4, 64 and 512; unit test
+       `signed_16_and_128_bit_reads_are_the_sign_cast_of_their_unsigned_reads`;
+       `mdtests/a_16_bit_cell_read_at_the_other_signedness_is_its_sign_cast.md`).
+       A 128-bit read is an opaque `Machine128` atom with no load
+       application, so the relation joins the two reads of one cell term
+       but equal addresses do not relate two cells' reads, as before. No
+       frontend here can write a 128-bit read through a pointer of the other
+       signedness (C has no `__int128`; the C++ exporter takes no 128-bit
+       pointer), so 128 bits has unit coverage only. Version selection and
+       lowering are unchanged.
      - **PR 4** splits `Bits64` into `Int64` and `UInt64`. The remaining
        spellings are genuine 64-bit integer reads: their construction from a
        format (`memory_state.rs`, `program_point.rs`,

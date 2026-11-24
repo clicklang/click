@@ -680,8 +680,14 @@ pub(super) struct TermClasses {
     // Registration dependencies are drained before any public answer. Keeping
     // this worklist iterative handles loads used as indices of further loads.
     pending_loads: Vec<(u64, ProgramPoint, crate::kernel::Address)>,
-    // Signed byte reads still to be related to their unsigned read (R-mem).
-    pending_signed_byte_reads: Vec<(u64, ProgramPoint, crate::kernel::Address)>,
+    // Signed 8-, 16- and 128-bit reads still to be related to their cell's
+    // unsigned read by the sign cast (R-mem), with the signed read's kind.
+    pending_signed_reads: Vec<(
+        u64,
+        ProgramPoint,
+        crate::kernel::Address,
+        crate::kernel::LoadKind,
+    )>,
     // `uint32` reads still to be related to their cell's `int32` read by σ
     // (R-mem at 32 bits).
     pending_unsigned_word_reads: Vec<(u64, ProgramPoint, crate::kernel::Address)>,
@@ -1803,7 +1809,7 @@ impl TermClasses {
         };
         self.enqueue_int32_load(id, &node);
         self.enqueue_narrow_load(id, &node);
-        self.enqueue_signed_byte_read(id, &node);
+        self.enqueue_signed_read(id, &node);
         self.retain_machine_head(id, &node);
         self.nodes.insert(node, id);
         self.markers.insert(id, Arc::new(()));
@@ -1857,18 +1863,27 @@ impl TermClasses {
             .push((id, read.point, read.pointer, read.kind));
     }
 
-    fn enqueue_signed_byte_read(&mut self, id: u64, node: &Node) {
-        let Node::MachineNarrow(atom) = node else {
+    /// Queues a signed 8-, 16- or 128-bit read for its sign relation: one
+    /// entry, keyed by the read's own observation, no scan.
+    fn enqueue_signed_read(&mut self, id: u64, node: &Node) {
+        let (Node::MachineNarrow(atom) | Node::Machine128(atom)) = node else {
             return;
         };
         let Some(read) = crate::kernel::eval::scalar_read_observation(atom.operand_view()) else {
             return;
         };
-        if read.kind != crate::kernel::LoadKind::Int8 || read.bytes != 1 {
+        let bytes = match (node, read.kind) {
+            (Node::MachineNarrow(_), crate::kernel::LoadKind::Int8) => 1,
+            (Node::MachineNarrow(_), crate::kernel::LoadKind::Int16) => 2,
+            (Node::Machine128(_), crate::kernel::LoadKind::Int128) => 16,
+            _ => return,
+        };
+        // A wider recorded observation must not acquire a narrower relation.
+        if read.bytes != bytes {
             return;
         }
-        self.pending_signed_byte_reads
-            .push((id, read.point, read.pointer));
+        self.pending_signed_reads
+            .push((id, read.point, read.pointer, read.kind));
     }
 
     fn register_pending_loads(&mut self) {
@@ -1925,21 +1940,40 @@ impl TermClasses {
                 self.close(vec![(unsigned, cast)]);
                 continue;
             }
-            if let Some((signed, point, pointer)) = self.pending_signed_byte_reads.pop() {
+            // R-mem at 8, 16 and 128 bits: a signed read is the sign cast
+            // of its cell's unsigned read at the same read key. One read
+            // interned, one cast node, one union.
+            if let Some((signed, point, pointer, kind)) = self.pending_signed_reads.pop() {
+                use crate::kernel::{CarrierWidth as W, LoadKind as K, MachineIntegerType as M};
                 crate::instrumentation::record_deterministic_work(1);
+                let (unsigned_kind, from, to, width, bytes) = match kind {
+                    K::Int8 => (K::UInt8, M::UInt8, M::Int8, W::Bits8, 1),
+                    K::Int16 => (K::UInt16, M::UInt16, M::Int16, W::Bits16, 2),
+                    K::Int128 => (K::UInt128, M::UInt128, M::Int128, W::Bits128, 16),
+                    _ => unreachable!("only signed 8-, 16- and 128-bit reads are queued"),
+                };
                 let unsigned = crate::kernel::eval::scalar_read_for_exact_cell_at(
                     &point,
                     &pointer,
-                    crate::kernel::LoadKind::UInt8,
-                    1,
+                    unsigned_kind,
+                    bytes,
                 );
-                let byte = self.intern_typed_machine(&unsigned, crate::kernel::CarrierWidth::Bits8);
-                let cast = self.narrow_cast_node(
-                    crate::kernel::MachineIntegerType::UInt8,
-                    crate::kernel::MachineIntegerType::Int8,
-                    byte,
-                    false,
-                );
+                let unsigned = self.intern_typed_machine(&unsigned, width);
+                let cast = if width == W::Bits128 {
+                    // The cast node a written `(__int128) u` interns: the
+                    // applied generic conversion at 128 bits.
+                    let head = self.intern_node(Node::MachineUnary(
+                        crate::kernel::BitvectorUnaryOp::Cast {
+                            spelling: crate::kernel::MachineCastSpelling::Generic,
+                            from,
+                            to,
+                        },
+                        W::Bits128,
+                    ));
+                    self.intern_node(Node::Apply(head, unsigned))
+                } else {
+                    self.narrow_cast_node(from, to, unsigned, false)
+                };
                 self.close(vec![(signed, cast)]);
                 continue;
             }

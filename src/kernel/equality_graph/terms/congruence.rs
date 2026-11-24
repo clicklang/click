@@ -168,6 +168,15 @@ impl TermClasses {
         left != right && self.close(vec![(left, right)])
     }
 
+    /// Interns a native value of `width` and drains the registrations it
+    /// queued (load applications, sign relations), as a comparison does.
+    #[cfg(test)]
+    pub(in crate::kernel::equality_graph) fn register_typed(&mut self, width: W, term: &T) -> u64 {
+        let id = self.intern_typed_machine(term, width);
+        self.register_pending_loads();
+        id
+    }
+
     /// Whether two native values of `width` are one class.
     #[cfg(test)]
     pub(in crate::kernel::equality_graph) fn are_typed_equal(

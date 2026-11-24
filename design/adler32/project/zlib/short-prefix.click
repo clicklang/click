@@ -82,7 +82,7 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
   apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(b % 65521u64) <= 65535 by close() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
+   truncating_remainder(to_integer(b), 65521) <= 65521 - 1;
   };
   have to_integer(a) <= 65535 by close() using { to_integer(a) <= 3826; };
   apply(integer::uint64_pack_uint16_to_integer(a, b % 65521u64));
