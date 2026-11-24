@@ -3586,11 +3586,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        attempt::candidate_outcome(
-            proof
-                .driver()
-                .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
-        )
+        let step = if proof.goal().is_some_and(|goal| {
+            crate::kernel::proof::arithmetic_special::checks_selected_float_bounds(
+                goal,
+                requirements,
+            )
+        }) {
+            ProofStep::NormalizeUsing(surfaces)
+        } else {
+            ProofStep::CompatibilityNormalize(Some(surfaces))
+        };
+        attempt::candidate_outcome(proof.driver().apply_step(step))
     }
 
     fn establish_arithmetic_bounds(
@@ -3954,6 +3960,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_bound_chain");
+        use crate::kernel::proof::arithmetic_special::checks_selected_float_bounds;
         let [source, intermediate @ ..] = bounds else {
             return Ok(None);
         };
@@ -3987,12 +3994,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 previous_bound = bound;
                 continue;
             }
-            let Some(closed) = attempt::candidate_outcome(
-                scope
-                    .driver()
-                    .apply_step(ProofStep::CompatibilityNormalize(Some(vec![previous]))),
-            )?
-            else {
+            let step = if checks_selected_float_bounds(bound, std::slice::from_ref(previous_bound))
+            {
+                ProofStep::NormalizeUsing(vec![previous])
+            } else {
+                ProofStep::CompatibilityNormalize(Some(vec![previous]))
+            };
+            let Some(closed) = attempt::candidate_outcome(scope.driver().apply_step(step))? else {
                 return Ok(None);
             };
             proof = closed.join()?;
@@ -4005,11 +4013,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
-        attempt::candidate_outcome(
-            proof
-                .driver()
-                .apply_step(ProofStep::CompatibilityNormalize(Some(vec![previous]))),
-        )
+        let step = if proof.goal().is_some_and(|goal| {
+            checks_selected_float_bounds(goal, std::slice::from_ref(previous_bound))
+        }) {
+            ProofStep::NormalizeUsing(vec![previous])
+        } else {
+            ProofStep::CompatibilityNormalize(Some(vec![previous]))
+        };
+        attempt::candidate_outcome(proof.driver().apply_step(step))
     }
 
     /// Close the small domain conjunction as ordinary checked `have` steps.

@@ -26927,6 +26927,10 @@ fn float_cast_bounds_expand_and_cold_replay() {
 fn selected_float_bounds_expand_and_cold_replay() {
     for (fixture, functions) in [
         (
+            "float_bound_composition",
+            &["scale_twice", "double_twice"][..],
+        ),
+        (
             "float_signed_ranges",
             &["by_zero_bounded", "product", "quotient"][..],
         ),
@@ -26952,8 +26956,10 @@ fn selected_float_bounds_expand_and_cold_replay() {
                     > source.matches("normalize() using").count(),
                 "{claim}: {expanded}"
             );
-            without_implicit_solve_for_claim(&claim, || verify_c_sources(&expanded, &sources))
-                .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+            without_implicit_solve_for_claim(&claim, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
         }
     }
 }
