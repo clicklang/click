@@ -4655,6 +4655,15 @@ fn raise_kernel_term_dispatch(
         Node::PointerCall { call, .. } => recurse(call)?,
         // An array argument is its pointer, spelled as any pointer argument
         // is (a proof name, or `0` for null), read at the view's state.
+        // A null array is formed at no state; it is the literal `0`.
+        Node::ArrayReference { pointer, .. }
+            if matches!(
+                pointer.pointer_native(),
+                Some(ProgramValue::Pointer(value)) if value.address() == &Address::null()
+            ) =>
+        {
+            SurfaceTerm::IntegerLiteral("0".into())
+        }
         Node::ArrayReference { point, pointer, .. } => {
             let raise = |selected: &ExecutionState| {
                 raise_call_argument(pointer, parameter_binding, selected, bound_variables)
