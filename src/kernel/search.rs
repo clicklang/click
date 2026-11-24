@@ -22,6 +22,21 @@ pub(crate) fn disjunction_candidates(
     context.disjunction_fact_propositions(SearchPermission::new())
 }
 
+/// Select a written case split only when each arm excludes the queried word
+/// literal. Replay checks each branch using its own order premise.
+pub(crate) fn word_order_cases_exclude(
+    goal: &crate::kernel::Proposition,
+    source: &crate::kernel::Proposition,
+) -> bool {
+    use crate::kernel::proof::arithmetic_special::word_order_excludes_literal;
+    match source {
+        crate::kernel::Proposition::Or(left, right) => [left, right]
+            .into_iter()
+            .all(|case| word_order_excludes_literal(goal, case)),
+        _ => false,
+    }
+}
+
 /// Enumerate universal premises only while planning an expandable proof.
 pub(crate) fn universal_candidates(
     facts: &crate::kernel::proof::PureFactStore,

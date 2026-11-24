@@ -395,3 +395,52 @@ fn float_quotient_range_checks_only_four_cited_endpoints() {
         );
     }
 }
+
+#[test]
+fn rounded_integer_float_bound_checks_only_the_cited_integer_endpoint() {
+    let x = MachineTerm::var(crate::kernel::Variable(880801));
+    let goal = Proposition::condition_is(
+        ConditionTerm::float32_compare(
+            MachineTerm::opaque_conversion("c_int32_to_float32", x.clone()),
+            MachineTerm::constant(0x4f000000),
+            ComparisonOperator::LessThan,
+        ),
+        true,
+    );
+    let bound = |word, upper| {
+        Proposition::condition_is(
+            ConditionTerm::signed_less_equal(word, MachineTerm::constant(upper)),
+            true,
+        )
+    };
+    let safe = bound(x.clone(), 2147483583);
+    let unsafe_bound = bound(x.clone(), 2147483584);
+    for related in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let mut ambient = vec![safe.clone(), unsafe_bound.clone()];
+            for index in 0..size {
+                let value = if related {
+                    x.clone()
+                } else {
+                    MachineTerm::var(crate::kernel::Variable(880820 + u64::from(index)))
+                };
+                ambient.push(bound(value, 2147483600 + index));
+            }
+            let facts = PureFactStore::from_ordered(&ambient);
+            let (hit, work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, std::slice::from_ref(&safe), &facts)
+            });
+            hit.unwrap();
+            assert!(
+                normalize_using_conditions(&goal, std::slice::from_ref(&unsafe_bound), &facts)
+                    .is_err()
+            );
+            work
+        });
+        let minimum = samples.iter().copied().min().unwrap();
+        assert!(
+            samples.iter().all(|&work| work <= minimum + 8),
+            "{related}: {samples:?}"
+        );
+    }
+}
