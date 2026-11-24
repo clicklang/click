@@ -170,64 +170,76 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             have forall (k: int32) {
                 0 <= k and k < n implies at(iter, next[k]) == next[k]
             } by {
-                intro(); intro();
-                have contains(memory(visited[0..n]), memory(visited[cur])) by {
-                    apply(click::separation::contains_element(visited, 0, n, cur));
+                intro() {
+                    intro() {
+                        have contains(memory(visited[0..n]), memory(visited[cur])) by {
+                            apply(click::separation::contains_element(visited, 0, n, cur));
+                        }
+                        have contains(memory(next[0..n]), memory(next[k])) by {
+                            apply(click::separation::contains_element(next, 0, n, k));
+                        }
+                        have separate(memory(visited[cur]), memory(next[k])) by {
+                            apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k])));
+                        }
+                        have separate(loop(0).statement(1).footprint, memory(next[k])) by {
+                            close() using { separate(memory(visited[cur]), memory(next[k])); };
+                        }
+                        have next[k] == at(iter, next[k]) by {
+                            preserve(memory(next[k]), loop(0).statement(1));
+                        }
+                        close();
+                    }
                 }
-                have contains(memory(next[0..n]), memory(next[k])) by {
-                    apply(click::separation::contains_element(next, 0, n, k));
-                }
-                have separate(memory(visited[cur]), memory(next[k])) by {
-                    apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k])));
-                }
-                have separate(loop(0).statement(1).footprint, memory(next[k])) by {
-                    close() using { separate(memory(visited[cur]), memory(next[k])); };
-                }
-                have next[k] == at(iter, next[k]) by {
-                    preserve(memory(next[k]), loop(0).statement(1));
-                }
-                close();
             }
             have forall (k: int32) {
                 0 <= k and k < n implies 0 <= next[k] and next[k] < n
             } by {
-                intro(); intro();
-                instantiate(at(iter, forall (j: int32) {
-                    0 <= j and j < n implies 0 <= next[j] and next[j] < n
-                }), k);
-                instantiate(forall (j: int32) {
-                    0 <= j and j < n implies at(iter, next[j]) == next[j]
-                }, k);
-                rewrite(next[k], at(iter, next[k]));
-                close();
+                intro() {
+                    intro() {
+                        instantiate(at(iter, forall (j: int32) {
+                            0 <= j and j < n implies 0 <= next[j] and next[j] < n
+                        }), k);
+                        instantiate(forall (j: int32) {
+                            0 <= j and j < n implies at(iter, next[j]) == next[j]
+                        }, k);
+                        rewrite(next[k], at(iter, next[k]));
+                        close();
+                    }
+                }
             }
             have forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == visited[k] } by {
-                intro(); intro();
-                have cur != k by { close() using { k < cur; }; }
-                have separate(memory(visited[cur]), memory(visited[k])) by {
-                    apply(click::separation::separate_elements(visited, cur, k));
+                intro() {
+                    intro() {
+                        have cur != k by { close() using { k < cur; }; }
+                        have separate(memory(visited[cur]), memory(visited[k])) by {
+                            apply(click::separation::separate_elements(visited, cur, k));
+                        }
+                        have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
+                            close() using { separate(memory(visited[cur]), memory(visited[k])); };
+                        }
+                        have visited[k] == at(iter, visited[k]) by {
+                            preserve(memory(visited[k]), loop(0).statement(1));
+                        }
+                        close();
+                    }
                 }
-                have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
-                    close() using { separate(memory(visited[cur]), memory(visited[k])); };
-                }
-                have visited[k] == at(iter, visited[k]) by {
-                    preserve(memory(visited[k]), loop(0).statement(1));
-                }
-                close();
             }
             have forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == visited[k] } by {
-                intro(); intro();
-                have cur != k by { close() using { cur < k; }; }
-                have separate(memory(visited[cur]), memory(visited[k])) by {
-                    apply(click::separation::separate_elements(visited, cur, k));
+                intro() {
+                    intro() {
+                        have cur != k by { close() using { cur < k; }; }
+                        have separate(memory(visited[cur]), memory(visited[k])) by {
+                            apply(click::separation::separate_elements(visited, cur, k));
+                        }
+                        have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
+                            close() using { separate(memory(visited[cur]), memory(visited[k])); };
+                        }
+                        have visited[k] == at(iter, visited[k]) by {
+                            preserve(memory(visited[k]), loop(0).statement(1));
+                        }
+                        close();
+                    }
                 }
-                have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
-                    close() using { separate(memory(visited[cur]), memory(visited[k])); };
-                }
-                have visited[k] == at(iter, visited[k]) by {
-                    preserve(memory(visited[k]), loop(0).statement(1));
-                }
-                close();
             }
             observe(visited[0..n]);
             apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur));

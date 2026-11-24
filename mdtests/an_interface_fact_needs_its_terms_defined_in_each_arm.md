@@ -94,10 +94,13 @@ int32 bubble_pass3(int32 p[3]) {
                                 preserve(memory(p[0]), loop(0).statement(0).statement(2));
                             }
                             unfold(all_le_range(p, 0, j, p[j + 1]));
-                            intro(); intro();
-                            have k == 0 by close();
-                            rewrite(k, 0);
-                            close();
+                            intro() {
+                                intro() {
+                                    have k == 0 by close();
+                                    rewrite(k, 0);
+                                    close();
+                                }
+                            }
                         }
                     }
                 }

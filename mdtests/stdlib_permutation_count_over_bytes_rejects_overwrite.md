@@ -36,14 +36,15 @@ int32 duplicate_byte(uint8 p[2]) {
     step();
     have byte_permutation(p, old(p), 0, 2) by {
         unfold(byte_permutation(p, old(p), 0, 2));
-        intro();
-        if x == 0u8 {
-            rewrite(x, 0u8);
-            rewrite(permutation::count(p, 0, 2, 0u8), 0);
-            rewrite(permutation::count(old(p), 0, 2, 0u8), 1);
-            normalize();
-        } else {
-            close();
+        intro() {
+            if x == 0u8 {
+                rewrite(x, 0u8);
+                rewrite(permutation::count(p, 0, 2, 0u8), 0);
+                rewrite(permutation::count(old(p), 0, 2, 0u8), 1);
+                normalize();
+            } else {
+                close();
+            }
         }
     }
 }

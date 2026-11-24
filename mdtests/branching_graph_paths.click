@@ -159,29 +159,33 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
     requires 0 <= to and to < n implies after[to] == before[to];
     ensures forall (path: Path) { walk(left, right, from, path) != to } by {
         have forall (k: int32) { 0 <= k and k < n and after[k] != 0 implies k != to and (after[left[k]] != 0 and after[right[k]] != 0) } by {
-            intro(); intro();
-            have 0 <= k; have k < n; have after[k] != 0;
-            instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, k);
-            instantiate(forall (k: int32) { 0 <= k and k < n and before[k] == 0 and after[k] != 0 implies after[left[k]] != 0 and after[right[k]] != 0 }, k);
-            have k != to by {
-                if k == to {
-                    have 0 <= to;
-                    have to < n;
-                    have 0 <= to and to < n by close();
-                    have after[to] == before[to];
-                    have before[to] == 0 by {
-                        instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, to);
-                        close();
+            intro() {
+                intro() {
+                    have 0 <= k; have k < n; have after[k] != 0;
+                    instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, k);
+                    instantiate(forall (k: int32) { 0 <= k and k < n and before[k] == 0 and after[k] != 0 implies after[left[k]] != 0 and after[right[k]] != 0 }, k);
+                    have k != to by {
+                        if k == to {
+                            have 0 <= to;
+                            have to < n;
+                            have 0 <= to and to < n by close();
+                            have after[to] == before[to];
+                            have before[to] == 0 by {
+                                instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, to);
+                                close();
+                            }
+                            have after[to] == 0 by { rewrite(after[to], before[to]); close(); }
+                            have after[k] == 0 by { rewrite(k, to); close(); }
+                            contradiction(after[k] != 0);
+                        } else { close(); }
                     }
-                    have after[to] == 0 by { rewrite(after[to], before[to]); close(); }
-                    have after[k] == 0 by { rewrite(k, to); close(); }
-                    contradiction(after[k] != 0);
-                } else { close(); }
+                    close();
+                }
             }
+        }
+        intro() {
+            apply(closed_marks_exclude_target(left, right, after, n, from, to, path));
             close();
         }
-        intro();
-        apply(closed_marks_exclude_target(left, right, after, n, from, to, path));
-        close();
     }
 }

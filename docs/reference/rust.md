@@ -1163,6 +1163,49 @@ is described below. Numeric contract casts are `x as i32`, `x as u32`,
 convert modulo 2^N. Use signed 64-bit widening to state full-width u32
 addition guards, for example `(x as i64 + y as i64) <= 4294967295i64`.
 
+## String slices
+
+A `&str` parameter is a shared slice of the UTF-8 bytes it refers to,
+passed as a byte slice is: a pointer and a length in bytes. A sidecar
+writes its type `&str` and reads its length as `s.len()`; the type grants
+the same authority a `&[u8]` does. A reborrow `&*s` and a call passing a
+`&str` on are supported. `s.len()` and `s.is_empty()` call `str::len` and
+`str::is_empty`, one-line contracts in `library/rust/str.interface.click`
+([Rust string slice methods](library/index.md#rust-string-slice-methods)),
+reported as assumptions:
+
+<!-- verified-example: tests/fixtures/rust-verification/str-views/strs.click -->
+```click
+verifying "strs.rs";
+
+// A `&str` is a shared slice of its UTF-8 bytes: a contract reads its
+// length in bytes as `s.len()`, as the code does. The library states
+// `str::len` and `str::is_empty` over that length.
+fn str_views::byte_len(s: &str) -> usize {
+    ensures result == s.len();
+}
+
+fn str_views::blank(s: &str) -> bool {
+    ensures result == (s.len() == 0u64);
+}
+
+// A call passes the string slice on, and the callee's contract gives its
+// length.
+fn str_views::longer(a: &str, b: &str) -> bool {
+    ensures result == (a.len() > b.len());
+}
+
+// `is_empty` decides the branch, so each case gives its own result.
+fn str_views::width(s: &str) -> usize {
+    ensures s.len() == 0u64 implies result == 1u64;
+    ensures s.len() != 0u64 implies result == s.len();
+}
+```
+
+`&mut str`, `String`, string literals, `as_bytes`, `==` and the other `str`
+methods are refused with their names. The UTF-8 validity of a `&str`'s bytes
+is not modeled.
+
 ## Shared slice splitting
 
 The standard shared byte-slice method supports local destructuring:

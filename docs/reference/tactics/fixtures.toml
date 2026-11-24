@@ -170,12 +170,12 @@ needle = "normalize() using { x < y; y == 5; };"
 [[form]]
 id = "intro"
 path = "mdtests/copy_n_segment_invariant.md"
-needle = "intro();"
+needle = "intro() {"
 
 [[form]]
 id = "intro-as"
 path = "mdtests/intro_as_names_the_introduced_variable.md"
-needle = "let row = intro();"
+needle = "intro(row) {"
 
 [[form]]
 id = "enumerate"

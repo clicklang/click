@@ -59,18 +59,21 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
             have sorted(old(p), 3) by {
                 unfold(sorted(old(p), 3));
                 unfold(sorted_range(old(p), 0, 3));
-                intro();
-                intro();
-                intro();
-                instantiate(forall (i: int32) {
-                    forall (j: int32) {
-                        0 <= i and 0 <= j and 0 <= i and i < j and j < 3 implies p[i] <= p[j]
+                intro() {
+                    intro() {
+                        intro() {
+                            instantiate(forall (i: int32) {
+                                forall (j: int32) {
+                                    0 <= i and 0 <= j and 0 <= i and i < j and j < 3 implies p[i] <= p[j]
+                                }
+                            }, i);
+                            instantiate(forall (j: int32) {
+                                0 <= i and 0 <= j and 0 <= i and i < j and j < 3 implies p[i] <= p[j]
+                            }, j);
+                            close();
+                        }
                     }
-                }, i);
-                instantiate(forall (j: int32) {
-                    0 <= i and 0 <= j and 0 <= i and i < j and j < 3 implies p[i] <= p[j]
-                }, j);
-                close();
+                }
             }
         }
         maintain by {

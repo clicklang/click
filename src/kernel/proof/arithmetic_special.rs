@@ -3173,38 +3173,44 @@ pub(crate) fn word_order_excludes_literal(goal: &Proposition, premise: &Proposit
 /// product, since an Integer product is a different expression.
 pub(crate) fn odd_product_nonzero_requirement(goal: &Proposition) -> Option<Proposition> {
     use crate::kernel::MachineOperandView as View;
-    use crate::kernel::machine_integer::{
-        Relation,
-        comparison::{comparison_view, condition_for_operand_views},
-    };
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
 
-    let (condition, truth) = goal.condition_native()?;
-    let view = comparison_view(condition, *truth)?;
-    let format = view.format;
-    if view.relation != Relation::NotEqual
-        || !matches!(
-            format,
-            MachineIntegerType::UInt32 | MachineIntegerType::UInt64
-        )
-    {
+    let Proposition::ConditionIs(condition, false) = goal else {
         return None;
-    }
-    let [left, right] = view
-        .operands
-        .each_ref()
-        .map(|operand| operand.operand_view());
-    let constant = |operand: View<'_>| format.constant_from_term(&operand.literal()?);
+    };
+    let (comparison_format, CompareRelation::Equal, [left, right]) =
+        condition.operand_view().comparison()?
+    else {
+        return None;
+    };
     for (product, zero) in [(left, right), (right, left)] {
-        if !constant(zero).is_some_and(|value| value.bits() == 0) {
+        let Some(zero) = zero.literal() else {
+            continue;
+        };
+        let zero_matches_width = match comparison_format.format().bits() {
+            32 => zero.constant32() == Some(0),
+            64 => zero.bitvector64_as_const() == Some(0),
+            _ => false,
+        };
+        if !zero_matches_width {
             continue;
         }
-        let (operation_format, operation, [a, b]) = product.binary()?;
-        if operation_format != format || operation != MachineBinaryOp::Multiply {
+        // Equality uses the same bits at either signedness. In particular,
+        // native UInt64 equality is stored with an Int64 comparison format.
+        let (format, MachineBinaryOp::Multiply, [a, b]) = product.binary()? else {
+            return None;
+        };
+        if !matches!(
+            format,
+            MachineIntegerType::UInt32 | MachineIntegerType::UInt64
+        ) || comparison_format.format().bits() != format.format().bits()
+        {
             return None;
         }
+        let constant = |operand: View<'_>| format.constant_from_term(&operand.literal()?);
         for (operand, multiplier) in [(a, b), (b, a)] {
             if constant(multiplier).is_some_and(|value| value.bits() & 1 == 1) {
-                let zero = zero.literal()?;
+                let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
                 return Some(Proposition::condition_is(
                     condition_for_operand_views(
                         format,
@@ -3774,7 +3780,10 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
                 .inclusive_endpoint()
                 .is_some_and(|endpoint| float_endpoint_establishes(&goal, endpoint, false));
     }
-    if let Some(endpoint) = float_reciprocal_endpoint(&premise, &goal) {
+    if let Some((_, endpoint)) = premise
+        .inclusive_endpoint()
+        .and_then(|near_zero| float_reciprocal_endpoint(&premise, &goal, near_zero))
+    {
         return float_endpoint_establishes(&goal, endpoint, false);
     }
     let Some((operand, operation)) = float_bound_operation(goal.operand) else {
@@ -3790,14 +3799,17 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
     float_endpoint_establishes(&goal, endpoint, strict)
 }
 
-fn float_reciprocal_endpoint(premise: &FloatBound<'_>, goal: &FloatBound<'_>) -> Option<u64> {
+fn float_reciprocal_endpoint(
+    premise: &FloatBound<'_>,
+    goal: &FloatBound<'_>,
+    near_zero: u64,
+) -> Option<(u64, u64)> {
     use crate::kernel::FloatBinaryOperator::Divide;
     let (Divide, [numerator, divisor]) = goal.operand.binary()? else {
         return None;
     };
     let sign = float_sign_bit(goal.format);
     let numerator = numerator.literal_bits()?;
-    let near_zero = premise.inclusive_endpoint()?;
     if !positive_finite_float(goal.format, numerator & !sign)
         || premise.format != goal.format
         || !same_float_operand(premise.operand, divisor)
@@ -3809,10 +3821,49 @@ fn float_reciprocal_endpoint(premise: &FloatBound<'_>, goal: &FloatBound<'_>) ->
     // The stated side of zero includes its infinity. The most distant
     // quotient from zero occurs at the divisor endpoint nearest zero.
     let negative = (numerator ^ near_zero) & sign != 0;
-    Some(if goal.lower == negative {
+    let endpoint = if goal.lower == negative {
         crate::kernel::primitives::float_binary_bits_at(goal.format, numerator, near_zero, Divide)
     } else {
         0
+    };
+    Some((numerator, endpoint))
+}
+
+pub(crate) struct FloatReciprocalBoundPlan {
+    pub(crate) weakening: FloatBoundWeakening,
+    pub(crate) numerator: u64,
+    pub(crate) divisor_lower_bound: bool,
+    pub(crate) strict_source: bool,
+    pub(crate) minimum_positive_endpoint: Option<u64>,
+    pub(crate) uses_positive_law: bool,
+}
+
+/// Use the cited divisor endpoint, with a strict positive bound at zero
+/// strengthened to the smallest positive value of the same format.
+pub(crate) fn float_reciprocal_bound_weakening(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<FloatReciprocalBoundPlan> {
+    let source = float_bound(premise)?;
+    let bound = float_bound(goal)?;
+    let minimum_positive_endpoint =
+        if source.strict && source.lower && (source.endpoint & !float_sign_bit(source.format)) == 0
+        {
+            Some(source.inclusive_endpoint()?)
+        } else {
+            None
+        };
+    let divisor_endpoint = minimum_positive_endpoint.unwrap_or(source.endpoint);
+    let (numerator, endpoint) = float_reciprocal_endpoint(&source, &bound, divisor_endpoint)?;
+    Some(FloatReciprocalBoundPlan {
+        weakening: FloatBoundWeakening::new(&bound, endpoint, false)?,
+        numerator,
+        divisor_lower_bound: source.lower,
+        strict_source: source.strict,
+        minimum_positive_endpoint,
+        uses_positive_law: source.lower
+            && positive_finite_float(bound.format, divisor_endpoint)
+            && positive_finite_float(bound.format, numerator),
     })
 }
 
@@ -3851,6 +3902,35 @@ pub(crate) fn rounded_integer_float_bound(
     goal: &Proposition,
     premise: Option<&Proposition>,
 ) -> bool {
+    float_bound(goal).is_some_and(|bound| {
+        rounded_integer_float_endpoint(&bound, premise)
+            .is_some_and(|(_, _, _, bits)| float_endpoint_establishes(&bound, bits, false))
+    })
+}
+
+pub(crate) fn rounded_int32_to_float32_bound(
+    source: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, i32, bool)> {
+    let bound = float_bound(goal)?;
+    if bound.format != KernelFloatType::Float32 {
+        return None;
+    }
+    let (format, endpoint, strict, bits) = rounded_integer_float_endpoint(&bound, Some(source))?;
+    if format != MachineIntegerType::Int32 {
+        return None;
+    }
+    Some((
+        FloatBoundWeakening::new(&bound, bits, false)?,
+        endpoint.try_into().ok()?,
+        strict,
+    ))
+}
+
+fn rounded_integer_float_endpoint(
+    bound: &FloatBound<'_>,
+    premise: Option<&Proposition>,
+) -> Option<(MachineIntegerType, i128, bool, u64)> {
     use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
     use crate::kernel::primitives::float_conversion::{
         integer_to_float32_bits, integer_to_float64_bits,
@@ -3858,35 +3938,22 @@ pub(crate) fn rounded_integer_float_bound(
     use crate::kernel::{MachineOperandView, equality_graph::MachineAtom};
     use num_traits::ToPrimitive;
 
-    let Some(bound) = float_bound(goal) else {
-        return false;
-    };
-    let Some(conversion) = bound.operand.conversion() else {
-        return false;
-    };
-    let Some(format) = MachineIntegerType::from_program_type(conversion.source_type()) else {
-        return false;
-    };
+    let conversion = bound.operand.conversion()?;
+    let format = MachineIntegerType::from_program_type(conversion.source_type())?;
     if format.format().bits() > 64 {
-        return false;
+        return None;
     }
-    let operand = if let Some(root) = conversion.shared() {
-        MachineOperandView::Shared(root)
-    } else if let Some(native) = conversion.native() {
-        MachineOperandView::Legacy(native)
-    } else {
-        return false;
-    };
     let (minimum, maximum) = format.format().bounds();
-    let endpoint = if let Some(premise) = premise {
-        let Some(view) = premise
-            .condition_native()
-            .and_then(|(condition, truth)| comparison_view(condition, *truth))
-        else {
-            return false;
+    let (endpoint, strict) = if let Some(premise) = premise {
+        let operand = if let Some(root) = conversion.shared() {
+            MachineOperandView::Shared(root)
+        } else {
+            MachineOperandView::Legacy(conversion.native()?)
         };
+        let (condition, truth) = premise.condition_native()?;
+        let view = comparison_view(condition, *truth)?;
         if view.format != format || !matches!(view.relation, Relation::Less | Relation::LessEqual) {
-            return false;
+            return None;
         }
         let [left, right] = &view.operands;
         let (literal, named) = if bound.lower {
@@ -3894,31 +3961,22 @@ pub(crate) fn rounded_integer_float_bound(
         } else {
             (right, left)
         };
-        let Some(literal) = literal
-            .operand_view()
-            .literal()
-            .and_then(|term| format.constant_from_term(&term))
-        else {
-            return false;
-        };
+        let literal = format.constant_from_term(&literal.operand_view().literal()?)?;
         if MachineAtom::from_numeric_operand(format, named.operand_view())
             != MachineAtom::from_numeric_operand(format, operand)
         {
-            return false;
+            return None;
         }
         let mut endpoint = literal.to_integer();
-        if view.relation == Relation::Less {
+        let strict = view.relation == Relation::Less;
+        if strict {
             endpoint += if bound.lower { 1 } else { -1 };
         }
-        endpoint
-    } else if bound.lower {
-        minimum
+        (endpoint, strict)
     } else {
-        maximum
+        (if bound.lower { minimum } else { maximum }, false)
     };
-    let Some(value) = endpoint.to_i128() else {
-        return false;
-    };
+    let value = endpoint.to_i128()?;
     let bits = match bound.format {
         KernelFloatType::Float32 => {
             u64::from(integer_to_float32_bits(value < 0, value.unsigned_abs()))
@@ -3926,7 +3984,7 @@ pub(crate) fn rounded_integer_float_bound(
         KernelFloatType::Float64 => integer_to_float64_bits(value < 0, value.unsigned_abs()),
     };
     crate::instrumentation::record_deterministic_work(1);
-    float_endpoint_establishes(&bound, bits, false)
+    Some((format, value, strict, bits))
 }
 
 pub(crate) fn is_rounded_integer_float_bound(goal: &Proposition) -> bool {
@@ -3947,6 +4005,22 @@ pub(crate) struct FloatBoundWeakening {
     pub(crate) endpoint_strict: bool,
 }
 
+/// Weaken an ordered endpoint on the same retained floating-point operand.
+pub(crate) fn same_float_bound_weakening(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, bool)> {
+    let source = float_bound(premise)?;
+    let goal = float_bound(goal)?;
+    if source.lower != goal.lower || !same_float_operand(source.operand, goal.operand) {
+        return None;
+    }
+    Some((
+        FloatBoundWeakening::new(&goal, source.endpoint, source.strict)?,
+        source.strict,
+    ))
+}
+
 pub(crate) fn exact_float_bound_transfer(
     premise: &Proposition,
     goal: &Proposition,
@@ -3963,6 +4037,26 @@ pub(crate) fn exact_float_bound_transfer(
     }
     let (endpoint, strict) = operation.apply(bound.format, source.endpoint, source.strict);
     FloatBoundWeakening::from_goal(goal, endpoint, strict)
+}
+
+/// Narrowing rounds the bound at float32 precision and can merge distinct
+/// input values, so the transported comparison is always non-strict.
+pub(crate) fn float_narrow_bound_weakening(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, bool)> {
+    let source = float_bound(premise)?;
+    let bound = float_bound(goal)?;
+    let operand = bound.operand.narrowed_float64()?;
+    if source.lower != bound.lower || !same_float_operand(source.operand, operand) {
+        return None;
+    }
+    let (endpoint, strict) =
+        FloatBoundOperation::Narrow.apply(bound.format, source.endpoint, source.strict);
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
+        source.strict,
+    ))
 }
 
 impl FloatBoundWeakening {
@@ -4361,13 +4455,14 @@ impl<'a> FloatPairBound<'a> {
 }
 
 /// Plan the exact rounded endpoint from two selected finite ordered bounds.
-/// The ordinary addition law takes non-strict input comparisons.
-pub(crate) fn float_sum_bound_weakening(
+/// The ordinary addition and subtraction laws take non-strict comparisons.
+pub(crate) fn float_pair_bound_weakening(
     goal: &Proposition,
     [first, second]: &[Proposition; 2],
-) -> Option<FloatBoundWeakening> {
+) -> Option<(FloatBoundWeakening, bool)> {
+    use crate::kernel::FloatBinaryOperator::{Add, Subtract};
     let pair = FloatPairBound::new(goal)?;
-    if pair.operator != crate::kernel::FloatBinaryOperator::Add
+    if !matches!(pair.operator, Add | Subtract)
         || float_bound(first)?.strict
         || float_bound(second)?.strict
     {
@@ -4379,21 +4474,177 @@ pub(crate) fn float_sum_bound_weakening(
         pair.operand_endpoint(1, second)?,
         pair.operator,
     );
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, false)?,
+        pair.operator == Subtract,
+    ))
+}
+
+/// Select the same subtraction law when one of its two bounds is reflexive.
+pub(crate) fn float_literal_subtraction_bound(
+    source: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, u64, bool)> {
+    let input = float_bound(source)?;
+    let result = float_bound(goal)?;
+    let (operand, operation) = float_literal_operation(result.operand)?;
+    let FloatBoundOperation::Binary {
+        operator: crate::kernel::FloatBinaryOperator::Subtract,
+        literal,
+        literal_on_left,
+        ..
+    } = operation
+    else {
+        return None;
+    };
+    if input.strict
+        || !same_float_operand(input.operand, operand)
+        || !float_bound_weakens(source, goal)
+    {
+        return None;
+    }
+    let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
+        literal,
+        literal_on_left,
+    ))
+}
+
+/// A selected finite interval establishes the operand classification needed
+/// by the exact zero-product bridge.
+pub(crate) fn float_zero_product_from_bounds(
+    goal: &Proposition,
+    [first, second]: &[Proposition; 2],
+) -> Option<(KernelFloatType, Proposition)> {
+    let pair = FloatPairBound::new(goal)?;
+    if !pair.zero_product || float_bound(first)?.strict || float_bound(second)?.strict {
+        return None;
+    }
+    pair.operand_endpoint(0, first)?;
+    pair.operand_endpoint(1, second)?;
+    Some((pair.goal.format, float_zero_product_premise(goal)?))
+}
+
+/// A finite square is bounded below by zero and above by the larger rounded
+/// endpoint square.
+pub(crate) fn float_square_bound(
+    goal: &Proposition,
+    [first, second]: &[Proposition; 2],
+) -> Option<(FloatBoundWeakening, u64)> {
+    use crate::kernel::FloatBinaryOperator::Multiply;
+    let pair = FloatPairBound::new(goal)?;
+    if !pair.square || float_bound(first)?.strict || float_bound(second)?.strict {
+        return None;
+    }
+    let format = pair.goal.format;
+    let square =
+        |bits| crate::kernel::primitives::float_binary_bits_at(format, bits, bits, Multiply);
+    let low = square(pair.operand_endpoint(0, first)?);
+    let high = square(pair.operand_endpoint(2, second)?);
+    let upper = if float_endpoint_compare(format, low, high, ComparisonOperator::LessThan) {
+        high
+    } else {
+        low
+    };
+    let endpoint = if pair.goal.lower { 0 } else { upper };
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, false)?,
+        upper,
+    ))
+}
+
+/// The positive product's two lower bounds suffice even without upper bounds.
+pub(crate) fn float_positive_product_bound(
+    goal: &Proposition,
+    [first, second]: &[Proposition; 2],
+) -> Option<FloatBoundWeakening> {
+    use crate::kernel::FloatBinaryOperator::Multiply;
+    let pair = FloatPairBound::new(goal)?;
+    if pair.operator != Multiply
+        || pair.zero_product
+        || float_bound(first)?.strict
+        || float_bound(second)?.strict
+    {
+        return None;
+    }
+    let endpoints = [
+        pair.operand_endpoint(0, first)?,
+        pair.operand_endpoint(1, second)?,
+    ];
+    if !pair.established_by(&endpoints) {
+        return None;
+    }
+    let [left, right] = endpoints;
+    let endpoint =
+        crate::kernel::primitives::float_binary_bits_at(pair.goal.format, left, right, Multiply);
     FloatBoundWeakening::from_goal(goal, endpoint, false)
 }
 
-/// Rounded float32 multiplication by a positive finite literal on the left.
+/// Select the tight rounded endpoint from a product or quotient rectangle.
+/// The proof cites all four operand bounds and each rounded corner order.
+pub(crate) fn float_corner_bound_weakening(
+    goal: &Proposition,
+    bounds: &[Proposition; 4],
+) -> Option<(FloatBoundWeakening, crate::kernel::FloatBinaryOperator)> {
+    use crate::kernel::FloatBinaryOperator::{Divide, Multiply};
+    let pair = FloatPairBound::new(goal)?;
+    let operator = pair.operator;
+    if !matches!(operator, Multiply | Divide) || pair.zero_product {
+        return None;
+    }
+    let mut endpoints = [0; 4];
+    for (index, (endpoint, bound)) in endpoints.iter_mut().zip(bounds).enumerate() {
+        if float_bound(bound)?.strict {
+            return None;
+        }
+        *endpoint = pair.operand_endpoint(index, bound)?;
+    }
+    if !pair.established_by(&endpoints) {
+        return None;
+    }
+    let [left_low, right_low, left_high, right_high] = endpoints;
+    let format = pair.goal.format;
+    let order = if pair.goal.lower {
+        ComparisonOperator::LessThan
+    } else {
+        ComparisonOperator::GreaterThan
+    };
+    let endpoint = [left_low, left_high]
+        .into_iter()
+        .flat_map(|left| {
+            [right_low, right_high]
+                .into_iter()
+                .map(move |right| (left, right))
+        })
+        .map(|(left, right)| {
+            crate::kernel::primitives::float_binary_bits_at(format, left, right, operator)
+        })
+        .reduce(|best, candidate| {
+            if float_endpoint_compare(format, candidate, best, order) {
+                candidate
+            } else {
+                best
+            }
+        })?;
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, false)?,
+        operator,
+    ))
+}
+
+/// Rounded float32 multiplication by a positive finite literal.
 pub(crate) fn float_scale_bound_weakening(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u32)> {
+) -> Option<(FloatBoundWeakening, u32, bool)> {
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
     let (_, operation) = float_literal_operation(result.operand)?;
     let FloatBoundOperation::Binary {
         operator: crate::kernel::FloatBinaryOperator::Multiply,
         literal,
-        literal_on_left: true,
+        literal_on_left,
         increasing: true,
     } = operation
     else {
@@ -4409,6 +4660,7 @@ pub(crate) fn float_scale_bound_weakening(
     Some((
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal as u32,
+        literal_on_left,
     ))
 }
 

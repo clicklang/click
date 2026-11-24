@@ -37,9 +37,10 @@ fn last_index(bytes: &[u8]) -> usize {
     }
     have loop(0).iter.len() == 0u64;
     have bytes.len() != 0u64 implies last == bytes.len() - 1u64 by {
-        intro();
-        have loop(0).iter.count == bytes.len();
-        close();
+        intro() {
+            have loop(0).iter.count == bytes.len();
+            close();
+        }
     }
 }
 

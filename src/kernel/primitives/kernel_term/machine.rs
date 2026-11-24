@@ -479,7 +479,7 @@ impl MachineCastSpelling {
     }
 }
 
-pub(super) fn wrap_exact(format: MachineIntegerType, term: MachineTerm) -> ProgramValue {
+pub(in crate::kernel) fn wrap_exact(format: MachineIntegerType, term: MachineTerm) -> ProgramValue {
     // value_from_term applies the word-format convention. This adapter must
     // preserve the payload exactly, including constants inside operations.
     match format {

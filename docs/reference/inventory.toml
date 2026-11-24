@@ -1691,6 +1691,10 @@ id = "cli.expand.--claim"
 path = "reference/cli/expand.md#options"
 
 [[item]]
+id = "cli.expand.--check-normalize-removal"
+path = "reference/cli/expand.md#options"
+
+[[item]]
 id = "cli.expand.--migrate-normalize"
 path = "reference/cli/expand.md#options"
 
@@ -2837,6 +2841,14 @@ path = "reference/library/index.md#integer-checked-arithmetic"
 [[item]]
 id = "library.rust.u32::max"
 path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.str::is_empty"
+path = "reference/library/index.md#rust-string-slice-methods"
+
+[[item]]
+id = "library.rust.str::len"
+path = "reference/library/index.md#rust-string-slice-methods"
 
 [[item]]
 id = "library.rust.u32::min"
@@ -5543,3 +5555,143 @@ path = "reference/library/index.md#float_orderfloat32_scale_lower"
 [[item]]
 id = "library.theorem.float_order::float32_scale_upper"
 path = "reference/library/index.md#float_orderfloat32_scale_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_sub_lower"
+path = "reference/library/index.md#float_orderfloat32_sub_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_sub_upper"
+path = "reference/library/index.md#float_orderfloat32_sub_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_sub_lower"
+path = "reference/library/index.md#float_orderfloat64_sub_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_sub_upper"
+path = "reference/library/index.md#float_orderfloat64_sub_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_narrow_le"
+path = "reference/library/index.md#float_orderfloat64_narrow_le"
+
+[[item]]
+id = "library.theorem.float_order::float64_narrow_lt"
+path = "reference/library/index.md#float_orderfloat64_narrow_lt"
+
+[[item]]
+id = "library.theorem.float_order::float32_lt_to_le"
+path = "reference/library/index.md#float_orderfloat32_lt_to_le"
+
+[[item]]
+id = "library.theorem.float_order::float64_lt_to_le"
+path = "reference/library/index.md#float_orderfloat64_lt_to_le"
+
+[[item]]
+id = "library.theorem.float_order::float32_positive_product_lower"
+path = "reference/library/index.md#float_orderfloat32_positive_product_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_product_lower"
+path = "reference/library/index.md#float_orderfloat32_product_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_product_upper"
+path = "reference/library/index.md#float_orderfloat32_product_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_positive_product_lower"
+path = "reference/library/index.md#float_orderfloat64_positive_product_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_product_lower"
+path = "reference/library/index.md#float_orderfloat64_product_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_product_upper"
+path = "reference/library/index.md#float_orderfloat64_product_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_reciprocal_lower"
+path = "reference/library/index.md#float_orderfloat32_reciprocal_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_reciprocal_upper"
+path = "reference/library/index.md#float_orderfloat32_reciprocal_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_quotient_lower"
+path = "reference/library/index.md#float_orderfloat32_quotient_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_quotient_upper"
+path = "reference/library/index.md#float_orderfloat32_quotient_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_reciprocal_lower"
+path = "reference/library/index.md#float_orderfloat64_reciprocal_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_reciprocal_upper"
+path = "reference/library/index.md#float_orderfloat64_reciprocal_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_quotient_lower"
+path = "reference/library/index.md#float_orderfloat64_quotient_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_quotient_upper"
+path = "reference/library/index.md#float_orderfloat64_quotient_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_right_lower"
+path = "reference/library/index.md#float_orderfloat32_scale_right_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_right_upper"
+path = "reference/library/index.md#float_orderfloat32_scale_right_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_bounded_reciprocal_lower"
+path = "reference/library/index.md#float_orderfloat32_bounded_reciprocal_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_bounded_reciprocal_upper"
+path = "reference/library/index.md#float_orderfloat32_bounded_reciprocal_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_strictly_positive_minimum"
+path = "reference/library/index.md#float_orderfloat32_strictly_positive_minimum"
+
+[[item]]
+id = "library.theorem.float_order::float64_bounded_reciprocal_lower"
+path = "reference/library/index.md#float_orderfloat64_bounded_reciprocal_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_bounded_reciprocal_upper"
+path = "reference/library/index.md#float_orderfloat64_bounded_reciprocal_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_strictly_positive_minimum"
+path = "reference/library/index.md#float_orderfloat64_strictly_positive_minimum"
+
+[[item]]
+id = "library.theorem.float_order::float32_finite_between"
+path = "reference/library/index.md#float_orderfloat32_finite_between"
+
+[[item]]
+id = "library.theorem.float_order::float32_square_interval"
+path = "reference/library/index.md#float_orderfloat32_square_interval"
+
+[[item]]
+id = "library.theorem.float_order::float64_finite_between"
+path = "reference/library/index.md#float_orderfloat64_finite_between"
+
+[[item]]
+id = "library.theorem.float_order::float64_square_interval"
+path = "reference/library/index.md#float_orderfloat64_square_interval"
+
+[[item]]
+id = "library.theorem.float_order::int32_to_float32_le"
+path = "reference/library/index.md#float_orderint32_to_float32_le"

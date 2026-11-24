@@ -81,42 +81,44 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             have forall (k: int32) {
                 start <= k and to_integer(k) < to_integer(at(opened, i) + 1) implies occupied[k] == 1
             } by {
-                intro();
-                intro();
-                have to_integer(k) < to_integer(at(opened, i) + 1);
-                if k < at(opened, i) {
-                    have k < m by close();
-                    have at(opened, occupied[k]) == 1 by {
-                        have at(opened, start) <= at(opened, k) and
-                                at(opened, k) < at(opened, m);
-                        instantiate(forall (j: int32) {
-                            at(opened, start) <= at(opened, j) and
-                                at(opened, j) < at(opened, m) implies
-                                at(opened, occupied[j]) == at(opened, 1)
-                        }, k);
-                        close();
+                intro() {
+                    intro() {
+                        have to_integer(k) < to_integer(at(opened, i) + 1);
+                        if k < at(opened, i) {
+                            have k < m by close();
+                            have at(opened, occupied[k]) == 1 by {
+                                have at(opened, start) <= at(opened, k) and
+                                        at(opened, k) < at(opened, m);
+                                instantiate(forall (j: int32) {
+                                    at(opened, start) <= at(opened, j) and
+                                        at(opened, j) < at(opened, m) implies
+                                        at(opened, occupied[j]) == at(opened, 1)
+                                }, k);
+                                close();
+                            }
+                            have 0 <= k by close();
+                            have k != at(opened, i) by { close() using { k < at(opened, i); }; }
+                            have at(opened, separate(memory(occupied[i]), memory(occupied[k]))) by {
+                                apply(click::separation::separate_elements(occupied, at(opened, i), k));
+                            }
+                            have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
+                                normalize() using { at(opened, separate(memory(occupied[i]), memory(occupied[k]))); };
+                            }
+                            have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
+                                preserve(memory(occupied[k]), loop(0).statement(0));
+                            }
+                            have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { normalize() using { }; }
+                            have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
+                                preserve(memory(occupied[k]), loop(0).statement(1));
+                            }
+                            close();
+                        } else {
+                            have k <= at(opened, i);
+                            have k == at(opened, i);
+                            rewrite(k, at(opened, i));
+                            normalize();
+                        }
                     }
-                    have 0 <= k by close();
-                    have k != at(opened, i) by { close() using { k < at(opened, i); }; }
-                    have at(opened, separate(memory(occupied[i]), memory(occupied[k]))) by {
-                        apply(click::separation::separate_elements(occupied, at(opened, i), k));
-                    }
-                    have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                        normalize() using { at(opened, separate(memory(occupied[i]), memory(occupied[k]))); };
-                    }
-                    have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
-                        preserve(memory(occupied[k]), loop(0).statement(0));
-                    }
-                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { normalize() using { }; }
-                    have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
-                        preserve(memory(occupied[k]), loop(0).statement(1));
-                    }
-                    close();
-                } else {
-                    have k <= at(opened, i);
-                    have k == at(opened, i);
-                    rewrite(k, at(opened, i));
-                    normalize();
                 }
             }
             have start <= at(opened, i) by {

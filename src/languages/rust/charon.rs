@@ -28,6 +28,7 @@ mod slice_into_iteration_tests;
 mod split_slices;
 #[cfg(test)]
 mod split_slices_tests;
+mod str_methods;
 mod temporaries;
 pub(super) use temporaries::{
     moved_drop_operands, scalar_expression_operands, tested_option_box_local,
@@ -646,6 +647,11 @@ fn concrete_size(size: &a::Size) -> Result<u32, String> {
     u32::try_from(*value).map_err(|_| unsupported("large layout"))
 }
 
+/// Whether `ty` is `str`, the UTF-8 byte sequence a `&str` refers to.
+fn str_type(ty: &a::Ty) -> bool {
+    matches!(ty.kind(), a::TyKind::Adt(r) if r.builtin == Some(a::BuiltinAdt::Str))
+}
+
 fn byte_slice(ty: &a::Ty) -> bool {
     matches!(ty.kind(), a::TyKind::Slice(element, _) if matches!(element.kind(), a::TyKind::Scalar(a::ScalarTy::Integer(a::IntegerTy::Unsigned(a::UIntTy::U8)))))
 }
@@ -734,6 +740,14 @@ impl Adapter<'_> {
             a::TyKind::Ref(_, pointee, kind) if byte_slice(pointee) => Type::ByteSlice {
                 mutable: *kind == a::RefKind::Mut,
             },
+            // A `&str` is a shared slice of the UTF-8 bytes it refers to,
+            // read as a `&[u8]` is: its pointer and its length in bytes.
+            a::TyKind::Ref(_, pointee, a::RefKind::Shared) if str_type(pointee) => {
+                Type::ByteSlice { mutable: false }
+            }
+            a::TyKind::Ref(_, pointee, a::RefKind::Mut) if str_type(pointee) => {
+                return Err(unsupported("`&mut str`"));
+            }
             a::TyKind::Ref(_, pointee, kind) if matches!(pointee.kind(), a::TyKind::Slice(..)) => {
                 let a::TyKind::Slice(element, _) = pointee.kind() else {
                     unreachable!()
@@ -2001,7 +2015,7 @@ impl BodyAdapter<'_, '_> {
                 place,
                 kind,
                 ptr_metadata,
-            } if matches!(place.ty.kind(), a::TyKind::Slice(..)) => {
+            } if matches!(place.ty.kind(), a::TyKind::Slice(..)) || str_type(&place.ty) => {
                 let a::PlaceKind::Projection(base, a::ProjectionElem::Deref) = &place.kind else {
                     return Err(unsupported("slice reborrow place"));
                 };
@@ -2703,6 +2717,11 @@ impl BodyAdapter<'_, '_> {
                             Some(function) => Some(function),
                             None => match self.adapter.slice_method_call(callee, ptr, call)? {
                                 Some(function) => Some(function),
+                                None if let Some(function) =
+                                    self.adapter.str_method_call(callee, ptr, call)? =>
+                                {
+                                    Some(function)
+                                }
                                 None => {
                                     match self.adapter.option_take_method_call(callee, ptr, call)? {
                                         Some(function) => Some(function),

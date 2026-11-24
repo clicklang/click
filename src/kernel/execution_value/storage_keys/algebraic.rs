@@ -20,10 +20,11 @@ enum Atom {
     Type(AlgebraicType),
     Name(String),
     Variable(Variable),
-    Argument(PureFunctionArgument),
+    Argument(super::scalar::ArgumentKey),
+    Program(ProgramStorageKey),
     Condition(ConditionStorageKey),
     Memory(ProgramPoint),
-    Address(Address),
+    Address(AddressKey),
 }
 impl AlgebraicStorageKey {
     fn new(node: Node) -> Self {
@@ -45,12 +46,12 @@ impl AlgebraicStorageKey {
         Self::atom(Atom::Tag(value))
     }
     fn argument(root: &KernelTerm, carrier: Option<&SharedMachineIntegerTerm>) -> Self {
+        use super::scalar::ArgumentKey;
+
         if let Some(carrier) = carrier {
             return Self::list(vec![
                 Self::tag(1),
-                Self::atom(Atom::Argument(PureFunctionArgument::SharedMachine(
-                    carrier.clone(),
-                ))),
+                Self::atom(Atom::Argument(ArgumentKey::SharedMachine(carrier.clone()))),
             ]);
         }
         if matches!(root.ty(), KernelType::Algebraic(_)) {
@@ -62,25 +63,28 @@ impl AlgebraicStorageKey {
                 Self::list(vec![Self::tag(16), for_root(operand)]),
             ]);
         }
-        let value = KernelTermExport::default()
-            .argument(root)
-            .expect("selected algebraic scalar argument");
-        let (rank, payload) = match &value {
-            PureFunctionArgument::Value(v) => (
-                0,
-                Self::list(vec![
-                    Self::tag(native_rank(v)),
-                    Self::atom(Atom::Argument(value.clone())),
-                ]),
-            ),
-            PureFunctionArgument::SharedMachine(_) => (1, Self::atom(Atom::Argument(value))),
-            PureFunctionArgument::Integer(_) => (2, Self::atom(Atom::Argument(value))),
-            PureFunctionArgument::ArrayRef { .. } => (4, Self::atom(Atom::Argument(value))),
-            PureFunctionArgument::Algebraic(_) => unreachable!("algebraic child was projected"),
+        let (rank, payload) = match ArgumentKey::shared(root) {
+            ArgumentKey::Program(value) => {
+                let key = match value {
+                    ProgramStorageKey::Algebraic(key) => Self::list(vec![Self::tag(16), key]),
+                    value => Self::list(vec![
+                        Self::tag(value.rank()),
+                        Self::atom(Atom::Program(value)),
+                    ]),
+                };
+                (0, key)
+            }
+            value @ ArgumentKey::SharedMachine(_) => (1, Self::atom(Atom::Argument(value))),
+            value @ ArgumentKey::Integer(_) => (2, Self::atom(Atom::Argument(value))),
+            value @ ArgumentKey::Array(..) => (4, Self::atom(Atom::Argument(value))),
+            ArgumentKey::Algebraic(_) => unreachable!("algebraic child was projected"),
         };
         Self::list(vec![Self::tag(rank), payload])
     }
-    fn field(root: &KernelTerm) -> Self {
+    pub(super) fn native_field(value: &AlgebraicValue) -> Self {
+        Self::field(&KernelTermImport::for_exact_field_inputs().match_field(value))
+    }
+    pub(super) fn field(root: &KernelTerm) -> Self {
         // AlgebraicValue has Program / Integer / Algebraic order; call arguments
         // have an extra SharedMachine arm, whose original carrier is retained.
         let argument = Self::argument(root, None);
@@ -151,9 +155,7 @@ impl AlgebraicStorageKey {
                 parts.extend([
                     Self::tag(5),
                     Self::atom(Atom::Memory(point.clone())),
-                    Self::atom(Atom::Address(
-                        address.export().expect("selected algebraic read address"),
-                    )),
+                    Self::atom(Atom::Address(AddressKey::shared(address))),
                 ]);
             }
             _ => unreachable!("algebraic key node"),
@@ -161,7 +163,7 @@ impl AlgebraicStorageKey {
         Self::list(parts)
     }
     pub(in crate::kernel) fn native(value: &AlgebraicTerm) -> Self {
-        for_root(&KernelTermImport::default().algebraic(value))
+        for_root(&KernelTermImport::for_exact_field_inputs().algebraic(value))
     }
 }
 impl Hash for AlgebraicStorageKey {
@@ -171,7 +173,7 @@ impl Hash for AlgebraicStorageKey {
 }
 impl PartialEq for AlgebraicStorageKey {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
+        self.0.fingerprint == other.0.fingerprint && self.cmp(other).is_eq()
     }
 }
 impl Eq for AlgebraicStorageKey {}

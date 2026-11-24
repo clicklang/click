@@ -15,11 +15,11 @@ use click::surface::{
     ClickProject, SmartTacticCandidate, SmartTacticSelectionError,
     expand_c_prepared_tactic_source_at, expand_c_tactic_source_at,
     expand_program_prepared_tactic_source_at, expand_project_tactic_source_at,
-    project_select_smart_tactic, project_tactic_source_position, tactic_source_position,
-    verify_project_at, verify_sources_at,
+    first_normalize_in_claim, project_select_smart_tactic, project_tactic_source_position,
+    tactic_source_position, verify_project_at, verify_sources_at,
 };
 
-const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n       click expand --migrate-normalize [--claim <LABEL>] <sidecar.click|mdtest.md>\n\n--migrate-normalize proposes checked substitutions for written normalize calls. The expanded proof is used as validation and the output keeps the short substitutions.\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with proof search disabled. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
+const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--check-normalize-removal] [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n       click expand --migrate-normalize [--claim <LABEL>] <sidecar.click|mdtest.md>\n\n--migrate-normalize proposes checked substitutions for written normalize calls. The expanded proof is used as validation and the output keeps the short substitutions.\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with proof search disabled. --check-normalize-removal rejects written or generated normalization in the selected proof unit. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -28,6 +28,7 @@ struct Arguments {
     limits: RunLimits,
     output: Option<PathBuf>,
     in_place: bool,
+    check_normalize_removal: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,6 +75,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut in_place = false;
     let mut claim = None;
     let mut migrate = false;
+    let mut check_normalize_removal = false;
     let mut parse_options = true;
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
@@ -107,6 +109,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                 .next()
                 .ok_or_else(|| format!("missing unit count after `--work-limit`\n{USAGE}"))?;
             work_limit = Some(cli::parse_work_limit(&units)?);
+        } else if argument == "--check-normalize-removal" {
+            check_normalize_removal = true;
         } else if argument == "--migrate-normalize" {
             migrate = true;
         } else if argument == "--claim" {
@@ -136,6 +140,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     if in_place && output.is_some() {
         return Err("`--output` and `--in-place` cannot be combined".to_string());
     }
+    if check_normalize_removal && !matches!(selection, Selection::Claim(_)) {
+        return Err(
+            "`--check-normalize-removal` requires whole-claim expansion with `--claim`".into(),
+        );
+    }
     Ok(Arguments {
         click_path,
         selection,
@@ -145,6 +154,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         },
         output,
         in_place,
+        check_normalize_removal,
     })
 }
 
@@ -533,6 +543,17 @@ fn verified_expansion(
         source: expanded,
         whole_claim,
     } = selected;
+    if arguments.check_normalize_removal {
+        require_no_normalize(project, click_source, inputs, &claim, "Selected proof")?;
+        let expanded_project = project.map(|project| project.with_entry_source(expanded.clone()));
+        require_no_normalize(
+            expanded_project.as_ref(),
+            &expanded,
+            inputs,
+            &claim,
+            "Expanded proof",
+        )?;
+    }
     verify_expansion(
         project,
         click_source,
@@ -554,6 +575,32 @@ fn verified_expansion(
         format!("{error}\nOriginal selection {selection}")
     })?;
     Ok(expanded)
+}
+
+fn require_no_normalize(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &VerificationInput,
+    claim: &str,
+    stage: &str,
+) -> Result<(), String> {
+    if let Some(position) =
+        first_normalize_in_claim(project, source, &inputs.program_inputs(), claim)
+            .map_err(|error| format!("{stage}: {}", error.report()))?
+    {
+        let before = position.line.saturating_sub(4);
+        let context = source
+            .lines()
+            .skip(before)
+            .take(position.line - before)
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(format!(
+            "{stage} still contains normalize() at {}:{} in its Click source\n{context}",
+            position.line, position.column
+        ));
+    }
+    Ok(())
 }
 
 /// Checks the expansion before it is written. A whole claim's expansion has
@@ -913,6 +960,58 @@ int32 identity(int32 x) {
     }
 
     #[test]
+    fn check_normalize_removal_rejects_written_generated_and_compatibility_steps() {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/arithmetic_expression_float_bound_composition.md");
+        let check = |path: &Path, claim: &str| {
+            run(&parse_arguments([
+                "--check-normalize-removal".to_string(),
+                "--claim".to_string(),
+                claim.to_string(),
+                path.display().to_string(),
+            ])?)
+        };
+
+        // The input has normalization in sibling theorems.
+        check(&fixture, "scale_twice.ensures_0").unwrap();
+        let written = check(&fixture, "negative_divisor_bound.ensures_0").unwrap_err();
+        assert!(
+            written.contains("Selected proof still contains normalize()"),
+            "{written}"
+        );
+        let generated = check(&fixture, "divide_two.ensures_0").unwrap_err();
+        assert!(
+            generated.contains("Expanded proof still contains normalize()"),
+            "{generated}"
+        );
+
+        let directory = tempfile::tempdir().unwrap();
+        let hidden = directory.path().join("mirror.click");
+        fs::write(
+            &hidden,
+            "theorem integer_mirror(i: Integer, j: Integer) {\n\
+                requires i < j;\n\
+                ensures (if j > i { 1 } else { 2 }) == 1 by { close() using { i < j; }; }\n\
+            }\n",
+        )
+        .unwrap();
+        let compatibility = check(&hidden, "integer_mirror.ensures_0").unwrap_err();
+        assert!(
+            compatibility.contains("used legacy normalization"),
+            "{compatibility}"
+        );
+    }
+
+    #[test]
+    fn check_normalize_removal_requires_whole_claim_expansion() {
+        let error = parse_arguments(
+            ["--check-normalize-removal", "example.click:12:7"].map(str::to_string),
+        )
+        .unwrap_err();
+        assert!(error.contains("requires whole-claim expansion"), "{error}");
+    }
+
+    #[test]
     fn claim_expansion_proves_its_normalized_claims_in_goal_order() {
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let directory = env::temp_dir().join(format!(
@@ -937,6 +1036,7 @@ int32 identity(int32 x) {
             limits: RunLimits::expand(),
             output: None,
             in_place: false,
+            check_normalize_removal: false,
         })
         .expect("the contract should expand and recheck");
         let _ = fs::remove_dir_all(&directory);
@@ -1013,6 +1113,7 @@ int32 bad(int32 x) {
             limits: RunLimits::expand(),
             output: None,
             in_place: false,
+            check_normalize_removal: false,
         };
 
         let expanded = run(&arguments)
@@ -1052,6 +1153,7 @@ int32 bad(int32 x) {
                 limits: RunLimits::expand(),
                 output: None,
                 in_place: false,
+                check_normalize_removal: false,
             })
         };
 
@@ -1347,6 +1449,7 @@ int32 identity(int32 x) {
             limits: RunLimits::expand(),
             output: None,
             in_place: false,
+            check_normalize_removal: false,
         };
 
         let expanded = run(&arguments).expect("the whole claim should expand and check");
@@ -1377,6 +1480,7 @@ int32 identity(int32 x) {
             limits: RunLimits::expand(),
             output: None,
             in_place: false,
+            check_normalize_removal: false,
         };
 
         let expanded = run(&arguments).expect("pure theorem claims should expand by label");
@@ -1445,6 +1549,7 @@ int32 f(int32 a, int32 b) {
                 limits: RunLimits::expand(),
                 output: None,
                 in_place: false,
+                check_normalize_removal: false,
             })
         };
 
@@ -1508,6 +1613,7 @@ theorem use_add_one(x: Integer) {
             limits: RunLimits::expand(),
             output: None,
             in_place: false,
+            check_normalize_removal: false,
         };
 
         let expanded = run(&arguments)
@@ -1580,9 +1686,10 @@ theorem neighbor(x: int32) {
 }
 theorem selected(x: int32) {
     ensures x == 0 implies x == 0 by {
-        intro();
-        have x == 0 by { close(); }
-        close();
+        intro() {
+            have x == 0 by { close(); }
+            close();
+        }
     }
 }
 "#;
@@ -1591,11 +1698,11 @@ theorem selected(x: int32) {
         verify_expansion(None, source, source, &inputs, claim, true).unwrap();
         for body in [
             "close();",
-            "intro(); have x == 0 by { close(); } close();",
-            "intro();",
+            "intro() { have forall (k: int32) { k == k } by { close(); } close(); }",
+            "intro() {}",
         ] {
             let incomplete = source.replace(
-                "intro();\n        have x == 0 by { close(); }\n        close();",
+                "intro() {\n            have x == 0 by { close(); }\n            close();\n        }",
                 body,
             );
             assert_ne!(source, incomplete);

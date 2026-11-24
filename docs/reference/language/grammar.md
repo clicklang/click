@@ -798,8 +798,8 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
 
 The value forms use `item` as the written range binder. An `.any` witness
 therefore names `item`. In an `.all` proof, `intro(k) { ... }` binds the
-index as `k` and introduces both bounds for the block. The flat equivalent
-is `let k = intro(); intro();`. Elaborated applications use the existing
+index as `k` and introduces both bounds for the block. Elaborated applications
+use the existing
 universal/existential range terms and add no proof search.
 
 ### Range folds
@@ -843,7 +843,7 @@ Binder scope is the body between braces. Renaming a bound variable doesn't
 change the proposition or expression it denotes.
 
 Expansion gives an introduced proof value an ordinary lexical name.
-For example, `let x = intro();` introduces the value for a universal goal.
+For example, `intro(x) { ... }` introduces the value for a universal goal.
 References use `x` within its scope. Expansion chooses names that avoid
 the surrounding source bindings.
 

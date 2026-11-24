@@ -10,8 +10,11 @@ theorem local_count_arithmetic() {
         to_integer(count_value(count)) == 3 implies
         to_integer(count_value(count)) + 1 == 4
     } by {
-        intro(); intro();
-        close() using { to_integer(count_value(count)) == 3; };
+        intro() {
+            intro() {
+                close() using { to_integer(count_value(count)) == 3; };
+            }
+        }
     }
 }
 ```

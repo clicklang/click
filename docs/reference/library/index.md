@@ -58,6 +58,7 @@ how far it is trusted:
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
 | [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
 | [Rust core interfaces](#rust-core-interfaces), `library/rust/core.interface.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
+| [Rust string slice methods](#rust-string-slice-methods), `library/rust/str.interface.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
 | [`click::separation`](#clickseparation) | `import click::separation;` | specification |
 
 `click::primitives` and `click::c::builtins` are implicit too; they hold the
@@ -8345,6 +8346,22 @@ width.
 
 **Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `distance` and `magnitude` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs).
 
+## Rust string slice methods
+
+Source: `library/rust/str.interface.click`, one contract per Rust `str` core
+method, each on one line. This file is not a module: the Rust importer
+appends to a sidecar the line of each method an import calls, and only those.
+A `&str` is a shared slice of the UTF-8 bytes it refers to
+([string slices](../rust.md#string-slices)), so each contract states its
+method over the slice's length.
+
+```click
+fn str::len(s: &str) -> usize { ensures result == s.len(); }
+fn str::is_empty(s: &str) -> bool { ensures result == (s.len() == 0u64); }
+```
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `byte_len`, `blank`, `longer` and `width` in [`tests/fixtures/rust-verification/str-views/strs.rs`](https://github.com/clicklang/click/blob/master/tests/fixtures/rust-verification/str-views/strs.rs) in `charon_str_views_read_as_byte_slices`, and refuses claims about a length the calls do not give.
+
 ## `click::separation`
 
 Source: `library/separation.click`, `import click::separation;`.
@@ -10246,5 +10263,513 @@ axiom float32_scale_upper(factor: float, x: float, bound: float) {
     requires isfinite(factor);
     requires float32_from_bits(0) < factor;
     ensures factor * x <= factor * bound;
+}
+```
+
+### `float_order::float32_scale_right_lower`
+
+```click
+axiom float32_scale_right_lower(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures x * factor >= bound * factor;
+}
+```
+
+### `float_order::float32_scale_right_upper`
+
+```click
+axiom float32_scale_right_upper(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures x * factor <= bound * factor;
+}
+```
+
+Rounded subtraction requires opposite bound directions for its two operands.
+Both endpoints are finite, and each difference rounds at the stated precision.
+
+### `float_order::float32_sub_lower`
+
+```click
+axiom float32_sub_lower(x: float, y: float, a: float, b: float) {
+    requires x >= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y >= a - b;
+}
+```
+
+### `float_order::float32_sub_upper`
+
+```click
+axiom float32_sub_upper(x: float, y: float, a: float, b: float) {
+    requires x <= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y <= a - b;
+}
+```
+
+### `float_order::float64_sub_lower`
+
+```click
+axiom float64_sub_lower(x: double, y: double, a: double, b: double) {
+    requires x >= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y >= a - b;
+}
+```
+
+### `float_order::float64_sub_upper`
+
+```click
+axiom float64_sub_upper(x: double, y: double, a: double, b: double) {
+    requires x <= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y <= a - b;
+}
+```
+
+### `float_order::float64_narrow_le`
+
+Rounding from `double` to `float` preserves a true non-strict order.
+
+```click
+axiom float64_narrow_le(a: double, b: double) {
+    requires a <= b;
+    ensures (a as float) <= (b as float);
+}
+```
+
+### `float_order::float64_narrow_lt`
+
+Distinct double values can round to the same float. A strict input order
+therefore gives an inclusive bound on the result.
+
+```click
+axiom float64_narrow_lt(a: double, b: double) {
+    requires a < b;
+    ensures (a as float) <= (b as float);
+}
+```
+
+A true strict IEEE comparison also gives non-strict order.
+
+### `float_order::float32_lt_to_le`
+
+```click
+axiom float32_lt_to_le(a: float, b: float) {
+    requires a < b;
+    ensures a <= b;
+}
+```
+
+### `float_order::float64_lt_to_le`
+
+```click
+axiom float64_lt_to_le(a: double, b: double) {
+    requires a < b;
+    ensures a <= b;
+}
+```
+
+Positive lower endpoints bound a rounded product from below. With two finite
+operand intervals, any bound on all four rounded corners also bounds the product.
+
+### `float_order::float32_positive_product_lower`
+
+```click
+axiom float32_positive_product_lower(x: float, y: float, a: float, b: float) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires float32_from_bits(0) < a;
+    requires float32_from_bits(0) < b;
+    ensures x * y >= a * b;
+}
+```
+
+### `float_order::float32_product_lower`
+
+```click
+axiom float32_product_lower(x: float, y: float, a: float, b: float, c: float, d: float, bound: float) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires bound <= a * b;
+    requires bound <= a * d;
+    requires bound <= c * b;
+    requires bound <= c * d;
+    ensures x * y >= bound;
+}
+```
+
+### `float_order::float32_product_upper`
+
+```click
+axiom float32_product_upper(x: float, y: float, a: float, b: float, c: float, d: float, bound: float) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires a * b <= bound;
+    requires a * d <= bound;
+    requires c * b <= bound;
+    requires c * d <= bound;
+    ensures x * y <= bound;
+}
+```
+
+### `float_order::float64_positive_product_lower`
+
+```click
+axiom float64_positive_product_lower(x: double, y: double, a: double, b: double) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires float64_from_bits(0u64) < a;
+    requires float64_from_bits(0u64) < b;
+    ensures x * y >= a * b;
+}
+```
+
+### `float_order::float64_product_lower`
+
+```click
+axiom float64_product_lower(x: double, y: double, a: double, b: double, c: double, d: double, bound: double) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires bound <= a * b;
+    requires bound <= a * d;
+    requires bound <= c * b;
+    requires bound <= c * d;
+    ensures x * y >= bound;
+}
+```
+
+### `float_order::float64_product_upper`
+
+```click
+axiom float64_product_upper(x: double, y: double, a: double, b: double, c: double, d: double, bound: double) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires a * b <= bound;
+    requires a * d <= bound;
+    requires c * b <= bound;
+    requires c * d <= bound;
+    ensures x * y <= bound;
+}
+```
+
+A positive finite numerator divided by an ordered positive divisor gives
+a nonnegative result. Increasing the divisor weakens the upper bound,
+including when the divisor is positive infinity.
+For two finite operand ranges, the quotient bound uses all four
+rounded endpoint combinations. The divisor range must stay on one side
+of zero.
+
+### `float_order::float32_reciprocal_lower`
+
+```click
+axiom float32_reciprocal_lower(n: float, y: float, b: float) {
+    requires isfinite(n);
+    requires float32_from_bits(0) < n;
+    requires float32_from_bits(0) < b;
+    requires b <= y;
+    ensures n / y >= float32_from_bits(0);
+}
+```
+
+### `float_order::float32_reciprocal_upper`
+
+```click
+axiom float32_reciprocal_upper(n: float, y: float, b: float) {
+    requires isfinite(n);
+    requires float32_from_bits(0) < n;
+    requires float32_from_bits(0) < b;
+    requires b <= y;
+    ensures n / y <= n / b;
+}
+```
+
+### `float_order::float32_quotient_lower`
+
+```click
+axiom float32_quotient_lower(x: float, y: float, a: float, b: float, c: float, d: float, bound: float) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires float32_from_bits(0) < b or d < float32_from_bits(0);
+    requires bound <= a / b;
+    requires bound <= a / d;
+    requires bound <= c / b;
+    requires bound <= c / d;
+    ensures x / y >= bound;
+}
+```
+
+### `float_order::float32_quotient_upper`
+
+```click
+axiom float32_quotient_upper(x: float, y: float, a: float, b: float, c: float, d: float, bound: float) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires float32_from_bits(0) < b or d < float32_from_bits(0);
+    requires a / b <= bound;
+    requires a / d <= bound;
+    requires c / b <= bound;
+    requires c / d <= bound;
+    ensures x / y <= bound;
+}
+```
+
+### `float_order::float64_reciprocal_lower`
+
+```click
+axiom float64_reciprocal_lower(n: double, y: double, b: double) {
+    requires isfinite(n);
+    requires float64_from_bits(0) < n;
+    requires float64_from_bits(0) < b;
+    requires b <= y;
+    ensures n / y >= float64_from_bits(0);
+}
+```
+
+### `float_order::float64_reciprocal_upper`
+
+```click
+axiom float64_reciprocal_upper(n: double, y: double, b: double) {
+    requires isfinite(n);
+    requires float64_from_bits(0) < n;
+    requires float64_from_bits(0) < b;
+    requires b <= y;
+    ensures n / y <= n / b;
+}
+```
+
+### `float_order::float64_quotient_lower`
+
+```click
+axiom float64_quotient_lower(x: double, y: double, a: double, b: double, c: double, d: double, bound: double) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires float64_from_bits(0) < b or d < float64_from_bits(0);
+    requires bound <= a / b;
+    requires bound <= a / d;
+    requires bound <= c / b;
+    requires bound <= c / d;
+    ensures x / y >= bound;
+}
+```
+
+### `float_order::float64_quotient_upper`
+
+```click
+axiom float64_quotient_upper(x: double, y: double, a: double, b: double, c: double, d: double, bound: double) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires float64_from_bits(0) < b or d < float64_from_bits(0);
+    requires a / b <= bound;
+    requires a / d <= bound;
+    requires c / b <= bound;
+    requires c / d <= bound;
+    ensures x / y <= bound;
+}
+```
+
+A finite numerator and a one-sided divisor bound give a reciprocal range
+between zero and the rounded quotient at that endpoint. A strict positive
+comparison against either signed zero supplies the least positive
+representable bound.
+
+### `float_order::float32_bounded_reciprocal_lower`
+
+```click
+axiom float32_bounded_reciprocal_lower(n: float, y: float, b: float, bound: float) {
+    requires isfinite(n);
+    requires (float32_from_bits(0) < b and b <= y) or (b < float32_from_bits(0) and y <= b);
+    requires bound <= float32_from_bits(0);
+    requires bound <= n / b;
+    ensures n / y >= bound;
+}
+```
+
+### `float_order::float32_bounded_reciprocal_upper`
+
+```click
+axiom float32_bounded_reciprocal_upper(n: float, y: float, b: float, bound: float) {
+    requires isfinite(n);
+    requires (float32_from_bits(0) < b and b <= y) or (b < float32_from_bits(0) and y <= b);
+    requires float32_from_bits(0) <= bound;
+    requires n / b <= bound;
+    ensures n / y <= bound;
+}
+```
+
+### `float_order::float32_strictly_positive_minimum`
+
+```click
+axiom float32_strictly_positive_minimum(z: float, y: float) {
+    requires z == float32_from_bits(0);
+    requires z < y;
+    ensures float32_from_bits(1) <= y;
+}
+```
+
+### `float_order::float64_bounded_reciprocal_lower`
+
+```click
+axiom float64_bounded_reciprocal_lower(n: double, y: double, b: double, bound: double) {
+    requires isfinite(n);
+    requires (float64_from_bits(0u64) < b and b <= y) or (b < float64_from_bits(0u64) and y <= b);
+    requires bound <= float64_from_bits(0u64);
+    requires bound <= n / b;
+    ensures n / y >= bound;
+}
+```
+
+### `float_order::float64_bounded_reciprocal_upper`
+
+```click
+axiom float64_bounded_reciprocal_upper(n: double, y: double, b: double, bound: double) {
+    requires isfinite(n);
+    requires (float64_from_bits(0u64) < b and b <= y) or (b < float64_from_bits(0u64) and y <= b);
+    requires float64_from_bits(0u64) <= bound;
+    requires n / b <= bound;
+    ensures n / y <= bound;
+}
+```
+
+### `float_order::float64_strictly_positive_minimum`
+
+```click
+axiom float64_strictly_positive_minimum(z: double, y: double) {
+    requires z == float64_from_bits(0u64);
+    requires z < y;
+    ensures float64_from_bits(1u64) <= y;
+}
+```
+
+Two finite endpoints bound all operand values to finite numbers. A square
+is nonnegative and its upper bound is the larger rounded endpoint square.
+
+### `float_order::float32_finite_between`
+
+```click
+axiom float32_finite_between(x: float, lo: float, hi: float) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    ensures isfinite(x);
+}
+```
+
+### `float_order::float32_square_interval`
+
+```click
+axiom float32_square_interval(x: float, lo: float, hi: float, upper: float) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    requires lo * lo <= upper;
+    requires hi * hi <= upper;
+    ensures x * x >= float32_from_bits(0);
+    ensures x * x <= upper;
+}
+```
+
+### `float_order::float64_finite_between`
+
+```click
+axiom float64_finite_between(x: double, lo: double, hi: double) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    ensures isfinite(x);
+}
+```
+
+### `float_order::float64_square_interval`
+
+```click
+axiom float64_square_interval(x: double, lo: double, hi: double, upper: double) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    requires lo * lo <= upper;
+    requires hi * hi <= upper;
+    ensures x * x >= float64_from_bits(0u64);
+    ensures x * x <= upper;
+}
+```
+
+### `float_order::int32_to_float32_le`
+
+Rounding signed integers to float32 preserves non-strict order. Two distinct
+integers may round to the same float32 value.
+
+```click
+axiom int32_to_float32_le(a: int32, b: int32) {
+    requires to_integer(a) <= to_integer(b);
+    ensures (a as float) <= (b as float);
 }
 ```

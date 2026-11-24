@@ -10,13 +10,16 @@ theorem capture(n: int32) {
     ensures forall (x: int32) { x == 5 implies forall (y: int32) { y == 5 } }
     by {
         let ih = induct(n);
-        intro();
-        intro();
-        have forall (z: int32) { z == 5 } by {
-            intro();
-            close();
+        intro() {
+            intro() {
+                have forall (z: int32) { z == 5 } by {
+                    intro() {
+                        close();
+                    }
+                }
+                close();
+            }
         }
-        close();
     }
 }
 ```

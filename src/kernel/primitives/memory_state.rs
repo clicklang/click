@@ -7173,7 +7173,7 @@ impl SymbolicMemory {
         crate::kernel::debug_assert_widths(
             "a stored value",
             || crate::kernel::value_mismatch(value.native()),
-            value.native(),
+            value.value(),
         );
         let base = intern_derivation_base(&mut self);
         // Cache invalidation is internal to this store, not a memory event.
@@ -7184,7 +7184,10 @@ impl SymbolicMemory {
             && let Some((mut prepared, lost_knowledge)) = self.prepare_store_cache_of(
                 &pointer,
                 value.byte_width(),
-                crate::kernel::assumptions::access_extent_of_value(value.native()),
+                crate::kernel::assumptions::access_extent_of_type(
+                    value.program_type(),
+                    value.byte_width(),
+                ),
                 context,
                 authorized_range,
             )

@@ -760,8 +760,9 @@ fn contradiction_closes_an_impossible_concrete_outcome() {
             } by {
                 step();
                 have result == 1 implies data[0] == 2 by {
-                    intro();
-                    contradiction(result == 1);
+                    intro() {
+                        contradiction(result == 1);
+                    }
                 }
                 close();
             }
@@ -2060,9 +2061,11 @@ fn quantified_heap_scope_stays_on_checked_proof() {
                 have forall (k: int32) {
                     0 <= k and k < 2 implies p[k] == p[k]
                 } by {
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            close();
+                        }
+                    }
                 }
                 close();
             }
@@ -3106,12 +3109,12 @@ fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
         ),
         (
             "forall (k: int32) { to_integer(k + 1) == to_integer(k + 1) }",
-            "intro(); normalize();",
+            "intro() { normalize(); }",
             false,
         ),
         (
             "not (exists (k: int32) { to_integer(k + 1) != to_integer(k + 1) })",
-            "intro(); normalize();",
+            "intro() { normalize(); }",
             false,
         ),
         (

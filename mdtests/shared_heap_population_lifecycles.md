@@ -318,8 +318,9 @@ void parent_detach(struct parent* p) {
                 }
                 step_until(function.exit);
                 have to_integer(old(count(child_ref(p->kid)))) > 1 implies old(p->kid)->payload == old(p->kid->payload) by {
-                    intro();
-                    contradiction(to_integer(old(count(child_ref(p->kid)))) <= 1);
+                    intro() {
+                        contradiction(to_integer(old(count(child_ref(p->kid)))) <= 1);
+                    }
                 }
                 close();
             }

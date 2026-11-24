@@ -77,9 +77,11 @@ void *fill_range(void *argument) {
         initialize by {
             have job->begin <= index and index <= job->end;
             have forall (k: int32) { job->begin <= k and k < index implies job->output[k] == job->value } by {
-                intro();
-                intro();
-                contradiction(job->begin <= k and k < index);
+                intro() {
+                    intro() {
+                        contradiction(job->begin <= k and k < index);
+                    }
+                }
             }
         }
         maintain by {
@@ -127,37 +129,39 @@ void *fill_range(void *argument) {
             have job->value == at(before_write, job->value) by { close(); }
 
             have forall (k: int32) { job->begin <= k and k <= index implies job->output[k] == job->value } by {
-                intro();
-                intro();
-                if k < index {
-                    instantiate(at(before_write, forall (k: int32) {
-                        job->begin <= k and k < index implies job->output[k] == job->value
-                    }), k);
-                    have at(before_write, job->begin) <= k and k < at(before_write, index) by {
-                        rewrite(at(before_write, job->begin), job->begin);
-                        close();
+                intro() {
+                    intro() {
+                        if k < index {
+                            instantiate(at(before_write, forall (k: int32) {
+                                job->begin <= k and k < index implies job->output[k] == job->value
+                            }), k);
+                            have at(before_write, job->begin) <= k and k < at(before_write, index) by {
+                                rewrite(at(before_write, job->begin), job->begin);
+                                close();
+                            }
+                            apply(at(before_write, job->begin) <= k and k < at(before_write, index) implies
+                                at(before_write, job->output[k]) == at(before_write, job->value));
+                            have k != at(before_write, index) by { close() using { k < index; }; }
+                            have separate(at(before_write, memory(job->output[k])), at(before_write, memory(job->output[index]))) by {
+                                apply(separation::separate_elements(at(before_write, job->output), k, at(before_write, index)));
+                            }
+                            have separate(loop(0).statement(0).footprint, at(before_write, memory(job->output[k]))) by {
+                                normalize() using {
+                                    separate(at(before_write, memory(job->output[k])), at(before_write, memory(job->output[index])));
+                                };
+                            }
+                            have load<int32>(at(before_write, &job->output[k])) == at(before_write, job->output[k]) by {
+                                preserve(at(before_write, memory(job->output[k])), loop(0).statement(0));
+                            }
+                            rewrite(job->output, at(before_write, job->output));
+                            rewrite(job->value, at(before_write, job->value));
+                            close();
+                        } else {
+                            have k == index;
+                            rewrite(k, index);
+                            close();
+                        }
                     }
-                    apply(at(before_write, job->begin) <= k and k < at(before_write, index) implies
-                        at(before_write, job->output[k]) == at(before_write, job->value));
-                    have k != at(before_write, index) by { close() using { k < index; }; }
-                    have separate(at(before_write, memory(job->output[k])), at(before_write, memory(job->output[index]))) by {
-                        apply(separation::separate_elements(at(before_write, job->output), k, at(before_write, index)));
-                    }
-                    have separate(loop(0).statement(0).footprint, at(before_write, memory(job->output[k]))) by {
-                        normalize() using {
-                            separate(at(before_write, memory(job->output[k])), at(before_write, memory(job->output[index])));
-                        };
-                    }
-                    have load<int32>(at(before_write, &job->output[k])) == at(before_write, job->output[k]) by {
-                        preserve(at(before_write, memory(job->output[k])), loop(0).statement(0));
-                    }
-                    rewrite(job->output, at(before_write, job->output));
-                    rewrite(job->value, at(before_write, job->value));
-                    close();
-                } else {
-                    have k == index;
-                    rewrite(k, index);
-                    close();
                 }
             }
 
@@ -178,28 +182,30 @@ void *fill_range(void *argument) {
                 close();
             }
             have forall (k: int32) { job->begin <= k and k < index implies job->output[k] == job->value } by {
-                intro();
-                intro();
-                have k <= at(after_write, index) by {
-                    have to_integer(k) < to_integer(index) by { close(); }
-                    apply(integer::lt_le_predecessor(to_integer(k), to_integer(index)));
-                    have to_integer(at(after_write, index)) == to_integer(index) - 1 by {
-                        rewrite(to_integer(index), to_integer(at(before_write, index)) + 1);
+                intro() {
+                    intro() {
+                        have k <= at(after_write, index) by {
+                            have to_integer(k) < to_integer(index) by { close(); }
+                            apply(integer::lt_le_predecessor(to_integer(k), to_integer(index)));
+                            have to_integer(at(after_write, index)) == to_integer(index) - 1 by {
+                                rewrite(to_integer(index), to_integer(at(before_write, index)) + 1);
+                                close();
+                            }
+                            have to_integer(k) <= to_integer(at(after_write, index)) by {
+                                rewrite(to_integer(at(after_write, index)), to_integer(index) - 1);
+                                close();
+                            }
+                            apply(integer::int32_to_integer_less_equal_implies_less_equal(k, at(after_write, index)));
+                        }
+                        instantiate(at(after_write, forall (k: int32) {
+                            job->begin <= k and k <= index implies job->output[k] == job->value
+                        }), k);
+                        have at(after_write, job->begin) <= k and k <= at(after_write, index) by { close(); }
+                        apply(at(after_write, job->begin) <= k and k <= at(after_write, index) implies
+                            at(after_write, job->output[k]) == at(after_write, job->value));
                         close();
                     }
-                    have to_integer(k) <= to_integer(at(after_write, index)) by {
-                        rewrite(to_integer(at(after_write, index)), to_integer(index) - 1);
-                        close();
-                    }
-                    apply(integer::int32_to_integer_less_equal_implies_less_equal(k, at(after_write, index)));
                 }
-                instantiate(at(after_write, forall (k: int32) {
-                    job->begin <= k and k <= index implies job->output[k] == job->value
-                }), k);
-                have at(after_write, job->begin) <= k and k <= at(after_write, index) by { close(); }
-                apply(at(after_write, job->begin) <= k and k <= at(after_write, index) implies
-                    at(after_write, job->output[k]) == at(after_write, job->value));
-                close();
             }
             have job->begin <= index by {
                 have at(after_write, job->begin) <= at(after_write, index) by { close(); }
@@ -227,13 +233,15 @@ void *fill_range(void *argument) {
             have forall (k: int32) {
                 job->begin <= k and k < job->end implies job->output[k] == job->value
             } by {
-                intro();
-                intro();
-                have job->begin <= k and k < index by close();
-                instantiate(forall (k: int32) {
-                    job->begin <= k and k < index implies job->output[k] == job->value
-                }, k);
-                close();
+                intro() {
+                    intro() {
+                        have job->begin <= k and k < index by close();
+                        instantiate(forall (k: int32) {
+                            job->begin <= k and k < index implies job->output[k] == job->value
+                        }, k);
+                        close();
+                    }
+                }
             }
         }
     }
@@ -278,14 +286,16 @@ int fill_parallel(int output[4]) {
             have forall (k: int32) {
                 first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
             } by {
-                let k = intro();
-                intro();
-                have 0 <= k by { rewrite(0, first_job.begin); close(); }
-                have k < 2 by { rewrite(2, first_job.end); close(); }
-                instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
-                rewrite(first_job.output, output);
-                rewrite(first_job.value, 11);
-                close();
+                intro(k) {
+                    intro() {
+                        have 0 <= k by { rewrite(0, first_job.begin); close(); }
+                        have k < 2 by { rewrite(2, first_job.end); close(); }
+                        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
+                        rewrite(first_job.output, output);
+                        rewrite(first_job.value, 11);
+                        close();
+                    }
+                }
             }
             have first_job.output[0] == first_job.value by {
                 have first_job.begin <= 0 and 0 < first_job.end;
@@ -317,14 +327,16 @@ int fill_parallel(int output[4]) {
     have forall (k: int32) {
         first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
     } by {
-        let k = intro();
-        intro();
-        have 0 <= k by { rewrite(0, first_job.begin); close(); }
-        have k < 2 by { rewrite(2, first_job.end); close(); }
-        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
-        rewrite(first_job.output, output);
-        rewrite(first_job.value, 11);
-        close();
+        intro(k) {
+            intro() {
+                have 0 <= k by { rewrite(0, first_job.begin); close(); }
+                have k < 2 by { rewrite(2, first_job.end); close(); }
+                instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
+                rewrite(first_job.output, output);
+                rewrite(first_job.value, 11);
+                close();
+            }
+        }
     }
     have first_job.output[0] == first_job.value by {
         have first_job.begin <= 0 and 0 < first_job.end;

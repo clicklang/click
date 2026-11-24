@@ -390,13 +390,25 @@ pub(super) fn plan_explicit_forall_instantiation(
     None
 }
 
+pub(super) struct UniversalConclusionPlan {
+    pub(super) tactics: Vec<ProofTactic>,
+    pub(super) conclusion: Option<SelectedConclusion>,
+}
+
+pub(super) struct SelectedConclusion {
+    pub(super) source: ClickProposition,
+    pub(super) target: ClickProposition,
+    pub(super) premises: Vec<ClickProposition>,
+    pub(super) fallback: Vec<ProofTactic>,
+}
+
 pub(super) fn plan_explicit_forall_instantiation_transport(
     goal: &Proposition,
     surface_goal: &ClickProposition,
     premise_pairs: &[(Proposition, ClickProposition)],
     extra_arguments: &[(MachineTerm, ContractExpression)],
     conclusion_gate: &dyn Fn(&Proposition) -> bool,
-) -> Option<Vec<ProofTactic>> {
+) -> Option<UniversalConclusionPlan> {
     for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
         let Proposition::ForAll { sort, .. } = kernel else {
             continue;
@@ -446,8 +458,8 @@ pub(super) fn plan_explicit_forall_instantiation_transport(
 
 /// Plans an explicit certificate for a universal goal: introduce the binder
 /// (and implication antecedent), then specialize one listed universal premise
-/// at the introduced binder. Instantiation adds the specialized fact; an
-/// optional transport adds its target, and `known` closes the exact goal.
+/// at the introduced binder. Instantiation adds the specialized fact.
+/// Search can then prove an ordinary conclusion from the selected instance.
 /// The instantiated guards discharge from the introduced antecedent plus the
 /// remaining listed premises.
 #[allow(clippy::too_many_arguments)]
@@ -461,7 +473,7 @@ fn plan_explicit_universal_conclusion_discharge(
     discharge_kernels: &[Proposition],
     using_surfaces: &[ClickProposition],
     conclusion_gate: Option<&dyn Fn(&Proposition) -> bool>,
-) -> Option<Vec<ProofTactic>> {
+) -> Option<UniversalConclusionPlan> {
     let Proposition::ForAll {
         var: premise_var,
         sort: Sort::ProgramInt32,
@@ -486,11 +498,8 @@ fn plan_explicit_universal_conclusion_discharge(
     {
         return None;
     }
-    // A residual form difference (for example a loop counter the listed
-    // order facts pin to a constant) crosses through an explicit transport
-    // from the instantiated conclusion instead. The transported closure is
-    // validated by the caller's immediate certificate validation, so no weaker
-    // equivalence pre-check runs here.
+    // Retain the instantiated conclusion's spelling when the goal needs
+    // a rewrite or arithmetic proof after instantiation.
     let transport_closure = if closes_by_known {
         None
     } else {
@@ -541,7 +550,8 @@ fn plan_explicit_universal_conclusion_discharge(
         quantified: premise_surface.clone(),
         arguments: vec![argument_expression.clone()],
     });
-    if let Some((source, target)) = transport_closure {
+    let conclusion = transport_closure.map(|(source, target)| {
+        let mut fallback = Vec::new();
         if let Some((historical, current)) = comparison_state_expression_pair(&source, &target) {
             let reflexive = ClickProposition::Comparison {
                 left: historical.clone(),
@@ -560,31 +570,43 @@ fn plan_explicit_universal_conclusion_discharge(
             };
             let mut bridge_premises = vec![reflexive.clone()];
             bridge_premises.extend(using_surfaces.iter().cloned());
-            tactics.push(ProofTactic::Have(ProofHave {
+            fallback.push(ProofTactic::Have(ProofHave {
                 proposition: forward.clone(),
-                proof: SourceProof::Script(vec![ProofTactic::TransportUsing {
+                proof: SourceProof::Script(vec![ProofTactic::CompatibilityFactTransport {
                     source: reflexive,
                     target: forward.clone(),
                     premises: bridge_premises,
                 }]),
             }));
-            tactics.push(ProofTactic::Have(ProofHave {
+            fallback.push(ProofTactic::Have(ProofHave {
                 proposition: reverse.clone(),
                 proof: SourceProof::Script(vec![ProofTactic::Rewrite(forward), ProofTactic::Known]),
             }));
-            tactics.push(ProofTactic::Rewrite(reverse));
+            fallback.push(ProofTactic::Rewrite(reverse));
         } else {
             let mut transport_premises = vec![source.clone()];
             transport_premises.extend(using_surfaces.iter().cloned());
-            tactics.push(ProofTactic::TransportUsing {
-                source,
-                target,
+            fallback.push(ProofTactic::CompatibilityFactTransport {
+                source: source.clone(),
+                target: target.clone(),
                 premises: transport_premises,
             });
         }
+        fallback.push(ProofTactic::Known);
+        SelectedConclusion {
+            source,
+            target,
+            premises: using_surfaces.to_vec(),
+            fallback,
+        }
+    });
+    if conclusion.is_none() {
+        tactics.push(ProofTactic::Known);
     }
-    tactics.push(ProofTactic::Known);
-    Some(tactics)
+    Some(UniversalConclusionPlan {
+        tactics,
+        conclusion,
+    })
 }
 
 /// Finds the comparison operand written as the same expression at a named
@@ -633,7 +655,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
     goal: &Proposition,
     surface_goal: &ClickProposition,
     premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<ProofTactic>> {
+) -> Option<UniversalConclusionPlan> {
     let Proposition::ForAll {
         var: goal_var,
         sort: sort @ Sort::ProgramInt32,
@@ -681,7 +703,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
             discharge_kernels.push(other_kernel.clone());
             using_surfaces.push(other_surface.clone());
         }
-        let Some(mut body_tactics) = plan_explicit_universal_conclusion_discharge(
+        let Some(mut plan) = plan_explicit_universal_conclusion_discharge(
             kernel,
             surface,
             MachineTerm::Variable(goal_witness),
@@ -700,8 +722,9 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
         if antecedent.is_some() {
             tactics.push(ProofTactic::Intro);
         }
-        tactics.append(&mut body_tactics);
-        return Some(tactics);
+        tactics.append(&mut plan.tactics);
+        plan.tactics = tactics;
+        return Some(plan);
     }
     None
 }
@@ -1133,7 +1156,7 @@ fn read_preservation_steps(
 }
 
 /// Read bridges selected by the written comparison only.
-fn comparison_preservation_reads(
+pub(super) fn comparison_preservation_reads(
     source: &ClickProposition,
     target: &ClickProposition,
 ) -> Option<Vec<(ContractExpression, ContractExpression)>> {
@@ -2214,160 +2237,6 @@ pub(super) fn viewability_restriction_requirements(
     Some(requirements)
 }
 
-pub(super) fn plan_explicit_loadability_transport(
-    goal: &Proposition,
-    surface_goal: &ClickProposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<ProofTactic>> {
-    let goal_width;
-    let goal_bytes = match goal {
-        Proposition::MemoryLoadable { bytes, .. } => bytes.native_compat(),
-        Proposition::MemoryReadDefined { value_type, .. } => {
-            goal_width = MachineTerm::constant(value_type.byte_width());
-            &goal_width
-        }
-        _ => return None,
-    };
-    let mut sources = premise_pairs
-        .iter()
-        .filter(|(kernel, _)| {
-            matches!(
-                kernel,
-                Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. }
-            )
-        })
-        .collect::<Vec<_>>();
-    let surface_is_range = |surface: &ClickProposition| match surface {
-        ClickProposition::At { proposition, .. } => {
-            matches!(
-                proposition.as_ref(),
-                ClickProposition::Loadable { segment }
-                    if matches!(segment.surface, ContractSegmentSurface::Range { .. } | ContractSegmentSurface::StructRange { .. })
-            )
-        }
-        ClickProposition::Loadable { segment } => {
-            matches!(
-                segment.surface,
-                ContractSegmentSurface::Range { .. } | ContractSegmentSurface::StructRange { .. }
-            )
-        }
-        _ => false,
-    };
-    sources.sort_by_key(|(kernel, surface)| match kernel {
-        Proposition::MemoryLoadable { bytes, .. } => (
-            (!surface_is_range(surface)) as u8,
-            (bytes.native_compat() == goal_bytes) as u8,
-        ),
-        Proposition::MemoryReadDefined { .. } => (0, 0),
-        _ => unreachable!(),
-    });
-    if sources.is_empty() {
-        super::attempt::record_search_note(
-            "solve view transport planning",
-            format!(
-                "no memory-view premise has a checked source spelling ({} resolved premises)",
-                premise_pairs.len()
-            ),
-        );
-    }
-    for (source, surface_source) in sources {
-        let mut selected = premise_pairs
-            .iter()
-            .filter(|(kernel, _)| {
-                matches!(
-                    kernel,
-                    Proposition::MemoryLoadable { .. }
-                        | Proposition::MemoryReadDefined { .. }
-                        | Proposition::ConditionIs(_, _)
-                )
-            })
-            .collect::<Vec<_>>();
-        let proves_goal = |pairs: &[&(Proposition, ClickProposition)]| {
-            let propositions = pairs
-                .iter()
-                .map(|(kernel, _)| kernel.clone())
-                .collect::<Vec<_>>();
-            crate::kernel::search::ProofSearch::derive_solve_proposition(
-                &(assumptions_from_propositions(&propositions)),
-                goal,
-            )
-            .is_some()
-        };
-        if !proves_goal(&selected) {
-            super::attempt::record_search_note(
-                "solve view transport planning",
-                format!(
-                    "the resolved memory-view and condition premises do not produce a retained-premise derivation of the requested view ({} resolved transport premises)",
-                    selected.len()
-                ),
-            );
-            continue;
-        }
-        if source == goal && surface_source == surface_goal {
-            return Some(vec![ProofTactic::Known]);
-        }
-        let mut index = 0;
-        while index < selected.len() {
-            if selected[index].0 == *source {
-                index += 1;
-                continue;
-            }
-            let mut reduced = selected.clone();
-            reduced.remove(index);
-            if proves_goal(&reduced) {
-                selected = reduced;
-            } else {
-                index += 1;
-            }
-        }
-        // Selection starts with a successful search and changes only after
-        // another success. Do not repeat bounded search as an assertion: its
-        // budget can now be exhausted. The emitted transport still goes
-        // through the ordinary checked operation before it can prove anything.
-        let mut premises = selected
-            .into_iter()
-            .map(|(_, surface)| surface.clone())
-            .collect::<Vec<_>>();
-        let mut tactics = Vec::new();
-        // Native byte-count views can use scaled bounds or displaced bases.
-        // Their existing transport is not an element-subrange certificate.
-        if !matches!(goal, Proposition::MemoryLoadable { wide: true, .. })
-            && let Some(requirements) =
-                viewability_restriction_requirements(surface_source, surface_goal)
-        {
-            for requirement in requirements {
-                if premises.contains(&requirement) {
-                    continue;
-                }
-                let proof = if matches!(
-                    &requirement,
-                    ClickProposition::Comparison {
-                        operator: ComparisonOperator::Equal,
-                        ..
-                    }
-                ) {
-                    ProofTactic::Known
-                } else {
-                    ProofTactic::ArithmeticUsing(premises.clone())
-                };
-                tactics.push(ProofTactic::Have(ProofHave {
-                    proposition: requirement.clone(),
-                    proof: SourceProof::Script(vec![proof]),
-                }));
-                premises.push(requirement);
-            }
-        }
-        tactics.push(ProofTactic::TransportUsing {
-            source: surface_source.clone(),
-            target: surface_goal.clone(),
-            premises,
-        });
-        tactics.push(ProofTactic::Known);
-        return Some(tactics);
-    }
-    None
-}
-
 pub(super) fn signed_strict_parts(
     proposition: &Proposition,
 ) -> Option<(&MachineTerm, &MachineTerm)> {
@@ -3442,10 +3311,10 @@ fn plan_explicit_implies_refuted_antecedent(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let mut tactics = Vec::new();
+    let mut depth = 0;
     let mut current = goal;
     while let Proposition::Implies(antecedent, consequent) = current {
-        tactics.push(ProofTactic::Intro);
+        depth += 1;
         let refutation = premise_pairs
             .iter()
             .find(|(kernel, _)| match antecedent.as_ref() {
@@ -3456,8 +3325,11 @@ fn plan_explicit_implies_refuted_antecedent(
                 _ => false,
             });
         if let Some((_, surface)) = refutation {
-            tactics.push(ProofTactic::Contradiction(surface.clone()));
-            return Some(tactics);
+            let mut body = vec![ProofTactic::Contradiction(surface.clone())];
+            for _ in 0..depth {
+                body = vec![ProofTactic::IntroBlock { binder: None, body }];
+            }
+            return Some(body);
         }
         current = consequent;
     }
@@ -3492,13 +3364,17 @@ fn plan_explicit_discharged_implication_consequent(
                 let (premises, _) = crate::surface::proof::driver::fact_application_parts(surface);
                 let (remaining, _) =
                     crate::surface::proof::driver::fact_application_parts(surface_consequent);
-                let mut tactics = vec![ProofTactic::Intro; remaining.len()];
-                tactics.push(ProofTactic::ApplyFactUsing {
-                    fact: surface.clone(),
-                    premises,
-                });
-                tactics.push(ProofTactic::Known);
-                return Some(tactics);
+                let mut body = vec![
+                    ProofTactic::ApplyFactUsing {
+                        fact: surface.clone(),
+                        premises,
+                    },
+                    ProofTactic::Known,
+                ];
+                for _ in remaining {
+                    body = vec![ProofTactic::IntroBlock { binder: None, body }];
+                }
+                return Some(body);
             }
             current = (consequent, surface_consequent);
         }
@@ -4946,84 +4822,6 @@ pub(super) fn plan_explicit_increment_lower_bound(
         }
     }
     None
-}
-
-#[cfg(test)]
-mod selected_premise_tests {
-    use super::*;
-    use crate::kernel::{AddressBase, AddressOffset};
-
-    #[test]
-    fn loadability_planning_does_not_repeat_search_after_its_budget_is_spent() {
-        use crate::instrumentation::{
-            TacticEvent, TacticWorkLimits, VerificationEvent, emit, measure_deterministic_work,
-            with_tactic_work_limits,
-        };
-
-        let goal = Proposition::MemoryLoadable {
-            memory: SymbolicMemory::new(),
-            base: Address {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
-            },
-            bytes: (MachineTerm::constant(4)).into(),
-            wide: false,
-        };
-        let surface = ClickProposition::Loadable {
-            segment: ContractSegment {
-                uninitialized: false,
-                state: ContractSegmentState::Current,
-                base: ProgramExpression::Variable("p".into()),
-                start: ProgramExpression::Value(int32(0)),
-                end: ProgramExpression::Value(int32(1)),
-                surface: ContractSegmentSurface::Range {
-                    base: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        "p".into(),
-                    )),
-                    start: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
-                        0,
-                    ))),
-                    end: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
-                },
-            },
-        };
-        // Give planning exactly the work needed to establish its candidate.
-        // Repeating that query in a debug assertion then exhausts the budget.
-        let (derivation, work) = measure_deterministic_work(|| {
-            crate::kernel::search::ProofSearch::derive_solve_proposition(
-                &(assumptions_from_propositions(std::slice::from_ref(&goal))),
-                &goal,
-            )
-        });
-        assert!(derivation.is_some());
-        assert!(work > 0);
-        let tactic = TacticEvent {
-            source_tactic_path: None,
-            claim: "viewability".into(),
-            tactic_index: 0,
-            tactic_name: "solve".into(),
-            class: "smart".into(),
-            statement_index: 0,
-            source_index: 0,
-        };
-        let candidate = with_tactic_work_limits(
-            TacticWorkLimits {
-                smart: work,
-                ..TacticWorkLimits::default()
-            },
-            || {
-                emit(VerificationEvent::TacticStarted(tactic.clone()));
-                let candidate = plan_explicit_loadability_transport(
-                    &goal,
-                    &surface,
-                    &[(goal.clone(), surface.clone())],
-                );
-                emit(VerificationEvent::TacticFailed(tactic));
-                candidate
-            },
-        );
-        assert_eq!(candidate, Some(vec![ProofTactic::Known]));
-    }
 }
 
 #[cfg(test)]

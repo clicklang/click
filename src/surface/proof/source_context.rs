@@ -63,6 +63,7 @@ impl SourceContext {
                     | ProofTactic::Contradiction(_)
                     | ProofTactic::Rewrite(_)
                     | ProofTactic::TransportUsing { .. }
+                    | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::Instantiate { .. }
             ),
             Self::ExecutionFrontier => matches!(
@@ -74,6 +75,7 @@ impl SourceContext {
                     | ProofTactic::StepCall(_)
                     | ProofTactic::UserTactic(_)
                     | ProofTactic::TransportUsing { .. }
+                    | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::UnfoldResource(_)
@@ -109,6 +111,7 @@ impl SourceContext {
                     | ProofTactic::Preserve(_)
                     | ProofTactic::Rewrite(_)
                     | ProofTactic::TransportUsing { .. }
+                    | ProofTactic::CompatibilityFactTransport { .. }
             ),
         }
     }

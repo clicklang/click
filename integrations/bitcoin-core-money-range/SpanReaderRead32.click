@@ -74,37 +74,39 @@ uint32 ser_readdata32<SpanReader>(struct SpanReader& s) throws std::ios_base::fa
             // Span setup touches local storage. The caller's input bytes remain
             // unchanged up to the reader's call entry.
             have forall (k: uint64) { k < 4u64 implies at(call(2).entry, load<uint8>(std_span_data(s.m_data) + k)) == old(load<uint8>(std_span_data(s.m_data) + k)) } by {
-                intro();
-                intro();
-                have separate(region(0).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
-                have at(region(0).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(0).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
-                    preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(0));
+                intro() {
+                    intro() {
+                        have separate(region(0).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
+                        have at(region(0).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(0).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
+                            preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(0));
+                        }
+                        have separate(region(1).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
+                        have at(region(1).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(1).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
+                            preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(1));
+                        }
+                        have separate(region(2).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
+                        have at(region(2).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(2).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
+                            preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(2));
+                        }
+                        have separate(region(3).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
+                        have at(region(3).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(3).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
+                            preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(3));
+                        }
+                        have separate(region(4).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
+                        have at(region(4).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(4).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
+                            preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(4));
+                        }
+                        have separate(region(5).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
+                        have at(region(5).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(5).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
+                            preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(5));
+                        }
+                        have separate(region(6).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
+                        have at(region(6).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(6).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
+                            preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(6));
+                        }
+                        close();
+                    }
                 }
-                have separate(region(1).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
-                have at(region(1).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(1).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
-                    preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(1));
-                }
-                have separate(region(2).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
-                have at(region(2).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(2).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
-                    preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(2));
-                }
-                have separate(region(3).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
-                have at(region(3).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(3).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
-                    preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(3));
-                }
-                have separate(region(4).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
-                have at(region(4).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(4).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
-                    preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(4));
-                }
-                have separate(region(5).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
-                have at(region(5).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(5).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
-                    preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(5));
-                }
-                have separate(region(6).footprint, at(function.entry, memory((std_span_data(s.m_data) + k)[0]))) by { close(); }
-                have at(region(6).exit, load<uint8>(old(std_span_data(s.m_data)) + k)) == at(region(6).entry, load<uint8>(old(std_span_data(s.m_data)) + k)) by {
-                    preserve(at(function.entry, memory((std_span_data(s.m_data) + k)[0])), region(6));
-                }
-                close();
             }
 
             // Use the byte pointer equality to relate the local word to the input.

@@ -17,11 +17,11 @@ int32 ordered() { ensures result == 1; } by {
     let { result: cmp } = step(memcmp);
     have bytes::equal(left, 0u64, right, 0u64, 1u64) by {
         unfold(bytes::equal(left, 0u64, right, 0u64, 1u64));
-        intro();
-        intro();
-        have k == 0u64 by { close(); }
-        rewrite(k, 0u64);
-        close();
+        intro() {
+            have k == 0u64 by { close(); }
+            rewrite(k, 0u64);
+            close();
+        }
     }
     apply(bytes::comparison_zero_when_equal(left, right, 1u64, cmp));
 }

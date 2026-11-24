@@ -10,10 +10,13 @@ theorem guarded_universal() {
     ensures forall (k: int32) {
         to_integer(k + 1) > 0 and k >= 0 implies k >= 0
     } by {
-        intro();
-        intro();
-        intro();
-        close();
+        intro() {
+            intro() {
+                intro() {
+                    close();
+                }
+            }
+        }
     }
 }
 ```

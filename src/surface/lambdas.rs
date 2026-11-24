@@ -418,7 +418,7 @@ mod tests {
             (
                 "function every(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).all(p) }",
                 "every(|i: int32| -> Prop { i < hi }, lo, hi)",
-                "by { intro(); intro(); close(); }",
+                "by { intro() { intro() { close(); } } }",
             ),
             (
                 "function some(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).any(p) }",
@@ -552,20 +552,20 @@ mod tests {
                 "by close();",
             ),
             (
-                "theorem test(x: Integer) { ensures (|n: Integer| -> Prop { forall (y: Integer) { n + y == y + n } })(x) by { intro(); close(); } }",
-                "by { intro(); close(); }",
+                "theorem test(x: Integer) { ensures (|n: Integer| -> Prop { forall (y: Integer) { n + y == y + n } })(x) by { intro() { close(); } } }",
+                "by { intro() { close(); } }",
             ),
             (
-                "theorem test(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures (lo..hi).all(p) by { let k = intro(); intro(); close(); } }",
-                "by { let k = intro(); intro(); close(); }",
+                "theorem test(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures (lo..hi).all(p) by { intro(k) { close(); } } }",
+                "by { intro(k) { close(); } }",
             ),
             (
                 "theorem test(lo: int32, hi: int32) { let p = |x: int32| -> Prop { x == lo }; requires lo < hi; ensures (lo..hi).any(p) by { witness(lo); close(); } }",
                 "by { witness(lo); close(); }",
             ),
             (
-                "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires viewable(p[lo..hi]); requires (lo..hi).all(|i| { p[i] == 0 }); ensures (lo..hi).all(zero) by { let k = intro(); intro(); close(); } }",
-                "by { let k = intro(); intro(); close(); }",
+                "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires viewable(p[lo..hi]); requires (lo..hi).all(|i| { p[i] == 0 }); ensures (lo..hi).all(zero) by { intro(k) { close(); } } }",
+                "by { intro(k) { close(); } }",
             ),
             (
                 "theorem test(p: int32*, lo: int32, hi: int32) { let zero = |i: int32| -> Prop { p[i] == 0 }; requires lo < hi; requires viewable(p[lo..hi]); requires p[lo] == 0; ensures (lo..hi).any(zero) by { witness(lo); close(); } }",

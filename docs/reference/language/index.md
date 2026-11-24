@@ -278,7 +278,7 @@ one, as in Rust, and chains left to right:
 
 The C form `(T) e` is refused in Click text, with the suggestion to write
 `e as T` (`e as (T *)` for a pointer); C source keeps C's casts. A name bound by
-`let ih = induct(x)`, `let n = intro()`, `verifying "f.c" as
+`let ih = induct(x)`, `intro(n) { ... }`, `verifying "f.c" as
 f` or a loop label, may not be a cast's type name. Diagnostics, expansions
 and synthesized proofs print casts in this form, parenthesized only where
 precedence requires (`design/machine-integers.md`, Decisions, 2026-10-26). The

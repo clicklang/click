@@ -149,9 +149,11 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_walk_root(walk.model) == sized_walk_root(at(loop(0).entry, walk.model))
                                     implies sized_shape(sized_walk_tree(walk.model)) == sized_shape(sized_walk_tree(at(loop(0).entry, walk.model)))
                                     implies rb_subtree_size(sized_shape(sized_walk_tree(walk.model))) <= 2147483647 by {
-                                    intro();
-                                    intro();
-                                    close();
+                                    intro() {
+                                        intro() {
+                                            close();
+                                        }
+                                    }
                                 }
                                 have 0 <= sized_walk_rank(walk.model) by { close(); }
                                 have sized_walk_rank(walk.model) < sized_context_depth(sized_path_context(path_model)) + 1 by { close(); }

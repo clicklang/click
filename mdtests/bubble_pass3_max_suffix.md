@@ -100,29 +100,36 @@ int32 bubble_pass3(int32 p[3]) {
                                 preserve(memory(p[0]), loop(0).statement(0).statement(2));
                             }
                             unfold(all_le_range(p, 0, j, p[j + 1]));
-                            intro(); intro();
-                            have k == 0 by close();
-                            have at(before_swap, 0 <= k and 0 <= k and k < j) by close();
-                            instantiate(at(before_swap, forall (m: int32) {
-                                0 <= m and 0 <= m and m < j implies p[m] <= p[j]
-                            }), k);
-                            have p[k] == at(before_swap, p[k]) by {
-                                rewrite(k, 0);
-                                close() using {
-                                    at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]);
-                                    at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]);
-                                };
+                            intro() {
+                                intro() {
+                                    have k == 0 by close();
+                                    have at(before_swap, 0 <= k and 0 <= k and k < j) by close();
+                                    instantiate(at(before_swap, forall (m: int32) {
+                                        0 <= m and 0 <= m and m < j implies p[m] <= p[j]
+                                    }), k);
+                                    have p[k] == at(before_swap, p[k]) by {
+                                        rewrite(k, 0);
+                                        close() using {
+                                            at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]);
+                                            at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]);
+                                        };
+                                    }
+                                    have p[j + 1] == at(before_swap, p[j]) by { close(); }
+                                    close() using {
+                                        p[k] == at(before_swap, p[k]);
+                                        p[j + 1] == at(before_swap, p[j]);
+                                        at(before_swap, p[k] <= p[j]);
+                                    };
+                                }
                             }
-                            have p[j + 1] == at(before_swap, p[j]) by { close(); }
-                            close() using {
-                                p[k] == at(before_swap, p[k]);
-                                p[j + 1] == at(before_swap, p[j]);
-                                at(before_swap, p[k] <= p[j]);
-                            };
                         }
                     }
                     have forall (k: int32) { 0 <= k and 0 <= k and k < j implies defined(j + 1) } by {
-                        intro(); intro(); close();
+                        intro() {
+                            intro() {
+                                close();
+                            }
+                        }
                     }
                     unfold(all_le_range(p, 0, j, p[j + 1]));
                 }
@@ -131,12 +138,19 @@ int32 bubble_pass3(int32 p[3]) {
                     have p[j] <= p[j + 1];
                     have all_le_range(p, 0, j, p[j + 1]) by {
                         unfold(all_le_range(p, 0, j, p[j + 1]));
-                        intro(); intro();
-                        instantiate(forall (i: int32) { 0 <= i and 0 <= i and i < j implies p[i] <= p[j] }, k);
-                        close() using { p[k] <= p[j]; p[j] <= p[j + 1]; };
+                        intro() {
+                            intro() {
+                                instantiate(forall (i: int32) { 0 <= i and 0 <= i and i < j implies p[i] <= p[j] }, k);
+                                close() using { p[k] <= p[j]; p[j] <= p[j + 1]; };
+                            }
+                        }
                     }
                     have forall (k: int32) { 0 <= k and 0 <= k and k < j implies defined(j + 1) } by {
-                        intro(); intro(); close();
+                        intro() {
+                            intro() {
+                                close();
+                            }
+                        }
                     }
                     unfold(all_le_range(p, 0, j, p[j + 1]));
                 }
@@ -150,11 +164,14 @@ int32 bubble_pass3(int32 p[3]) {
     have p[j] == p[2] by { normalize() using { j == 2; }; }
     have all_le_range(p, 0, 2, p[2]) by {
         unfold(all_le_range(p, 0, 2, p[2]));
-        intro(); intro();
-        have k < j by { close() using { j == 2; k < 2; }; }
-        instantiate(forall (m: int32) { 0 <= m and 0 <= m and m < j implies p[m] <= p[j] }, k);
-        rewrite(p[2], p[j]);
-        close();
+        intro() {
+            intro() {
+                have k < j by { close() using { j == 2; k < 2; }; }
+                instantiate(forall (m: int32) { 0 <= m and 0 <= m and m < j implies p[m] <= p[j] }, k);
+                rewrite(p[2], p[j]);
+                close();
+            }
+        }
     }
     step_until(function.exit);
     close();

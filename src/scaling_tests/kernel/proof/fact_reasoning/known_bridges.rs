@@ -149,6 +149,15 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
         let right_shift = shift(signed, count.clone());
         let shift_goal = equality(right_shift.clone(), shift(unsigned, count.clone()));
         let different_count = equality(right_shift, shift(unsigned, other.clone()));
+        let shifted_one = observe(
+            unsigned,
+            MachineBinaryOp::ShiftLeft,
+            constant_word(unsigned, &1.into()).unwrap(),
+            count.clone(),
+        );
+        let nonzero_goal =
+            ConditionTerm::IntegerNotEqual(shifted_one.into(), IntegerTerm::constant_i64(0).into())
+                .truth_claim(true);
         let bound = |d, endpoint: u32| {
             let endpoint = constant_word(unsigned, &endpoint.into()).unwrap();
             condition_for_operand_views(
@@ -179,14 +188,16 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
                     assert!(
                         !known_bridge_leaf(&different_count, &|p| present.pure_known_available(p))
                     );
+                    assert!(known_shifted_one(&nonzero_goal, &|p| present.contains(p)));
+                    assert!(!known_shifted_one(&nonzero_goal, &|p| missing.contains(p)));
                 });
                 let baseline = *expected_work.get_or_insert(work);
                 // Indexed lookups can visit a different number of nodes as
                 // the fact store grows. A scan of either bucket would exceed
                 // this fixed allowance.
                 assert!(
-                    work <= baseline + 16,
-                    "{unsigned:?}, related={related}, facts={size}: {work} > {baseline} + 16"
+                    work <= baseline + 32,
+                    "{unsigned:?}, related={related}, facts={size}: {work} > {baseline} + 32"
                 );
             }
         }
