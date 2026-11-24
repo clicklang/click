@@ -19221,6 +19221,40 @@ unsigned char probe(unsigned char* destination, const unsigned char* source) noe
     project.write_config("probe");
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
+    // Read the fresh capture directly, before the importer normalizes older spellings.
+    let captured: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    assert!(
+        captured["reachable_functions"][0]["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|parameter| parameter["name"] == "")
+    );
+    let lowered = lower_import(&import).unwrap();
+    let reachable = &lowered.reachable_kernel_functions()[0];
+    let parameters = reachable.parameters();
+    let interface = lowered
+        .contract_functions()
+        .iter()
+        .find(|function| function.name() == reachable.name())
+        .unwrap();
+    assert_eq!(parameters.len(), 3);
+    assert!(
+        interface
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.binding_name())
+            .eq(parameters.iter().map(|parameter| parameter.binding_name()))
+    );
+    for (index, parameter) in parameters.iter().enumerate() {
+        let click::kernel::BindingName::Local(identity) = parameter.binding_name() else {
+            panic!("unnamed parameter has a typed declaration identity")
+        };
+        assert_eq!(identity.ordinal() as usize, index);
+        assert!(identity.is_parameter());
+        assert!(identity.spelling().is_none());
+    }
     let source = r#"verifying "driver.cpp";
 uint8 probe(uint8* destination, const uint8* source) {
     owns uninitialized(destination[0..1]);
