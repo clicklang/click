@@ -958,6 +958,37 @@ fn cpp_mdtest_audit_inventories_imported_semantics() {
 }
 
 #[test]
+fn complete_replay_allows_direct_close_and_refuses_its_search_fallback() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("implication.click");
+    let original = r#"
+theorem identity(x: int32) {
+    ensures x == 0 implies x == 0 by { close(); }
+}
+"#;
+    fs::write(&path, original).unwrap();
+    let claim = "identity.ensures_0";
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        claim.to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).expect("the expanded closer checks directly after intro");
+
+    let source = load_audit_source(&path).unwrap();
+    let limit = AuditLimits::default().verification;
+    assert!(cold_verify_expansion(original, &source, claim, limit, false).is_ok());
+    let error = cold_verify_expansion(original, &source, claim, limit, true)
+        .err()
+        .expect("the original closer still needs search");
+    assert!(
+        error.starts_with("cold replay: ") && error.contains(claim),
+        "{error}"
+    );
+}
+
+#[test]
 fn cpp_theorem_expansion_uses_imported_record_layouts() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/cpp_class_template_override_calls_its_own_method.md");

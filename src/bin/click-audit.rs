@@ -73,16 +73,15 @@ expansion audit's.
 The expansion audit inventories smart tactics without executing proofs, then audits each
 selected site in source order: it expands the site, verifies the rewritten
 proof unit in the retained session, reverifies that proof unit through the
-normal direct targeted entry point, and checks the rewrite is an
-expansion fixed point (the audited smart tactic is gone from its claim and
-the emitted expansion introduced no new smart tactic). By default it stops at
+normal direct targeted entry point, and checks that the expansion removes
+the selected proof search. By default it stops at
 the first failure and prints an inclusive --start-at resume command.
 Successful progress is concise by default: one row per claim. `--verbose`
 includes the phase costs for each claim batch.
 
 A claim whose sites are all selected is expanded once, with every site
 together, since expanding one site runs its whole claim, and its rewrite is
-cold-verified with the implicit `solve` off inside that claim. Untouched
+cold-verified with proof search disabled inside that claim. Untouched
 neighboring claims and required workers are still verified normally. Failure
 of that whole-claim expansion fails the audit. A partial selection is captured together in one verification as well;
 its fixed-point check covers only the emitted regions, leaving unselected
@@ -2376,8 +2375,8 @@ fn audit_claim_rewrite(
     };
     let original = worker.source.container_source.clone();
     // Runtime discovery can observe an implicit tail after an already
-    // complete explicit script. Its unchanged expansion is a fixed point;
-    // it still has to pass the smart-site and cold, no-implicit-solve checks.
+    // complete explicit script. Its unchanged expansion must still pass
+    // cold verification with proof search disabled.
     let expanded_click_source =
         rewritten_click_source(&worker.source, &expanded).map_err(|error| {
             format!("expanded proof container did not parse (report this as a bug): {error}")
@@ -2385,27 +2384,9 @@ fn audit_claim_rewrite(
     claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)
         .map_err(|error| audit_phase_error("expanded source", error))?;
 
-    // The fixed point: an expanded claim holds simple tactics only. Every
-    // script still ends with the implicit tail, which has nothing left to
-    // do; the cold check below runs with it off and refuses any C or goal
-    // it would have taken.
-    let mut remaining = claim_smart_sites(
-        &expanded_click_source,
-        &worker.source.inputs,
-        worker.source.project.as_ref(),
-        &site.claim,
-    )
-    .map_err(|error| audit_phase_error("expansion fixed point", error))?;
-    remaining.retain(|name| name != click::instrumentation::IMPLICIT_TAIL_TACTIC);
-    if !remaining.is_empty() {
-        return Err(format!(
-            "the expanded claim `{}` still holds {} smart tactic(s): {}",
-            site.claim,
-            remaining.len(),
-            remaining.join(", ")
-        ));
-    }
-
+    // The same `close()` spelling can check a fact directly or invoke
+    // search. Cold replay below enforces the fixed point by disabling
+    // search in this claim, including the fallback of each `close()`.
     let retained = verify_rewrite_in_session(worker, &site.claim, &expanded, limits, deadline)
         .map_err(|error| audit_phase_error("retained replay", error))?;
     // These cold checks share no verification state. The original's cost is

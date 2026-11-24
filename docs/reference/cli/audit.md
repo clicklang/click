@@ -120,8 +120,9 @@ kind's query total, `work` and `sites`. The audit never fails the command.
 ## Expansion audit
 
 The expansion audit inventories source-addressable smart tactics, expands
-selected sites, verifies each rewritten proof unit, and checks that expansion
-reaches a fixed point without introducing a new smart tactic.
+selected sites, and verifies each rewritten proof unit. A whole-claim rewrite
+must verify with search disabled. This lets a written `close()` check a fact
+directly, as it does in an expanded certificate.
 
 ## Target selection
 
@@ -155,8 +156,8 @@ fails the audit; one with smart sites is reported by its session.
 ## Checks
 
 A wholly selected claim is expanded once with all its smart sites. The
-rewrite must contain no smart tactics and pass retained and cold verification.
-Cold replay disables implicit solving inside the selected claim and its nested
+rewrite must pass retained and cold verification.
+Cold replay disables proof search inside the selected claim and its nested
 proofs. It also rejects monitored discovery, including ambient search,
 proposition search, and legacy fact transport. Neighboring claims and modeled
 workers keep their ordinary verification policy. A selected claim that cold
