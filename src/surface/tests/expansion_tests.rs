@@ -82,7 +82,7 @@ fn reassigned_pointer_read_replays_with_a_checked_alias_fact() {
 }
 
 #[test]
-fn solve_expands_to_scoped_introductions_for_written_ranges() {
+fn close_expands_to_scoped_introductions() {
     let source = r#"
 theorem bounded(lo: int32, hi: int32) {
     ensures (lo..hi).all(|i| { i < hi }) by close();
@@ -101,21 +101,39 @@ theorem ordinary(hi: int32) {
     ensures forall (i: int32) { i < hi implies i < hi } by close();
 }
 "#;
-    for (claim, scopes, flat) in [
-        ("bounded.ensures_0", 1, 0),
-        ("nested.ensures_0", 2, 0),
-        ("projected.ensures_0", 1, 0),
-        ("ordinary.ensures_0", 0, 2),
+    for (claim, scopes) in [
+        ("bounded.ensures_0", 1),
+        ("nested.ensures_0", 2),
+        ("projected.ensures_0", 1),
+        ("ordinary.ensures_0", 2),
     ] {
         let expanded = expand_c_claim_source_by_label(source, &[], claim)
             .unwrap_or_else(|error| panic!("{}", error.report()));
         assert_eq!(expanded.matches("intro() {").count(), scopes, "{expanded}");
-        assert_eq!(expanded.matches("intro();").count(), flat, "{expanded}");
-        without_implicit_solve_for_claim(claim, || {
+        assert!(!expanded.contains("intro();"), "{expanded}");
+        crate::surface::without_proof_search_for_claim(claim, || {
             verify_c_sources(&expanded, &[]).map_err(|error| error.report())
         })
         .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
     }
+
+    let source = r#"
+theorem written() {
+    ensures forall (x: int32) { x == 0 implies x == 0 } by {
+        intro();
+        close();
+    }
+}
+"#;
+    let offset = source.find("close();").unwrap();
+    let position = expansion::position_at_offset(source, offset);
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column).unwrap();
+    assert!(expanded.starts_with(&source[..offset]), "{expanded}");
+    assert!(expanded[offset..].contains("intro() {"), "{expanded}");
+    crate::surface::without_proof_search_for_claim("written.ensures_0", || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
@@ -5066,11 +5084,11 @@ theorem integer_exists_choose() {
         let expanded = expand_c_claim_source_by_label(source, &[], label)
             .expect("the Integer quantifier claim should expand");
         if label.ends_with("ordered") {
-            assert!(expanded.contains("intro();"), "{label}: {expanded}");
+            assert!(expanded.contains("intro()"), "{label}: {expanded}");
         } else if label.ends_with("witnessed") {
             assert!(expanded.contains("close();"), "{label}: {expanded}");
         } else if label.ends_with("logical") {
-            assert!(expanded.contains("intro();"), "{label}: {expanded}");
+            assert!(expanded.contains("intro()"), "{label}: {expanded}");
             // Equality closure can discharge this reflexive conjunction
             // directly. The expanded claim must still verify below.
         } else {
@@ -5723,14 +5741,17 @@ theorem reflexive_implication(x: int32) {
     let offset = source.find("close();").expect("expected smart tactic");
     let position = expansion::position_at_offset(source, offset);
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column).unwrap();
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro() {"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[])
         .expect("expanded implication introduction should independently recheck");
-    let missing_intro = expanded.replacen("intro();", "", 1);
     crate::surface::without_proof_search_for_claim("reflexive_implication.ensures_0", || {
-        verify_c_sources(&missing_intro, &[]).map_err(|error| error.report())
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .expect("the scoped introduction should recheck without search");
+    crate::surface::without_proof_search_for_claim("reflexive_implication.ensures_0", || {
+        verify_c_sources(source, &[]).map_err(|error| error.report())
     })
     .expect_err("checked replay requires the retained introduction");
 }
@@ -8099,7 +8120,7 @@ fn grouped_post_execution_solve_publishes_checked_obligations_through_proof() {
     )
     .expect("the retained grouped solve certificate should expand");
     // The first `solve` acts on the first open goal; the second keeps its own.
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro() {"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the serialized grouped obligation scopes should verify independently");
@@ -8387,7 +8408,7 @@ fn post_execution_solve_uses_the_introduced_antecedent_for_contradiction() {
 
     let expanded = expand_function_proof_source(click_source, &sources, "branch_value")
         .expect("the retained introduced contradiction should expand");
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro()"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("the introduced contradiction should check independently");
     let false_on_the_reachable_branch = expanded.replace("result == 1", "result == 2");
@@ -16126,7 +16147,7 @@ fn quantified_outcome_solve_keeps_its_binder_on_the_checked_goal() {
     )
     .expect("the quantified outcome proof should expand");
     assert!(
-        expanded.contains("intro();") || expanded.contains("enumerate();"),
+        expanded.contains("intro()") || expanded.contains("enumerate();"),
         "{expanded}"
     );
     assert!(expanded.contains("instantiate("), "{expanded}");
@@ -18078,7 +18099,7 @@ fn quantified_old_equality_expands_to_bound_indexed_reads() {
     let expanded = expand_function_proof_source(click_source, &sources, "shifted_copy")
         .expect("the quantified postcondition should expand");
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro()"), "{expanded}");
     assert!(
         expanded.contains("at(region(2).exit, src[k])"),
         "{expanded}"

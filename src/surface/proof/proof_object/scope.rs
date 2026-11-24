@@ -847,25 +847,41 @@ impl<'a> Proof<'a> {
             })
     }
 
-    /// A solver can close the implication as a whole after opening the
-    /// binder. Compact only a checked continuation that introduced it.
-    pub(in crate::surface::proof) fn finish_generated_range_intro(
+    /// Retain a generated introduction over the checked continuation that
+    /// finished its goal. A written range's scope also opens its membership
+    /// guard, so absorb that introduction when the continuation took it.
+    pub(in crate::surface::proof) fn finish_generated_intro(
         &self,
         introduced: &Self,
         completed: Self,
     ) -> Result<Self, ClickError> {
-        if !self.opens_scoped_range(introduced) {
+        let range = self.opens_scoped_range(introduced);
+        if !range
+            && !matches!(
+                (self.surface_goal(), self.goal()),
+                (
+                    Some(ClickProposition::ForAll { .. }),
+                    Some(Proposition::ForAll { .. })
+                ) | (
+                    Some(ClickProposition::Implies(..)),
+                    Some(Proposition::Implies(..))
+                )
+            )
+        {
             return Ok(completed);
         }
         let continuation = completed.certificate_since(&introduced.checkpoint())?;
-        let [ProofStep::Intro, body @ ..] = continuation.steps() else {
-            return Ok(completed);
+        let body = if range {
+            match continuation.steps() {
+                [ProofStep::Intro, body @ ..] => ProofCertificate::from_steps(body.to_vec())?,
+                [ProofStep::IntroBlock { binder: None, body }] => body.as_ref().clone(),
+                // Search can prove the membership implication as a whole.
+                _ => return Ok(completed),
+            }
+        } else {
+            continuation
         };
-        self.retain_scoped_intro(
-            introduced,
-            ProofCertificate::from_steps(body.to_vec())?,
-            completed,
-        )
+        self.retain_scoped_intro(introduced, body, completed)
     }
 
     /// Retain a checked binder or premise, its optional range guard, and
