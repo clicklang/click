@@ -34,6 +34,9 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             let widened = MachineTerm::machine_integer_cast(source, destination, narrow.clone());
             let goal = equal(observation(destination, widened), original.clone());
             let mut premises = bounds(lo.clone(), hi.clone());
+            // Measure ambient premises separately from the selected operands'
+            // one-time cache preparation.
+            check_rule(vec![0, 1], &goal, &premises).unwrap();
             let mut costs = Vec::new();
             for ambient in [0, 16, 64, 256, 1024] {
                 premises.resize_with(ambient + 2, || {

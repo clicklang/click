@@ -191,7 +191,7 @@ fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
     let goal = Proposition::And(Box::new(upper), Box::new(lower));
     for mode in 0..4 {
         let mut samples = Vec::new();
-        for count in [4, 16, 64] {
+        for count in [0, 4, 16, 64] {
             let mut context = PureFactContext::new();
             if mode == 1 {
                 context = context
@@ -224,7 +224,11 @@ fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
                 )
             });
             assert_eq!(established, mode != 0);
-            samples.push(work);
+            // Warm the selected expression caches with a separate context.
+            // Each measured sample still starts with its own cold stated index.
+            if count != 0 {
+                samples.push(work);
+            }
         }
         assert!(
             samples.windows(2).all(|pair| pair[0] == pair[1]),

@@ -565,7 +565,11 @@ mod tests {
             let fields = ResourceFieldValues::from_minted(vec![value]);
             let schema = ResourceFieldSchema::new(vec![("value".into(), ty)]).unwrap();
             assert!(fields.matches_schema(&schema));
-            assert!(weak.upgrade().is_some_and(|root| !root.has_cached_native_argument()), "algebraic={algebraic}");
+            assert!(
+                weak.upgrade()
+                    .is_some_and(|root| !root.has_cached_native_argument()),
+                "algebraic={algebraic}"
+            );
         }
     }
 

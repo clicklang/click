@@ -303,14 +303,19 @@ fn observing_every_shared_machine_prefix_does_not_materialize_operands() {
 fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
     let mut baseline = Vec::new();
     for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
         let mut costs = Vec::new();
         let _ambient = (0..unrelated)
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(955000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
             let format = MachineIntegerType::Int64;
-            let mut term =
-                KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(956000));
+            // Build a fresh selected chain for each sample so the ambient
+            // roots are the only source of potential work differences.
+            let mut term = KernelTerm::variable(
+                KernelType::Program(ProgramType::Int64),
+                Variable(956000 + 1024 * unrelated + size as u64),
+            );
             let mut retained = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {

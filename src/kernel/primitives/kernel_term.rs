@@ -1592,10 +1592,7 @@ impl KernelTermImport {
                     format: machine.ty(),
                     operand: machine.shared_operand().cloned().unwrap_or_else(|| {
                         KernelTerm::legacy_at(
-                            PureFunctionArgument::Value(machine::wrap_exact(
-                                machine.ty(),
-                                machine.value().clone(),
-                            )),
+                            PureFunctionArgument::SharedMachine(machine.clone()),
                             LegacyIdentity::ExactIntegerObservation(machine.clone()),
                         )
                     }),
@@ -2150,7 +2147,15 @@ impl KernelTermExport {
             KernelTermNode::ProgramParameter { operand } => PureFunctionArgument::Value(
                 ProgramValue::Parameter(Box::new(self.algebraic(operand)?)),
             ),
-            KernelTermNode::Legacy(value) => value.value().clone(),
+            KernelTermNode::Legacy(value) => match &value.identity {
+                LegacyIdentity::ExactIntegerObservation(observation) => {
+                    PureFunctionArgument::Value(machine::wrap_exact(
+                        observation.ty(),
+                        observation.value().clone(),
+                    ))
+                }
+                _ => value.value().clone(),
+            },
             _ => return Err("kernel term sort has not migrated to the checker bridge"),
         };
         self.values.insert(term.clone(), value.clone());

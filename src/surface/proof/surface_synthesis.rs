@@ -6983,6 +6983,11 @@ fn synthesize_legacy_call_argument(
             | ProgramValue::Int128(value)
             | ProgramValue::UInt128(value),
         ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
+        crate::kernel::PureFunctionArgument::SharedMachine(value)
+            if value.ty().format().bits() >= 32 =>
+        {
+            synthesize_surface_bitvector(value.value(), parameter_binding, state, bound_variables)?
+        }
         crate::kernel::PureFunctionArgument::Integer(value) => {
             synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
         }
