@@ -790,10 +790,10 @@ fn collect_retained_affine_operand(
     Some(())
 }
 
-fn affine_factor<'a>(
-    arguments: &'a [KernelTerm],
-    constants: &'a HashMap<u64, Option<BigInt>>,
-) -> Option<(&'a BigInt, &'a KernelTerm)> {
+fn affine_factor<'term, 'constant>(
+    arguments: &'term [KernelTerm],
+    constants: &'constant HashMap<u64, Option<BigInt>>,
+) -> Option<(&'constant BigInt, &'term KernelTerm)> {
     let [left, right] = arguments else {
         return None;
     };

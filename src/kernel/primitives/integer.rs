@@ -145,6 +145,14 @@ fn application_argument_keys(
         .collect()
 }
 
+fn application_fingerprint(name: &str, keys: &[PureApplicationArgumentKey]) -> u64 {
+    crate::instrumentation::record_deterministic_work(keys.len().saturating_add(1));
+    let mut hasher = crate::id_hash::FingerprintHasher::default();
+    name.hash(&mut hasher);
+    keys.hash(&mut hasher);
+    hasher.finish()
+}
+
 struct PureApplicationInterner {
     buckets: HashMap<
         u64,
@@ -165,7 +173,9 @@ impl PureApplicationInterner {
         name: String,
         arguments: Vec<PureFunctionArgument>,
     ) -> SharedPureApplication {
-        let identity = self.intern_identity(&name, application_argument_keys(&arguments));
+        let keys = application_argument_keys(&arguments);
+        let fingerprint = application_fingerprint(&name, &keys);
+        let identity = self.intern_identity(&name, keys, fingerprint);
         SharedPureApplication::with_identity(identity, name, arguments)
     }
 
@@ -173,12 +183,8 @@ impl PureApplicationInterner {
         &mut self,
         name: &str,
         argument_keys: Vec<PureApplicationArgumentKey>,
+        key: u64,
     ) -> Arc<PureApplicationIdentity> {
-        crate::instrumentation::record_deterministic_work(argument_keys.len().saturating_add(1));
-        let mut hasher = crate::id_hash::FingerprintHasher::default();
-        name.hash(&mut hasher);
-        argument_keys.hash(&mut hasher);
-        let key = hasher.finish();
         let cleanup_limit = self.cleanup.len().min(8);
         for _ in 0..cleanup_limit {
             let Some((fingerprint, pointer)) = self.cleanup.pop_front() else {
@@ -323,7 +329,8 @@ impl SharedPureApplication {
         argument_keys: Vec<PureApplicationArgumentKey>,
     ) -> Arc<PureApplicationIdentity> {
         static INTERNER: OnceLock<Mutex<PureApplicationInterner>> = OnceLock::new();
-        // The typed word identities were computed outside this lock.
+        // Hashing a native argument can prepare a retained Integer identity.
+        let fingerprint = application_fingerprint(name, &argument_keys);
         INTERNER
             .get_or_init(|| {
                 Mutex::new(PureApplicationInterner {
@@ -334,7 +341,7 @@ impl SharedPureApplication {
             })
             .lock()
             .expect("Pure application interner lock poisoned")
-            .intern_identity(name, argument_keys)
+            .intern_identity(name, argument_keys, fingerprint)
     }
 
     pub(crate) fn identity(&self) -> Arc<PureApplicationIdentity> {
@@ -730,11 +737,12 @@ impl SharedMachineIntegerTerm {
     /// Read-only: a miss does not import syntax or retain an opaque payload.
     pub(crate) fn retained_import(ty: MachineIntegerType, value: &MachineTerm) -> Option<Self> {
         let key = MachineIntegerKey::native(ty, value.clone());
+        let fingerprint = key.fingerprint();
         let found = MACHINE_INTEGER_INTERNER
             .get()?
             .lock()
             .expect("machine Integer interner lock poisoned")
-            .find(&key)?;
+            .find(&key, fingerprint)?;
         (found.shared_operand().is_some()
             && MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow().contains_key(&found.id())))
         .then_some(found)
@@ -823,10 +831,11 @@ impl SharedMachineIntegerTerm {
         }
         let interner =
             MACHINE_INTEGER_INTERNER.get_or_init(|| Mutex::new(MachineIntegerInterner::default()));
+        let fingerprint = key.fingerprint();
         if let Some(found) = interner
             .lock()
             .expect("machine Integer interner lock poisoned")
-            .find(&key)
+            .find(&key, fingerprint)
             && (found.shared_operand().is_none()
                 || MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow().contains_key(&found.id())))
         {
@@ -918,12 +927,13 @@ impl SharedMachineIntegerTerm {
     }
 
     fn remember_explicit_import(&self, key: MachineIntegerKey) {
+        let fingerprint = key.fingerprint();
         MACHINE_INTEGER_INTERNER
             .get()
             .expect("shared machine interner")
             .lock()
             .expect("machine Integer interner lock poisoned")
-            .remember(key, self);
+            .remember(key, fingerprint, self);
         MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow_mut().insert(self.id(), self.clone()));
     }
 
@@ -944,11 +954,12 @@ impl SharedMachineIntegerTerm {
     }
 
     fn intern_key(key: MachineIntegerKey) -> Self {
+        let fingerprint = key.fingerprint();
         MACHINE_INTEGER_INTERNER
             .get_or_init(|| Mutex::new(MachineIntegerInterner::default()))
             .lock()
             .expect("machine Integer interner lock poisoned")
-            .intern(key)
+            .intern(key, fingerprint)
     }
 
     pub(crate) fn shared_operand(&self) -> Option<&KernelTerm> {
@@ -1126,6 +1137,14 @@ enum MachineIntegerKey {
     },
 }
 impl MachineIntegerKey {
+    // A boxed conversion's Integer child may read a machine observation while
+    // preparing its identity. Hash it before taking the machine interner lock.
+    fn fingerprint(&self) -> u64 {
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
+        self.hash(&mut hasher);
+        hasher.finish()
+    }
+
     fn native(ty: MachineIntegerType, value: MachineTerm) -> Self {
         if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
             return Self::Application {
@@ -1152,11 +1171,9 @@ struct MachineIntegerInterner {
 static MACHINE_INTEGER_INTERNER: OnceLock<Mutex<MachineIntegerInterner>> = OnceLock::new();
 
 impl MachineIntegerInterner {
-    fn find(&self, key: &MachineIntegerKey) -> Option<SharedMachineIntegerTerm> {
-        let mut hasher = crate::id_hash::FingerprintHasher::default();
-        key.hash(&mut hasher);
+    fn find(&self, key: &MachineIntegerKey, fingerprint: u64) -> Option<SharedMachineIntegerTerm> {
         self.values
-            .get(&hasher.finish())?
+            .get(&fingerprint)?
             .iter()
             .find_map(|(candidate, node)| {
                 (candidate == key)
@@ -1165,13 +1182,15 @@ impl MachineIntegerInterner {
             })
     }
 
-    fn remember(&mut self, key: MachineIntegerKey, node: &SharedMachineIntegerTerm) {
-        if self.find(&key).is_some() {
+    fn remember(
+        &mut self,
+        key: MachineIntegerKey,
+        fingerprint: u64,
+        node: &SharedMachineIntegerTerm,
+    ) {
+        if self.find(&key, fingerprint).is_some() {
             return;
         }
-        let mut hasher = crate::id_hash::FingerprintHasher::default();
-        key.hash(&mut hasher);
-        let fingerprint = hasher.finish();
         self.values
             .entry(fingerprint)
             .or_default()
@@ -1180,7 +1199,7 @@ impl MachineIntegerInterner {
             .push_back((fingerprint, Arc::as_ptr(&node.0) as usize));
     }
 
-    fn intern(&mut self, key: MachineIntegerKey) -> SharedMachineIntegerTerm {
+    fn intern(&mut self, key: MachineIntegerKey, fingerprint: u64) -> SharedMachineIntegerTerm {
         for _ in 0..8 {
             let Some((fingerprint, pointer)) = self.cleanup_queue.pop_front() else {
                 break;
@@ -1200,9 +1219,6 @@ impl MachineIntegerInterner {
                 }
             }
         }
-        let mut hasher = crate::id_hash::FingerprintHasher::default();
-        key.hash(&mut hasher);
-        let fingerprint = hasher.finish();
         if let Some(bucket) = self.values.get(&fingerprint) {
             for (candidate, node) in bucket {
                 if candidate == &key
@@ -1905,10 +1921,11 @@ impl IntegerIdentity {
         key: IntegerShallowKey,
         observation: Option<SharedMachineIntegerTerm>,
     ) -> Arc<Self> {
+        let fingerprint = integer_key_fingerprint(&key);
         integer_interner()
             .lock()
             .expect("Integer interner lock poisoned")
-            .intern_identity(key, observation)
+            .intern_identity(key, observation, fingerprint)
     }
 }
 
@@ -1930,6 +1947,7 @@ impl IntegerInterner {
         &mut self,
         key: IntegerShallowKey,
         observation: Option<SharedMachineIntegerTerm>,
+        fingerprint: u64,
     ) -> Arc<IntegerIdentity> {
         for _ in 0..8 {
             let Some((fingerprint, pointer)) = self.cleanup_queue.pop_front() else {
@@ -1950,7 +1968,6 @@ impl IntegerInterner {
                 }
             }
         }
-        let fingerprint = integer_key_fingerprint(&key);
         let bucket = self.identities.entry(fingerprint).or_default();
         if let Some(identity) = bucket
             .iter()
