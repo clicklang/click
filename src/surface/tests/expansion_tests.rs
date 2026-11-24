@@ -17107,7 +17107,7 @@ fn vector_push_pipeline_has_no_outcome_fallbacks() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
-fn smart_have_using_legacy_normalization_refuses_expansion() {
+fn unchanged_field_read_have_expands_and_replays_without_normalization() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest
         .join("examples")
@@ -17119,33 +17119,26 @@ fn smart_have_using_legacy_normalization_refuses_expansion() {
     // regression's ordinary surface goal explicit in its own test input.
     let anchor = "    have owner->tail == 4 by {";
     assert_eq!(project_source.matches(anchor).count(), 1);
-    let explicit = project_source.replacen(
-        anchor,
-        "    have owner->head == old(owner->head) by {\n        normalize();\n    }\n    have owner->tail == 4 by {",
-        1,
-    );
-    let smart = explicit.replacen(
-        "have owner->head == old(owner->head) by {\n        normalize();\n    }",
-        "have owner->head == old(owner->head) by {\n        close();\n    }",
-        1,
-    );
-    assert_ne!(
-        smart, explicit,
-        "the regression must select the intended have"
-    );
-    let sources = crate::cli::read_verifying_sources(&path, &smart)
+    let unchanged_head = "    have owner->head == old(owner->head) by {\n        close();\n    }";
+    let source = project_source.replacen(anchor, &format!("{unchanged_head}\n{anchor}"), 1);
+    let sources = crate::cli::read_verifying_sources(&path, &source)
         .unwrap_or_else(|error| panic!("failed to load `{}`: {error}", path.display()));
     let c_sources = crate::cli::source_refs(&sources);
 
-    verify_c_sources(&smart, &c_sources).expect("the smart have should verify");
-    let error = expand_c_claim_source(
-        &smart,
+    verify_c_sources(&source, &c_sources).expect("the unchanged field proof should verify");
+    let expanded = expand_c_claim_source(
+        &source,
         &c_sources,
         "ring_buffer_pipeline",
         ContractProofClaim::Grouped,
     )
-    .unwrap_err();
-    assert_compatibility_normalization_refusal(error);
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains(unchanged_head), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim("ring_buffer_pipeline.contract", || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
