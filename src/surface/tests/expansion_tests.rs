@@ -28126,40 +28126,35 @@ fn conditional_signed_shifts_verify_with_legacy_normalization() {
 }
 
 #[test]
-fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
-    for (fixture, claims) in [
-        (
-            "guarded_signed_ring",
-            &[("sum", true), ("product", true)][..],
-        ),
+fn arithmetic_certificates_cold_replay_without_generated_normalization() {
+    for (fixture, functions) in [
+        ("guarded_signed_ring", &["sum", "product"][..]),
         (
             "float_bound_composition",
-            &[("negate_scaled", true), ("widen_scaled", true)][..],
+            &["negate_scaled", "widen_scaled"][..],
         ),
-        ("signed_odd_divisor", &[("divide", true)][..]),
-        ("negative_signed_product", &[("product", true)][..]),
-        ("float_add_pair", &[("sum", true)][..]),
-        (
-            "unsigned_masked_divisor",
-            &[("divide", true), ("remainder", true)][..],
-        ),
+        ("signed_odd_divisor", &["divide"][..]),
+        ("negative_signed_product", &["product"][..]),
+        ("float_add_pair", &["sum"][..]),
+        ("unsigned_masked_divisor", &["divide", "remainder"][..]),
     ] {
         let (source, sources) =
             mdtest_sources(&format!("mdtests/arithmetic_expression_{fixture}.md"));
         let sources = crate::cli::source_refs(&sources);
         verify_c_sources(&source, &sources).unwrap();
-        for (function, replayable) in claims {
+        for function in functions {
             let claim = format!("{function}.ensures_0");
-            let result = expand_c_claim_source_by_label(&source, &sources, &claim);
-            if *replayable {
-                let expanded = result.unwrap_or_else(|error| panic!("{claim}: {error}"));
-                crate::surface::check_audit_claim(&claim, true, || {
-                    verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-                })
-                .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
-            } else {
-                assert_compatibility_normalization_refusal(result.unwrap_err());
-            }
+            let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
+                .unwrap_or_else(|error| panic!("{claim}: {error}"));
+            assert_eq!(
+                expanded.matches("normalize()").count(),
+                source.matches("normalize()").count(),
+                "{claim}"
+            );
+            crate::surface::check_audit_claim(&claim, true, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
         }
     }
 }
