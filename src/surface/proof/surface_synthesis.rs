@@ -5721,6 +5721,64 @@ fn declared_pointee_of_named_pointer(
         .filter(|pointee| crate::kernel::PointerLoadCategory::of_type(*pointee).is_some())
 }
 
+/// The place that spells the cell at `pointer` read at `value_type` in
+/// `state`, with the type it is spelled at: a declared scalar, an owned or
+/// declared field, or `load<T>(address)`. Asked at the untyped `Pointer`, a
+/// pointer cell is spelled at its declaration's type, or as
+/// `load<Pointer>(address)` where no declaration names it.
+fn synthesize_cell_place(
+    pointer: &Address,
+    value_type: ProgramType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<(ContractExpression, ProgramType)> {
+    let untyped = value_type == ProgramType::Pointer;
+    let spelled = |expression: ContractExpression| {
+        let ty = spelled_load_type(&expression).unwrap_or(value_type);
+        place_names_read_at(value_type, ty).then_some((expression, ty))
+    };
+    if let Some((name, ty)) = SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+        let owners = slot.borrow();
+        let (name, ty) = owners.as_ref()?.storage_scalars.get(pointer)?;
+        place_names_read_at(value_type, *ty).then(|| (name.clone(), *ty))
+    }) {
+        return Some((
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)),
+            ty,
+        ));
+    }
+    if let Some(field) =
+        synthesize_owned_field_at_address(pointer, value_type, state).and_then(&spelled)
+    {
+        return Some(field);
+    }
+    let field = if untyped {
+        synthesize_parameter_field_load_matching(pointer, None, parameter_binding).or_else(|| {
+            synthesize_local_field_load_matching(pointer, None, parameter_binding, state)
+        })
+    } else {
+        synthesize_struct_field_load(pointer, value_type, parameter_binding, state)
+    };
+    if let Some(field) = field.and_then(&spelled) {
+        return Some(field);
+    }
+    let address =
+        synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
+    let load_type = if untyped {
+        declared_pointee_of_named_pointer(&address, parameter_binding, state)
+            .unwrap_or(ProgramType::Pointer)
+    } else {
+        value_type
+    };
+    let address = if value_type == ProgramType::UInt8 {
+        synthesize_observation_operand(address, ProgramType::UInt8Pointer)?
+    } else {
+        address
+    };
+    Some((synthesize_memory_load(address, load_type), load_type))
+}
+
 /// [`synthesize_point_read`], with the type its place spells the read at:
 /// `value_type`, or, for a pointer load asked at the untyped `Pointer`, the
 /// declared type of the field, slot or parameter that names it. A pointer
@@ -5734,54 +5792,14 @@ fn synthesize_spelled_point_read(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<(ContractExpression, ProgramType)> {
     let untyped = value_type == ProgramType::Pointer;
-    let spelled = |expression: ContractExpression| {
-        let ty = spelled_load_type(&expression).unwrap_or(value_type);
-        place_names_read_at(value_type, ty).then_some((expression, ty))
-    };
     let place = |state: &ExecutionState| {
-        if let Some((name, ty)) = SYNTHESIS_STRUCT_OWNERS.with(|slot| {
-            let owners = slot.borrow();
-            let (name, ty) = owners.as_ref()?.storage_scalars.get(pointer)?;
-            place_names_read_at(value_type, *ty).then(|| (name.clone(), *ty))
-        }) {
-            return Some((
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(name)),
-                ty,
-            ));
-        }
-        if let Some(field) =
-            synthesize_owned_field_at_address(pointer, value_type, state).and_then(&spelled)
-        {
-            return Some(field);
-        }
-        let field = if untyped {
-            synthesize_parameter_field_load_matching(pointer, None, parameter_binding).or_else(
-                || synthesize_local_field_load_matching(pointer, None, parameter_binding, state),
-            )
-        } else {
-            synthesize_struct_field_load(pointer, value_type, parameter_binding, state)
-        };
-        if let Some(field) = field.and_then(&spelled) {
-            return Some(field);
-        }
-        let address = synthesize_surface_pointer_expression(
+        synthesize_cell_place(
             pointer,
+            value_type,
             parameter_binding,
             state,
             bound_variables,
-        )?;
-        let load_type = if untyped {
-            declared_pointee_of_named_pointer(&address, parameter_binding, state)
-                .unwrap_or(ProgramType::Pointer)
-        } else {
-            value_type
-        };
-        let address = if value_type == ProgramType::UInt8 {
-            synthesize_observation_operand(address, ProgramType::UInt8Pointer)?
-        } else {
-            address
-        };
-        Some((synthesize_memory_load(address, load_type), load_type))
+        )
     };
     // The version the place's own read selects at `state`, read at the type
     // it is spelled at: an untyped nested load is spelled at its place's
@@ -6126,7 +6144,23 @@ fn synthesize_typed_word_read(
             parameter_binding,
             state,
             bound_variables,
-        )?;
+        );
+        let Some(address) = address else {
+            crate::surface::proof::raise_lower_audit::note_reason(|| {
+                let variant = |text: String| {
+                    text.split(|c: char| !c.is_alphanumeric())
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                };
+                format!(
+                    "cell address unspelled: base {}, offset {}",
+                    variant(format!("{:?}", pointer.base)),
+                    variant(format!("{:?}", pointer.offset))
+                )
+            });
+            return None;
+        };
         Some(synthesize_memory_load(address, value_type))
     };
     if let Some(load) = scalar_read_in_state(&read, state) {
@@ -8415,29 +8449,44 @@ fn synthesize_pointer_equality_operand(
             )?;
             Some(synthesize_memory_load(operand, value.program_type()))
         };
+        use crate::surface::proof::raise_lower_audit::note_reason;
+        let unspelled = |place: &str| {
+            note_reason(|| format!("snapshot pointer load: no place spells its cell at {place}"));
+        };
         if crate::kernel::intern_memory_ref(state.memory()).unchanged_bytes_source()
             == source.unchanged_bytes_source()
         {
-            return at_state(state);
+            let spelled = at_state(state);
+            if spelled.is_none() {
+                unspelled("the current state");
+            }
+            return spelled;
         }
         if let Some((reference, selector)) =
             SYNTHESIS_REFERENCE_STATE.with(|slot| slot.borrow().clone())
             && crate::kernel::intern_memory_ref(reference.memory()).unchanged_bytes_source()
                 == source.unchanged_bytes_source()
         {
+            let Some(expression) = at_state(&reference) else {
+                unspelled("the reference state");
+                return None;
+            };
             return Some(ContractExpression::At {
                 selector,
-                expression: Box::new(at_state(&reference)?),
+                expression: Box::new(expression),
             });
         }
         if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
             && crate::kernel::intern_memory_ref(entry.memory()).unchanged_bytes_source()
                 == source.unchanged_bytes_source()
         {
-            return Some(ContractExpression::Old(Box::new(at_state(&entry)?)));
+            let Some(expression) = at_state(&entry) else {
+                unspelled("function entry");
+                return None;
+            };
+            return Some(ContractExpression::Old(Box::new(expression)));
         }
         return SYNTHESIS_RECORDED_POINTS.with(|slot| {
-            use crate::surface::proof::raise_lower_audit::note_reason;
             let slot = slot.borrow();
             let Some((selector, recorded)) = slot.as_ref()?.point_reading_memory(&source) else {
                 let site = address_read
@@ -8567,6 +8616,21 @@ fn synthesize_surface_pointer_expression(
         state,
         bound_variables,
     );
+    if raised.is_none() {
+        crate::surface::proof::raise_lower_audit::note_reason(|| {
+            let variant = |text: String| {
+                text.split(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            };
+            format!(
+                "pointer unspelled: base {}, offset {}",
+                variant(format!("{:?}", pointer.base)),
+                variant(format!("{:?}", pointer.offset))
+            )
+        });
+    }
     if raised.is_none()
         && let Some(read) = pointer.as_loaded_value()
     {
@@ -8801,6 +8865,43 @@ fn synthesize_surface_pointer_expression_routes(
         .or_else(|| {
             synthesize_recorded_pointer_expression(pointer, parameter_binding, bound_variables)
         })
+        .or_else(|| {
+            // A pointer a constant number of bytes past one that has a
+            // spelling: that spelling, offset in bytes. Last, so no pointer
+            // another route spells (a field, an element) changes.
+            let AddressOffset::Constant(bytes) = pointer.offset else {
+                return None;
+            };
+            let bytes = u32::try_from(bytes).ok().filter(|bytes| *bytes != 0)?;
+            let origin = Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Constant(0),
+            };
+            let base = synthesize_surface_pointer_expression(
+                &origin,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            synthesize_byte_offset(base, bytes)
+        })
+        .or_else(|| {
+            // A memory-named load the state reads is the read of its cell
+            // there: the cell's place, as a point-named load is spelled.
+            // Last, so no load another route spells changes its spelling.
+            if pointer.as_loaded_value()?.identity.is_point_named() {
+                return None;
+            }
+            let cell = pointer_read_address_in_state(pointer, state)?;
+            let (place, _) = synthesize_cell_place(
+                &cell,
+                ProgramType::Pointer,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            Some(place)
+        })
 }
 
 /// A pointer read from the call's private parameter object is named by
@@ -8954,14 +9055,25 @@ fn recorded_point_of_pointer_read(
         AddressBase::Load(_) => pointer.as_loaded_value()?.defining_memory,
         _ => return None,
     };
+    use crate::surface::proof::raise_lower_audit::note_reason;
     if pointer_read_address_in_state(pointer, state).is_some() {
+        note_reason(|| {
+            "pointer load at a snapshot: the current state reads it, no current route spelled it"
+                .to_string()
+        });
         return None;
     }
     // Read where the memory is recorded.
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
         let (selector, recorded) = slot.as_ref()?.point_reading_memory(&memory)?;
-        pointer_read_address_in_state(pointer, recorded)?;
+        if pointer_read_address_in_state(pointer, recorded).is_none() {
+            note_reason(|| {
+                "pointer load at a snapshot: the recorded point with its memory does not read it"
+                    .to_string()
+            });
+            return None;
+        }
         Some((selector.clone(), recorded.clone()))
     })
 }
