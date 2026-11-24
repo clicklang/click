@@ -4364,16 +4364,17 @@ pub(crate) fn float_pair_bound_weakening(
     ))
 }
 
-/// Select the same subtraction law when one of its two bounds is reflexive.
-pub(crate) fn float_literal_subtraction_bound(
+/// An addition or subtraction law can use reflexive order for a literal operand.
+pub(crate) fn float_literal_sum_or_difference_bound(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u64, bool)> {
+) -> Option<(FloatBoundWeakening, u64, bool, bool)> {
+    use crate::kernel::FloatBinaryOperator::{Add, Subtract};
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
     let (operand, operation) = float_literal_operation(result.operand)?;
     let FloatBoundOperation::Binary {
-        operator: crate::kernel::FloatBinaryOperator::Subtract,
+        operator: operator @ (Add | Subtract),
         literal,
         literal_on_left,
         ..
@@ -4392,6 +4393,7 @@ pub(crate) fn float_literal_subtraction_bound(
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal,
         literal_on_left,
+        operator == Subtract,
     ))
 }
 
