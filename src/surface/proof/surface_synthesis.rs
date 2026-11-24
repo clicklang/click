@@ -2552,6 +2552,51 @@ fn synthesize_surface_atomic_proposition(
             right: bool_literal(!*zero),
         });
     }
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && let Some(root) = condition.root()
+    {
+        use crate::kernel::KernelTermNode as Node;
+        let raise = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
+        let equality = if *value {
+            ComparisonOperator::Equal
+        } else {
+            ComparisonOperator::NotEqual
+        };
+        match root.node() {
+            Node::AlgebraicEqual {
+                arguments: [left, right],
+            } => {
+                return Some(ClickProposition::Comparison {
+                    left: raise(left)?,
+                    operator: equality,
+                    right: raise(right)?,
+                });
+            }
+            Node::BoolEqual {
+                arguments: [left, right],
+            } if let (Node::BoolLiteral(left), Node::BoolLiteral(right)) =
+                (left.node(), right.node()) =>
+            {
+                return Some(ClickProposition::Comparison {
+                    left: bool_literal(*left),
+                    operator: equality,
+                    right: bool_literal(*right),
+                });
+            }
+            Node::Variable(_)
+            | Node::Call { .. }
+            | Node::BoolIf { .. }
+            | Node::BoolEqual { .. } => {
+                let claim = bool_truth(raise(root)?);
+                return Some(if *value {
+                    claim
+                } else {
+                    ClickProposition::Not(Box::new(claim))
+                });
+            }
+            _ => {}
+        }
+    }
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
@@ -2600,20 +2645,19 @@ fn synthesize_surface_atomic_proposition(
         );
     }
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition {
+        let raise = |value: &crate::kernel::StoredAlgebraicTerm| match value.root() {
+            Some(root) => raise_kernel_term(root, parameter_binding, state, bound_variables),
+            None => synthesize_surface_algebraic(
+                value.native_compat(),
+                parameter_binding,
+                state,
+                bound_variables,
+            ),
+        };
         return Some(ClickProposition::Comparison {
-            left: synthesize_surface_algebraic(
-                left.native_compat(),
-                parameter_binding,
-                state,
-                bound_variables,
-            )?,
+            left: raise(left)?,
             operator: ComparisonOperator::Equal,
-            right: synthesize_surface_algebraic(
-                right.native_compat(),
-                parameter_binding,
-                state,
-                bound_variables,
-            )?,
+            right: raise(right)?,
         });
     }
     if let Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) = proposition {
@@ -4209,12 +4253,13 @@ fn raise_constructor_field(
         Node::ProgramParameter { operand } => operand,
         _ => term,
     };
+    if matches!(term.node(), Node::MachineLiteral(_))
+        || term.ty() == &KernelType::Bool
+            && matches!(term.node(), Node::Variable(_) | Node::BoolLiteral(_))
+    {
+        return raise_kernel_term(term, parameter_binding, state, bound_variables);
+    }
     if matches!(term.ty(), KernelType::Algebraic(_)) {
-        // The native constructor-field boundary does not spell conditional
-        // algebraic fields. Keep that admission policy in this migration.
-        if matches!(term.node(), Node::AlgebraicIf { .. }) {
-            return None;
-        }
         return raise_kernel_term(term, parameter_binding, state, bound_variables);
     }
     if let Some(ProgramValue::Pointer(pointer)) = term.pointer_native() {
@@ -9153,91 +9198,9 @@ fn synthesize_surface_algebraic(
             })
             .or_else(|| synthesize_held_value_local(term, pointer, state))
             .or_else(|| synthesize_recorded_held_value_local(term, pointer)),
-        crate::kernel::AlgebraicTermNode::Constructor { variant, fields } => {
-            let arguments = fields
-                .iter()
-                .map(|field| match field {
-                    crate::kernel::AlgebraicValue::Program(ProgramValue::Parameter(term)) => {
-                        synthesize_surface_algebraic(
-                            term,
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )
-                    }
-                    crate::kernel::AlgebraicValue::Algebraic(term) => synthesize_surface_algebraic(
-                        term,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    ),
-                    crate::kernel::AlgebraicValue::Integer(term) => synthesize_surface_integer(
-                        &term.clone().into(),
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )
-                    .map(integer_typed_expression),
-                    crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
-                        raise_constructor_pointer(
-                            pointer,
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )
-                    }
-                    crate::kernel::AlgebraicValue::Program(ProgramValue::Int32(value)) => {
-                        synthesize_surface_bitvector(
-                            value,
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )
-                    }
-                    crate::kernel::AlgebraicValue::Program(
-                        value @ ProgramValue::UInt8(MachineTerm::Constant {
-                            format: MachineIntegerType::UInt8,
-                            ..
-                        }),
-                    ) => Some(ContractExpression::ProgramExpression(
-                        ProgramExpression::Value(value.clone()),
-                    )),
-                    // A field of another scalar width that a binder names is
-                    // spelled by that binder, which carries its own type;
-                    // otherwise by the local, parameter or `result` holding
-                    // it, which carry theirs.
-                    crate::kernel::AlgebraicValue::Program(
-                        ProgramValue::Bool(value @ MachineTerm::Variable(variable))
-                        | ProgramValue::Int8(value @ MachineTerm::Variable(variable))
-                        | ProgramValue::Int16(value @ MachineTerm::Variable(variable))
-                        | ProgramValue::UInt8(value @ MachineTerm::Variable(variable))
-                        | ProgramValue::UInt16(value @ MachineTerm::Variable(variable))
-                        | ProgramValue::UInt32(value @ MachineTerm::Variable(variable))
-                        | ProgramValue::Int64(value @ MachineTerm::Variable(variable))
-                        | ProgramValue::UInt64(value @ MachineTerm::Variable(variable)),
-                    ) => bound_variables
-                        .get(variable)
-                        .map(|name| {
-                            ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                                (name.clone()).into(),
-                            ))
-                        })
-                        .or_else(|| {
-                            synthesize_surface_bitvector(
-                                value,
-                                parameter_binding,
-                                state,
-                                bound_variables,
-                            )
-                        }),
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(ContractExpression::AlgebraicConstructor {
-                algebraic_type: surface_algebraic_type(&term.algebraic_type)?,
-                variant: variant.clone(),
-                arguments,
-            })
+        crate::kernel::AlgebraicTermNode::Constructor { .. } => {
+            let root = crate::kernel::KernelTermImport::for_exact_field_inputs().algebraic(term);
+            raise_kernel_term(&root, parameter_binding, state, bound_variables)
         }
     }
 }
