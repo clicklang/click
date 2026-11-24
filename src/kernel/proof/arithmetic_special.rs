@@ -3633,6 +3633,22 @@ pub(crate) struct FloatBoundWeakening {
     pub(crate) endpoint_strict: bool,
 }
 
+/// Weaken an ordered endpoint on the same retained floating-point operand.
+pub(crate) fn same_float_bound_weakening(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, bool)> {
+    let source = float_bound(premise)?;
+    let goal = float_bound(goal)?;
+    if source.lower != goal.lower || !same_float_operand(source.operand, goal.operand) {
+        return None;
+    }
+    Some((
+        FloatBoundWeakening::new(&goal, source.endpoint, source.strict)?,
+        source.strict,
+    ))
+}
+
 pub(crate) fn exact_float_bound_transfer(
     premise: &Proposition,
     goal: &Proposition,

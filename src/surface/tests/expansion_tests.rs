@@ -28171,6 +28171,27 @@ fn signed_shift_definedness_expands_and_replays() {
 }
 
 #[test]
+fn strict_float_bound_weakens_the_same_operand_on_replay() {
+    let source = r#"
+        theorem bound(x: double) {
+            requires float64_from_bits(0x3ff0000000000000u64) < x;
+            ensures float64_from_bits(0x3ff0000000000000u64) <= x by solve();
+        }
+    "#;
+    let claim = "bound.ensures_0";
+    let expanded = expand_c_claim_source_by_label(source, &[], claim).unwrap();
+    assert!(
+        expanded.contains("click::float_order::float64_lt_to_le"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn arithmetic_certificates_cold_replay_without_generated_normalization() {
     for (fixture, functions) in [
         ("guarded_signed_ring", &["sum", "product"][..]),
@@ -28182,6 +28203,8 @@ fn arithmetic_certificates_cold_replay_without_generated_normalization() {
         ("negative_signed_product", &["product"][..]),
         ("float_add_pair", &["sum"][..]),
         ("float_subtract_pair", &["cast_difference", "upper"][..]),
+        ("float_reuse_quotient_bounds", &["f"][..]),
+        ("float_weaken_quotient_bound", &["probe"][..]),
         ("unsigned_masked_divisor", &["divide", "remainder"][..]),
     ] {
         let (source, sources) =

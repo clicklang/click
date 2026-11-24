@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 99 `axiom`s, which are trusted, not proved.
+The library also declares 101 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -217,7 +217,9 @@ The six floating-point order axioms in `library/float_order.click` give
 transitivity for two non-strict comparisons and for either order of a strict
 and a non-strict comparison. Each premise is a true IEEE comparison, so the
 operands are ordered values. No separate finiteness hypothesis is needed.
-The same laws apply to infinities and to both zeros.
+The same laws apply to infinities and to both zeros. Two further order laws
+state that a strict comparison implies the corresponding non-strict
+comparison at either precision.
 
 The rounded addition axioms in the same module compare a sum with the sum
 of its two finite lower or upper endpoints. The ordered premises exclude

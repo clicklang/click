@@ -14,6 +14,10 @@ The transitivity laws `float_order::float32_le_le`,
 `float_order::float64_le_le`, `float_order::float64_le_lt`, and
 `float_order::float64_lt_le` are exercised in
 [`float_order_transitivity.md`](float_order_transitivity.md).
+The strict-to-non-strict laws `float_order::float32_lt_to_le` and
+`float_order::float64_lt_to_le` are exercised in
+[`arithmetic_expression_float_weaken_quotient_bound.md`](arithmetic_expression_float_weaken_quotient_bound.md).
+
 The rounded addition bounds `float_order::float32_add_lower`,
 `float_order::float32_add_upper`, `float_order::float64_add_lower`, and
 `float_order::float64_add_upper` are exercised in

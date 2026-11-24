@@ -5581,3 +5581,11 @@ path = "reference/library/index.md#float_orderfloat64_narrow_le"
 [[item]]
 id = "library.theorem.float_order::float64_narrow_lt"
 path = "reference/library/index.md#float_orderfloat64_narrow_lt"
+
+[[item]]
+id = "library.theorem.float_order::float32_lt_to_le"
+path = "reference/library/index.md#float_orderfloat32_lt_to_le"
+
+[[item]]
+id = "library.theorem.float_order::float64_lt_to_le"
+path = "reference/library/index.md#float_orderfloat64_lt_to_le"

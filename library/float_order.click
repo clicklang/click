@@ -128,3 +128,13 @@ axiom float64_narrow_lt(a: double, b: double) {
     requires a < b;
     ensures (a as float) <= (b as float);
 }
+
+axiom float32_lt_to_le(a: float, b: float) {
+    requires a < b;
+    ensures a <= b;
+}
+
+axiom float64_lt_to_le(a: double, b: double) {
+    requires a < b;
+    ensures a <= b;
+}

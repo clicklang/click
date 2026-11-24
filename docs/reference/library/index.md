@@ -10322,3 +10322,23 @@ axiom float64_narrow_lt(a: double, b: double) {
     ensures (a as float) <= (b as float);
 }
 ```
+
+A true strict IEEE comparison also gives non-strict order.
+
+### `float_order::float32_lt_to_le`
+
+```click
+axiom float32_lt_to_le(a: float, b: float) {
+    requires a < b;
+    ensures a <= b;
+}
+```
+
+### `float_order::float64_lt_to_le`
+
+```click
+axiom float64_lt_to_le(a: double, b: double) {
+    requires a < b;
+    ensures a <= b;
+}
+```
