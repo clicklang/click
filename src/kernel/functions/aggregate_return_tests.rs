@@ -1515,6 +1515,7 @@ fn copying_unknown_pointer_field_preserves_its_value_after_source_retirement() {
     state.set_memory(state.memory.clone().with_initialized_object(&source, 16));
     let expected = crate::kernel::eval::symbolic_storage_cell_value(
         &state.memory,
+        None,
         &source,
         ProgramType::Int32Pointer,
         true,
@@ -1621,6 +1622,7 @@ fn copying_unknown_uint32_pointer_field_keeps_its_value_and_initialization_check
         .with_initialized_object(&source, 16);
     let expected = crate::kernel::eval::symbolic_storage_cell_value(
         &memory,
+        None,
         &source,
         ProgramType::UInt32Pointer,
         true,

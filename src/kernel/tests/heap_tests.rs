@@ -110,15 +110,17 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
     let StatementOutcome::Normal(after) = &path.outcome else {
         panic!("free succeeds: {:?}", path.outcome);
     };
-    let ProgramValue::Pointer(before_read) = state
-        .memory()
-        .symbolic_pointer_version_load(&cell, ProgramType::Int32Pointer)
+    let ProgramValue::Pointer(before_read) =
+        state
+            .memory()
+            .symbolic_pointer_version_load(None, &cell, ProgramType::Int32Pointer)
     else {
         unreachable!()
     };
-    let ProgramValue::Pointer(after_read) = after
-        .memory()
-        .symbolic_pointer_version_load(&cell, ProgramType::Int32Pointer)
+    let ProgramValue::Pointer(after_read) =
+        after
+            .memory()
+            .symbolic_pointer_version_load(None, &cell, ProgramType::Int32Pointer)
     else {
         unreachable!()
     };

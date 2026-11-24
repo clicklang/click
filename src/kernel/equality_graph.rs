@@ -688,17 +688,31 @@ impl EqualityGraph {
     /// load. This is trusted-kernel term metadata, not an assumed
     /// equality: the producer supplies the canonical defining state and
     /// address. Never recover this equation by decoding pointer arithmetic.
+    #[cfg(test)]
     pub(in crate::kernel) fn register_pointer_read_definition(
         &self,
         value: &Address,
         memory: &crate::kernel::SharedMemory,
         address: &Address,
     ) {
+        self.register_pointer_read_definition_at(value, memory, None, address);
+    }
+
+    /// [`Self::register_pointer_read_definition`] of a read made at `site`,
+    /// when the producer has one: the application records it as its read
+    /// site and is the same term.
+    pub(in crate::kernel) fn register_pointer_read_definition_at(
+        &self,
+        value: &Address,
+        memory: &crate::kernel::SharedMemory,
+        site: Option<&crate::kernel::ProgramPoint>,
+        address: &Address,
+    ) {
         // A loaded-pointer identity is its own definition.
         if value.as_loaded_value().is_some() {
             return;
         }
-        let application = Address::loaded_value(memory, address);
+        let application = Address::loaded_value_read_at(memory, site, address);
         let mut reads = self.logical_reads.lock().expect("logical pointer reads");
         if let Some(existing) = reads.definitions.get(value) {
             assert_eq!(
@@ -897,7 +911,12 @@ impl EqualityGraph {
                     .logical_pointer_sources
                     .with_inserted(value.clone(), sources.clone());
                 for source in sources.into_iter().flatten() {
-                    let source_read = Address::loaded_value(&source, &load.defining_address);
+                    // The same read, of the bytes' unchanged source.
+                    let source_read = Address::loaded_value_read_at(
+                        &source,
+                        Some(&load.point),
+                        &load.defining_address,
+                    );
                     let application = Address {
                         base: source_read.base,
                         offset: load.displacement.clone(),
@@ -954,7 +973,10 @@ impl EqualityGraph {
                     address,
                 )
             {
-                definitions.push((application.clone(), Address::loaded_value(&source, address)));
+                definitions.push((
+                    application.clone(),
+                    Address::loaded_value_read_at(&source, Some(&load.point), address),
+                ));
             }
             crate::instrumentation::record_deterministic_work(1);
         }
@@ -4018,9 +4040,10 @@ mod tests {
         assert!(scalar_indexed_address.as_loaded_value().is_none());
         assert_ne!(scalar_indexed_address, named_read);
         assert_ne!(scalar_indexed_address, from_p);
-        let ProgramValue::Pointer(execution_value) = memory
-            .memory()
-            .symbolic_pointer_load(&p, ProgramType::Int64Pointer)
+        let ProgramValue::Pointer(execution_value) =
+            memory
+                .memory()
+                .symbolic_pointer_load(None, &p, ProgramType::Int64Pointer)
         else {
             panic!("pointer-typed load must produce a pointer value");
         };
@@ -4426,9 +4449,10 @@ mod tests {
         let base = Address::symbolic(Variable(51_401));
         let address = base.offset_by_bytes(8);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let ProgramValue::Pointer(raw) = memory
-            .memory()
-            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
+        let ProgramValue::Pointer(raw) =
+            memory
+                .memory()
+                .symbolic_pointer_load(None, &address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
@@ -4470,9 +4494,10 @@ mod tests {
             address.clone(),
             ProgramValue::UInt64(MachineTerm::int64_constant(9)),
         ));
-        let ProgramValue::Pointer(changed) = later
-            .memory()
-            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
+        let ProgramValue::Pointer(changed) =
+            later
+                .memory()
+                .symbolic_pointer_load(None, &address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
@@ -4543,9 +4568,10 @@ mod tests {
     fn scalar_read_congruence_imports_shifted_raw_pointer_dependencies() {
         let address = Address::symbolic(Variable(51_411)).offset_by_bytes(8);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let ProgramValue::Pointer(raw) = memory
-            .memory()
-            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
+        let ProgramValue::Pointer(raw) =
+            memory
+                .memory()
+                .symbolic_pointer_load(None, &address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };

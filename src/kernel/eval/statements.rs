@@ -1265,7 +1265,11 @@ fn write_program_lvalue_paths_for_initialization(
                     Pointer::from_point_read(version, value_type, &written_pointer)
                 } else {
                     Pointer::new(
-                        Address::canonical_read(point.shared_memory(), &written_pointer),
+                        Address::canonical_read(
+                            point.shared_memory(),
+                            Some(&point),
+                            &written_pointer,
+                        ),
                         value_type,
                     )
                 };
@@ -3306,21 +3310,22 @@ fn execute_program_heap_free_paths(
             )
             .expect("validated live heap base should free");
         for (address, value_type) in pointer_frames {
-            let before = if let Some(version) = state
-                .program_point()
-                .indexed_typed_version(&address, value_type)
-            {
+            let point = state.program_point();
+            let before = if let Some(version) = point.indexed_typed_version(&address, value_type) {
                 Pointer::from_point_read(version, value_type, &address)
             } else {
+                // `before_free` is the state's memory: the read is made at
+                // its point.
                 let ProgramValue::Pointer(read) =
-                    before_free.symbolic_pointer_version_load(&address, value_type)
+                    before_free.symbolic_pointer_version_load(Some(&point), &address, value_type)
                 else {
                     unreachable!("a pointer version read has pointer type");
                 };
                 read
             };
+            // The freed memory has no point of its own yet.
             let ProgramValue::Pointer(after) =
-                memory.symbolic_pointer_version_load(&address, value_type)
+                memory.symbolic_pointer_version_load(None, &address, value_type)
             else {
                 unreachable!("a pointer version read has pointer type");
             };

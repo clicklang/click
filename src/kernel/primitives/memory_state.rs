@@ -6995,8 +6995,13 @@ impl SymbolicMemory {
         pointer: Address,
         program_type: ProgramType,
     ) -> Self {
-        let value =
-            crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, program_type, true);
+        let value = crate::kernel::eval::symbolic_storage_cell_value(
+            &self,
+            None,
+            &pointer,
+            program_type,
+            true,
+        );
         match value {
             Some(value) => self.materialize_named_cell(pointer, value),
             None => self,
@@ -8882,11 +8887,7 @@ impl SymbolicMemory {
     /// The point a legacy symbolic read of this memory is named at: this
     /// memory, recording `site` as the read site when the caller has one.
     fn legacy_read_point(&self, site: Option<&ProgramPoint>) -> ProgramPoint {
-        let memory = crate::kernel::intern_memory(self.clone());
-        match site {
-            Some(site) => ProgramPoint::at_read_site(&memory, site),
-            None => ProgramPoint::at(&memory),
-        }
+        ProgramPoint::at_optional_read_site(&crate::kernel::intern_memory(self.clone()), site)
     }
 
     #[cfg_attr(test, track_caller)]
@@ -9052,31 +9053,36 @@ impl SymbolicMemory {
     /// is named by the cell's version ([`Address::version_read`]).
     pub(in crate::kernel) fn symbolic_pointer_version_load(
         &self,
+        site: Option<&ProgramPoint>,
         pointer: &Address,
         value_type: ProgramType,
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
         // A version read is a named read, or a value the memory holds for the
         // cell, either of which already carries its definition.
-        match Address::version_read_value(&retained_state, pointer) {
+        match Address::version_read_value(&retained_state, site, pointer) {
             Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
-            Err(value) => ProgramValue::Pointer(Pointer::from_read(
+            Err(value) => ProgramValue::Pointer(Pointer::from_read_at(
                 value,
                 value_type,
                 &retained_state,
+                site,
                 pointer,
             )),
         }
     }
 
+    /// The pointer read of `pointer` in this memory, recording `site` as the
+    /// read site when the caller has one, as the scalar loads above do.
     pub(in crate::kernel) fn symbolic_pointer_load(
         &self,
+        site: Option<&ProgramPoint>,
         pointer: &Address,
         value_type: ProgramType,
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
         let value = Address::loaded(&crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&retained_state),
+            ProgramPoint::at_optional_read_site(&retained_state, site),
             pointer.clone(),
             LoadKind::Int32,
         ))
@@ -9084,15 +9090,13 @@ impl SymbolicMemory {
         // This factory constructs an exact typed read, just like the seeded
         // cell producer. Keep its defining state and address even when a
         // resource argument evaluator does not retain a C load's fact stream.
-        crate::kernel::equality_graph::EqualityGraph::default().register_pointer_read_definition(
-            &value,
-            &retained_state,
-            pointer,
-        );
-        ProgramValue::Pointer(Pointer::from_read(
+        crate::kernel::equality_graph::EqualityGraph::default()
+            .register_pointer_read_definition_at(&value, &retained_state, site, pointer);
+        ProgramValue::Pointer(Pointer::from_read_at(
             value,
             value_type,
             &retained_state,
+            site,
             pointer,
         ))
     }

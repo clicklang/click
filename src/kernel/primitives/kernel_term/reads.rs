@@ -220,7 +220,8 @@ mod tests {
             ProgramType::Int32Pointer,
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ] {
-            let ProgramValue::Pointer(pointer) = memory.symbolic_pointer_load(&address, ty) else {
+            let ProgramValue::Pointer(pointer) = memory.symbolic_pointer_load(None, &address, ty)
+            else {
                 panic!("pointer producer");
             };
             let pointer = pointer;
@@ -263,7 +264,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let address = Address::symbolic(Variable(1018001));
         let memory = SymbolicMemory::new();
-        let native = memory.symbolic_pointer_load(&address, ProgramType::UInt8Pointer);
+        let native = memory.symbolic_pointer_load(None, &address, ProgramType::UInt8Pointer);
         let retained = crate::kernel::ExecutionValue::retain_native(native);
         let root = retained.shared().expect("read root").clone();
         crate::kernel::eval::clear_load_variable_registry();

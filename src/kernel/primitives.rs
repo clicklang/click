@@ -2989,6 +2989,19 @@ impl Pointer {
         memory: &SharedMemory,
         cell: &Address,
     ) -> Self {
+        Self::from_read_at(pointer, program_type, memory, None, cell)
+    }
+
+    /// [`Self::from_read`] of a read made at `site`, when the caller has one:
+    /// the domain's origin records it as its read site
+    /// (`Address::loaded_value_read_at`). The value is the same.
+    pub(in crate::kernel) fn from_read_at(
+        pointer: Address,
+        program_type: ProgramType,
+        memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
+        cell: &Address,
+    ) -> Self {
         let mut value = Self::new(pointer, program_type);
         if matches!(program_type, ProgramType::FunctionPointer(_))
             || value.address.base.is_function()
@@ -3000,7 +3013,7 @@ impl Pointer {
         // needs explicit evidence, not a search for an older cell version.
         crate::instrumentation::record_deterministic_work(1);
         let source = memory.unchanged_bytes_source();
-        let origin = Arc::new(Address::loaded_value(&source, cell));
+        let origin = Arc::new(Address::loaded_value_read_at(&source, site, cell));
         value.array = ArrayObject::Opaque(Some(origin.clone()));
         value.with_provenance(origin)
     }
@@ -3014,7 +3027,13 @@ impl Pointer {
     ) -> Self {
         if point.read_version_id().is_none() {
             let address = Address::loaded_source_value_at(&point, cell);
-            return Self::from_read(address, program_type, point.shared_memory(), cell);
+            return Self::from_read_at(
+                address,
+                program_type,
+                point.shared_memory(),
+                Some(&point),
+                cell,
+            );
         }
         // One load per cell at one version point, whatever type decodes
         // it: the category and pointee type are the term's.

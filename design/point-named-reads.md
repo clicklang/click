@@ -250,7 +250,7 @@ What remains:
 
 | Producer | Reads | Next |
 | --- | --- | --- |
-| integer reads of pointer cells from a memory (`Pointer::canonical_read`, `canonical_loaded_value`, `version_read_value`, `symbolic_pointer_load`, `logical_pointer_read_term`) | ~5,560 | `loaded_value_at` records the site (`design/loads.md` step 2 follow-up); then their callers pass a point |
+| integer reads of pointer cells from a memory (`Pointer::canonical_read`, `canonical_loaded_value`, `version_read_value`, `symbolic_pointer_load`, `logical_pointer_read_term`) | ~5,560 | `loaded_value_at` records the site (`design/loads.md` step 2 follow-up); their callers now pass a point where one is in reach (`design/loads.md` step 6 lists those that have none) |
 | legacy-walk endpoint probes (`LoadCellWalks`) | 864 | comparison terms inside the memory-keyed walk history, never kept; they go with the walk |
 | exact-cell and canonical rebuilds of reads that arrived without a site | ~1,800 | fall as their inputs gain sites |
 

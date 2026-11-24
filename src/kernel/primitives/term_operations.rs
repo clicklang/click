@@ -5003,30 +5003,41 @@ impl Address {
     /// memory's read key, is the one `loaded_value` gives
     /// (`design/point-named-reads.md`, stage 1: a point everywhere).
     pub(crate) fn loaded_value_at(point: &ProgramPoint, address: &Address) -> Self {
-        Self::loaded_memory_value_at(point.shared_memory(), point, address)
+        Self::loaded_value_read_at(point.shared_memory(), Some(point), address)
     }
 
     /// [`Self::loaded_value_at`] of the unchanged-bytes source of `point`'s
     /// memory, the state a memory-named read is keyed by, read at `point`.
     pub(crate) fn loaded_source_value_at(point: &ProgramPoint, address: &Address) -> Self {
         let source = point.shared_memory().unchanged_bytes_source();
-        Self::loaded_memory_value_at(&source, point, address)
+        Self::loaded_value_read_at(&source, Some(point), address)
     }
 
-    fn loaded_memory_value_at(
+    /// [`Self::loaded_value`] of `memory`, recording `site` as the read site
+    /// when the caller knows where the read was made: a state the read's
+    /// bytes are unchanged from (a source, an earlier node of a walk) or a
+    /// working copy of the site's memory. The load is the one
+    /// `loaded_value(memory, address)` gives; only the record differs.
+    pub(crate) fn loaded_value_read_at(
         memory: &SharedMemory,
-        site: &ProgramPoint,
+        site: Option<&ProgramPoint>,
         address: &Address,
     ) -> Self {
-        crate::kernel::Load::at(ProgramPoint::at_read_site(memory, site), address).address()
+        crate::kernel::Load::at(ProgramPoint::at_optional_read_site(memory, site), address)
+            .address()
     }
 
     /// The read of the pointer cell at `address` in `memory`, identified by
     /// its version point: the term a Click read of that place lowers to.
     /// Two reads of an unchanged cell in different memories are this same
     /// term. Unlike [`Self::canonical_loaded_value`], a stored pointer does
-    /// not replace the read.
-    pub(crate) fn canonical_read(memory: &SharedMemory, address: &Address) -> Self {
+    /// not replace the read. `site`, when the caller has one, is where the
+    /// read was made; the read records it and is the same term.
+    pub(crate) fn canonical_read(
+        memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
+        address: &Address,
+    ) -> Self {
         // A pointer read covers the whole pointer cell. Record that width
         // before the walk, so a write to any of its bytes stops the walk even
         // when an earlier narrower read of the cell recorded a smaller one.
@@ -5035,7 +5046,7 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = crate::kernel::legacy_pointer_word_read(memory, address);
+        let read = crate::kernel::legacy_pointer_word_read(memory, site, address);
         named_pointer_read(
             canonical_pointer_read(&read).expect("a memory load has a canonical read"),
         )
@@ -5053,7 +5064,9 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = crate::kernel::legacy_pointer_word_read(memory, address);
+        // Its one caller holds a state, not a point: a read built here
+        // records no site.
+        let read = crate::kernel::legacy_pointer_word_read(memory, None, address);
         match canonical_pointer_read(&read) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(memory, address),
@@ -5097,8 +5110,19 @@ impl Address {
     /// holds, which the read-over-write authority relates to the read
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.
+    #[cfg(test)]
     pub(crate) fn version_read(memory: &SharedMemory, address: &Address) -> Self {
-        match Self::version_read_value(memory, address) {
+        Self::version_read_at(memory, None, address)
+    }
+
+    /// [`Self::version_read`], recording `site` as where the read was made
+    /// when the caller has one. The term is the same.
+    pub(crate) fn version_read_at(
+        memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
+        address: &Address,
+    ) -> Self {
+        match Self::version_read_value(memory, site, address) {
             Ok(held) => held.address().clone(),
             Err(read) => read,
         }
@@ -5107,9 +5131,11 @@ impl Address {
     /// A logical read with the whole pointer value when the read is a
     /// value the memory already holds for the cell (its own materialized
     /// read, or static storage's symbolic initial contents), provenance and
-    /// bounds included; otherwise the named read, as `Err`.
+    /// bounds included; otherwise the named read, as `Err`, recording `site`
+    /// as its read site when the caller has one.
     pub(crate) fn version_read_value(
         memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
         address: &Address,
     ) -> Result<Pointer, Self> {
         let source = memory.unchanged_bytes_source();
@@ -5150,7 +5176,7 @@ impl Address {
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
         let bits = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(memory),
+            ProgramPoint::at_optional_read_site(memory, site),
             address.clone(),
             LoadKind::Int32,
         );

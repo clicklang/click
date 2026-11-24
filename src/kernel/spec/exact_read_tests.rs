@@ -112,6 +112,9 @@ fn an_exact_pointer_read_has_its_own_read_as_provenance() {
     ) else {
         panic!("a pointer read")
     };
-    assert_eq!(ordinary.address(), &Address::canonical_read(&state, &cell));
+    assert_eq!(
+        ordinary.address(),
+        &Address::canonical_read(&state, None, &cell)
+    );
     assert_ne!(ordinary.address(), exact.address());
 }
