@@ -6144,7 +6144,23 @@ fn synthesize_typed_word_read(
             parameter_binding,
             state,
             bound_variables,
-        )?;
+        );
+        let Some(address) = address else {
+            crate::surface::proof::raise_lower_audit::note_reason(|| {
+                let variant = |text: String| {
+                    text.split(|c: char| !c.is_alphanumeric())
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                };
+                format!(
+                    "cell address unspelled: base {}, offset {}",
+                    variant(format!("{:?}", pointer.base)),
+                    variant(format!("{:?}", pointer.offset))
+                )
+            });
+            return None;
+        };
         Some(synthesize_memory_load(address, value_type))
     };
     if let Some(load) = scalar_read_in_state(&read, state) {
@@ -8600,6 +8616,21 @@ fn synthesize_surface_pointer_expression(
         state,
         bound_variables,
     );
+    if raised.is_none() {
+        crate::surface::proof::raise_lower_audit::note_reason(|| {
+            let variant = |text: String| {
+                text.split(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            };
+            format!(
+                "pointer unspelled: base {}, offset {}",
+                variant(format!("{:?}", pointer.base)),
+                variant(format!("{:?}", pointer.offset))
+            )
+        });
+    }
     if raised.is_none()
         && let Some(read) = pointer.as_loaded_value()
     {
@@ -8787,22 +8818,6 @@ fn synthesize_surface_pointer_expression_routes(
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return Some(field);
     }
-    // A memory-named load the state reads is the read of its cell there: the
-    // cell's place, as a point-named load is spelled.
-    if pointer
-        .as_loaded_value()
-        .is_some_and(|read| !read.identity.is_point_named())
-        && let Some(cell) = pointer_read_address_in_state(pointer, state)
-        && let Some((place, _)) = synthesize_cell_place(
-            &cell,
-            ProgramType::Pointer,
-            parameter_binding,
-            state,
-            bound_variables,
-        )
-    {
-        return Some(place);
-    }
     if let Some((selector, recorded)) = recorded_point_of_pointer_read(pointer, state) {
         let expression = synthesize_surface_pointer_expression(
             pointer,
@@ -8849,6 +8864,43 @@ fn synthesize_surface_pointer_expression_routes(
         })
         .or_else(|| {
             synthesize_recorded_pointer_expression(pointer, parameter_binding, bound_variables)
+        })
+        .or_else(|| {
+            // A pointer a constant number of bytes past one that has a
+            // spelling: that spelling, offset in bytes. Last, so no pointer
+            // another route spells (a field, an element) changes.
+            let AddressOffset::Constant(bytes) = pointer.offset else {
+                return None;
+            };
+            let bytes = u32::try_from(bytes).ok().filter(|bytes| *bytes != 0)?;
+            let origin = Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Constant(0),
+            };
+            let base = synthesize_surface_pointer_expression(
+                &origin,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            synthesize_byte_offset(base, bytes)
+        })
+        .or_else(|| {
+            // A memory-named load the state reads is the read of its cell
+            // there: the cell's place, as a point-named load is spelled.
+            // Last, so no load another route spells changes its spelling.
+            if pointer.as_loaded_value()?.identity.is_point_named() {
+                return None;
+            }
+            let cell = pointer_read_address_in_state(pointer, state)?;
+            let (place, _) = synthesize_cell_place(
+                &cell,
+                ProgramType::Pointer,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            Some(place)
         })
 }
 
