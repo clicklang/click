@@ -1954,6 +1954,12 @@ impl EqualityGraph {
                         | N::Fold(_)
                         | N::Match(_)
                         | N::FloatConvert { .. } => {}
+                        N::IntegerToMachine { operand, .. }
+                            if let N::MachineObservation { operand: word, .. } = operand.node()
+                                && word.is_shared_machine_operand() =>
+                        {
+                            pending.push(Work::SharedMachine(word));
+                        }
                         N::IntegerToMachine { .. }
                         | N::Legacy(_)
                         | N::Call { .. }

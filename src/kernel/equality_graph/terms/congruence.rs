@@ -546,6 +546,19 @@ impl TermClasses {
         self.intern_expression(None, None, None, None, Some((application, CallHead::Bool)))
     }
 
+    pub(super) fn intern_observation_round_trip(
+        &mut self,
+        format: MachineIntegerType,
+        operand: u64,
+    ) -> u64 {
+        let observe = self.intern_node(Node::IntegerOperation(IntegerOperation::Observe(format)));
+        let observed = self.intern_node(Node::Apply(observe, operand));
+        let convert = self.intern_node(Node::IntegerToMachine(format));
+        let converted = self.intern_node(Node::Apply(convert, observed));
+        self.close(vec![(converted, operand)]);
+        converted
+    }
+
     fn intern_expression(
         &mut self,
         machine: Option<(&T, W)>,
@@ -1346,13 +1359,7 @@ impl TermClasses {
                 }
                 Work::ObservationRoundTrip(format) => {
                     let operand = values.pop().expect("observed machine operand");
-                    let observe =
-                        self.intern_node(Node::IntegerOperation(IntegerOperation::Observe(format)));
-                    let observed = self.intern_node(Node::Apply(observe, operand));
-                    let convert = self.intern_node(Node::IntegerToMachine(format));
-                    let converted = self.intern_node(Node::Apply(convert, observed));
-                    self.close(vec![(converted, operand)]);
-                    values.push(converted);
+                    values.push(self.intern_observation_round_trip(format, operand));
                     continue;
                 }
                 Work::Call(mut head, count) => {
