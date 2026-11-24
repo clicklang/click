@@ -25826,7 +25826,7 @@ fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
 }
 
 #[test]
-fn selected_field_viewability_expands_with_containment() {
+fn field_viewability_expands_with_containment() {
     let sources = [(
         "view.c",
         "struct box { int first; int second; }; void f(struct box *p) {}",
@@ -25838,14 +25838,70 @@ fn selected_field_viewability_expands_with_containment() {
             ensures true;
         } by {
             have viewable(p->second) by {
-                close() using { viewable(p[0..1]); };
+                CLOSE_VIEW
             }
             step();
         }
     "#;
-    let expanded = expand_c_claim_source_by_label(source, &sources, "f.contract").unwrap();
+    for tactic in ["solve();", "close() using { viewable(p[0..1]); };"] {
+        let source = source.replace("CLOSE_VIEW", tactic);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
+        assert!(
+            expanded.contains("contains(memory(p[0..1]), memory(p->second))"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains("separation::viewable_restrict"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        without_implicit_solve_for_claim("f.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+
+    let source = source.replace("CLOSE_VIEW", "solve();").replace(
+        "            have viewable(p->second)",
+        "            step();\n            have viewable(p->second)",
+    );
+    let with_local = sources[0].1.replace("{}", "{ int local = 0; }");
+    let sources = [("view.c", with_local.as_str())];
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
     assert!(
-        expanded.contains("contains(memory(p[0..1]), memory(p->second))"),
+        expanded.contains("preserve(memory(p[0..1]), region(0))"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn aliased_element_viewability_expands_with_containment() {
+    let sources = [("view.c", "void f(int *p, int *q, int i) {}")];
+    let source = r#"
+        verifying "view.c";
+        void f(int32 *p, int32 *q, int32 i) {
+            requires q == p;
+            requires viewable(p[0..8]);
+            requires 0 <= i and i < 8;
+            ensures true;
+        } by {
+            have viewable(q[i]) by { solve(); }
+            step();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "f.contract").unwrap();
+    assert!(expanded.contains("rewrite(q, p)"), "{expanded}");
+    assert!(
+        expanded.contains("separation::contains_element"),
         "{expanded}"
     );
     assert!(

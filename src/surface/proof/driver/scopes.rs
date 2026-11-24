@@ -3,12 +3,12 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
-    pub(in crate::surface::proof) fn try_preserve_entry_conjunct(
+    pub(in crate::surface::proof) fn try_preserve_selected_fact(
         &self,
         conclusion: &ClickProposition,
         source: ClickProposition,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
-        let Some(body) = crate::kernel::search::ProofSearch::try_preserve_entry_conjunct(
+        let Some(body) = crate::kernel::search::ProofSearch::try_preserve_selected_fact(
             &self.proof.body,
             conclusion,
             source,

@@ -2884,23 +2884,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let Some(closed) = scope
             .driver()
-            .try_preserve_entry_conjunct(conclusion, entry(conclusion))?
+            .try_preserve_selected_fact(conclusion, entry(conclusion))?
         else {
             return Ok(None);
         };
         attempt::candidate_outcome(closed.join())
     }
 
-    pub(in crate::surface::proof) fn try_preserve_entry_conjunct(
+    pub(in crate::surface::proof) fn try_preserve_selected_fact(
         body: &Proof<'a>,
         conclusion: &ClickProposition,
         source: ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_preserve_entry_conjunct");
+        crate::kernel::search::record_discovery("try_preserve_selected_fact");
         if let Some(goal @ Proposition::MemoryLoadable { .. }) = body.goal() {
             let Some(kernel) = attempt::candidate_outcome(
-                body.lower_cited_surface_proposition(&source, "entry conjunct"),
+                body.lower_cited_surface_proposition(&source, "preserved source fact"),
             )?
             else {
                 return Ok(None);
@@ -12615,22 +12615,56 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .collect::<Vec<_>>();
         let child = ResourceSubject::Memory(target_segment.clone());
         for source in surfaces {
+            let mut descriptor = source;
+            while let ClickProposition::At { proposition, .. } = descriptor {
+                descriptor = proposition;
+            }
             let ClickProposition::Loadable {
                 segment: source_segment,
-            } = source
+            } = descriptor
             else {
                 continue;
             };
             if crate::instrumentation::deadline_exceeded_with_work(1) {
                 return None;
             }
+            // Retain the selected citation. If it names another memory
+            // state, first establish the current view across recorded effects.
+            let current_source = ClickProposition::Loadable {
+                segment: source_segment.clone(),
+            };
+            let prepare_source = || {
+                if source == descriptor {
+                    return Some((search_input.clone(), source.clone()));
+                }
+                let retained = search_input
+                    .lower_cited_surface_proposition(source, "selected historical view")
+                    .ok()?;
+                let scope = search_input
+                    .driver()
+                    .open_have(current_source.clone())
+                    .ok()?;
+                if scope.goal() == Some(&retained) {
+                    return Some((search_input.clone(), source.clone()));
+                }
+                let current = scope
+                    .driver()
+                    .try_preserve_selected_fact(&current_source, source.clone())
+                    .ok()??
+                    .join()
+                    .ok()?;
+                Some((current, current_source.clone()))
+            };
+            let Some((view_proof, source)) = prepare_source() else {
+                continue;
+            };
             let parent = ResourceSubject::Memory(source_segment.clone());
             let containment = ClickProposition::Contains {
                 parent: parent.clone(),
                 child: child.clone(),
             };
             let prepared = (|| {
-                let scope = search_input.driver().open_have(containment.clone()).ok()?;
+                let scope = view_proof.driver().open_have(containment.clone()).ok()?;
                 if let Ok(closed) = scope
                     .driver()
                     .apply_step(ProofStep::NormalizeUsing(conditions.clone()))
@@ -12639,19 +12673,73 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 let (base, lo, hi) = source_segment.surface_range()?;
                 let (target_base, inner_lo, inner_hi) = target_segment.surface_range()?;
-                if base != target_base || source_segment.state != target_segment.state {
+                if source_segment.state != target_segment.state {
                     return None;
                 }
                 let observe = |value: &ContractExpression| ContractExpression::Call {
                     name: "to_integer".into(),
                     arguments: vec![value.clone()],
                 };
-                let mut current = search_input.clone();
+                let point = match contract_expression_as_program_expression(target_base) {
+                    Some(ProgramExpression::AddressOf(element))
+                        if target_segment.start == ProgramExpression::Value(int32(0))
+                            && target_segment.end == ProgramExpression::Value(int32(1)) =>
+                    {
+                        match *element {
+                            ProgramExpression::Index(pointer, index) => Some((
+                                ContractExpression::ProgramExpression(*pointer),
+                                ContractExpression::ProgramExpression(*index),
+                            )),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+                let (target_base, law, arguments, comparisons) =
+                    if let Some((pointer, index)) = &point {
+                        (
+                            pointer,
+                            "click::separation::contains_element",
+                            vec![base, lo, hi, index],
+                            vec![
+                                (lo, ComparisonOperator::LessEqual, index),
+                                (index, ComparisonOperator::LessThan, hi),
+                            ],
+                        )
+                    } else {
+                        (
+                            target_base,
+                            "click::separation::contains_subrange",
+                            vec![base, lo, hi, inner_lo, inner_hi],
+                            vec![
+                                (lo, ComparisonOperator::LessEqual, inner_lo),
+                                (inner_lo, ComparisonOperator::LessEqual, inner_hi),
+                                (inner_hi, ComparisonOperator::LessEqual, hi),
+                            ],
+                        )
+                    };
+                let mut current = view_proof;
+                let alias = if base != target_base {
+                    let equality = ClickProposition::Comparison {
+                        left: target_base.clone(),
+                        operator: ComparisonOperator::Equal,
+                        right: base.clone(),
+                    };
+                    let scope = current.driver().open_have(equality.clone()).ok()?;
+                    current = scope
+                        .driver()
+                        .try_restricted_solve_closure(surfaces)?
+                        .join()
+                        .ok()?;
+                    Some(equality)
+                } else {
+                    None
+                };
                 let mut bounds = Vec::new();
-                for (left, right) in [(lo, inner_lo), (inner_lo, inner_hi), (inner_hi, hi)] {
+                for (left, operator, right) in comparisons {
                     let bound = ClickProposition::Comparison {
                         left: observe(left),
-                        operator: ComparisonOperator::LessEqual,
+                        operator,
                         right: observe(right),
                     };
                     let scope = current.driver().open_have(bound.clone()).ok()?;
@@ -12662,16 +12750,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .ok()?;
                     bounds.push(bound);
                 }
-                let scope = current.driver().open_have(containment.clone()).ok()?;
+                let mut scope = current.driver().open_have(containment.clone()).ok()?;
+                if let Some(alias) = alias {
+                    scope = scope.driver().apply_step(ProofStep::Rewrite(alias)).ok()?;
+                }
                 scope
                     .driver()
                     .apply_step(ProofStep::ApplyPlannedTheorem {
                         application: TheoremApplication {
-                            name: "click::separation::contains_subrange".into(),
-                            arguments: [base, lo, hi, inner_lo, inner_hi]
-                                .into_iter()
-                                .cloned()
-                                .collect(),
+                            name: law.into(),
+                            arguments: arguments.into_iter().cloned().collect(),
                         },
                         premises: bounds,
                     })
@@ -12692,7 +12780,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .map(|resource| ContractExpression::Resource(Box::new(resource)))
                             .collect(),
                     },
-                    premises: vec![source.clone(), containment],
+                    premises: vec![source, containment],
                 })
                 .ok();
             if let Some(closed) = proof.filter(|proof| proof.focused_discharged()) {
@@ -13272,8 +13360,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .ok();
         }
         // A direct loadability derivation already selected its source range.
-        // Expand that selection through ordinary observation and containment
-        // before the legacy transport planner can consume the derivation.
+        // Expand that selection through ordinary observation, preservation,
+        // or containment.
         if matches!(goal, Proposition::MemoryLoadable { .. }) {
             let selected = premise_pairs
                 .iter()
@@ -13284,6 +13372,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .or_else(|| {
                         Self::try_local_viewability_preservation(search_input, goal, premise_pairs)
                     })
+                    .or_else(|| Self::try_selected_viewability_containment(search_input, &selected))
             {
                 return Some(proof);
             }
@@ -13318,13 +13407,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let recorded =
                     recorded_load_address_congruence_path_pairs(derivation, premise_pairs)?;
                 plan_recorded_load_address_congruence(goal, derivation, &recorded)
-            })
-            .or_else(|| {
-                plan_explicit_loadability_transport(
-                    goal,
-                    search_input.surface_goal()?,
-                    premise_pairs,
-                )
             })
             .or_else(|| plan_pointer_advanced_load_equality(goal, premise_pairs))
             .or_else(|| {
