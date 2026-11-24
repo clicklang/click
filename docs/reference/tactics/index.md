@@ -1754,8 +1754,14 @@ not search for an interval or derive missing bounds.
 For a valid literal shift count, a left-shift observation equals multiplication
 by its power of two when the exact result is in range; signed shifts also
 require a nonnegative source. A bitwise-and with a nonnegative literal mask
-is between zero and the mask, and is at most a nonnegative source. A root
-conditional equals its selected arm when its written guard is available.
+is between zero and the mask, and is at most a nonnegative source. For a 32-
+or 64-bit shift count, `known()` can remove the mask `width - 1` when the
+count is known in range. It also checks the equality of the signed and
+unsigned right shifts of the positive signed maximum at the same in-range
+count. A constant right shift of a zero-extended unsigned byte or halfword
+has a range computed from its source width and count, including after a
+signed widening of the result. A root conditional equals its selected arm
+when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared
 arm without a guard premise.
 Shared native comparison guards retain their operand DAGs; other shared
