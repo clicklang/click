@@ -26922,6 +26922,10 @@ fn float_cast_bounds_expand_and_cold_replay() {
     for (fixture, functions) in [
         ("arithmetic_safety_float_widening", &["convert"][..]),
         (
+            "arithmetic_safety_float_narrowing_keeps_rounded_bounds",
+            &["cast_narrowed"][..],
+        ),
+        (
             "float_negation_preserves_cast_bounds",
             &["cast32", "cast64"][..],
         ),
@@ -26934,6 +26938,13 @@ fn float_cast_bounds_expand_and_cold_replay() {
             let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
                 .unwrap_or_else(|error| panic!("{}", error.report()));
             assert!(!expanded.contains("normalize()"), "{expanded}");
+            if *function == "cast_narrowed" {
+                let (cast_proof, _) = expanded.split_once("theorem rounded(").unwrap();
+                assert!(
+                    cast_proof.contains("click::float_order::float64_narrow_le"),
+                    "{cast_proof}"
+                );
+            }
             crate::surface::check_audit_claim(&claim, true, || {
                 verify_c_sources(&expanded, &sources).map_err(|error| error.report())
             })
@@ -28165,11 +28176,12 @@ fn arithmetic_certificates_cold_replay_without_generated_normalization() {
         ("guarded_signed_ring", &["sum", "product"][..]),
         (
             "float_bound_composition",
-            &["negate_scaled", "widen_scaled"][..],
+            &["negate_scaled", "widen_scaled", "subtract_two"][..],
         ),
         ("signed_odd_divisor", &["divide"][..]),
         ("negative_signed_product", &["product"][..]),
         ("float_add_pair", &["sum"][..]),
+        ("float_subtract_pair", &["cast_difference", "upper"][..]),
         ("unsigned_masked_divisor", &["divide", "remainder"][..]),
     ] {
         let (source, sources) =

@@ -288,6 +288,9 @@ try_float_bound_chain
 try_exact_float_bound_transfer
 try_float_bound_weakening
 select_float_pair_bounds
-try_float_sum_bound
+try_float_pair_bound
+try_float_literal_subtraction_bound
+try_apply_float_pair_bound
 try_float_scale_bound
+try_float_narrow_bound
 try_float_bound_link

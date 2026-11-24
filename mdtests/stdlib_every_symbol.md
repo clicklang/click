@@ -21,6 +21,15 @@ The rounded addition bounds `float_order::float32_add_lower`,
 The finite positive scaling bounds `float_order::float32_scale_lower` and
 `float_order::float32_scale_upper` are exercised in
 [`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_float_bound_composition.md).
+The rounded subtraction bounds `float_order::float32_sub_lower`,
+`float_order::float32_sub_upper`, `float_order::float64_sub_lower`, and
+`float_order::float64_sub_upper` are exercised in
+[`arithmetic_expression_float_subtract_pair.md`](arithmetic_expression_float_subtract_pair.md)
+and [`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_float_bound_composition.md).
+
+The narrowing laws `float_order::float64_narrow_le` and
+`float_order::float64_narrow_lt` are exercised in
+[`arithmetic_safety_float_narrowing_keeps_rounded_bounds.md`](arithmetic_safety_float_narrowing_keeps_rounded_bounds.md).
 
 The representation law `integer::uint32_from_le_bytes` is exercised in
 [`integer_uint32_from_le_bytes_initialization.md`](integer_uint32_from_le_bytes_initialization.md).
