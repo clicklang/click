@@ -344,8 +344,18 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        compared the old and new equality on every comparison of two reads
        (over two million) and found no difference; both harnesses pass
        unchanged, and no session interned more than 10,000 loads. Ordering
-       changes from address order to load-id order, with no proof or output
-       change on the harnesses. Consumers still read the selection from the
+       is by content, never by load id, since proof search iterates
+       term-keyed sets in it and an id is a probe slot that depends on what
+       the session interned before: a load orders by the hash of its point
+       (as `ProgramPoint` hashes, by memory content for a legacy point) and
+       cell, then on a tie by point and cell. The id's slot hashes the same
+       content, not the read key, whose legacy form holds the arena token, so
+       ids and term hashes do not vary with how many sessions ran before
+       (`integer_reads_order_and_hash_the_same_whatever_was_interned_before`).
+       A `cfg(test)` assertion in `Load::at` checks that a legacy point's
+       memory belongs to the current arena, so the gate checks that terms of
+       two arenas never meet; tests that probe the boundary on purpose say so
+       with `allow_cross_arena_loads`. Consumers still read the selection from the
        term's `ReadPoint`, never from `Load::point`, which is the first
        selection of its key; a substitution or rewrite that changes the
        address rebuilds the read and so interns the new cell's load. Reads of
@@ -450,7 +460,8 @@ Design check
    them one constructor.
 3. **Interning cost** of `Load`. *Resolved in step 2:* interning is one hash
    probe on `(read_key, cell)`, charged one work unit only on a slot
-   collision, and equality, hashing and ordering compare one id
+   collision, equality and hashing compare one id, and ordering compares
+   one stored content hash before falling back to structure on a tie
    (`src/scaling_tests/kernel/primitives/load.rs`): the work to intern a new
    load or find an interned one is the same with 16, 256 or 4,096 other loads
    interned; comparing two loads of a cell nested 4, 64 or 512 loads deep is

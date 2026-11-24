@@ -25,6 +25,10 @@ pub struct Load {
 
 struct LoadNode {
     id: u64,
+    /// The hash of the point, as `ProgramPoint` hashes, and the cell, before
+    /// probing: independent of what the session interned before, so it
+    /// orders loads deterministically in one comparison.
+    content: u64,
     /// The selection the load was first built from. Any other selection
     /// with the same read key names the same bytes (`design/loads.md`, open
     /// question 2): an `Exact` and an `IndexedCell` selection of one point
@@ -75,11 +79,28 @@ impl Load {
     /// key returns the load already interned, keeping its first point.
     pub(crate) fn at(point: ProgramPoint, cell: &Address) -> Self {
         use std::hash::{Hash, Hasher};
+        // Terms of two memory arenas never meet: an arena starts only with a
+        // verification session, which also clears this interner, and a
+        // `Load` keys a legacy point by arena id where `ProgramPoint`
+        // compared memories by content.
+        #[cfg(test)]
+        if point.read_version_id().is_none() && !CROSS_ARENA_LOADS.with(std::cell::Cell::get) {
+            assert_eq!(
+                point.shared_memory().arena_id().0,
+                super::memory_arena_token(),
+                "a load of a memory from another arena"
+            );
+        }
         let key = point.read_key();
+        // The slot hashes the point as `ProgramPoint` hashes, not its read
+        // key: a legacy read key holds the arena token, which depends on how
+        // many sessions started before, so hashing it would make ids, and
+        // the hashes of every term holding a load, vary from run to run.
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        key.hash(&mut hasher);
+        point.hash(&mut hasher);
         cell.hash(&mut hasher);
-        let mut slot = hasher.finish() % LOAD_ID_RANGE;
+        let content = hasher.finish();
+        let mut slot = content % LOAD_ID_RANGE;
         LOAD_INTERNER.with(|interner| {
             let mut interner = interner.borrow_mut();
             loop {
@@ -101,6 +122,7 @@ impl Load {
                         let load = Load {
                             node: Arc::new(LoadNode {
                                 id: slot,
+                                content,
                                 point,
                                 cell: cell.clone(),
                             }),
@@ -171,9 +193,24 @@ impl PartialOrd for Load {
     }
 }
 
+/// Ordering is by content, never by id: proof search is sensitive to
+/// iteration order, and an id is a probe slot that depends on what the
+/// session interned before. Two loads compare by their content hash, and on
+/// a tie by point (`ProgramPoint`'s order, by memory content for a legacy
+/// point) and then cell. One id is one point key and cell, so this agrees
+/// with equality; the id breaks only the tie of equal-content memories of two
+/// arenas, which never meet in one proof.
 impl Ord for Load {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.node.id.cmp(&other.node.id)
+        if self.node.id == other.node.id {
+            return std::cmp::Ordering::Equal;
+        }
+        self.node
+            .content
+            .cmp(&other.node.content)
+            .then_with(|| self.node.point.cmp(&other.node.point))
+            .then_with(|| self.node.cell.cmp(&other.node.cell))
+            .then_with(|| self.node.id.cmp(&other.node.id))
     }
 }
 
@@ -382,6 +419,25 @@ pub(crate) fn restore_load_interner(state: &LoadInternerState) {
 
 pub(crate) fn clear_load_interner() {
     LOAD_INTERNER.with(|interner| interner.borrow_mut().clear());
+}
+
+#[cfg(test)]
+thread_local! {
+    static CROSS_ARENA_LOADS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Lets a test that probes the arena boundary build loads of an earlier
+/// arena's memory until the guard drops; elsewhere `Load::at` asserts that
+/// a legacy point's memory is the current arena's.
+#[cfg(test)]
+pub(crate) fn allow_cross_arena_loads() -> impl Drop {
+    struct Allow(bool);
+    impl Drop for Allow {
+        fn drop(&mut self) {
+            CROSS_ARENA_LOADS.with(|allowed| allowed.set(self.0));
+        }
+    }
+    Allow(CROSS_ARENA_LOADS.with(|allowed| allowed.replace(true)))
 }
 
 /// How many loads are interned.

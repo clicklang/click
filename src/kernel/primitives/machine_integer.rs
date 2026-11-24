@@ -922,6 +922,71 @@ mod tests {
         assert_ne!(int32, next, "another cell is another load");
     }
 
+    /// Integer reads order and hash by content, not by when their loads were
+    /// interned or how many sessions came before: proof search iterates
+    /// term-keyed sets in this order. The same reads interned in reverse,
+    /// in a later session after other arenas, compare and hash as before.
+    #[test]
+    fn integer_reads_order_and_hash_the_same_whatever_was_interned_before() {
+        use crate::kernel::{
+            Address, AddressBase, AddressOffset, LoadKind, ProgramPoint, ProgramValue,
+            SymbolicMemory,
+        };
+        use std::hash::{Hash, Hasher};
+        let block = AddressBase::Concrete("local:read-order-slot".into());
+        let cell = |offset| Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(offset),
+        };
+        let reads = || {
+            let empty = SymbolicMemory::new().with_block(block.clone(), 8);
+            [
+                empty.clone(),
+                empty.store(cell(0), ProgramValue::Int32(MachineTerm::constant(7))),
+            ]
+            .into_iter()
+            .flat_map(|memory| {
+                let memory = crate::kernel::intern_memory(memory);
+                [0, 4].map(|offset| (ProgramPoint::at(&memory), cell(offset)))
+            })
+            .collect::<Vec<_>>()
+        };
+        let hash = |term: &MachineTerm| {
+            let mut state = std::collections::hash_map::DefaultHasher::new();
+            term.hash(&mut state);
+            state.finish()
+        };
+        let observe = |reverse: bool| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut operands = reads();
+            if reverse {
+                operands.reverse();
+            }
+            let mut terms = operands
+                .into_iter()
+                .map(|(point, address)| MachineTerm::read_named(point, address, LoadKind::Int32))
+                .collect::<Vec<_>>();
+            if reverse {
+                terms.reverse();
+            }
+            let order = terms
+                .iter()
+                .map(|left| {
+                    terms
+                        .iter()
+                        .map(|right| left.cmp(right))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            (order, terms.iter().map(hash).collect::<Vec<_>>())
+        };
+        let first = observe(false);
+        for _ in 0..3 {
+            let _other = crate::kernel::VerificationSession::enter();
+        }
+        assert_eq!(observe(true), first);
+    }
+
     /// A 32-to-64-bit extension is built as the typed node C lowering
     /// builds, whichever constructor builds it, and rule W reads the
     /// value-preserving ones as their operand; `UInt64FromInt32` keeps no

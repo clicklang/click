@@ -33,6 +33,8 @@ mod tests {
             intern_memory(SymbolicMemory::new())
         };
         let _session = crate::kernel::VerificationSession::enter();
+        // Reads of the first session's memory, on purpose.
+        let _cross_arena = crate::kernel::primitives::allow_cross_arena_loads();
         let second = intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(999814)),
