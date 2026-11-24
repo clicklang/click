@@ -686,6 +686,11 @@ mod producer_tests {
         };
         let endpoint = SharedIntegerRangeEndpoint::intern(call.clone());
         assert!(endpoint.machine_operand().shared_operand().is_none());
+        let input = KernelFold::import_endpoint(MachineIntegerType::UInt64, &endpoint);
+        assert!(std::ptr::eq(
+            input.retained_machine_input().unwrap(),
+            endpoint.value(),
+        ));
         let produce = |end| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::UInt64 {

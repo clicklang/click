@@ -41,7 +41,7 @@ pub(super) fn source_index(
                     operand,
                     ..
                 } => Some(V::Shared(operand).retain(MachineIntegerType::UInt32)),
-                N::Legacy(_) | N::MachineObservationInput { .. } => {
+                N::Legacy(_) | N::MachineObservationInput { .. } | N::WrittenMachine(_) => {
                     widened(V::Legacy(root.machine_conversion_leaf()?))
                 }
                 _ => None,
@@ -65,7 +65,7 @@ pub(super) fn literal(view: V<'_>) -> Option<MachineTerm> {
         V::Shared(root)
             if !matches!(
                 root.node(),
-                N::MachineLiteral(_) | N::Legacy(_) | N::MachineObservationInput { .. }
+                N::MachineLiteral(_) | N::Legacy(_) | N::MachineObservationInput { .. } | N::WrittenMachine(_)
             ) =>
         {
             None
@@ -113,7 +113,7 @@ pub(super) fn load_free(root: V<'_>) -> bool {
                 }
                 N::MachineIf { arguments } => pending.extend(arguments[1..].iter().map(V::Shared)),
                 N::Fold(fold) => pending.extend(fold.arguments.iter().map(V::Shared)),
-                N::Legacy(_) | N::MachineObservationInput { .. } | N::IntegerAddress { .. } => {
+                N::Legacy(_) | N::MachineObservationInput { .. } | N::WrittenMachine(_) | N::IntegerAddress { .. } => {
                     match root.machine_conversion_leaf() {
                         Some(value) => pending.push(V::Legacy(value)),
                         None => return false,

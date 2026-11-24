@@ -310,9 +310,9 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
-            KernelTermNode::MachineObservationInput { observation, .. } => {
+            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
                 collect_machine_leaf(
-                    observation.value(),
+                    term.retained_machine_input().unwrap(),
                     mode,
                     &mut leaf_variables,
                     &mut SeenTerms::default(),

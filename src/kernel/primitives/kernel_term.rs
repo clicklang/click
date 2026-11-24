@@ -201,6 +201,8 @@ pub enum KernelTermNode {
         format: MachineIntegerType,
         operand: KernelTerm,
     },
+    /// An explicitly supplied machine expression outside the structural fragment.
+    WrittenMachine(KernelWrittenMachine),
     /// An already retained observation whose written carrier has no shared root.
     /// Numeric arguments use the observation identity directly. An exact
     /// Integer producer keeps its own spelling when read as a machine operand.
@@ -238,6 +240,36 @@ pub enum KernelTermNode {
     CallArgument(KernelCallArgument),
     /// Temporary adapter, not a second spelling or equality interpretation.
     Legacy(KernelLegacyTerm),
+}
+
+/// Exact native input to the typed machine operand API. Retagging and
+/// reading the operand can reuse the provided syntax by reference.
+#[derive(Clone, Debug)]
+pub struct KernelWrittenMachine {
+    identity: u64,
+    format: MachineIntegerType,
+    value: Arc<MachineTerm>,
+}
+
+impl KernelWrittenMachine {
+    pub(crate) fn value(&self) -> &MachineTerm {
+        &self.value
+    }
+
+    pub(crate) fn format(&self) -> MachineIntegerType {
+        self.format
+    }
+}
+impl PartialEq for KernelWrittenMachine {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity
+    }
+}
+impl Eq for KernelWrittenMachine {}
+impl Hash for KernelWrittenMachine {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.identity.hash(state);
+    }
 }
 
 /// Reference to the written slot of a particular call. Pure applications
@@ -279,7 +311,6 @@ pub struct KernelLegacyTerm {
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum LegacyIdentity {
-    Machine(u64),
     NativeObservation(Box<PureFunctionArgument>),
     Fresh(u64),
 }
@@ -472,10 +503,10 @@ impl NodeKey {
             | KernelTermNode::AlgebraicRead(_)
             | KernelTermNode::FloatRead(_) => true,
             KernelTermNode::MachineObservationInput { exact, .. } => *exact,
-            KernelTermNode::CallArgument(_) => true,
+            KernelTermNode::WrittenMachine(_) | KernelTermNode::CallArgument(_) => true,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
-                LegacyIdentity::Fresh(_) | LegacyIdentity::Machine(_)
+                LegacyIdentity::Fresh(_)
             ),
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
@@ -556,8 +587,7 @@ impl NodeKey {
             }
             KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
-            KernelTermNode::MachineObservationInput { .. } => true,
-            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Machine(_)),
+            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => true,
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
             }
@@ -578,8 +608,7 @@ impl NodeKey {
             KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::FloatConvert { .. } => shared_machine_operand,
             KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => true,
-            KernelTermNode::MachineObservationInput { .. } => true,
-            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Machine(_)),
+            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => true,
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().any(KernelTerm::has_machine_conversions)
             }
@@ -624,8 +653,7 @@ impl NodeKey {
             // Opaque domain leaves can contain conditions (If, folds, calls).
             // Their native walker owns those payloads; do not skip it merely
             // because the surrounding arithmetic now has shared parents.
-            KernelTermNode::MachineObservationInput { .. } => true,
-            KernelTermNode::Legacy(value) => value.machine_operand().is_some(),
+            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => true,
             _ => false,
         };
         let machine_conditionals = match &node {
@@ -847,6 +875,9 @@ impl KernelTerm {
                         observation,
                         ..
                     } => machine::wrap_exact(*format, observation.value().clone()),
+                    KernelTermNode::WrittenMachine(input) => {
+                        machine::wrap_exact(input.format(), input.value().clone())
+                    }
                     _ => crate::kernel::ExecutionValue::Shared(self.clone()).into_native(),
                 };
                 Box::new(PureFunctionArgument::Value(value))
@@ -1407,9 +1438,13 @@ impl KernelTerm {
                 let id = NEXT
                     .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
                     .expect("retained machine leaf identity exhausted");
-                Self::legacy_at(
-                    PureFunctionArgument::Value(machine::wrap_exact(format, value.clone())),
-                    LegacyIdentity::Machine(id),
+                Self::intern(
+                    KernelType::Program(format.program_type()),
+                    KernelTermNode::WrittenMachine(KernelWrittenMachine {
+                        identity: id,
+                        format,
+                        value: Arc::new(value.clone()),
+                    }),
                 )
             })
     }
@@ -1425,7 +1460,7 @@ impl KernelTerm {
         if matches!(
             self.node(),
             KernelTermNode::Legacy(_)
-                | KernelTermNode::MachineObservationInput { .. }
+                | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. }
         ) && rewritten == original
@@ -2103,6 +2138,11 @@ impl KernelTermExport {
         &mut self,
         term: &KernelTerm,
     ) -> Result<PureFunctionArgument, &'static str> {
+        if let KernelTermNode::WrittenMachine(input) = term.node() {
+            return Ok(PureFunctionArgument::Value(machine::wrap_exact(
+                input.format(), input.value().clone(),
+            )));
+        }
         if let KernelTermNode::CallArgument(argument) = term.node() {
             return Ok(argument.value().clone());
         }

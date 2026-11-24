@@ -7,34 +7,10 @@ use crate::kernel::{
     uint32_constant, uint64_constant,
 };
 
-impl KernelLegacyTerm {
-    pub(in crate::kernel) fn machine_operand(&self) -> Option<&MachineTerm> {
-        if !matches!(self.identity, LegacyIdentity::Machine(_)) {
-            return None;
-        }
-        let PureFunctionArgument::Value(value) = self.value() else {
-            return None;
-        };
-        match value {
-            ProgramValue::Int8(v)
-            | ProgramValue::UInt8(v)
-            | ProgramValue::Int16(v)
-            | ProgramValue::UInt16(v)
-            | ProgramValue::Int32(v)
-            | ProgramValue::UInt32(v)
-            | ProgramValue::Int64(v)
-            | ProgramValue::UInt64(v)
-            | ProgramValue::Int128(v)
-            | ProgramValue::UInt128(v) => Some(v),
-            _ => None,
-        }
-    }
-}
-
 fn retained_machine_input(node: &KernelTermNode) -> Option<&MachineTerm> {
     match node {
         KernelTermNode::MachineObservationInput { observation, .. } => Some(observation.value()),
-        KernelTermNode::Legacy(value) => value.machine_operand(),
+        KernelTermNode::WrittenMachine(value) => Some(value.value()),
         _ => None,
     }
 }
@@ -380,7 +356,7 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                     _ => None,
                 });
         }
-        KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } => {
+        KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
             // native `If`, instead of exporting the enclosing DAG to read it.
@@ -905,6 +881,7 @@ impl KernelTermExport {
                 operand,
             } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
             Node::MachineObservationInput { observation, .. } => observation.value().clone(),
+            Node::WrittenMachine(value) => value.value().clone(),
             Node::Legacy(_) | Node::CallArgument(_) => {
                 let Some(PureFunctionArgument::Value(value)) = term.written_argument() else {
                     return Err("expected a machine value legacy payload");

@@ -54,7 +54,7 @@ pub(crate) fn shared_machine_syntax_variables(
                 | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
-                | KernelTermNode::MachineObservationInput { .. }
+                | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::IntegerAddress { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Call { .. }
@@ -127,7 +127,7 @@ pub(crate) fn shared_machine_conversion_leaves(
                     | KernelTermNode::FloatConvert { .. }
                     | KernelTermNode::BoolCast { .. }
                     | KernelTermNode::Legacy(_)
-                    | KernelTermNode::MachineObservationInput { .. }
+                    | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_)
                     | KernelTermNode::IntegerAddress { .. }
                     | KernelTermNode::Call { .. }
                     | KernelTermNode::MachineIf { .. }
@@ -709,7 +709,7 @@ impl<'a> MachineOperandView<'a> {
         match self {
             Self::Shared(root) => match root.node() {
                 KernelTermNode::MemoryLoad { kind, .. } => Some(*kind),
-                KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } => {
+                KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
                     Self::Legacy(self.retained_native_input()?).read_kind()
                 }
                 _ => None,

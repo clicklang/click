@@ -732,7 +732,7 @@ mod tests {
             }],
         };
         let index = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &native);
-        assert!(matches!(index.node(), N::Legacy(_)));
+        assert!(matches!(index.node(), N::WrittenMachine(_)));
         let base = SharedPointer::import(&Pointer::new(Address::null(), ProgramType::Int32Pointer));
         let mut value = base.node().clone();
         value.address = SharedAddress::new(

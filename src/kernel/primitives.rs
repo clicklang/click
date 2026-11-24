@@ -110,7 +110,7 @@ pub(crate) use kernel_term::{
 };
 pub use kernel_term::{
     KernelCallArgument, KernelFloatType, KernelIntegerOperator, KernelLegacyTerm,
-    KernelMachineLiteral, KernelTerm, KernelTermNode, KernelType,
+    KernelMachineLiteral, KernelTerm, KernelTermNode, KernelType, KernelWrittenMachine,
 };
 #[allow(unused_imports)]
 pub(crate) use kernel_term::{

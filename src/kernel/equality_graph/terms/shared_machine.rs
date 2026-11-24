@@ -504,7 +504,7 @@ impl TermClasses {
                 | N::BoolCast { .. }
                 | N::IntegerAddress { .. }
                 | N::Legacy(_)
-                | N::MachineObservationInput { .. }
+                | N::MachineObservationInput { .. } | N::WrittenMachine(_)
                 | N::Call { .. } => self.intern_typed_machine(
                     term.machine_conversion_leaf().expect("conversion leaf"),
                     width,

@@ -4680,6 +4680,14 @@ fn raise_kernel_term_dispatch(
                 synthesize_surface_value(term.pointer_native()?, parameter_binding, state)?
             }
         }
+        Node::WrittenMachine(input) => {
+            if input.format().format().bits() < 32 {
+                return None;
+            }
+            synthesize_surface_bitvector(
+                input.value(), parameter_binding, state, bound_variables,
+            )?
+        }
         Node::MachineObservationInput {
             format,
             observation,

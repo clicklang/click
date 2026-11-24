@@ -4428,8 +4428,8 @@ impl RetainedIntegerScopeSummaries {
                     }
                     summary
                 }
-                Node::MachineObservationInput { observation, .. } => {
-                    collect_bitvector_scope_summary(observation.value(), &mut self.native)
+                Node::MachineObservationInput { .. } | Node::WrittenMachine(_) => {
+                    collect_bitvector_scope_summary(term.retained_machine_input()?, &mut self.native)
                 }
                 Node::Legacy(_) | Node::CallArgument(_) => {
                     collect_scope_summary_in_argument(term.written_argument()?, &mut self.native)
