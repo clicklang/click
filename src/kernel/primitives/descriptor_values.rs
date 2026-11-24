@@ -345,8 +345,8 @@ impl StoredConditionTerm {
     }
 }
 
-/// Retained contract displacement. Exact legacy indices still enter as a
-/// native input because their carrier identity cannot be recovered from a root.
+/// Retained contract displacement. Opaque indices retain their exact
+/// carrier in the corresponding typed machine input.
 #[derive(Clone)]
 pub struct StoredPointerOffset(Arc<PointerOffsetStorage>);
 
@@ -372,20 +372,11 @@ impl From<AddressOffset> for StoredPointerOffset {
 impl StoredPointerOffset {
     pub(in crate::kernel) fn from_rewritten_root(root: SharedAddressOffset) -> Self {
         let mut indices = Vec::new();
-        if !root.visit_root_while(|node| {
+        root.visit_root_in_order(false, |node| {
             if let Some(index) = node.index() {
-                let index = SharedAddressOffset::exact_index(index);
-                if index.shared_operand().is_none() {
-                    return false;
-                }
-                indices.push(index);
+                indices.push(SharedAddressOffset::exact_index(index));
             }
-            true
-        }) {
-            // A rewrite can introduce an exact opaque index. Keep that result
-            // in the same native storage as a written offset with such an index.
-            return Self::from(KernelAddressOffset::export(&root).expect("rewritten offset"));
-        }
+        });
         Self(Arc::new(PointerOffsetStorage::Shared {
             root,
             _index_identities: indices,
@@ -405,18 +396,14 @@ impl StoredPointerOffset {
     }
 
     fn retain(written: &AddressOffset) -> Option<PointerOffsetStorage> {
+        let root = KernelAddressOffset::try_import(written).ok()?;
         let mut indices = Vec::new();
-        if written.any_scaled_operand(|value| {
-            if value.shared_operand().is_none() {
-                return true;
-            }
+        written.any_scaled_operand(|value| {
             indices.push(value.clone());
             false
-        }) {
-            return None;
-        }
+        });
         Some(PointerOffsetStorage::Shared {
-            root: KernelAddressOffset::import(written),
+            root,
             _index_identities: indices,
             native: OnceLock::new(),
         })
@@ -507,8 +494,93 @@ impl std::hash::Hash for StoredIntegerTerm {
     }
 }
 native_descriptor_identity!(StoredAlgebraicTerm);
-native_descriptor_identity!(StoredConditionTerm);
-native_descriptor_identity!(StoredPointerOffset);
+impl std::fmt::Debug for StoredConditionTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.native_compat().fmt(f)
+    }
+}
+impl StoredConditionTerm {
+    fn connective_roots<'a>(&'a self, other: &'a Self) -> Option<(&'a KernelTerm, &'a KernelTerm)> {
+        let connective = |root: &KernelTerm| {
+            matches!(
+                root.node(),
+                KernelTermNode::BoolIf { .. } | KernelTermNode::BoolEqual { .. }
+            )
+        };
+        let left = self.root().filter(|root| connective(root))?;
+        let right = other.root().filter(|root| connective(root))?;
+        Some((left, right))
+    }
+}
+impl PartialEq for StoredConditionTerm {
+    fn eq(&self, other: &Self) -> bool {
+        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
+            return true;
+        }
+        if let Some((left, right)) = self.connective_roots(other) {
+            return left.condition_storage_key() == right.condition_storage_key();
+        }
+        self.native_compat() == other.native_compat()
+    }
+}
+impl Eq for StoredConditionTerm {}
+impl PartialOrd for StoredConditionTerm {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StoredConditionTerm {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
+            return std::cmp::Ordering::Equal;
+        }
+        if let Some((left, right)) = self.connective_roots(other) {
+            return left
+                .condition_storage_key()
+                .cmp(&right.condition_storage_key());
+        }
+        self.native_compat().cmp(other.native_compat())
+    }
+}
+impl std::hash::Hash for StoredConditionTerm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.native_compat().hash(state);
+    }
+}
+impl std::fmt::Debug for StoredPointerOffset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.native_compat().fmt(f)
+    }
+}
+impl PartialEq for StoredPointerOffset {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.root(), other.root()) {
+            (Some(left), Some(right)) => left == right || left.syntax_equal(right),
+            _ => self.native_compat() == other.native_compat(),
+        }
+    }
+}
+impl Eq for StoredPointerOffset {}
+impl PartialOrd for StoredPointerOffset {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StoredPointerOffset {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.root(), other.root()) {
+            (Some(left), Some(right)) => {
+                crate::kernel::execution_value::storage_keys::compare_offsets(left, right)
+            }
+            _ => self.native_compat().cmp(other.native_compat()),
+        }
+    }
+}
+impl std::hash::Hash for StoredPointerOffset {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.native_compat().hash(state);
+    }
+}
 
 #[cfg(test)]
 mod protocol_value_tests {
@@ -573,6 +645,40 @@ mod protocol_value_tests {
     }
 
     #[test]
+    fn retained_contract_offset_keeps_opaque_index_carrier() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let index = SharedMachineIntegerTerm::index(
+            MachineIntegerType::Int32,
+            MachineTerm::PureFunctionApplication {
+                name: "opaque_displacement".into(),
+                arguments: vec![MachineTerm::Variable(Variable(998985))],
+            },
+        );
+        let source = AddressOffset::Int32Scaled {
+            value: index.clone(),
+            byte_width: 4,
+        };
+        let stored = StoredPointerOffset::from_written(&source);
+        let root = stored.root().expect("typed displacement");
+        let first = KernelAddressOffset::index_key(root.node().index().unwrap()).unwrap();
+        assert!(std::ptr::eq(
+            first.structural_value(),
+            index.structural_value()
+        ));
+        assert_eq!(first, index);
+        let equal = StoredPointerOffset::from(AddressOffset::Int32Scaled {
+            value: SharedMachineIntegerTerm::index(index.ty(), index.structural_value().clone()),
+            byte_width: 4,
+        });
+        assert_ne!(stored.root(), equal.root());
+        assert_eq!(stored, equal);
+        assert_eq!(stored.cmp(&equal), std::cmp::Ordering::Equal);
+        assert!(!stored.has_cached_native_offset());
+        assert!(!equal.has_cached_native_offset());
+        assert_eq!(stored.native_compat(), &source);
+    }
+
+    #[test]
     fn protocol_native_values_keep_exact_identity_and_scalar_conditions_round_trip() {
         let _session = crate::kernel::VerificationSession::enter();
         let values = [
@@ -628,6 +734,27 @@ mod protocol_value_tests {
             }
         }
     }
+    #[test]
+    fn retained_condition_ordering_keeps_connectives_unboxed() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let input = |variable| ConditionTerm::BoolIf {
+            condition: Box::new(ConditionTerm::Variable(variable)),
+            then_condition: Box::new(ConditionTerm::Constant(true)),
+            else_condition: Box::new(ConditionTerm::Constant(false)),
+        };
+        let values = [input(Variable(10993742)), input(Variable(10993743))];
+        let roots = values
+            .each_ref()
+            .map(|condition| KernelTermImport::default().condition(condition));
+        let [left, right] = roots
+            .each_ref()
+            .map(|root| StoredConditionTerm::from_root(root.clone()).unwrap());
+        assert_ne!(left, right);
+        assert_eq!(left.cmp(&right), values[0].cmp(&values[1]));
+        assert!(roots.iter().all(|root| !root.has_cached_native_argument()));
+        assert_eq!(left, StoredConditionTerm::from(values[0].clone()));
+    }
+
     #[test]
     fn minted_condition_native_views_reuse_the_produced_output_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();

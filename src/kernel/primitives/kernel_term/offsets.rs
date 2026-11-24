@@ -152,17 +152,16 @@ impl KernelAddressOffset {
     }
 
     pub(crate) fn import(offset: &AddressOffset) -> SharedAddressOffset {
+        Self::try_import(offset).expect("native offset types")
+    }
+
+    pub(crate) fn try_import(offset: &AddressOffset) -> Result<SharedAddressOffset, &'static str> {
         enum Task<'a> {
             Enter(&'a AddressOffset),
             Add,
         }
         let mut pending = vec![Task::Enter(offset)];
         let mut values = Vec::new();
-        let index = |value: &SharedMachineIntegerTerm| {
-            value.shared_operand().cloned().unwrap_or_else(|| {
-                KernelTerm::retained_native_machine_operand(value.ty(), value.structural_value())
-            })
-        };
         while let Some(task) = pending.pop() {
             let node = match task {
                 Task::Enter(AddressOffset::Constant(value)) => Self::Constant(*value),
@@ -173,7 +172,7 @@ impl KernelAddressOffset {
                 }
                 Task::Enter(AddressOffset::Int32Scaled { value, byte_width }) => {
                     Self::Int32Scaled {
-                        value: index(value),
+                        value: KernelTerm::retain_address_index(value),
                         byte_width: *byte_width,
                     }
                 }
@@ -182,7 +181,7 @@ impl KernelAddressOffset {
                     byte_width,
                     unsigned,
                 }) => Self::Int64Scaled {
-                    value: index(value),
+                    value: KernelTerm::retain_address_index(value),
                     byte_width: *byte_width,
                     unsigned: *unsigned,
                 },
@@ -192,9 +191,9 @@ impl KernelAddressOffset {
                     Self::Add([left, right])
                 }
             };
-            values.push(node.into_shared().expect("native offset types"));
+            values.push(node.into_shared()?);
         }
-        values.pop().expect("offset root")
+        Ok(values.pop().expect("offset root"))
     }
 
     /// The native offset index contract, shared by explicit output and storage keys.
@@ -206,6 +205,9 @@ impl KernelAddressOffset {
         };
         let format =
             MachineIntegerType::from_program_type(*ty).ok_or("expected machine offset index")?;
+        if let Some(index) = value.retained_address_index(format) {
+            return Ok(index.clone());
+        }
         if let Some(native) = value.retained_machine_input() {
             return Ok(SharedMachineIntegerTerm::index(format, native.clone()));
         }

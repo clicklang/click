@@ -164,11 +164,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 | KernelTermNode::PointerArithmetic { .. }
                 | KernelTermNode::PointerCall { .. }
                 | KernelTermNode::ArrayReference { .. } => {
-                    // Observation equality keeps the established native pointer
-                    // metadata policy; exact producer roots remain untouched.
-                    KernelTerm::native_observation_leaf(
-                        KernelTermExport::default().argument(&term).expect("pointer argument observation"),
-                    )
+                    KernelTerm::observe_pointer_argument(&term)
                 }
                 KernelTermNode::AlgebraicIf { arguments } => {
                     let KernelType::Algebraic(ty) = term.ty() else { unreachable!() };

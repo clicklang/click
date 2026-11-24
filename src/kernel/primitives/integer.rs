@@ -733,6 +733,11 @@ pub(crate) fn clear_machine_observation_memo() {
 pub(in crate::kernel::primitives) mod observation_identity;
 
 impl SharedMachineIntegerTerm {
+    /// Exact retained carrier allocation, distinct from numeric equality.
+    pub(super) fn payload_id(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
+
     /// An explicit native operand already imported in this verification.
     /// Read-only: a miss does not import syntax or retain an opaque payload.
     pub(crate) fn retained_import(ty: MachineIntegerType, value: &MachineTerm) -> Option<Self> {

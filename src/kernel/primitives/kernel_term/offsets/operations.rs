@@ -215,6 +215,9 @@ impl SharedAddressOffset {
             unreachable!("typed offset index")
         };
         let format = MachineIntegerType::from_program_type(*ty).expect("numeric offset index");
+        if let Some(index) = root.retained_address_index(format) {
+            return index.clone();
+        }
         if let Some(native) = root.retained_machine_input() {
             return SharedMachineIntegerTerm::index(format, native.clone());
         }

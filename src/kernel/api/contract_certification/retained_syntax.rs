@@ -313,6 +313,16 @@ impl Comparison {
     fn call_argument(&mut self, left: CallArgument<'_>, right: CallArgument<'_>) -> bool {
         use CallArgument::{Native, Shared};
         if let Shared(root) = left
+            && let N::ObservedPointer(value) = root.node()
+        {
+            return self.call_argument(Shared(value.source()), right);
+        }
+        if let Shared(root) = right
+            && let N::ObservedPointer(value) = root.node()
+        {
+            return self.call_argument(left, Shared(value.source()));
+        }
+        if let Shared(root) = left
             && let Some(value) = root.written_argument()
         {
             return self.call_argument(Native(value), right);
