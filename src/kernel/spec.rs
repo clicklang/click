@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 use crate::kernel::eval::SpecDivision;
-use crate::kernel::{CompareRelation, ProgramPoint};
+use crate::kernel::{CompareRelation, MachineOperandView, ProgramPoint, StoredPointerOffset};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 mod existential;
@@ -2780,13 +2780,38 @@ fn integer_carrier_in_pointer_offset(offset: &AddressOffset, variable: Variable)
                 || integer_carrier_in_pointer_offset(right, variable)
         }
         AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
-            if let Some(load) = value.operand_view().variable() {
-                integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
-            } else {
-                // The existing rule conservatively retains every composite.
-                value.operand_view().literal().is_none()
-            }
+            integer_carrier_in_offset_index(value.operand_view(), variable)
         }
+    }
+}
+
+fn integer_carrier_in_stored_offset(offset: &StoredPointerOffset, variable: Variable) -> bool {
+    use crate::kernel::{KernelAddressOffset, SharedAddressOffset};
+    let Some(root) = offset.root() else {
+        return integer_carrier_in_pointer_offset(offset.native_compat(), variable);
+    };
+    !root.visit_root_while(|node| {
+        let carries_integer = match node {
+            KernelAddressOffset::Variable(load) => {
+                integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
+            }
+            node => node.index().is_some_and(|index| {
+                integer_carrier_in_offset_index(
+                    SharedAddressOffset::exact_index(index).operand_view(),
+                    variable,
+                )
+            }),
+        };
+        !carries_integer
+    })
+}
+
+fn integer_carrier_in_offset_index(operand: MachineOperandView<'_>, variable: Variable) -> bool {
+    if let Some(load) = operand.variable() {
+        integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
+    } else {
+        // The existing rule conservatively retains every composite.
+        operand.literal().is_none()
     }
 }
 
@@ -2959,9 +2984,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
                 integer_carrier_in_program_value(value.native_compat(), variable)
             }
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
-            Term::PointerOffset(offset) => {
-                integer_carrier_in_pointer_offset(offset.native_compat(), variable)
-            }
+            Term::PointerOffset(offset) => integer_carrier_in_stored_offset(offset, variable),
             Term::Algebraic(value) => integer_carrier_in_algebraic(value.native_compat(), variable),
             // A state may carry a mathematical machine conversion in a
             // nested local.  Keep this conservative

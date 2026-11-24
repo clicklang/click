@@ -121,3 +121,27 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
         }
     }
 }
+
+#[test]
+fn offset_carrier_queries_visit_each_shared_child_once() {
+    use crate::kernel::{KernelAddressOffset, StoredPointerOffset};
+
+    let _session = VerificationSession::enter();
+    for depth in [4, 8, 12, 16] {
+        let mut root = KernelAddressOffset::Variable(Variable(998200))
+            .into_shared()
+            .unwrap();
+        for _ in 0..depth {
+            root = KernelAddressOffset::Add([root.clone(), root])
+                .into_shared()
+                .unwrap();
+        }
+        let offset = StoredPointerOffset::from_rewritten_root(root);
+        let (carries, work) = crate::instrumentation::measure_deterministic_work(|| {
+            integer_carrier_in_stored_offset(&offset, Variable(998201))
+        });
+        assert!(!carries);
+        assert!(!offset.has_cached_native_offset());
+        assert!(work <= 8 * depth, "depth={depth}, work={work}");
+    }
+}
