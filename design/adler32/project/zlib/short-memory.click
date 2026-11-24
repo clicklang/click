@@ -82,9 +82,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     have to_integer(sum2) == to_integer(old(len as uint32 as int32)) + adler_weighted_sum(old(buf), old(len as uint32 as int32), old(len as uint32 as int32)) by {
      close() using { to_integer(sum2) == to_integer(zlib_prefix_count(old(len), len)) + adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), len)); zlib_prefix_count(old(len), len) == old(len as uint32 as int32); };
     }
-    step(); step(); step(); step();
-    have __click_call_result1 == 0u64 by close();
-    step();
+    step(); step();
    } else {
     have 0u64 <= len by normalize();
     have 0u64 < len by {
@@ -96,24 +94,17 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     }
    have to_integer(1u64) <= to_integer(len) by close() using { to_integer(0u64) < to_integer(len); };
    have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64);
-   step(); step();
-   have 0u64 < len by close();
-   have 0u64 <= len by normalize();
-   have 0u64 <= len - 0u64 by normalize();
+
    have viewable(buf[0u64..1u64]) by close();
    have viewable(buf[0u64..len]) by close();
    mark before_decrement;
-   step(); step(); step();
+   step(); step();
    have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by close();
    have to_integer(len) <= 15 by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; at(before_decrement, to_integer(len)) <= 15; };
    have 0 <= to_integer(len) by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(len)); };
    have to_integer(len) < at(before_decrement, to_integer(len)) by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };
    step_until(assignment(adler, 3).entry);
-   have __click_call_result0 == at(before_decrement, buf) by close();
-   have viewable(__click_call_result0[0u64..1u64]) by {
-    close() using { __click_call_result0 == at(before_decrement, buf); at(before_decrement, viewable(buf[0u64..1u64])); };
-   }
-   have __click_call_result0 == old(buf) + (old(len) - at(before_decrement, len)) by close();
+   have at(before_decrement, buf) == old(buf) + (old(len) - at(before_decrement, len)) by close();
    have at(before_decrement, len) <= old(len) by close();
    have to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - to_integer(at(before_decrement, len));
    have to_integer(old(len) - at(before_decrement, len)) < to_integer(old(len)) by close() using {
@@ -129,50 +120,50 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have old(len) - at(before_decrement, len) <= 22208u64 by close() using { old(len) - at(before_decrement, len) <= 14u64; };
    have old(len) - at(before_decrement, len) <= 15u64 by close() using { old(len) - at(before_decrement, len) <= 14u64; };
    apply(zlib_prefix_pointer(old(buf), old(len), at(before_decrement, len)));
-   have __click_call_result0 == old(buf) + zlib_prefix_count(old(len), at(before_decrement, len)) by close() using {
-    __click_call_result0 == old(buf) + (old(len) - at(before_decrement, len));
+   have at(before_decrement, buf) == old(buf) + zlib_prefix_count(old(len), at(before_decrement, len)) by close() using {
+    at(before_decrement, buf) == old(buf) + (old(len) - at(before_decrement, len));
     old(buf) + (old(len) - at(before_decrement, len)) == old(buf) + zlib_prefix_count(old(len), at(before_decrement, len));
    };
-   have __click_call_result0[0] == old(buf)[zlib_prefix_count(old(len), at(before_decrement, len))] by close() using {
-    __click_call_result0 == old(buf) + zlib_prefix_count(old(len), at(before_decrement, len));
+   have at(before_decrement, buf)[0] == old(buf)[zlib_prefix_count(old(len), at(before_decrement, len))] by close() using {
+    at(before_decrement, buf) == old(buf) + zlib_prefix_count(old(len), at(before_decrement, len));
    };
-   apply(zlib_byte_u64(__click_call_result0[0]));
-   apply(zlib_byte_integer_identity(__click_call_result0[0]));
+   apply(zlib_byte_u64(at(before_decrement, buf)[0]));
+   apply(zlib_byte_integer_identity(at(before_decrement, buf)[0]));
    have to_integer(adler) <= 3571 by close() using {
     to_integer(adler) <= 1 + 255 * (to_integer(old(len)) - at(before_decrement, to_integer(len)));
     to_integer(old(len)) <= 15;
     to_integer(1u64) <= at(before_decrement, to_integer(len));
    };
-   have to_integer(adler) + to_integer(__click_call_result0[0] as uint32 as uint64) <= 18446744073709551615 by close() using {
+   have to_integer(adler) + to_integer(at(before_decrement, buf)[0] as uint32 as uint64) <= 18446744073709551615 by close() using {
     to_integer(adler) <= 3571;
-    to_integer(__click_call_result0[0] as uint32 as uint64) == to_integer(__click_call_result0[0] as int32);
-    to_integer(__click_call_result0[0] as int32) <= 255;
+    to_integer(at(before_decrement, buf)[0] as uint32 as uint64) == to_integer(at(before_decrement, buf)[0] as int32);
+    to_integer(at(before_decrement, buf)[0] as int32) <= 255;
    };
-   have to_integer(adler + __click_call_result0[0] as uint32 as uint64) == to_integer(adler) + to_integer(__click_call_result0[0] as uint32 as uint64);
+   have to_integer(adler + at(before_decrement, buf)[0] as uint32 as uint64) == to_integer(adler) + to_integer(at(before_decrement, buf)[0] as uint32 as uint64);
    mark before_add;
    step();
-   have adler == at(before_add, adler + __click_call_result0[0] as uint32 as uint64) by close();
-   have to_integer(adler) == at(before_add, to_integer(adler + __click_call_result0[0] as uint32 as uint64)) by close() using { adler == at(before_add, adler + __click_call_result0[0] as uint32 as uint64); };
-   have to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(__click_call_result0[0] as int32)) by close() using {
-    to_integer(adler) == at(before_add, to_integer(adler + __click_call_result0[0] as uint32 as uint64));
-    at(before_add, to_integer(adler + __click_call_result0[0] as uint32 as uint64)) == at(before_add, to_integer(adler)) + at(before_add, to_integer(__click_call_result0[0] as uint32 as uint64));
-    at(before_add, to_integer(__click_call_result0[0] as uint32 as uint64)) == at(before_add, to_integer(__click_call_result0[0] as int32));
+   have adler == at(before_add, adler + at(before_decrement, buf)[0] as uint32 as uint64) by close();
+   have to_integer(adler) == at(before_add, to_integer(adler + at(before_decrement, buf)[0] as uint32 as uint64)) by close() using { adler == at(before_add, adler + at(before_decrement, buf)[0] as uint32 as uint64); };
+   have to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(at(before_decrement, buf)[0] as int32)) by close() using {
+    to_integer(adler) == at(before_add, to_integer(adler + at(before_decrement, buf)[0] as uint32 as uint64));
+    at(before_add, to_integer(adler + at(before_decrement, buf)[0] as uint32 as uint64)) == at(before_add, to_integer(adler)) + at(before_add, to_integer(at(before_decrement, buf)[0] as uint32 as uint64));
+    at(before_add, to_integer(at(before_decrement, buf)[0] as uint32 as uint64)) == at(before_add, to_integer(at(before_decrement, buf)[0] as int32));
    };
    have 1 <= to_integer(adler) by close() using {
     1 <= at(before_add, to_integer(adler));
-    0 <= at(before_add, to_integer(__click_call_result0[0] as int32));
-    to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(__click_call_result0[0] as int32));
+    0 <= at(before_add, to_integer(at(before_decrement, buf)[0] as int32));
+    to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(at(before_decrement, buf)[0] as int32));
    };
    have to_integer(adler) <= 1 + 255 * (to_integer(old(len)) - to_integer(len)) by close() using {
     at(before_add, to_integer(adler)) <= 1 + 255 * (to_integer(old(len)) - at(before_decrement, to_integer(len)));
-    at(before_add, to_integer(__click_call_result0[0] as int32)) <= 255;
-    to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(__click_call_result0[0] as int32));
+    at(before_add, to_integer(at(before_decrement, buf)[0] as int32)) <= 255;
+    to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(at(before_decrement, buf)[0] as int32));
     to_integer(len) == at(before_decrement, to_integer(len)) - 1;
    };
    have to_integer(adler) <= 3826 by close() using {
     at(before_add, to_integer(adler)) <= 3571;
-    at(before_add, to_integer(__click_call_result0[0] as int32)) <= 255;
-    to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(__click_call_result0[0] as int32));
+    at(before_add, to_integer(at(before_decrement, buf)[0] as int32)) <= 255;
+    to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(at(before_decrement, buf)[0] as int32));
    };
    have to_integer(sum2) + to_integer(adler) <= 18446744073709551615 by close() using {
     to_integer(sum2) <= 57390;
@@ -212,11 +203,13 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - at(before_decrement, to_integer(len));
     to_integer((old(len) - at(before_decrement, len)) + 1u64) == to_integer(old(len) - at(before_decrement, len)) + to_integer(1u64);
    };
-   have buf == at(before_decrement, buf) + 1 by close();
+   have buf == at(before_decrement, buf) + 1u64 by close();
+   apply(integer::uint8_pointer_add_associate_uint64(old(buf), old(len) - at(before_decrement, len), 1u64));
    have buf == old(buf) + (old(len) - len) by {
-    rewrite(buf, at(before_decrement, buf) + 1);
+    rewrite(buf, at(before_decrement, buf) + 1u64);
     rewrite(old(len) - len, (old(len) - at(before_decrement, len)) + 1u64);
-    close() using { at(before_decrement, buf) == old(buf) + (old(len) - at(before_decrement, len)); old(len) - at(before_decrement, len) <= 14u64; };
+    rewrite(at(before_decrement, buf), old(buf) + (old(len) - at(before_decrement, len)));
+    known();
    }
    have to_integer(len) == to_integer(at(before_decrement, len) - 1u64) by close();
    have len == (at(before_decrement, len) - 1u64);
@@ -225,7 +218,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have len <= 9223372036854775807u64;
    have viewable(buf[0u64..len]) by {
     transport(at(before_decrement, viewable(buf[0u64..len])), viewable(buf[0u64..len])) using {
-     buf == at(before_decrement, buf) + 1;
+     buf == at(before_decrement, buf) + 1u64;
      at(before_decrement, viewable(buf[0u64..len]));
      1u64 <= at(before_decrement, len);
      len <= at(before_decrement, len) - 1u64;
@@ -269,9 +262,9 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    };
    apply(zlib_prefix_append(old(buf), old(len), len));
    apply(adler_weighted_prefix_step(old(buf), zlib_prefix_count(old(len), len)));
-   have old(buf)[zlib_prefix_count(old(len), len) - 1] == at(before_add, __click_call_result0[0]) by close() using {
+   have old(buf)[zlib_prefix_count(old(len), len) - 1] == at(before_add, at(before_decrement, buf)[0]) by close() using {
     zlib_prefix_count(old(len), len) - 1 == zlib_prefix_count(old(len), at(before_decrement, len));
-    at(before_add, __click_call_result0[0]) == old(buf)[zlib_prefix_count(old(len), at(before_decrement, len))];
+    at(before_add, at(before_decrement, buf)[0]) == old(buf)[zlib_prefix_count(old(len), at(before_decrement, len))];
    };
    have adler_byte_sum(old(buf), zlib_prefix_count(old(len), len) - 1) == adler_byte_sum(old(buf), zlib_prefix_count(old(len), at(before_decrement, len))) by close() using {
     zlib_prefix_count(old(len), len) - 1 == zlib_prefix_count(old(len), at(before_decrement, len));
@@ -279,16 +272,16 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len) - 1, zlib_prefix_count(old(len), len) - 1) == adler_weighted_sum(old(buf), zlib_prefix_count(old(len), at(before_decrement, len)), zlib_prefix_count(old(len), at(before_decrement, len))) by close() using {
     zlib_prefix_count(old(len), len) - 1 == zlib_prefix_count(old(len), at(before_decrement, len));
    };
-   apply(zlib_equal_byte_integers(old(buf)[zlib_prefix_count(old(len), len) - 1], at(before_add, __click_call_result0[0])));
-   have zlib_byte_integer(old(buf)[zlib_prefix_count(old(len), len) - 1]) == at(before_add, to_integer(__click_call_result0[0] as int32)) by close() using {
-    zlib_byte_integer(old(buf)[zlib_prefix_count(old(len), len) - 1]) == zlib_byte_integer(at(before_add, __click_call_result0[0]));
-    at(before_add, zlib_byte_integer(__click_call_result0[0])) == at(before_add, to_integer(__click_call_result0[0] as int32));
+   apply(zlib_equal_byte_integers(old(buf)[zlib_prefix_count(old(len), len) - 1], at(before_add, at(before_decrement, buf)[0])));
+   have zlib_byte_integer(old(buf)[zlib_prefix_count(old(len), len) - 1]) == at(before_add, to_integer(at(before_decrement, buf)[0] as int32)) by close() using {
+    zlib_byte_integer(old(buf)[zlib_prefix_count(old(len), len) - 1]) == zlib_byte_integer(at(before_add, at(before_decrement, buf)[0]));
+    at(before_add, zlib_byte_integer(at(before_decrement, buf)[0])) == at(before_add, to_integer(at(before_decrement, buf)[0] as int32));
    };
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len)) by close() using {
     adler_byte_sum(old(buf), zlib_prefix_count(old(len), len)) == adler_byte_sum(old(buf), zlib_prefix_count(old(len), len) - 1) + zlib_byte_integer(old(buf)[zlib_prefix_count(old(len), len) - 1]);
     adler_byte_sum(old(buf), zlib_prefix_count(old(len), len) - 1) == adler_byte_sum(old(buf), zlib_prefix_count(old(len), at(before_decrement, len)));
-    zlib_byte_integer(old(buf)[zlib_prefix_count(old(len), len) - 1]) == at(before_add, to_integer(__click_call_result0[0] as int32));
-    to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(__click_call_result0[0] as int32));
+    zlib_byte_integer(old(buf)[zlib_prefix_count(old(len), len) - 1]) == at(before_add, to_integer(at(before_decrement, buf)[0] as int32));
+    to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(at(before_decrement, buf)[0] as int32));
     at(before_add, to_integer(adler)) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), at(before_decrement, len)));
    };
    have to_integer(sum2) == to_integer(zlib_prefix_count(old(len), len)) + adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), len)) by close() using {

@@ -2036,17 +2036,12 @@ fn inventory_keeps_distinct_sites_inside_have_bodies() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("nested.click");
     let source = r#"
-theorem helper(x: int32) {
-    requires 0 <= x;
-    ensures 0 <= x by { known(); }
-}
 theorem nested(x: int32) {
     requires 0 <= x;
     ensures 0 <= x by {
         have 0 <= x by {
-            have 0 <= x by { apply(helper(x)); }
-            apply(helper(x));
-            known();
+            have 0 <= x by { close(); }
+            close();
         }
         known();
     }
@@ -2058,7 +2053,7 @@ theorem nested(x: int32) {
     assert!(
         sites
             .iter()
-            .all(|site| site.claim == "nested.ensures_0" && site.tactic_name == "apply")
+            .all(|site| site.claim == "nested.ensures_0" && site.tactic_name == "close")
     );
     assert_ne!(sites[0].position, sites[1].position);
     for site in sites {
