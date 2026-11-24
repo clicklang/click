@@ -220,12 +220,9 @@ impl StoredIntegerTerm {
         }
     }
     fn exact_key(&self) -> super::integer::IntegerShallowKey {
-        match self.root() {
-            Some(root) if root.is_mathematical_integer() => {
-                super::integer::IntegerShallowKey::mathematical(root)
-            }
-            _ => self.native_compat().shallow_key(),
-        }
+        self.root()
+            .and_then(KernelTerm::integer_exact_key)
+            .unwrap_or_else(|| self.native_compat().shallow_key())
     }
 
     pub(crate) fn native_compat(&self) -> &IntegerTerm {
@@ -479,8 +476,11 @@ impl PartialEq for StoredIntegerTerm {
             if left == right {
                 return true;
             }
-            if left.is_mathematical_integer() && right.is_mathematical_integer() {
-                return false;
+            if let (Some(left), Some(right)) = (
+                left.retained_integer_exact_id(),
+                right.retained_integer_exact_id(),
+            ) {
+                return left == right;
             }
         }
         self.exact_key() == other.exact_key()
