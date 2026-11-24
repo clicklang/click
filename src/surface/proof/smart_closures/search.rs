@@ -6701,7 +6701,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 None
             }
         }
-        let indexed_operand_against_binding = || {
+        let read_operand_against_binding = || {
             [(left, right), (right, left)]
                 .into_iter()
                 .find_map(|(expression, bound)| {
@@ -6718,7 +6718,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         return None;
                     }
                     match expression {
-                        ContractExpression::Index(..) => Some(expression),
+                        ContractExpression::Index(..)
+                        | ContractExpression::CUnary {
+                            lowered: ProgramExpression::Load(_),
+                            ..
+                        }
+                        | ContractExpression::ProgramExpression(ProgramExpression::Load(_)) => {
+                            Some(expression)
+                        }
                         ContractExpression::BitwiseAnd(left, right)
                             if matches!(
                                 operand_against_literal(left, right),
@@ -6731,9 +6738,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     }
                 })
         };
-        let Some(expression) =
-            operand_against_literal(left, right).or_else(indexed_operand_against_binding)
-        else {
+        let literal_operand = operand_against_literal(left, right);
+        let Some(expression) = literal_operand.or_else(read_operand_against_binding) else {
             return Ok(None);
         };
         fn expression_memory_read(
@@ -6810,8 +6816,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 read
             }
-            _ if outcome
-                && *operator == ComparisonOperator::Equal
+            _ if (literal_operand.is_none()
+                || (outcome && *operator == ComparisonOperator::Equal))
                 && matches!(
                     expression,
                     ContractExpression::CUnary {
@@ -6824,7 +6830,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && let ProgramExpression::Add(base, index) = *pointer =>
             {
                 // Retain the array base and index for same-array separation
-                // when an outcome read is raised as *(a + i).
+                // when an indexed read is spelled as *(a + i).
                 indexed = ContractExpression::Index(
                     Box::new(ContractExpression::ProgramExpression(*base)),
                     Box::new(ContractExpression::ProgramExpression(*index)),
