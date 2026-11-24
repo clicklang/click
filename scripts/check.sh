@@ -69,7 +69,7 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
     case "$suite" in
         unit)
             filter='not (test(gate_tests::mdtests::) | test(gate_tests::rust_import::) | test(=gate_tests::examples::example_projects))'
-            nextest_args=(--partition "hash:$partition" --no-fail-fast)
+            nextest_args=(--partition "hash:$partition")
             ;;
         rust)
             # The only tests that run Charon, and so the only shards that
