@@ -47,7 +47,7 @@ pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     }
 }
 
-impl Proposition {
+impl KernelProposition {
     /// Whether this is kernel authority rather than a proof-state fact: a
     /// resource composition, a completed volatile access record, or a
     /// predicate with no Click spelling. The
@@ -14795,7 +14795,7 @@ pub struct VolatileAccess {
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Proposition {
+pub enum KernelProposition {
     VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
     SequenceMembership {
@@ -14910,14 +14910,14 @@ pub enum Proposition {
         allocation_base: Address,
         bytes: AllocationSize,
     },
-    And(Box<Proposition>, Box<Proposition>),
-    Or(Box<Proposition>, Box<Proposition>),
-    Not(Box<Proposition>),
-    Implies(Box<Proposition>, Box<Proposition>),
+    And(Box<KernelProposition>, Box<KernelProposition>),
+    Or(Box<KernelProposition>, Box<KernelProposition>),
+    Not(Box<KernelProposition>),
+    Implies(Box<KernelProposition>, Box<KernelProposition>),
     ForAll {
         var: QuantifierBinder,
         sort: Sort,
-        body: Box<Proposition>,
+        body: Box<KernelProposition>,
         /// The binder's written name, for printing only.
         name: BinderName,
     },
@@ -14925,11 +14925,14 @@ pub enum Proposition {
         name: String,
         var: QuantifierBinder,
         sort: Sort,
-        body: Box<Proposition>,
+        body: Box<KernelProposition>,
     },
 }
 
-impl Proposition {
+/// Compatibility name for [`KernelProposition`].
+pub use self::KernelProposition as Proposition;
+
+impl KernelProposition {
     /// Store an exact native input or an already-retained logical condition.
     pub fn condition_is(condition: impl Into<StoredConditionTerm>, truth: bool) -> Self {
         Self::ConditionIs(condition.into(), truth)
@@ -14968,13 +14971,13 @@ impl Proposition {
     }
 }
 
-impl Clone for Proposition {
+impl Clone for KernelProposition {
     fn clone(&self) -> Self {
         clone_proposition_iteratively(self)
     }
 }
 
-impl Hash for Proposition {
+impl Hash for KernelProposition {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let mut pending = vec![self];
         while let Some(proposition) = pending.pop() {

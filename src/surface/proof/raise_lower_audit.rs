@@ -1,6 +1,6 @@
 //! A check that lowering undoes raising.
 //!
-//! Every kernel term a proof state holds must satisfy `lower(raise(x)) == x`
+//! Every proof-visible kernel proposition must satisfy `lower(raise(x)) == x`
 //! (`docs/internals/raise-lower-principle.md#the-raise-lower-principle`). Setting
 //! `CLICK_RAISE_LOWER=<path>` raises each fact a checked step adds, and the
 //! goal it leaves focused, with the canonical raiser goal presentation uses
@@ -11,13 +11,12 @@
 //!
 //! This checks the canonical Surface form. The raise-lower census separately
 //! measures facts that cannot be raised; a mismatch here is a raised form
-//! that lowers to a different term.
+//! that lowers to a different proposition.
 //!
 //! The audit only observes: it charges no budget, records no search note,
 //! and does not change the proof or its report.
 
-#[cfg(test)]
-use crate::kernel::Proposition;
+use crate::kernel::KernelProposition;
 
 #[cfg(test)]
 thread_local! {
@@ -70,13 +69,13 @@ pub(super) fn collecting_reasons<R>(run: impl FnOnce() -> R) -> (R, String) {
 /// How one round trip ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RoundTrip {
-    /// The raised form lowered back to the same term, up to bound names.
+    /// The raised form lowered back to the same proposition, up to bound names.
     Same,
     /// It lowered to the same comparison stated with the other polarity,
     /// such as `a < b` held false for `a >= b`: a normalization, not the
-    /// same term.
+    /// same proposition.
     Polarity,
-    /// It lowered to a different term.
+    /// It lowered to a different proposition.
     Differs,
     /// The raised form did not lower.
     Unlowered,
@@ -99,11 +98,8 @@ impl RoundTrip {
     }
 }
 
-/// Classifies the lowering of a raised form against the original term.
-pub(super) fn classify(
-    original: &crate::kernel::Proposition,
-    lowered: &crate::kernel::Proposition,
-) -> RoundTrip {
+/// Classifies the lowering of a raised form against the original proposition.
+pub(super) fn classify(original: &KernelProposition, lowered: &KernelProposition) -> RoundTrip {
     if crate::kernel::fact_stability::same_up_to_binders(original, lowered) {
         RoundTrip::Same
     } else if super::condition_polarity_equivalent(lowered, original) {
@@ -115,8 +111,8 @@ pub(super) fn classify(
 
 /// Appends one audit line: the outcome, the role (`fact` or `goal`), the
 /// census kind, the claim, the tactic, the origin (`written` or `smart`),
-/// the original term's diagnostic rendering, the raised form, for
-/// `differs` the lowered term's rendering, the container, and the reasons
+/// the original proposition's diagnostic rendering, the raised form, for
+/// `differs` the lowered proposition's rendering, the container, and the reasons
 /// the raiser noted for reads it could not spell.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn record(
@@ -176,8 +172,8 @@ mod tests {
         CompareRelation, ConditionTerm, MachineIntegerType, MachineTerm, Variable,
     };
 
-    fn compare(relation: CompareRelation, value: bool) -> Proposition {
-        Proposition::condition_is(
+    fn compare(relation: CompareRelation, value: bool) -> KernelProposition {
+        KernelProposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
@@ -309,13 +305,22 @@ int32 probe(const struct Input* src, {index_type} n, {index_type} k, struct Opti
     }
 
     #[test]
-    fn a_round_trip_is_classified_by_the_term_it_lowers_to() {
+    fn a_round_trip_is_classified_by_the_proposition_it_lowers_to() {
         let less = compare(CompareRelation::LessThan, true);
         assert_eq!(classify(&less, &less), RoundTrip::Same);
         assert_eq!(
             classify(&less, &compare(CompareRelation::Equal, true)),
             RoundTrip::Differs
         );
+    }
+
+    #[test]
+    fn a_round_trip_preserves_the_connective_even_with_identical_operands() {
+        use KernelProposition::{And, Or};
+        let lower = Box::new(compare(CompareRelation::LessThan, true));
+        let upper = Box::new(compare(CompareRelation::Equal, true));
+        let original = And(lower.clone(), upper.clone());
+        assert_eq!(classify(&original, &Or(lower, upper)), RoundTrip::Differs);
     }
 
     #[test]
@@ -766,7 +771,7 @@ int32 f(struct holder* h, uint64 n, uint64 k) {
 
     /// A 64-bit equality reads both words at its format, so a `uint64`
     /// call in it raises as the call, not cast to `int64`, which would lower
-    /// to a different term.
+    /// to a different proposition.
     #[test]
     fn a_wide_call_result_equality_round_trips_without_a_cast() {
         let lines = round_trips(
