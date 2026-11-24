@@ -61,4 +61,5 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   rewrite(adler_spec_checksum_u64(buf, 1u64, 1, 0), adler_spec_checksum(buf, 1, 1, 0));
   close();
  }
+ step_until(function.exit);
 }
