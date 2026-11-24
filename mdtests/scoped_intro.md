@@ -29,8 +29,8 @@ theorem scoped_range(lo: int32, hi: int32) {
     ensures (lo..hi).all(|written| { lo <= written and written < hi }) by {
         intro(i) {
             all {
-                lo <= i => { known(); }
-                i < hi => { known(); }
+                lo <= i => { close(); }
+                i < hi => { close(); }
             }
         }
     }
@@ -56,10 +56,10 @@ int32 scoped_claim(int32 x) {
 } by {
     step_until(function.exit);
     intro() {
-        have result == outer.x by { known(); }
+        have result == outer.x by { close(); }
         normalize();
     }
-    known();
+    close();
 }
 ```
 

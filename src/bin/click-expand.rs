@@ -441,7 +441,8 @@ fn expand_selection(
 }
 
 fn generate_expansion<R>(operation: impl FnOnce() -> Result<R, String>) -> Result<R, String> {
-    let (result, events) = click::instrumentation::collect(operation);
+    let (result, events) =
+        click::instrumentation::collect(|| click::surface::with_expansion_close_output(operation));
     if click::instrumentation::deadline_exceeded() {
         return Err(expansion_limit_error(
             "generating the selected tactic certificate",
@@ -1066,7 +1067,7 @@ int32 bad(int32 x) {
                 .lines()
                 .zip(from_solve.lines().skip(1))
                 .any(|(have, body)| have.trim() == "have st.live == 1 by {"
-                    && body.trim() == "known();"),
+                    && body.trim() == "close();"),
             "{from_solve}"
         );
         // The written `solve() using` is replaced, at whatever indentation.
@@ -1242,9 +1243,9 @@ int32 bad(int32 x) {
         assert_eq!(
             arm[..6],
             [
-                "have error == 7 by known();",
+                "have error == 7 by close();",
                 "step() by {",
-                "known();",
+                "close();",
                 "}",
                 "step();",
                 "step();",
@@ -1542,6 +1543,10 @@ theorem use_add_one(x: Integer) {
     #[test]
     fn close_replays_direct_hits_and_expands_its_search() {
         let source = r#"
+theorem written(x: int32) {
+    requires x == 0;
+    ensures x == 0 by known();
+}
 theorem direct(x: int32) {
     requires x == 0;
     ensures x == 0 by close();
@@ -1556,11 +1561,21 @@ theorem fallback(x: int32) {
         let claim = "fallback.ensures_0";
         verify_expansion(None, source, source, &inputs, claim, false).unwrap();
         assert!(verify_expansion(None, source, source, &inputs, claim, true).is_err());
-        let expanded = click::surface::expand_c_claim_source_by_label(source, &[], claim).unwrap();
+        let expanded = generate_expansion(|| {
+            click::surface::expand_c_claim_source_by_label(source, &[], claim)
+                .map_err(|error| error.report())
+        })
+        .unwrap();
+        assert!(expanded.contains("ensures x == 0 by known();"));
         let fallback = expanded.split("theorem fallback").nth(1).unwrap();
-        assert!(fallback.contains("intro();") && fallback.contains("known();"));
-        assert!(!fallback.contains("close();"));
+        assert!(fallback.contains("intro();") && fallback.contains("close();"));
+        assert!(!fallback.contains("known();"));
         verify_expansion(None, source, &expanded, &inputs, claim, true).unwrap();
+        // If a step goes missing, ordinary verification can still recover
+        // at the new spelling. The whole-claim replay must refuse it.
+        let incomplete = expanded.replace("intro();", "");
+        verify_expansion(None, source, &incomplete, &inputs, claim, false).unwrap();
+        assert!(verify_expansion(None, source, &incomplete, &inputs, claim, true).is_err());
     }
 
     #[test]
