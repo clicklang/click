@@ -299,6 +299,7 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/c/string.interface.click",
     "library/permutation.click",
     "library/integer.click",
+    "library/float_order.click",
     "library/c/stdio.click",
     "library/rust/i8.click",
     "library/rust/i16.click",

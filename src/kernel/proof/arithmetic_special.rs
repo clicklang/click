@@ -3472,6 +3472,54 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
     float_endpoint_establishes(&goal, endpoint, strict)
 }
 
+/// One checked unary transfer followed by ordered endpoint weakening.
+pub(crate) struct ExactFloatBoundTransfer {
+    pub(crate) intermediate: Proposition,
+    pub(crate) format: KernelFloatType,
+    pub(crate) actual_endpoint: u64,
+    pub(crate) requested_endpoint: u64,
+    pub(crate) lower: bool,
+    pub(crate) intermediate_strict: bool,
+    pub(crate) endpoint_strict: bool,
+}
+
+pub(crate) fn exact_float_bound_transfer(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<ExactFloatBoundTransfer> {
+    let source = float_bound(premise)?;
+    let bound = float_bound(goal)?;
+    let (operand, operation @ (FloatBoundOperation::Negate | FloatBoundOperation::Widen)) =
+        float_bound_operation(bound.operand)?
+    else {
+        return None;
+    };
+    if !same_float_operand(source.operand, operand) || !float_bound_weakens(premise, goal) {
+        return None;
+    }
+    let (endpoint, strict) = operation.apply(bound.format, source.endpoint, source.strict);
+    let endpoint_strict = bound.strict && float_endpoint_establishes(&bound, endpoint, false);
+    let intermediate_strict = bound.strict && !endpoint_strict;
+    if intermediate_strict && !strict {
+        return None;
+    }
+    Some(ExactFloatBoundTransfer {
+        intermediate: float_bound_proposition(
+            bound.format,
+            bound.operand,
+            endpoint,
+            bound.lower,
+            intermediate_strict,
+        )?,
+        format: bound.format,
+        actual_endpoint: endpoint,
+        requested_endpoint: bound.endpoint,
+        lower: bound.lower,
+        intermediate_strict,
+        endpoint_strict,
+    })
+}
+
 fn same_float_operand(left: FloatOperandView<'_>, right: FloatOperandView<'_>) -> bool {
     match (left, right) {
         (FloatOperandView::Shared(left), FloatOperandView::Shared(right)) if left == right => true,

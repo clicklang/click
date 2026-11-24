@@ -1979,6 +1979,8 @@ bound on an exact float widening or sign negation also closes with
 `known()` from the corresponding input comparison at the same endpoint.
 Negation reverses the order and flips the endpoint's sign. The widening
 check requires the endpoint to be exactly representable in the input width.
+For a weaker result bound, `solve()` records the transported comparison in
+a `have` and applies the corresponding `click::float_order` transitivity law.
 
 For supported native unsigned address words, `solve` emits ordinary `have`
 goals, `apply(click::integer::...)`, rewrites, and `known()`: alignment

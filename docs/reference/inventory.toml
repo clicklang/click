@@ -5497,3 +5497,27 @@ path = "reference/library/index.md#stdioformat_output-stdioformat_length-and-std
 [[item]]
 id = "library.function.stdio::write_requests"
 path = "reference/library/index.md#stdiowrite_requests"
+
+[[item]]
+id = "library.theorem.float_order::float32_le_le"
+path = "reference/library/index.md#float_orderfloat32_le_le"
+
+[[item]]
+id = "library.theorem.float_order::float32_le_lt"
+path = "reference/library/index.md#float_orderfloat32_le_lt"
+
+[[item]]
+id = "library.theorem.float_order::float32_lt_le"
+path = "reference/library/index.md#float_orderfloat32_lt_le"
+
+[[item]]
+id = "library.theorem.float_order::float64_le_le"
+path = "reference/library/index.md#float_orderfloat64_le_le"
+
+[[item]]
+id = "library.theorem.float_order::float64_le_lt"
+path = "reference/library/index.md#float_orderfloat64_le_lt"
+
+[[item]]
+id = "library.theorem.float_order::float64_lt_le"
+path = "reference/library/index.md#float_orderfloat64_lt_le"

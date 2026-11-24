@@ -10106,3 +10106,70 @@ theorem float64_pointer_add_associate_uint64(p: double*, i: uint64, j: uint64) {
 **Proved:** from pointer translation and the corresponding addition observation theorem.
 
 **Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+## Floating-point order
+
+[`library/float_order.click`](../../../library/float_order.click) provides
+local transitivity laws for IEEE comparisons. The two true premises exclude
+NaN from every operand. Infinities and signed zeros obey the same laws.
+Use these with an explicitly stated intermediate endpoint.
+
+### `float_order::float32_le_le`
+
+```click
+axiom float32_le_le(a: float, b: float, c: float) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c;
+}
+```
+
+### `float_order::float32_le_lt`
+
+```click
+axiom float32_le_lt(a: float, b: float, c: float) {
+    requires a <= b;
+    requires b < c;
+    ensures a < c;
+}
+```
+
+### `float_order::float32_lt_le`
+
+```click
+axiom float32_lt_le(a: float, b: float, c: float) {
+    requires a < b;
+    requires b <= c;
+    ensures a < c;
+}
+```
+
+### `float_order::float64_le_le`
+
+```click
+axiom float64_le_le(a: double, b: double, c: double) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c;
+}
+```
+
+### `float_order::float64_le_lt`
+
+```click
+axiom float64_le_lt(a: double, b: double, c: double) {
+    requires a <= b;
+    requires b < c;
+    ensures a < c;
+}
+```
+
+### `float_order::float64_lt_le`
+
+```click
+axiom float64_lt_le(a: double, b: double, c: double) {
+    requires a < b;
+    requires b <= c;
+    ensures a < c;
+}
+```

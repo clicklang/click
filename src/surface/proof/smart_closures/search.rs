@@ -3617,6 +3617,108 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
+    fn try_exact_float_bound_transfer(
+        input: &Proof<'a>,
+        source: &Proposition,
+        goal: &Proposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_exact_float_bound_transfer");
+        use crate::kernel::KernelFloatType;
+        use crate::kernel::proof::arithmetic_special::exact_float_bound_transfer;
+        let Some(plan) = exact_float_bound_transfer(source, goal) else {
+            return Ok(None);
+        };
+        let Some(intermediate @ ClickProposition::Comparison { .. }) =
+            input.structural_proposition_candidate(&plan.intermediate)
+        else {
+            return Ok(None);
+        };
+        let ClickProposition::Comparison { left: operand, .. } = &intermediate else {
+            unreachable!("ordered bound")
+        };
+        let literal = |bits| {
+            ContractExpression::ProgramExpression(match plan.format {
+                KernelFloatType::Float32 => {
+                    crate::kernel::program_expression::float32_literal(bits as u32)
+                }
+                KernelFloatType::Float64 => {
+                    crate::kernel::program_expression::float64_literal(bits)
+                }
+            })
+        };
+        let actual = literal(plan.actual_endpoint);
+        let requested = literal(plan.requested_endpoint);
+        let (left, right, arguments) = if plan.lower {
+            (
+                requested.clone(),
+                actual.clone(),
+                vec![requested, actual, operand.clone()],
+            )
+        } else {
+            (
+                actual.clone(),
+                requested.clone(),
+                vec![operand.clone(), actual, requested],
+            )
+        };
+        let endpoint_order = ClickProposition::Comparison {
+            left,
+            operator: if plan.endpoint_strict {
+                ComparisonOperator::LessThan
+            } else {
+                ComparisonOperator::LessEqual
+            },
+            right,
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(intermediate.clone(), vec![ProofStep::Known]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        if let Some(closed) =
+            attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(closed));
+        }
+        let strict_left = if plan.lower {
+            plan.endpoint_strict
+        } else {
+            plan.intermediate_strict
+        };
+        let strict_right = if plan.lower {
+            plan.intermediate_strict
+        } else {
+            plan.endpoint_strict
+        };
+        let name = match (plan.format, strict_left, strict_right) {
+            (KernelFloatType::Float32, false, false) => "float32_le_le",
+            (KernelFloatType::Float32, false, true) => "float32_le_lt",
+            (KernelFloatType::Float32, true, false) => "float32_lt_le",
+            (KernelFloatType::Float64, false, false) => "float64_le_le",
+            (KernelFloatType::Float64, false, true) => "float64_le_lt",
+            (KernelFloatType::Float64, true, false) => "float64_lt_le",
+            (_, true, true) => unreachable!("only one comparison needs to be strict"),
+        };
+        let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
+            ProofStep::ApplyPlannedTheorem {
+                application: TheoremApplication {
+                    name: format!("click::float_order::{name}"),
+                    arguments,
+                },
+                premises: vec![intermediate, endpoint_order],
+            },
+        ))?
+        else {
+            return Ok(None);
+        };
+        if proof.focused_discharged() {
+            return Ok(Some(proof));
+        }
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
     /// Materialize the selected chain as one checked normalization per
     /// operation. Each have cites the previous bound, with its own endpoint.
     fn try_float_bound_chain(
@@ -3784,6 +3886,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )? {
                     return Ok(Some(closed));
                 }
+            } else if let Some(closed) =
+                Self::try_exact_float_bound_transfer(search_input, &bound, goal)?
+            {
+                return Ok(Some(closed));
             } else {
                 candidates.push(vec![bound]);
             }

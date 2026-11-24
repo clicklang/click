@@ -213,6 +213,12 @@ are proved theorems. Addition, rounding, antisymmetry, and discreteness are
 new declarations. Their stated guards and conclusions have an independent
 BigInt oracle regression, including negative and arbitrary-width values.
 
+The six floating-point order axioms in `library/float_order.click` give
+transitivity for two non-strict comparisons and for either order of a strict
+and a non-strict comparison. Each premise is a true IEEE comparison, so the
+operands are ordered values. No separate finiteness hypothesis is needed.
+The same laws apply to infinities and to both zeros.
+
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The
 kernel reads each instance of a primitive type as a rigid type, so no

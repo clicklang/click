@@ -18,6 +18,7 @@ imports with `import click::...;`, and the modules those import:
 | `c/string.click` | `import click::c::string;`, or when the C declares or calls a modeled string function | `memcpy`, `memcmp`, `memset` and `strlen` contracts, C-string predicates and theorems, and the `cstr_at` resource |
 | `c/stdio.click` | `import click::c::stdio;`, or with the projected `<stdio.h>` | `stream`, `write_requests` and decimal formatting functions and theorems |
 | `c/stream_output.click.in` | for checked literal `printf` and `fprintf` calls | One C stream-write contract, instantiated for the requested bytes |
+| `float_order.click` | `import click::float_order;` | Transitivity for ordered `float` and `double` comparisons |
 | `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
 | `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the integer-method contracts of `rust/integers.click` name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies, and the Rust names of the lemmas a Rust proof applies (`u32::multiply_to_integer`) |
 | `cpp/span.click` | selected when a C++ import calls one of its methods | `std::span<T>` and static-extent `std::span<T, N>` contracts, as template methods written out at each called element type and extent |

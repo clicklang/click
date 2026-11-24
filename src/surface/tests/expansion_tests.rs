@@ -26896,7 +26896,7 @@ fn arithmetic_safety_bounds_expand_to_checked_proofs() {
 }
 
 #[test]
-fn float_bounds_using_legacy_normalization_refuse_expansion() {
+fn float_cast_bounds_expand_and_cold_replay() {
     for (fixture, functions) in [
         ("arithmetic_safety_float_widening", &["convert"][..]),
         (
@@ -26908,9 +26908,14 @@ fn float_bounds_using_legacy_normalization_refuse_expansion() {
         let sources = crate::cli::source_refs(&sources);
         verify_c_sources(&source, &sources).unwrap();
         for function in functions {
-            assert_compatibility_normalization_refusal(
-                expand_function_proof_source(&source, &sources, function).unwrap_err(),
-            );
+            let claim = format!("{function}.ensures_0");
+            let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+            assert!(!expanded.contains("normalize()"), "{expanded}");
+            crate::surface::check_audit_claim(&claim, true, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
         }
     }
 }
