@@ -1780,11 +1780,32 @@ concurrency-dependent problem tracked in
 ## Checked sequential kernel access primitives
 
 Click recognizes the Linux-style `READ_ONCE`, `WRITE_ONCE`, `likely`, `unlikely`,
-and `rcu_assign_pointer` forms at the source boundary. Header wrappers
-whose replacement text uses GNU `typeof`, volatile accesses, or the matching
-helper names are mapped to these checked operations before ordinary C
-parsing, so statement-expression implementations do not get erased or
-silently treated as ordinary calls.
+and `rcu_assign_pointer` macros at the source boundary of a source bundle.
+A definition becomes the checked operation only when its parameters and body
+are exactly one of these forms, up to whitespace between tokens:
+
+- `READ_ONCE(x)`: `({ typeof(x) __value; __value = x; __value; })`
+- `WRITE_ONCE(x, value)`:
+  `({ typeof(x) __value = (value); (*(volatile typeof(x) *)&(x)) = __value; __value; })`
+- `likely(x)`: `__builtin_expect(!!(x), 1)`
+- `unlikely(x)`: `__builtin_expect(!!(x), 0)`
+- `rcu_assign_pointer(p, v)`:
+  `({ typeof(p) __value = (v); WRITE_ONCE(p, __value); })`
+
+`READ_ONCE(x)` may instead be defined as `__READ_ONCE(x)` and `WRITE_ONCE(x,
+value)` as `__WRITE_ONCE(x, value)`, with the helper carrying the body above.
+The helper, and for `rcu_assign_pointer` the `WRITE_ONCE` it calls, must have
+the recognized definition where the macro is used. The body is the evidence
+that the checked operation is the macro's meaning, so a macro with one of
+these names and any other body is expanded as written, like any macro: a
+`likely(x)` defined as `(x)` is its argument. A call spelled with one of these
+names that no definition expands is refused, including a call to a C function
+with that name. Units imported from a compiler's preprocessed output do not
+use this projection; their macros arrive already expanded.
+
+<!-- verified-example: mdtests/a_write_once_macro_with_another_body_keeps_its_own_meaning.md -->
+<!-- verified-example: mdtests/a_write_once_helper_with_another_body_keeps_its_own_meaning.md -->
+<!-- verified-example: mdtests/a_function_named_write_once_is_refused.md -->
 
 `READ_ONCE(x)` reads one supported scalar or object-pointer lvalue and
 `WRITE_ONCE(x, value)` writes one such cell. Both evaluate their lvalue and
