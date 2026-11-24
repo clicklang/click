@@ -10,7 +10,8 @@ by `authority_establishes_and_retires_empty_stack_population` in
 `src/surface/tests/execution_tests.rs`.
 
 The floating-point transitivity axioms are exercised in
-[`float_order_transitivity.md`](float_order_transitivity.md).
+[`float_order_transitivity.md`](float_order_transitivity.md). Rounded addition bounds
+are exercised in [`arithmetic_expression_float_add_pair.md`](arithmetic_expression_float_add_pair.md).
 
 The representation law `integer::uint32_from_le_bytes` is exercised in
 [`integer_uint32_from_le_bytes_initialization.md`](integer_uint32_from_le_bytes_initialization.md).

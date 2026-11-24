@@ -3645,6 +3645,28 @@ impl<'a> FloatPairBound<'a> {
     }
 }
 
+/// Plan the exact rounded endpoint from two selected finite ordered bounds.
+/// The ordinary addition law takes non-strict input comparisons.
+pub(crate) fn float_sum_bound_weakening(
+    goal: &Proposition,
+    [first, second]: &[Proposition; 2],
+) -> Option<FloatBoundWeakening> {
+    let pair = FloatPairBound::new(goal)?;
+    if pair.operator != crate::kernel::FloatBinaryOperator::Add
+        || float_bound(first)?.strict
+        || float_bound(second)?.strict
+    {
+        return None;
+    }
+    let endpoint = crate::kernel::primitives::float_binary_bits_at(
+        pair.goal.format,
+        pair.operand_endpoint(0, first)?,
+        pair.operand_endpoint(1, second)?,
+        pair.operator,
+    );
+    FloatBoundWeakening::from_goal(goal, endpoint, false)
+}
+
 /// Planning only. Pick a suffix that starts at the selected bound and
 /// carry its endpoint through each operation at that operation's precision.
 pub(crate) fn float_bound_chain(

@@ -10173,3 +10173,54 @@ axiom float64_lt_le(a: double, b: double, c: double) {
     ensures a < c;
 }
 ```
+
+Rounded addition bounds take two ordered inputs and two finite endpoints. The
+endpoint sum and the operand sum round at the precision of the law.
+
+### `float_order::float32_add_lower`
+
+```click
+axiom float32_add_lower(x: float, y: float, a: float, b: float) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y >= a + b;
+}
+```
+
+### `float_order::float32_add_upper`
+
+```click
+axiom float32_add_upper(x: float, y: float, a: float, b: float) {
+    requires x <= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y <= a + b;
+}
+```
+
+### `float_order::float64_add_lower`
+
+```click
+axiom float64_add_lower(x: double, y: double, a: double, b: double) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y >= a + b;
+}
+```
+
+### `float_order::float64_add_upper`
+
+```click
+axiom float64_add_upper(x: double, y: double, a: double, b: double) {
+    requires x <= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y <= a + b;
+}
+```

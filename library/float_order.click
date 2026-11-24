@@ -35,3 +35,37 @@ axiom float64_lt_le(a: double, b: double, c: double) {
     requires b <= c;
     ensures a < c;
 }
+
+// Rounded addition is monotone in each operand on these ordered domains.
+// Finite endpoints exclude the infinities that could form an indeterminate sum.
+axiom float32_add_lower(x: float, y: float, a: float, b: float) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y >= a + b;
+}
+
+axiom float32_add_upper(x: float, y: float, a: float, b: float) {
+    requires x <= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y <= a + b;
+}
+
+axiom float64_add_lower(x: double, y: double, a: double, b: double) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y >= a + b;
+}
+
+axiom float64_add_upper(x: double, y: double, a: double, b: double) {
+    requires x <= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y <= a + b;
+}

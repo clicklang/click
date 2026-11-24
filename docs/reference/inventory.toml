@@ -5521,3 +5521,19 @@ path = "reference/library/index.md#float_orderfloat64_le_lt"
 [[item]]
 id = "library.theorem.float_order::float64_lt_le"
 path = "reference/library/index.md#float_orderfloat64_lt_le"
+
+[[item]]
+id = "library.theorem.float_order::float32_add_lower"
+path = "reference/library/index.md#float_orderfloat32_add_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_add_upper"
+path = "reference/library/index.md#float_orderfloat32_add_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_add_lower"
+path = "reference/library/index.md#float_orderfloat64_add_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_add_upper"
+path = "reference/library/index.md#float_orderfloat64_add_upper"

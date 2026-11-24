@@ -28138,7 +28138,7 @@ fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
         ),
         ("signed_odd_divisor", &[("divide", true)][..]),
         ("negative_signed_product", &[("product", true)][..]),
-        ("float_add_pair", &[("sum", false)][..]),
+        ("float_add_pair", &[("sum", true)][..]),
         (
             "unsigned_masked_divisor",
             &[("divide", true), ("remainder", true)][..],

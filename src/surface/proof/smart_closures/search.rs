@@ -3727,6 +3727,73 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
     }
 
+    fn try_float_sum_bound(
+        input: &Proof<'a>,
+        goal: &Proposition,
+        bounds: &[Proposition; 2],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_sum_bound");
+        use crate::kernel::KernelFloatType;
+        use crate::kernel::proof::arithmetic_special::float_sum_bound_weakening;
+        let Some(plan) = float_sum_bound_weakening(goal, bounds) else {
+            return Ok(None);
+        };
+        let resolve = |bound| {
+            Self::resolve_solve_premises_unmeasured(
+                input,
+                std::slice::from_ref(bound),
+                introduced_surfaces,
+            )
+            .and_then(|mut pairs| pairs.pop().map(|(_, surface)| surface))
+            .or_else(|| input.structural_proposition_candidate(bound))
+        };
+        let [Some(first), Some(second)] = bounds.each_ref().map(resolve) else {
+            return Ok(None);
+        };
+        let parts = |bound| {
+            let comparison = surface_comparison_with_anchored_operands(bound);
+            surface_nonstrict_parts(&comparison).map(|(left, right)| {
+                if plan.lower {
+                    (right, left)
+                } else {
+                    (left, right)
+                }
+            })
+        };
+        let (Some((x, a)), Some((y, b))) = (parts(&first), parts(&second)) else {
+            return Ok(None);
+        };
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let name = match (plan.format, plan.lower) {
+            (KernelFloatType::Float32, true) => "float32_add_lower",
+            (KernelFloatType::Float32, false) => "float32_add_upper",
+            (KernelFloatType::Float64, true) => "float64_add_lower",
+            (KernelFloatType::Float64, false) => "float64_add_upper",
+        };
+        let finite = |expression| ClickProposition::FloatClassification {
+            expression,
+            classification: syntax::CFloatClassification::Finite,
+        };
+        let application = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: format!("click::float_order::{name}"),
+                arguments: vec![x, y, a.clone(), b.clone()],
+            },
+            premises: vec![first, second, finite(a), finite(b)],
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        Self::try_float_bound_weakening(&proof, &plan, intermediate)
+    }
+
     /// Materialize the selected chain as one checked normalization per
     /// operation. Each have cites the previous bound, with its own endpoint.
     fn try_float_bound_chain(
@@ -3906,6 +3973,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             search_input.facts().assumptions(),
             goal,
         ) {
+            if let Some(closed) =
+                Self::try_float_sum_bound(search_input, goal, &bounds, introduced_surfaces)?
+            {
+                return Ok(Some(closed));
+            }
             candidates.push(bounds.into());
         }
         if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_bound_chain(

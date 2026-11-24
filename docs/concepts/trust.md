@@ -219,6 +219,13 @@ and a non-strict comparison. Each premise is a true IEEE comparison, so the
 operands are ordered values. No separate finiteness hypothesis is needed.
 The same laws apply to infinities and to both zeros.
 
+The rounded addition axioms in the same module compare a sum with the sum
+of its two finite lower or upper endpoints. The ordered premises exclude
+NaNs. For an upper bound the finite endpoints rule out positive infinity
+in the inputs, and for a lower bound they rule out negative infinity.
+Neither case admits a sum of infinities of opposite sign. Each sum rounds
+at the law's stated precision.
+
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The
 kernel reads each instance of a primitive type as a rigid type, so no
