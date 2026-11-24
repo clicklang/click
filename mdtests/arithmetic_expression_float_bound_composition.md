@@ -97,6 +97,23 @@ theorem scaled_upper(x: float) {
     }
 }
 
+theorem scaled_on_right(x: float) {
+    requires x >= float32_from_bits(0xc1200000);
+    requires x <= float32_from_bits(0x41200000);
+    ensures x * float32_from_bits(0x3f000000) >= float32_from_bits(0xc0a00000) by {
+        apply(click::float_order::float32_scale_right_lower(
+            float32_from_bits(0x3f000000), x, float32_from_bits(0xc1200000)
+        ));
+        close();
+    }
+    ensures x * float32_from_bits(0x3f000000) <= float32_from_bits(0x40a00000) by {
+        apply(click::float_order::float32_scale_right_upper(
+            float32_from_bits(0x3f000000), x, float32_from_bits(0x41200000)
+        ));
+        close();
+    }
+}
+
 ```
 
 ```expect

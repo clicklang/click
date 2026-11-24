@@ -84,6 +84,20 @@ axiom float32_scale_upper(factor: float, x: float, bound: float) {
     ensures factor * x <= factor * bound;
 }
 
+axiom float32_scale_right_lower(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures x * factor >= bound * factor;
+}
+
+axiom float32_scale_right_upper(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures x * factor <= bound * factor;
+}
+
 // Rounded subtraction is monotone in the left operand and reverses order
 // in the right. Finite endpoints exclude same-sign infinity subtraction.
 axiom float32_sub_lower(x: float, y: float, a: float, b: float) {

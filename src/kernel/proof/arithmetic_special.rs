@@ -4451,18 +4451,18 @@ pub(crate) fn float_corner_bound_weakening(
     ))
 }
 
-/// Rounded float32 multiplication by a positive finite literal on the left.
+/// Rounded float32 multiplication by a positive finite literal.
 pub(crate) fn float_scale_bound_weakening(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u32)> {
+) -> Option<(FloatBoundWeakening, u32, bool)> {
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
     let (_, operation) = float_literal_operation(result.operand)?;
     let FloatBoundOperation::Binary {
         operator: crate::kernel::FloatBinaryOperator::Multiply,
         literal,
-        literal_on_left: true,
+        literal_on_left,
         increasing: true,
     } = operation
     else {
@@ -4478,6 +4478,7 @@ pub(crate) fn float_scale_bound_weakening(
     Some((
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal as u32,
+        literal_on_left,
     ))
 }
 

@@ -4089,7 +4089,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_scale_bound");
         use crate::kernel::proof::arithmetic_special::float_scale_bound_weakening;
-        let Some((plan, factor)) = float_scale_bound_weakening(source, goal) else {
+        let Some((plan, factor, literal_on_left)) = float_scale_bound_weakening(source, goal) else {
             return Ok(None);
         };
         let source_order = surface_comparison_with_anchored_operands(source_surface);
@@ -4119,10 +4119,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             operator: ComparisonOperator::LessThan,
             right: factor.clone(),
         };
-        let name = if plan.lower {
-            "float32_scale_lower"
-        } else {
-            "float32_scale_upper"
+        let name = match (literal_on_left, plan.lower) {
+            (true, true) => "float32_scale_lower",
+            (true, false) => "float32_scale_upper",
+            (false, true) => "float32_scale_right_lower",
+            (false, false) => "float32_scale_right_upper",
         };
         let application = ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
