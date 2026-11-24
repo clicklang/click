@@ -1518,7 +1518,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut domains = Vec::new();
         let mut domain_proofs = Vec::new();
         let mut considered_domains = std::collections::HashSet::new();
+        // Spellings of one domain, such as `defined(hi - 1)`, its cast
+        // `defined((hi - 1) as int32)`, or `old(...)` in a pure proof, lower
+        // to the same fact. Once one spelling establishes it, cite that one
+        // and skip the rest. A spelling that declined leaves the fact open.
+        let mut established_kernels = std::collections::HashSet::new();
+        let mut pending: Option<(usize, Proposition)> = None;
         for domain in domain_candidates {
+            if let Some((count, kernel)) = pending.take()
+                && domains.len() > count
+            {
+                established_kernels.insert(kernel);
+            }
             if !considered_domains.insert(domain.clone()) {
                 continue;
             }
@@ -1528,6 +1539,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
+            if established_kernels.contains(&kernel) {
+                continue;
+            }
+            pending = Some((domains.len(), kernel.clone()));
             // The signed-definedness search below serves a range domain whose
             // operands owe nothing. A candidate whose operand is itself an
             // operation or a read is kept only when it closes directly: the
@@ -2021,10 +2036,12 @@ mod tests {
     }
 
     #[test]
-    fn an_argument_domain_cites_its_established_lower_bound() {
+    fn an_argument_domain_cites_its_established_bounds_once() {
         // `defined(hi - 1)` asks for `to_integer(hi) - 1 >= -2147483648`;
         // the composition proved it as `-2147483648 <= ...`. The domain
-        // cites that fact instead of deriving the bound again.
+        // cites that fact instead of deriving the bound again. Its other
+        // spellings, `defined((hi - 1) as int32)` and `old(...)`, are the
+        // same fact here and are not proved again.
         let source = "theorem domain(lo: int32, hi: int32) { requires 0 <= lo; requires lo < hi; requires hi <= 1073741823; ensures 0 <= to_integer(hi - 1) by { solve(); } }";
         let expanded = expand_c_claim_source_by_label(source, &[], "domain.ensures_0")
             .unwrap_or_else(|error| panic!("{}", error.report()));
@@ -2037,6 +2054,7 @@ mod tests {
             !expanded.contains("have -2147483648 <= (to_integer(hi) - to_integer(1))"),
             "{expanded}"
         );
+        assert_eq!(expanded.matches("have defined(").count(), 1, "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
     }
