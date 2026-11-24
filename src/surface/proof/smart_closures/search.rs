@@ -3648,7 +3648,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_bound_weakening");
         use crate::kernel::KernelFloatType;
-        let ClickProposition::Comparison { left: operand, .. } = &intermediate else {
+        if let Some(closed) =
+            attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(closed));
+        }
+        let ClickProposition::Comparison { left: operand, .. } =
+            surface_comparison_with_anchored_operands(&intermediate)
+        else {
             return Ok(None);
         };
         let literal = |bits| {
@@ -3667,13 +3674,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             (
                 requested.clone(),
                 actual.clone(),
-                vec![requested, actual, operand.clone()],
+                vec![requested, actual, operand],
             )
         } else {
             (
                 actual.clone(),
                 requested.clone(),
-                vec![operand.clone(), actual, requested],
+                vec![operand, actual, requested],
             )
         };
         let endpoint_order = ClickProposition::Comparison {
@@ -3685,11 +3692,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             right,
         };
-        if let Some(closed) =
-            attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
-        {
-            return Ok(Some(closed));
-        }
         let strict_left = if plan.lower {
             plan.endpoint_strict
         } else {
