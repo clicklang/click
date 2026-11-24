@@ -2036,7 +2036,11 @@ impl<'a> Proof<'a> {
                     &mut facts,
                     source_index,
                 )
-            })?;
+            })
+            // The loop's phases and transitions are certified inside this
+            // operation. A refusal there keeps this proof's checked path
+            // and state, so its report has a trace like any other step's.
+            .map_err(|error| self.attach_step_diagnostic(error))?;
         if capture_this_tactic {
             // The tactic's expansion is the expanded loop itself.
             let expansion = ProofCertificateBuilder {
