@@ -2552,6 +2552,51 @@ fn synthesize_surface_atomic_proposition(
             right: bool_literal(!*zero),
         });
     }
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && let Some(root) = condition.root()
+    {
+        use crate::kernel::KernelTermNode as Node;
+        let raise = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
+        let equality = if *value {
+            ComparisonOperator::Equal
+        } else {
+            ComparisonOperator::NotEqual
+        };
+        match root.node() {
+            Node::AlgebraicEqual {
+                arguments: [left, right],
+            } => {
+                return Some(ClickProposition::Comparison {
+                    left: raise(left)?,
+                    operator: equality,
+                    right: raise(right)?,
+                });
+            }
+            Node::BoolEqual {
+                arguments: [left, right],
+            } if let (Node::BoolLiteral(left), Node::BoolLiteral(right)) =
+                (left.node(), right.node()) =>
+            {
+                return Some(ClickProposition::Comparison {
+                    left: bool_literal(*left),
+                    operator: equality,
+                    right: bool_literal(*right),
+                });
+            }
+            Node::Variable(_)
+            | Node::Call { .. }
+            | Node::BoolIf { .. }
+            | Node::BoolEqual { .. } => {
+                let claim = bool_truth(raise(root)?);
+                return Some(if *value {
+                    claim
+                } else {
+                    ClickProposition::Not(Box::new(claim))
+                });
+            }
+            _ => {}
+        }
+    }
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
