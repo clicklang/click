@@ -17,40 +17,42 @@ theorem adler_byte_widen(value: uint8) {
 theorem adler_byte_sum_bridge(bytes: uint8[], m: uint64) {
  ensures forall (n: int32) { to_integer(n) == to_integer(m) implies adler_byte_sum(bytes, n) == adler_byte_sum_u64(bytes, m) } by {
   let ih = induct(m);
-  intro();
-  intro();
-  if m <= 0u64 {
-   have m == 0u64 by close() using { m <= 0u64; };
-   have n == 0 by close() using { to_integer(n) == to_integer(m); m == 0u64; };
-   rewrite(m, 0u64);
-   rewrite(n, 0);
-   apply(adler_sum_empty(bytes, 0));
-   apply(adler_sum_empty_u64(bytes, 0));
-   close();
-  } else {
-   have 0u64 < m by close();
-   have 0 < n by close() using { to_integer(n) == to_integer(m); 0u64 < m; };
-   have to_integer(m - 1u64) < to_integer(m) by close() using { 0u64 < m; };
-   have defined(n - 1) by close() using { 0 < n; };
-   have to_integer(n - 1) == to_integer(n) - to_integer(1);
-   have 1u64 <= m by close() using { 0u64 < m; };
-   have to_integer(m - 1u64) == to_integer(m) - to_integer(1u64);
-   have to_integer(n - 1) == to_integer(m - 1u64) by close() using { to_integer(n) == to_integer(m); to_integer(n - 1) == to_integer(n) - to_integer(1); to_integer(m - 1u64) == to_integer(m) - to_integer(1u64); };
-   apply(ih(m - 1u64));
-   instantiate(forall (n: int32) { to_integer(n) == to_integer(m - 1u64) implies adler_byte_sum(bytes, n) == adler_byte_sum_u64(bytes, m - 1u64) }, n - 1);
-   apply(adler_sum_append(bytes, n));
-   apply(adler_sum_append_u64(bytes, m));
-   have bytes + (n - 1) == bytes + (m - 1u64) by normalize() using { to_integer(n - 1) == to_integer(m - 1u64); };
-   have to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]) by {
-    rewrite(bytes + (n - 1), bytes + (m - 1u64));
-    apply(adler_byte_widen(bytes[m - 1u64]));
-   }
-   close() using {
-    adler_byte_sum(bytes, n) == adler_byte_sum(bytes, n - 1) + to_integer(bytes[n - 1] as int32);
-    adler_byte_sum_u64(bytes, m) == adler_byte_sum_u64(bytes, m - 1u64) + to_integer(bytes[m - 1u64]);
-    adler_byte_sum(bytes, n - 1) == adler_byte_sum_u64(bytes, m - 1u64);
-    to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]);
-   };
+  intro() {
+      intro() {
+          if m <= 0u64 {
+           have m == 0u64 by close() using { m <= 0u64; };
+           have n == 0 by close() using { to_integer(n) == to_integer(m); m == 0u64; };
+           rewrite(m, 0u64);
+           rewrite(n, 0);
+           apply(adler_sum_empty(bytes, 0));
+           apply(adler_sum_empty_u64(bytes, 0));
+           close();
+          } else {
+           have 0u64 < m by close();
+           have 0 < n by close() using { to_integer(n) == to_integer(m); 0u64 < m; };
+           have to_integer(m - 1u64) < to_integer(m) by close() using { 0u64 < m; };
+           have defined(n - 1) by close() using { 0 < n; };
+           have to_integer(n - 1) == to_integer(n) - to_integer(1);
+           have 1u64 <= m by close() using { 0u64 < m; };
+           have to_integer(m - 1u64) == to_integer(m) - to_integer(1u64);
+           have to_integer(n - 1) == to_integer(m - 1u64) by close() using { to_integer(n) == to_integer(m); to_integer(n - 1) == to_integer(n) - to_integer(1); to_integer(m - 1u64) == to_integer(m) - to_integer(1u64); };
+           apply(ih(m - 1u64));
+           instantiate(forall (n: int32) { to_integer(n) == to_integer(m - 1u64) implies adler_byte_sum(bytes, n) == adler_byte_sum_u64(bytes, m - 1u64) }, n - 1);
+           apply(adler_sum_append(bytes, n));
+           apply(adler_sum_append_u64(bytes, m));
+           have bytes + (n - 1) == bytes + (m - 1u64) by normalize() using { to_integer(n - 1) == to_integer(m - 1u64); };
+           have to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]) by {
+            rewrite(bytes + (n - 1), bytes + (m - 1u64));
+            apply(adler_byte_widen(bytes[m - 1u64]));
+           }
+           close() using {
+            adler_byte_sum(bytes, n) == adler_byte_sum(bytes, n - 1) + to_integer(bytes[n - 1] as int32);
+            adler_byte_sum_u64(bytes, m) == adler_byte_sum_u64(bytes, m - 1u64) + to_integer(bytes[m - 1u64]);
+            adler_byte_sum(bytes, n - 1) == adler_byte_sum_u64(bytes, m - 1u64);
+            to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]);
+           };
+          }
+      }
   }
  }
 }
@@ -58,40 +60,42 @@ theorem adler_byte_sum_bridge(bytes: uint8[], m: uint64) {
 theorem adler_weighted_sum_bridge(bytes: uint8[], m: uint64, w: int32) {
  ensures forall (n: int32) { to_integer(n) == to_integer(m) implies adler_weighted_sum(bytes, n, w) == adler_weighted_sum_u64(bytes, m, to_integer(w)) } by {
   let ih = induct(m);
-  intro();
-  intro();
-  if m <= 0u64 {
-   have m == 0u64 by close() using { m <= 0u64; };
-   have n == 0 by close() using { to_integer(n) == to_integer(m); m == 0u64; };
-   rewrite(m, 0u64);
-   rewrite(n, 0);
-   apply(adler_sum_empty(bytes, w));
-   apply(adler_sum_empty_u64(bytes, to_integer(w)));
-   close();
-  } else {
-   have 0u64 < m by close();
-   have 0 < n by close() using { to_integer(n) == to_integer(m); 0u64 < m; };
-   have to_integer(m - 1u64) < to_integer(m) by close() using { 0u64 < m; };
-   have defined(n - 1) by close() using { 0 < n; };
-   have to_integer(n - 1) == to_integer(n) - to_integer(1);
-   have 1u64 <= m by close() using { 0u64 < m; };
-   have to_integer(m - 1u64) == to_integer(m) - to_integer(1u64);
-   have to_integer(n - 1) == to_integer(m - 1u64) by close() using { to_integer(n) == to_integer(m); to_integer(n - 1) == to_integer(n) - to_integer(1); to_integer(m - 1u64) == to_integer(m) - to_integer(1u64); };
-   apply(ih(m - 1u64));
-   instantiate(forall (n: int32) { to_integer(n) == to_integer(m - 1u64) implies adler_weighted_sum(bytes, n, w) == adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)) }, n - 1);
-   apply(adler_weighted_append(bytes, n, w));
-   apply(adler_weighted_append_u64(bytes, m, to_integer(w)));
-   have bytes + (n - 1) == bytes + (m - 1u64) by normalize() using { to_integer(n - 1) == to_integer(m - 1u64); };
-   have to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]) by {
-    rewrite(bytes + (n - 1), bytes + (m - 1u64));
-    apply(adler_byte_widen(bytes[m - 1u64]));
-   }
-   rewrite(adler_weighted_sum(bytes, n, w), adler_weighted_sum(bytes, n - 1, w) + (to_integer(w) - to_integer(n - 1)) * to_integer(bytes[n - 1] as int32));
-   rewrite(adler_weighted_sum_u64(bytes, m, to_integer(w)), adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)) + (to_integer(w) - to_integer(m - 1u64)) * to_integer(bytes[m - 1u64]));
-   rewrite(adler_weighted_sum(bytes, n - 1, w), adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)));
-   rewrite(to_integer(n - 1), to_integer(m - 1u64));
-   rewrite(to_integer(bytes[n - 1] as int32), to_integer(bytes[m - 1u64]));
-   close();
+  intro() {
+      intro() {
+          if m <= 0u64 {
+           have m == 0u64 by close() using { m <= 0u64; };
+           have n == 0 by close() using { to_integer(n) == to_integer(m); m == 0u64; };
+           rewrite(m, 0u64);
+           rewrite(n, 0);
+           apply(adler_sum_empty(bytes, w));
+           apply(adler_sum_empty_u64(bytes, to_integer(w)));
+           close();
+          } else {
+           have 0u64 < m by close();
+           have 0 < n by close() using { to_integer(n) == to_integer(m); 0u64 < m; };
+           have to_integer(m - 1u64) < to_integer(m) by close() using { 0u64 < m; };
+           have defined(n - 1) by close() using { 0 < n; };
+           have to_integer(n - 1) == to_integer(n) - to_integer(1);
+           have 1u64 <= m by close() using { 0u64 < m; };
+           have to_integer(m - 1u64) == to_integer(m) - to_integer(1u64);
+           have to_integer(n - 1) == to_integer(m - 1u64) by close() using { to_integer(n) == to_integer(m); to_integer(n - 1) == to_integer(n) - to_integer(1); to_integer(m - 1u64) == to_integer(m) - to_integer(1u64); };
+           apply(ih(m - 1u64));
+           instantiate(forall (n: int32) { to_integer(n) == to_integer(m - 1u64) implies adler_weighted_sum(bytes, n, w) == adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)) }, n - 1);
+           apply(adler_weighted_append(bytes, n, w));
+           apply(adler_weighted_append_u64(bytes, m, to_integer(w)));
+           have bytes + (n - 1) == bytes + (m - 1u64) by normalize() using { to_integer(n - 1) == to_integer(m - 1u64); };
+           have to_integer(bytes[n - 1] as int32) == to_integer(bytes[m - 1u64]) by {
+            rewrite(bytes + (n - 1), bytes + (m - 1u64));
+            apply(adler_byte_widen(bytes[m - 1u64]));
+           }
+           rewrite(adler_weighted_sum(bytes, n, w), adler_weighted_sum(bytes, n - 1, w) + (to_integer(w) - to_integer(n - 1)) * to_integer(bytes[n - 1] as int32));
+           rewrite(adler_weighted_sum_u64(bytes, m, to_integer(w)), adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)) + (to_integer(w) - to_integer(m - 1u64)) * to_integer(bytes[m - 1u64]));
+           rewrite(adler_weighted_sum(bytes, n - 1, w), adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)));
+           rewrite(to_integer(n - 1), to_integer(m - 1u64));
+           rewrite(to_integer(bytes[n - 1] as int32), to_integer(bytes[m - 1u64]));
+           close();
+          }
+      }
   }
  }
 }

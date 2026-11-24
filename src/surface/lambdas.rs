@@ -418,7 +418,7 @@ mod tests {
             (
                 "function every(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).all(p) }",
                 "every(|i: int32| -> Prop { i < hi }, lo, hi)",
-                "by { intro(); intro(); close(); }",
+                "by { intro() { intro() { close(); } } }",
             ),
             (
                 "function some(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).any(p) }",
@@ -552,8 +552,8 @@ mod tests {
                 "by close();",
             ),
             (
-                "theorem test(x: Integer) { ensures (|n: Integer| -> Prop { forall (y: Integer) { n + y == y + n } })(x) by { intro(); close(); } }",
-                "by { intro(); close(); }",
+                "theorem test(x: Integer) { ensures (|n: Integer| -> Prop { forall (y: Integer) { n + y == y + n } })(x) by { intro() { close(); } } }",
+                "by { intro() { close(); } }",
             ),
             (
                 "theorem test(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures (lo..hi).all(p) by { intro(k) { close(); } } }",

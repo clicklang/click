@@ -270,37 +270,40 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             have to_integer(at(iteration, i) + 1) == to_integer(at(iteration, i)) + 1;
             have 0 <= to_integer(capacity) - to_integer(at(iteration, i) + 1);
             have forall (k: int32) { 0 <= k and k < i implies occupied[k] == 0 } by {
-                intro(); intro();
-                have 0 <= k;
-                have k < i;
-                if k < at(iteration, i) {
-                    have at(iteration, occupied[k]) == 0 by {
-                        have at(iteration, 0) <= at(iteration, k) and at(iteration, k) < at(iteration, i);
-                        instantiate(forall (j: int32) {
-                            at(iteration, 0) <= at(iteration, j) and at(iteration, j) < at(iteration, i) implies
-                                at(iteration, occupied[j]) == at(iteration, 0)
-                        }, k);
-                        close();
+                intro() {
+                    intro() {
+                        have 0 <= k;
+                        have k < i;
+                        if k < at(iteration, i) {
+                            have at(iteration, occupied[k]) == 0 by {
+                                have at(iteration, 0) <= at(iteration, k) and at(iteration, k) < at(iteration, i);
+                                instantiate(forall (j: int32) {
+                                    at(iteration, 0) <= at(iteration, j) and at(iteration, j) < at(iteration, i) implies
+                                        at(iteration, occupied[j]) == at(iteration, 0)
+                                }, k);
+                                close();
+                            }
+                            have at(iteration, i) != k by { close() using { k < at(iteration, i); }; }
+                            have at(iteration, separate(memory(occupied[i]), memory(occupied[k]))) by {
+                                apply(separation::separate_elements(occupied, at(iteration, i), k));
+                            }
+                            have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
+                                close() using { at(iteration, separate(memory(occupied[i]), memory(occupied[k]))); };
+                            }
+                            have at(loop(0).statement(0).exit, occupied[k]) == at(iteration, occupied[k]) by {
+                                preserve(memory(occupied[k]), loop(0).statement(0));
+                            }
+                            have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { close() using {}; }
+                            have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
+                                preserve(memory(occupied[k]), loop(0).statement(1));
+                            }
+                            close();
+                        } else {
+                            have k == at(iteration, i) by { close(); }
+                            rewrite(k, at(iteration, i));
+                            close();
+                        }
                     }
-                    have at(iteration, i) != k by { close() using { k < at(iteration, i); }; }
-                    have at(iteration, separate(memory(occupied[i]), memory(occupied[k]))) by {
-                        apply(separation::separate_elements(occupied, at(iteration, i), k));
-                    }
-                    have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                        close() using { at(iteration, separate(memory(occupied[i]), memory(occupied[k]))); };
-                    }
-                    have at(loop(0).statement(0).exit, occupied[k]) == at(iteration, occupied[k]) by {
-                        preserve(memory(occupied[k]), loop(0).statement(0));
-                    }
-                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { close() using {}; }
-                    have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
-                        preserve(memory(occupied[k]), loop(0).statement(1));
-                    }
-                    close();
-                } else {
-                    have k == at(iteration, i) by { close(); }
-                    rewrite(k, at(iteration, i));
-                    close();
                 }
             }
             close();
@@ -324,15 +327,17 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     have forall (k: int32) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < capacity;
-        have 0 <= k and k < i;
-        instantiate(forall (j: int32) {
-            0 <= j and j < i implies occupied[j] == 0
-        }, k);
-        close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < capacity;
+                have 0 <= k and k < i;
+                instantiate(forall (j: int32) {
+                    0 <= j and j < i implies occupied[j] == 0
+                }, k);
+                close();
+            }
+        }
     }
     step();
     step();
@@ -343,16 +348,18 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     have forall (k: int32) {
         0 <= k and k < arena->capacity implies arena->occupied[k] == 0
     } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        instantiate(forall (j: int32) {
-            0 <= j and j < capacity implies occupied[j] == 0
-        }, k);
-        have occupied[k] == 0 by { close(); }
-        rewrite(arena->occupied, occupied);
-        close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                instantiate(forall (j: int32) {
+                    0 <= j and j < capacity implies occupied[j] == 0
+                }, k);
+                have occupied[k] == 0 by { close(); }
+                rewrite(arena->occupied, occupied);
+                close();
+            }
+        }
     }
     fold(arena_initialized_storage(
         arena->data,
@@ -394,15 +401,17 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         result == 1 and 0 <= k and k < arena->capacity implies
             arena->occupied[k] == 0
     } by {
-        intro();
-        intro();
-        have result == 1;
-        have 0 <= k;
-        have k < arena->capacity;
-        instantiate(forall (j: int32) {
-            0 <= j and j < arena->capacity implies arena->occupied[j] == 0
-        }, k);
-        close();
+        intro() {
+            intro() {
+                have result == 1;
+                have 0 <= k;
+                have k < arena->capacity;
+                instantiate(forall (j: int32) {
+                    0 <= j and j < arena->capacity implies arena->occupied[j] == 0
+                }, k);
+                close();
+            }
+        }
     }
     let outcome = fold(arena_init_outcome(arena), {
         model: ArenaInitOutcome::Success(0, capacity),
@@ -487,11 +496,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             close();
         }
         have forall (k: int32) { result == 0 and 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    close();
+                }
+            }
         }
         close();
         have result == 0 or result == 1 by {
@@ -515,78 +526,93 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         close();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->arena == arena by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies to_integer(region->end) == (to_integer(region->start) + to_integer(count)) by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->end <= arena->capacity by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies 0 <= region->start by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->start < region->end by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies arena->occupied[k] == 1 } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and 0 <= k and k < region->start implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and region->end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies old(arena->occupied[k]) == 0 } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         close();
@@ -604,11 +630,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             close();
         }
         have forall (k: int32) { result == 0 and 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    close();
+                }
+            }
         }
         close();
         have result == 0 or result == 1 by {
@@ -632,78 +660,93 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         close();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->arena == arena by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies to_integer(region->end) == (to_integer(region->start) + to_integer(count)) by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->end <= arena->capacity by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies 0 <= region->start by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->start < region->end by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies arena->occupied[k] == 1 } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and 0 <= k and k < region->start implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and region->end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies old(arena->occupied[k]) == 0 } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         close();
@@ -726,21 +769,25 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         apply(integer::int32_less_equal_transitive(0, count, arena->capacity));
     }
     have forall (k: int32) { 0 <= k and k < 0 implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < 0;
-        have not k < 0 by {
-            close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < 0;
+                have not k < 0 by {
+                    close();
+                }
+                contradiction(k < 0);
+            }
         }
-        contradiction(k < 0);
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                close();
+            }
+        }
     }
     have viewable(arena->occupied[0..arena->capacity]) by {
         observe(old(arena->occupied)[0..old(arena->capacity)]);
@@ -811,27 +858,29 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 step();
                 have forall (k: int32) { lo <= k and k < i implies arena->occupied[k] == 0 } by {
-                    intro();
-                    intro();
-                    have lo <= k;
-                    have k < i;
-                    if k < at(iteration, i) {
-                        have k < hi by {
-                            close();
+                    intro() {
+                        intro() {
+                            have lo <= k;
+                            have k < i;
+                            if k < at(iteration, i) {
+                                have k < hi by {
+                                    close();
+                                }
+                                instantiate(forall (j: int32) { lo <= j and j < hi implies arena->occupied[j] == 0 }, k);
+                                close();
+                            } else {
+                                have k <= at(iteration, i) by {
+                                    close() using { (at(region(13).entry, i) as int32) <
+                                            (at(region(13).entry, arena->capacity) as int32); (k as int32) < (i as int32); (0 as int32) <= (at(region(13).entry, i) as int32); (at(function.entry, arena->capacity) as int32) <=
+                                            (at(function.entry, 536870911) as int32); };
+                                }
+                                have k == at(iteration, i) by {
+                                    close() using { k <= at(iteration, i); not k < at(region(13).entry, i); };
+                                }
+                                rewrite(k, at(iteration, i));
+                                close();
+                            }
                         }
-                        instantiate(forall (j: int32) { lo <= j and j < hi implies arena->occupied[j] == 0 }, k);
-                        close();
-                    } else {
-                        have k <= at(iteration, i) by {
-                            close() using { (at(region(13).entry, i) as int32) <
-                                    (at(region(13).entry, arena->capacity) as int32); (k as int32) < (i as int32); (0 as int32) <= (at(region(13).entry, i) as int32); (at(function.entry, arena->capacity) as int32) <=
-                                    (at(function.entry, 536870911) as int32); };
-                        }
-                        have k == at(iteration, i) by {
-                            close() using { k <= at(iteration, i); not k < at(region(13).entry, i); };
-                        }
-                        rewrite(k, at(iteration, i));
-                        close();
                     }
                 }
                 have to_integer(at(iteration, i)) < (to_integer(at(iteration, i)) + 1) by {
@@ -959,16 +1008,18 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             i)) + 1); };
                 }
                 have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    intro();
-                    have 0 <= k;
-                    have k < arena->capacity;
-                    have at(iteration, arena->occupied[k]) == at(find_first_free_run.entry, arena->occupied[k]) by {
-                        have at(iteration, 0) <= at(iteration, k) and at(iteration, k) < at(iteration, arena->capacity);
-                        instantiate(forall (j: int32) { at(iteration, 0) <= at(iteration, j) and at(iteration, j) < at(iteration, arena->capacity) implies at(iteration, arena->occupied[j]) == at(find_first_free_run.entry, arena->occupied[j]) }, k);
-                        close();
+                    intro() {
+                        intro() {
+                            have 0 <= k;
+                            have k < arena->capacity;
+                            have at(iteration, arena->occupied[k]) == at(find_first_free_run.entry, arena->occupied[k]) by {
+                                have at(iteration, 0) <= at(iteration, k) and at(iteration, k) < at(iteration, arena->capacity);
+                                instantiate(forall (j: int32) { at(iteration, 0) <= at(iteration, j) and at(iteration, j) < at(iteration, arena->capacity) implies at(iteration, arena->occupied[j]) == at(find_first_free_run.entry, arena->occupied[j]) }, k);
+                                close();
+                            }
+                            close();
+                        }
                     }
-                    close();
                 }
                 have arena->data == old(arena->data) by {
                     close();
@@ -988,14 +1039,16 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 step();
                 have forall (k: int32) { i <= k and k < i implies arena->occupied[k] == 0 } by {
-                    intro();
-                    intro();
-                    have i <= k;
-                    have k < i;
-                    have not k < i by {
-                        close();
+                    intro() {
+                        intro() {
+                            have i <= k;
+                            have k < i;
+                            have not k < i by {
+                                close();
+                            }
+                            contradiction(k < i);
+                        }
                     }
-                    contradiction(k < i);
                 }
                 have 0 <= i by {
                     close() using { (0 as int32) <= (at(region(13).entry, i) as int32); (at(region(13).entry, i) as int32) < (at(region(13).entry,
@@ -1034,56 +1087,73 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             i)) + 1); };
                 }
                 have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    intro();
-                    have 0 <= k;
-                    have k < arena->capacity;
-                    have at(iteration, arena->occupied[k]) == at(find_first_free_run.entry, arena->occupied[k]) by {
-                        have at(iteration, 0) <= at(iteration, k) and at(iteration, k) < at(iteration, arena->capacity);
-                        instantiate(forall (j: int32) { at(iteration, 0) <= at(iteration, j) and at(iteration, j) < at(iteration, arena->capacity) implies at(iteration, arena->occupied[j]) == at(find_first_free_run.entry, arena->occupied[j]) }, k);
-                        close();
+                    intro() {
+                        intro() {
+                            have 0 <= k;
+                            have k < arena->capacity;
+                            have at(iteration, arena->occupied[k]) == at(find_first_free_run.entry, arena->occupied[k]) by {
+                                have at(iteration, 0) <= at(iteration, k) and at(iteration, k) < at(iteration, arena->capacity);
+                                instantiate(forall (j: int32) { at(iteration, 0) <= at(iteration, j) and at(iteration, j) < at(iteration, arena->capacity) implies at(iteration, arena->occupied[j]) == at(find_first_free_run.entry, arena->occupied[j]) }, k);
+                                close();
+                            }
+                            close();
+                        }
                     }
-                    close();
                 }
                 have run.hi == i by {
                     close();
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count by {
-                    intro();
-                    intro();
-                    all {
-                        0 <= run_length => {
-                            close();
-                        }
-                        run_length <= count => {
-                            close() using { at(function.entry, 0) < at(function.entry, count); };
+                    intro() {
+                        intro() {
+                            all {
+                                0 <= run_length => {
+                                    close();
+                                }
+                                run_length <= count => {
+                                    close() using { at(function.entry, 0) < at(function.entry, count); };
+                                }
+                            }
                         }
                     }
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count implies forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            intro() {
+                                close();
+                            }
+                        }
+                    }
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count implies forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } implies arena->data == old(arena->data) by {
-                    intro();
-                    intro();
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            intro() {
+                                intro() {
+                                    close();
+                                }
+                            }
+                        }
+                    }
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count implies forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } implies arena->data == old(arena->data) implies arena->occupied == old(arena->occupied) by {
-                    intro();
-                    intro();
-                    intro();
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            intro() {
+                                intro() {
+                                    intro() {
+                                        close();
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 have (to_integer(arena->capacity) - to_integer(i)) < at(region(13).entry, (to_integer(arena->capacity) - to_integer(i))) by {
                     rewrite(to_integer((at(iteration, i) + 1)), (to_integer(at(iteration, i)) + 1));
@@ -1094,18 +1164,20 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     }
     let { lo: run_lo, hi: run_hi } = unfold(run);
     have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have arena->occupied[k] == old(arena->occupied[k]) by {
-            instantiate(forall (j: int32) { 0 <= j and j < arena->capacity implies arena->occupied[j] == at(find_first_free_run.entry, arena->occupied[j]) }, k);
-            close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have arena->occupied[k] == old(arena->occupied[k]) by {
+                    instantiate(forall (j: int32) { 0 <= j and j < arena->capacity implies arena->occupied[j] == at(find_first_free_run.entry, arena->occupied[j]) }, k);
+                    close();
+                }
+                have at(find_first_free_run.entry, 0) <= at(find_first_free_run.entry, k) and at(find_first_free_run.entry, k) < at(find_first_free_run.entry, arena->capacity);
+                instantiate(forall (j: int32) { at(find_first_free_run.entry, 0) <= at(find_first_free_run.entry, j) and at(find_first_free_run.entry, j) < at(find_first_free_run.entry, arena->capacity) implies at(find_first_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                rewrite(arena->occupied[k], at(find_first_free_run.entry, arena->occupied[k]));
+                close();
+            }
         }
-        have at(find_first_free_run.entry, 0) <= at(find_first_free_run.entry, k) and at(find_first_free_run.entry, k) < at(find_first_free_run.entry, arena->capacity);
-        instantiate(forall (j: int32) { at(find_first_free_run.entry, 0) <= at(find_first_free_run.entry, j) and at(find_first_free_run.entry, j) < at(find_first_free_run.entry, arena->capacity) implies at(find_first_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-        rewrite(arena->occupied[k], at(find_first_free_run.entry, arena->occupied[k]));
-        close();
     }
     mark scanned;
     if at(region(17).entry, run_length) < at(region(17).entry, count) {
@@ -1118,16 +1190,18 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             close();
         }
         have forall (k: int32) { result == 0 and 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have arena->occupied[k] == old(arena->occupied[k]) by {
-                have at(scanned, 0) <= at(scanned, k) and at(scanned, k) < at(scanned, arena->capacity);
-                instantiate(forall (j: int32) { at(scanned, 0) <= at(scanned, j) and at(scanned, j) < at(scanned, arena->capacity) implies at(scanned, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have arena->occupied[k] == old(arena->occupied[k]) by {
+                        have at(scanned, 0) <= at(scanned, k) and at(scanned, k) < at(scanned, arena->capacity);
+                        instantiate(forall (j: int32) { at(scanned, 0) <= at(scanned, j) and at(scanned, j) < at(scanned, arena->capacity) implies at(scanned, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                        close();
+                    }
+                    close();
+                }
             }
-            close();
         }
         close();
         have result == 0 or result == 1 by {
@@ -1151,78 +1225,93 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         close();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->arena == arena by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies to_integer(region->end) == (to_integer(region->start) + to_integer(count)) by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->end <= arena->capacity by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies 0 <= region->start by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have result == 1 implies region->start < region->end by {
-            intro();
-            contradiction(result == 1);
+            intro() {
+                contradiction(result == 1);
+            }
         }
         close();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies arena->occupied[k] == 1 } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and 0 <= k and k < region->start implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and region->end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies old(arena->occupied[k]) == 0 } by {
-            intro();
-            intro();
-            have result == 1;
-            have not result == 1 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 1;
+                    have not result == 1 by {
+                        close();
+                    }
+                    contradiction(result == 1);
+                }
             }
-            contradiction(result == 1);
         }
         close();
         close();
@@ -1335,45 +1424,51 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             close();
         }
         have forall (k: int32) { start <= k and k < start implies arena->occupied[k] == 1 } by {
-            intro();
-            intro();
-            have start <= k;
-            have k < start;
-            have not k < start by {
-                close();
+            intro() {
+                intro() {
+                    have start <= k;
+                    have k < start;
+                    have not k < start by {
+                        close();
+                    }
+                    contradiction(k < start);
+                }
             }
-            contradiction(k < start);
         }
         have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have arena->occupied[k] == old(arena->occupied[k]) by {
-                have at(scanned, 0) <= at(scanned, k) and at(scanned, k) < at(scanned, arena->capacity);
-                instantiate(forall (j: int32) { at(scanned, 0) <= at(scanned, j) and at(scanned, j) < at(scanned, arena->capacity) implies at(scanned, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have arena->occupied[k] == old(arena->occupied[k]) by {
+                        have at(scanned, 0) <= at(scanned, k) and at(scanned, k) < at(scanned, arena->capacity);
+                        instantiate(forall (j: int32) { at(scanned, 0) <= at(scanned, j) and at(scanned, j) < at(scanned, arena->capacity) implies at(scanned, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                        close();
+                    }
+                    close();
+                }
             }
-            close();
         }
         have forall (k: int32) { start <= k and k < end implies old(arena->occupied[k]) == 0 } by {
-            intro();
-            intro();
-            have start <= k;
-            have k < end;
-            have 0 <= start by { close(); }
-            have 0 <= k by {
-                apply(click::integer::int32_less_equal_transitive(0, start, k));
+            intro() {
+                intro() {
+                    have start <= k;
+                    have k < end;
+                    have 0 <= start by { close(); }
+                    have 0 <= k by {
+                        apply(click::integer::int32_less_equal_transitive(0, start, k));
+                    }
+                    have k < arena->capacity by {
+                        apply(integer::int32_less_than_less_equal_transitive(k, end, arena->capacity));
+                    }
+                    have old(arena->occupied[k]) == 0 by {
+                        instantiate(forall (j: int32) { start <= j and j < end implies arena->occupied[j] == 0 }, k);
+                        close();
+                    }
+                    instantiate(forall (j: int32) { 0 <= j and j < arena->capacity implies arena->occupied[j] == old(arena->occupied[j]) }, k);
+                    close();
+                }
             }
-            have k < arena->capacity by {
-                apply(integer::int32_less_than_less_equal_transitive(k, end, arena->capacity));
-            }
-            have old(arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { start <= j and j < end implies arena->occupied[j] == 0 }, k);
-                close();
-            }
-            instantiate(forall (j: int32) { 0 <= j and j < arena->capacity implies arena->occupied[j] == old(arena->occupied[j]) }, k);
-            close();
         }
         have viewable(arena->occupied[0..arena->capacity]) by {
             observe(old(arena->occupied)[0..old(arena->capacity)]);
@@ -1392,14 +1487,18 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     close();
                 }
                 have forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            close();
+                        }
+                    }
                 }
                 have forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            close();
+                        }
+                    }
                 }
                 have arena->data == old(arena->data) by {
                     close();
@@ -1490,226 +1589,242 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     close();
                 }
                 have forall (k: int32) { (to_integer(at(opened, i)) + 1) <= to_integer(k) and k < end implies arena->occupied[k] == 0 } by {
-                    intro();
-                    intro();
-                    have (to_integer(at(opened, i)) + 1) <= to_integer(k);
-                    have k < end;
-                    have at(opened, i) < k by {
-                        close() using { (let integer_value: Integer = to_integer((i as int32)) + 1;
-                                integer_value) <= to_integer((k as int32)); };
+                    intro() {
+                        intro() {
+                            have (to_integer(at(opened, i)) + 1) <= to_integer(k);
+                            have k < end;
+                            have at(opened, i) < k by {
+                                close() using { (let integer_value: Integer = to_integer((i as int32)) + 1;
+                                        integer_value) <= to_integer((k as int32)); };
+                            }
+                            have at(opened, i) <= k by {
+                                apply(integer::int32_less_than_implies_less_equal(at(opened, i), k));
+                            }
+                            have m <= k by {
+                                close();
+                            }
+                            have at(opened, arena->occupied[k]) == 0 by {
+                                have at(opened, m) <= at(opened, k) and at(opened, k) < at(opened, end);
+                                instantiate(forall (j: int32) { at(opened, m) <= at(opened, j) and at(opened, j) < at(opened, end) implies at(opened, arena->occupied[j]) == at(opened, 0) }, k);
+                                close();
+                            }
+                            have 0 <= k by {
+                                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, i) as
+                                        int32); (at(opened, i) as int32) <= (k as int32); };
+                            }
+                            have k < at(opened, arena->capacity) by {
+                                apply(integer::int32_less_than_less_equal_transitive(k, end, at(opened, arena->capacity)));
+                            }
+                            have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
+                            have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                                apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                            }
+                            have separate(statement(13).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
+                                close();
+                            }
+                            have at(statement(13).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
+                                == at(statement(13).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
+                                preserve(memory(at(opened, arena->occupied)[k]), statement(13).statement(0));
+                            }
+                            rewrite(arena->occupied, at(opened, arena->occupied));
+                            close();
+                        }
                     }
-                    have at(opened, i) <= k by {
-                        apply(integer::int32_less_than_implies_less_equal(at(opened, i), k));
-                    }
-                    have m <= k by {
-                        close();
-                    }
-                    have at(opened, arena->occupied[k]) == 0 by {
-                        have at(opened, m) <= at(opened, k) and at(opened, k) < at(opened, end);
-                        instantiate(forall (j: int32) { at(opened, m) <= at(opened, j) and at(opened, j) < at(opened, end) implies at(opened, arena->occupied[j]) == at(opened, 0) }, k);
-                        close();
-                    }
-                    have 0 <= k by {
-                        close() using { (at(function.entry, 0) as int32) <= (at(function.entry, i) as
-                                int32); (at(opened, i) as int32) <= (k as int32); };
-                    }
-                    have k < at(opened, arena->capacity) by {
-                        apply(integer::int32_less_than_less_equal_transitive(k, end, at(opened, arena->capacity)));
-                    }
-                    have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
-                    have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                    }
-                    have separate(statement(13).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
-                        close();
-                    }
-                    have at(statement(13).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
-                        == at(statement(13).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
-                        preserve(memory(at(opened, arena->occupied)[k]), statement(13).statement(0));
-                    }
-                    rewrite(arena->occupied, at(opened, arena->occupied));
-                    close();
                 }
                 have forall (k: int32) { start <= k and to_integer(k) < (to_integer(at(opened, i)) + 1) implies arena->occupied[k] == 1 } by {
-                    intro();
-                    intro();
-                    have start <= k;
-                    have to_integer(k) < (to_integer(at(opened, i)) + 1);
-                    if k < at(opened, i) {
-                        have k < m by {
-                            close();
+                    intro() {
+                        intro() {
+                            have start <= k;
+                            have to_integer(k) < (to_integer(at(opened, i)) + 1);
+                            if k < at(opened, i) {
+                                have k < m by {
+                                    close();
+                                }
+                                have at(opened, arena->occupied[k]) == 1 by {
+                                    have at(opened, start) <= at(opened, k) and at(opened, k) < at(opened, m);
+                                    instantiate(forall (j: int32) { at(opened, start) <= at(opened, j) and at(opened, j) < at(opened, m) implies at(opened, arena->occupied[j]) == at(opened, 1) }, k);
+                                    close();
+                                }
+                                have 0 <= k by {
+                                    apply(click::integer::int32_less_equal_transitive(0, start, k));
+                                }
+                                have at(opened, i) != k by { close() using { k < at(opened, i); }; }
+                                have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                                }
+                                have separate(statement(13).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
+                                    close();
+                                }
+                                have at(statement(13).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
+                                    == at(statement(13).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
+                                    preserve(memory(at(opened, arena->occupied)[k]), statement(13).statement(0));
+                                }
+                                rewrite(arena->occupied, at(opened, arena->occupied));
+                                close();
+                            } else {
+                                have k <= at(opened, i) by {
+                                    close() using { (let integer_value: Integer = to_integer((k as int32));
+                                            integer_value) < (to_integer((i as int32)) + 1); };
+                                }
+                                have k == at(opened, i) by {
+                                    close() using { k <= at(opened, i); not k < i; };
+                                }
+                                have at(statement(13).statement(0).exit,
+                                    (let occupied: int32* = old(arena->occupied); occupied[i])) == 1 by { close(); }
+                                rewrite(k, at(opened, i));
+                                rewrite(arena->occupied, old(arena->occupied));
+                                close();
+                            }
                         }
-                        have at(opened, arena->occupied[k]) == 1 by {
-                            have at(opened, start) <= at(opened, k) and at(opened, k) < at(opened, m);
-                            instantiate(forall (j: int32) { at(opened, start) <= at(opened, j) and at(opened, j) < at(opened, m) implies at(opened, arena->occupied[j]) == at(opened, 1) }, k);
-                            close();
-                        }
-                        have 0 <= k by {
-                            apply(click::integer::int32_less_equal_transitive(0, start, k));
-                        }
-                        have at(opened, i) != k by { close() using { k < at(opened, i); }; }
-                        have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                            apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                        }
-                        have separate(statement(13).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
-                            close();
-                        }
-                        have at(statement(13).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
-                            == at(statement(13).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
-                            preserve(memory(at(opened, arena->occupied)[k]), statement(13).statement(0));
-                        }
-                        rewrite(arena->occupied, at(opened, arena->occupied));
-                        close();
-                    } else {
-                        have k <= at(opened, i) by {
-                            close() using { (let integer_value: Integer = to_integer((k as int32));
-                                    integer_value) < (to_integer((i as int32)) + 1); };
-                        }
-                        have k == at(opened, i) by {
-                            close() using { k <= at(opened, i); not k < i; };
-                        }
-                        have at(statement(13).statement(0).exit,
-                            (let occupied: int32* = old(arena->occupied); occupied[i])) == 1 by { close(); }
-                        rewrite(k, at(opened, i));
-                        rewrite(arena->occupied, old(arena->occupied));
-                        close();
                     }
                 }
                 step();
                 have forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    intro();
-                    have 0 <= k;
-                    have k < start;
-                    have at(opened, arena->occupied[k]) == at(mark_free_run.entry, arena->occupied[k]) by {
-                        have at(opened, 0) <= at(opened, k) and at(opened, k) < at(opened, start);
-                        instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, start) implies at(opened, arena->occupied[j]) == at(mark_free_run.entry, arena->occupied[j]) }, k);
-                        close();
+                    intro() {
+                        intro() {
+                            have 0 <= k;
+                            have k < start;
+                            have at(opened, arena->occupied[k]) == at(mark_free_run.entry, arena->occupied[k]) by {
+                                have at(opened, 0) <= at(opened, k) and at(opened, k) < at(opened, start);
+                                instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, start) implies at(opened, arena->occupied[j]) == at(mark_free_run.entry, arena->occupied[j]) }, k);
+                                close();
+                            }
+                            have k < at(opened, i) by {
+                                apply(integer::int32_less_than_less_equal_transitive(k, start, at(opened, i)));
+                            }
+                            have at(opened, i) != k by { close() using { k < at(opened, i); }; }
+                            have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                                apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                            }
+                            have separate(statement(13).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
+                                close();
+                            }
+                            have at(statement(13).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
+                                == at(statement(13).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
+                                preserve(memory(at(opened, arena->occupied)[k]), statement(13).statement(0));
+                            }
+                            rewrite(arena->occupied, at(opened, arena->occupied));
+                            close();
+                        }
                     }
-                    have k < at(opened, i) by {
-                        apply(integer::int32_less_than_less_equal_transitive(k, start, at(opened, i)));
-                    }
-                    have at(opened, i) != k by { close() using { k < at(opened, i); }; }
-                    have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                    }
-                    have separate(statement(13).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
-                        close();
-                    }
-                    have at(statement(13).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
-                        == at(statement(13).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
-                        preserve(memory(at(opened, arena->occupied)[k]), statement(13).statement(0));
-                    }
-                    rewrite(arena->occupied, at(opened, arena->occupied));
-                    close();
                 }
                 have forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    intro();
-                    have end <= k;
-                    have k < arena->capacity;
-                    have k < at(opened, arena->capacity) by {
-                        close();
+                    intro() {
+                        intro() {
+                            have end <= k;
+                            have k < arena->capacity;
+                            have k < at(opened, arena->capacity) by {
+                                close();
+                            }
+                            have at(opened, arena->occupied[k]) == at(mark_free_run.entry, arena->occupied[k]) by {
+                                have at(opened, end) <= at(opened, k) and at(opened, k) < at(opened, arena->capacity);
+                                instantiate(forall (j: int32) { at(opened, end) <= at(opened, j) and at(opened, j) < at(opened, arena->capacity) implies at(opened, arena->occupied[j]) == at(mark_free_run.entry, arena->occupied[j]) }, k);
+                                close();
+                            }
+                            have at(opened, i) < k by {
+                                apply(integer::int32_less_than_less_equal_transitive(at(opened, i), end, k));
+                            }
+                            have at(opened, i) <= k by {
+                                apply(integer::int32_less_than_implies_less_equal(at(opened, i), k));
+                            }
+                            have 0 <= k by {
+                                close() using { (0 as int32) <= (at(region(24).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
+                            }
+                            have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
+                            have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                                apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                            }
+                            have separate(statement(13).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
+                                close();
+                            }
+                            have at(statement(13).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
+                                == at(statement(13).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
+                                preserve(memory(at(opened, arena->occupied)[k]), statement(13).statement(0));
+                            }
+                            rewrite(arena->occupied, at(opened, arena->occupied));
+                            close();
+                        }
                     }
-                    have at(opened, arena->occupied[k]) == at(mark_free_run.entry, arena->occupied[k]) by {
-                        have at(opened, end) <= at(opened, k) and at(opened, k) < at(opened, arena->capacity);
-                        instantiate(forall (j: int32) { at(opened, end) <= at(opened, j) and at(opened, j) < at(opened, arena->capacity) implies at(opened, arena->occupied[j]) == at(mark_free_run.entry, arena->occupied[j]) }, k);
-                        close();
-                    }
-                    have at(opened, i) < k by {
-                        apply(integer::int32_less_than_less_equal_transitive(at(opened, i), end, k));
-                    }
-                    have at(opened, i) <= k by {
-                        apply(integer::int32_less_than_implies_less_equal(at(opened, i), k));
-                    }
-                    have 0 <= k by {
-                        close() using { (0 as int32) <= (at(region(24).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
-                    }
-                    have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
-                    have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                    }
-                    have separate(statement(13).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
-                        close();
-                    }
-                    have at(statement(13).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
-                        == at(statement(13).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
-                        preserve(memory(at(opened, arena->occupied)[k]), statement(13).statement(0));
-                    }
-                    rewrite(arena->occupied, at(opened, arena->occupied));
-                    close();
                 }
                 have forall (k: int32) { i <= k and k < end implies arena->occupied[k] == 0 } by {
-                    intro();
-                    intro();
-                    have i <= k;
-                    have k < end;
-                    have (to_integer(at(opened, i)) + 1) <= to_integer(k) by {
-                        have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                            close() using { 0 <= to_integer(at(opened, i)); };
+                    intro() {
+                        intro() {
+                            have i <= k;
+                            have k < end;
+                            have (to_integer(at(opened, i)) + 1) <= to_integer(k) by {
+                                have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
+                                    close() using { 0 <= to_integer(at(opened, i)); };
+                                }
+                                have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
+                                    close() using { (let integer_value: Integer = to_integer((run_lo as
+                                            int32)) + to_integer((count as int32)); integer_value) <=
+                                            2147483647; (let integer_value: Integer = to_integer((end as int32));
+                                            integer_value) == (to_integer((run_lo as int32)) +
+                                            to_integer((count as int32))); to_integer(at(opened, i)) < to_integer((let
+                                            integer_value: Integer = to_integer((end as int32));
+                                            integer_value)); };
+                                }
+                                have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
+                                    close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
+                                }
+                                rewrite(to_integer(at(opened, i)) + 1, to_integer(i));
+                                close();
+                            }
+                            instantiate(forall (j: int32) { (to_integer(at(opened, i)) + 1) <= to_integer(j) and j < end implies arena->occupied[j] == 0 }, k);
+                            close();
                         }
-                        have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                            close() using { (let integer_value: Integer = to_integer((run_lo as
-                                    int32)) + to_integer((count as int32)); integer_value) <=
-                                    2147483647; (let integer_value: Integer = to_integer((end as int32));
-                                    integer_value) == (to_integer((run_lo as int32)) +
-                                    to_integer((count as int32))); to_integer(at(opened, i)) < to_integer((let
-                                    integer_value: Integer = to_integer((end as int32));
-                                    integer_value)); };
-                        }
-                        have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                            close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
-                        }
-                        rewrite(to_integer(at(opened, i)) + 1, to_integer(i));
-                        close();
                     }
-                    instantiate(forall (j: int32) { (to_integer(at(opened, i)) + 1) <= to_integer(j) and j < end implies arena->occupied[j] == 0 }, k);
-                    close();
                 }
                 have forall (k: int32) { start <= k and k < i implies arena->occupied[k] == 1 } by {
-                    intro();
-                    intro();
-                    have start <= k;
-                    have k < i;
-                    have to_integer(k) < (to_integer(at(opened, i)) + 1) by {
-                        have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                            close() using { 0 <= to_integer(at(opened, i)); };
+                    intro() {
+                        intro() {
+                            have start <= k;
+                            have k < i;
+                            have to_integer(k) < (to_integer(at(opened, i)) + 1) by {
+                                have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
+                                    close() using { 0 <= to_integer(at(opened, i)); };
+                                }
+                                have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
+                                    close() using { (let integer_value: Integer = to_integer((run_lo as
+                                            int32)) + to_integer((count as int32)); integer_value) <=
+                                            2147483647; (let integer_value: Integer = to_integer((end as int32));
+                                            integer_value) == (to_integer((run_lo as int32)) +
+                                            to_integer((count as int32))); to_integer(at(opened, i)) < to_integer((let
+                                            integer_value: Integer = to_integer((end as int32));
+                                            integer_value)); };
+                                }
+                                have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
+                                    close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
+                                }
+                                close() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
+                            }
+                            instantiate(forall (j: int32) { start <= j and to_integer(j) < (to_integer(at(opened, i)) + 1) implies arena->occupied[j] == 1 }, k);
+                            close();
                         }
-                        have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                            close() using { (let integer_value: Integer = to_integer((run_lo as
-                                    int32)) + to_integer((count as int32)); integer_value) <=
-                                    2147483647; (let integer_value: Integer = to_integer((end as int32));
-                                    integer_value) == (to_integer((run_lo as int32)) +
-                                    to_integer((count as int32))); to_integer(at(opened, i)) < to_integer((let
-                                    integer_value: Integer = to_integer((end as int32));
-                                    integer_value)); };
-                        }
-                        have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                            close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
-                        }
-                        close() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
                     }
-                    instantiate(forall (j: int32) { start <= j and to_integer(j) < (to_integer(at(opened, i)) + 1) implies arena->occupied[j] == 1 }, k);
-                    close();
                 }
                 observe(at(opened, arena->occupied)[0..at(opened, arena->capacity)]);
                 have forall (k: int32) { i <= k and k < end implies load<int32>((old(arena->occupied) + k)) == 0 } by {
-                    intro();
-                    intro();
-                    instantiate(forall (j: int32) { i <= j and j < end implies arena->occupied[j] == 0 }, k);
-                    have &arena->occupied[k] == old(&arena->occupied[k]) by {
-                        close();
+                    intro() {
+                        intro() {
+                            instantiate(forall (j: int32) { i <= j and j < end implies arena->occupied[j] == 0 }, k);
+                            have &arena->occupied[k] == old(&arena->occupied[k]) by {
+                                close();
+                            }
+                            close();
+                        }
                     }
-                    close();
                 }
                 have forall (k: int32) { start <= k and k < i implies load<int32>((old(arena->occupied) + k)) == 1 } by {
-                    intro();
-                    intro();
-                    instantiate(forall (j: int32) { start <= j and j < i implies arena->occupied[j] == 1 }, k);
-                    have &arena->occupied[k] == old(&arena->occupied[k]) by {
-                        close();
+                    intro() {
+                        intro() {
+                            instantiate(forall (j: int32) { start <= j and j < i implies arena->occupied[j] == 1 }, k);
+                            have &arena->occupied[k] == old(&arena->occupied[k]) by {
+                                close();
+                            }
+                            close();
+                        }
                     }
-                    close();
                 }
                 have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
@@ -1745,26 +1860,36 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     close();
                 }
                 have w.next == i implies forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have w.next == i implies forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } implies forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            close();
+                        }
+                    }
                 }
                 have w.next == i implies forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } implies forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } implies arena->data == old(arena->data) by {
-                    intro();
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            intro() {
+                                close();
+                            }
+                        }
+                    }
                 }
                 have w.next == i implies forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } implies forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } implies arena->data == old(arena->data) implies arena->occupied == old(arena->occupied) by {
-                    intro();
-                    intro();
-                    intro();
-                    intro();
-                    close();
+                    intro() {
+                        intro() {
+                            intro() {
+                                intro() {
+                                    close();
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1782,55 +1907,61 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             close() using { at(function.entry, m) <= at(function.entry, end); not at(function.entry, m) < at(function.entry, end); };
         }
         have forall (k: int32) { start <= k and k < end implies arena->occupied[k] == 1 } by {
-            intro();
-            intro();
-            have start <= k;
-            have k < end;
-            have k < m by {
-                close();
+            intro() {
+                intro() {
+                    have start <= k;
+                    have k < end;
+                    have k < m by {
+                        close();
+                    }
+                    instantiate(forall (j: int32) { start <= j and j < m implies arena->occupied[j] == 1 }, k);
+                    close();
+                }
             }
-            instantiate(forall (j: int32) { start <= j and j < m implies arena->occupied[j] == 1 }, k);
-            close();
         }
         have forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < start;
-            have arena->occupied[k] == old(arena->occupied[k]) by {
-                instantiate(forall (j: int32) { 0 <= j and j < start implies arena->occupied[j] == at(mark_free_run.entry, arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < start;
+                    have arena->occupied[k] == old(arena->occupied[k]) by {
+                        instantiate(forall (j: int32) { 0 <= j and j < start implies arena->occupied[j] == at(mark_free_run.entry, arena->occupied[j]) }, k);
+                        close();
+                    }
+                    have k < end by {
+                        close() using { k < start; at(function.entry, start) < at(function.entry, end); };
+                    }
+                    have k < arena->capacity by {
+                        apply(integer::int32_less_than_less_equal_transitive(k, end, arena->capacity));
+                    }
+                    have at(mark_free_run.entry, 0) <= at(mark_free_run.entry, k) and at(mark_free_run.entry, k) < at(mark_free_run.entry, arena->capacity);
+                    instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                    close();
+                }
             }
-            have k < end by {
-                close() using { k < start; at(function.entry, start) < at(function.entry, end); };
-            }
-            have k < arena->capacity by {
-                apply(integer::int32_less_than_less_equal_transitive(k, end, arena->capacity));
-            }
-            have at(mark_free_run.entry, 0) <= at(mark_free_run.entry, k) and at(mark_free_run.entry, k) < at(mark_free_run.entry, arena->capacity);
-            instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-            close();
         }
         have forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have end <= k;
-            have k < arena->capacity;
-            have arena->occupied[k] == old(arena->occupied[k]) by {
-                instantiate(forall (j: int32) { end <= j and j < arena->capacity implies arena->occupied[j] == at(mark_free_run.entry, arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have end <= k;
+                    have k < arena->capacity;
+                    have arena->occupied[k] == old(arena->occupied[k]) by {
+                        instantiate(forall (j: int32) { end <= j and j < arena->capacity implies arena->occupied[j] == at(mark_free_run.entry, arena->occupied[j]) }, k);
+                        close();
+                    }
+                    have 0 <= end by {
+                        close() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
+                                int32); (count as int32) <= (end as int32); };
+                    }
+                    have 0 <= k by {
+                        close() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
+                                int32); (end as int32) <= (k as int32); };
+                    }
+                    have at(mark_free_run.entry, 0) <= at(mark_free_run.entry, k) and at(mark_free_run.entry, k) < at(mark_free_run.entry, arena->capacity);
+                    instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                    close();
+                }
             }
-            have 0 <= end by {
-                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
-                        int32); (count as int32) <= (end as int32); };
-            }
-            have 0 <= k by {
-                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
-                        int32); (end as int32) <= (k as int32); };
-            }
-            have at(mark_free_run.entry, 0) <= at(mark_free_run.entry, k) and at(mark_free_run.entry, k) < at(mark_free_run.entry, arena->capacity);
-            instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-            close();
         }
         mark marked;
         step();
@@ -1860,212 +1991,220 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             close();
         }
         have forall (k: int32) { region->start <= k and k < region->end implies arena->occupied[k] == 1 } by {
-            intro();
-            intro();
-            have region->start <= k;
-            have k < region->end;
-            have start <= k by {
-                close();
+            intro() {
+                intro() {
+                    have region->start <= k;
+                    have k < region->end;
+                    have start <= k by {
+                        close();
+                    }
+                    have k < end by {
+                        close();
+                    }
+                    have 0 <= start by { close(); }
+                    have 0 <= k by {
+                        apply(click::integer::int32_less_equal_transitive(0, start, k));
+                    }
+                    have k < arena->capacity by {
+                        apply(integer::int32_less_than_less_equal_transitive(k, end, arena->capacity));
+                    }
+                    have at(marked, start) <= at(marked, k) and at(marked, k) < at(marked, end);
+                    instantiate(forall (j: int32) { at(marked, start) <= at(marked, j) and at(marked, j) < at(marked, end) implies at(marked, arena->occupied[j]) == at(marked, 1) }, k);
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->arena)) by { close(); }
+                    have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(14));
+                    }
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->start)) by { close(); }
+                    have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(15));
+                    }
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->end)) by { close(); }
+                    have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(16));
+                    }
+                    have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
+                    have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(17));
+                    }
+                    close();
+                }
             }
-            have k < end by {
-                close();
-            }
-            have 0 <= start by { close(); }
-            have 0 <= k by {
-                apply(click::integer::int32_less_equal_transitive(0, start, k));
-            }
-            have k < arena->capacity by {
-                apply(integer::int32_less_than_less_equal_transitive(k, end, arena->capacity));
-            }
-            have at(marked, start) <= at(marked, k) and at(marked, k) < at(marked, end);
-            instantiate(forall (j: int32) { at(marked, start) <= at(marked, j) and at(marked, j) < at(marked, end) implies at(marked, arena->occupied[j]) == at(marked, 1) }, k);
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->arena)) by { close(); }
-            have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(14));
-            }
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->start)) by { close(); }
-            have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(15));
-            }
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->end)) by { close(); }
-            have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(16));
-            }
-            have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
-            have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(17));
-            }
-            close();
         }
         have forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < region->start;
-            have k < start by {
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < region->start;
+                    have k < start by {
+                        close();
+                    }
+                    have k < end by {
+                        close() using { at(function.entry, k) < at(function.entry, start); at(function.entry, start) < at(function.entry, end); };
+                    }
+                    have k < arena->capacity by {
+                        apply(integer::int32_less_than_less_equal_transitive(k, end, arena->capacity));
+                    }
+                    have at(marked, 0) <= at(marked, k) and at(marked, k) < at(marked, start);
+                    instantiate(forall (j: int32) { at(marked, 0) <= at(marked, j) and at(marked, j) < at(marked, start) implies at(marked, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->arena)) by { close(); }
+                    have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(14));
+                    }
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->start)) by { close(); }
+                    have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(15));
+                    }
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->end)) by { close(); }
+                    have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(16));
+                    }
+                    have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
+                    have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(17));
+                    }
+                    close();
+                }
             }
-            have k < end by {
-                close() using { at(function.entry, k) < at(function.entry, start); at(function.entry, start) < at(function.entry, end); };
-            }
-            have k < arena->capacity by {
-                apply(integer::int32_less_than_less_equal_transitive(k, end, arena->capacity));
-            }
-            have at(marked, 0) <= at(marked, k) and at(marked, k) < at(marked, start);
-            instantiate(forall (j: int32) { at(marked, 0) <= at(marked, j) and at(marked, j) < at(marked, start) implies at(marked, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->arena)) by { close(); }
-            have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(14));
-            }
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->start)) by { close(); }
-            have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(15));
-            }
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->end)) by { close(); }
-            have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(16));
-            }
-            have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
-            have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(17));
-            }
-            close();
         }
         have forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have region->end <= k;
-            have k < arena->capacity;
-            have end <= k by {
-                close();
+            intro() {
+                intro() {
+                    have region->end <= k;
+                    have k < arena->capacity;
+                    have end <= k by {
+                        close();
+                    }
+                    have 0 <= end by {
+                        close() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
+                                int32); (count as int32) <= (end as int32); };
+                    }
+                    have 0 <= k by {
+                        close() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
+                                int32); (at(function.entry, end) as int32) <= (at(function.entry, k) as
+                                int32); };
+                    }
+                    have at(marked, end) <= at(marked, k) and at(marked, k) < at(marked, arena->capacity);
+                    instantiate(forall (j: int32) { at(marked, end) <= at(marked, j) and at(marked, j) < at(marked, arena->capacity) implies at(marked, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->arena)) by { close(); }
+                    have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(14));
+                    }
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->start)) by { close(); }
+                    have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(15));
+                    }
+                    have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*region), memory(region->end)) by { close(); }
+                    have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(16));
+                    }
+                    have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
+                    have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
+                    have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
+                        apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k));
+                    }
+                    have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
+                        close();
+                    }
+                    have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                        preserve(memory(at(marked, arena->occupied)[k]), statement(17));
+                    }
+                    close();
+                }
             }
-            have 0 <= end by {
-                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
-                        int32); (count as int32) <= (end as int32); };
-            }
-            have 0 <= k by {
-                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
-                        int32); (at(function.entry, end) as int32) <= (at(function.entry, k) as
-                        int32); };
-            }
-            have at(marked, end) <= at(marked, k) and at(marked, k) < at(marked, arena->capacity);
-            instantiate(forall (j: int32) { at(marked, end) <= at(marked, j) and at(marked, j) < at(marked, arena->capacity) implies at(marked, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->arena)) by { close(); }
-            have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(14));
-            }
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->start)) by { close(); }
-            have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(15));
-            }
-            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*region), memory(region->end)) by { close(); }
-            have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(16));
-            }
-            have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { close(); }
-            have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
-            have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
-                apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k));
-            }
-            have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
-                close();
-            }
-            have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
-                preserve(memory(at(marked, arena->occupied)[k]), statement(17));
-            }
-            close();
         }
         mark stored;
         have forall (k: int32) { region->start <= k and k < region->end implies old(arena->occupied[k]) == 0 } by {
-            intro();
-            intro();
-            have region->start <= k;
-            have k < region->end;
-            have start <= k by {
-                close();
+            intro() {
+                intro() {
+                    have region->start <= k;
+                    have k < region->end;
+                    have start <= k by {
+                        close();
+                    }
+                    have k < end by {
+                        close();
+                    }
+                    instantiate(forall (j: int32) { start <= j and j < end implies old(arena->occupied[j]) == 0 }, k);
+                    close();
+                }
             }
-            have k < end by {
-                close();
-            }
-            instantiate(forall (j: int32) { start <= j and j < end implies old(arena->occupied[j]) == 0 }, k);
-            close();
         }
         fold(arena_cells(arena->data, arena->occupied, arena->capacity));
         let allocated = fold(arena_region(region), { start: start, end: end });
@@ -2076,13 +2215,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             close();
         }
         have forall (k: int32) { result == 0 and 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have result == 0;
-            have not result == 0 by {
-                close();
+            intro() {
+                intro() {
+                    have result == 0;
+                    have not result == 0 by {
+                        close();
+                    }
+                    contradiction(result == 0);
+                }
             }
-            contradiction(result == 0);
         }
         close();
         have result == 0 or result == 1 by {
@@ -2115,87 +2256,102 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         close();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
-            intro();
-            contradiction(result == 0);
+            intro() {
+                contradiction(result == 0);
+            }
         }
         close();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have result == 1 implies region->arena == arena by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have result == 1 implies to_integer(region->end) == (to_integer(region->start) + to_integer(count)) by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have result == 1 implies region->end <= arena->capacity by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have result == 1 implies 0 <= region->start by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have result == 1 implies region->start < region->end by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         close();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies arena->occupied[k] == 1 } by {
-            intro();
-            intro();
-            have region->start <= k;
-            have k < region->end;
-            have arena->occupied[k] == 1 by {
-                have at(stored, region->start) <= at(stored, k) and at(stored, k) < at(stored, region->end);
-                instantiate(forall (j: int32) { at(stored, region->start) <= at(stored, j) and at(stored, j) < at(stored, region->end) implies at(stored, arena->occupied[j]) == at(stored, 1) }, k);
-                close();
+            intro() {
+                intro() {
+                    have region->start <= k;
+                    have k < region->end;
+                    have arena->occupied[k] == 1 by {
+                        have at(stored, region->start) <= at(stored, k) and at(stored, k) < at(stored, region->end);
+                        instantiate(forall (j: int32) { at(stored, region->start) <= at(stored, j) and at(stored, j) < at(stored, region->end) implies at(stored, arena->occupied[j]) == at(stored, 1) }, k);
+                        close();
+                    }
+                    close();
+                }
             }
-            close();
         }
         close();
         have forall (k: int32) { result == 1 and 0 <= k and k < region->start implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < region->start;
-            have arena->occupied[k] == old(arena->occupied[k]) by {
-                have at(stored, 0) <= at(stored, k) and at(stored, k) < at(stored, region->start);
-                instantiate(forall (j: int32) { at(stored, 0) <= at(stored, j) and at(stored, j) < at(stored, region->start) implies at(stored, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < region->start;
+                    have arena->occupied[k] == old(arena->occupied[k]) by {
+                        have at(stored, 0) <= at(stored, k) and at(stored, k) < at(stored, region->start);
+                        instantiate(forall (j: int32) { at(stored, 0) <= at(stored, j) and at(stored, j) < at(stored, region->start) implies at(stored, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                        close();
+                    }
+                    close();
+                }
             }
-            close();
         }
         close();
         have forall (k: int32) { result == 1 and region->end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
-            intro();
-            intro();
-            have region->end <= k;
-            have k < arena->capacity;
-            have arena->occupied[k] == old(arena->occupied[k]) by {
-                have at(stored, region->end) <= at(stored, k) and at(stored, k) < at(stored, arena->capacity);
-                instantiate(forall (j: int32) { at(stored, region->end) <= at(stored, j) and at(stored, j) < at(stored, arena->capacity) implies at(stored, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have region->end <= k;
+                    have k < arena->capacity;
+                    have arena->occupied[k] == old(arena->occupied[k]) by {
+                        have at(stored, region->end) <= at(stored, k) and at(stored, k) < at(stored, arena->capacity);
+                        instantiate(forall (j: int32) { at(stored, region->end) <= at(stored, j) and at(stored, j) < at(stored, arena->capacity) implies at(stored, arena->occupied[j]) == old(arena->occupied[j]) }, k);
+                        close();
+                    }
+                    close();
+                }
             }
-            close();
         }
         close();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies old(arena->occupied[k]) == 0 } by {
-            intro();
-            intro();
-            have region->start <= k;
-            have k < region->end;
-            have at(stored, region->start) <= at(stored, k) and at(stored, k) < at(stored, region->end);
-            instantiate(forall (j: int32) { at(stored, region->start) <= at(stored, j) and at(stored, j) < at(stored, region->end) implies old(arena->occupied[j]) == 0 }, k);
-            close();
+            intro() {
+                intro() {
+                    have region->start <= k;
+                    have k < region->end;
+                    have at(stored, region->start) <= at(stored, k) and at(stored, k) < at(stored, region->end);
+                    instantiate(forall (j: int32) { at(stored, region->start) <= at(stored, j) and at(stored, j) < at(stored, region->end) implies old(arena->occupied[j]) == 0 }, k);
+                    close();
+                }
+            }
         }
         close();
         close();
@@ -2330,48 +2486,52 @@ void arena_free(struct region* region) {
         close();
     }
     have forall (k: int32) { region->start <= k and k < region->start implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have region->start <= k;
-        have k < region->start;
-        have not k < region->start by {
-            close();
+        intro() {
+            intro() {
+                have region->start <= k;
+                have k < region->start;
+                have not k < region->start by {
+                    close();
+                }
+                contradiction(k < region->start);
+            }
         }
-        contradiction(k < region->start);
     }
     have viewable(arena->occupied[0..arena->capacity]) by {
         observe(at(unfolded, region->arena->occupied)[0..at(unfolded, region->arena->capacity)]);
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == old(region->arena->occupied[k]) } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have separate(statement(0).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
-            close() using {};
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have separate(statement(0).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
+                    close() using {};
+                }
+                have at(statement(0).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(0).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
+                    preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(0));
+                }
+                have separate(statement(1).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
+                    close() using {};
+                }
+                have at(statement(1).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(1).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
+                    preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(1));
+                }
+                have separate(statement(2).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
+                    close() using {};
+                }
+                have at(statement(2).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(2).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
+                    preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(2));
+                }
+                have separate(statement(3).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
+                    close() using {};
+                }
+                have at(statement(3).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(3).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
+                    preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(3));
+                }
+                close();
+            }
         }
-        have at(statement(0).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(0).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
-            preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(0));
-        }
-        have separate(statement(1).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
-            close() using {};
-        }
-        have at(statement(1).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(1).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
-            preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(1));
-        }
-        have separate(statement(2).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
-            close() using {};
-        }
-        have at(statement(2).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(2).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
-            preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(2));
-        }
-        have separate(statement(3).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
-            close() using {};
-        }
-        have at(statement(3).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(3).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
-            preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(3));
-        }
-        close();
     }
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end), { next: region->start });
     loop clear_occupied {
@@ -2388,14 +2548,18 @@ void arena_free(struct region* region) {
                 close();
             }
             have forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
-                intro();
-                intro();
-                close();
+                intro() {
+                    intro() {
+                        close();
+                    }
+                }
             }
             have forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
-                intro();
-                intro();
-                close();
+                intro() {
+                    intro() {
+                        close();
+                    }
+                }
             }
             have arena->data == at(clear_occupied.entry, arena->data) by {
                 close();
@@ -2520,130 +2684,138 @@ void arena_free(struct region* region) {
                 close() using { to_integer(old(region->start)) <= to_integer(at(opened, i)); to_integer(region->start) == to_integer(old(region->start)); };
             }
             have forall (k: int32) { region->start <= k and to_integer(k) < (to_integer(at(opened, i)) + 1) implies arena->occupied[k] == 0 } by {
-                intro();
-                intro();
-                have region->start <= k;
-                have to_integer(k) < (to_integer(at(opened, i)) + 1);
-                if k < at(opened, i) {
-                    have k < m by {
-                        close();
+                intro() {
+                    intro() {
+                        have region->start <= k;
+                        have to_integer(k) < (to_integer(at(opened, i)) + 1);
+                        if k < at(opened, i) {
+                            have k < m by {
+                                close();
+                            }
+                            have at(opened, arena->occupied[k]) == 0 by {
+                                have at(opened, region->start) <= at(opened, k) and at(opened, k) < at(opened, m);
+                                instantiate(forall (j: int32) { at(opened, region->start) <= at(opened, j) and at(opened, j) < at(opened, m) implies at(opened, arena->occupied[j]) == at(opened, 0) }, k);
+                                close();
+                            }
+                            have 0 <= k by {
+                                close() using { (at(function.entry, 0) as int32) <= (at(function.entry,
+                                        region->start) as int32); (region->start as int32) <= (k as int32); (region->start as int32) == (at(opened, region->start) as
+                                        int32); };
+                            }
+                            have k < at(opened, arena->capacity) by {
+                                close() using { at(region(5).entry, i) < at(region(5).entry, region->end); at(function.entry, region->end) <= at(function.entry,
+                                        arena->capacity); k < at(region(5).entry, i); };
+                            }
+                            have at(opened, i) != k by { close() using { k < at(opened, i); }; }
+                            have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                                apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                            }
+                            have separate(loop(0).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
+                                close();
+                            }
+                            have at(loop(0).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
+                                == at(loop(0).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
+                                preserve(memory(at(opened, arena->occupied)[k]), loop(0).statement(0));
+                            }
+                            rewrite(arena->occupied, at(opened, arena->occupied));
+                            close();
+                        } else {
+                            have to_integer(k) == to_integer(at(opened, i)) by {
+                                close() using { to_integer(k) < (to_integer(at(opened, i)) + 1); not k < at(opened, i); };
+                            }
+                            rewrite(k, at(opened, i));
+                            rewrite(arena->occupied, at(opened, arena->occupied));
+                            close();
+                        }
                     }
-                    have at(opened, arena->occupied[k]) == 0 by {
-                        have at(opened, region->start) <= at(opened, k) and at(opened, k) < at(opened, m);
-                        instantiate(forall (j: int32) { at(opened, region->start) <= at(opened, j) and at(opened, j) < at(opened, m) implies at(opened, arena->occupied[j]) == at(opened, 0) }, k);
-                        close();
-                    }
-                    have 0 <= k by {
-                        close() using { (at(function.entry, 0) as int32) <= (at(function.entry,
-                                region->start) as int32); (region->start as int32) <= (k as int32); (region->start as int32) == (at(opened, region->start) as
-                                int32); };
-                    }
-                    have k < at(opened, arena->capacity) by {
-                        close() using { at(region(5).entry, i) < at(region(5).entry, region->end); at(function.entry, region->end) <= at(function.entry,
-                                arena->capacity); k < at(region(5).entry, i); };
-                    }
-                    have at(opened, i) != k by { close() using { k < at(opened, i); }; }
-                    have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                    }
-                    have separate(loop(0).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
-                        close();
-                    }
-                    have at(loop(0).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
-                        == at(loop(0).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
-                        preserve(memory(at(opened, arena->occupied)[k]), loop(0).statement(0));
-                    }
-                    rewrite(arena->occupied, at(opened, arena->occupied));
-                    close();
-                } else {
-                    have to_integer(k) == to_integer(at(opened, i)) by {
-                        close() using { to_integer(k) < (to_integer(at(opened, i)) + 1); not k < at(opened, i); };
-                    }
-                    rewrite(k, at(opened, i));
-                    rewrite(arena->occupied, at(opened, arena->occupied));
-                    close();
                 }
             }
             have forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
-                intro();
-                intro();
-                have 0 <= k;
-                have k < region->start;
-                have at(opened, arena->occupied[k]) == at(clear_occupied.entry, arena->occupied[k]) by {
-                    have at(opened, 0) <= at(opened, k) and at(opened, k) < at(opened, region->start);
-                    instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, region->start) implies at(opened, arena->occupied[j]) == at(clear_occupied.entry, arena->occupied[j]) }, k);
-                    close();
+                intro() {
+                    intro() {
+                        have 0 <= k;
+                        have k < region->start;
+                        have at(opened, arena->occupied[k]) == at(clear_occupied.entry, arena->occupied[k]) by {
+                            have at(opened, 0) <= at(opened, k) and at(opened, k) < at(opened, region->start);
+                            instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, region->start) implies at(opened, arena->occupied[j]) == at(clear_occupied.entry, arena->occupied[j]) }, k);
+                            close();
+                        }
+                        have k < at(opened, i) by {
+                            close() using { at(region(3).exit, i) <= at(region(5).entry, i); region->start == at(opened, region->start); k < region->start; };
+                        }
+                        have at(opened, i) != k by { close() using { k < at(opened, i); }; }
+                        have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                            apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                        }
+                        have separate(loop(0).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
+                            close();
+                        }
+                        have at(loop(0).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
+                            == at(loop(0).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
+                            preserve(memory(at(opened, arena->occupied)[k]), loop(0).statement(0));
+                        }
+                        rewrite(arena->occupied, at(opened, arena->occupied));
+                        close();
+                    }
                 }
-                have k < at(opened, i) by {
-                    close() using { at(region(3).exit, i) <= at(region(5).entry, i); region->start == at(opened, region->start); k < region->start; };
-                }
-                have at(opened, i) != k by { close() using { k < at(opened, i); }; }
-                have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                }
-                have separate(loop(0).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
-                    close();
-                }
-                have at(loop(0).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
-                    == at(loop(0).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
-                    preserve(memory(at(opened, arena->occupied)[k]), loop(0).statement(0));
-                }
-                rewrite(arena->occupied, at(opened, arena->occupied));
-                close();
             }
             have forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
-                intro();
-                intro();
-                have region->end <= k;
-                have k < arena->capacity;
-                have at(opened, arena->occupied[k]) == at(clear_occupied.entry, arena->occupied[k]) by {
-                    have at(opened, region->end) <= at(opened, k) and at(opened, k) < at(opened, arena->capacity);
-                    instantiate(forall (j: int32) { at(opened, region->end) <= at(opened, j) and at(opened, j) < at(opened, arena->capacity) implies at(opened, arena->occupied[j]) == at(clear_occupied.entry, arena->occupied[j]) }, k);
-                    close();
+                intro() {
+                    intro() {
+                        have region->end <= k;
+                        have k < arena->capacity;
+                        have at(opened, arena->occupied[k]) == at(clear_occupied.entry, arena->occupied[k]) by {
+                            have at(opened, region->end) <= at(opened, k) and at(opened, k) < at(opened, arena->capacity);
+                            instantiate(forall (j: int32) { at(opened, region->end) <= at(opened, j) and at(opened, j) < at(opened, arena->capacity) implies at(opened, arena->occupied[j]) == at(clear_occupied.entry, arena->occupied[j]) }, k);
+                            close();
+                        }
+                        have at(opened, i) < k by {
+                            close() using { region->end <= k; region->end == at(opened, region->end); at(region(5).entry, i) < at(region(5).entry, region->end); };
+                        }
+                        have at(opened, i) <= k by {
+                            apply(integer::int32_less_than_implies_less_equal(at(opened, i), k));
+                        }
+                        have 0 <= k by {
+                            close() using { (0 as int32) <= (at(region(5).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
+                        }
+                        have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
+                        have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                            apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                        }
+                        have separate(loop(0).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
+                            close();
+                        }
+                        have at(loop(0).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
+                            == at(loop(0).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
+                            preserve(memory(at(opened, arena->occupied)[k]), loop(0).statement(0));
+                        }
+                        rewrite(arena->occupied, at(opened, arena->occupied));
+                        close();
+                    }
                 }
-                have at(opened, i) < k by {
-                    close() using { region->end <= k; region->end == at(opened, region->end); at(region(5).entry, i) < at(region(5).entry, region->end); };
-                }
-                have at(opened, i) <= k by {
-                    apply(integer::int32_less_than_implies_less_equal(at(opened, i), k));
-                }
-                have 0 <= k by {
-                    close() using { (0 as int32) <= (at(region(5).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
-                }
-                have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
-                have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                }
-                have separate(loop(0).statement(0).footprint, memory(at(opened, arena->occupied)[k])) by {
-                    close();
-                }
-                have at(loop(0).statement(0).exit, (let saved: int32* = at(opened, arena->occupied); saved[k]))
-                    == at(loop(0).statement(0).entry, (let saved: int32* = at(opened, arena->occupied); saved[k])) by {
-                    preserve(memory(at(opened, arena->occupied)[k]), loop(0).statement(0));
-                }
-                rewrite(arena->occupied, at(opened, arena->occupied));
-                close();
             }
             have forall (k: int32) { region->start <= k and k < i implies arena->occupied[k] == 0 } by {
-                intro();
-                intro();
-                have region->start <= k;
-                have k < i;
-                have to_integer(k) < (to_integer(at(opened, i)) + 1) by {
-                    have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                        close() using { 0 <= to_integer(at(opened, i)); };
+                intro() {
+                    intro() {
+                        have region->start <= k;
+                        have k < i;
+                        have to_integer(k) < (to_integer(at(opened, i)) + 1) by {
+                            have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
+                                close() using { 0 <= to_integer(at(opened, i)); };
+                            }
+                            have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
+                                close() using { to_integer(at(opened, i)) < to_integer(at(region(5).entry,
+                                        arena->capacity)); to_integer(at(region(5).entry, arena->capacity)) <= 536870911; };
+                            }
+                            have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
+                                close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
+                            }
+                            close() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
+                        }
+                        instantiate(forall (j: int32) { region->start <= j and to_integer(j) < (to_integer(at(opened, i)) + 1) implies arena->occupied[j] == 0 }, k);
+                        close();
                     }
-                    have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                        close() using { to_integer(at(opened, i)) < to_integer(at(region(5).entry,
-                                arena->capacity)); to_integer(at(region(5).entry, arena->capacity)) <= 536870911; };
-                    }
-                    have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                        close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
-                    }
-                    close() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
                 }
-                instantiate(forall (j: int32) { region->start <= j and to_integer(j) < (to_integer(at(opened, i)) + 1) implies arena->occupied[j] == 0 }, k);
-                close();
             }
             have arena->occupied == old(region->arena->occupied) by {
                 close();
@@ -2652,14 +2824,16 @@ void arena_free(struct region* region) {
                 close();
             }
             have forall (k: int32) { old(region->start) <= k and k < i implies (let saved: int32* = old(region->arena->occupied); saved[k]) == 0 } by {
-                intro();
-                intro();
-                have old(region->start) <= k;
-                have k < i;
-                have region->start <= k and k < i;
-                instantiate(forall (j: int32) { region->start <= j and j < i implies arena->occupied[j] == 0 }, k);
-                rewrite(old(region->arena->occupied), arena->occupied);
-                close();
+                intro() {
+                    intro() {
+                        have old(region->start) <= k;
+                        have k < i;
+                        have region->start <= k and k < i;
+                        instantiate(forall (j: int32) { region->start <= j and j < i implies arena->occupied[j] == 0 }, k);
+                        rewrite(old(region->arena->occupied), arena->occupied);
+                        close();
+                    }
+                }
             }
             let w = fold(arena_clear_window(old(region->arena->data), old(region->arena->occupied), old(region->arena->capacity), old(region->start), old(region->end)), { next: i });
             have region->start <= region->end by {
@@ -2699,34 +2873,49 @@ void arena_free(struct region* region) {
                 close();
             }
             have w.next == i implies forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have w.next == i implies forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } implies forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
-                intro();
-                intro();
-                close();
+                intro() {
+                    intro() {
+                        close();
+                    }
+                }
             }
             have w.next == i implies forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } implies forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } implies arena->data == at(clear_occupied.entry, arena->data) by {
-                intro();
-                intro();
-                intro();
-                close();
+                intro() {
+                    intro() {
+                        intro() {
+                            close();
+                        }
+                    }
+                }
             }
             have w.next == i implies forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } implies forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } implies arena->data == at(clear_occupied.entry, arena->data) implies arena->occupied == at(clear_occupied.entry, arena->occupied) by {
-                intro();
-                intro();
-                intro();
-                intro();
-                close();
+                intro() {
+                    intro() {
+                        intro() {
+                            intro() {
+                                close();
+                            }
+                        }
+                    }
+                }
             }
             have w.next == i implies forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } implies forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } implies arena->data == at(clear_occupied.entry, arena->data) implies arena->occupied == at(clear_occupied.entry, arena->occupied) implies region->arena == old(region->arena) by {
-                intro();
-                intro();
-                intro();
-                intro();
-                intro();
-                close();
+                intro() {
+                    intro() {
+                        intro() {
+                            intro() {
+                                intro() {
+                                    close();
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -2753,56 +2942,62 @@ void arena_free(struct region* region) {
         close();
     }
     have forall (k: int32) { region->start <= k and k < region->end implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have region->start <= k;
-        have k < region->end;
-        have k < m by {
-            close();
+        intro() {
+            intro() {
+                have region->start <= k;
+                have k < region->end;
+                have k < m by {
+                    close();
+                }
+                instantiate(forall (j: int32) { region->start <= j and j < m implies arena->occupied[j] == 0 }, k);
+                close();
+            }
         }
-        instantiate(forall (j: int32) { region->start <= j and j < m implies arena->occupied[j] == 0 }, k);
-        close();
     }
     have forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == old(region->arena->occupied[k]) } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < region->start;
-        have arena->occupied[k] == old(region->arena->occupied[k]) by {
-            instantiate(forall (j: int32) { 0 <= j and j < region->start implies arena->occupied[j] == at(clear_occupied.entry, arena->occupied[j]) }, k);
-            close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < region->start;
+                have arena->occupied[k] == old(region->arena->occupied[k]) by {
+                    instantiate(forall (j: int32) { 0 <= j and j < region->start implies arena->occupied[j] == at(clear_occupied.entry, arena->occupied[j]) }, k);
+                    close();
+                }
+                have k < region->end by {
+                    close() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
+                }
+                have k < arena->capacity by {
+                    apply(integer::int32_less_than_less_equal_transitive(k, region->end, arena->capacity));
+                }
+                have at(clear_occupied.entry, 0) <= at(clear_occupied.entry, k) and at(clear_occupied.entry, k) < at(clear_occupied.entry, arena->capacity);
+                instantiate(forall (j: int32) { at(clear_occupied.entry, 0) <= at(clear_occupied.entry, j) and at(clear_occupied.entry, j) < at(clear_occupied.entry, arena->capacity) implies at(clear_occupied.entry, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
+                close() using {
+                    arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]);
+                    at(clear_occupied.entry, arena->occupied[k]) == old(region->arena->occupied[k]);
+                };
+            }
         }
-        have k < region->end by {
-            close() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
-        }
-        have k < arena->capacity by {
-            apply(integer::int32_less_than_less_equal_transitive(k, region->end, arena->capacity));
-        }
-        have at(clear_occupied.entry, 0) <= at(clear_occupied.entry, k) and at(clear_occupied.entry, k) < at(clear_occupied.entry, arena->capacity);
-        instantiate(forall (j: int32) { at(clear_occupied.entry, 0) <= at(clear_occupied.entry, j) and at(clear_occupied.entry, j) < at(clear_occupied.entry, arena->capacity) implies at(clear_occupied.entry, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
-        close() using {
-            arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]);
-            at(clear_occupied.entry, arena->occupied[k]) == old(region->arena->occupied[k]);
-        };
     }
     have forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == old(region->arena->occupied[k]) } by {
-        intro();
-        intro();
-        have region->end <= k;
-        have k < arena->capacity;
-        have arena->occupied[k] == old(region->arena->occupied[k]) by {
-            instantiate(forall (j: int32) { region->end <= j and j < arena->capacity implies arena->occupied[j] == at(clear_occupied.entry, arena->occupied[j]) }, k);
-            close();
+        intro() {
+            intro() {
+                have region->end <= k;
+                have k < arena->capacity;
+                have arena->occupied[k] == old(region->arena->occupied[k]) by {
+                    instantiate(forall (j: int32) { region->end <= j and j < arena->capacity implies arena->occupied[j] == at(clear_occupied.entry, arena->occupied[j]) }, k);
+                    close();
+                }
+                have 0 <= k by {
+                    close() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
+                }
+                have at(clear_occupied.entry, 0) <= at(clear_occupied.entry, k) and at(clear_occupied.entry, k) < at(clear_occupied.entry, arena->capacity);
+                instantiate(forall (j: int32) { at(clear_occupied.entry, 0) <= at(clear_occupied.entry, j) and at(clear_occupied.entry, j) < at(clear_occupied.entry, arena->capacity) implies at(clear_occupied.entry, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
+                close() using {
+                    arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]);
+                    at(clear_occupied.entry, arena->occupied[k]) == old(region->arena->occupied[k]);
+                };
+            }
         }
-        have 0 <= k by {
-            close() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
-        }
-        have at(clear_occupied.entry, 0) <= at(clear_occupied.entry, k) and at(clear_occupied.entry, k) < at(clear_occupied.entry, arena->capacity);
-        instantiate(forall (j: int32) { at(clear_occupied.entry, 0) <= at(clear_occupied.entry, j) and at(clear_occupied.entry, j) < at(clear_occupied.entry, arena->capacity) implies at(clear_occupied.entry, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
-        close() using {
-            arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]);
-            at(clear_occupied.entry, arena->occupied[k]) == old(region->arena->occupied[k]);
-        };
     }
     mark cleared;
     have at(cleared, separate(memory(arena->live_regions), memory(region->arena))) by {
@@ -2843,79 +3038,85 @@ void arena_free(struct region* region) {
         preserve(memory(arena->occupied), statement(5));
     }
     have forall (k: int32) { region->start <= k and k < region->end implies region->arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have region->start <= k;
-        have k < region->end;
-        have 0 <= k by {
-            close() using { at(function.entry, 0) <= at(function.entry, region->start); at(region(3).exit, i) <= k; };
+        intro() {
+            intro() {
+                have region->start <= k;
+                have k < region->end;
+                have 0 <= k by {
+                    close() using { at(function.entry, 0) <= at(function.entry, region->start); at(region(3).exit, i) <= k; };
+                }
+                have k < arena->capacity by {
+                    apply(integer::int32_less_than_less_equal_transitive(k, region->end, arena->capacity));
+                }
+                have at(cleared, region->start) <= at(cleared, k) and at(cleared, k) < at(cleared, region->end);
+                instantiate(forall (j: int32) { at(cleared, region->start) <= at(cleared, j) and at(cleared, j) < at(cleared, region->end) implies at(cleared, arena->occupied[j]) == at(cleared, 0) }, k);
+                have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
+                have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
+                    apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
+                }
+                have separate(statement(5).footprint, memory(arena->occupied[k])) by {
+                    close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+                }
+                have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
+                    preserve(memory(arena->occupied[k]), statement(5));
+                }
+                rewrite(region->arena, arena);
+                close();
+            }
         }
-        have k < arena->capacity by {
-            apply(integer::int32_less_than_less_equal_transitive(k, region->end, arena->capacity));
-        }
-        have at(cleared, region->start) <= at(cleared, k) and at(cleared, k) < at(cleared, region->end);
-        instantiate(forall (j: int32) { at(cleared, region->start) <= at(cleared, j) and at(cleared, j) < at(cleared, region->end) implies at(cleared, arena->occupied[j]) == at(cleared, 0) }, k);
-        have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
-        have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
-            apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
-        }
-        have separate(statement(5).footprint, memory(arena->occupied[k])) by {
-            close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
-        }
-        have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
-            preserve(memory(arena->occupied[k]), statement(5));
-        }
-        rewrite(region->arena, arena);
-        close();
     }
     have forall (k: int32) { 0 <= k and k < region->start implies region->arena->occupied[k] == old(region->arena->occupied[k]) } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < region->start;
-        have k < region->end by {
-            close() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < region->start;
+                have k < region->end by {
+                    close() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
+                }
+                have k < arena->capacity by {
+                    apply(integer::int32_less_than_less_equal_transitive(k, region->end, arena->capacity));
+                }
+                have at(cleared, 0) <= at(cleared, k) and at(cleared, k) < at(cleared, region->start);
+                instantiate(forall (j: int32) { at(cleared, 0) <= at(cleared, j) and at(cleared, j) < at(cleared, region->start) implies at(cleared, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
+                have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
+                have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
+                    apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
+                }
+                have separate(statement(5).footprint, memory(arena->occupied[k])) by {
+                    close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+                }
+                have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
+                    preserve(memory(arena->occupied[k]), statement(5));
+                }
+                rewrite(region->arena, arena);
+                close();
+            }
         }
-        have k < arena->capacity by {
-            apply(integer::int32_less_than_less_equal_transitive(k, region->end, arena->capacity));
-        }
-        have at(cleared, 0) <= at(cleared, k) and at(cleared, k) < at(cleared, region->start);
-        instantiate(forall (j: int32) { at(cleared, 0) <= at(cleared, j) and at(cleared, j) < at(cleared, region->start) implies at(cleared, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
-        have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
-        have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
-            apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
-        }
-        have separate(statement(5).footprint, memory(arena->occupied[k])) by {
-            close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
-        }
-        have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
-            preserve(memory(arena->occupied[k]), statement(5));
-        }
-        rewrite(region->arena, arena);
-        close();
     }
     have forall (k: int32) { region->end <= k and k < arena->capacity implies region->arena->occupied[k] == old(region->arena->occupied[k]) } by {
-        intro();
-        intro();
-        have region->end <= k;
-        have k < arena->capacity;
-        have 0 <= k by {
-            close() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
+        intro() {
+            intro() {
+                have region->end <= k;
+                have k < arena->capacity;
+                have 0 <= k by {
+                    close() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
+                }
+                have at(cleared, region->end) <= at(cleared, k) and at(cleared, k) < at(cleared, arena->capacity);
+                instantiate(forall (j: int32) { at(cleared, region->end) <= at(cleared, j) and at(cleared, j) < at(cleared, arena->capacity) implies at(cleared, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
+                have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
+                have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
+                    apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
+                }
+                have separate(statement(5).footprint, memory(arena->occupied[k])) by {
+                    close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+                }
+                have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
+                    preserve(memory(arena->occupied[k]), statement(5));
+                }
+                rewrite(region->arena, arena);
+                close();
+            }
         }
-        have at(cleared, region->end) <= at(cleared, k) and at(cleared, k) < at(cleared, arena->capacity);
-        instantiate(forall (j: int32) { at(cleared, region->end) <= at(cleared, j) and at(cleared, j) < at(cleared, arena->capacity) implies at(cleared, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
-        have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
-        have separate(memory(arena->live_regions), memory(arena->occupied[k])) by {
-            apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
-        }
-        have separate(statement(5).footprint, memory(arena->occupied[k])) by {
-            close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
-        }
-        have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
-            preserve(memory(arena->occupied[k]), statement(5));
-        }
-        rewrite(region->arena, arena);
-        close();
     }
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
     have defined(n - 1) by { close(); }
@@ -3065,40 +3266,42 @@ void arena_write(struct region* region, int32 index, int32 value) {
         0 <= k and k < at(w, region->arena->capacity) implies
             at(w, region->arena->occupied[k]) == region->arena->occupied[k]
     } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < at(w, region->arena->capacity);
-        have k < region->arena->capacity by { close(); }
-        have contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k])) by {
-            apply(separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k));
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < at(w, region->arena->capacity);
+                have k < region->arena->capacity by { close(); }
+                have contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k])) by {
+                    apply(separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k));
+                }
+                have 0 <= at(before_access, region->start + index) by { close(); }
+                have at(before_access, region->start + index) < region->arena->capacity by { close(); }
+                have 0 <= to_integer(at(before_access, region->start + index)) by { close(); }
+                have to_integer(at(before_access, region->start + index)) < to_integer(region->arena->capacity) by { close(); }
+                have at(before_access, region->arena->data) == region->arena->data by { close(); }
+                have contains(memory(at(before_access, region->arena->data)[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)])) by {
+                    apply(separation::contains_element(at(before_access, region->arena->data), 0, region->arena->capacity, at(before_access, region->start + index)));
+                }
+                have contains(memory(region->arena->data[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)])) by { rewrite(region->arena->data, at(before_access, region->arena->data)); close(); }
+                have separate(memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])) by {
+                    apply(separation::separate_symm(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])));
+                    apply(separation::separate_restrict(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->occupied[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])));
+                }
+                have separate(statement(0).footprint, memory(region->arena->occupied[k])) by { close(); }
+                have at(statement(0).exit, region->arena->occupied[k]) == at(statement(0).entry, region->arena->occupied[k]) by {
+                    preserve(memory(region->arena->occupied[k]), statement(0));
+                }
+                have separate(statement(1).footprint, memory(region->arena->occupied[k])) by { close(); }
+                have at(statement(1).exit, region->arena->occupied[k]) == at(statement(1).entry, region->arena->occupied[k]) by {
+                    preserve(memory(region->arena->occupied[k]), statement(1));
+                }
+                have separate(statement(2).footprint, memory(region->arena->occupied[k])) by { close(); }
+                have at(statement(2).exit, region->arena->occupied[k]) == at(statement(2).entry, region->arena->occupied[k]) by {
+                    preserve(memory(region->arena->occupied[k]), statement(2));
+                }
+                close();
+            }
         }
-        have 0 <= at(before_access, region->start + index) by { close(); }
-        have at(before_access, region->start + index) < region->arena->capacity by { close(); }
-        have 0 <= to_integer(at(before_access, region->start + index)) by { close(); }
-        have to_integer(at(before_access, region->start + index)) < to_integer(region->arena->capacity) by { close(); }
-        have at(before_access, region->arena->data) == region->arena->data by { close(); }
-        have contains(memory(at(before_access, region->arena->data)[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)])) by {
-            apply(separation::contains_element(at(before_access, region->arena->data), 0, region->arena->capacity, at(before_access, region->start + index)));
-        }
-        have contains(memory(region->arena->data[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)])) by { rewrite(region->arena->data, at(before_access, region->arena->data)); close(); }
-        have separate(memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])) by {
-            apply(separation::separate_symm(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])));
-            apply(separation::separate_restrict(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->occupied[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])));
-        }
-        have separate(statement(0).footprint, memory(region->arena->occupied[k])) by { close(); }
-        have at(statement(0).exit, region->arena->occupied[k]) == at(statement(0).entry, region->arena->occupied[k]) by {
-            preserve(memory(region->arena->occupied[k]), statement(0));
-        }
-        have separate(statement(1).footprint, memory(region->arena->occupied[k])) by { close(); }
-        have at(statement(1).exit, region->arena->occupied[k]) == at(statement(1).entry, region->arena->occupied[k]) by {
-            preserve(memory(region->arena->occupied[k]), statement(1));
-        }
-        have separate(statement(2).footprint, memory(region->arena->occupied[k])) by { close(); }
-        have at(statement(2).exit, region->arena->occupied[k]) == at(statement(2).entry, region->arena->occupied[k]) by {
-            preserve(memory(region->arena->occupied[k]), statement(2));
-        }
-        close();
     }
     have region->arena->capacity == old(region->arena->capacity) by close();
     have separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])) by {
@@ -3210,11 +3413,13 @@ int32 arena_read(struct region* region, int32 index) {
         0 <= k and k < at(w, region->arena->capacity) implies
             at(w, region->arena->occupied[k]) == region->arena->occupied[k]
     } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < at(w, region->arena->capacity);
-        close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < at(w, region->arena->capacity);
+                close();
+            }
+        }
     }
     let r = fold(arena_region(region), { start: s, end: e });
     let st = fold(arena_state(region->arena), { live: n, capacity: c });
@@ -3320,12 +3525,14 @@ int32 arena_pipeline(
     have o0.model == ArenaInitOutcome::Success(0, 8) by close();
     let { state: s0 } = unfold(o0);
     have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        instantiate(forall (j: int32) { initialized == 1 and 0 <= j and j < arena->capacity implies arena->occupied[j] == 0 }, k);
-        close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                instantiate(forall (j: int32) { initialized == 1 and 0 <= j and j < arena->capacity implies arena->occupied[j] == 0 }, k);
+                close();
+            }
+        }
     }
     mark a1;
     let { outcome: o1 } = step(arena_alloc, { st: s0 });
@@ -3339,9 +3546,10 @@ int32 arena_pipeline(
         preserve(memory(first->arena), statement(7).assignment(allocated, 0));
     }
     have allocated == 1 implies first->arena == arena by {
-        intro();
-        have at(after_first_alloc, first->arena) == arena;
-        close();
+        intro() {
+            have at(after_first_alloc, first->arena) == arena;
+            close();
+        }
     }
     have arena->capacity == at(a1, arena->capacity) by {
         close();
@@ -3350,22 +3558,24 @@ int32 arena_pipeline(
         step();
         have o1.model == ArenaAllocOutcome::Failure() by close();
         have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == 0 } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have arena->occupied[k] == at(a1, arena->occupied[k]) by {
-                instantiate(forall (j: int32) { allocated == 0 and 0 <= j and j < arena->capacity implies arena->occupied[j] == at(a1, arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have arena->occupied[k] == at(a1, arena->occupied[k]) by {
+                        instantiate(forall (j: int32) { allocated == 0 and 0 <= j and j < arena->capacity implies arena->occupied[j] == at(a1, arena->occupied[j]) }, k);
+                        close();
+                    }
+                    have k < at(a1, arena->capacity) by {
+                        close();
+                    }
+                    have at(a1, arena->occupied[k]) == 0 by {
+                        instantiate(forall (j: int32) { 0 <= j and j < at(a1, arena->capacity) implies at(a1, arena->occupied[j]) == 0 }, k);
+                        close();
+                    }
+                    close();
+                }
             }
-            have k < at(a1, arena->capacity) by {
-                close();
-            }
-            have at(a1, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(a1, arena->capacity) implies at(a1, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            close();
         }
         step(arena_destroy, { st: s0 });
         unfold(o1);
@@ -3404,38 +3614,40 @@ int32 arena_pipeline(
         close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have k < at(z1, first->start) or at(z1, first->end) <= k;
-        have k < at(a1, arena->capacity) by {
-            close();
-        }
-        have at(a1, arena->occupied[k]) == 0 by {
-            instantiate(forall (j: int32) { 0 <= j and j < at(a1, arena->capacity) implies at(a1, arena->occupied[j]) == 0 }, k);
-            close();
-        }
-        cases {
-            k < at(z1, first->start) => {
-                have k < first->start by {
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have k < at(z1, first->start) or at(z1, first->end) <= k;
+                have k < at(a1, arena->capacity) by {
                     close();
                 }
-                have arena->occupied[k] == at(a1, arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { allocated == 1 and 0 <= j and j < first->start implies arena->occupied[j] == at(a1, arena->occupied[j]) }, k);
+                have at(a1, arena->occupied[k]) == 0 by {
+                    instantiate(forall (j: int32) { 0 <= j and j < at(a1, arena->capacity) implies at(a1, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                close();
-            }
-            at(z1, first->end) <= k => {
-                have first->end <= k by {
-                    close();
+                cases {
+                    k < at(z1, first->start) => {
+                        have k < first->start by {
+                            close();
+                        }
+                        have arena->occupied[k] == at(a1, arena->occupied[k]) by {
+                            instantiate(forall (j: int32) { allocated == 1 and 0 <= j and j < first->start implies arena->occupied[j] == at(a1, arena->occupied[j]) }, k);
+                            close();
+                        }
+                        close();
+                    }
+                    at(z1, first->end) <= k => {
+                        have first->end <= k by {
+                            close();
+                        }
+                        have arena->occupied[k] == at(a1, arena->occupied[k]) by {
+                            instantiate(forall (j: int32) { allocated == 1 and first->end <= j and j < arena->capacity implies arena->occupied[j] == at(a1, arena->occupied[j]) }, k);
+                            close();
+                        }
+                        close();
+                    }
                 }
-                have arena->occupied[k] == at(a1, arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { allocated == 1 and first->end <= j and j < arena->capacity implies arena->occupied[j] == at(a1, arena->occupied[j]) }, k);
-                    close();
-                }
-                close();
             }
         }
     }
@@ -3489,9 +3701,10 @@ int32 arena_pipeline(
         preserve(memory(second->arena), statement(9).assignment(allocated, 0));
     }
     have allocated == 1 implies second->arena == arena by {
-        intro();
-        have at(after_second_alloc, second->arena) == arena;
-        close();
+        intro() {
+            have at(after_second_alloc, second->arena) == arena;
+            close();
+        }
     }
     have arena->capacity == at(a2, arena->capacity) by {
         close();
@@ -3500,23 +3713,25 @@ int32 arena_pipeline(
         step();
         have o2.model == ArenaAllocOutcome::Failure() by close();
         have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) implies arena->occupied[k] == 0 } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have k < at(z1, first->start) or at(z1, first->end) <= k;
-            have arena->occupied[k] == at(a2, arena->occupied[k]) by {
-                instantiate(forall (j: int32) { allocated == 0 and 0 <= j and j < arena->capacity implies arena->occupied[j] == at(a2, arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have k < at(z1, first->start) or at(z1, first->end) <= k;
+                    have arena->occupied[k] == at(a2, arena->occupied[k]) by {
+                        instantiate(forall (j: int32) { allocated == 0 and 0 <= j and j < arena->capacity implies arena->occupied[j] == at(a2, arena->occupied[j]) }, k);
+                        close();
+                    }
+                    have k < at(a2, arena->capacity) by {
+                        close();
+                    }
+                    have at(a2, arena->occupied[k]) == 0 by {
+                        instantiate(forall (j: int32) { 0 <= j and j < at(a2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(a2, arena->occupied[j]) == 0 }, k);
+                        close();
+                    }
+                    close();
+                }
             }
-            have k < at(a2, arena->capacity) by {
-                close();
-            }
-            have at(a2, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(a2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(a2, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            close();
         }
         have at(a2, s0.live) == 1 by {
             close();
@@ -3564,103 +3779,108 @@ int32 arena_pipeline(
             close();
         }
         have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == 0 } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have k < first->start implies arena->occupied[k] == 0 by {
-                intro();
-                have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { 0 <= j and j < first->start implies first->arena->occupied[j] == at(f1, first->arena->occupied[j]) }, k);
-                    close();
-                }
-                have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
-                    close();
-                }
-                have k < at(f1, arena->capacity) by {
-                    close();
-                }
-                have k < at(z1, first->start) by {
-                    close();
-                }
-                have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                    close();
-                }
-                have at(f1, arena->occupied[k]) == 0 by {
-                    instantiate(forall (j: int32) { 0 <= j and j < at(f1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f1, arena->occupied[j]) == 0 }, k);
-                    close();
-                }
-                normalize() using {
-                    first->arena == arena;
-                    first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
-                    at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
-                    at(f1, arena->occupied[k]) == 0;
-                };
-            }
-            have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
-                intro();
-                have first->start <= k;
-                have k < first->end;
-                have arena->occupied[k] == 0 by {
-                    instantiate(forall (j: int32) { first->start <= j and j < first->end implies first->arena->occupied[j] == 0 }, k);
-                    normalize() using {
-                        first->arena == arena;
-                        first->arena->occupied[k] == 0;
-                    };
-                }
-                close();
-            }
-            have first->end <= k implies arena->occupied[k] == 0 by {
-                intro();
-                have k < first->arena->capacity by {
-                    close();
-                }
-                have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { first->end <= j and j < first->arena->capacity implies first->arena->occupied[j] == at(f1, first->arena->occupied[j]) }, k);
-                    close();
-                }
-                have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
-                    close();
-                }
-                have k < at(f1, arena->capacity) by {
-                    close();
-                }
-                have at(z1, first->end) <= k by {
-                    close();
-                }
-                have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                    close();
-                }
-                have at(f1, arena->occupied[k]) == 0 by {
-                    instantiate(forall (j: int32) { 0 <= j and j < at(f1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f1, arena->occupied[j]) == 0 }, k);
-                    close();
-                }
-                normalize() using {
-                    first->arena == arena;
-                    first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
-                    at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
-                    at(f1, arena->occupied[k]) == 0;
-                };
-            }
-            if k < first->start {
-                have k < first->start by {
-                    close();
-                }
-                have arena->occupied[k] == 0; close();
-            } else {
-                have first->start <= k by {
-                    close();
-                }
-                if k < first->end {
-                    have first->start <= k and k < first->end by {
-                        close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have k < first->start implies arena->occupied[k] == 0 by {
+                        intro() {
+                            have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {
+                                instantiate(forall (j: int32) { 0 <= j and j < first->start implies first->arena->occupied[j] == at(f1, first->arena->occupied[j]) }, k);
+                                close();
+                            }
+                            have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
+                                close();
+                            }
+                            have k < at(f1, arena->capacity) by {
+                                close();
+                            }
+                            have k < at(z1, first->start) by {
+                                close();
+                            }
+                            have k < at(z1, first->start) or at(z1, first->end) <= k by {
+                                close();
+                            }
+                            have at(f1, arena->occupied[k]) == 0 by {
+                                instantiate(forall (j: int32) { 0 <= j and j < at(f1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f1, arena->occupied[j]) == 0 }, k);
+                                close();
+                            }
+                            normalize() using {
+                                first->arena == arena;
+                                first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
+                                at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
+                                at(f1, arena->occupied[k]) == 0;
+                            };
+                        }
                     }
-                    have arena->occupied[k] == 0; close();
-                } else {
-                    have first->end <= k by {
-                        close();
+                    have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
+                        intro() {
+                            have first->start <= k;
+                            have k < first->end;
+                            have arena->occupied[k] == 0 by {
+                                instantiate(forall (j: int32) { first->start <= j and j < first->end implies first->arena->occupied[j] == 0 }, k);
+                                normalize() using {
+                                    first->arena == arena;
+                                    first->arena->occupied[k] == 0;
+                                };
+                            }
+                            close();
+                        }
                     }
-                    have arena->occupied[k] == 0; close();
+                    have first->end <= k implies arena->occupied[k] == 0 by {
+                        intro() {
+                            have k < first->arena->capacity by {
+                                close();
+                            }
+                            have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {
+                                instantiate(forall (j: int32) { first->end <= j and j < first->arena->capacity implies first->arena->occupied[j] == at(f1, first->arena->occupied[j]) }, k);
+                                close();
+                            }
+                            have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
+                                close();
+                            }
+                            have k < at(f1, arena->capacity) by {
+                                close();
+                            }
+                            have at(z1, first->end) <= k by {
+                                close();
+                            }
+                            have k < at(z1, first->start) or at(z1, first->end) <= k by {
+                                close();
+                            }
+                            have at(f1, arena->occupied[k]) == 0 by {
+                                instantiate(forall (j: int32) { 0 <= j and j < at(f1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f1, arena->occupied[j]) == 0 }, k);
+                                close();
+                            }
+                            normalize() using {
+                                first->arena == arena;
+                                first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
+                                at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
+                                at(f1, arena->occupied[k]) == 0;
+                            };
+                        }
+                    }
+                    if k < first->start {
+                        have k < first->start by {
+                            close();
+                        }
+                        have arena->occupied[k] == 0; close();
+                    } else {
+                        have first->start <= k by {
+                            close();
+                        }
+                        if k < first->end {
+                            have first->start <= k and k < first->end by {
+                                close();
+                            }
+                            have arena->occupied[k] == 0; close();
+                        } else {
+                            have first->end <= k by {
+                                close();
+                            }
+                            have arena->occupied[k] == 0; close();
+                        }
+                    }
                 }
             }
         }
@@ -3707,39 +3927,41 @@ int32 arena_pipeline(
         close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) and (k < at(z2, second->start) or at(z2, second->end) <= k) implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have k < at(z1, first->start) or at(z1, first->end) <= k;
-        have k < at(z2, second->start) or at(z2, second->end) <= k;
-        have k < at(a2, arena->capacity) by {
-            close();
-        }
-        have at(a2, arena->occupied[k]) == 0 by {
-            instantiate(forall (j: int32) { 0 <= j and j < at(a2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(a2, arena->occupied[j]) == 0 }, k);
-            close();
-        }
-        cases {
-            k < at(z2, second->start) => {
-                have k < second->start by {
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have k < at(z1, first->start) or at(z1, first->end) <= k;
+                have k < at(z2, second->start) or at(z2, second->end) <= k;
+                have k < at(a2, arena->capacity) by {
                     close();
                 }
-                have arena->occupied[k] == at(a2, arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { allocated == 1 and 0 <= j and j < second->start implies arena->occupied[j] == at(a2, arena->occupied[j]) }, k);
+                have at(a2, arena->occupied[k]) == 0 by {
+                    instantiate(forall (j: int32) { 0 <= j and j < at(a2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(a2, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                close();
-            }
-            at(z2, second->end) <= k => {
-                have second->end <= k by {
-                    close();
+                cases {
+                    k < at(z2, second->start) => {
+                        have k < second->start by {
+                            close();
+                        }
+                        have arena->occupied[k] == at(a2, arena->occupied[k]) by {
+                            instantiate(forall (j: int32) { allocated == 1 and 0 <= j and j < second->start implies arena->occupied[j] == at(a2, arena->occupied[j]) }, k);
+                            close();
+                        }
+                        close();
+                    }
+                    at(z2, second->end) <= k => {
+                        have second->end <= k by {
+                            close();
+                        }
+                        have arena->occupied[k] == at(a2, arena->occupied[k]) by {
+                            instantiate(forall (j: int32) { allocated == 1 and second->end <= j and j < arena->capacity implies arena->occupied[j] == at(a2, arena->occupied[j]) }, k);
+                            close();
+                        }
+                        close();
+                    }
                 }
-                have arena->occupied[k] == at(a2, arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { allocated == 1 and second->end <= j and j < arena->capacity implies arena->occupied[j] == at(a2, arena->occupied[j]) }, k);
-                    close();
-                }
-                close();
             }
         }
     }
@@ -3870,35 +4092,37 @@ int32 arena_pipeline(
         close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) and (k < at(z2, second->start) or at(z2, second->end) <= k) implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have k < at(z1, first->start) or at(z1, first->end) <= k;
-        have k < at(z2, second->start) or at(z2, second->end) <= k;
-        have k < first->arena->capacity by {
-            close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have k < at(z1, first->start) or at(z1, first->end) <= k;
+                have k < at(z2, second->start) or at(z2, second->end) <= k;
+                have k < first->arena->capacity by {
+                    close();
+                }
+                have first->arena->occupied[k] == at(w1, first->arena->occupied[k]) by {
+                    instantiate(forall (j: int32) { 0 <= j and j < first->arena->capacity implies first->arena->occupied[j] == at(w1, first->arena->occupied[j]) }, k);
+                    close();
+                }
+                have at(w1, first->arena->occupied[k]) == at(w1, arena->occupied[k]) by {
+                    close();
+                }
+                have k < at(w1, arena->capacity) by {
+                    close();
+                }
+                have at(w1, arena->occupied[k]) == 0 by {
+                    instantiate(forall (j: int32) { 0 <= j and j < at(w1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(w1, arena->occupied[j]) == 0 }, k);
+                    close();
+                }
+                normalize() using {
+                    first->arena->occupied[k] == at(w1, first->arena->occupied[k]);
+                    at(w1, first->arena->occupied[k]) == at(w1, arena->occupied[k]);
+                    at(w1, arena->occupied[k]) == 0;
+                    first->arena == arena;
+                };
+            }
         }
-        have first->arena->occupied[k] == at(w1, first->arena->occupied[k]) by {
-            instantiate(forall (j: int32) { 0 <= j and j < first->arena->capacity implies first->arena->occupied[j] == at(w1, first->arena->occupied[j]) }, k);
-            close();
-        }
-        have at(w1, first->arena->occupied[k]) == at(w1, arena->occupied[k]) by {
-            close();
-        }
-        have k < at(w1, arena->capacity) by {
-            close();
-        }
-        have at(w1, arena->occupied[k]) == 0 by {
-            instantiate(forall (j: int32) { 0 <= j and j < at(w1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(w1, arena->occupied[j]) == 0 }, k);
-            close();
-        }
-        normalize() using {
-            first->arena->occupied[k] == at(w1, first->arena->occupied[k]);
-            at(w1, first->arena->occupied[k]) == at(w1, arena->occupied[k]);
-            at(w1, arena->occupied[k]) == 0;
-            first->arena == arena;
-        };
     }
     have second->arena == arena by {
         close();
@@ -4060,38 +4284,40 @@ int32 arena_pipeline(
         };
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) and (k < at(z2, second->start) or at(z2, second->end) <= k) implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have k < at(z1, first->start) or at(z1, first->end) <= k;
-        have k < at(z2, second->start) or at(z2, second->end) <= k;
-        have k < second->arena->capacity by {
-            close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have k < at(z1, first->start) or at(z1, first->end) <= k;
+                have k < at(z2, second->start) or at(z2, second->end) <= k;
+                have k < second->arena->capacity by {
+                    close();
+                }
+                have second->arena->occupied[k] == at(w2, second->arena->occupied[k]) by {
+                    instantiate(forall (j: int32) { 0 <= j and j < second->arena->capacity implies second->arena->occupied[j] == at(w2, second->arena->occupied[j]) }, k);
+                    close();
+                }
+                have at(w2, second->arena->occupied[k]) == at(w2, arena->occupied[k]) by {
+                    close();
+                }
+                have k < at(w2, arena->capacity) by {
+                    normalize() using {
+                        k < arena->capacity;
+                        arena->capacity == at(w2, arena->capacity);
+                    };
+                }
+                have at(w2, arena->occupied[k]) == 0 by {
+                    instantiate(forall (j: int32) { 0 <= j and j < at(w2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(w2, arena->occupied[j]) == 0 }, k);
+                    close();
+                }
+                normalize() using {
+                    second->arena->occupied[k] == at(w2, second->arena->occupied[k]);
+                    at(w2, second->arena->occupied[k]) == at(w2, arena->occupied[k]);
+                    at(w2, arena->occupied[k]) == 0;
+                    second->arena == arena;
+                };
+            }
         }
-        have second->arena->occupied[k] == at(w2, second->arena->occupied[k]) by {
-            instantiate(forall (j: int32) { 0 <= j and j < second->arena->capacity implies second->arena->occupied[j] == at(w2, second->arena->occupied[j]) }, k);
-            close();
-        }
-        have at(w2, second->arena->occupied[k]) == at(w2, arena->occupied[k]) by {
-            close();
-        }
-        have k < at(w2, arena->capacity) by {
-            normalize() using {
-                k < arena->capacity;
-                arena->capacity == at(w2, arena->capacity);
-            };
-        }
-        have at(w2, arena->occupied[k]) == 0 by {
-            instantiate(forall (j: int32) { 0 <= j and j < at(w2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(w2, arena->occupied[j]) == 0 }, k);
-            close();
-        }
-        normalize() using {
-            second->arena->occupied[k] == at(w2, second->arena->occupied[k]);
-            at(w2, second->arena->occupied[k]) == at(w2, arena->occupied[k]);
-            at(w2, arena->occupied[k]) == 0;
-            second->arena == arena;
-        };
     }
     have first->arena == arena by {
         close();
@@ -4298,40 +4524,42 @@ int32 arena_pipeline(
         close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) and (k < at(z2, second->start) or at(z2, second->end) <= k) implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have k < at(z1, first->start) or at(z1, first->end) <= k;
-        have k < at(z2, second->start) or at(z2, second->end) <= k;
-        have k < first->arena->capacity by {
-            close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have k < at(z1, first->start) or at(z1, first->end) <= k;
+                have k < at(z2, second->start) or at(z2, second->end) <= k;
+                have k < first->arena->capacity by {
+                    close();
+                }
+                have first->arena->occupied[k] == at(m3, first->arena->occupied[k]) by {
+                    instantiate(forall (j: int32) { 0 <= j and j < first->arena->capacity implies first->arena->occupied[j] == at(m3, first->arena->occupied[j]) }, k);
+                    close();
+                }
+                have at(m3, first->arena->occupied[k]) == at(m3, arena->occupied[k]) by {
+                    normalize() using {
+                        at(m3, first->arena) == arena;
+                    };
+                }
+                have k < at(m3, arena->capacity) by {
+                    normalize() using {
+                        k < arena->capacity;
+                        arena->capacity == at(m3, arena->capacity);
+                    };
+                }
+                have at(m3, arena->occupied[k]) == 0 by {
+                    instantiate(forall (j: int32) { 0 <= j and j < at(m3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(m3, arena->occupied[j]) == 0 }, k);
+                    close();
+                }
+                normalize() using {
+                    first->arena->occupied[k] == at(m3, first->arena->occupied[k]);
+                    at(m3, first->arena->occupied[k]) == at(m3, arena->occupied[k]);
+                    at(m3, arena->occupied[k]) == 0;
+                    first->arena == arena;
+                };
+            }
         }
-        have first->arena->occupied[k] == at(m3, first->arena->occupied[k]) by {
-            instantiate(forall (j: int32) { 0 <= j and j < first->arena->capacity implies first->arena->occupied[j] == at(m3, first->arena->occupied[j]) }, k);
-            close();
-        }
-        have at(m3, first->arena->occupied[k]) == at(m3, arena->occupied[k]) by {
-            normalize() using {
-                at(m3, first->arena) == arena;
-            };
-        }
-        have k < at(m3, arena->capacity) by {
-            normalize() using {
-                k < arena->capacity;
-                arena->capacity == at(m3, arena->capacity);
-            };
-        }
-        have at(m3, arena->occupied[k]) == 0 by {
-            instantiate(forall (j: int32) { 0 <= j and j < at(m3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(m3, arena->occupied[j]) == 0 }, k);
-            close();
-        }
-        normalize() using {
-            first->arena->occupied[k] == at(m3, first->arena->occupied[k]);
-            at(m3, first->arena->occupied[k]) == at(m3, arena->occupied[k]);
-            at(m3, arena->occupied[k]) == 0;
-            first->arena == arena;
-        };
     }
     have second->arena == arena by {
         close();
@@ -4481,43 +4709,45 @@ int32 arena_pipeline(
         close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) and (k < at(z2, second->start) or at(z2, second->end) <= k) implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have k < at(z1, first->start) or at(z1, first->end) <= k;
-        have k < at(z2, second->start) or at(z2, second->end) <= k;
-        have k < second->arena->capacity by {
-            normalize() using {
-                k < arena->capacity;
-                second->arena == arena;
-            };
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have k < at(z1, first->start) or at(z1, first->end) <= k;
+                have k < at(z2, second->start) or at(z2, second->end) <= k;
+                have k < second->arena->capacity by {
+                    normalize() using {
+                        k < arena->capacity;
+                        second->arena == arena;
+                    };
+                }
+                have second->arena->occupied[k] == at(m4, second->arena->occupied[k]) by {
+                    instantiate(forall (j: int32) { 0 <= j and j < second->arena->capacity implies second->arena->occupied[j] == at(m4, second->arena->occupied[j]) }, k);
+                    close();
+                }
+                have at(m4, second->arena->occupied[k]) == at(m4, arena->occupied[k]) by {
+                    normalize() using {
+                        at(m4, second->arena) == arena;
+                    };
+                }
+                have k < at(m4, arena->capacity) by {
+                    normalize() using {
+                        k < arena->capacity;
+                        arena->capacity == at(m4, arena->capacity);
+                    };
+                }
+                have at(m4, arena->occupied[k]) == 0 by {
+                    instantiate(forall (j: int32) { 0 <= j and j < at(m4, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(m4, arena->occupied[j]) == 0 }, k);
+                    close();
+                }
+                normalize() using {
+                    second->arena->occupied[k] == at(m4, second->arena->occupied[k]);
+                    at(m4, second->arena->occupied[k]) == at(m4, arena->occupied[k]);
+                    at(m4, arena->occupied[k]) == 0;
+                    second->arena == arena;
+                };
+            }
         }
-        have second->arena->occupied[k] == at(m4, second->arena->occupied[k]) by {
-            instantiate(forall (j: int32) { 0 <= j and j < second->arena->capacity implies second->arena->occupied[j] == at(m4, second->arena->occupied[j]) }, k);
-            close();
-        }
-        have at(m4, second->arena->occupied[k]) == at(m4, arena->occupied[k]) by {
-            normalize() using {
-                at(m4, second->arena) == arena;
-            };
-        }
-        have k < at(m4, arena->capacity) by {
-            normalize() using {
-                k < arena->capacity;
-                arena->capacity == at(m4, arena->capacity);
-            };
-        }
-        have at(m4, arena->occupied[k]) == 0 by {
-            instantiate(forall (j: int32) { 0 <= j and j < at(m4, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(m4, arena->occupied[j]) == 0 }, k);
-            close();
-        }
-        normalize() using {
-            second->arena->occupied[k] == at(m4, second->arena->occupied[k]);
-            at(m4, second->arena->occupied[k]) == at(m4, arena->occupied[k]);
-            at(m4, arena->occupied[k]) == 0;
-            second->arena == arena;
-        };
     }
     have s0.live == 2 by {
         close();
@@ -4622,120 +4852,125 @@ int32 arena_pipeline(
         rewrite(second->end, at(f2, r2.end)); close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have k < at(z1, first->start) or at(z1, first->end) <= k;
-        have k < second->start implies arena->occupied[k] == 0 by {
-            intro();
-            have second->arena->occupied[k] == at(f2, second->arena->occupied[k]) by {
-                instantiate(forall (j: int32) { 0 <= j and j < second->start implies second->arena->occupied[j] == at(f2, second->arena->occupied[j]) }, k);
-                close();
-            }
-            have at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]) by {
-                normalize() using {
-                    at(f2, second->arena) == arena;
-                };
-            }
-            have k < at(f2, arena->capacity) by {
-                normalize() using {
-                    k < arena->capacity;
-                    arena->capacity == at(f2, arena->capacity);
-                };
-            }
-            have k < at(z2, second->start) by {
-                close();
-            }
-            have k < at(z2, second->start) or at(z2, second->end) <= k by {
-                close();
-            }
-            have at(f2, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(f2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(f2, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            normalize() using {
-                second->arena->occupied[k] == at(f2, second->arena->occupied[k]);
-                at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]);
-                at(f2, arena->occupied[k]) == 0;
-                second->arena == arena;
-            };
-        }
-        have second->start <= k and k < second->end implies arena->occupied[k] == 0 by {
-            intro();
-            have second->start <= k;
-            have k < second->end;
-            have arena->occupied[k] == 0 by {
-                instantiate(forall (j: int32) { second->start <= j and j < second->end implies second->arena->occupied[j] == 0 }, k);
-                normalize() using {
-                    second->arena->occupied[k] == 0;
-                    second->arena == arena;
-                };
-            }
-            close();
-        }
-        have second->end <= k implies arena->occupied[k] == 0 by {
-            intro();
-            have k < second->arena->capacity by {
-                normalize() using {
-                    k < arena->capacity;
-                    second->arena == arena;
-                };
-            }
-            have second->arena->occupied[k] == at(f2, second->arena->occupied[k]) by {
-                instantiate(forall (j: int32) { second->end <= j and j < second->arena->capacity implies second->arena->occupied[j] == at(f2, second->arena->occupied[j]) }, k);
-                close();
-            }
-            have at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]) by {
-                normalize() using {
-                    at(f2, second->arena) == arena;
-                };
-            }
-            have k < at(f2, arena->capacity) by {
-                normalize() using {
-                    k < arena->capacity;
-                    arena->capacity == at(f2, arena->capacity);
-                };
-            }
-            have at(z2, second->end) <= k by {
-                normalize() using {
-                    second->end <= k;
-                    second->end == at(z2, second->end);
-                };
-            }
-            have k < at(z2, second->start) or at(z2, second->end) <= k by {
-                close();
-            }
-            have at(f2, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(f2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(f2, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            normalize() using {
-                second->arena->occupied[k] == at(f2, second->arena->occupied[k]);
-                at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]);
-                at(f2, arena->occupied[k]) == 0;
-                second->arena == arena;
-            };
-        }
-        if k < second->start {
-            have k < second->start by {
-                close();
-            }
-            have arena->occupied[k] == 0; close();
-        } else {
-            have second->start <= k by {
-                close();
-            }
-            if k < second->end {
-                have second->start <= k and k < second->end by {
-                    close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have k < at(z1, first->start) or at(z1, first->end) <= k;
+                have k < second->start implies arena->occupied[k] == 0 by {
+                    intro() {
+                        have second->arena->occupied[k] == at(f2, second->arena->occupied[k]) by {
+                            instantiate(forall (j: int32) { 0 <= j and j < second->start implies second->arena->occupied[j] == at(f2, second->arena->occupied[j]) }, k);
+                            close();
+                        }
+                        have at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]) by {
+                            normalize() using {
+                                at(f2, second->arena) == arena;
+                            };
+                        }
+                        have k < at(f2, arena->capacity) by {
+                            normalize() using {
+                                k < arena->capacity;
+                                arena->capacity == at(f2, arena->capacity);
+                            };
+                        }
+                        have k < at(z2, second->start) by {
+                            close();
+                        }
+                        have k < at(z2, second->start) or at(z2, second->end) <= k by {
+                            close();
+                        }
+                        have at(f2, arena->occupied[k]) == 0 by {
+                            instantiate(forall (j: int32) { 0 <= j and j < at(f2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(f2, arena->occupied[j]) == 0 }, k);
+                            close();
+                        }
+                        normalize() using {
+                            second->arena->occupied[k] == at(f2, second->arena->occupied[k]);
+                            at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]);
+                            at(f2, arena->occupied[k]) == 0;
+                            second->arena == arena;
+                        };
+                    }
                 }
-                have arena->occupied[k] == 0; close();
-            } else {
-                have second->end <= k by {
-                    close();
+                have second->start <= k and k < second->end implies arena->occupied[k] == 0 by {
+                    intro() {
+                        have second->start <= k;
+                        have k < second->end;
+                        have arena->occupied[k] == 0 by {
+                            instantiate(forall (j: int32) { second->start <= j and j < second->end implies second->arena->occupied[j] == 0 }, k);
+                            normalize() using {
+                                second->arena->occupied[k] == 0;
+                                second->arena == arena;
+                            };
+                        }
+                        close();
+                    }
                 }
-                have arena->occupied[k] == 0; close();
+                have second->end <= k implies arena->occupied[k] == 0 by {
+                    intro() {
+                        have k < second->arena->capacity by {
+                            normalize() using {
+                                k < arena->capacity;
+                                second->arena == arena;
+                            };
+                        }
+                        have second->arena->occupied[k] == at(f2, second->arena->occupied[k]) by {
+                            instantiate(forall (j: int32) { second->end <= j and j < second->arena->capacity implies second->arena->occupied[j] == at(f2, second->arena->occupied[j]) }, k);
+                            close();
+                        }
+                        have at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]) by {
+                            normalize() using {
+                                at(f2, second->arena) == arena;
+                            };
+                        }
+                        have k < at(f2, arena->capacity) by {
+                            normalize() using {
+                                k < arena->capacity;
+                                arena->capacity == at(f2, arena->capacity);
+                            };
+                        }
+                        have at(z2, second->end) <= k by {
+                            normalize() using {
+                                second->end <= k;
+                                second->end == at(z2, second->end);
+                            };
+                        }
+                        have k < at(z2, second->start) or at(z2, second->end) <= k by {
+                            close();
+                        }
+                        have at(f2, arena->occupied[k]) == 0 by {
+                            instantiate(forall (j: int32) { 0 <= j and j < at(f2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(f2, arena->occupied[j]) == 0 }, k);
+                            close();
+                        }
+                        normalize() using {
+                            second->arena->occupied[k] == at(f2, second->arena->occupied[k]);
+                            at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]);
+                            at(f2, arena->occupied[k]) == 0;
+                            second->arena == arena;
+                        };
+                    }
+                }
+                if k < second->start {
+                    have k < second->start by {
+                        close();
+                    }
+                    have arena->occupied[k] == 0; close();
+                } else {
+                    have second->start <= k by {
+                        close();
+                    }
+                    if k < second->end {
+                        have second->start <= k and k < second->end by {
+                            close();
+                        }
+                        have arena->occupied[k] == 0; close();
+                    } else {
+                        have second->end <= k by {
+                            close();
+                        }
+                        have arena->occupied[k] == 0; close();
+                    }
+                }
             }
         }
     }
@@ -4807,107 +5042,112 @@ int32 arena_pipeline(
         rewrite(first->end, at(f3, r1.end)); close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == 0 } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < arena->capacity;
-        have k < first->start implies arena->occupied[k] == 0 by {
-            intro();
-            have first->arena->occupied[k] == at(f3, first->arena->occupied[k]) by {
-                instantiate(forall (j: int32) { 0 <= j and j < first->start implies first->arena->occupied[j] == at(f3, first->arena->occupied[j]) }, k);
-                close();
-            }
-            have at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]) by {
-                normalize() using {
-                    at(f3, first->arena) == arena;
-                };
-            }
-            have k < at(f3, arena->capacity) by {
-                close();
-            }
-            have k < at(z1, first->start) by {
-                close();
-            }
-            have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                close();
-            }
-            have at(f3, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(f3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f3, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            normalize() using {
-                first->arena->occupied[k] == at(f3, first->arena->occupied[k]);
-                at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]);
-                at(f3, arena->occupied[k]) == 0;
-                first->arena == arena;
-            };
-        }
-        have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
-            intro();
-            have first->start <= k;
-            have k < first->end;
-            have arena->occupied[k] == 0 by {
-                instantiate(forall (j: int32) { first->start <= j and j < first->end implies first->arena->occupied[j] == 0 }, k);
-                normalize() using {
-                    first->arena->occupied[k] == 0;
-                    first->arena == arena;
-                };
-            }
-            close();
-        }
-        have first->end <= k implies arena->occupied[k] == 0 by {
-            intro();
-            have k < first->arena->capacity by {
-                close();
-            }
-            have first->arena->occupied[k] == at(f3, first->arena->occupied[k]) by {
-                instantiate(forall (j: int32) { first->end <= j and j < first->arena->capacity implies first->arena->occupied[j] == at(f3, first->arena->occupied[j]) }, k);
-                close();
-            }
-            have at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]) by {
-                normalize() using {
-                    at(f3, first->arena) == arena;
-                };
-            }
-            have k < at(f3, arena->capacity) by {
-                close();
-            }
-            have at(z1, first->end) <= k by {
-                close();
-            }
-            have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                close();
-            }
-            have at(f3, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(f3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f3, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            normalize() using {
-                first->arena->occupied[k] == at(f3, first->arena->occupied[k]);
-                at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]);
-                at(f3, arena->occupied[k]) == 0;
-                first->arena == arena;
-            };
-        }
-        if k < first->start {
-            have k < first->start by {
-                close();
-            }
-            have arena->occupied[k] == 0; close();
-        } else {
-            have first->start <= k by {
-                close();
-            }
-            if k < first->end {
-                have first->start <= k and k < first->end by {
-                    close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < arena->capacity;
+                have k < first->start implies arena->occupied[k] == 0 by {
+                    intro() {
+                        have first->arena->occupied[k] == at(f3, first->arena->occupied[k]) by {
+                            instantiate(forall (j: int32) { 0 <= j and j < first->start implies first->arena->occupied[j] == at(f3, first->arena->occupied[j]) }, k);
+                            close();
+                        }
+                        have at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]) by {
+                            normalize() using {
+                                at(f3, first->arena) == arena;
+                            };
+                        }
+                        have k < at(f3, arena->capacity) by {
+                            close();
+                        }
+                        have k < at(z1, first->start) by {
+                            close();
+                        }
+                        have k < at(z1, first->start) or at(z1, first->end) <= k by {
+                            close();
+                        }
+                        have at(f3, arena->occupied[k]) == 0 by {
+                            instantiate(forall (j: int32) { 0 <= j and j < at(f3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f3, arena->occupied[j]) == 0 }, k);
+                            close();
+                        }
+                        normalize() using {
+                            first->arena->occupied[k] == at(f3, first->arena->occupied[k]);
+                            at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]);
+                            at(f3, arena->occupied[k]) == 0;
+                            first->arena == arena;
+                        };
+                    }
                 }
-                have arena->occupied[k] == 0; close();
-            } else {
-                have first->end <= k by {
-                    close();
+                have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
+                    intro() {
+                        have first->start <= k;
+                        have k < first->end;
+                        have arena->occupied[k] == 0 by {
+                            instantiate(forall (j: int32) { first->start <= j and j < first->end implies first->arena->occupied[j] == 0 }, k);
+                            normalize() using {
+                                first->arena->occupied[k] == 0;
+                                first->arena == arena;
+                            };
+                        }
+                        close();
+                    }
                 }
-                have arena->occupied[k] == 0; close();
+                have first->end <= k implies arena->occupied[k] == 0 by {
+                    intro() {
+                        have k < first->arena->capacity by {
+                            close();
+                        }
+                        have first->arena->occupied[k] == at(f3, first->arena->occupied[k]) by {
+                            instantiate(forall (j: int32) { first->end <= j and j < first->arena->capacity implies first->arena->occupied[j] == at(f3, first->arena->occupied[j]) }, k);
+                            close();
+                        }
+                        have at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]) by {
+                            normalize() using {
+                                at(f3, first->arena) == arena;
+                            };
+                        }
+                        have k < at(f3, arena->capacity) by {
+                            close();
+                        }
+                        have at(z1, first->end) <= k by {
+                            close();
+                        }
+                        have k < at(z1, first->start) or at(z1, first->end) <= k by {
+                            close();
+                        }
+                        have at(f3, arena->occupied[k]) == 0 by {
+                            instantiate(forall (j: int32) { 0 <= j and j < at(f3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f3, arena->occupied[j]) == 0 }, k);
+                            close();
+                        }
+                        normalize() using {
+                            first->arena->occupied[k] == at(f3, first->arena->occupied[k]);
+                            at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]);
+                            at(f3, arena->occupied[k]) == 0;
+                            first->arena == arena;
+                        };
+                    }
+                }
+                if k < first->start {
+                    have k < first->start by {
+                        close();
+                    }
+                    have arena->occupied[k] == 0; close();
+                } else {
+                    have first->start <= k by {
+                        close();
+                    }
+                    if k < first->end {
+                        have first->start <= k and k < first->end by {
+                            close();
+                        }
+                        have arena->occupied[k] == 0; close();
+                    } else {
+                        have first->end <= k by {
+                            close();
+                        }
+                        have arena->occupied[k] == 0; close();
+                    }
+                }
             }
         }
     }
@@ -4931,9 +5171,10 @@ int32 arena_pipeline(
         preserve(memory(combined->arena), statement(18).assignment(allocated, 0));
     }
     have allocated == 1 implies combined->arena == arena by {
-        intro();
-        have at(after_combined_alloc, combined->arena) == arena;
-        close();
+        intro() {
+            have at(after_combined_alloc, combined->arena) == arena;
+            close();
+        }
     }
     have arena->capacity == at(a3, arena->capacity) by {
         close();
@@ -4942,25 +5183,27 @@ int32 arena_pipeline(
         step();
         have o3.model == ArenaAllocOutcome::Failure() by close();
         have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == 0 } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have arena->occupied[k] == at(a3, arena->occupied[k]) by {
-                instantiate(forall (j: int32) { allocated == 0 and 0 <= j and j < arena->capacity implies arena->occupied[j] == at(a3, arena->occupied[j]) }, k);
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have arena->occupied[k] == at(a3, arena->occupied[k]) by {
+                        instantiate(forall (j: int32) { allocated == 0 and 0 <= j and j < arena->capacity implies arena->occupied[j] == at(a3, arena->occupied[j]) }, k);
+                        close();
+                    }
+                    have k < at(a3, arena->capacity) by {
+                        close();
+                    }
+                    have at(a3, arena->occupied[k]) == 0 by {
+                        instantiate(forall (j: int32) { 0 <= j and j < at(a3, arena->capacity) implies at(a3, arena->occupied[j]) == 0 }, k);
+                        close();
+                    }
+                    normalize() using {
+                        arena->occupied[k] == at(a3, arena->occupied[k]);
+                        at(a3, arena->occupied[k]) == 0;
+                    };
+                }
             }
-            have k < at(a3, arena->capacity) by {
-                close();
-            }
-            have at(a3, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(a3, arena->capacity) implies at(a3, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            normalize() using {
-                arena->occupied[k] == at(a3, arena->occupied[k]);
-                at(a3, arena->occupied[k]) == 0;
-            };
         }
         step(arena_destroy, { st: g3 });
         unfold(o3);
@@ -5010,43 +5253,45 @@ int32 arena_pipeline(
             close();
         }
         have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z3, combined->start) or at(z3, combined->end) <= k) implies arena->occupied[k] == 0 } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have k < at(z3, combined->start) or at(z3, combined->end) <= k;
-            have k < at(a3, arena->capacity) by {
-                close();
-            }
-            have at(a3, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(a3, arena->capacity) implies at(a3, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            cases {
-                k < at(z3, combined->start) => {
-                    have k < combined->start by {
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have k < at(z3, combined->start) or at(z3, combined->end) <= k;
+                    have k < at(a3, arena->capacity) by {
                         close();
                     }
-                    have arena->occupied[k] == at(a3, arena->occupied[k]) by {
-                        instantiate(forall (j: int32) { allocated == 1 and 0 <= j and j < combined->start implies arena->occupied[j] == at(a3, arena->occupied[j]) }, k);
+                    have at(a3, arena->occupied[k]) == 0 by {
+                        instantiate(forall (j: int32) { 0 <= j and j < at(a3, arena->capacity) implies at(a3, arena->occupied[j]) == 0 }, k);
                         close();
                     }
-                    rewrite(arena->occupied[k], at(a3, arena->occupied[k]));
-                    rewrite(at(a3, arena->occupied[k]), 0);
-                    close();
-                }
-                at(z3, combined->end) <= k => {
-                    have combined->end <= k by {
-                        close();
+                    cases {
+                        k < at(z3, combined->start) => {
+                            have k < combined->start by {
+                                close();
+                            }
+                            have arena->occupied[k] == at(a3, arena->occupied[k]) by {
+                                instantiate(forall (j: int32) { allocated == 1 and 0 <= j and j < combined->start implies arena->occupied[j] == at(a3, arena->occupied[j]) }, k);
+                                close();
+                            }
+                            rewrite(arena->occupied[k], at(a3, arena->occupied[k]));
+                            rewrite(at(a3, arena->occupied[k]), 0);
+                            close();
+                        }
+                        at(z3, combined->end) <= k => {
+                            have combined->end <= k by {
+                                close();
+                            }
+                            have arena->occupied[k] == at(a3, arena->occupied[k]) by {
+                                instantiate(forall (j: int32) { allocated == 1 and combined->end <= j and j < arena->capacity implies arena->occupied[j] == at(a3, arena->occupied[j]) }, k);
+                                close();
+                            }
+                            normalize() using {
+                                arena->occupied[k] == at(a3, arena->occupied[k]);
+                                at(a3, arena->occupied[k]) == 0;
+                            };
+                        }
                     }
-                    have arena->occupied[k] == at(a3, arena->occupied[k]) by {
-                        instantiate(forall (j: int32) { allocated == 1 and combined->end <= j and j < arena->capacity implies arena->occupied[j] == at(a3, arena->occupied[j]) }, k);
-                        close();
-                    }
-                    normalize() using {
-                        arena->occupied[k] == at(a3, arena->occupied[k]);
-                        at(a3, arena->occupied[k]) == 0;
-                    };
                 }
             }
         }
@@ -5162,34 +5407,36 @@ int32 arena_pipeline(
             close();
         }
         have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z3, combined->start) or at(z3, combined->end) <= k) implies arena->occupied[k] == 0 } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have k < at(z3, combined->start) or at(z3, combined->end) <= k;
-            have k < combined->arena->capacity by {
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have k < at(z3, combined->start) or at(z3, combined->end) <= k;
+                    have k < combined->arena->capacity by {
+                        close();
+                    }
+                    have combined->arena->occupied[k] == at(w3, combined->arena->occupied[k]) by {
+                        instantiate(forall (j: int32) { 0 <= j and j < combined->arena->capacity implies combined->arena->occupied[j] == at(w3, combined->arena->occupied[j]) }, k);
+                        close();
+                    }
+                    have at(w3, combined->arena->occupied[k]) == at(w3, arena->occupied[k]) by {
+                        close();
+                    }
+                    have k < at(w3, arena->capacity) by {
+                        close();
+                    }
+                    have at(w3, arena->occupied[k]) == 0 by {
+                        instantiate(forall (j: int32) { 0 <= j and j < at(w3, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(w3, arena->occupied[j]) == 0 }, k);
+                        close();
+                    }
+                    normalize() using {
+                        combined->arena->occupied[k] == at(w3, combined->arena->occupied[k]);
+                        at(w3, combined->arena->occupied[k]) == at(w3, arena->occupied[k]);
+                        at(w3, arena->occupied[k]) == 0;
+                        combined->arena == arena;
+                    };
+                }
             }
-            have combined->arena->occupied[k] == at(w3, combined->arena->occupied[k]) by {
-                instantiate(forall (j: int32) { 0 <= j and j < combined->arena->capacity implies combined->arena->occupied[j] == at(w3, combined->arena->occupied[j]) }, k);
-                close();
-            }
-            have at(w3, combined->arena->occupied[k]) == at(w3, arena->occupied[k]) by {
-                close();
-            }
-            have k < at(w3, arena->capacity) by {
-                close();
-            }
-            have at(w3, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(w3, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(w3, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            normalize() using {
-                combined->arena->occupied[k] == at(w3, combined->arena->occupied[k]);
-                at(w3, combined->arena->occupied[k]) == at(w3, arena->occupied[k]);
-                at(w3, arena->occupied[k]) == 0;
-                combined->arena == arena;
-            };
         }
         have g3.live == at(w3, g3.live) by {
             close();
@@ -5258,34 +5505,36 @@ int32 arena_pipeline(
             close();
         }
         have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z3, combined->start) or at(z3, combined->end) <= k) implies arena->occupied[k] == 0 } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have k < at(z3, combined->start) or at(z3, combined->end) <= k;
-            have k < combined->arena->capacity by {
-                close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have k < at(z3, combined->start) or at(z3, combined->end) <= k;
+                    have k < combined->arena->capacity by {
+                        close();
+                    }
+                    have combined->arena->occupied[k] == at(m5, combined->arena->occupied[k]) by {
+                        instantiate(forall (j: int32) { 0 <= j and j < combined->arena->capacity implies combined->arena->occupied[j] == at(m5, combined->arena->occupied[j]) }, k);
+                        close();
+                    }
+                    have at(m5, combined->arena->occupied[k]) == at(m5, arena->occupied[k]) by {
+                        close();
+                    }
+                    have k < at(m5, arena->capacity) by {
+                        close();
+                    }
+                    have at(m5, arena->occupied[k]) == 0 by {
+                        instantiate(forall (j: int32) { 0 <= j and j < at(m5, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(m5, arena->occupied[j]) == 0 }, k);
+                        close();
+                    }
+                    normalize() using {
+                        combined->arena->occupied[k] == at(m5, combined->arena->occupied[k]);
+                        at(m5, combined->arena->occupied[k]) == at(m5, arena->occupied[k]);
+                        at(m5, arena->occupied[k]) == 0;
+                        combined->arena == arena;
+                    };
+                }
             }
-            have combined->arena->occupied[k] == at(m5, combined->arena->occupied[k]) by {
-                instantiate(forall (j: int32) { 0 <= j and j < combined->arena->capacity implies combined->arena->occupied[j] == at(m5, combined->arena->occupied[j]) }, k);
-                close();
-            }
-            have at(m5, combined->arena->occupied[k]) == at(m5, arena->occupied[k]) by {
-                close();
-            }
-            have k < at(m5, arena->capacity) by {
-                close();
-            }
-            have at(m5, arena->occupied[k]) == 0 by {
-                instantiate(forall (j: int32) { 0 <= j and j < at(m5, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(m5, arena->occupied[j]) == 0 }, k);
-                close();
-            }
-            normalize() using {
-                combined->arena->occupied[k] == at(m5, combined->arena->occupied[k]);
-                at(m5, combined->arena->occupied[k]) == at(m5, arena->occupied[k]);
-                at(m5, arena->occupied[k]) == 0;
-                combined->arena == arena;
-            };
         }
         have g3.live == 1 by {
             close();
@@ -5335,122 +5584,127 @@ int32 arena_pipeline(
             close();
         }
         have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == 0 } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < arena->capacity;
-            have k < combined->start implies arena->occupied[k] == 0 by {
-                intro();
-                have combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { 0 <= j and j < combined->start implies combined->arena->occupied[j] == at(f4, combined->arena->occupied[j]) }, k);
-                    close();
-                }
-                have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by {
-                    normalize() using {
-                        at(f4, combined->arena) == arena;
-                    };
-                }
-                have k < at(f4, arena->capacity) by {
-                    normalize() using {
-                        k < arena->capacity;
-                        arena->capacity == at(f4, arena->capacity);
-                    };
-                }
-                have k < at(z3, combined->start) by {
-                    normalize() using {
-                        k < combined->start;
-                        combined->start == at(z3, combined->start);
-                    };
-                }
-                have k < at(z3, combined->start) or at(z3, combined->end) <= k by {
-                    close();
-                }
-                have at(f4, arena->occupied[k]) == 0 by {
-                    instantiate(forall (j: int32) { 0 <= j and j < at(f4, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(f4, arena->occupied[j]) == 0 }, k);
-                    close();
-                }
-                normalize() using {
-                    combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]);
-                    at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]);
-                    at(f4, arena->occupied[k]) == 0;
-                    combined->arena == arena;
-                };
-            }
-            have combined->start <= k and k < combined->end implies arena->occupied[k] == 0 by {
-                intro();
-                have combined->start <= k;
-                have k < combined->end;
-                have arena->occupied[k] == 0 by {
-                    instantiate(forall (j: int32) { combined->start <= j and j < combined->end implies combined->arena->occupied[j] == 0 }, k);
-                    normalize() using {
-                        combined->arena->occupied[k] == 0;
-                        combined->arena == arena;
-                    };
-                }
-                close();
-            }
-            have combined->end <= k implies arena->occupied[k] == 0 by {
-                intro();
-                have k < combined->arena->capacity by {
-                    normalize() using {
-                        k < arena->capacity;
-                        combined->arena == arena;
-                    };
-                }
-                have combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { combined->end <= j and j < combined->arena->capacity implies combined->arena->occupied[j] == at(f4, combined->arena->occupied[j]) }, k);
-                    close();
-                }
-                have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by {
-                    normalize() using {
-                        at(f4, combined->arena) == arena;
-                    };
-                }
-                have k < at(f4, arena->capacity) by {
-                    normalize() using {
-                        k < arena->capacity;
-                        arena->capacity == at(f4, arena->capacity);
-                    };
-                }
-                have at(z3, combined->end) <= k by {
-                    normalize() using {
-                        combined->end <= k;
-                        combined->end == at(z3, combined->end);
-                    };
-                }
-                have k < at(z3, combined->start) or at(z3, combined->end) <= k by {
-                    close();
-                }
-                have at(f4, arena->occupied[k]) == 0 by {
-                    instantiate(forall (j: int32) { 0 <= j and j < at(f4, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(f4, arena->occupied[j]) == 0 }, k);
-                    close();
-                }
-                normalize() using {
-                    combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]);
-                    at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]);
-                    at(f4, arena->occupied[k]) == 0;
-                    combined->arena == arena;
-                };
-            }
-            if k < combined->start {
-                have k < combined->start by {
-                    close();
-                }
-                have arena->occupied[k] == 0; close();
-            } else {
-                have combined->start <= k by {
-                    close();
-                }
-                if k < combined->end {
-                    have combined->start <= k and k < combined->end by {
-                        close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < arena->capacity;
+                    have k < combined->start implies arena->occupied[k] == 0 by {
+                        intro() {
+                            have combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]) by {
+                                instantiate(forall (j: int32) { 0 <= j and j < combined->start implies combined->arena->occupied[j] == at(f4, combined->arena->occupied[j]) }, k);
+                                close();
+                            }
+                            have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by {
+                                normalize() using {
+                                    at(f4, combined->arena) == arena;
+                                };
+                            }
+                            have k < at(f4, arena->capacity) by {
+                                normalize() using {
+                                    k < arena->capacity;
+                                    arena->capacity == at(f4, arena->capacity);
+                                };
+                            }
+                            have k < at(z3, combined->start) by {
+                                normalize() using {
+                                    k < combined->start;
+                                    combined->start == at(z3, combined->start);
+                                };
+                            }
+                            have k < at(z3, combined->start) or at(z3, combined->end) <= k by {
+                                close();
+                            }
+                            have at(f4, arena->occupied[k]) == 0 by {
+                                instantiate(forall (j: int32) { 0 <= j and j < at(f4, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(f4, arena->occupied[j]) == 0 }, k);
+                                close();
+                            }
+                            normalize() using {
+                                combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]);
+                                at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]);
+                                at(f4, arena->occupied[k]) == 0;
+                                combined->arena == arena;
+                            };
+                        }
                     }
-                    have arena->occupied[k] == 0; close();
-                } else {
-                    have combined->end <= k by {
-                        close();
+                    have combined->start <= k and k < combined->end implies arena->occupied[k] == 0 by {
+                        intro() {
+                            have combined->start <= k;
+                            have k < combined->end;
+                            have arena->occupied[k] == 0 by {
+                                instantiate(forall (j: int32) { combined->start <= j and j < combined->end implies combined->arena->occupied[j] == 0 }, k);
+                                normalize() using {
+                                    combined->arena->occupied[k] == 0;
+                                    combined->arena == arena;
+                                };
+                            }
+                            close();
+                        }
                     }
-                    have arena->occupied[k] == 0; close();
+                    have combined->end <= k implies arena->occupied[k] == 0 by {
+                        intro() {
+                            have k < combined->arena->capacity by {
+                                normalize() using {
+                                    k < arena->capacity;
+                                    combined->arena == arena;
+                                };
+                            }
+                            have combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]) by {
+                                instantiate(forall (j: int32) { combined->end <= j and j < combined->arena->capacity implies combined->arena->occupied[j] == at(f4, combined->arena->occupied[j]) }, k);
+                                close();
+                            }
+                            have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by {
+                                normalize() using {
+                                    at(f4, combined->arena) == arena;
+                                };
+                            }
+                            have k < at(f4, arena->capacity) by {
+                                normalize() using {
+                                    k < arena->capacity;
+                                    arena->capacity == at(f4, arena->capacity);
+                                };
+                            }
+                            have at(z3, combined->end) <= k by {
+                                normalize() using {
+                                    combined->end <= k;
+                                    combined->end == at(z3, combined->end);
+                                };
+                            }
+                            have k < at(z3, combined->start) or at(z3, combined->end) <= k by {
+                                close();
+                            }
+                            have at(f4, arena->occupied[k]) == 0 by {
+                                instantiate(forall (j: int32) { 0 <= j and j < at(f4, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(f4, arena->occupied[j]) == 0 }, k);
+                                close();
+                            }
+                            normalize() using {
+                                combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]);
+                                at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]);
+                                at(f4, arena->occupied[k]) == 0;
+                                combined->arena == arena;
+                            };
+                        }
+                    }
+                    if k < combined->start {
+                        have k < combined->start by {
+                            close();
+                        }
+                        have arena->occupied[k] == 0; close();
+                    } else {
+                        have combined->start <= k by {
+                            close();
+                        }
+                        if k < combined->end {
+                            have combined->start <= k and k < combined->end by {
+                                close();
+                            }
+                            have arena->occupied[k] == 0; close();
+                        } else {
+                            have combined->end <= k by {
+                                close();
+                            }
+                            have arena->occupied[k] == 0; close();
+                        }
+                    }
                 }
             }
         }
@@ -5497,43 +5751,46 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
         0 <= k and k < middle->arena->capacity implies
             (middle->arena->occupied[k] == 0 implies 2 <= k and k < 4)
     } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < middle->arena->capacity;
-        intro();
-        if k < 2 {
-            have k < middle->start;
-            instantiate(forall (j: int32) {
-                0 <= j and j < middle->start implies
-                    middle->arena->occupied[j] == old(middle->arena->occupied[j])
-            }, k);
-            have k < old(middle->arena->capacity);
-            instantiate(forall (j: int32) {
-                0 <= j and j < old(middle->arena->capacity) implies
-                    old(middle->arena->occupied[j]) == 1
-            }, k);
-            have middle->arena->occupied[k] == 1;
-            have not (middle->arena->occupied[k] == 0);
-            contradiction(middle->arena->occupied[k] == 0);
-        } else {
-            if k < 4 {
-                have 2 <= k and k < 4;
-                close();
-            } else {
-                have middle->end <= k;
-                instantiate(forall (j: int32) {
-                    middle->end <= j and j < middle->arena->capacity implies
-                        middle->arena->occupied[j] == old(middle->arena->occupied[j])
-                }, k);
-                have k < old(middle->arena->capacity);
-                instantiate(forall (j: int32) {
-                    0 <= j and j < old(middle->arena->capacity) implies
-                        old(middle->arena->occupied[j]) == 1
-                }, k);
-                have middle->arena->occupied[k] == 1;
-                have not (middle->arena->occupied[k] == 0);
-            contradiction(middle->arena->occupied[k] == 0);
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < middle->arena->capacity;
+                intro() {
+                    if k < 2 {
+                        have k < middle->start;
+                        instantiate(forall (j: int32) {
+                            0 <= j and j < middle->start implies
+                                middle->arena->occupied[j] == old(middle->arena->occupied[j])
+                        }, k);
+                        have k < old(middle->arena->capacity);
+                        instantiate(forall (j: int32) {
+                            0 <= j and j < old(middle->arena->capacity) implies
+                                old(middle->arena->occupied[j]) == 1
+                        }, k);
+                        have middle->arena->occupied[k] == 1;
+                        have not (middle->arena->occupied[k] == 0);
+                        contradiction(middle->arena->occupied[k] == 0);
+                    } else {
+                        if k < 4 {
+                            have 2 <= k and k < 4;
+                            close();
+                        } else {
+                            have middle->end <= k;
+                            instantiate(forall (j: int32) {
+                                middle->end <= j and j < middle->arena->capacity implies
+                                    middle->arena->occupied[j] == old(middle->arena->occupied[j])
+                            }, k);
+                            have k < old(middle->arena->capacity);
+                            instantiate(forall (j: int32) {
+                                0 <= j and j < old(middle->arena->capacity) implies
+                                    old(middle->arena->occupied[j]) == 1
+                            }, k);
+                            have middle->arena->occupied[k] == 1;
+                            have not (middle->arena->occupied[k] == 0);
+                        contradiction(middle->arena->occupied[k] == 0);
+                        }
+                    }
+                }
             }
         }
     }
@@ -5544,55 +5801,58 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
     have forall (k: int32) {
         allocated == 1 and reused->start <= k and k < reused->end implies 2 <= k and k < 4
     } by {
-        intro();
-        intro();
-        have allocated == 1;
-        have reused->start <= k;
-        have k < reused->end;
-        instantiate(forall (j: int32) {
-            allocated == 1 and reused->start <= j and j < reused->end implies
-                at(allocating, middle->arena->occupied[j]) == 0
-        }, k);
-        have 0 <= reused->start;
-        have 0 <= k;
-        have reused->end <= middle->arena->capacity;
-        have k < at(allocating, middle->arena->capacity) by {
-            close() using {
-                k < reused->end;
-                reused->end <= middle->arena->capacity;
-                middle->arena->capacity == at(allocating, middle->arena->capacity);
-            };
-        }
-        instantiate(forall (j: int32) {
-            0 <= j and j < at(allocating, middle->arena->capacity) implies
-                (at(allocating, middle->arena->occupied[j]) == 0 implies 2 <= j and j < 4)
-        }, k);
-        close();
-    }
-    have allocated == 1 implies 2 <= reused->start and reused->end <= 4 by {
-        intro();
-        have reused->start < reused->end;
-        instantiate(forall (k: int32) {
-            allocated == 1 and reused->start <= k and k < reused->end implies 2 <= k and k < 4
-        }, reused->start);
-        have reused->start <= 4;
-        have reused->end <= 4 by {
-            if 4 < reused->end {
-                instantiate(forall (k: int32) {
-                    allocated == 1 and reused->start <= k and k < reused->end implies
-                        2 <= k and k < 4
-                }, 4);
-                have not (4 < 4) by {
-                    close() using {};
+        intro() {
+            intro() {
+                have allocated == 1;
+                have reused->start <= k;
+                have k < reused->end;
+                instantiate(forall (j: int32) {
+                    allocated == 1 and reused->start <= j and j < reused->end implies
+                        at(allocating, middle->arena->occupied[j]) == 0
+                }, k);
+                have 0 <= reused->start;
+                have 0 <= k;
+                have reused->end <= middle->arena->capacity;
+                have k < at(allocating, middle->arena->capacity) by {
+                    close() using {
+                        k < reused->end;
+                        reused->end <= middle->arena->capacity;
+                        middle->arena->capacity == at(allocating, middle->arena->capacity);
+                    };
                 }
-                contradiction(4 < 4);
-            } else {
-                close() using {
-                    not (4 < reused->end);
-                };
+                instantiate(forall (j: int32) {
+                    0 <= j and j < at(allocating, middle->arena->capacity) implies
+                        (at(allocating, middle->arena->occupied[j]) == 0 implies 2 <= j and j < 4)
+                }, k);
+                close();
             }
         }
-        close();
+    }
+    have allocated == 1 implies 2 <= reused->start and reused->end <= 4 by {
+        intro() {
+            have reused->start < reused->end;
+            instantiate(forall (k: int32) {
+                allocated == 1 and reused->start <= k and k < reused->end implies 2 <= k and k < 4
+            }, reused->start);
+            have reused->start <= 4;
+            have reused->end <= 4 by {
+                if 4 < reused->end {
+                    instantiate(forall (k: int32) {
+                        allocated == 1 and reused->start <= k and k < reused->end implies
+                            2 <= k and k < 4
+                    }, 4);
+                    have not (4 < 4) by {
+                        close() using {};
+                    }
+                    contradiction(4 < 4);
+                } else {
+                    close() using {
+                        not (4 < reused->end);
+                    };
+                }
+            }
+            close();
+        }
     }
     step();
     close();

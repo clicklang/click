@@ -355,7 +355,7 @@ fn chosen_step_text(step: &ProofStep) -> Option<String> {
 impl<'a> Proof<'a> {
     /// Under `CLICK_RAISE_LOWER_CENSUS`, records whether each fact this step
     /// added, and the goal it leaves focused, raises to a checked Surface form.
-    fn record_raise_lower_census(&self, next: &Self, tactic: &str) {
+    fn record_raise_lower_census(&self, next: &Self, tactic: &str, written: bool) {
         use crate::surface::proof::raise_lower_census as census;
         // A step that closes its goal leaves no proof state to hold its
         // facts, and raising reads the focused goal's facts.
@@ -393,6 +393,7 @@ impl<'a> Proof<'a> {
                 &census::kind(fact),
                 self.claim_label(),
                 tactic,
+                written,
                 &next.render_kernel_proposition(fact),
             );
         }
@@ -403,6 +404,7 @@ impl<'a> Proof<'a> {
                 &census::kind(goal),
                 self.claim_label(),
                 tactic,
+                written,
                 &next.render_kernel_proposition(goal),
             );
         }

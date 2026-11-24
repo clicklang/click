@@ -25,24 +25,25 @@ void fill_t(uint8* dst) {
         close();
     }
     have (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }) by {
-        intro(); intro();
-        have separate(memory(dst[4u64]), memory(dst[k])) by {
-            apply(separation::separate_elements(dst, 4u64, k));
+        intro() {
+            have separate(memory(dst[4u64]), memory(dst[k])) by {
+                apply(separation::separate_elements(dst, 4u64, k));
+            }
+            have separate(statement(1).footprint, memory(dst[k])) by {
+                close() using { separate(memory(dst[4u64]), memory(dst[k])); };
+            }
+            have at(statement(1).exit, dst[k]) == at(statement(1).entry, dst[k]) by {
+                preserve(memory(dst[k]), statement(1));
+            }
+            instantiate(at(statement(1).entry,
+                (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k);
+            have at(statement(1).exit, defined(dst[k])) by {
+                preserve(memory(dst[k]), statement(1));
+            }
+            have defined(dst[k]) by { close(); }
+            have dst[k] == 7u8 by { close(); }
+            close();
         }
-        have separate(statement(1).footprint, memory(dst[k])) by {
-            close() using { separate(memory(dst[4u64]), memory(dst[k])); };
-        }
-        have at(statement(1).exit, dst[k]) == at(statement(1).entry, dst[k]) by {
-            preserve(memory(dst[k]), statement(1));
-        }
-        instantiate(at(statement(1).entry,
-            (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k);
-        have at(statement(1).exit, defined(dst[k])) by {
-            preserve(memory(dst[k]), statement(1));
-        }
-        have defined(dst[k]) by { close(); }
-        have dst[k] == 7u8 by { close(); }
-        close();
     }
     close();
 }

@@ -50,8 +50,11 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  have to_integer((load<uint16>(state + 2u64) as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite((load<uint16>(state + 2u64) as u32), at(saved_state, (load<uint16>(state + 2u64) as u32))); close(); }
  mark prefix_done;
  have forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) } by {
-  intro(); intro();
-  normalize();
+  intro() {
+      intro() {
+          normalize();
+      }
+  }
  }
  apply(adler_spec_extensional_u64(suffix, old(bytes + split), bytes.len() - split, to_integer((load<uint16>(state) as u32)), to_integer((load<uint16>(state + 2u64) as u32))));
  step_until(statement(6).call(0).entry);

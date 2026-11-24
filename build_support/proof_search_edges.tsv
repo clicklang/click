@@ -215,6 +215,7 @@ src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_outcome_fact_transport	driver	1
 src/surface/proof/proof_object/fixed_state_steps.rs	operation	Proof::apply_pure_transport_using	derive_atomic_proposition	1
 src/surface/proof/proof_object/resource_steps/search.rs	search	ProofSearch::try_open_for_missing_resource	driver	1
+src/surface/proof/proof_object/scope.rs	operation-to-driver	Proof::finish_generated_intro	driver	2
 src/surface/proof/proof_object/step_application.rs	presentation	Proof::record_raise_lower_census	resolve_solve_premises	1
 src/surface/proof/proof_object/trace_surface.rs	presentation	Proof::trace_pointer_pair	available_surface_fact	3
 src/surface/proof/pure_theorems.rs	mixed	::check_direct_pure_goal_with_proof	driver	1

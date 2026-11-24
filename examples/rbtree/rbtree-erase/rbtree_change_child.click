@@ -252,35 +252,42 @@ tactic detach_erase_links(focus: struct rb_node*, parent: struct rb_node*, root:
                 unfold(erase_context_is_right(Context::Top)); close();
             }
             have links.model == Context::Top implies parent == 0 and links.root_count == 1 and links.parent_count == 0 by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have links.model != Context::Top implies parent != 0 and links.root_count == 0 and links.parent_count == 1 by {
-                intro();
-                contradiction(links.model != Context::Top);
+                intro() {
+                    contradiction(links.model != Context::Top);
+                }
             }
             have links.model == Context::Top implies root->rb_node == focus by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have links.model != Context::Top and erase_context_is_right(links.model) == 0 implies parent->rb_left == focus and parent->rb_right == links.sibling_ptr by {
-                intro();
-                have not(links.model != Context::Top and erase_context_is_right(links.model) == 0) by { rewrite(links.model, Context::Top); close(); }
-                contradiction(links.model != Context::Top and erase_context_is_right(links.model) == 0);
+                intro() {
+                    have not(links.model != Context::Top and erase_context_is_right(links.model) == 0) by { rewrite(links.model, Context::Top); close(); }
+                    contradiction(links.model != Context::Top and erase_context_is_right(links.model) == 0);
+                }
             }
             have erase_context_is_right(links.model) == 1 implies parent->rb_right == focus and parent->rb_left == links.sibling_ptr by {
-                intro();
-                have erase_context_is_right(links.model) != 1 by { rewrite(erase_context_is_right(links.model), 0); close(); }
-                contradiction(erase_context_is_right(links.model) == 1);
+                intro() {
+                    have erase_context_is_right(links.model) != 1 by { rewrite(erase_context_is_right(links.model), 0); close(); }
+                    contradiction(erase_context_is_right(links.model) == 1);
+                }
             }
             have erase_context_is_right(links.model) == 1 implies address(links.sibling_ptr) != address(focus) by {
-                intro();
-                have erase_context_is_right(links.model) != 1 by { rewrite(erase_context_is_right(links.model), 0); close(); }
-                contradiction(erase_context_is_right(links.model) == 1);
+                intro() {
+                    have erase_context_is_right(links.model) != 1 by { rewrite(erase_context_is_right(links.model), 0); close(); }
+                    contradiction(erase_context_is_right(links.model) == 1);
+                }
             }
             have parent != 0 implies parent->__rb_parent_color == links.tag and ((parent->__rb_parent_color & ~3) as (struct rb_node*)) == links.above by {
-                intro();
-                contradiction(parent != 0);
+                intro() {
+                    contradiction(parent != 0);
+                }
             }
         },
         Context::Left(identity, grandparent, color, sibling_model, outer_model) => {
@@ -310,36 +317,43 @@ tactic detach_erase_links(focus: struct rb_node*, parent: struct rb_node*, root:
                 unfold(erase_context_is_right(Context::Left(identity, grandparent, color, sibling_model, outer_model))); close();
             }
             have links.model == Context::Top implies parent == 0 and links.root_count == 1 and links.parent_count == 0 by {
-                intro();
-                have links.model != Context::Top by { rewrite(links.model, Context::Left(identity, grandparent, color, sibling_model, outer_model)); close(); }
-                contradiction(links.model == Context::Top);
+                intro() {
+                    have links.model != Context::Top by { rewrite(links.model, Context::Left(identity, grandparent, color, sibling_model, outer_model)); close(); }
+                    contradiction(links.model == Context::Top);
+                }
             }
             have links.model != Context::Top implies parent != 0 and links.root_count == 0 and links.parent_count == 1 by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have links.model == Context::Top implies root->rb_node == focus by {
-                intro();
-                have links.model != Context::Top by { rewrite(links.model, Context::Left(identity, grandparent, color, sibling_model, outer_model)); close(); }
-                contradiction(links.model == Context::Top);
+                intro() {
+                    have links.model != Context::Top by { rewrite(links.model, Context::Left(identity, grandparent, color, sibling_model, outer_model)); close(); }
+                    contradiction(links.model == Context::Top);
+                }
             }
             have links.model != Context::Top and erase_context_is_right(links.model) == 0 implies parent->rb_left == focus and parent->rb_right == links.sibling_ptr by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have erase_context_is_right(links.model) == 1 implies parent->rb_right == focus and parent->rb_left == links.sibling_ptr by {
-                intro();
-                have erase_context_is_right(links.model) != 1 by { rewrite(erase_context_is_right(links.model), 0); close(); }
-                contradiction(erase_context_is_right(links.model) == 1);
+                intro() {
+                    have erase_context_is_right(links.model) != 1 by { rewrite(erase_context_is_right(links.model), 0); close(); }
+                    contradiction(erase_context_is_right(links.model) == 1);
+                }
             }
             have erase_context_is_right(links.model) == 1 implies address(links.sibling_ptr) != address(focus) by {
-                intro();
-                have erase_context_is_right(links.model) != 1 by { rewrite(erase_context_is_right(links.model), 0); close(); }
-                contradiction(erase_context_is_right(links.model) == 1);
+                intro() {
+                    have erase_context_is_right(links.model) != 1 by { rewrite(erase_context_is_right(links.model), 0); close(); }
+                    contradiction(erase_context_is_right(links.model) == 1);
+                }
             }
             have parent != 0 implies parent->__rb_parent_color == links.tag and ((parent->__rb_parent_color & ~3) as (struct rb_node*)) == links.above by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
         },
         Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
@@ -370,35 +384,42 @@ tactic detach_erase_links(focus: struct rb_node*, parent: struct rb_node*, root:
                 unfold(erase_context_is_right(Context::Right(identity, grandparent, color, sibling_model, outer_model))); close();
             }
             have links.model == Context::Top implies parent == 0 and links.root_count == 1 and links.parent_count == 0 by {
-                intro();
-                have links.model != Context::Top by { rewrite(links.model, Context::Right(identity, grandparent, color, sibling_model, outer_model)); close(); }
-                contradiction(links.model == Context::Top);
+                intro() {
+                    have links.model != Context::Top by { rewrite(links.model, Context::Right(identity, grandparent, color, sibling_model, outer_model)); close(); }
+                    contradiction(links.model == Context::Top);
+                }
             }
             have links.model != Context::Top implies parent != 0 and links.root_count == 0 and links.parent_count == 1 by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have links.model == Context::Top implies root->rb_node == focus by {
-                intro();
-                have links.model != Context::Top by { rewrite(links.model, Context::Right(identity, grandparent, color, sibling_model, outer_model)); close(); }
-                contradiction(links.model == Context::Top);
+                intro() {
+                    have links.model != Context::Top by { rewrite(links.model, Context::Right(identity, grandparent, color, sibling_model, outer_model)); close(); }
+                    contradiction(links.model == Context::Top);
+                }
             }
             have links.model != Context::Top and erase_context_is_right(links.model) == 0 implies parent->rb_left == focus and parent->rb_right == links.sibling_ptr by {
-                intro();
-                have not(links.model != Context::Top and erase_context_is_right(links.model) == 0) by { rewrite(erase_context_is_right(links.model), 1); close(); }
-                contradiction(links.model != Context::Top and erase_context_is_right(links.model) == 0);
+                intro() {
+                    have not(links.model != Context::Top and erase_context_is_right(links.model) == 0) by { rewrite(erase_context_is_right(links.model), 1); close(); }
+                    contradiction(links.model != Context::Top and erase_context_is_right(links.model) == 0);
+                }
             }
             have erase_context_is_right(links.model) == 1 implies parent->rb_right == focus and parent->rb_left == links.sibling_ptr by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have erase_context_is_right(links.model) == 1 implies address(links.sibling_ptr) != address(focus) by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have parent != 0 implies parent->__rb_parent_color == links.tag and ((parent->__rb_parent_color & ~3) as (struct rb_node*)) == links.above by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
         },
     }

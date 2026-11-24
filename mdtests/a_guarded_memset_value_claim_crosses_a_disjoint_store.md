@@ -27,19 +27,20 @@ void fill(uint8* dst) {
     step();
     have bytes::all_equal(dst, 0u64, 4u64, 7u8) by {
         unfold(bytes::all_equal(dst, 0u64, 4u64, 7u8));
-        intro(); intro();
-        have separate(memory(dst[4u64]), memory(dst[k])) by {
-            apply(separation::separate_elements(dst, 4u64, k));
+        intro() {
+            have separate(memory(dst[4u64]), memory(dst[k])) by {
+                apply(separation::separate_elements(dst, 4u64, k));
+            }
+            have separate(statement(1).footprint, memory(dst[k])) by {
+                close() using { separate(memory(dst[4u64]), memory(dst[k])); };
+            }
+            have dst[k] == at(statement(1).entry, dst[k]) by {
+                preserve(memory(dst[k]), statement(1));
+            }
+            instantiate(at(statement(1).entry,
+                (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k);
+            close();
         }
-        have separate(statement(1).footprint, memory(dst[k])) by {
-            close() using { separate(memory(dst[4u64]), memory(dst[k])); };
-        }
-        have dst[k] == at(statement(1).entry, dst[k]) by {
-            preserve(memory(dst[k]), statement(1));
-        }
-        instantiate(at(statement(1).entry,
-            (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k);
-        close();
     }
     step();
     close();

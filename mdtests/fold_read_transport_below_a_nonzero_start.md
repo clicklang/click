@@ -31,16 +31,19 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
     step();
     have zeros(at(entry, v), lo, hi) == zeros(v, lo, hi) by {
         have forall (k: int32) { lo <= k and k < n implies v[k] == at(entry, v[k]) } by {
-            intro(); intro();
-            have 0 <= k by { close(); }
-            have j != k by { close(); }
-            have separate(memory(v[j]), memory(v[k])) by {
-                apply(click::separation::separate_elements(v, j, k));
+            intro() {
+                intro() {
+                    have 0 <= k by { close(); }
+                    have j != k by { close(); }
+                    have separate(memory(v[j]), memory(v[k])) by {
+                        apply(click::separation::separate_elements(v, j, k));
+                    }
+                    have separate(statement(0).footprint, memory(v[k])) by {
+                        close() using { separate(memory(v[j]), memory(v[k])); };
+                    }
+                    preserve(memory(v[k]), statement(0));
+                }
             }
-            have separate(statement(0).footprint, memory(v[k])) by {
-                close() using { separate(memory(v[j]), memory(v[k])); };
-            }
-            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); close(); }
         apply(same_zeros(v, at(entry, v), lo, n, hi));

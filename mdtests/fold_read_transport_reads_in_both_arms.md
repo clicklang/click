@@ -72,15 +72,18 @@ void set_end(int32 *v, int32 i, int32 n) {
     step();
     have weighted(at(entry, v), 0, i) == weighted(v, 0, i) by {
         have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
-            intro(); intro();
-            have i != k by { close(); }
-            have separate(memory(v[i]), memory(v[k])) by {
-                apply(click::separation::separate_elements(v, i, k));
+            intro() {
+                intro() {
+                    have i != k by { close(); }
+                    have separate(memory(v[i]), memory(v[k])) by {
+                        apply(click::separation::separate_elements(v, i, k));
+                    }
+                    have separate(statement(0).footprint, memory(v[k])) by {
+                        close() using { separate(memory(v[i]), memory(v[k])); };
+                    }
+                    preserve(memory(v[k]), statement(0));
+                }
             }
-            have separate(statement(0).footprint, memory(v[k])) by {
-                close() using { separate(memory(v[i]), memory(v[k])); };
-            }
-            preserve(memory(v[k]), statement(0));
         }
         have viewable(v[0..n]) by { observe(v[0..n]); close(); }
         have viewable(v[0..i]) by {

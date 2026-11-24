@@ -155,7 +155,7 @@ verifying "identity.c";
 int32 identity(int32 x, int32 d) {
     requires d > 0;
     ensures x < 0 implies truncating_quotient(to_integer(result), to_integer(d)) == truncating_quotient(to_integer(x), to_integer(d));
-} by { step_until(function.exit); intro(); close(); }
+} by { step_until(function.exit); intro() { close(); } }
 "#;
 
 #[test]
@@ -256,7 +256,7 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {
-            all { (x == 0 implies x == 0) => { intro(); close(); } x == 0 => { close(); } }
+            all { (x == 0 implies x == 0) => { intro() { close(); } } x == 0 => { close(); } }
         }
     }"#;
     assert!(
@@ -1530,7 +1530,7 @@ fn named_conjunct_proofs_match_labels_in_either_order() {
                     (2 == 2 and 3 == 3) => {
                         all { 3 == 3 => { normalize(); } 2 == 2 => { normalize(); } }
                     }
-                    forall (j: int32) { j == j } => { intro(); normalize(); }
+                    forall (j: int32) { j == j } => { intro() { normalize(); } }
                 }
             }
         }

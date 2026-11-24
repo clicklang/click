@@ -39,7 +39,7 @@
     "diagnostic": "local `chunks_remaining` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/chunk-proof/chunks.click",
     "frozen_sidecar": "design/charon-trial/chunk-proof/frozen.click",
-    "frozen_sha256": "44ec6692964ebd6677aa56c511c6dd37cfe250be64b5b45e51996048ec8a77c5",
+    "frozen_sha256": "ccd87283ea70b3ea39034fd89fd8a56292b50bbdf19ed51b3bcd07d1543086a7",
     "original_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
   },
   {

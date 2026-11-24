@@ -92,10 +92,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
         have stdio::decimal_length(size as uint32 as uint64) <= 20u64 by { unfold(stdio::decimal_length(size as uint32 as uint64)); close(); }
         have len as uint64 != 0u64;
         have forall (k: uint64) { 0u64 <= k and k < 0u64 implies tmp[k] != 0u8 } by {
-            intro();
-            intro();
-            have false by { close() using { k < 0u64; }; }
-            contradiction();
+            intro() {
+                intro() {
+                    have false by { close() using { k < 0u64; }; }
+                    contradiction();
+                }
+            }
         }
         have forall (k: uint64) { 0u64 <= k and k < 0u64 + 1u64 implies defined(tmp[k]) } by { enumerate(); }
         if (units & 1u32) == 1u32 {
@@ -151,10 +153,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             have stdio::decimal_length(size as uint32 as uint64) <= 20u64 by { unfold(stdio::decimal_length(size as uint32 as uint64)); close(); }
             have len as uint64 != 0u64;
             have forall (k: uint64) { 0u64 <= k and k < 0u64 implies tmp[k] != 0u8 } by {
-                intro();
-                intro();
-                have false by { close() using { k < 0u64; }; }
-                contradiction();
+                intro() {
+                    intro() {
+                        have false by { close() using { k < 0u64; }; }
+                        contradiction();
+                    }
+                }
             }
             have forall (k: uint64) { 0u64 <= k and k < 0u64 + 1u64 implies defined(tmp[k]) } by { enumerate(); }
             if (units & 1u32) == 1u32 {
@@ -250,34 +254,37 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     }
                     have i == 1 implies to_integer(blk_size) * 1000 <= 18446744073709551615;
                     have i == 2 implies to_integer(blk_size) * 1000000 <= 18446744073709551615 by {
-                        intro();
-                        have at(head, i) == 1;
-                        have to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615 by { close(); }
-                        have to_integer(blk_size) * 1000000 <= 18446744073709551615 by { close() using {
-                            to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
-                            to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615;
-                        }; }
-                        close();
+                        intro() {
+                            have at(head, i) == 1;
+                            have to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615 by { close(); }
+                            have to_integer(blk_size) * 1000000 <= 18446744073709551615 by { close() using {
+                                to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
+                                to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615;
+                            }; }
+                            close();
+                        }
                     }
                     have i == 3 implies to_integer(blk_size) * 1000000000 <= 18446744073709551615 by {
-                        intro();
-                        have at(head, i) == 2;
-                        have to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615 by { close(); }
-                        have to_integer(blk_size) * 1000000000 <= 18446744073709551615 by { close() using {
-                            to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
-                            to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615;
-                        }; }
-                        close();
+                        intro() {
+                            have at(head, i) == 2;
+                            have to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615 by { close(); }
+                            have to_integer(blk_size) * 1000000000 <= 18446744073709551615 by { close() using {
+                                to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
+                                to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615;
+                            }; }
+                            close();
+                        }
                     }
                     have i == 4 implies to_integer(blk_size) * 1000000000000 <= 18446744073709551615 by {
-                        intro();
-                        have at(head, i) == 3;
-                        have to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615 by { close(); }
-                        have to_integer(blk_size) * 1000000000000 <= 18446744073709551615 by { close() using {
-                            to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
-                            to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615;
-                        }; }
-                        close();
+                        intro() {
+                            have at(head, i) == 3;
+                            have to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615 by { close(); }
+                            have to_integer(blk_size) * 1000000000000 <= 18446744073709551615 by { close() using {
+                                to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
+                                to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615;
+                            }; }
+                            close();
+                        }
                     }
                 }
             }
@@ -328,34 +335,37 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     }
                     have i == at(loop(1).entry, i) + 1 implies to_integer(size) * 1000 <= 18446744073709551615;
                     have i == at(loop(1).entry, i) + 2 implies to_integer(size) * 1000000 <= 18446744073709551615 by {
-                        intro();
-                        have at(head, i) == at(loop(1).entry, i) + 1;
-                        have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
-                        have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
-                            to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
-                            to_integer(at(head, size)) * 1000 <= 18446744073709551615;
-                        }; }
-                        close();
+                        intro() {
+                            have at(head, i) == at(loop(1).entry, i) + 1;
+                            have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
+                            have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
+                                to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
+                                to_integer(at(head, size)) * 1000 <= 18446744073709551615;
+                            }; }
+                            close();
+                        }
                     }
                     have i == at(loop(1).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615 by {
-                        intro();
-                        have at(head, i) == at(loop(1).entry, i) + 2;
-                        have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
-                        have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
-                            to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
-                            to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
-                        }; }
-                        close();
+                        intro() {
+                            have at(head, i) == at(loop(1).entry, i) + 2;
+                            have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
+                            have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
+                                to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
+                                to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
+                            }; }
+                            close();
+                        }
                     }
                     have i == at(loop(1).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615 by {
-                        intro();
-                        have at(head, i) == at(loop(1).entry, i) + 3;
-                        have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
-                        have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
-                            to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
-                            to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
-                        }; }
-                        close();
+                        intro() {
+                            have at(head, i) == at(loop(1).entry, i) + 3;
+                            have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
+                            have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
+                                to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
+                                to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
+                            }; }
+                            close();
+                        }
                     }
                 }
             }
@@ -416,58 +426,64 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 }
                             }
                             have i == at(loop(2).entry, i) + 1 implies to_integer(size) * 1000 <= 18446744073709551615 by {
-                                intro();
-                                close() using { to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size)); };
+                                intro() {
+                                    close() using { to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size)); };
+                                }
                             }
                             have i == at(loop(2).entry, i) + 2 implies to_integer(size) * 1000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 1;
-                                have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 1;
+                                    have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                             have i == at(loop(2).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 2;
-                                have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 2;
+                                    have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                             have i == at(loop(2).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 3;
-                                have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 3;
+                                    have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                             have i == at(loop(2).entry, i) + 5 implies to_integer(size) * 1000000000000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 4;
-                                have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 4;
+                                    have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                             have i == at(loop(2).entry, i) + 6 implies to_integer(size) * 1000000000000000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 5;
-                                have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 5;
+                                    have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                         } else {
                             step();
@@ -497,58 +513,64 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 }
                             }
                             have i == at(loop(2).entry, i) + 1 implies to_integer(size) * 1000 <= 18446744073709551615 by {
-                                intro();
-                                close() using { to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size)); };
+                                intro() {
+                                    close() using { to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size)); };
+                                }
                             }
                             have i == at(loop(2).entry, i) + 2 implies to_integer(size) * 1000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 1;
-                                have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 1;
+                                    have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                             have i == at(loop(2).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 2;
-                                have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 2;
+                                    have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                             have i == at(loop(2).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 3;
-                                have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 3;
+                                    have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                             have i == at(loop(2).entry, i) + 5 implies to_integer(size) * 1000000000000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 4;
-                                have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 4;
+                                    have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                             have i == at(loop(2).entry, i) + 6 implies to_integer(size) * 1000000000000000000 <= 18446744073709551615 by {
-                                intro();
-                                have at(head, i) == at(loop(2).entry, i) + 5;
-                                have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { close(); }
-                                have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { close() using {
-                                    to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
-                                    to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615;
-                                }; }
-                                close();
+                                intro() {
+                                    have at(head, i) == at(loop(2).entry, i) + 5;
+                                    have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { close(); }
+                                    have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { close() using {
+                                        to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
+                                        to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615;
+                                    }; }
+                                    close();
+                                }
                             }
                         } else {
                             step();
@@ -596,11 +618,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have j <= 2;
                     have 0 <= 2 - j;
                     have j == 2 implies 100u32 <= sf_cap by {
-                        intro();
-                        have at(head, j) == 1;
-                        have 10u32 <= at(head, sf_cap) by { close(); }
-                        have 100u32 <= sf_cap;
-                        close();
+                        intro() {
+                            have at(head, j) == 1;
+                            have 10u32 <= at(head, sf_cap) by { close(); }
+                            have 100u32 <= sf_cap;
+                            close();
+                        }
                     }
                 }
             }
@@ -779,18 +802,22 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
                         have forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) } by { enumerate(); }
                         have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
-                            intro();
-                            intro();
-                            have k < 2u64 by { close() using { k < tmp_len(j); tmp_len(j) == 2u64; }; }
-                            instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
-                            close();
+                            intro() {
+                                intro() {
+                                    have k < 2u64 by { close() using { k < tmp_len(j); tmp_len(j) == 2u64; }; }
+                                    instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
+                                    close();
+                                }
+                            }
                         }
                         have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
-                            intro();
-                            intro();
-                            have k < 3u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 2u64; }; }
-                            instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) }, k);
-                            close();
+                            intro() {
+                                intro() {
+                                    have k < 3u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 2u64; }; }
+                                    instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) }, k);
+                                    close();
+                                }
+                            }
                         }
                     } else {
                         have 0 <= j and j <= 2;
@@ -849,18 +876,22 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 } by { enumerate(); }
                         have forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) } by { enumerate(); }
                         have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
-                            intro();
-                            intro();
-                            have k < 3u64 by { close() using { k < tmp_len(j); tmp_len(j) == 3u64; }; }
-                            instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 }, k);
-                            close();
+                            intro() {
+                                intro() {
+                                    have k < 3u64 by { close() using { k < tmp_len(j); tmp_len(j) == 3u64; }; }
+                                    instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 }, k);
+                                    close();
+                                }
+                            }
                         }
                         have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
-                            intro();
-                            intro();
-                            have k < 4u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 3u64; }; }
-                            instantiate(forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) }, k);
-                            close();
+                            intro() {
+                                intro() {
+                                    have k < 4u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 3u64; }; }
+                                    instantiate(forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) }, k);
+                                    close();
+                                }
+                            }
                         }
                     }
                 }
@@ -870,18 +901,22 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 0u64); close(); }
                     have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
-                        intro();
-                        intro();
-                        have false by { close() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
-                        contradiction();
+                        intro() {
+                            intro() {
+                                have false by { close() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
+                                contradiction();
+                            }
+                        }
                     }
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
-                        intro();
-                        intro();
-                        have k < 1u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 0u64; }; }
-                        have k == 0u64 by { close() using { k < 1u64; }; }
-                        rewrite(k, 0u64);
-                        close();
+                        intro() {
+                            intro() {
+                                have k < 1u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 0u64; }; }
+                                have k == 0u64 by { close() using { k < 1u64; }; }
+                                rewrite(k, 0u64);
+                                close();
+                            }
+                        }
                     }
                 }
             }

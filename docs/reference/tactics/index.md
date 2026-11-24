@@ -70,7 +70,7 @@ remains supported.
   See [Proposition reasoning](#proposition-reasoning).
 - `match value { ... }`: split the proof on an algebraic value's
   constructors. See [Proposition reasoning](#proposition-reasoning).
-- `intro()`: assume an implication's antecedent or fix a universal's
+- `intro() { ... }`: assume an implication's antecedent or fix a universal's
   variable. See [Proposition reasoning](#proposition-reasoning).
 - `let ih = induct(value)`, with `apply(ih(m))`: prove
   a pure theorem by induction. See
@@ -1129,7 +1129,7 @@ step is still checked.
 | `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
-| `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
+| `intro() { ... }` | control | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
 | `intro(name) { ... }` | control | Specialized | Choose the name introduced into the block. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
@@ -1366,7 +1366,7 @@ the whole goal, each conjunct trying direct steps first.
 An implication whose antecedent `normalize()` refutes, such as
 `i == i + 1 implies n <= 5u64` with Integer `i + 1`, is introduced and closed
 by `contradiction` on that antecedent, reading only the goal; expansion
-writes `intro(); contradiction(A);`
+writes `intro() { contradiction(A); }`
 ([`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md)).
 An implication whose antecedent, or one conjunct of an `a and b` antecedent,
 has its opposite among the facts closes by `contradiction` once `close()`
@@ -2627,8 +2627,7 @@ charges the affected expression.
 the consequent. For a universal, it fixes an arbitrary value and proves
 the body at that value. The closing brace discharges the original goal and
 ends the scope of the premise or binder. In a grouped contract proof the
-next tactic can then work on the next claim. The flat unnamed form `intro();`
-is also accepted.
+next tactic can then work on the next claim.
 
 With `intro()`, a universal's variable keeps the name its quantifier wrote.
 An earlier binding of the same name stays readable as `outer.name`. That
@@ -2648,7 +2647,6 @@ access in a proof; it is not parsed as the shadowed-binder qualifier.
 - `(lo..hi).all(|x| { B })`: one scoped introduction binds `x` and makes
   both `lo <= x` and `x < hi` available while proving `B`. Use one nested
   block per range and a separate block for an implication written in `B`.
-  Flat introductions take two steps, one for the binder and one for membership.
 - An implication lowering inserted in front of a written body, such as a
   path fact: `intro()` adds the premise and keeps the written goal focused.
   If such an implication sits between a range binder and the membership

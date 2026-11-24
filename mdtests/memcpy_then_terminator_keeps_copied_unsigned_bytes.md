@@ -32,40 +32,41 @@ void copy_u(uint8* dst, const uint8* src) {
     step();
     have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         unfold(bytes::equal(dst, 0u64, src, 0u64, 4u64));
-        intro(); intro();
-        have separate(memory(dst[4u64]), memory(dst[k])) by {
-            apply(separation::separate_elements(dst, 4u64, k));
+        intro() {
+            have separate(memory(dst[4u64]), memory(dst[k])) by {
+                apply(separation::separate_elements(dst, 4u64, k));
+            }
+            have separate(statement(1).footprint, memory(dst[k])) by {
+                close() using { separate(memory(dst[4u64]), memory(dst[k])); };
+            }
+            have dst[k] == at(copied, dst[k]) by {
+                preserve(memory(dst[k]), statement(1));
+            }
+            instantiate(at(copied, (0u64..4u64).all(|j| {
+                dst[0u64 + j] == old(src[0u64 + j])
+            })), k);
+            have separate(memory(dst[0..4]), memory(src[k])) by { close(); }
+            have contains(memory(dst[0..4]), statement(0).footprint) by { close(); }
+            apply(separation::contains_refl(memory(src[k])));
+            apply(separation::separate_restrict(
+                memory(dst[0..4]), memory(src[k]),
+                statement(0).footprint, memory(src[k])
+            ));
+            have at(copied, src[k]) == old(src[k]) by {
+                preserve(memory(src[k]), statement(0));
+            }
+            have separate(memory(dst[4u64]), memory(src[k])) by { close(); }
+            have separate(statement(1).footprint, memory(src[k])) by {
+                close() using { separate(memory(dst[4u64]), memory(src[k])); };
+            }
+            have src[k] == at(copied, src[k]) by {
+                preserve(memory(src[k]), statement(1));
+            }
+            rewrite(src[k], at(copied, src[k]));
+            rewrite(at(copied, src[k]), old(src[k]));
+            rewrite(dst[k], at(copied, dst[k]));
+            close();
         }
-        have separate(statement(1).footprint, memory(dst[k])) by {
-            close() using { separate(memory(dst[4u64]), memory(dst[k])); };
-        }
-        have dst[k] == at(copied, dst[k]) by {
-            preserve(memory(dst[k]), statement(1));
-        }
-        instantiate(at(copied, (0u64..4u64).all(|j| {
-            dst[0u64 + j] == old(src[0u64 + j])
-        })), k);
-        have separate(memory(dst[0..4]), memory(src[k])) by { close(); }
-        have contains(memory(dst[0..4]), statement(0).footprint) by { close(); }
-        apply(separation::contains_refl(memory(src[k])));
-        apply(separation::separate_restrict(
-            memory(dst[0..4]), memory(src[k]),
-            statement(0).footprint, memory(src[k])
-        ));
-        have at(copied, src[k]) == old(src[k]) by {
-            preserve(memory(src[k]), statement(0));
-        }
-        have separate(memory(dst[4u64]), memory(src[k])) by { close(); }
-        have separate(statement(1).footprint, memory(src[k])) by {
-            close() using { separate(memory(dst[4u64]), memory(src[k])); };
-        }
-        have src[k] == at(copied, src[k]) by {
-            preserve(memory(src[k]), statement(1));
-        }
-        rewrite(src[k], at(copied, src[k]));
-        rewrite(at(copied, src[k]), old(src[k]));
-        rewrite(dst[k], at(copied, dst[k]));
-        close();
     }
 }
 void copy_u_smart(uint8* dst, const uint8* src) {
@@ -80,37 +81,38 @@ void copy_u_smart(uint8* dst, const uint8* src) {
     step();
     have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         unfold(bytes::equal(dst, 0u64, src, 0u64, 4u64));
-        intro(); intro();
-        have separate(memory(dst[4u64]), memory(dst[k])) by {
-            apply(separation::separate_elements(dst, 4u64, k));
+        intro() {
+            have separate(memory(dst[4u64]), memory(dst[k])) by {
+                apply(separation::separate_elements(dst, 4u64, k));
+            }
+            have separate(statement(1).footprint, memory(dst[k])) by {
+                close() using { separate(memory(dst[4u64]), memory(dst[k])); };
+            }
+            have dst[k] == at(copied, dst[k]) by {
+                preserve(memory(dst[k]), statement(1));
+            }
+            instantiate(at(copied, (0u64..4u64).all(|j| {
+                dst[0u64 + j] == old(src[0u64 + j])
+            })), k);
+            have separate(memory(dst[0..4]), memory(src[k])) by { close(); }
+            have contains(memory(dst[0..4]), statement(0).footprint) by { close(); }
+            apply(separation::contains_refl(memory(src[k])));
+            apply(separation::separate_restrict(
+                memory(dst[0..4]), memory(src[k]),
+                statement(0).footprint, memory(src[k])
+            ));
+            have at(copied, src[k]) == old(src[k]) by {
+                preserve(memory(src[k]), statement(0));
+            }
+            have separate(memory(dst[4u64]), memory(src[k])) by { close(); }
+            have separate(statement(1).footprint, memory(src[k])) by {
+                close() using { separate(memory(dst[4u64]), memory(src[k])); };
+            }
+            have src[k] == at(copied, src[k]) by {
+                preserve(memory(src[k]), statement(1));
+            }
+            close();
         }
-        have separate(statement(1).footprint, memory(dst[k])) by {
-            close() using { separate(memory(dst[4u64]), memory(dst[k])); };
-        }
-        have dst[k] == at(copied, dst[k]) by {
-            preserve(memory(dst[k]), statement(1));
-        }
-        instantiate(at(copied, (0u64..4u64).all(|j| {
-            dst[0u64 + j] == old(src[0u64 + j])
-        })), k);
-        have separate(memory(dst[0..4]), memory(src[k])) by { close(); }
-        have contains(memory(dst[0..4]), statement(0).footprint) by { close(); }
-        apply(separation::contains_refl(memory(src[k])));
-        apply(separation::separate_restrict(
-            memory(dst[0..4]), memory(src[k]),
-            statement(0).footprint, memory(src[k])
-        ));
-        have at(copied, src[k]) == old(src[k]) by {
-            preserve(memory(src[k]), statement(0));
-        }
-        have separate(memory(dst[4u64]), memory(src[k])) by { close(); }
-        have separate(statement(1).footprint, memory(src[k])) by {
-            close() using { separate(memory(dst[4u64]), memory(src[k])); };
-        }
-        have src[k] == at(copied, src[k]) by {
-            preserve(memory(src[k]), statement(1));
-        }
-        close();
     }
 }
 

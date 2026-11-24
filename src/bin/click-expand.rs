@@ -1686,9 +1686,10 @@ theorem neighbor(x: int32) {
 }
 theorem selected(x: int32) {
     ensures x == 0 implies x == 0 by {
-        intro();
-        have x == 0 by { close(); }
-        close();
+        intro() {
+            have x == 0 by { close(); }
+            close();
+        }
     }
 }
 "#;
@@ -1697,11 +1698,11 @@ theorem selected(x: int32) {
         verify_expansion(None, source, source, &inputs, claim, true).unwrap();
         for body in [
             "close();",
-            "intro(); have x == 0 by { close(); } close();",
-            "intro();",
+            "intro() { have forall (k: int32) { k == k } by { close(); } close(); }",
+            "intro() {}",
         ] {
             let incomplete = source.replace(
-                "intro();\n        have x == 0 by { close(); }\n        close();",
+                "intro() {\n            have x == 0 by { close(); }\n            close();\n        }",
                 body,
             );
             assert_ne!(source, incomplete);

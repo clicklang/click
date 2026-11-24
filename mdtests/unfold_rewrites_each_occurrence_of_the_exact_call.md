@@ -21,8 +21,9 @@ theorem every_occurrence(n: int32, m: int32) {
     requires f(m) == m;
     ensures f(n) + f(n) == n + n implies f(m) == m by {
         unfold(f(n));
-        intro();
-        close();
+        intro() {
+            close();
+        }
     }
 }
 

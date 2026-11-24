@@ -405,6 +405,7 @@ impl ProofCertificate {
             }
             match steps {
                 [ProofStep::Known] => {}
+                [ProofStep::IntroBlock { binder: None, body }] => pending.push(body.steps()),
                 [
                     ProofStep::Both {
                         left_proof,

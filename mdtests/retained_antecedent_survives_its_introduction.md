@@ -21,10 +21,12 @@ int32 retained_antecedent(int32 n) {
 } by {
     step();
     have forall (k: int32) { k == -1 and n / k == n implies n == n } by {
-        intro();
-        intro();
-        have n / k == n;
-        normalize();
+        intro() {
+            intro() {
+                have n / k == n;
+                normalize();
+            }
+        }
     }
     close();
 }
