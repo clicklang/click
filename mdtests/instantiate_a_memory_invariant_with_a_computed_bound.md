@@ -31,9 +31,12 @@ void f(int32* p, int32 end, int32 count, int32 k) {
         }
         maintain by {
             have forall (x: int32) { 0 <= x and x < start implies p[x] == old(p[x]) } by {
-                intro(); intro();
-                instantiate(forall (j: int32) { 0 <= j and j < start implies p[j] == old(p[j]) }, x);
-                close();
+                intro() {
+                    intro() {
+                        instantiate(forall (j: int32) { 0 <= j and j < start implies p[j] == old(p[j]) }, x);
+                        close();
+                    }
+                }
             }
             step();
         }

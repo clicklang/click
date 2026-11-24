@@ -25,9 +25,11 @@ int32 keep_again(int32 x) {
     ensures result == x;
 } by {
     have forall (k: int32) { k < x implies k < x } by {
-        let below = intro();
-        intro();
-        close();
+        intro(below) {
+            intro() {
+                close();
+            }
+        }
     }
 }
 ```

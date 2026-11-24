@@ -60,35 +60,38 @@ int32 sum(int32 a[], int32 n) {
         close() using { (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0; };
     }
     have forall (j: int32) { 0 <= j and j < n implies defined(a[j]) } by {
-        intro(); intro();
-        instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(a[k])) }, j);
-        have separate(memory(total), memory(a[j])) by { close(); }
-        have separate(statement(0).footprint, memory(a[j])) by {
-            close() using { separate(memory(total), memory(a[j])); };
+        intro() {
+            intro() {
+                instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(a[k])) }, j);
+                have separate(memory(total), memory(a[j])) by { close(); }
+                have separate(statement(0).footprint, memory(a[j])) by {
+                    close() using { separate(memory(total), memory(a[j])); };
+                }
+                have at(statement(0).exit, defined(a[j])) by {
+                    preserve(memory(a[j]), statement(0));
+                }
+                have separate(memory(i), memory(a[j])) by { close(); }
+                have separate(statement(1).footprint, memory(a[j])) by {
+                    close() using { separate(memory(i), memory(a[j])); };
+                }
+                have at(statement(1).exit, defined(a[j])) by {
+                    preserve(memory(a[j]), statement(1));
+                }
+                have separate(statement(2).footprint, memory(a[j])) by {
+                    close() using { separate(memory(total), memory(a[j])); };
+                }
+                have at(statement(2).exit, defined(a[j])) by {
+                    preserve(memory(a[j]), statement(2));
+                }
+                have separate(statement(3).footprint, memory(a[j])) by {
+                    close() using { separate(memory(i), memory(a[j])); };
+                }
+                have at(statement(3).exit, defined(a[j])) by {
+                    preserve(memory(a[j]), statement(3));
+                }
+                close();
+            }
         }
-        have at(statement(0).exit, defined(a[j])) by {
-            preserve(memory(a[j]), statement(0));
-        }
-        have separate(memory(i), memory(a[j])) by { close(); }
-        have separate(statement(1).footprint, memory(a[j])) by {
-            close() using { separate(memory(i), memory(a[j])); };
-        }
-        have at(statement(1).exit, defined(a[j])) by {
-            preserve(memory(a[j]), statement(1));
-        }
-        have separate(statement(2).footprint, memory(a[j])) by {
-            close() using { separate(memory(total), memory(a[j])); };
-        }
-        have at(statement(2).exit, defined(a[j])) by {
-            preserve(memory(a[j]), statement(2));
-        }
-        have separate(statement(3).footprint, memory(a[j])) by {
-            close() using { separate(memory(i), memory(a[j])); };
-        }
-        have at(statement(3).exit, defined(a[j])) by {
-            preserve(memory(a[j]), statement(3));
-        }
-        close();
     }
     loop sum {
         decreases (n - i);
@@ -212,23 +215,26 @@ int32 sum(int32 a[], int32 n) {
             step();
             step();
             have forall (j: int32) { 0 <= j and j < n implies defined(a[j]) } by {
-                intro(); intro();
-                instantiate(at(iter, forall (j: int32) { 0 <= j and j < n implies defined(a[j]) }), j);
-                have separate(memory(total), memory(a[j])) by { close(); }
-                have separate(loop(0).statement(0).footprint, memory(a[j])) by {
-                    close() using { separate(memory(total), memory(a[j])); };
+                intro() {
+                    intro() {
+                        instantiate(at(iter, forall (j: int32) { 0 <= j and j < n implies defined(a[j]) }), j);
+                        have separate(memory(total), memory(a[j])) by { close(); }
+                        have separate(loop(0).statement(0).footprint, memory(a[j])) by {
+                            close() using { separate(memory(total), memory(a[j])); };
+                        }
+                        have at(loop(0).statement(0).exit, defined(a[j])) by {
+                            preserve(memory(a[j]), loop(0).statement(0));
+                        }
+                        have separate(memory(i), memory(a[j])) by { close(); }
+                        have separate(loop(0).statement(1).footprint, memory(a[j])) by {
+                            close() using { separate(memory(i), memory(a[j])); };
+                        }
+                        have at(loop(0).statement(1).exit, defined(a[j])) by {
+                            preserve(memory(a[j]), loop(0).statement(1));
+                        }
+                        close();
+                    }
                 }
-                have at(loop(0).statement(0).exit, defined(a[j])) by {
-                    preserve(memory(a[j]), loop(0).statement(0));
-                }
-                have separate(memory(i), memory(a[j])) by { close(); }
-                have separate(loop(0).statement(1).footprint, memory(a[j])) by {
-                    close() using { separate(memory(i), memory(a[j])); };
-                }
-                have at(loop(0).statement(1).exit, defined(a[j])) by {
-                    preserve(memory(a[j]), loop(0).statement(1));
-                }
-                close();
             }
             have to_integer(i) == to_integer((at(iter, i) + 1)) by {
                 close();
@@ -260,13 +266,15 @@ int32 sum(int32 a[], int32 n) {
                 close() using { to_integer(total) <= (1000 * to_integer(i)); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
             }
             have forall (k: int32) { k >= 0 and k < i implies defined(a[k]) } by {
-                intro();
-                intro();
-                have k < n;
-                instantiate(forall (j: int32) {
-                    0 <= j and j < n implies defined(a[j])
-                }, k);
-                close();
+                intro() {
+                    intro() {
+                        have k < n;
+                        instantiate(forall (j: int32) {
+                            0 <= j and j < n implies defined(a[j])
+                        }, k);
+                        close();
+                    }
+                }
             }
             have to_integer(i) <= to_integer(n);
             have to_integer(i) == (to_integer(at(iter, i)) + 1) by {

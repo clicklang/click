@@ -20,9 +20,12 @@ int32 report(int32 *v) {
 } by {
     have (forall (k: int32) { v[k] == 0 }) implies
         forall (choice: Choice) { pick(v, choice) == 0 } by {
-        intro(); intro();
-        instantiate(forall (k: int32) { v[k] == 0 }, 0);
-        unfold(pick(v, choice)); close();
+        intro() {
+            intro() {
+                instantiate(forall (k: int32) { v[k] == 0 }, 0);
+                unfold(pick(v, choice)); close();
+            }
+        }
     }
     step();
     have result == 0 implies

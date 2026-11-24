@@ -88,20 +88,22 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             have forall (k: int32) {
                 to_integer(i + 1) <= to_integer(k) and k < end implies occupied[k] == 0
             } by {
-                intro();
-                intro();
-                have to_integer(i + 1) <= to_integer(k);
-                have i < i + 1;
-                have i < k;
-                have i <= k;
-                have n <= k by {
-                    rewrite(n, i);
-                    close();
+                intro() {
+                    intro() {
+                        have to_integer(i + 1) <= to_integer(k);
+                        have i < i + 1;
+                        have i < k;
+                        have i <= k;
+                        have n <= k by {
+                            rewrite(n, i);
+                            close();
+                        }
+                        instantiate(forall (k: int32) {
+                            n <= k and k < end implies occupied[k] == 0
+                        }, k);
+                        close();
+                    }
                 }
-                instantiate(forall (k: int32) {
-                    n <= k and k < end implies occupied[k] == 0
-                }, k);
-                close();
             }
             have occupied[i] == 0 by {
                 instantiate(forall (k: int32) {

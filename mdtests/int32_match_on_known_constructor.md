@@ -9,7 +9,7 @@ theorem written() {
             Packet::Empty => 0,
             Packet::Full(n) => n,
         }) == 7
-    } by { intro(); close(); }
+    } by { intro() { close(); } }
 }
 
 theorem rewritten(p: Packet) {
