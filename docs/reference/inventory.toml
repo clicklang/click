@@ -5631,3 +5631,51 @@ path = "reference/library/index.md#float_orderfloat64_quotient_lower"
 [[item]]
 id = "library.theorem.float_order::float64_quotient_upper"
 path = "reference/library/index.md#float_orderfloat64_quotient_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_right_lower"
+path = "reference/library/index.md#float_orderfloat32_scale_right_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_right_upper"
+path = "reference/library/index.md#float_orderfloat32_scale_right_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_bounded_reciprocal_lower"
+path = "reference/library/index.md#float_orderfloat32_bounded_reciprocal_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_bounded_reciprocal_upper"
+path = "reference/library/index.md#float_orderfloat32_bounded_reciprocal_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_strictly_positive_minimum"
+path = "reference/library/index.md#float_orderfloat32_strictly_positive_minimum"
+
+[[item]]
+id = "library.theorem.float_order::float64_bounded_reciprocal_lower"
+path = "reference/library/index.md#float_orderfloat64_bounded_reciprocal_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_bounded_reciprocal_upper"
+path = "reference/library/index.md#float_orderfloat64_bounded_reciprocal_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_strictly_positive_minimum"
+path = "reference/library/index.md#float_orderfloat64_strictly_positive_minimum"
+
+[[item]]
+id = "library.theorem.float_order::float32_finite_between"
+path = "reference/library/index.md#float_orderfloat32_finite_between"
+
+[[item]]
+id = "library.theorem.float_order::float32_square_interval"
+path = "reference/library/index.md#float_orderfloat32_square_interval"
+
+[[item]]
+id = "library.theorem.float_order::float64_finite_between"
+path = "reference/library/index.md#float_orderfloat64_finite_between"
+
+[[item]]
+id = "library.theorem.float_order::float64_square_interval"
+path = "reference/library/index.md#float_orderfloat64_square_interval"

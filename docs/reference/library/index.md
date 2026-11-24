@@ -10249,6 +10249,28 @@ axiom float32_scale_upper(factor: float, x: float, bound: float) {
 }
 ```
 
+### `float_order::float32_scale_right_lower`
+
+```click
+axiom float32_scale_right_lower(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures x * factor >= bound * factor;
+}
+```
+
+### `float_order::float32_scale_right_upper`
+
+```click
+axiom float32_scale_right_upper(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures x * factor <= bound * factor;
+}
+```
+
 Rounded subtraction requires opposite bound directions for its two operands.
 Both endpoints are finite, and each difference rounds at the stated precision.
 
@@ -10590,5 +10612,135 @@ axiom float64_quotient_upper(x: double, y: double, a: double, b: double, c: doub
     requires c / b <= bound;
     requires c / d <= bound;
     ensures x / y <= bound;
+}
+```
+
+A finite numerator and a one-sided divisor bound give a reciprocal range
+between zero and the rounded quotient at that endpoint. A strict positive
+comparison against either signed zero supplies the least positive
+representable bound.
+
+### `float_order::float32_bounded_reciprocal_lower`
+
+```click
+axiom float32_bounded_reciprocal_lower(n: float, y: float, b: float, bound: float) {
+    requires isfinite(n);
+    requires (float32_from_bits(0) < b and b <= y) or (b < float32_from_bits(0) and y <= b);
+    requires bound <= float32_from_bits(0);
+    requires bound <= n / b;
+    ensures n / y >= bound;
+}
+```
+
+### `float_order::float32_bounded_reciprocal_upper`
+
+```click
+axiom float32_bounded_reciprocal_upper(n: float, y: float, b: float, bound: float) {
+    requires isfinite(n);
+    requires (float32_from_bits(0) < b and b <= y) or (b < float32_from_bits(0) and y <= b);
+    requires float32_from_bits(0) <= bound;
+    requires n / b <= bound;
+    ensures n / y <= bound;
+}
+```
+
+### `float_order::float32_strictly_positive_minimum`
+
+```click
+axiom float32_strictly_positive_minimum(z: float, y: float) {
+    requires z == float32_from_bits(0);
+    requires z < y;
+    ensures float32_from_bits(1) <= y;
+}
+```
+
+### `float_order::float64_bounded_reciprocal_lower`
+
+```click
+axiom float64_bounded_reciprocal_lower(n: double, y: double, b: double, bound: double) {
+    requires isfinite(n);
+    requires (float64_from_bits(0u64) < b and b <= y) or (b < float64_from_bits(0u64) and y <= b);
+    requires bound <= float64_from_bits(0u64);
+    requires bound <= n / b;
+    ensures n / y >= bound;
+}
+```
+
+### `float_order::float64_bounded_reciprocal_upper`
+
+```click
+axiom float64_bounded_reciprocal_upper(n: double, y: double, b: double, bound: double) {
+    requires isfinite(n);
+    requires (float64_from_bits(0u64) < b and b <= y) or (b < float64_from_bits(0u64) and y <= b);
+    requires float64_from_bits(0u64) <= bound;
+    requires n / b <= bound;
+    ensures n / y <= bound;
+}
+```
+
+### `float_order::float64_strictly_positive_minimum`
+
+```click
+axiom float64_strictly_positive_minimum(z: double, y: double) {
+    requires z == float64_from_bits(0u64);
+    requires z < y;
+    ensures float64_from_bits(1u64) <= y;
+}
+```
+
+Two finite endpoints bound all operand values to finite numbers. A square
+is nonnegative and its upper bound is the larger rounded endpoint square.
+
+### `float_order::float32_finite_between`
+
+```click
+axiom float32_finite_between(x: float, lo: float, hi: float) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    ensures isfinite(x);
+}
+```
+
+### `float_order::float32_square_interval`
+
+```click
+axiom float32_square_interval(x: float, lo: float, hi: float, upper: float) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    requires lo * lo <= upper;
+    requires hi * hi <= upper;
+    ensures x * x >= float32_from_bits(0);
+    ensures x * x <= upper;
+}
+```
+
+### `float_order::float64_finite_between`
+
+```click
+axiom float64_finite_between(x: double, lo: double, hi: double) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    ensures isfinite(x);
+}
+```
+
+### `float_order::float64_square_interval`
+
+```click
+axiom float64_square_interval(x: double, lo: double, hi: double, upper: double) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    requires lo * lo <= upper;
+    requires hi * hi <= upper;
+    ensures x * x >= float64_from_bits(0u64);
+    ensures x * x <= upper;
 }
 ```

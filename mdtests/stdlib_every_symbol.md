@@ -22,8 +22,9 @@ The rounded addition bounds `float_order::float32_add_lower`,
 `float_order::float32_add_upper`, `float_order::float64_add_lower`, and
 `float_order::float64_add_upper` are exercised in
 [`arithmetic_expression_float_add_pair.md`](arithmetic_expression_float_add_pair.md).
-The finite positive scaling bounds `float_order::float32_scale_lower` and
-`float_order::float32_scale_upper` are exercised in
+The finite positive scaling bounds `float_order::float32_scale_lower`,
+`float_order::float32_scale_upper`, `float_order::float32_scale_right_lower`,
+and `float_order::float32_scale_right_upper` are exercised in
 [`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_float_bound_composition.md).
 The rounded subtraction bounds `float_order::float32_sub_lower`,
 `float_order::float32_sub_upper`, `float_order::float64_sub_lower`, and
@@ -50,6 +51,18 @@ and [`arithmetic_expression_float_signed_quotient_ranges.md`](arithmetic_express
 The quotient laws `float_order::float32_quotient_lower`,
 `float_order::float32_quotient_upper`, `float_order::float64_quotient_lower`,
 and `float_order::float64_quotient_upper` are exercised in those same proofs.
+
+The signed reciprocal bounds `float_order::float32_bounded_reciprocal_lower`,
+`float_order::float32_bounded_reciprocal_upper`,
+`float_order::float64_bounded_reciprocal_lower`, and
+`float_order::float64_bounded_reciprocal_upper`, and the strict positive minimum
+laws `float_order::float32_strictly_positive_minimum` and
+`float_order::float64_strictly_positive_minimum` are exercised in
+[`float_reciprocal_bounds_are_checked.md`](float_reciprocal_bounds_are_checked.md).
+The finite interval and square bounds `float_order::float32_finite_between`,
+`float_order::float64_finite_between`, `float_order::float32_square_interval`,
+and `float_order::float64_square_interval` are exercised in
+[`arithmetic_expression_float_interval_laws.md`](arithmetic_expression_float_interval_laws.md).
 
 The representation law `integer::uint32_from_le_bytes` is exercised in
 [`integer_uint32_from_le_bytes_initialization.md`](integer_uint32_from_le_bytes_initialization.md).
