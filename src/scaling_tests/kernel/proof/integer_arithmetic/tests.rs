@@ -468,16 +468,16 @@ fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
         }
         let mut cache = HashMap::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            collect_integer_constants(&value, &mut cache).unwrap();
+            collect_integer_constants(value.root(), &mut cache).unwrap();
         });
         assert_eq!(cache.len(), depth + 1);
         assert_eq!(
-            cache.get(&value.id()).unwrap().as_ref().unwrap(),
+            cache.get(&value.root().id()).unwrap().as_ref().unwrap(),
             &(BigInt::from(1) << depth)
         );
         costs.push(work);
         let (_, repeated) = crate::instrumentation::measure_deterministic_work(|| {
-            collect_integer_constants(&value, &mut cache).unwrap();
+            collect_integer_constants(value.root(), &mut cache).unwrap();
         });
         assert!(repeated < 8, "{repeated}");
     }
@@ -496,7 +496,7 @@ fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
         control: 1000,
     };
     let result = crate::instrumentation::with_tactic_work_limits(limits, || {
-        collect_integer_constants(&value, &mut HashMap::new())
+        collect_integer_constants(value.root(), &mut HashMap::new())
     });
     assert!(
         result.is_none(),
