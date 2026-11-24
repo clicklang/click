@@ -1316,12 +1316,13 @@ pub(super) fn surface_has_repeated_branch_conditions(steps: &[ProofStep]) -> boo
 pub(super) fn synthesize_surface_alternatives(
     paths: Vec<ProofCertificateBuilder>,
 ) -> Result<Vec<ProofStep>, String> {
-    synthesize_surface_alternatives_with_returns(paths, &[])
+    synthesize_surface_alternatives_with_returns(paths, &[], &[])
 }
 
 pub(super) fn synthesize_surface_alternatives_with_returns(
     paths: Vec<ProofCertificateBuilder>,
     boolean_returns: &[Option<bool>],
+    terminal_choices: &[Result<Vec<SurfacePathChoice>, String>],
 ) -> Result<Vec<ProofStep>, String> {
     if paths.is_empty() {
         return Err("certified alternatives contained no paths".to_string());
@@ -1336,6 +1337,7 @@ pub(super) fn synthesize_surface_alternatives_with_returns(
             .map(|(index, path)| SurfacePathCursor {
                 steps: &path.steps,
                 choices: &path.path_choices,
+                terminal_choices: terminal_choices.get(index),
                 step: 0,
                 choice: 0,
                 boolean_return: boolean_returns.get(index).copied().flatten(),
@@ -1365,6 +1367,7 @@ pub(super) fn synthesize_surface_alternatives_with_returns(
 struct SurfacePathCursor<'p> {
     steps: &'p [ProofStep],
     choices: &'p [SurfacePathChoice],
+    terminal_choices: Option<&'p Result<Vec<SurfacePathChoice>, String>>,
     step: usize,
     choice: usize,
     boolean_return: Option<bool>,
@@ -1405,6 +1408,32 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
             .all(|pair| pair[0].steps() == pair[1].steps())
         {
             return Ok(paths[0].steps().to_vec());
+        }
+        // A return expression can split execution within one leaf of the
+        // written proof. Use those choices at that leaf, after the recorded
+        // proof cases have routed each sibling to its own return statement.
+        if paths.iter().any(|path| {
+            path.terminal_choices
+                .is_some_and(|choices| !matches!(choices, Ok(choices) if choices.is_empty()))
+        }) {
+            let paths = paths
+                .into_iter()
+                .map(|path| {
+                    let choices = path
+                        .terminal_choices
+                        .map_or(Ok(&[][..]), |choices| choices.as_deref())
+                        .map_err(Clone::clone)?;
+                    Ok(SurfacePathCursor {
+                        steps: path.steps(),
+                        choices,
+                        terminal_choices: None,
+                        step: 0,
+                        choice: 0,
+                        boolean_return: path.boolean_return,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            return synthesize_surface_cursors(paths);
         }
         if let Some(split) =
             boolean_return_split(paths.iter().map(|path| (path.boolean_return, path.steps())))
