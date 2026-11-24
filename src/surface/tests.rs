@@ -2537,6 +2537,7 @@ fn ensure_comparison(
 // tests".
 #[cfg(feature = "fast-gate")]
 pub(super) fn run_test_batch(cases: &[(&str, fn())]) {
+    let mut first_failure = None;
     for &(name, test) in cases {
         eprintln!("batched case {name} started");
         let started = std::time::Instant::now();
@@ -2548,12 +2549,18 @@ pub(super) fn run_test_batch(cases: &[(&str, fn())]) {
             .join();
         if let Err(panic) = result {
             eprintln!("batched case {name} FAILED");
-            std::panic::resume_unwind(panic);
+            if first_failure.is_none() {
+                first_failure = Some(panic);
+            }
+            continue;
         }
         eprintln!(
             "batched case {name} passed in {:.3}s",
             started.elapsed().as_secs_f64()
         );
+    }
+    if let Some(panic) = first_failure {
+        std::panic::resume_unwind(panic);
     }
 }
 
