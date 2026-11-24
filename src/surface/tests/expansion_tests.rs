@@ -28151,6 +28151,8 @@ fn arithmetic_certificates_cold_replay_without_generated_normalization() {
         ("signed_odd_divisor", &["divide"][..]),
         ("negative_signed_product", &["product"][..]),
         ("float_add_pair", &["sum"][..]),
+        ("float_reciprocal_and_products", &["multiply"][..]),
+        ("float_signed_ranges", &["product"][..]),
         ("unsigned_masked_divisor", &["divide", "remainder"][..]),
     ] {
         let (source, sources) =

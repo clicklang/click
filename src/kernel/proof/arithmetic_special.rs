@@ -3947,6 +3947,85 @@ pub(crate) fn float_sum_bound_weakening(
     FloatBoundWeakening::from_goal(goal, endpoint, false)
 }
 
+/// The positive product's two lower bounds suffice even without upper bounds.
+pub(crate) fn float_positive_product_bound(
+    goal: &Proposition,
+    [first, second]: &[Proposition; 2],
+) -> Option<FloatBoundWeakening> {
+    use crate::kernel::FloatBinaryOperator::Multiply;
+    let pair = FloatPairBound::new(goal)?;
+    if pair.operator != Multiply
+        || pair.zero_product
+        || float_bound(first)?.strict
+        || float_bound(second)?.strict
+    {
+        return None;
+    }
+    let endpoints = [
+        pair.operand_endpoint(0, first)?,
+        pair.operand_endpoint(1, second)?,
+    ];
+    if !pair.established_by(&endpoints) {
+        return None;
+    }
+    let [left, right] = endpoints;
+    let endpoint =
+        crate::kernel::primitives::float_binary_bits_at(pair.goal.format, left, right, Multiply);
+    FloatBoundWeakening::from_goal(goal, endpoint, false)
+}
+
+/// Select the tight rounded endpoint from a product or quotient rectangle.
+/// The proof cites all four operand bounds and each rounded corner order.
+pub(crate) fn float_corner_bound_weakening(
+    goal: &Proposition,
+    bounds: &[Proposition; 4],
+) -> Option<(FloatBoundWeakening, crate::kernel::FloatBinaryOperator)> {
+    use crate::kernel::FloatBinaryOperator::{Divide, Multiply};
+    let pair = FloatPairBound::new(goal)?;
+    let operator = pair.operator;
+    if !matches!(operator, Multiply | Divide) || pair.zero_product {
+        return None;
+    }
+    let mut endpoints = [0; 4];
+    for (index, (endpoint, bound)) in endpoints.iter_mut().zip(bounds).enumerate() {
+        if float_bound(bound)?.strict {
+            return None;
+        }
+        *endpoint = pair.operand_endpoint(index, bound)?;
+    }
+    if !pair.established_by(&endpoints) {
+        return None;
+    }
+    let [left_low, right_low, left_high, right_high] = endpoints;
+    let format = pair.goal.format;
+    let order = if pair.goal.lower {
+        ComparisonOperator::LessThan
+    } else {
+        ComparisonOperator::GreaterThan
+    };
+    let endpoint = [left_low, left_high]
+        .into_iter()
+        .flat_map(|left| {
+            [right_low, right_high]
+                .into_iter()
+                .map(move |right| (left, right))
+        })
+        .map(|(left, right)| {
+            crate::kernel::primitives::float_binary_bits_at(format, left, right, operator)
+        })
+        .reduce(|best, candidate| {
+            if float_endpoint_compare(format, candidate, best, order) {
+                candidate
+            } else {
+                best
+            }
+        })?;
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, false)?,
+        operator,
+    ))
+}
+
 /// Rounded float32 multiplication by a positive finite literal on the left.
 pub(crate) fn float_scale_bound_weakening(
     source: &Proposition,
