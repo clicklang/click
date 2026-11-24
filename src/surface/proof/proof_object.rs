@@ -1875,6 +1875,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             .map(|(label, fact, _)| (*label, fact.as_ref()))
     }
 
+    fn failed_requirement_source(&self) -> Option<&str> {
+        self.5.as_ref()?.2.as_deref()
+    }
+
     fn proposed_hidden_record(&self) -> Option<&crate::kernel::ResourceInstance> {
         self.11.as_deref()
     }
@@ -1917,7 +1921,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
     }
 
-    fn written_pointer_goal(&self) -> Option<&ClickProposition> {
+    fn written_goal(&self) -> Option<&ClickProposition> {
         let branch = self
             .0
             .state()
@@ -1926,12 +1930,9 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         let Obligation::Proposition(goal) = &branch.obligation else {
             return None;
         };
-        if goal.generated_surface
-            || !matches!(&goal.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _)) if left != right && left.address() == right.address()))
-        {
-            return None;
-        }
-        goal.surface.as_deref()
+        (!goal.generated_surface)
+            .then_some(goal.surface.as_deref())
+            .flatten()
     }
 
     fn premises(&self, limit: usize) -> Vec<&Proposition> {
@@ -2340,35 +2341,42 @@ impl Proof<'_> {
 }
 
 impl Proof<'_> {
-    /// `proposition` spelled for a refusal's own text, with the names the
-    /// report's `goal:` line uses for the same variables.
-    /// The Click text of `proposition` when it raises to a Surface form that
-    /// lowers back to it in this proof's context, the round trip the
-    /// raise-lower audit checks. Diagnostics print it in preference to the
-    /// renderer's spelling, which has no recorded points and names some
-    /// values only by placeholders. A raised form that lowers to another
-    /// fact would misname it, so it is never printed. Uncharged: it runs only
-    /// while a diagnostic is built.
+    /// A proof-visible proposition spelled in this context. Prefer its
+    /// retained source, then raise structurally from current names. A
+    /// spelling that lowers to another proposition is never used here.
     pub(in crate::surface::proof) fn round_trip_source_text(
         &self,
         proposition: &Proposition,
     ) -> Option<String> {
-        if !matches!(self.context.as_ref(), ProofContext::Pure(_))
-            && self.premise_fixed_state_view().is_none()
-        {
-            return None;
-        }
         let scope = crate::surface::proof::attempt::search_scope("diagnostic spelling");
         let text = crate::instrumentation::without_charging(|| {
-            let surface = self.structural_proposition_candidate(proposition)?;
-            let lowered =
-                crate::surface::proof::execution_planning::without_open_obligation_probe(|| {
-                    self.lower_surface_proposition_direct(&surface, "diagnostic spelling")
-                })
-                .ok()?;
-            (&lowered == proposition)
-                .then(|| crate::surface::printing::source_click_proposition(&surface))
-                .filter(|text| !text.contains("__click_"))
+            let text = |surface: &SurfaceProposition| {
+                let text = crate::surface::printing::source_click_proposition(surface);
+                (!text.contains("__click_")
+                    && crate::surface::parser::has_valid_source_tokens(&text))
+                .then_some(text)
+            };
+            let exact_source = |surface: &SurfaceProposition| {
+                let text = text(surface)?;
+                let lowered = self.lower_proposition_spelling(surface).ok()?;
+                crate::kernel::fact_stability::same_up_to_binders(&lowered, proposition)
+                    .then_some(text)
+            };
+            if self.goal() == Some(proposition)
+                && let Some(text) = self.surface_goal().and_then(exact_source)
+            {
+                return Some(text);
+            }
+            if let Some(text) = self
+                .local_surface_facts()
+                .recorded_surface(proposition)
+                .or_else(|| self.premise_surface_facts()?.recorded_surface(proposition))
+                .and_then(exact_source)
+            {
+                return Some(text);
+            }
+            let surface = self.structural_goal_spelling(proposition)?;
+            text(&surface)
         });
         drop(scope.finish());
         text
@@ -3269,17 +3277,24 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Lower a presentation in the current proof without contributing
+    /// obligations to an enclosing verification operation.
+    pub(in crate::surface::proof) fn lower_proposition_spelling(
+        &self,
+        candidate: &SurfaceProposition,
+    ) -> Result<Proposition, ClickError> {
+        super::execution_planning::without_open_obligation_probe(|| {
+            self.lower_surface_proposition_direct(candidate, "proposition spelling")
+        })
+    }
+
     pub(in crate::surface::proof) fn structural_goal_spelling(
         &self,
         goal: &Proposition,
     ) -> Option<ClickProposition> {
         let candidate = self.structural_proposition_candidate(goal)?;
-        // This compares presentation, not proof authority: rewriting already
-        // produced the successor. A spelling must retain its exact term.
-        self.lower_surface_proposition_direct(&candidate, "structural goal raising")
-            .ok()
-            .filter(|lowered| lowered == goal)
-            .map(|_| candidate)
+        let lowered = self.lower_proposition_spelling(&candidate).ok()?;
+        crate::kernel::fact_stability::same_up_to_binders(&lowered, goal).then_some(candidate)
     }
 
     pub(in crate::surface::proof) fn conjunct_goal_spelling(

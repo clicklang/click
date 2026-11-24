@@ -172,6 +172,54 @@ mod tests {
     }
 
     #[test]
+    fn shared_pointer_equality_uses_the_names_of_distinct_same_address_operands() {
+        let _session = VerificationSession::enter();
+        let left = Pointer::new(
+            Address::symbolic(Variable(1018020)),
+            ProgramType::Int32Pointer,
+        );
+        let right = left.clone().with_bounds(Some(SubobjectBounds {
+            start: left.address().clone(),
+            width: crate::kernel::MachineTerm::uint64_constant(4),
+        }));
+        let root = crate::kernel::KernelTerm::pointer_equal_raw(
+            [&left, &right].map(SharedPointer::import),
+        );
+        let bindings = ProgramValueBindings::from([
+            ("p".into(), ProgramValue::Pointer(left)),
+            ("q".into(), ProgramValue::Pointer(right)),
+        ]);
+        let names = bindings
+            .iter()
+            .map(|(name, value)| (value.clone(), SurfaceBinder::from(name)))
+            .collect();
+        let state = ExecutionState::new();
+        let expression = with_proof_local_value_names(names, || {
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
+        })
+        .unwrap();
+        let SurfaceTerm::If { condition, .. } = expression else {
+            panic!("expected a raised pointer comparison");
+        };
+        assert_eq!(
+            crate::surface::printing::source_click_proposition(&condition),
+            "p == q"
+        );
+        let (restored, _, _, _) =
+            crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                &condition, &PureFactContext::new(), ContractEnvironment::new(&bindings, &BTreeMap::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+                SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
+                FixedStateLoweringOptions::default(),
+            ).unwrap();
+        let expected = Proposition::condition_is(
+            crate::kernel::StoredConditionTerm::from_root(root).unwrap(),
+            true,
+        );
+        assert_eq!(restored, expected);
+    }
+
+    #[test]
     fn numeric_pointer_observation_roots_raise_and_lower_through_existing_casts() {
         use crate::kernel::{
             KernelTermImport, MachineIntegerType, MachineTerm, PureFunctionArgument,
