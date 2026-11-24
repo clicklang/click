@@ -422,6 +422,123 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
     );
 }
 
+/// R-mem at 16 and 128 bits, as at 8: the signed read of a cell is the
+/// sign cast of its unsigned read at the same read key, the cast node a
+/// written conversion interns. The two reads stay two terms, and a read of
+/// another cell is not related.
+#[test]
+fn signed_16_and_128_bit_reads_are_the_sign_cast_of_their_unsigned_reads() {
+    use crate::kernel::{CarrierWidth as W, LoadKind as K, MachineIntegerType as M};
+    for (signed_kind, unsigned_kind, from, to, width, bytes) in [
+        (K::Int16, K::UInt16, M::UInt16, M::Int16, W::Bits16, 2),
+        (K::Int128, K::UInt128, M::UInt128, M::Int128, W::Bits128, 16),
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = memory();
+        let read = |pointer: &Address, kind| {
+            MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                &memory, pointer, kind, bytes,
+            ))
+        };
+        let signed = read(&address(1), signed_kind);
+        let unsigned = read(&address(1), unsigned_kind);
+        let other = read(&address(2), unsigned_kind);
+        assert_ne!(signed, unsigned, "each read is its own load");
+        let cast = |value| MachineTerm::machine_integer_cast(from, to, value);
+        // A 128-bit equality is decided in its Integer reading
+        // (`representation::spells_comparison_natively`); a 16-bit one by its
+        // native comparison.
+        let equal = |terms: &mut terms::TermClasses, left: MachineTerm, right: &MachineTerm| {
+            if width == W::Bits128 {
+                let reading = |value| crate::kernel::IntegerTerm::from_machine(to, value).unwrap();
+                terms.are_integer_equal(&reading(left), &reading(right.clone()))
+            } else {
+                terms.knows_condition(
+                    &crate::kernel::ConditionTerm::Compare {
+                        format: to,
+                        relation: crate::kernel::CompareRelation::Equal,
+                        left: Box::new(left),
+                        right: Box::new(right.clone()),
+                    },
+                    true,
+                )
+            }
+        };
+        let graph = EqualityGraph::default();
+        let mut state = graph.state.lock().expect("equality graph");
+        let terms = &mut state.terms;
+        assert!(
+            equal(terms, cast(unsigned.clone()), &signed),
+            "{to:?}: R-mem relates the two reads of one cell"
+        );
+        assert!(
+            !equal(terms, cast(other.clone()), &signed),
+            "{to:?}: a read of another cell is not related"
+        );
+        // A 16-bit read has a load application, so equal addresses relate
+        // the reads of two cells. A 128-bit read is an opaque atom with
+        // none: its relation is to its own cell's unsigned read.
+        if width == W::Bits16 {
+            terms.add_int32_equality(&var(1), &var(2));
+            assert!(
+                equal(terms, cast(other.clone()), &signed),
+                "{to:?}: equal addresses relate their reads"
+            );
+        }
+    }
+}
+
+/// A 16-bit constant known of either read of a cell decides the other, as a
+/// byte constant does (R-mem), at both ends and both halves of the range.
+#[test]
+fn a_16_bit_constant_decides_the_other_read_of_its_cell() {
+    use crate::kernel::{CompareRelation, ConditionTerm, LoadKind as K, MachineIntegerType as M};
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = memory();
+    let read = |kind| {
+        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            &memory,
+            &address(1),
+            kind,
+            2,
+        ))
+    };
+    let (signed, unsigned) = (read(K::Int16), read(K::UInt16));
+    let equal = |format, left: &MachineTerm, value: i64| ConditionTerm::Compare {
+        format,
+        relation: CompareRelation::Equal,
+        left: Box::new(left.clone()),
+        right: Box::new(MachineTerm::narrow_constant(format, value as u16 as u128)),
+    };
+    for (signed_value, unsigned_value) in [
+        (0, 0),
+        (7, 7),
+        (32_767, 32_767),
+        (-32_768, 32_768),
+        (-1, 65_535),
+        (-200, 65_336),
+    ] {
+        let from_signed =
+            PureFactContext::new().assume_condition(equal(M::Int16, &signed, signed_value), true);
+        assert_eq!(
+            from_signed.decide(&equal(M::UInt16, &unsigned, unsigned_value)),
+            Some(true),
+            "int16 read == {signed_value}"
+        );
+        assert_eq!(
+            from_signed.decide(&equal(M::UInt16, &unsigned, (unsigned_value + 1) % 65_536)),
+            Some(false)
+        );
+        let from_unsigned = PureFactContext::new()
+            .assume_condition(equal(M::UInt16, &unsigned, unsigned_value), true);
+        assert_eq!(
+            from_unsigned.decide(&equal(M::Int16, &signed, signed_value)),
+            Some(true),
+            "uint16 read == {unsigned_value}"
+        );
+    }
+}
+
 /// Rule K8 as a relation: a sum of the `int32` widenings of `n` narrow
 /// loads is interned with constant work per widening, and is σ of the
 /// `uint32` sum of the loads' `uint32` widenings (R-dist and R-comp), at
