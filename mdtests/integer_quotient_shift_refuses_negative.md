@@ -14,5 +14,5 @@ theorem false_shift(x: Integer, k: Integer) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

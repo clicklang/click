@@ -713,9 +713,14 @@ theorem narrowed_length_result(n: uint64, result: int32) {
         crate::surface::verify_click_theorems(source).unwrap();
         let line = source
             .lines()
-            .position(|line| line.contains("solve()"))
+            .position(|line| line.contains("close() using"))
             .unwrap();
-        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+        let column = source
+            .lines()
+            .nth(line)
+            .unwrap()
+            .find("close() using")
+            .unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         assert!(expanded.contains("rewrite("), "{expanded}");
@@ -741,9 +746,14 @@ theorem identity(x: {ty}) {{
         crate::surface::verify_click_theorems(&source).unwrap();
         let line = source
             .lines()
-            .position(|line| line.contains("solve()"))
+            .position(|line| line.contains("close() using"))
             .unwrap();
-        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+        let column = source
+            .lines()
+            .nth(line)
+            .unwrap()
+            .find("close() using")
+            .unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1).unwrap();
         assert!(!expanded.contains("normalize("), "{expanded}");

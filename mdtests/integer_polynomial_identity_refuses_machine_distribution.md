@@ -13,5 +13,5 @@ theorem false_machine_product(x: uint32, y: uint32) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

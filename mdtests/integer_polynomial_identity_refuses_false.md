@@ -9,5 +9,5 @@ theorem false_successor(n: Integer) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

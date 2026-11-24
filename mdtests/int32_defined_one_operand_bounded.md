@@ -27,5 +27,5 @@ int32 sum(int32 a, int32 b) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

@@ -412,7 +412,7 @@ theorem count_step(n: uint64{parameters}) {{
         result.unwrap();
         let work = work
             .iter()
-            .rfind(|sample| sample.tactic.tactic_name == "solve")
+            .rfind(|sample| sample.tactic.tactic_name == "close")
             .expect("the final arithmetic closure ran")
             .work;
         samples.push((size, work));

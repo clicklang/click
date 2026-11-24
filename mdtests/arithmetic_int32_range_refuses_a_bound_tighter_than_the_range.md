@@ -31,5 +31,5 @@ int32 next_index(int32 i, int32 n) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

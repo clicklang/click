@@ -215,7 +215,7 @@ fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
         let label = format!("chain_{count}.ensures_0");
         samples
             .iter()
-            .find(|sample| sample.tactic.claim == label && sample.tactic.tactic_name == "solve")
+            .find(|sample| sample.tactic.claim == label && sample.tactic.tactic_name == "close")
             .expect("the typed equality certificate ran")
             .work
     });

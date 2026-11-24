@@ -16,5 +16,5 @@ theorem too_tight_product(x: Integer, y: Integer) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

@@ -13,5 +13,5 @@ theorem allocation_range_fits(length: int32) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

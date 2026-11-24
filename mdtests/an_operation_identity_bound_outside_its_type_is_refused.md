@@ -20,5 +20,5 @@ uint32 decrement(uint32 x) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

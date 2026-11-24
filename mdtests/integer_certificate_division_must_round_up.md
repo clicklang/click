@@ -13,5 +13,5 @@ theorem over_rounded(x: Integer) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

@@ -23,5 +23,5 @@ int64 sum(int64 a, int64 b) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

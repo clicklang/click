@@ -22,5 +22,5 @@ int32 bump(int32 n) {
 ```
 
 ```expect
-fail: `solve` works on the outcome claims at function exit and does not execute
+fail: `close` works on the outcome claims at function exit and does not execute
 ```

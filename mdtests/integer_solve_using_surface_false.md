@@ -15,5 +15,5 @@ theorem integer_constant_solve_using_false(x: Integer) {
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```
