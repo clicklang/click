@@ -431,37 +431,39 @@ impl<'a> Proof<'a> {
         let goal = next.goal().map(|goal| ("goal", goal));
         for (role, original) in facts.chain(goal) {
             let scope = crate::surface::proof::attempt::search_scope("raise-lower audit");
-            let (outcome, raised, lowered) = crate::instrumentation::without_charging(|| {
-                // A pure proof (a theorem, a lemma, a termination check) raises
-                // and lowers in its own context; only a program proof needs a
-                // fixed state to raise at.
-                if !matches!(next.context.as_ref(), super::ProofContext::Pure(_))
-                    && next.premise_fixed_state_view().is_none()
-                {
-                    return (RoundTrip::NoState, String::new(), String::new());
-                }
-                // Raise as goal presentation does: with the path's recorded
-                // points and its entry state, so `at(point, ..)`, `old(..)`
-                // and `<call>.result` forms are available.
-                let Some(surface) = next.structural_proposition_candidate(original) else {
-                    return (RoundTrip::Unraised, String::new(), String::new());
-                };
-                let raised = crate::surface::printing::source_click_proposition(&surface);
-                let lowered =
-                    crate::surface::proof::execution_planning::without_open_obligation_probe(
-                        || next.lower_surface_proposition_direct(&surface, "raise-lower audit"),
-                    );
-                match lowered {
-                    Err(_) => (RoundTrip::Unlowered, raised, String::new()),
-                    Ok(lowered) => match audit::classify(original, &lowered) {
-                        RoundTrip::Differs => (
-                            RoundTrip::Differs,
-                            raised,
-                            next.render_kernel_proposition(&lowered),
-                        ),
-                        outcome => (outcome, raised, String::new()),
-                    },
-                }
+            let ((outcome, raised, lowered), reasons) = audit::collecting_reasons(|| {
+                crate::instrumentation::without_charging(|| {
+                    // A pure proof (a theorem, a lemma, a termination check) raises
+                    // and lowers in its own context; only a program proof needs a
+                    // fixed state to raise at.
+                    if !matches!(next.context.as_ref(), super::ProofContext::Pure(_))
+                        && next.premise_fixed_state_view().is_none()
+                    {
+                        return (RoundTrip::NoState, String::new(), String::new());
+                    }
+                    // Raise as goal presentation does: with the path's recorded
+                    // points and its entry state, so `at(point, ..)`, `old(..)`
+                    // and `<call>.result` forms are available.
+                    let Some(surface) = next.structural_proposition_candidate(original) else {
+                        return (RoundTrip::Unraised, String::new(), String::new());
+                    };
+                    let raised = crate::surface::printing::source_click_proposition(&surface);
+                    let lowered =
+                        crate::surface::proof::execution_planning::without_open_obligation_probe(
+                            || next.lower_surface_proposition_direct(&surface, "raise-lower audit"),
+                        );
+                    match lowered {
+                        Err(_) => (RoundTrip::Unlowered, raised, String::new()),
+                        Ok(lowered) => match audit::classify(original, &lowered) {
+                            RoundTrip::Differs => (
+                                RoundTrip::Differs,
+                                raised,
+                                next.render_kernel_proposition(&lowered),
+                            ),
+                            outcome => (outcome, raised, String::new()),
+                        },
+                    }
+                })
             });
             drop(scope.finish());
             audit::record(
@@ -473,6 +475,7 @@ impl<'a> Proof<'a> {
                 &next.render_kernel_proposition(original),
                 &raised,
                 &lowered,
+                &reasons,
             );
         }
     }

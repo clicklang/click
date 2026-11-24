@@ -41,6 +41,32 @@ pub(super) fn enabled() -> bool {
     crate::instrumentation::RAISE_LOWER_RECORDS.enabled()
 }
 
+thread_local! {
+    /// Why the raiser gave up on a read while one fact is being raised.
+    static REASONS: std::cell::RefCell<Option<std::collections::BTreeSet<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Notes why the raiser could not spell a read. Kept only while the audit
+/// raises a fact ([`collecting_reasons`]); `reason` is not built otherwise.
+pub(crate) fn note_reason(reason: impl FnOnce() -> String) {
+    REASONS.with(|reasons| {
+        if let Some(reasons) = reasons.borrow_mut().as_mut() {
+            reasons.insert(reason());
+        }
+    });
+}
+
+/// Runs `run` and returns the reasons the raiser noted during it.
+pub(super) fn collecting_reasons<R>(run: impl FnOnce() -> R) -> (R, String) {
+    let previous = REASONS.with(|reasons| reasons.replace(Some(Default::default())));
+    let result = run();
+    let noted = REASONS
+        .with(|reasons| reasons.replace(previous))
+        .unwrap_or_default();
+    (result, noted.into_iter().collect::<Vec<_>>().join("; "))
+}
+
 /// How one round trip ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RoundTrip {
@@ -89,8 +115,9 @@ pub(super) fn classify(
 
 /// Appends one audit line: the outcome, the role (`fact` or `goal`), the
 /// census kind, the claim, the tactic, the origin (`written` or `smart`),
-/// the original term's diagnostic rendering, the raised form, and for
-/// `differs` the lowered term's rendering.
+/// the original term's diagnostic rendering, the raised form, for
+/// `differs` the lowered term's rendering, the container, and the reasons
+/// the raiser noted for reads it could not spell.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn record(
     outcome: RoundTrip,
@@ -101,6 +128,7 @@ pub(super) fn record(
     original: &str,
     raised: &str,
     lowered: &str,
+    reasons: &str,
 ) {
     if !enabled() {
         return;
@@ -120,12 +148,13 @@ pub(super) fn record(
     // The last field is the verifier thread's name, which names the proof
     // container under `click audit` and the mdtest harness.
     let line = format!(
-        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\t{}\n",
+        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\t{}\t{}\n",
         outcome.tag(),
         field(original),
         field(raised),
         field(lowered),
         std::thread::current().name().unwrap_or(""),
+        field(reasons),
     );
     #[cfg(test)]
     if CAPTURE.with(|lines| {
@@ -157,6 +186,40 @@ mod tests {
             },
             value,
         )
+    }
+
+    /// Reasons are kept only while a fact is being raised, once each, and
+    /// reach the record as its last field.
+    #[test]
+    fn a_raise_reason_is_recorded_once_and_only_while_collecting() {
+        note_reason(|| unreachable!("no fact is being raised"));
+        let ((), reasons) = collecting_reasons(|| {
+            note_reason(|| "point read: its version point has no name".to_string());
+            note_reason(|| "point read: its version point has no name".to_string());
+            note_reason(|| "a second reason".to_string());
+        });
+        assert_eq!(
+            reasons,
+            "a second reason; point read: its version point has no name"
+        );
+        let lines = capture(|| {
+            record(
+                RoundTrip::Unraised,
+                "fact",
+                "condition",
+                "f.contract",
+                "step",
+                "x == y",
+                "",
+                "",
+                &reasons,
+            );
+        });
+        assert_eq!(lines.len(), 1);
+        assert_eq!(
+            lines[0].trim_end().split('\t').nth(10),
+            Some(reasons.as_str())
+        );
     }
 
     #[test]

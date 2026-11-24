@@ -61,6 +61,23 @@ counts and lists only that claim's raise-lower facts. The expansion audit
 prints a reproduce command for each failing site, and writes every failing
 site or container to `expansion.failures.tsv` in the same columns.
 
+Each `raise-lower.tsv` record ends with the reasons the raiser noted for
+reads it could not spell while raising that fact, separated by `; ` (the
+eleventh field, empty when it noted none):
+
+| Reason | Meaning |
+|---|---|
+| `point read: its version point has no name` | the read's version point is no recorded point, so no selector names it |
+| `point read: the recorded state at its point selects another version` | the point is named, but a read there names the cell at another version |
+| `point read: no place spells its cell at its point` | no declaration or address expression spells the cell |
+| `snapshot read: its memory matches no recorded point (read site: yes\|no)` | a memory-named integer read whose memory no recorded point reads |
+| `snapshot read: the recorded point with its memory names the cell differently` | the point is found, but its own read of the cell is another term |
+| `snapshot pointer load: ...` | the same, for a memory-named pointer load in a pointer comparison |
+| `pointer load at a point: ...`, `pointer load at a snapshot: ...` | a loaded pointer inside an address that no route spelled, with whether its point is named or its memory matches a recorded point |
+
+Count them over a run with, for example,
+`awk -F'\t' '$1 != "same" && $11 != "" { n[$11]++ } END { for (r in n) print n[r], r }' raise-lower.tsv`.
+
 A container that does not verify as its expectation says is counted after
 the headline and listed in `raise-lower.unexpected.tsv` or
 `fact-stability.unexpected.tsv`. The audit does not judge it: the gate and the

@@ -264,3 +264,77 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
         }
     }
 }
+
+/// R-mem at 16 and 128 bits: registering a signed read costs registering
+/// a read plus what the written sign cast of its cell's unsigned read
+/// costs, and one union, the same at every size, as the graph's unrelated classes and the class of the read's
+/// address grow. A relation that looked for its partner read among the
+/// graph's reads, or walked the address class, would grow with them.
+#[test]
+fn registering_a_signed_16_or_128_bit_read_costs_what_its_unsigned_read_costs() {
+    use crate::kernel::{CarrierWidth as W, LoadKind as K, MachineIntegerType as M};
+    for (signed_kind, unsigned_kind, from, to, width, bytes) in [
+        (K::Int16, K::UInt16, M::UInt16, M::Int16, W::Bits16, 2),
+        (K::Int128, K::UInt128, M::UInt128, M::Int128, W::Bits128, 16),
+    ] {
+        let mut samples = Vec::new();
+        for size in [4_u64, 64, 512] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let memory = memory();
+            let read = |kind| {
+                MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                    &memory,
+                    &address(1),
+                    kind,
+                    bytes,
+                ))
+            };
+            let (signed, unsigned) = (read(signed_kind), read(unsigned_kind));
+            let graph = EqualityGraph::default();
+            {
+                let mut state = graph.state.lock().expect("equality graph");
+                for index in 0..size {
+                    // Unrelated classes, and a growing class of the address.
+                    state.terms.add_typed_equality(
+                        width,
+                        &var(600_000 + index),
+                        &var(700_000 + index),
+                    );
+                    state
+                        .terms
+                        .add_int32_equality(&var(1), &var(800_000 + index));
+                }
+            }
+            let measure = |term: &MachineTerm| {
+                let branch = graph.clone();
+                let mut state = branch.state.lock().expect("equality graph");
+                crate::instrumentation::measure_deterministic_work(|| {
+                    state.terms.register_typed(width, term)
+                })
+                .1
+            };
+            let written = MachineTerm::machine_integer_cast(from, to, unsigned.clone());
+            // Warm the session's read observations, so each sample below is
+            // the graph's own work.
+            for term in [&unsigned, &signed, &written] {
+                measure(term);
+            }
+            let unsigned_units = measure(&unsigned);
+            let signed_units = measure(&signed);
+            let written_units = measure(&written);
+            // The signed read's own registration costs what the unsigned
+            // read's does; its relation costs what the written cast of the
+            // unsigned read costs, plus its queue entry and one union.
+            assert!(
+                signed_units <= unsigned_units + written_units + 8,
+                "{signed_kind:?}: size={size}, signed {signed_units}, \
+                 unsigned {unsigned_units}, written cast {written_units}"
+            );
+            samples.push((unsigned_units, signed_units, written_units));
+        }
+        assert!(
+            samples.iter().all(|sample| *sample == samples[0]),
+            "{signed_kind:?}: (unsigned, signed, written cast) work grew: {samples:?}"
+        );
+    }
+}

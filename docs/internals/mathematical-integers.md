@@ -650,7 +650,9 @@ of its own, defined by its own read (`load_variable_for_term`,
 `mint_load_variable_identity`). The equality graph relates the two reads of
 one cell by σ (R-mem): the `int32` read is the cell's word load
 application, and the `uint32` read is σ of it; an `int32` read of a cell
-storing a `uint32` value is σ of that value. Kernel-internal reads (index
+storing a `uint32` value is σ of that value. At 8, 16 and 128 bits the
+signed read of a cell is the native sign cast of its unsigned read, a
+conversion node as a written cast interns it. Kernel-internal reads (index
 arithmetic, pointer words) are `Int32`.
 
 A constant has a format: `MachineTerm::Constant { format, bits }` is
