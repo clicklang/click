@@ -417,7 +417,9 @@ fn cpp_exporter() -> Option<PathBuf> {
 fn unit_import(root: &Path, unit: &str, source: &str) -> BTreeMap<PathBuf, Vec<u8>> {
     let lock: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join(click::project::LOCK_NAME)).unwrap()).unwrap();
-    let artifact = PathBuf::from(".click").join(unit).join(source);
+    let artifact = Path::new(click::project::LOCK_NAME)
+        .with_file_name(unit)
+        .join(source);
     BTreeMap::from([
         (
             PathBuf::from(click::project::LOCK_NAME),

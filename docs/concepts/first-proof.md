@@ -72,7 +72,7 @@ unsuccessful search:
   C statement at increment.c:2:5
   `return x + 1;`
   unproved obligation
-  `((to_integer((x as int32)) + 1) : Integer) <= 2147483647 and ((to_integer((x as int32)) + 1) : Integer) >= -2147483648`
+  `(to_integer((x as int32)) + 1) <= 2147483647 and (to_integer((x as int32)) + 1) >= -2147483648`
 
 tactic: step
   --> increment.click:4:5
