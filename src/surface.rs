@@ -6345,11 +6345,12 @@ pub enum ProofTactic {
     /// A compatibility check used in verification. It has no expansion spelling.
     CompatibilityNormalize(Option<Vec<ClickProposition>>),
     ArithmeticUsing(Vec<ClickProposition>),
+    /// An internal introduction step used while building a checked scope.
     Intro,
-    /// `let name = intro()`: introduce a universal goal's variable under a
-    /// name the proof chooses instead of the one the proposition wrote.
+    /// Internal named introductions used by proof plans and their certificates.
     IntroAs(String),
     IntroBinder(SurfaceBinder),
+    /// A source introduction and the proof of its opened goal.
     IntroBlock {
         binder: Option<SurfaceBinder>,
         body: Vec<ProofTactic>,
