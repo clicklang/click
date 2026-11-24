@@ -27095,6 +27095,7 @@ fn indexed_read_comparisons_expand_with_preservation() {
         ("p[i]", "!="),
         ("(p[i] & 2)", "<"),
         ("(p[i] | 2)", "<"),
+        ("(p[i] ^ 2)", "<"),
         ("*(p + i)", "<"),
     ] {
         let source = source
