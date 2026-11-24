@@ -165,7 +165,9 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
     while let Some(step) = pending.pop() {
         count += 1;
         match step {
-            ProofStep::Have { proof, .. } => pending.extend(proof.steps()),
+            ProofStep::Have { proof, .. } | ProofStep::IntroBlock { body: proof, .. } => {
+                pending.extend(proof.steps());
+            }
             ProofStep::Both {
                 left_proof,
                 right_proof,
@@ -8978,7 +8980,8 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                 "implication" => assert!(
                     matches!(
                         retained_steps.steps(),
-                        [ProofStep::Intro, ProofStep::Known,]
+                        [ProofStep::IntroBlock { binder: None, body }]
+                            if body.steps() == [ProofStep::Known]
                     ),
                     "{retained_steps:#?}"
                 ),
