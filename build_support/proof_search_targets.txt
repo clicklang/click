@@ -283,4 +283,4 @@ try_index_disequality_from_order
 find_connected_arithmetic_bound
 select_float_bound_chain
 try_float_bound_chain
-select_float_sum_bounds
+select_float_pair_bounds
