@@ -6368,6 +6368,12 @@ pub enum ProofTactic {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
+    /// A legacy frame check with no ordinary Surface expansion.
+    CompatibilityFactTransport {
+        source: ClickProposition,
+        target: ClickProposition,
+        premises: Vec<ClickProposition>,
+    },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: ClickProposition,
@@ -6975,7 +6981,9 @@ impl ProofTactic {
             Self::Transport { .. } => {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
             }
-            Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
+            Self::TransportUsing { .. } | Self::CompatibilityFactTransport { .. } => {
+                TacticClass::Simple(SimpleTactic::FactTransport)
+            }
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),

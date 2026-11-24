@@ -1449,19 +1449,17 @@ from the exact-result bounds
 ([`solve_defined_read_through_a_produced_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_read_through_a_produced_resource.md)).
 
 A goal that reads one cell at two version points, such as `owner->cell[0] ==
-owner->phase` right after a store wrote the first side from the second, is
-proved by `transport` from the cell's reflexive equality at a recently recorded
-point, with the frame evidence the transport selects as its `using` list
+owner->phase` right after a store wrote the first side from the second, can
+use a frame proof from a recently recorded point. When search finds ordinary
+separation and preservation steps, expansion writes them into the proof
 ([`solve_frames_a_read_across_a_separate_store.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_frames_a_read_across_a_separate_store.md)).
 
-A goal that reads memory and held at the function's entry or at one of the 8
-most recently recorded points is proved by one `transport` from that point,
-with the frame evidence the transport selects. A read written through one
-alias of a cell whose fact was stated through another, across a store the
-context's facts keep separate from it, is carried this way: lowering keeps the
-read as written
+A goal that held at function entry or at one of the eight most recently
+recorded points can use the frame evidence for that state. Lowering keeps
+an aliased read as written
 ([`fold_argument_reads_through_model_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_argument_reads_through_model_pointer.md)).
-A fact from an older point needs an explicit `transport`.
+If verification needs a legacy frame check and search finds no ordinary
+proof, expansion reports that it is unavailable for the claim.
 
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the

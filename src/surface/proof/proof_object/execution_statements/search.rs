@@ -150,11 +150,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
             })?
         };
-        search_input.driver().apply_step(ProofStep::TransportUsing {
-            source: surface_source.clone(),
-            target: surface_target.clone(),
-            premises,
-        })
+        if let Some(proof) = Self::try_ordinary_fact_transport(
+            search_input,
+            surface_source,
+            surface_target,
+            &premises,
+        )? {
+            return Ok(proof);
+        }
+        search_input
+            .driver()
+            .apply_step(ProofStep::CompatibilityFactTransport {
+                source: surface_source.clone(),
+                target: surface_target.clone(),
+                premises,
+            })
     }
     /// The live-state search planner on a focused function outcome:
     /// the same premise planner, reading the path's effects, the returned
@@ -226,10 +236,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
                 .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
         })?;
-        search_input.driver().apply_step(ProofStep::TransportUsing {
-            source: surface_source.clone(),
-            target: surface_target.clone(),
-            premises,
-        })
+        if let Some(proof) = Self::try_ordinary_fact_transport(
+            search_input,
+            surface_source,
+            surface_target,
+            &premises,
+        )? {
+            return Ok(proof);
+        }
+        search_input
+            .driver()
+            .apply_step(ProofStep::CompatibilityFactTransport {
+                source: surface_source.clone(),
+                target: surface_target.clone(),
+                premises,
+            })
     }
 }

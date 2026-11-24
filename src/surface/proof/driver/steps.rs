@@ -161,6 +161,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             source,
             target,
             premises,
+        }
+        | ProofStep::CompatibilityFactTransport {
+            source,
+            target,
+            premises,
         } = &step
             && driver_proof.surface_goal() == Some(target)
             && let Some(separation) =
@@ -187,6 +192,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             source,
             target,
             premises,
+        }
+        | ProofStep::CompatibilityFactTransport {
+            source,
+            target,
+            premises,
         } = &step
             && let Some(steps) = statement_preservation_steps(source, target, premises)
                 .or_else(|| comparison_preservation_steps(source, target, premises))
@@ -200,6 +210,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // Retain the ordinary derivation, rather than an opaque transport
         // node, when the written inputs identify a viewability restriction.
         if let ProofStep::TransportUsing {
+            source,
+            target,
+            premises,
+        }
+        | ProofStep::CompatibilityFactTransport {
             source,
             target,
             premises,
@@ -241,6 +256,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // the certificate, including when transport merely adds an auxiliary
         // fact rather than closing the currently focused proposition.
         if let ProofStep::TransportUsing {
+            source,
+            target,
+            premises,
+        }
+        | ProofStep::CompatibilityFactTransport {
             source,
             target,
             premises,
@@ -528,7 +548,19 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 application,
                 premises,
             } => driver_proof.apply_theorem_using(application, premises),
+            ProofStep::CompatibilityFactTransport { .. }
+                if crate::instrumentation::replay_forbids_discovery(
+                    "verification-only fact transport",
+                ) =>
+            {
+                Err(driver_proof.step_error("verification-only fact transport cannot replay"))
+            }
             ProofStep::TransportUsing {
+                source,
+                target,
+                premises,
+            }
+            | ProofStep::CompatibilityFactTransport {
                 source,
                 target,
                 premises,
@@ -581,7 +613,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // boundary and accidentally make a later citation look current.
         if matches!(
             step,
-            ProofStep::Rewrite(_) | ProofStep::TransportUsing { .. }
+            ProofStep::Rewrite(_)
+                | ProofStep::TransportUsing { .. }
+                | ProofStep::CompatibilityFactTransport { .. }
         ) {
             transition.clear_existential_projection();
         }
@@ -610,6 +644,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 | ProofStep::ApplyTheoremUsing { .. }
                 | ProofStep::ApplyPlannedTheorem { .. }
                 | ProofStep::TransportUsing { .. }
+                | ProofStep::CompatibilityFactTransport { .. }
                 | ProofStep::LetSatisfy(_)
         ) {
             close_goal_from_added_fact(state)

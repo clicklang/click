@@ -17446,6 +17446,7 @@ fn outcome_solve_preserves_viewability_after_a_call() {
 
     let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
         .expect("the call-preserved viewability should expand");
+    assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(expanded.contains("preserve(memory(p[0..1]),"), "{expanded}");
     crate::surface::check_audit_claim("use_summary.contract", true, || {
@@ -25905,6 +25906,130 @@ fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
 }
 
 #[test]
+fn field_viewability_expands_with_containment() {
+    let sources = [(
+        "view.c",
+        "struct box { int first; int second; }; void f(struct box *p) {}",
+    )];
+    let source = r#"
+        verifying "view.c";
+        void f(struct box *p) {
+            requires viewable(p[0..1]);
+            ensures true;
+        } by {
+            have viewable(p->second) by {
+                CLOSE_VIEW
+            }
+            step();
+        }
+    "#;
+    for tactic in ["close();", "close() using { viewable(p[0..1]); };"] {
+        let source = source.replace("CLOSE_VIEW", tactic);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
+        assert!(
+            expanded.contains("contains(memory(p[0..1]), memory(p->second))"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains("separation::viewable_restrict"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        without_implicit_solve_for_claim("f.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+
+    let source = source.replace("CLOSE_VIEW", "close();").replace(
+        "            have viewable(p->second)",
+        "            step();\n            have viewable(p->second)",
+    );
+    let with_local = sources[0].1.replace("{}", "{ int local = 0; }");
+    let sources = [("view.c", with_local.as_str())];
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
+    assert!(
+        expanded.contains("preserve(memory(p[0..1]), region(0))"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn aliased_element_viewability_expands_with_containment() {
+    let sources = [("view.c", "void f(int *p, int *q, int i) {}")];
+    let source = r#"
+        verifying "view.c";
+        void f(int32 *p, int32 *q, int32 i) {
+            requires q == p;
+            requires viewable(p[0..8]);
+            requires 0 <= i and i < 8;
+            ensures true;
+        } by {
+            have viewable(q[i]) by { close(); }
+            step();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "f.contract").unwrap();
+    assert!(expanded.contains("rewrite(q, p)"), "{expanded}");
+    assert!(
+        expanded.contains("separation::contains_element"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn entry_existential_view_expands_with_preservation() {
+    let sources = [(
+        "entry.c",
+        "int f(unsigned char *p) { int local = 0; return local; }",
+    )];
+    let source = r#"
+        verifying "entry.c";
+
+        predicate good(p: uint8*) {
+            exists (n: uint64) { n == 8u64 and viewable(p[0u64..n]) }
+        }
+
+        int32 f(uint8 *p) {
+            requires good(p);
+            ensures result == 0;
+        } by {
+            step();
+            have exists (n: uint64) { n == 8u64 and viewable(p[0u64..n]) } by {
+                close();
+            }
+            step();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "f.contract").unwrap();
+    assert!(expanded.contains("witness(n)"), "{expanded}");
+    assert!(expanded.contains("preserve(memory(p["), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn nested_resource_scope_closing_obligations_expand_and_replay() {
     let sources = [(
         "set.c",
@@ -27381,6 +27506,79 @@ fn indexed_left_shift_comparison_expands_with_preservation() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+fn indexed_signed_left_shift_definedness_expands_with_preservation() {
+    let sources = [(
+        "read_order.c",
+        "void keep(int *p, int i, int j, int limit) { p[j] = 10; }",
+    )];
+    let source = r#"
+        verifying "read_order.c";
+        void keep(int32 *p, int32 i, int32 j, int32 limit) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires i != j;
+            requires 0 <= p[i] and p[i] <= 1073741823;
+            requires (p[i] << 1) < limit;
+            ensures (p[i] << 1) < limit;
+        } by {
+            step();
+            have (p[i] << 1) < limit by { close(); }
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "keep.contract").unwrap();
+    assert!(
+        expanded.contains("have not p[i] < 0 and p[i] <= 1073741823 by {"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("preserve(memory(p[i]), region(0))"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("rewrite(p[i],"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn indexed_equality_with_a_historical_read_expands_with_preservation() {
+    let sources = [("keep.c", "void f(int *p, int i, int j) { p[j] = 10; }")];
+    let source = r#"
+        verifying "keep.c";
+        void f(int32 *p, int32 i, int32 j) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires i != j;
+            ensures true;
+        } by {
+            step();
+            have p[i] == SAVED by { close(); }
+        }
+    "#;
+    for saved in ["old(p[i])", "at(function.entry, p[i])"] {
+        let source = source.replace("SAVED", saved);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
+        assert!(
+            expanded.contains("separation::separate_elements"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains("preserve(memory(p[i]), region(0))"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        without_implicit_solve_for_claim("f.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+        let overlapping = expanded.replace("requires i != j;", "");
+        assert!(verify_c_sources(&overlapping, &sources).is_err());
+    }
 }
 
 #[test]
