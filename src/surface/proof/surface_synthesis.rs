@@ -3531,7 +3531,52 @@ fn synthesize_surface_atomic_proposition(
             ..
         }
     );
+    // A 64-bit equality the source wrote between a 64-bit word and a 32-bit
+    // one holds the narrow operand widened. Writing that widening as a cast
+    // gives two operands of one format, which lower to a different
+    // comparison; the narrow operand is written as the source had it and
+    // lowering widens it again. Against a constant the cast stays: lowering
+    // decides or narrows a widened word compared with a literal, so only the
+    // one-format comparison keeps it.
+    fn widened(term: &MachineTerm) -> Option<(&MachineTerm, bool)> {
+        match term {
+            cast_term!(Int64From32, value) | cast_term!(UInt64FromInt32, value) => {
+                Some((value.as_ref(), false))
+            }
+            cast_term!(Int64FromUInt32, value) | cast_term!(UInt64From32, value) => {
+                Some((value.as_ref(), true))
+            }
+            _ => None,
+        }
+    }
+    let wide_constant =
+        |term: &MachineTerm| term.int64_as_const().is_some() || term.uint64_as_const().is_some();
+    let narrow_operand = matches!(
+        condition.native_compat(),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            ..
+        }
+    )
+    .then(|| match (widened(left), widened(right)) {
+        (Some(narrow), None) if !wide_constant(right) => Some((left, narrow)),
+        (None, Some(narrow)) if !wide_constant(left) => Some((right, narrow)),
+        _ => None,
+    })
+    .flatten();
     let operand = |term: &MachineTerm| {
+        if let Some((widening, (narrow, unsigned))) = narrow_operand
+            && std::ptr::eq::<MachineTerm>(&**widening, term)
+        {
+            let narrow =
+                synthesize_surface_bitvector(narrow, parameter_binding, state, bound_variables)?;
+            return if unsigned {
+                synthesize_uint32_operand(narrow)
+            } else {
+                synthesize_int32_operand(narrow)
+            };
+        }
         // A `uint32` equality's constant whose word reads negative as an
         // `int32` is written as its `uint32` value: the word it compares is
         // the same either way, but `-56` beside a `uint32` value would read

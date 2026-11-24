@@ -206,6 +206,39 @@ fn a_printed_void_pointer_coercion_round_trips_its_pointer_type() {
     );
 }
 
+/// `(wide & 1u64) == narrow` compares a `uint64` word with an `int32` one,
+/// which lowering widens. Raising must leave the widening to lowering: with
+/// it written as a cast, both operands have one format and the comparison
+/// lowers to a different node.
+#[test]
+fn a_wide_equality_with_a_narrow_operand_round_trips() {
+    let file = parser::parse(
+        "void probe(uint64 wide, int32 narrow) { requires (wide & 1u64) == narrow; ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = file.function_blocks()[0].requires()[0].clone() else {
+        panic!("expected a comparison requirement");
+    };
+    let state = ExecutionState::new()
+        .with_local(
+            "wide",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(910_101))),
+        )
+        .with_local(
+            "narrow",
+            ProgramValue::Int32(MachineTerm::Variable(Variable(910_102))),
+        );
+    let original = relower_written_proposition(&written, &state).unwrap();
+    let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+        .expect("the equality must be spellable");
+    assert_eq!(
+        relower_written_proposition(&raised, &state),
+        Ok(original),
+        "{}",
+        crate::surface::printing::source_click_proposition(&raised)
+    );
+}
+
 fn relower_written_proposition_with_states(
     surface: &ClickProposition,
     pre_state: &ExecutionState,
