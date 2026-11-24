@@ -1666,7 +1666,7 @@ mod tests {
         let value = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "opaque_argument".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(Address::symbolic(Variable(87654328))),
                     LoadKind::Int32,

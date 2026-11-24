@@ -5434,7 +5434,7 @@ mod synthesized_literal_tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         ));
-        let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
+        let read = |memory, pointer, kind| MachineTerm::read_named(memory, Box::new(pointer), kind);
         let value = read(
             crate::kernel::ProgramPoint::at(&before),
             pointer.clone(),
@@ -5486,7 +5486,7 @@ mod synthesized_literal_tests {
                 .store(pointer.clone(), ProgramValue::Int32(sum.clone())),
         );
         let read =
-            |memory| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32);
+            |memory| MachineTerm::read_named(memory, Box::new(pointer.clone()), LoadKind::Int32);
         let retained = |relation, left: &MachineTerm, right: &MachineTerm| {
             let roots =
                 [left, right].map(|v| KernelTerm::retained_machine_operand(ty, V::Legacy(v)));

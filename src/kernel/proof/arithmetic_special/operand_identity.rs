@@ -175,7 +175,7 @@ mod tests {
             KernelTermImport::default()
                 .machine_arithmetic(
                     MachineIntegerType::UInt16,
-                    &MachineTerm::MemoryLoad(memory, Box::new(address), kind),
+                    &MachineTerm::read_named(memory, Box::new(address), kind),
                 )
                 .unwrap()
         };
@@ -189,7 +189,7 @@ mod tests {
             address.clone(),
             LoadKind::Int16,
         );
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(address.clone()),
             LoadKind::UInt16,

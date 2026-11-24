@@ -1175,7 +1175,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let address = Address::symbolic(Variable(997151));
         let read = |offset, kind| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(address.offset_by_bytes(offset)),
                 kind,

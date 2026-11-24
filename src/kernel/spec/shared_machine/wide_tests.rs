@@ -119,7 +119,7 @@ fn wide_reads_keep_type_and_state_in_casts_and_observations() {
         let roots = [before.clone(), after.clone()].map(|memory| {
             KernelTermImport::default().machine(
                 format,
-                &MachineTerm::MemoryLoad(
+                &MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(address.clone()),
                     kind,
@@ -141,7 +141,7 @@ fn wide_reads_keep_type_and_state_in_casts_and_observations() {
         }
         let bad = KernelTermImport::default().machine(
             format,
-            &MachineTerm::MemoryLoad(
+            &MachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(address.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -180,7 +180,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                 "wide_operand",
                                 MachineTerm::Variable(Variable(id)),
                             ),
-                            5 => MachineTerm::MemoryLoad(
+                            5 => MachineTerm::read_named(
                                 ProgramPoint::at(
                                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                                 ),

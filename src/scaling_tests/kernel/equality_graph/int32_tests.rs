@@ -346,7 +346,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
                 address.clone(),
                 ProgramValue::Int32(MachineTerm::constant(7)),
             ));
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address),
                 crate::kernel::LoadKind::Int32,
@@ -606,7 +606,7 @@ fn constant_queries_ignore_other_state_candidates() {
                     &PureFactContext::new(),
                     None,
                 );
-                let load = MachineTerm::MemoryLoad(
+                let load = MachineTerm::read_named(
                     ProgramPoint::at(&(intern_memory(memory.clone()))),
                     Box::new(address),
                     LoadKind::Int32,
@@ -670,7 +670,7 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         let mut context =
             PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
         for i in 0..size {
-            let read = MachineTerm::MemoryLoad(
+            let read = MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(Address::symbolic(Variable(920_000 + i))),
                 LoadKind::Int32,
@@ -683,7 +683,7 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         samples.push((size, found, work));
         // The selected coordinate must still be rejected when a read equality
         // explicitly mentions it, even though unrelated reads are harmless.
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(Address::symbolic(Variable(940_000))),
             LoadKind::Int32,

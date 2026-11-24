@@ -274,11 +274,11 @@ mod tests {
         let wide = Address::symbolic(Variable(999968));
         let offset = AddressOffset::Add(
             Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::MemoryLoad(point.clone(), Box::new(word.clone()), LoadKind::Int32),
+                MachineTerm::read_named(point.clone(), Box::new(word.clone()), LoadKind::Int32),
                 4,
             )),
             Box::new(AddressOffset::scaled_int64_node(
-                MachineTerm::MemoryLoad(point, Box::new(wide.clone()), LoadKind::Bits64),
+                MachineTerm::read_named(point, Box::new(wide.clone()), LoadKind::Bits64),
                 8,
                 true,
             )),
@@ -368,7 +368,7 @@ mod tests {
                     condition: Box::new(ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::MemoryLoad(
+                        left: Box::new(MachineTerm::read_named(
                             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                             Box::new(pointer.clone()),
                             LoadKind::Int32,
@@ -405,7 +405,7 @@ mod tests {
         let current = SymbolicMemory::new();
         let memory = crate::kernel::intern_memory_ref(&current);
         let pointer = Address::symbolic(Variable(991501));
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             LoadKind::Bits64,
@@ -481,7 +481,7 @@ mod offset_condition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let current = SymbolicMemory::new();
         let read = |id, kind| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                 Box::new(Address::symbolic(Variable(id))),
                 kind,
@@ -529,7 +529,7 @@ mod boolean_read_tests {
         let address = Address {
             base: AddressBase::Symbolic(Variable(999360)),
             offset: AddressOffset::scaled_int32_node(
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(SymbolicMemory::global_pointer("bool-index")),
                     LoadKind::Int32,

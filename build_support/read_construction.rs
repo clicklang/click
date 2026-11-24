@@ -6,6 +6,9 @@
 //!
 //! - integer and float reads, `MachineTerm::MemoryLoad(..)`, by
 //!   `MachineTerm::read_named` (and `MachineTerm::memory_read`, which calls it);
+//! - their operands, the producer's `ReadPoint(..)` and the `LoadCell { .. }`
+//!   that holds the read's interned load, by `read_operands`, which only
+//!   `MachineTerm::read_named` calls (`design/loads.md`, step 3a);
 //! - loads, `Load { .. }`, by `Load::at`, and pointer bases,
 //!   `AddressBase::Load(..)`, by `Load::base`.
 //!
@@ -20,6 +23,9 @@ use syn::visit::Visit;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum Form {
     MemoryLoad,
+    ReadOperands,
+    ReadPoint,
+    LoadCell,
     Load,
     LoadBase,
 }
@@ -28,6 +34,9 @@ impl Form {
     fn spelling(self) -> &'static str {
         match self {
             Self::MemoryLoad => "`MachineTerm::MemoryLoad(..)`",
+            Self::ReadOperands => "`read_operands(..)` calls",
+            Self::ReadPoint => "`ReadPoint(..)`",
+            Self::LoadCell => "`LoadCell { .. }`",
             Self::Load => "`Load { .. }`",
             Self::LoadBase => "`AddressBase::Load(..)`",
         }
@@ -36,6 +45,8 @@ impl Form {
     fn constructor(self) -> &'static str {
         match self {
             Self::MemoryLoad => "`MachineTerm::read_named`",
+            Self::ReadOperands => "`MachineTerm::read_named`",
+            Self::ReadPoint | Self::LoadCell => "`read_operands`",
             Self::Load => "`Load::at`",
             Self::LoadBase => "`Load::base`",
         }
@@ -45,12 +56,21 @@ impl Form {
 /// Direct constructions per file and form. Lower an entry when converting
 /// sites; never raise one.
 const BASELINE: &[(&str, Form, usize)] = &[
-    // `MachineTerm::read_named` itself.
+    // `MachineTerm::read_named` itself, which builds the read's operands
+    // with `read_operands`.
     (
         "src/kernel/primitives/machine_integer.rs",
         Form::MemoryLoad,
         1,
     ),
+    (
+        "src/kernel/primitives/machine_integer.rs",
+        Form::ReadOperands,
+        1,
+    ),
+    // `read_operands` itself.
+    ("src/kernel/primitives/load.rs", Form::ReadPoint, 1),
+    ("src/kernel/primitives/load.rs", Form::LoadCell, 1),
     // `Load::at` and `Load::base` themselves.
     ("src/kernel/primitives/load.rs", Form::Load, 1),
     ("src/kernel/primitives/load.rs", Form::LoadBase, 1),
@@ -145,6 +165,8 @@ impl<'ast> Visit<'ast> for Counter {
             let segments: Vec<_> = path.path.segments.iter().map(|s| &s.ident).collect();
             match segments.as_slice() {
                 [.., last] if *last == "MemoryLoad" => self.add(Form::MemoryLoad),
+                [.., last] if *last == "read_operands" => self.add(Form::ReadOperands),
+                [.., last] if *last == "ReadPoint" => self.add(Form::ReadPoint),
                 [.., owner, last]
                     if *last == "Load"
                         && (*owner == "AddressBase"
@@ -158,13 +180,10 @@ impl<'ast> Visit<'ast> for Counter {
         syn::visit::visit_expr_call(self, call);
     }
     fn visit_expr_struct(&mut self, expression: &'ast syn::ExprStruct) {
-        if expression
-            .path
-            .segments
-            .last()
-            .is_some_and(|segment| segment.ident == "Load")
-        {
-            self.add(Form::Load);
+        match expression.path.segments.last() {
+            Some(segment) if segment.ident == "Load" => self.add(Form::Load),
+            Some(segment) if segment.ident == "LoadCell" => self.add(Form::LoadCell),
+            _ => {}
         }
         syn::visit::visit_expr_struct(self, expression);
     }

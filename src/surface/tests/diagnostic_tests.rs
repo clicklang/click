@@ -2932,7 +2932,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         int32(1),
     );
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(read.clone()),
             LoadKind::Bits64,
@@ -3526,7 +3526,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
@@ -3683,7 +3683,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
                     binary_node!(
                         Int32,
                         Subtract,
-                        Box::new(MachineTerm::MemoryLoad(
+                        Box::new(MachineTerm::read_named(
                             crate::kernel::ProgramPoint::at(&(intern_memory(memory))),
                             Box::new(read.clone()),
                             LoadKind::Int32,

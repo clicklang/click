@@ -4503,7 +4503,7 @@ mod entry_cell_tests {
                 installed
                     .program_point()
                     .ordinary_typed_version(&symbolic_element, ProgramType::Int32),
-                Some(integer),
+                Some(crate::kernel::ProgramPoint::from(integer)),
             );
             work.push(cost);
         }

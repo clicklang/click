@@ -1923,7 +1923,7 @@ mod tests {
             offset: AddressOffset::Constant(4),
         };
         let read = |memory: SymbolicMemory, pointer: &Address| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&crate::kernel::intern_memory(memory)),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
@@ -2071,7 +2071,7 @@ mod tests {
             let before = memory.clone().store(base.clone(), int32(1));
             let after = before.clone().store(base.clone(), int32(u32::MAX));
             let check = |memory| {
-                let read = MachineTerm::MemoryLoad(
+                let read = MachineTerm::read_named(
                     ProgramPoint::at(&crate::kernel::intern_memory(memory)),
                     Box::new(base.clone()),
                     LoadKind::Int32,

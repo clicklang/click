@@ -19,7 +19,7 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
                     offset: AddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
-                            MachineTerm::MemoryLoad(
+                            MachineTerm::read_named(
                                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                                 Box::new(cell.clone()),
                                 LoadKind::Int32,

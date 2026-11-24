@@ -261,9 +261,9 @@ mod tests {
         let pointer = SymbolicMemory::global_pointer("opaque-source");
         let opaque = |memory: SharedMemory, name| MachineTerm::If {
             condition: ConditionTerm::Variable(Variable(name)).into(),
-            then_term: MachineTerm::MemoryLoad(
+            then_term: MachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                pointer.clone().into(),
+                pointer.clone(),
                 LoadKind::Int32,
             )
             .into(),

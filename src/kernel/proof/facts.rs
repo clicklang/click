@@ -3709,7 +3709,7 @@ mod integer_equality_fact_index_tests {
             item,
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(memory),
                     Box::new(Address {
                         base: "retained_state-alpha-facts".into(),

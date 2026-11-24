@@ -455,7 +455,7 @@ mod tests {
             let pointer = Address {
                 base: AddressBase::Symbolic(Variable(999130)),
                 offset: AddressOffset::scaled_int32_node(
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(crate::kernel::SymbolicMemory::global_pointer(
                             "complete-read",

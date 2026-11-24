@@ -1391,7 +1391,7 @@ mod tests {
                     Variable(item),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        MachineTerm::MemoryLoad(
+                        MachineTerm::read_named(
                             crate::kernel::ProgramPoint::at(memory),
                             Box::new(pointer.clone()),
                             crate::kernel::LoadKind::Int32,

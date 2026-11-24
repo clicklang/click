@@ -87,7 +87,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     // candidate because the memory edge itself resolves it to `a`.
     let slot = Address::symbolic(Variable(989_799));
     let retained_state = SymbolicMemory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
-    let loaded = MachineTerm::MemoryLoad(
+    let loaded = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(retained_state))),
         Box::new(slot),
         LoadKind::Int32,
@@ -4779,7 +4779,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         .with_block("loaded-address-data", 32)
         .with_block("loaded-address-unrelated", 4)
         .store(selector.clone(), int32(0));
-    let selector_load = MachineTerm::MemoryLoad(
+    let selector_load = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
         Box::new(selector.clone()),
         crate::kernel::LoadKind::Int32,
@@ -4855,7 +4855,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         .with_block("base-start-data", 32)
         .with_block("base-start-unrelated", 4)
         .store(selector.clone(), int16(0));
-    let selector_load = MachineTerm::MemoryLoad(
+    let selector_load = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
         Box::new(selector.clone()),
         crate::kernel::LoadKind::Int32,
@@ -6707,7 +6707,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
         pointer.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
     );
-    let old = MachineTerm::MemoryLoad(
+    let old = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(pointer.clone()),
         LoadKind::Bits64,
@@ -6722,7 +6722,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
         pointer.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant((1u64 << 32) + 3)),
     );
-    let changed = MachineTerm::MemoryLoad(
+    let changed = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(after))),
         Box::new(pointer),
         LoadKind::Bits64,

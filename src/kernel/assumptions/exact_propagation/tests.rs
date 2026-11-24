@@ -161,7 +161,7 @@ fn exact_propagation_does_not_match_different_memory_states_or_types() {
     let read = |memory| {
         Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&intern_memory(memory)),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,

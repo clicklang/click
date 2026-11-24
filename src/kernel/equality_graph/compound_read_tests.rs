@@ -42,7 +42,7 @@ fn compound_read_queries_require_explicit_equations() {
         if kind.is_word32() {
             crate::kernel::eval::record_load_access_width(memory.memory(), &slot, 4);
         }
-        let read = MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(slot.clone()), kind);
+        let read = MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(slot.clone()), kind);
         let expression = sum(format, read.clone(), number(format, 3));
         let expected = number(format, 10);
         let empty = PureFactContext::new();
@@ -71,7 +71,7 @@ fn compound_read_queries_require_explicit_equations() {
         }
         let through_alias = sum(
             format,
-            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(alias.clone()), kind),
+            MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(alias.clone()), kind),
             number(format, 3),
         );
         assert!(!equal(

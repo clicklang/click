@@ -612,7 +612,7 @@ mod tests {
             // A load, which normalization may rewrite.
             AddressOffset::add(
                 AddressOffset::scale_int32(
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(
                             &(crate::kernel::intern_memory(SymbolicMemory::new())),
                         ),

@@ -326,7 +326,7 @@ mod memory_condition_match_tests {
         let memory = SymbolicMemory::new();
         let pointer = Address::symbolic(Variable(999_000));
         let load = |memory: &SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,

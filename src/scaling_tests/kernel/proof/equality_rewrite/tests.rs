@@ -745,7 +745,7 @@ fn rewrite_capture_collection_does_not_visit_state_contents() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::Variable(free)),
-                right: Box::new(MachineTerm::MemoryLoad(
+                right: Box::new(MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(Address::symbolic(address)),
                     crate::kernel::LoadKind::Int32,
@@ -980,7 +980,7 @@ fn pointer_read_chain_rewrite_work(
         if native {
             Address::version_read(&memory, address)
         } else {
-            let term = MachineTerm::MemoryLoad(
+            let term = MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address.clone()),
                 LoadKind::Int32,
@@ -1336,7 +1336,7 @@ fn selected_rewrite_does_not_discover_a_load_equality_chain() {
     let _session = VerificationSession::enter();
     let x = MachineTerm::Variable(Variable(800_001));
     let y = MachineTerm::Variable(Variable(800_002));
-    let read = MachineTerm::MemoryLoad(
+    let read = MachineTerm::read_named(
         ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
         Box::new(Address::symbolic(Variable(800_003))),
         crate::kernel::LoadKind::Int32,

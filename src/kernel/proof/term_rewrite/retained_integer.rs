@@ -563,7 +563,7 @@ mod tests {
         );
         let replacements = [
             MachineTerm::Variable(load),
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address),
                 LoadKind::Int32,
@@ -651,7 +651,7 @@ mod tests {
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(from), 4),
         };
         let memory = intern_memory(SymbolicMemory::new());
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address),
             LoadKind::Int32,

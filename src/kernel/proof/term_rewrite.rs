@@ -2230,7 +2230,11 @@ impl<'a> TermRewrite<'a> {
                     unreachable!()
                 };
                 reads.insert(
-                    (memory.shared_memory().arena_id(), *pointer, kind),
+                    (
+                        memory.shared_memory().arena_id(),
+                        Address::from(pointer),
+                        kind,
+                    ),
                     (value, dependencies),
                 );
             } else if let MachineTerm::Variable(variable) = source {
@@ -6746,8 +6750,11 @@ impl<'a> TermRewrite<'a> {
         if let Some(reads) = self.comparison_reads
             && let Some(MachineTerm::MemoryLoad(memory, pointer, kind)) =
                 crate::kernel::eval::viewed_as_memory_load(v)
-            && let Some((replacement, variables)) =
-                reads.get(&(memory.shared_memory().arena_id(), *pointer, kind))
+            && let Some((replacement, variables)) = reads.get(&(
+                memory.shared_memory().arena_id(),
+                Address::from(pointer),
+                kind,
+            ))
             && !variables.is_bound_in(&self.scope)
         {
             self.changed = true;
@@ -7033,7 +7040,7 @@ impl<'a> TermRewrite<'a> {
                     && memory.has_certified_read_view()
                 {
                     return crate::kernel::eval::scalar_read_for_exact_cell_at(
-                        &memory.clone().for_exact_read(),
+                        &memory.point().clone().for_exact_read(),
                         &rewritten,
                         *kind,
                         bytes,

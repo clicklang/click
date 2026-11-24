@@ -1751,7 +1751,7 @@ fn loads_equal_by_bounded_state_match(
     else {
         return false;
     };
-    left_pointer == right_pointer
+    left_pointer.address() == right_pointer.address()
         && left_kind == right_kind
         && !crate::kernel::reasoning::loads_lack_recorded_equality(
             left_memory.shared_memory(),
@@ -11307,7 +11307,7 @@ fn generated_load_binding_matches_proposition(
                 && matches!(load, MachineTerm::MemoryLoad(expected_point, _, expected)
                     if *expected == kind
                         && ((expected_point.read_version_id().is_none() && memory.read_version_id().is_none())
-                            || expected_point == &memory))
+                            || expected_point.point() == memory.point()))
         }
         _ => false,
     }
@@ -14443,9 +14443,9 @@ mod pointer_index_walk_tests {
                     format: ty,
                     op: MachineBinaryOp::Add,
                     left: MachineTerm::Variable(Variable(1007210)).into(),
-                    right: MachineTerm::MemoryLoad(
+                    right: MachineTerm::read_named(
                         ProgramPoint::at(&retained_state),
-                        address.clone().into(),
+                        address.clone(),
                         LoadKind::Int32,
                     )
                     .into(),

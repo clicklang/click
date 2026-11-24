@@ -438,7 +438,7 @@ fn stored_byte_order_uses_only_the_exact_cells() {
         MachineTerm::machine_integer_cast(
             MachineIntegerType::UInt8,
             format,
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&crate::kernel::intern_memory(memory.clone())),
                 Box::new(pointer),
                 LoadKind::UInt8,
@@ -636,12 +636,12 @@ fn computation_refusal_is_independent_of_memory_history() {
             after = after.store(other.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
         }
         let after = crate::kernel::intern_memory(after);
-        let left = MachineTerm::MemoryLoad(
+        let left = MachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
-        let right = MachineTerm::MemoryLoad(
+        let right = MachineTerm::read_named(
             ProgramPoint::at(&after),
             Box::new(pointer.clone()),
             LoadKind::Int32,

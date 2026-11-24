@@ -73,9 +73,10 @@ pub(in crate::kernel) mod float_conversion;
 mod load;
 #[cfg(test)]
 mod memory_construction_tests;
-pub use load::Load;
 #[cfg(test)]
 pub(crate) use load::interned_load_count;
+pub(crate) use load::read_operands;
+pub use load::{Load, LoadCell, ReadPoint};
 pub(crate) use load::{
     LoadInternerState, capture_load_interner, clear_load_interner, restore_load_interner,
 };
@@ -1067,10 +1068,15 @@ pub enum MachineTerm {
         arms: Vec<AlgebraicBitvectorMatchArm>,
     },
     /// The value a read of `LoadKind` at the pointer returns in the state.
-    /// The kind is part of the load's identity: two reads of one address
-    /// that differ in width or, below four bytes, in signedness return
-    /// different values, so they are different terms. See [`LoadKind`].
-    MemoryLoad(ProgramPoint, Box<Address>, LoadKind),
+    /// Its identity is the interned [`Load`] its [`LoadCell`] holds, the
+    /// point's read key and the cell, and its kind (`design/loads.md`, step
+    /// 3a): the [`ReadPoint`] is the producer's selection, which consumers
+    /// branch on, and compares equal to every other. The kind is part of the
+    /// identity: two reads of one address that differ in width or, below
+    /// four bytes, in signedness return different values, so they are
+    /// different terms. See [`LoadKind`]. Built only by
+    /// [`MachineTerm::read_named`].
+    MemoryLoad(ReadPoint, LoadCell, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
     /// observation carries no provenance or selected bounds. Complete C
     /// integer copies retain that information separately in PointerInteger.
@@ -5306,8 +5312,8 @@ impl AlgebraicTermNode {
                 pointer,
                 LoadKind::Bits64 | LoadKind::Abstract(_),
             )) => Some(Self::MemoryLoad {
-                point: point.clone(),
-                pointer: pointer.clone(),
+                point: point.point().clone(),
+                pointer: pointer.boxed(),
             }),
             _ => None,
         }

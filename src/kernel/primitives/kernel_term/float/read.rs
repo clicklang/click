@@ -42,7 +42,7 @@ mod tests {
         let mut identities = std::collections::HashSet::new();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             for memory in [&first, &second] {
-                let source = MachineTerm::MemoryLoad(
+                let source = MachineTerm::read_named(
                     ProgramPoint::at(memory),
                     Box::new(pointer.clone()),
                     format.load_kind(),
@@ -76,7 +76,7 @@ mod tests {
         }
         // A malformed native carrier is preserved at its existing boundary,
         // rather than silently changing the written load kind during import.
-        let mismatch = MachineTerm::MemoryLoad(
+        let mismatch = MachineTerm::read_named(
             ProgramPoint::at(&second),
             Box::new(pointer),
             LoadKind::Int32,

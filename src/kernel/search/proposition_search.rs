@@ -2050,7 +2050,7 @@ mod condition_premise_tests {
             },
             ProgramValue::Int32(term(70)),
         );
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory))),
             Box::new(pointer),
             LoadKind::Int32,

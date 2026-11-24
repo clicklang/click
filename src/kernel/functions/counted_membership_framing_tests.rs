@@ -229,7 +229,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             .with_block("shared-counter", 4)
             .with_block("private-cell", 4);
         let load_in = |memory: &SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(shared.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -259,12 +259,12 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         );
         let same_load = |pointer: &Address| {
             checked_atomic_load_equality(
-                &MachineTerm::MemoryLoad(
+                &MachineTerm::read_named(
                     ProgramPoint::at(&(intern_memory_ref(&before))),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
-                &MachineTerm::MemoryLoad(
+                &MachineTerm::read_named(
                     ProgramPoint::at(&(intern_memory_ref(&after))),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,

@@ -774,7 +774,7 @@ impl SharedMachineIntegerTerm {
                 root.machine_read_leaf()
             {
                 matches!(&mapped, MachineTerm::MemoryLoad(other, pointer, other_kind)
-                    if memory.shared_memory().arena_id() == other.shared_memory().arena_id() && address == pointer && kind == other_kind)
+                    if memory.shared_memory().arena_id() == other.shared_memory().arena_id() && address.address() == pointer.address() && kind == other_kind)
             } else {
                 !root.has_machine_reads()
                     && !root.has_machine_conversions()
@@ -2604,7 +2604,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("cells", 16),
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(crate::kernel::Address {
                 base: crate::kernel::AddressBase::Concrete("cells".into()),

@@ -942,6 +942,11 @@ the execution value is a separate proposal that would require a coherent
 review of materialization, substitution, provenance, and rendering. Merely
 swapping the constructor breaks existing verification and expansion fixtures.
 
+An integer or float read, `MachineTerm::MemoryLoad`, has the same `Load` as
+its identity, beside its kind and the producer's selected point
+(`design/loads.md`, step 3a; [resource tracker](resource-tracker.md#a-load-term-carries-its-reads-kind)):
+comparing two reads compares one id and a kind, not their addresses.
+
 Pointer classes are weighted:
 `base(member) = base(representative) + delta`. Exact affine normalization can
 relate displaced forms such as `p + 8` and `(p + 4) + 4`. Preserve signedness,

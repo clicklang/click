@@ -871,7 +871,7 @@ mod exact_word_address_tests {
         let pointer = Address::symbolic(Variable(985_331));
         let memory = SymbolicMemory::new();
         let read = |memory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
@@ -1609,7 +1609,7 @@ mod retained_tag_tests {
         let pointer = Address::symbolic(Variable(986030));
         let memory = SymbolicMemory::new().with_block("tag-cell", 8);
         let read = |memory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(cell.clone()),
                 LoadKind::Bits64,

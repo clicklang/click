@@ -44,7 +44,7 @@ fn rewritten_store_witness_work_scales_with_explicit_adjacent_equalities() {
             .with_block("arg-memory", 128)
             .store(arc_pointer(4), ProgramValue::Int32(value.clone()));
         let load = |memory: &SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(arc_pointer(4)),
                 crate::kernel::LoadKind::Int32,
@@ -420,17 +420,17 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
             SymbolicMemory::new().with_block("local:different-retained_state", 4),
         );
         for retargeted in [
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&changed),
                 Box::new(right.clone()),
                 LoadKind::Int32,
             ),
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&named),
                 Box::new(right.offset_by_bytes(4)),
                 LoadKind::Int32,
             ),
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&named),
                 Box::new(right.clone()),
                 LoadKind::UInt8,
@@ -981,7 +981,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
         let before = crate::kernel::intern_memory_ref(&memory);
         let after = crate::kernel::intern_memory_ref(&memory.without_local_block(&retired.base));
         let load = |memory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 memory,
                 Box::new(read.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -1107,7 +1107,7 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory_ref(&SymbolicMemory::new());
     let index = |slot: i64| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(Address {
                 base: "byte-gap-index".into(),

@@ -278,3 +278,179 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
         }
     }
 }
+
+/// A cell `index` words into one local block.
+fn read_cell(index: u64) -> crate::kernel::Address {
+    crate::kernel::Address {
+        base: crate::kernel::AddressBase::Concrete("local:integer-read-cells".into()),
+        offset: crate::kernel::AddressOffset::Constant(8 * index as i64),
+    }
+}
+
+/// Building an integer read interns its load by one hash probe
+/// (`design/loads.md`, step 3a): the work to build a read of a new cell, and
+/// to build one of a cell already read, is the same however many reads of
+/// other cells the session already holds.
+#[test]
+fn building_an_integer_read_is_flat_in_the_number_of_interned_reads() {
+    use crate::kernel::{ExecutionState, LoadKind};
+    let mut fresh = Vec::new();
+    let mut found = Vec::new();
+    for reads in [16u64, 256, 4096] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new().begin_function_entry_memory();
+        let point = state.program_point();
+        let before = crate::kernel::interned_load_count();
+        for index in 0..reads {
+            MachineTerm::read_named(point.clone(), read_cell(index), LoadKind::Int32);
+        }
+        assert_eq!(
+            crate::kernel::interned_load_count() - before,
+            reads as usize
+        );
+        let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+            MachineTerm::read_named(point.clone(), read_cell(reads), LoadKind::Int32)
+        });
+        fresh.push(work);
+        let (again, work) = crate::instrumentation::measure_deterministic_work(|| {
+            MachineTerm::read_named(point.clone(), read_cell(reads), LoadKind::Int32)
+        });
+        assert_eq!(again, next);
+        found.push(work);
+    }
+    assert!(fresh.iter().all(|&work| work == fresh[0]), "{fresh:?}");
+    assert!(found.iter().all(|&work| work == found[0]), "{found:?}");
+}
+
+/// A hasher that counts the bytes it is fed: a deterministic measure of how
+/// much of a term hashing reads.
+#[derive(Default)]
+struct CountingHasher(usize);
+
+impl std::hash::Hasher for CountingHasher {
+    fn finish(&self) -> u64 {
+        self.0 as u64
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        self.0 += bytes.len();
+    }
+}
+
+fn hashed_bytes(value: &impl std::hash::Hash) -> usize {
+    let mut hasher = CountingHasher::default();
+    value.hash(&mut hasher);
+    hasher.0
+}
+
+/// An address whose offset sums `terms` scaled variables: as large as the
+/// caller likes, with no read inside to shortcut its comparison.
+fn wide_address(terms: u64) -> crate::kernel::Address {
+    use crate::kernel::{AddressOffset, Variable};
+    let mut offset = AddressOffset::Constant(0);
+    for term in 0..terms {
+        offset = AddressOffset::add(
+            offset,
+            AddressOffset::scale_int32(MachineTerm::Variable(Variable(149_100 + term)), 4),
+        );
+    }
+    crate::kernel::Address {
+        base: crate::kernel::AddressBase::Concrete("local:integer-read-wide".into()),
+        offset,
+    }
+}
+
+/// Equality, hashing and ordering of an integer read compare its load's id
+/// and its kind, never its address: two reads of one cell built from
+/// separately built addresses hash the same number of bytes whatever the
+/// address's size, while hashing the address itself grows with it.
+#[test]
+fn comparing_integer_reads_is_flat_in_address_size() {
+    use crate::kernel::{ExecutionState, LoadKind};
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new().begin_function_entry_memory();
+    let point = state.program_point();
+    let mut term_bytes = Vec::new();
+    let mut address_bytes = Vec::new();
+    for terms in [4, 64, 512] {
+        let left = MachineTerm::read_named(point.clone(), wide_address(terms), LoadKind::Int32);
+        let right = MachineTerm::read_named(point.clone(), wide_address(terms), LoadKind::Int32);
+        assert_eq!(left, right);
+        assert_eq!(left.cmp(&right), std::cmp::Ordering::Equal);
+        assert_eq!(hashed_bytes(&left), hashed_bytes(&right));
+        term_bytes.push(hashed_bytes(&left));
+        address_bytes.push(hashed_bytes(&wide_address(terms)));
+    }
+    assert!(
+        term_bytes.iter().all(|&bytes| bytes == term_bytes[0]),
+        "{term_bytes:?}"
+    );
+    assert!(
+        address_bytes.windows(2).all(|pair| pair[0] < pair[1]),
+        "the address itself grows: {address_bytes:?}"
+    );
+}
+
+/// One cell at one read key is one load, however many reads of it are built
+/// from alternating exact and indexed selections and at several widths, and
+/// the next read's work is flat in how many came before.
+#[test]
+fn one_load_per_integer_cell_across_selections_and_widths() {
+    use crate::kernel::{ExecutionState, LoadKind, ProgramType, ProgramValue, SymbolicMemory};
+    const KINDS: [LoadKind; 4] = [
+        LoadKind::Int32,
+        LoadKind::UInt32,
+        LoadKind::UInt8,
+        LoadKind::Bits64,
+    ];
+    let slot = read_cell(0);
+    let mut samples = Vec::new();
+    for reads in [4usize, 64, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let start = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
+        let written = start.clone().with_memory(
+            start
+                .memory()
+                .clone()
+                .store(slot.clone(), ProgramValue::Int32(MachineTerm::constant(3))),
+        );
+        let point = written.program_point();
+        let indexed = point
+            .indexed_typed_version(&slot, ProgramType::Int32)
+            .expect("the store's version");
+        let before = crate::kernel::interned_load_count();
+        let first = MachineTerm::read_named(indexed.clone(), slot.clone(), LoadKind::Int32);
+        for read in 0..reads {
+            let selection = if read % 2 == 0 {
+                point.clone().for_exact_read()
+            } else {
+                indexed.clone()
+            };
+            let kind = KINDS[read % KINDS.len()];
+            let term = MachineTerm::read_named(selection, slot.clone(), kind);
+            assert_eq!(
+                term == first,
+                kind == LoadKind::Int32,
+                "read {read} at {kind:?}"
+            );
+        }
+        assert_eq!(
+            crate::kernel::interned_load_count() - before,
+            1,
+            "one cell is one load"
+        );
+        let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+            MachineTerm::read_named(
+                point.clone().for_exact_read(),
+                slot.clone(),
+                LoadKind::Int32,
+            )
+        });
+        assert_eq!(next, first);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+}

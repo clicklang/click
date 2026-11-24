@@ -3166,7 +3166,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let pointer = crate::kernel::Address::symbolic(Variable(71_201));
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -3176,7 +3176,7 @@ mod tests {
             read.clone(),
         );
         checked_plan(&goal, &[lt(constant(0), read)]);
-        let other = MachineTerm::MemoryLoad(
+        let other = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.offset_by_bytes(4)),
             crate::kernel::LoadKind::Int32,

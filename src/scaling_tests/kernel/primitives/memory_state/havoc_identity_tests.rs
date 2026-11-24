@@ -36,7 +36,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
     crate::kernel::eval::declare_load_access_width(&target, 4);
     let before = SymbolicMemory::new();
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(target.clone()),
             crate::kernel::LoadKind::Int32,

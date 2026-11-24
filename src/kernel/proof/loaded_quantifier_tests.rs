@@ -35,7 +35,7 @@ fn loaded_fact_of_format(
             right: Box::new(right),
         }
     };
-    let read = MachineTerm::MemoryLoad(
+    let read = MachineTerm::read_named(
         ProgramPoint::at(memory),
         Box::new(Address {
             base: "loaded-quantifier".into(),
@@ -121,18 +121,21 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
         if change == 2 {
             **right = MachineTerm::constant(1);
         }
-        let MachineTerm::MemoryLoad(_, pointer, kind) = left.as_mut() else {
+        let MachineTerm::MemoryLoad(point, pointer, kind) = left.as_ref() else {
             unreachable!()
         };
+        let (mut pointer, mut kind) = (pointer.address().clone(), *kind);
         match change {
             3 => pointer.base = "other-block".into(),
-            4 => *kind = LoadKind::UInt32,
+            4 => kind = LoadKind::UInt32,
             5 => {
                 pointer.offset =
                     AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(920_003)), 4)
             }
             _ => {}
         }
+        // A changed read is a new term, built by its constructor.
+        **left = MachineTerm::read_named(point.point().clone(), pointer, kind);
         **conclusion = Proposition::condition_is(condition, truth);
         assert!(
             !quantified_binder_equivalent(&native, &different),

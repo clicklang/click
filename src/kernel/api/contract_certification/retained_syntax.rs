@@ -1047,7 +1047,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let read = |memory: &crate::kernel::SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(crate::kernel::Address::null()),
                 crate::kernel::LoadKind::Int32,
@@ -1150,7 +1150,7 @@ mod tests {
                     offset: AddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
-                            MachineTerm::MemoryLoad(
+                            MachineTerm::read_named(
                                 ProgramPoint::at(
                                     &(crate::kernel::intern_memory_ref(retained_state)),
                                 ),

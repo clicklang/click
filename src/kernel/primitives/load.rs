@@ -183,6 +183,190 @@ impl std::fmt::Debug for Load {
     }
 }
 
+/// The point the producer of an integer or float read selected
+/// (`MachineTerm::MemoryLoad`'s first field). Consumers branch on its
+/// selection kind (entry, exact, indexed write); it is no part of the term's
+/// identity, which its [`LoadCell`] holds, so it compares equal to every
+/// other read point, as [`super::AddressObjectClass`] does.
+///
+/// Built only beside its [`LoadCell`], by [`read_operands`].
+#[derive(Clone)]
+pub struct ReadPoint(ProgramPoint);
+
+impl ReadPoint {
+    /// The producer's point.
+    pub(crate) fn point(&self) -> &ProgramPoint {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for ReadPoint {
+    type Target = ProgramPoint;
+    fn deref(&self) -> &ProgramPoint {
+        &self.0
+    }
+}
+
+impl From<ReadPoint> for ProgramPoint {
+    fn from(point: ReadPoint) -> Self {
+        point.0
+    }
+}
+
+impl From<&ReadPoint> for ProgramPoint {
+    fn from(point: &ReadPoint) -> Self {
+        point.0.clone()
+    }
+}
+
+impl PartialEq for ReadPoint {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for ReadPoint {}
+
+impl std::hash::Hash for ReadPoint {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
+impl PartialOrd for ReadPoint {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ReadPoint {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl std::fmt::Debug for ReadPoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+/// The cell of an integer or float read (`MachineTerm::MemoryLoad`'s second
+/// field): the address as the producer spelled it, and the interned [`Load`]
+/// of that address at the producer's point. The load is the term's identity
+/// (`design/loads.md`, step 3a): equality, hashing and ordering compare its
+/// id, never the address, which the load's identity already holds.
+///
+/// Built only by [`read_operands`], so a rewritten address always comes with
+/// the load of the rewritten cell.
+#[derive(Clone)]
+pub struct LoadCell {
+    load: Load,
+    address: Box<Address>,
+}
+
+impl LoadCell {
+    /// The read's interned load. Its [`Load::point`] is the first selection
+    /// of its read key, not necessarily this read's: consumers read the
+    /// selection from the term's own [`ReadPoint`].
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "consumers move to the load in step 3a-ii (design/loads.md)"
+        )
+    )]
+    pub(crate) fn load(&self) -> &Load {
+        &self.load
+    }
+
+    /// The address as the producer spelled it.
+    pub(crate) fn address(&self) -> &Address {
+        &self.address
+    }
+
+    /// The address as the producer spelled it, boxed.
+    pub(crate) fn boxed(&self) -> Box<Address> {
+        self.address.clone()
+    }
+}
+
+impl std::ops::Deref for LoadCell {
+    type Target = Address;
+    fn deref(&self) -> &Address {
+        &self.address
+    }
+}
+
+impl AsRef<Address> for LoadCell {
+    fn as_ref(&self) -> &Address {
+        &self.address
+    }
+}
+
+impl From<LoadCell> for Box<Address> {
+    fn from(cell: LoadCell) -> Self {
+        cell.address
+    }
+}
+
+impl From<&LoadCell> for Box<Address> {
+    fn from(cell: &LoadCell) -> Self {
+        cell.address.clone()
+    }
+}
+
+impl From<LoadCell> for Address {
+    fn from(cell: LoadCell) -> Self {
+        *cell.address
+    }
+}
+
+impl From<&LoadCell> for Address {
+    fn from(cell: &LoadCell) -> Self {
+        (*cell.address).clone()
+    }
+}
+
+impl PartialEq for LoadCell {
+    fn eq(&self, other: &Self) -> bool {
+        self.load == other.load
+    }
+}
+
+impl Eq for LoadCell {}
+
+impl std::hash::Hash for LoadCell {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.load.hash(state);
+    }
+}
+
+impl PartialOrd for LoadCell {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for LoadCell {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.load.cmp(&other.load)
+    }
+}
+
+impl std::fmt::Debug for LoadCell {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.address.fmt(formatter)
+    }
+}
+
+/// The operands of the integer or float read of `address` at `point`: the
+/// producer's point, and the address with its interned load. The one builder
+/// of [`ReadPoint`] and [`LoadCell`], called by `MachineTerm::read_named`;
+/// `build_support/read_construction.rs` keeps it so.
+pub(crate) fn read_operands(point: ProgramPoint, address: Box<Address>) -> (ReadPoint, LoadCell) {
+    let load = Load::at(point.clone(), &address);
+    (ReadPoint(point), LoadCell { load, address })
+}
+
 /// The interned loads, as one value a reusable session captures and
 /// restores with the rest of the load registry state.
 #[derive(Clone, Default)]

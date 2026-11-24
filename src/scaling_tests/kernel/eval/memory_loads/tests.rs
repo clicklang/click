@@ -242,7 +242,7 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
                 &empty,
                 Some(&kept),
             );
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(cell.clone()),
                 LoadKind::Int32,
@@ -347,7 +347,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     assert!(latest_pointer_read_observation(&volatile).is_none());
     assert!(decode(&volatile).is_none());
     assert!(!equal(&left, &volatile, &facts));
-    let scalar = MachineTerm::MemoryLoad(
+    let scalar = MachineTerm::read_named(
         ProgramPoint::at(&(intern_memory(base.clone()))),
         Box::new(address.clone()),
         LoadKind::Int32,
@@ -373,7 +373,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
     let other = Address::symbolic(Variable(940_001));
     let base = intern_memory(SymbolicMemory::new());
     let load = |memory: &SharedMemory, pointer: &Address, kind| {
-        MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
+        MachineTerm::read_named(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
     };
     let first = load(&base, &pointer, LoadKind::Bits64);
     let (word, _) = load_variable_for_term(&first).unwrap();
@@ -1540,7 +1540,7 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
             true,
         );
         let canonical = |field: &Address| {
-            Address::loaded(&canonical_term(&MachineTerm::MemoryLoad(
+            Address::loaded(&canonical_term(&MachineTerm::read_named(
                 ProgramPoint::at(&origin),
                 Box::new(field.clone()),
                 LoadKind::Int32,
@@ -1772,7 +1772,7 @@ fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
         // reaches `994_000`.
         let cell = Address::symbolic(Variable(995_000));
         let load =
-            |kind| MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(cell.clone()), kind);
+            |kind| MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(cell.clone()), kind);
         let ((signed, _), signed_units) =
             crate::instrumentation::measure_deterministic_work(|| {
                 load_variable_for_term(&load(LoadKind::Int32)).unwrap()
@@ -2083,7 +2083,7 @@ fn structural_read_definitions_scale_across_cache_only_records() {
         let address = Address::symbolic(Variable(299_101));
         let mut memory = SymbolicMemory::new();
         let raw = |memory: &SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory_ref(memory))),
                 Box::new(address.clone()),
                 LoadKind::Int32,
@@ -2335,7 +2335,7 @@ fn narrow_read_selection_ignores_unrelated_wide_observations() {
                 8,
             );
         }
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             LoadKind::UInt8,

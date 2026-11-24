@@ -1008,7 +1008,7 @@ mod resource_relation_tests {
             4,
         );
         let pointer = Pointer::new(address.clone(), ProgramType::Int32Pointer);
-        let read = |memory, address, kind| MachineTerm::MemoryLoad(memory, Box::new(address), kind);
+        let read = |memory, address, kind| MachineTerm::read_named(memory, Box::new(address), kind);
         for separate in [false, true] {
             let named = relation(MachineTerm::Variable(name), pointer.clone(), separate);
             let structural = relation(

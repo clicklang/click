@@ -566,7 +566,7 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
         let point = source
             .entry_integer_version(address, LoadKind::Int32)
             .unwrap();
-        MachineTerm::MemoryLoad(point, Box::new(address.clone()), LoadKind::Int32)
+        MachineTerm::read_named(point, Box::new(address.clone()), LoadKind::Int32)
     };
     let observation = |term| IntegerTerm::from_machine(MachineIntegerType::Int32, term).unwrap();
     let expected = read(&entry.program_point(), &cell);

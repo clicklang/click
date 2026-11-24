@@ -782,7 +782,7 @@ mod tests {
         );
         let native = [
             MachineTerm::Variable(load),
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
@@ -903,7 +903,7 @@ mod tests {
             crate::kernel::KernelFloatType::Float32,
             crate::kernel::KernelFloatType::Float64,
         ] {
-            let argument = PureFunctionArgument::Value(format.value(MachineTerm::MemoryLoad(
+            let argument = PureFunctionArgument::Value(format.value(MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 format.load_kind(),
@@ -937,7 +937,7 @@ mod tests {
             crate::kernel::KernelFloatType::Float64,
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
-            let right = Box::new(MachineTerm::MemoryLoad(
+            let right = Box::new(MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
@@ -986,7 +986,7 @@ mod tests {
             crate::kernel::KernelFloatType::Float64,
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
-            let right = Box::new(MachineTerm::MemoryLoad(
+            let right = Box::new(MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),

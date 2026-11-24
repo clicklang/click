@@ -410,7 +410,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
         let source = |memory: &SharedMemory, kind| {
-            MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(address.clone()), kind)
+            MachineTerm::read_named(ProgramPoint::at(memory), Box::new(address.clone()), kind)
         };
         let before_read = source(&before, LoadKind::Int32);
         let after_read = source(&after, LoadKind::Int32);
@@ -507,7 +507,7 @@ mod tests {
         assert!(key.requires_checked_match());
         assert_eq!(
             key,
-            written(&MachineTerm::MemoryLoad(
+            written(&MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 LoadKind::Int32

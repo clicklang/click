@@ -46,7 +46,7 @@ fn resource_relation_comparison_lookup_ignores_unrelated_facts() {
         let pointer = Pointer::new(address.clone(), ProgramType::Int32Pointer);
         let source = relation(MachineTerm::Variable(name), pointer.clone(), false);
         let goal = relation(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address),
                 LoadKind::Int32,

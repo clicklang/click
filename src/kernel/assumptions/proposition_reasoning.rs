@@ -5653,7 +5653,7 @@ mod guided_condition_instantiation_tests {
     }
 
     fn array_read(index: MachineTerm, kind: LoadKind) -> MachineTerm {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(Address {
                 base: "quantified-cells".into(),
@@ -6323,7 +6323,7 @@ mod shared_wide_order_evidence_tests {
             let _session = crate::kernel::VerificationSession::enter();
             let memory = intern_memory(SymbolicMemory::new().with_block("wide-order", 16));
             let load = |offset| {
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: "wide-order".into(),

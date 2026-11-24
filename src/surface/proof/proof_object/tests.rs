@@ -1070,7 +1070,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::MemoryLoad(
+                    left: Box::new(MachineTerm::read_named(
                         crate::kernel::ProgramPoint::of_memory(&memory),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
@@ -11995,7 +11995,7 @@ fn generated_load_source_event_fixture(
             variable: Variable(variable.into()),
             retained_state: crate::kernel::MemoryStateIdentity::of(&SymbolicMemory::new()),
             pointer: pointer.clone(),
-            load: MachineTerm::MemoryLoad(
+            load: MachineTerm::read_named(
                 crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
