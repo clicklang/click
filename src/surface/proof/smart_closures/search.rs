@@ -4099,11 +4099,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         for signed in [false, true] {
             if let Some(bounds) = shifted_one_bounds(goal, signed)
-                && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
-                    search_input,
-                    &bounds,
-                    introduced_surfaces,
-                )?
+                && let Some((proof, _)) =
+                    Self::establish_arithmetic_bounds(search_input, &bounds, introduced_surfaces)?
+                && let Some(closed) =
+                    attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
             {
                 return Ok(Some(closed));
             }

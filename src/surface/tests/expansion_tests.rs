@@ -9,7 +9,7 @@ fn assert_compatibility_normalization_refusal(error: ClickError) {
 }
 
 #[test]
-fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
+fn shifted_one_replays_through_each_expansion_entry_point() {
     let source = r#"
         theorem shifted_one(d: uint32) {
             requires d < 32u32;
@@ -23,13 +23,19 @@ fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
     let offset = source.find("close() using").unwrap();
     let position = expansion::position_at_offset(source, offset);
     let claim = "shifted_one.ensures_0";
-    let errors = [
-        expand_c_claim_source_by_label(source, &sources, claim).unwrap_err(),
-        expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap_err(),
-        expand_c_tactics_source_at(source, &sources, &[position]).unwrap_err(),
+    let expansions = [
+        expand_c_claim_source_by_label(source, &sources, claim).unwrap(),
+        expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap(),
+        expand_c_tactics_source_at(source, &sources, &[position])
+            .unwrap()
+            .source,
     ];
-    for error in errors {
-        assert_compatibility_normalization_refusal(error);
+    for expanded in expansions {
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        crate::surface::check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
     }
 
     // Writing the compatibility tactic explicitly keeps the proof replayable.
@@ -26873,6 +26879,19 @@ fn shifted_one_divisors_expand_to_checked_bounds() {
     }
     assert_eq!(expanded.matches("step() by").count(), 4, "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn computed_shift_divisor_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/arithmetic_expression_computed_shift_count.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "divide.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
