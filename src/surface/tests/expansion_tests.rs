@@ -1,13 +1,5 @@
 use super::*;
 
-fn assert_compatibility_normalization_refusal(error: ClickError) {
-    assert_eq!(error.kind(), ClickErrorKind::Unsupported, "{error:?}");
-    assert!(
-        error.message().contains("used legacy normalization"),
-        "{error:?}"
-    );
-}
-
 #[test]
 fn shifted_one_replays_through_each_expansion_entry_point() {
     let source = r#"
