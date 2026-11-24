@@ -1740,7 +1740,10 @@ An unsigned `x % d` is at most `x` when the exact divisor is known nonzero.
 Signed quotient and remainder bounds against zero use the named operand
 signs and the divisor's nonzero guard. Machine operations also require
 evidence that excludes the signed minimum divided by `-1` when the signs
-alone leave that pair possible.
+alone leave that pair possible. A signed product's exact Integer bound at its
+machine minimum or maximum uses the two operand signs and the corresponding
+quotient guard when needed. The written product and endpoint name the guards
+for exact lookup.
 A full-width unsigned index agrees with its signed low word when both use
 the same base and stride and the full-width index is at most `INT32_MAX`.
 `known()` checks this bound on the full-width index itself. See

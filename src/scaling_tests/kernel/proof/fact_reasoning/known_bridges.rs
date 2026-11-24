@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn signed_product_bound_checks_only_the_exact_guards() {
+    let _session = VerificationSession::enter();
+    let ty = MachineIntegerType::Int32;
+    let observed = |id| IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(id))).unwrap();
+    let x = observed(995725);
+    let y = observed(995726);
+    let maximum = IntegerTerm::constant_i64(i64::from(i32::MAX));
+    let goal = le(
+        IntegerTerm::Multiply(x.clone().into(), y.into()),
+        maximum.clone(),
+    );
+    let guards = crate::kernel::proof::arithmetic_special::signed_product_guard_candidates(&goal)
+        .next()
+        .unwrap();
+    assert_eq!(guards.len(), 3);
+    for related in [false, true] {
+        let mut cost = Vec::new();
+        for size in [8, 32, 128] {
+            let mut facts = (0..size)
+                .map(|index| {
+                    le(
+                        if related { x.clone() } else { observed(995727) },
+                        IntegerTerm::constant_i64(i64::from(index + 1)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            facts.extend(guards[..2].iter().cloned());
+            let missing = PureFactStore::from_ordered(&facts);
+            facts.push(guards[2].clone());
+            let present = PureFactStore::from_ordered(&facts);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(known_bridge_leaf(&goal, &|p| present.pure_known_available(p)));
+                assert!(!known_bridge_leaf(&goal, &|p| missing.pure_known_available(p)));
+            });
+            cost.push(work);
+        }
+        assert!(
+            cost.windows(2).all(|pair| pair[1] <= 2 * pair[0]),
+            "{cost:?}"
+        );
+    }
+}
+
+#[test]
 fn local_observation_rules_ignore_unrelated_facts_and_related_bound_buckets() {
     for related in [false, true] {
         let _session = VerificationSession::enter();

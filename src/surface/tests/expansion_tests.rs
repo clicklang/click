@@ -28125,14 +28125,14 @@ fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
     for (fixture, claims) in [
         (
             "guarded_signed_ring",
-            &[("sum", true), ("product", false)][..],
+            &[("sum", true), ("product", true)][..],
         ),
         (
             "float_bound_composition",
             &[("negate_scaled", false), ("widen_scaled", false)][..],
         ),
         ("signed_odd_divisor", &[("divide", true)][..]),
-        ("negative_signed_product", &[("product", false)][..]),
+        ("negative_signed_product", &[("product", true)][..]),
         ("float_add_pair", &[("sum", false)][..]),
         (
             "unsigned_masked_divisor",

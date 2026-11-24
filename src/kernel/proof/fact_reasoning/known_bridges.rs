@@ -550,6 +550,18 @@ fn adjacent_range_separation(
         )
 }
 
+/// The product's width, operands and bound name each possible guard. The
+/// number of sign cases and the number of lookups per case are fixed.
+fn signed_product_bound(goal: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
+    super::super::arithmetic_special::signed_product_guard_candidates(goal).any(|guards| {
+        guards.into_iter().all(|guard| {
+            guard.condition_native().is_some_and(|(condition, truth)| {
+                comparison_holds(condition.clone(), *truth, available)
+            })
+        })
+    })
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
@@ -628,6 +640,9 @@ pub(crate) fn known_bridge_leaf(
             )) = condition_source_0.condition_native() =>
         {
             mask_bound(a, b, available)
+                || ((matches!(a.as_ref(), IntegerTerm::Multiply(..)) && b.as_const().is_some()
+                    || matches!(b.as_ref(), IntegerTerm::Multiply(..)) && a.as_const().is_some())
+                    && signed_product_bound(condition_source_0, available))
                 || unsigned_remainder_bound(a, b, available)
                 || signed_division_sign(a, b, available)
                 || condition_source_0
