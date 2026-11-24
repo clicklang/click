@@ -121,77 +121,9 @@ struct ConditionKeyData {
 #[derive(Debug, Hash)]
 enum ConditionShape {
     Atom(ConditionTerm),
-    AlgebraicEqual([AlgebraicStorageKey; 2]),
-    Compare(
-        MachineIntegerType,
-        CompareRelation,
-        [ComparisonStorageOperand; 2],
-    ),
-    Overflows(MachineIntegerType, OverflowOperation, [ScalarStorageKey; 2]),
-    Float(KernelFloatType, FloatPredicateKey),
-    OffsetEqual([OffsetKey; 2]),
-    AddressEqual([AddressKey; 2]),
-    PointerEqual([PointerStorageKey; 2]),
     If([ConditionStorageKey; 3]),
     Equal([ConditionStorageKey; 2]),
 }
-#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-enum ComparisonStorageOperand {
-    Term(ScalarStorageKey),
-    Value(i128),
-}
-
-#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-enum FloatPredicateKey {
-    Comparison(ComparisonOperator, [ScalarStorageKey; 2]),
-    Classification(FloatClassification, ScalarStorageKey),
-}
-
-impl FloatPredicateKey {
-    fn native(value: &FloatCondition) -> Self {
-        match value {
-            FloatCondition::Comparison {
-                operator,
-                left,
-                right,
-            } => Self::Comparison(
-                *operator,
-                [
-                    ScalarStorageKey::native(left),
-                    ScalarStorageKey::native(right),
-                ],
-            ),
-            FloatCondition::Classification {
-                classification,
-                value,
-            } => Self::Classification(*classification, ScalarStorageKey::native(value)),
-        }
-    }
-}
-
-impl ComparisonStorageOperand {
-    fn native(operand: crate::kernel::primitives::ComparisonSide<'_>) -> Self {
-        use crate::kernel::primitives::ComparisonSide;
-        match operand {
-            ComparisonSide::Term(term) => Self::Term(ScalarStorageKey::native(term)),
-            ComparisonSide::Value(value) => Self::Value(value),
-        }
-    }
-
-    fn retained(operand: crate::kernel::machine_integer::comparison::FactOperand<'_>) -> Self {
-        use crate::kernel::machine_integer::comparison::FactOperand;
-        match operand {
-            FactOperand::Term(MachineOperandView::Legacy(term)) => {
-                Self::Term(ScalarStorageKey::native(term))
-            }
-            FactOperand::Term(MachineOperandView::Shared(root)) => {
-                Self::Term(root.scalar_storage_key())
-            }
-            FactOperand::Value(value) => Self::Value(value),
-        }
-    }
-}
-
 impl ConditionStorageKey {
     fn new(shape: ConditionShape) -> Self {
         crate::instrumentation::record_deterministic_work(1);
@@ -210,72 +142,10 @@ impl ConditionStorageKey {
             KernelTermNode::BoolEqual { arguments } => Self::new(ConditionShape::Equal(
                 arguments.each_ref().map(KernelTerm::condition_storage_key),
             )),
-            KernelTermNode::AlgebraicEqual { arguments } => Self::new(
-                ConditionShape::AlgebraicEqual(arguments.each_ref().map(algebraic_for_root)),
-            ),
-            KernelTermNode::BoolCompare {
-                format,
-                relation,
-                arguments,
-            } => {
-                if let Some(native) = root.cached_condition_output() {
-                    return Self::native(native);
-                }
-                use crate::kernel::machine_integer::comparison::stored_operand_identity;
-                let operands = arguments.each_ref().map(|argument| {
-                    argument.retained_machine_input().map_or(
-                        MachineOperandView::Shared(argument),
-                        MachineOperandView::Legacy,
-                    )
-                });
-                let (format, operands) = stored_operand_identity(*format, *relation, operands);
-                Self::new(ConditionShape::Compare(
-                    format,
-                    *relation,
-                    operands.map(ComparisonStorageOperand::retained),
-                ))
-            }
-            KernelTermNode::BoolOverflow {
-                format,
-                operation,
-                arguments,
-            } => Self::new(ConditionShape::Overflows(
-                *format,
-                *operation,
-                arguments.each_ref().map(KernelTerm::scalar_storage_key),
-            )),
-            KernelTermNode::FloatCompare {
-                format,
-                operator,
-                arguments,
-            } => Self::new(ConditionShape::Float(
-                *format,
-                FloatPredicateKey::Comparison(
-                    *operator,
-                    arguments.each_ref().map(KernelTerm::scalar_storage_key),
-                ),
-            )),
-            KernelTermNode::FloatClassify {
-                format,
-                classification,
-                operand,
-            } => Self::new(ConditionShape::Float(
-                *format,
-                FloatPredicateKey::Classification(*classification, operand.scalar_storage_key()),
-            )),
-            KernelTermNode::AddressOffsetEqual { arguments } => Self::new(
-                ConditionShape::OffsetEqual(arguments.each_ref().map(offset_for_root)),
-            ),
-            KernelTermNode::AddressEqual { arguments } => Self::new(ConditionShape::AddressEqual(
-                arguments.each_ref().map(AddressKey::shared),
-            )),
-            KernelTermNode::PointerEqual(pair) => Self::new(ConditionShape::PointerEqual(
-                pair.arguments().each_ref().map(PointerStorageKey::shared),
-            )),
             _ => Self::native(&BooleanOperandView::Shared(root).identity_leaf()),
         }
     }
-    pub(in crate::kernel) fn native(term: &ConditionTerm) -> Self {
+    fn native(term: &ConditionTerm) -> Self {
         enum Task<'a> {
             Enter(&'a ConditionTerm),
             If,
@@ -300,66 +170,6 @@ impl ConditionStorageKey {
                     pending.push(Task::Enter(b));
                     pending.push(Task::Enter(a));
                 }
-                Task::Enter(ConditionTerm::AlgebraicEqual(a, b)) => {
-                    values.push(Self::new(ConditionShape::AlgebraicEqual([
-                        AlgebraicStorageKey::native(a),
-                        AlgebraicStorageKey::native(b),
-                    ])))
-                }
-                Task::Enter(term @ ConditionTerm::Compare { .. }) => {
-                    let (format, relation, left, right) =
-                        term.comparison_fact().expect("comparison identity");
-                    values.push(Self::new(ConditionShape::Compare(
-                        format,
-                        relation,
-                        [left, right].map(ComparisonStorageOperand::native),
-                    )));
-                }
-                Task::Enter(ConditionTerm::Overflows {
-                    format,
-                    op,
-                    left,
-                    right,
-                }) => {
-                    values.push(Self::new(ConditionShape::Overflows(
-                        *format,
-                        *op,
-                        [
-                            ScalarStorageKey::native(left),
-                            ScalarStorageKey::native(right),
-                        ],
-                    )));
-                }
-                Task::Enter(ConditionTerm::Float32(value)) => {
-                    values.push(Self::new(ConditionShape::Float(
-                        KernelFloatType::Float32,
-                        FloatPredicateKey::native(value),
-                    )))
-                }
-                Task::Enter(ConditionTerm::Float64(value)) => {
-                    values.push(Self::new(ConditionShape::Float(
-                        KernelFloatType::Float64,
-                        FloatPredicateKey::native(value),
-                    )))
-                }
-                Task::Enter(ConditionTerm::AddressOffsetEqual(a, b)) => {
-                    values.push(Self::new(ConditionShape::OffsetEqual([
-                        OffsetKey::native(a),
-                        OffsetKey::native(b),
-                    ])))
-                }
-                Task::Enter(ConditionTerm::AddressEqual(a, b)) => {
-                    values.push(Self::new(ConditionShape::AddressEqual([
-                        AddressKey::native(a),
-                        AddressKey::native(b),
-                    ])))
-                }
-                Task::Enter(ConditionTerm::PointerEqual(a, b)) => {
-                    values.push(Self::new(ConditionShape::PointerEqual([
-                        PointerStorageKey::native(a),
-                        PointerStorageKey::native(b),
-                    ])))
-                }
                 Task::Enter(term) => values.push(Self::new(ConditionShape::Atom(term.clone()))),
                 Task::If => {
                     let no = values.pop().unwrap();
@@ -380,14 +190,6 @@ impl ConditionStorageKey {
 impl ConditionShape {
     fn rank(&self) -> u8 {
         match self {
-            Self::AlgebraicEqual(_) => 2,
-            Self::Compare(..) => 3,
-            Self::Overflows(..) => 4,
-            Self::Float(KernelFloatType::Float32, _) => 5,
-            Self::Float(KernelFloatType::Float64, _) => 6,
-            Self::OffsetEqual(_) => 7,
-            Self::AddressEqual(_) => 8,
-            Self::PointerEqual(_) => 9,
             Self::If(_) => 17,
             Self::Equal(_) => 18,
             Self::Atom(value) => match value {
@@ -444,37 +246,28 @@ impl Ord for ConditionStorageKey {
             if !order.is_eq() {
                 return order;
             }
-            let order = match (&a.0.shape, &b.0.shape) {
-                (ConditionShape::Atom(a), ConditionShape::Atom(b)) => a.cmp(b),
-                (ConditionShape::AlgebraicEqual(a), ConditionShape::AlgebraicEqual(b)) => a.cmp(b),
-                (ConditionShape::Compare(af, ar, a), ConditionShape::Compare(bf, br, b)) => {
-                    (af, ar, a).cmp(&(bf, br, b))
+            match (&a.0.shape, &b.0.shape) {
+                (ConditionShape::Atom(a), ConditionShape::Atom(b)) => {
+                    let order = a.cmp(b);
+                    if !order.is_eq() {
+                        return order;
+                    }
                 }
-                (ConditionShape::Overflows(af, ao, a), ConditionShape::Overflows(bf, bo, b)) => {
-                    (af, ao, a).cmp(&(bf, bo, b))
-                }
-                (ConditionShape::Float(_, a), ConditionShape::Float(_, b)) => a.cmp(b),
-                (ConditionShape::OffsetEqual(a), ConditionShape::OffsetEqual(b)) => a.cmp(b),
-                (ConditionShape::AddressEqual(a), ConditionShape::AddressEqual(b)) => a.cmp(b),
-                (ConditionShape::PointerEqual(a), ConditionShape::PointerEqual(b)) => a.cmp(b),
                 (ConditionShape::If(a), ConditionShape::If(b)) => {
-                    pending.extend(a.iter().zip(b).rev());
-                    Ordering::Equal
+                    pending.extend(a.iter().zip(b).rev())
                 }
                 (ConditionShape::Equal(a), ConditionShape::Equal(b)) => {
-                    pending.extend(a.iter().zip(b).rev());
-                    Ordering::Equal
+                    pending.extend(a.iter().zip(b).rev())
                 }
                 _ => unreachable!("same condition key rank"),
-            };
-            if !order.is_eq() {
-                return order;
             }
         }
         Ordering::Equal
     }
 }
 
+/// Native ProgramValue variant order. Numeric local keys live in the separate
+/// machine-observation family; numeric memory cells keep native structural keys.
 /// Exact program value identity for descriptor storage and typed call arguments.
 /// Local numeric observations use a different key.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -642,14 +435,7 @@ impl Drop for ConditionStorageKey {
                 ) {
                     ConditionShape::If(children) => pending.extend(children),
                     ConditionShape::Equal(children) => pending.extend(children),
-                    ConditionShape::Atom(_)
-                    | ConditionShape::AlgebraicEqual(_)
-                    | ConditionShape::Compare(..)
-                    | ConditionShape::Overflows(..)
-                    | ConditionShape::Float(..)
-                    | ConditionShape::OffsetEqual(_)
-                    | ConditionShape::AddressEqual(_)
-                    | ConditionShape::PointerEqual(_) => {}
+                    ConditionShape::Atom(_) => {}
                 }
             }
         }

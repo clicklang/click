@@ -107,8 +107,7 @@ impl std::fmt::Debug for StoredMachineTerm {
 }
 impl PartialEq for StoredMachineTerm {
     fn eq(&self, other: &Self) -> bool {
-        matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b)
-            || self.storage_key() == other.storage_key()
+        self.cmp(other).is_eq()
     }
 }
 impl Eq for StoredMachineTerm {}
@@ -119,10 +118,10 @@ impl PartialOrd for StoredMachineTerm {
 }
 impl Ord for StoredMachineTerm {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) {
-            std::cmp::Ordering::Equal
-        } else {
-            self.storage_key().cmp(other.storage_key())
+        match (self.root(), other.root()) {
+            (None, None) => self.native_compat().cmp(other.native_compat()),
+            (Some(a), Some(b)) if a == b => std::cmp::Ordering::Equal,
+            _ => self.storage_key().cmp(other.storage_key()),
         }
     }
 }
@@ -450,10 +449,7 @@ impl PartialOrd for StoredProgramValue {
 }
 impl Ord for StoredProgramValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
-            return std::cmp::Ordering::Equal;
-        }
-        self.0.storage_key().cmp(other.0.storage_key())
+        self.0.cmp(&other.0)
     }
 }
 impl std::hash::Hash for StoredProgramValue {
@@ -520,17 +516,18 @@ impl PartialOrd for StoredAlgebraicTerm {
 }
 impl Ord for StoredAlgebraicTerm {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
-            return std::cmp::Ordering::Equal;
+        if let (Some(left), Some(right)) = (self.root(), other.root()) {
+            if left == right {
+                return std::cmp::Ordering::Equal;
+            }
+            if matches!(left.node(), KernelTermNode::Constructor(_))
+                && matches!(right.node(), KernelTermNode::Constructor(_))
+            {
+                use crate::kernel::execution_value::storage_keys::algebraic_for_root;
+                return algebraic_for_root(left).cmp(&algebraic_for_root(right));
+            }
         }
-        use crate::kernel::execution_value::storage_keys::{
-            AlgebraicStorageKey, algebraic_for_root,
-        };
-        let key = |value: &Self| match value.root() {
-            Some(root) => algebraic_for_root(root),
-            None => AlgebraicStorageKey::native(value.native_compat()),
-        };
-        key(self).cmp(&key(other))
+        self.native_compat().cmp(other.native_compat())
     }
 }
 impl std::hash::Hash for StoredAlgebraicTerm {
@@ -544,17 +541,27 @@ impl std::fmt::Debug for StoredConditionTerm {
     }
 }
 impl StoredConditionTerm {
-    fn storage_key(&self) -> crate::kernel::execution_value::storage_keys::ConditionStorageKey {
-        use crate::kernel::execution_value::storage_keys::ConditionStorageKey;
-        match self.root() {
-            Some(root) => root.condition_storage_key(),
-            None => ConditionStorageKey::native(self.native_compat()),
-        }
+    fn connective_roots<'a>(&'a self, other: &'a Self) -> Option<(&'a KernelTerm, &'a KernelTerm)> {
+        let connective = |root: &KernelTerm| {
+            matches!(
+                root.node(),
+                KernelTermNode::BoolIf { .. } | KernelTermNode::BoolEqual { .. }
+            )
+        };
+        let left = self.root().filter(|root| connective(root))?;
+        let right = other.root().filter(|root| connective(root))?;
+        Some((left, right))
     }
 }
 impl PartialEq for StoredConditionTerm {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
+        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
+            return true;
+        }
+        if let Some((left, right)) = self.connective_roots(other) {
+            return left.condition_storage_key() == right.condition_storage_key();
+        }
+        self.native_compat() == other.native_compat()
     }
 }
 impl Eq for StoredConditionTerm {}
@@ -568,7 +575,12 @@ impl Ord for StoredConditionTerm {
         if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
             return std::cmp::Ordering::Equal;
         }
-        self.storage_key().cmp(&other.storage_key())
+        if let Some((left, right)) = self.connective_roots(other) {
+            return left
+                .condition_storage_key()
+                .cmp(&right.condition_storage_key());
+        }
+        self.native_compat().cmp(other.native_compat())
     }
 }
 impl std::hash::Hash for StoredConditionTerm {
@@ -694,6 +706,8 @@ mod protocol_value_tests {
         assert_ne!(stored.root(), equal.root());
         assert_eq!(stored, equal);
         assert_eq!(stored.cmp(&equal), std::cmp::Ordering::Equal);
+        assert_eq!(hash(&stored), hash(&source));
+        assert_eq!(hash(&equal), hash(&source));
         assert!(!stored.has_cached_native_offset());
         assert!(!equal.has_cached_native_offset());
         assert_eq!(stored.native_compat(), &source);

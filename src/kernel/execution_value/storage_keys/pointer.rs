@@ -105,42 +105,46 @@ impl Ord for PointerStorageKey {
 }
 
 #[derive(Clone, Debug)]
-pub(in crate::kernel) struct OffsetKey(Arc<OffsetData>);
+pub(in crate::kernel) struct OffsetKey(OffsetShape);
+#[derive(Clone, Debug)]
+enum OffsetShape {
+    // The native leaf is already the exact offset identity. Keep these
+    // inline, especially constant offsets in ordinary resource keys.
+    Leaf(AddressOffset),
+    Add(Arc<OffsetAdd>),
+}
 #[derive(Debug)]
-struct OffsetData {
-    shape: OffsetShape,
+struct OffsetAdd {
+    children: [OffsetKey; 2],
     fingerprint: u64,
 }
-#[derive(Debug, Hash)]
-enum OffsetShape {
-    Constant(i64),
-    Variable(Variable),
-    Add([OffsetKey; 2]),
-    Int32Scaled(SharedMachineIntegerTerm, i64),
-    Int64Scaled(SharedMachineIntegerTerm, i64, bool),
-}
-impl OffsetShape {
-    fn rank(&self) -> u8 {
-        match self {
-            Self::Constant(_) => 0,
-            Self::Variable(_) => 1,
-            Self::Add(_) => 2,
-            Self::Int32Scaled(..) => 3,
-            Self::Int64Scaled(..) => 4,
-        }
-    }
-}
+
 impl OffsetKey {
-    fn new(shape: OffsetShape) -> Self {
+    fn add(children: [Self; 2]) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         let mut hash = std::collections::hash_map::DefaultHasher::new();
-        shape.hash(&mut hash);
-        Self(Arc::new(OffsetData {
-            shape,
+        children.hash(&mut hash);
+        Self(OffsetShape::Add(Arc::new(OffsetAdd {
+            children,
             fingerprint: hash.finish(),
-        }))
+        })))
     }
+
+    fn rank(&self) -> u8 {
+        match &self.0 {
+            OffsetShape::Leaf(AddressOffset::Constant(_)) => 0,
+            OffsetShape::Leaf(AddressOffset::Variable(_)) => 1,
+            OffsetShape::Add(_) => 2,
+            OffsetShape::Leaf(AddressOffset::Int32Scaled { .. }) => 3,
+            OffsetShape::Leaf(AddressOffset::Int64Scaled { .. }) => 4,
+            OffsetShape::Leaf(AddressOffset::Add(..)) => unreachable!("offset leaf"),
+        }
+    }
+
     pub(in crate::kernel) fn native(source: &AddressOffset) -> Self {
+        if !matches!(source, AddressOffset::Add(..)) {
+            return Self(OffsetShape::Leaf(source.clone()));
+        }
         enum Task<'a> {
             Enter(&'a AddressOffset),
             Add,
@@ -148,75 +152,77 @@ impl OffsetKey {
         let mut pending = vec![Task::Enter(source)];
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
-            let shape = match task {
-                Task::Enter(AddressOffset::Constant(v)) => OffsetShape::Constant(*v),
-                Task::Enter(AddressOffset::Variable(v)) => OffsetShape::Variable(*v),
+            match task {
                 Task::Enter(AddressOffset::Add(a, b)) => {
                     pending.extend([Task::Add, Task::Enter(b), Task::Enter(a)]);
-                    continue;
                 }
-                Task::Enter(AddressOffset::Int32Scaled { value, byte_width }) => {
-                    OffsetShape::Int32Scaled(value.clone(), *byte_width)
-                }
-                Task::Enter(AddressOffset::Int64Scaled {
-                    value,
-                    byte_width,
-                    unsigned,
-                }) => OffsetShape::Int64Scaled(value.clone(), *byte_width, *unsigned),
+                Task::Enter(leaf) => values.push(Self(OffsetShape::Leaf(leaf.clone()))),
                 Task::Add => {
                     let b = values.pop().unwrap();
                     let a = values.pop().unwrap();
-                    OffsetShape::Add([a, b])
+                    values.push(Self::add([a, b]));
                 }
-            };
-            values.push(Self::new(shape));
+            }
         }
         values.pop().expect("offset key")
     }
+
     pub(in crate::kernel) fn matches_root(&self, source: &SharedAddressOffset) -> bool {
-        if self.0.shape.rank()
-            != match source.node() {
+        self.rank()
+            == match source.node() {
                 KernelAddressOffset::Constant(_) => 0,
                 KernelAddressOffset::Variable(_) => 1,
                 KernelAddressOffset::Add(_) => 2,
                 KernelAddressOffset::Int32Scaled { .. } => 3,
                 KernelAddressOffset::Int64Scaled { .. } => 4,
             }
-        {
-            return false;
-        }
-        let candidate = offset_for_root(source);
-        self.0.fingerprint == candidate.0.fingerprint && *self == candidate
+            && *self == offset_for_root(source)
     }
 
     fn shared(source: &SharedAddressOffset) -> Self {
         let index = |root: &KernelTerm| {
             KernelAddressOffset::index_key(root).expect("selected offset index key")
         };
-        Self::new(match source.node() {
-            KernelAddressOffset::Constant(v) => OffsetShape::Constant(*v),
-            KernelAddressOffset::Variable(v) => OffsetShape::Variable(*v),
+        Self(OffsetShape::Leaf(match source.node() {
+            KernelAddressOffset::Constant(v) => AddressOffset::Constant(*v),
+            KernelAddressOffset::Variable(v) => AddressOffset::Variable(*v),
             KernelAddressOffset::Add(children) => {
-                OffsetShape::Add(children.each_ref().map(offset_for_root))
+                return Self::add(children.each_ref().map(offset_for_root));
             }
-            KernelAddressOffset::Int32Scaled { value, byte_width } => {
-                OffsetShape::Int32Scaled(index(value), *byte_width)
-            }
+            KernelAddressOffset::Int32Scaled { value, byte_width } => AddressOffset::Int32Scaled {
+                value: index(value),
+                byte_width: *byte_width,
+            },
             KernelAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
-            } => OffsetShape::Int64Scaled(index(value), *byte_width, *unsigned),
-        })
+            } => AddressOffset::Int64Scaled {
+                value: index(value),
+                byte_width: *byte_width,
+                unsigned: *unsigned,
+            },
+        }))
     }
 }
 impl Hash for OffsetKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.fingerprint.hash(state)
+        match &self.0 {
+            OffsetShape::Leaf(leaf) => leaf.hash(state),
+            OffsetShape::Add(add) => {
+                2usize.hash(state);
+                add.fingerprint.hash(state);
+            }
+        }
     }
 }
 impl PartialEq for OffsetKey {
     fn eq(&self, other: &Self) -> bool {
+        if let (OffsetShape::Add(a), OffsetShape::Add(b)) = (&self.0, &other.0)
+            && a.fingerprint != b.fingerprint
+        {
+            return false;
+        }
         self.cmp(other).is_eq()
     }
 }
@@ -228,31 +234,24 @@ impl PartialOrd for OffsetKey {
 }
 impl Ord for OffsetKey {
     fn cmp(&self, other: &Self) -> Ordering {
+        match (&self.0, &other.0) {
+            (OffsetShape::Leaf(a), OffsetShape::Leaf(b)) => return a.cmp(b),
+            (OffsetShape::Add(_), OffsetShape::Add(_)) => {}
+            _ => return self.rank().cmp(&other.rank()),
+        }
         let mut pending = vec![(self, other)];
         let mut seen = std::collections::HashSet::new();
         while let Some((a, b)) = pending.pop() {
-            if Arc::ptr_eq(&a.0, &b.0) || !seen.insert((Arc::as_ptr(&a.0), Arc::as_ptr(&b.0))) {
-                continue;
-            }
-            crate::instrumentation::record_deterministic_work(1);
-            let order = a.0.shape.rank().cmp(&b.0.shape.rank());
-            if !order.is_eq() {
-                return order;
-            }
-            let order = match (&a.0.shape, &b.0.shape) {
-                (OffsetShape::Constant(a), OffsetShape::Constant(b)) => a.cmp(b),
-                (OffsetShape::Variable(a), OffsetShape::Variable(b)) => a.cmp(b),
+            let order = match (&a.0, &b.0) {
+                (OffsetShape::Leaf(a), OffsetShape::Leaf(b)) => a.cmp(b),
                 (OffsetShape::Add(a), OffsetShape::Add(b)) => {
-                    pending.extend(a.iter().zip(b).rev());
+                    if !Arc::ptr_eq(a, b) && seen.insert((Arc::as_ptr(a), Arc::as_ptr(b))) {
+                        crate::instrumentation::record_deterministic_work(1);
+                        pending.extend(a.children.iter().zip(&b.children).rev());
+                    }
                     Ordering::Equal
                 }
-                (OffsetShape::Int32Scaled(a, aw), OffsetShape::Int32Scaled(b, bw)) => {
-                    (a, aw).cmp(&(b, bw))
-                }
-                (OffsetShape::Int64Scaled(a, aw, au), OffsetShape::Int64Scaled(b, bw, bu)) => {
-                    (a, aw, au).cmp(&(b, bw, bu))
-                }
-                _ => unreachable!("same offset variant"),
+                _ => a.rank().cmp(&b.rank()),
             };
             if !order.is_eq() {
                 return order;
@@ -264,11 +263,11 @@ impl Ord for OffsetKey {
 impl Drop for OffsetKey {
     fn drop(&mut self) {
         fn take(key: &mut OffsetKey, pending: &mut Vec<OffsetKey>) {
-            if let Some(data) = Arc::get_mut(&mut key.0)
-                && let OffsetShape::Add(children) =
-                    std::mem::replace(&mut data.shape, OffsetShape::Constant(0))
+            if let OffsetShape::Add(add) = &mut key.0
+                && let Some(add) = Arc::get_mut(add)
             {
-                pending.extend(children);
+                let leaf = || OffsetKey(OffsetShape::Leaf(AddressOffset::Constant(0)));
+                pending.extend(std::mem::replace(&mut add.children, [leaf(), leaf()]));
             }
         }
         let mut pending = Vec::new();
@@ -283,6 +282,9 @@ thread_local! {
     static POINTERS: std::cell::RefCell<crate::id_hash::U64Map<PointerStorageKey>> = Default::default();
 }
 pub(in crate::kernel) fn offset_for_root(source: &SharedAddressOffset) -> OffsetKey {
+    if !matches!(source.node(), KernelAddressOffset::Add(_)) {
+        return OffsetKey::shared(source);
+    }
     OFFSETS.with(|keys| {
         let mut pending = vec![(source, false)];
         while let Some((root, finish)) = pending.pop() {

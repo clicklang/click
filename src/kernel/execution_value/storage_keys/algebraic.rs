@@ -173,7 +173,7 @@ impl Hash for AlgebraicStorageKey {
 }
 impl PartialEq for AlgebraicStorageKey {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
+        self.0.fingerprint == other.0.fingerprint && self.cmp(other).is_eq()
     }
 }
 impl Eq for AlgebraicStorageKey {}

@@ -4,7 +4,7 @@
 //! have the same truth.
 
 mod fact_identity;
-pub(crate) use fact_identity::{FactOperand, fact_operand_identity, stored_operand_identity};
+pub(crate) use fact_identity::{FactOperand, fact_operand_identity};
 
 use super::{Relation, identity, range, representation};
 use crate::kernel::{

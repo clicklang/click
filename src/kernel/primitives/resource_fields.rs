@@ -113,7 +113,11 @@ impl StoredResourceField {
 }
 
 #[derive(Clone)]
-pub struct ResourceFieldValues(Arc<FieldStorage>);
+pub struct ResourceFieldValues(Arc<FieldData>);
+struct FieldData {
+    values: FieldStorage,
+    keys: std::sync::OnceLock<Box<[FieldKey]>>,
+}
 enum FieldStorage {
     Input(NativeResourceArguments),
     Retained(Box<[StoredResourceField]>),
@@ -130,7 +134,7 @@ impl Default for ResourceFieldValues {
 }
 impl ResourceFieldValues {
     pub fn len(&self) -> usize {
-        match self.0.as_ref() {
+        match &self.0.values {
             FieldStorage::Input(values) => values.len(),
             FieldStorage::Retained(values) => values.len(),
         }
@@ -139,7 +143,7 @@ impl ResourceFieldValues {
         self.len() == 0
     }
     pub fn get(&self, index: usize) -> Option<ResourceFieldValue<'_>> {
-        match self.0.as_ref() {
+        match &self.0.values {
             FieldStorage::Input(values) => values.get(index).map(ResourceFieldValue::from),
             FieldStorage::Retained(values) => values.get(index).map(StoredResourceField::native),
         }
@@ -160,7 +164,7 @@ impl ResourceFieldValues {
         }
     }
     pub(crate) fn program_value(&self, index: usize) -> Option<ExecutionValue> {
-        match self.0.as_ref() {
+        match &self.0.values {
             FieldStorage::Retained(values) => match values.get(index)? {
                 StoredResourceField::Program(value) => Some(value.clone().into_value()),
                 StoredResourceField::Input(AlgebraicValue::Program(value)) => {
@@ -175,7 +179,7 @@ impl ResourceFieldValues {
         }
     }
     pub(crate) fn stored_field(&self, index: usize) -> Option<StoredResourceField> {
-        match self.0.as_ref() {
+        match &self.0.values {
             FieldStorage::Input(values) => {
                 values.get(index).cloned().map(StoredResourceField::Input)
             }
@@ -183,9 +187,7 @@ impl ResourceFieldValues {
         }
     }
     pub(crate) fn from_stored(values: impl IntoIterator<Item = StoredResourceField>) -> Self {
-        Self(Arc::new(FieldStorage::Retained(
-            values.into_iter().collect(),
-        )))
+        Self::new(FieldStorage::Retained(values.into_iter().collect()))
     }
     /// Values minted by the existing typed field producers. Native public
     /// inputs use `From<NativeResourceArguments>` and retain their admission checks.
@@ -193,7 +195,7 @@ impl ResourceFieldValues {
         Self::from_stored(values.into_iter().map(StoredResourceField::from_minted))
     }
     pub(crate) fn retained_program(&self, index: usize) -> Option<&ExecutionValue> {
-        match self.0.as_ref() {
+        match &self.0.values {
             FieldStorage::Retained(values) => match values.get(index)? {
                 StoredResourceField::Program(value) => Some(value.value()),
                 _ => None,
@@ -202,7 +204,7 @@ impl ResourceFieldValues {
         }
     }
     pub(crate) fn integer_term(&self, index: usize) -> Option<StoredIntegerTerm> {
-        let value = match self.0.as_ref() {
+        let value = match &self.0.values {
             FieldStorage::Input(values) => values.get(index)?,
             FieldStorage::Retained(values) => match values.get(index)? {
                 StoredResourceField::Integer(root) => {
@@ -219,7 +221,7 @@ impl ResourceFieldValues {
     }
 
     pub(crate) fn retained_integer(&self, index: usize) -> Option<&KernelTerm> {
-        match self.0.as_ref() {
+        match &self.0.values {
             FieldStorage::Retained(values) => match values.get(index)? {
                 StoredResourceField::Integer(root) => Some(root),
                 _ => None,
@@ -228,7 +230,7 @@ impl ResourceFieldValues {
         }
     }
     pub(crate) fn retained_algebraic(&self, index: usize) -> Option<&KernelTerm> {
-        match self.0.as_ref() {
+        match &self.0.values {
             FieldStorage::Retained(values) => match values.get(index)? {
                 StoredResourceField::Algebraic(root) => Some(root),
                 _ => None,
@@ -242,7 +244,7 @@ impl ResourceFieldValues {
     /// Whole-list native APIs pay only for their explicitly selected output.
     /// There is no parallel cached native list beside the retained fields.
     pub(crate) fn native_values(&self) -> Cow<'_, [AlgebraicValue]> {
-        match self.0.as_ref() {
+        match &self.0.values {
             FieldStorage::Input(values) => Cow::Borrowed(values),
             FieldStorage::Retained(_) => Cow::Owned(self.to_vec()),
         }
@@ -252,7 +254,7 @@ impl ResourceFieldValues {
             return false;
         }
         schema.fields().iter().enumerate().all(|(index, (_, ty))| {
-            if let FieldStorage::Retained(values) = self.0.as_ref() {
+            if let FieldStorage::Retained(values) = &self.0.values {
                 // Retained values come from the existing typed producers. Raw
                 // public inputs still take the native admission checks below.
                 match &values[index] {
@@ -270,10 +272,17 @@ impl ResourceFieldValues {
             }
         })
     }
-    fn keys(&self) -> impl Iterator<Item = FieldKey> + '_ {
-        (0..self.len()).map(|index| match self.0.as_ref() {
-            FieldStorage::Input(values) => FieldKey::native(&values[index]),
-            FieldStorage::Retained(values) => values[index].key(),
+    fn new(values: FieldStorage) -> Self {
+        Self(Arc::new(FieldData {
+            values,
+            keys: Default::default(),
+        }))
+    }
+
+    fn keys(&self) -> &[FieldKey] {
+        self.0.keys.get_or_init(|| match &self.0.values {
+            FieldStorage::Input(values) => values.iter().map(FieldKey::native).collect(),
+            FieldStorage::Retained(values) => values.iter().map(StoredResourceField::key).collect(),
         })
     }
 
@@ -283,7 +292,7 @@ impl ResourceFieldValues {
 }
 impl From<NativeResourceArguments> for ResourceFieldValues {
     fn from(values: NativeResourceArguments) -> Self {
-        Self(Arc::new(FieldStorage::Input(values)))
+        Self::new(FieldStorage::Input(values))
     }
 }
 impl From<&[AlgebraicValue]> for ResourceFieldValues {
@@ -316,8 +325,13 @@ impl std::fmt::Debug for ResourceFieldValues {
 }
 impl PartialEq for ResourceFieldValues {
     fn eq(&self, other: &Self) -> bool {
-        self.shares_storage_with(other)
-            || (self.len() == other.len() && self.keys().eq(other.keys()))
+        if self.shares_storage_with(other) {
+            return true;
+        }
+        match (&self.0.values, &other.0.values) {
+            (FieldStorage::Input(left), FieldStorage::Input(right)) => left == right,
+            _ => self.len() == other.len() && self.keys() == other.keys(),
+        }
     }
 }
 impl Eq for ResourceFieldValues {}
@@ -326,7 +340,10 @@ impl Ord for ResourceFieldValues {
         if self.shares_storage_with(other) {
             return std::cmp::Ordering::Equal;
         }
-        self.keys().cmp(other.keys())
+        match (&self.0.values, &other.0.values) {
+            (FieldStorage::Input(left), FieldStorage::Input(right)) => left.cmp(right),
+            _ => self.keys().cmp(other.keys()),
+        }
     }
 }
 impl PartialOrd for ResourceFieldValues {
@@ -344,7 +361,17 @@ impl Hash for ResourceFieldValues {
 }
 impl PartialEq<[AlgebraicValue]> for ResourceFieldValues {
     fn eq(&self, other: &[AlgebraicValue]) -> bool {
-        self.len() == other.len() && self.keys().eq(other.iter().map(FieldKey::native))
+        match &self.0.values {
+            FieldStorage::Input(values) => values.as_ref() == other,
+            _ => {
+                self.len() == other.len()
+                    && self
+                        .keys()
+                        .iter()
+                        .zip(other)
+                        .all(|(key, value)| *key == FieldKey::native(value))
+            }
+        }
     }
 }
 impl<const N: usize> PartialEq<[AlgebraicValue; N]> for ResourceFieldValues {

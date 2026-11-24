@@ -439,7 +439,7 @@ impl From<ExecutionValue> for StoredMemoryValue {
 }
 impl PartialEq for StoredMemoryValue {
     fn eq(&self, other: &Self) -> bool {
-        self.same_retained_value(other) || self.identity() == other.identity()
+        self.cmp(other).is_eq()
     }
 }
 impl Eq for StoredMemoryValue {}
@@ -459,15 +459,22 @@ impl PartialOrd for StoredMemoryValue {
 impl Ord for StoredMemoryValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.same_retained_value(other) {
-            std::cmp::Ordering::Equal
-        } else {
-            self.identity().cmp(&other.identity())
+            return std::cmp::Ordering::Equal;
         }
+        if let (ExecutionValue::Native(left), ExecutionValue::Native(right)) =
+            (self.value(), other.value())
+        {
+            return left.cmp(right);
+        }
+        self.identity().cmp(other.identity())
     }
 }
 impl PartialEq<ProgramValue> for StoredMemoryValue {
     fn eq(&self, other: &ProgramValue) -> bool {
-        &ProgramStorageKey::native(other) == self.identity()
+        match self.value() {
+            ExecutionValue::Native(value) => value == other,
+            ExecutionValue::Shared(_) => &ProgramStorageKey::native(other) == self.identity(),
+        }
     }
 }
 impl PartialEq<StoredMemoryValue> for ProgramValue {
@@ -535,6 +542,11 @@ impl StoredExecutionValue {
     /// Storage equality can identify different machine spellings of one word;
     /// an outcome refresh must retain the earlier, stricter payload contract.
     pub(crate) fn same_native_value(&self, other: &Self) -> bool {
+        if let (ExecutionValue::Native(left), ExecutionValue::Native(right)) =
+            (&self.0.value, &other.0.value)
+        {
+            return left == right;
+        }
         self.same_retained_root(other)
             || ProgramStorageKey::for_value(self) == ProgramStorageKey::for_value(other)
     }
@@ -1116,6 +1128,16 @@ impl RetainedProgramValue {
             .get_or_init(|| ProgramStorageKey::for_value(self.value()))
     }
 
+    pub(in crate::kernel) fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.value(), other.value()) {
+            (ExecutionValue::Native(left), ExecutionValue::Native(right)) => left.cmp(right),
+            (ExecutionValue::Shared(left), ExecutionValue::Shared(right)) if left == right => {
+                std::cmp::Ordering::Equal
+            }
+            _ => self.storage_key().cmp(other.storage_key()),
+        }
+    }
+
     pub(crate) fn native_compat(&self) -> &ProgramValue {
         match self.value() {
             ExecutionValue::Native(value) => value,
@@ -1136,9 +1158,7 @@ impl RetainedProgramValue {
 }
 impl PartialEq for RetainedProgramValue {
     fn eq(&self, other: &Self) -> bool {
-        std::sync::Arc::ptr_eq(&self.0, &other.0)
-            || matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b)
-            || self.storage_key() == other.storage_key()
+        std::sync::Arc::ptr_eq(&self.0, &other.0) || self.cmp(other).is_eq()
     }
 }
 impl Eq for RetainedProgramValue {}
