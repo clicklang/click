@@ -69,11 +69,21 @@ fn trait_objects::dynamic(shape: &dyn trait_objects::Shape, scale: i32) -> i32 {
 fn trait_objects::through_bound(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     ensures result == 3 + scale;
+} by {
+    step_until(statement(1).call(0).entry);
+    let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Square_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
+    have packed.size == 3 by known();
+    step_until(function.exit);
 }
 
 fn trait_objects::through_dyn(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     ensures result == 4 + scale;
+} by {
+    step_until(statement(1).call(0).entry);
+    let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Circle_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
+    have packed.size == 4 by known();
+    step_until(function.exit);
 }
 
 // A mutable reference to a bound type parameter, or a `&mut dyn Shape`,
@@ -104,6 +114,11 @@ fn trait_objects::reset_dyn_square(half: i32) -> i32 {
 fn trait_objects::default_square(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 50;
     ensures result == 3 + scale + scale;
+} by {
+    step_until(statement(1).call(0).entry);
+    let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Square_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
+    have packed.size == 3 by known();
+    step_until(function.exit);
 }
 
 // A shared object lends the struct's memory for the call, so the caller keeps
@@ -111,9 +126,19 @@ fn trait_objects::default_square(scale: i32) -> i32 {
 fn trait_objects::tag_after_dyn(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     ensures result == 7;
+} by {
+    step_until(statement(1).call(0).entry);
+    let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Tagged_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
+    have packed.size == 3 by known();
+    step_until(function.exit);
 }
 
 fn trait_objects::tag_after_bound(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 100;
     ensures result == 7;
+} by {
+    step_until(statement(1).call(0).entry);
+    let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Tagged_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
+    have packed.size == 3 by known();
+    step_until(function.exit);
 }
