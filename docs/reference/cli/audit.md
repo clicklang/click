@@ -165,8 +165,9 @@ replay did not visit fails the audit.
 
 A cursor, site cap, or changed-source selection can select part of a claim.
 Audit rewrites the selected sites together and checks that the emitted regions
-contain only simple tactics. The rewritten unit then passes retained and cold
-verification with unselected automation still available.
+contain only simple tactics. An emitted `close()` must check its goal directly
+during cold verification. The rewritten unit also passes retained verification.
+Unselected automation is available in both checks.
 
 Each phase has a deterministic work budget. Replay uses the usual per-tactic
 budgets and the input-sized work allowances of the checked operations that

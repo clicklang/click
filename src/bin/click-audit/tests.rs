@@ -958,6 +958,71 @@ fn cpp_mdtest_audit_inventories_imported_semantics() {
 }
 
 #[test]
+fn partial_audit_checks_emitted_closers_and_leaves_other_search_available() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("partial.md");
+    let mdtest = r#"```c filename=identity.c
+int32 identity(int32 x) { return x; }
+```
+
+```click
+verifying "identity.c";
+int32 identity(int32 x) {
+    requires x == 0;
+    ensures result == 0;
+} by {
+    have 0 == x by { close(); }
+    step_until(function.exit);
+}
+```
+
+```expect
+pass
+```
+"#;
+    fs::write(&path, mdtest).unwrap();
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "identity.contract".to_string(),
+        "--max-sites".to_string(),
+        "1".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
+
+    let path = directory.path().join("implication.click");
+    let source = "theorem identity(x: int32) { ensures x == 0 implies x == 0 by close(); }";
+    fs::write(&path, source).unwrap();
+    let original = load_audit_source(&path).unwrap();
+    let start = source.find("close").unwrap();
+    let artifact = click::surface::SelectedTacticExpansion {
+        source: source.to_string(),
+        replacement_spans: std::iter::once(start..start + "close();".len()).collect(),
+    };
+    let replay = || {
+        cold_verify_expansion(
+            source,
+            &original,
+            "identity.ensures_0",
+            AuditLimits::default().verification,
+            false,
+        )
+    };
+    assert!(replay().is_ok());
+    let error = artifact
+        .with_checked_closers(replay)
+        .unwrap()
+        .err()
+        .expect("a generated closer may not search for a proof");
+    assert!(error.contains("cold replay:"), "{error}");
+    assert!(
+        replay().is_ok(),
+        "the next replay restores ordinary closing"
+    );
+}
+
+#[test]
 fn complete_replay_allows_direct_close_and_refuses_its_search_fallback() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("implication.click");

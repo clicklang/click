@@ -2464,55 +2464,6 @@ fn audit_selected_claim_rewrite(
         .map_err(|error| error.report())
     })
     .map_err(|error| audit_phase_error("expansion", error))?;
-    let ((), fixed_point) = run_phase(
-        "selected fixed point",
-        limits.expansion.within(deadline)?,
-        || {
-            let remaining =
-                smart_sites_for_source(&artifact.source, &source.inputs, source.project.as_ref())?;
-            let positions = remaining
-                .into_iter()
-                .map(|site| ((site.position.line, site.position.column), site.tactic_name))
-                .collect::<BTreeMap<_, _>>();
-            let (mut line, mut column, mut region) = (1, 1, 0);
-            for (offset, character) in artifact.source.char_indices() {
-                while artifact
-                    .replacement_spans
-                    .get(region)
-                    .is_some_and(|span| span.end <= offset)
-                {
-                    region += 1;
-                }
-                if artifact
-                    .replacement_spans
-                    .get(region)
-                    .is_some_and(|span| span.contains(&offset))
-                    && let Some(tactic) = positions.get(&(line, column))
-                {
-                    return Err(format!(
-                        "selected expansion introduced smart tactic `{tactic}`; its rewrite is not a fixed point"
-                    ));
-                }
-                if character == '\n' {
-                    line += 1;
-                    column = 1;
-                } else {
-                    column += 1;
-                }
-            }
-            Ok(())
-        },
-    )
-    .map_err(|error| audit_phase_error("expansion fixed point", error))?;
-    let expanded_click = artifact.source;
-    let expanded = if let Some(mdtest) = &source.mdtest {
-        mdtest.replace_click_source(&source.container_source, &expanded_click)?
-    } else {
-        expanded_click.clone()
-    };
-    if expanded == source.container_source {
-        return Err("expansion returned the original sidecar unchanged".into());
-    }
     let original_cost = cold_verify(
         &source.container_source,
         source,
@@ -2520,18 +2471,81 @@ fn audit_selected_claim_rewrite(
         limits.verification.within(deadline)?,
         "original proof-unit verification",
     );
-    // Unselected automation keeps running, including the implicit closer.
-    let cold_limit = limits.verification.within(deadline)?;
-    let replay = cold_verify_expansion(&expanded, source, &first.claim, cold_limit, false)?;
-    let size = verbose.then(|| {
-        proof_speed(
-            source,
-            &expanded_click,
-            &first.claim,
-            replay.claim_elapsed,
-            cold_limit,
-        )
-    });
+    let (expanded, fixed_point, replay, size) = artifact
+        .with_checked_closers(|| {
+            let ((), fixed_point) = run_phase(
+                "selected fixed point",
+                limits.expansion.within(deadline)?,
+                || {
+                    let remaining = smart_sites_for_source(
+                        &artifact.source,
+                        &source.inputs,
+                        source.project.as_ref(),
+                    )?;
+                    let positions = remaining
+                        .into_iter()
+                        .map(|site| ((site.position.line, site.position.column), site.tactic_name))
+                        .collect::<BTreeMap<_, _>>();
+                    let (mut line, mut column, mut region) = (1, 1, 0);
+                    for (offset, character) in artifact.source.char_indices() {
+                        while artifact
+                            .replacement_spans
+                            .get(region)
+                            .is_some_and(|span| span.end <= offset)
+                        {
+                            region += 1;
+                        }
+                        if artifact
+                            .replacement_spans
+                            .get(region)
+                            .is_some_and(|span| span.contains(&offset))
+                            && let Some(tactic) = positions.get(&(line, column))
+                        {
+                            return Err(format!(
+                                "selected expansion introduced smart tactic `{tactic}`; \
+                         its rewrite is not a fixed point"
+                            ));
+                        }
+                        if character == '\n' {
+                            line += 1;
+                            column = 1;
+                        } else {
+                            column += 1;
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|error| audit_phase_error("expansion fixed point", error))?;
+            let expanded_click = &artifact.source;
+            let expanded = if let Some(mdtest) = &source.mdtest {
+                mdtest.replace_click_source(&source.container_source, expanded_click)?
+            } else {
+                expanded_click.clone()
+            };
+            if expanded == source.container_source
+                && artifact
+                    .replacement_spans
+                    .iter()
+                    .all(std::ops::Range::is_empty)
+            {
+                return Err("expansion did not emit a selected proof region".into());
+            }
+            // Unselected automation keeps running, including the implicit closer.
+            let cold_limit = limits.verification.within(deadline)?;
+            let replay = cold_verify_expansion(&expanded, source, &first.claim, cold_limit, false)?;
+            let size = verbose.then(|| {
+                proof_speed(
+                    source,
+                    expanded_click,
+                    &first.claim,
+                    replay.claim_elapsed,
+                    cold_limit,
+                )
+            });
+            Ok::<_, String>((expanded, fixed_point, replay, size))
+        })
+        .map_err(|error| audit_phase_error("expanded source", error.report()))??;
     let retained = verify_rewrite_in_session(worker, &first.claim, &expanded, limits, deadline)
         .map_err(|error| audit_phase_error("retained replay", error))?;
     let mut report = claim_audit_report(

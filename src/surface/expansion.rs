@@ -3500,6 +3500,13 @@ pub struct SelectedTacticExpansion {
 }
 
 impl SelectedTacticExpansion {
+    /// Audit the emitted bare closers as direct checks. Unselected proof text
+    /// still parses as written, and the ordinary syntax of `close() using`
+    /// still denotes search.
+    pub fn with_checked_closers<R>(&self, operation: impl FnOnce() -> R) -> Result<R, ClickError> {
+        parser::with_checked_expansion_closers(&self.source, &self.replacement_spans, operation)
+    }
+
     fn whole_rewrite(original: &str, source: String) -> Self {
         let prefix = original
             .chars()
