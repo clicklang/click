@@ -6704,21 +6704,31 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let indexed_operand_against_binding = || {
             [(left, right), (right, left)]
                 .into_iter()
-                .find_map(|(read, bound)| {
-                    (matches!(read, ContractExpression::Index(..))
-                        && matches!(
-                            bound,
-                            ContractExpression::Binding(_)
-                                | ContractExpression::ProgramBinding(_)
-                                | ContractExpression::ProgramExpression(
-                                    ProgramExpression::Variable(_)
-                                )
-                                | ContractExpression::QualifiedC {
-                                    lowered: ProgramExpression::Variable(_),
-                                    ..
-                                }
-                        ))
-                    .then_some(read)
+                .find_map(|(expression, bound)| {
+                    if !matches!(
+                        bound,
+                        ContractExpression::Binding(_)
+                            | ContractExpression::ProgramBinding(_)
+                            | ContractExpression::ProgramExpression(ProgramExpression::Variable(_))
+                            | ContractExpression::QualifiedC {
+                                lowered: ProgramExpression::Variable(_),
+                                ..
+                            }
+                    ) {
+                        return None;
+                    }
+                    match expression {
+                        ContractExpression::Index(..) => Some(expression),
+                        ContractExpression::BitwiseAnd(left, right)
+                            if matches!(
+                                operand_against_literal(left, right),
+                                Some(ContractExpression::Index(..))
+                            ) =>
+                        {
+                            Some(expression)
+                        }
+                        _ => None,
+                    }
                 })
         };
         let Some(expression) =
