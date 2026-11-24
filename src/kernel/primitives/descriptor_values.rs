@@ -499,9 +499,28 @@ impl std::fmt::Debug for StoredConditionTerm {
         self.native_compat().fmt(f)
     }
 }
+impl StoredConditionTerm {
+    fn connective_roots<'a>(&'a self, other: &'a Self) -> Option<(&'a KernelTerm, &'a KernelTerm)> {
+        let connective = |root: &KernelTerm| {
+            matches!(
+                root.node(),
+                KernelTermNode::BoolIf { .. } | KernelTermNode::BoolEqual { .. }
+            )
+        };
+        let left = self.root().filter(|root| connective(root))?;
+        let right = other.root().filter(|root| connective(root))?;
+        Some((left, right))
+    }
+}
 impl PartialEq for StoredConditionTerm {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
+        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
+            return true;
+        }
+        if let Some((left, right)) = self.connective_roots(other) {
+            return left.condition_storage_key() == right.condition_storage_key();
+        }
+        self.native_compat() == other.native_compat()
     }
 }
 impl Eq for StoredConditionTerm {}
@@ -512,19 +531,15 @@ impl PartialOrd for StoredConditionTerm {
 }
 impl Ord for StoredConditionTerm {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use crate::kernel::execution_value::storage_keys::ConditionStorageKey;
-        match (self.root(), other.root()) {
-            (Some(left), Some(right)) if left == right => std::cmp::Ordering::Equal,
-            (Some(left), Some(right)) => left
-                .condition_storage_key()
-                .cmp(&right.condition_storage_key()),
-            (Some(left), None) => left
-                .condition_storage_key()
-                .cmp(&ConditionStorageKey::native(other.native_compat())),
-            (None, Some(right)) => ConditionStorageKey::native(self.native_compat())
-                .cmp(&right.condition_storage_key()),
-            (None, None) => self.native_compat().cmp(other.native_compat()),
+        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
+            return std::cmp::Ordering::Equal;
         }
+        if let Some((left, right)) = self.connective_roots(other) {
+            return left
+                .condition_storage_key()
+                .cmp(&right.condition_storage_key());
+        }
+        self.native_compat().cmp(other.native_compat())
     }
 }
 impl std::hash::Hash for StoredConditionTerm {
@@ -736,8 +751,8 @@ mod protocol_value_tests {
             .map(|root| StoredConditionTerm::from_root(root.clone()).unwrap());
         assert_ne!(left, right);
         assert_eq!(left.cmp(&right), values[0].cmp(&values[1]));
-        assert_eq!(left, StoredConditionTerm::from(values[0].clone()));
         assert!(roots.iter().all(|root| !root.has_cached_native_argument()));
+        assert_eq!(left, StoredConditionTerm::from(values[0].clone()));
     }
 
     #[test]
