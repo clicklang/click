@@ -2692,8 +2692,9 @@ An element type outside that list matches no entry, so its calls are refused
 by name. Element accessors (`front`, `back`, `operator[]`) return native
 element references. A caller can bind one and use it for reads or, for a
 mutable reference, writes. A caller can also read it as a direct scalar
-initializer or return value. A read of the returned reference inside a larger
-expression, such as `return s[0] == 67;`, is currently unsupported.
+initializer or return value, or read it inside an expression such as
+`return s[0] == 67;` using the read-only observer contract. A read on the
+right of `&&` runs only when the left operand is true.
 A defaulted argument is imported as the constant Clang evaluates for it, so
 `subspan(1)` passes `std::dynamic_extent` as its count and verifies as the
 subview to the end.
