@@ -613,6 +613,22 @@ pub(crate) fn known_bridge_leaf(
     {
         return true;
     }
+    if super::super::arithmetic_special::float_zero_product_premise(goal)
+        .is_some_and(|premise| holds(&premise, available))
+        || super::super::arithmetic_special::signed_or_excludes_minus_one(goal).is_some_and(
+            |premises| {
+                premises.iter().any(|premise| {
+                    premise
+                        .condition_native()
+                        .is_some_and(|(condition, truth)| {
+                            comparison_holds(condition.clone(), *truth, available)
+                        })
+                })
+            },
+        )
+    {
+        return true;
+    }
     match goal {
         Proposition::ConditionIs(_, true) if exact_float_bound(goal, available) => true,
         Proposition::ConditionIs(condition, true) if narrow_machine_arm(condition, available) => {

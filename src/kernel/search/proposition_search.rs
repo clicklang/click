@@ -457,17 +457,30 @@ impl super::ProofSearch<PureFactContext> {
                     *slot = Some((endpoint, premise.clone()));
                 }
             }
-            let mut endpoints = [0; 4];
-            for (index, source) in best[..count].iter().enumerate() {
-                endpoints[index] = source.as_ref()?.0;
+            for length in [2, 4] {
+                if length > count {
+                    break;
+                }
+                let mut endpoints = [0; 4];
+                if !best[..length].iter().enumerate().all(|(index, source)| {
+                    source.as_ref().is_some_and(|(endpoint, _)| {
+                        endpoints[index] = *endpoint;
+                        true
+                    })
+                }) {
+                    continue;
+                }
+                if pair.established_by(&endpoints[..length]) {
+                    return Some(
+                        best[..length]
+                            .iter()
+                            .flatten()
+                            .map(|(_, premise)| premise.clone())
+                            .collect(),
+                    );
+                }
             }
-            pair.established_by(endpoints).then(|| {
-                best[..count]
-                    .iter()
-                    .flatten()
-                    .map(|(_, premise)| premise.clone())
-                    .collect()
-            })
+            None
         })
     }
 

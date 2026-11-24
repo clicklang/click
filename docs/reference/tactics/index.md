@@ -1778,8 +1778,10 @@ not search for an interval or derive missing bounds.
 
 For a valid literal shift count, a left-shift observation equals multiplication
 by its power of two when the exact result is in range; signed shifts also
-require a nonnegative source. A bitwise-and with a nonnegative literal mask
-is between zero and the mask, and is at most a nonnegative source. For
+require a nonnegative source. A signed OR with a nonnegative literal and
+a stated nonnegative second operand excludes `-1`. A bitwise-and with a
+nonnegative literal mask is between zero and the mask, and is at most a
+nonnegative source. For
 unsigned words, this range also supports comparisons of compound expressions.
 For example, `known()` can prove `((y & 7u32) + 1u32) as uint32 != 0u32`
 because the addition's range is `[1, 8]` and fits the word.
@@ -1971,10 +1973,13 @@ rounds the endpoints at the operation's width.
 A positive finite literal divided by an operand with a positive finite
 lower endpoint has lower bound zero and an upper bound obtained by dividing
 by that endpoint. The operand may be positive infinity.
-For a product or quotient with two positive finite operand ranges, cite the
-lower and upper endpoints of both ranges. The rule checks the appropriate
-corner at the operation's width. A product's lower bound can instead cite
-just the two strictly positive lower endpoints.
+For a product or quotient with two finite operand ranges, cite the lower
+and upper endpoints of both ranges. The rule checks the four corners at
+the operation's width. A quotient's divisor range must exclude zero.
+A product's lower bound can instead cite two strictly positive lower
+endpoints. Multiplication by a literal signed zero can cite a finite
+operand or its two finite bounds. `known()` accepts the exact
+`isfinite` premise for the zero product.
 
 
 For two negative signed operands, `x < 0`, `y < 0`, and
