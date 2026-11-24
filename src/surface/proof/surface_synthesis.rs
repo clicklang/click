@@ -717,9 +717,28 @@ fn recorded_point_of_load(
         return None;
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        use crate::surface::proof::raise_lower_audit::note_reason;
         let slot = slot.borrow();
-        let (selector, state) = slot.as_ref()?.point_reading_load(memory, pointer)?;
-        let load = scalar_read_in_state(read, state)?;
+        let Some((selector, state)) = slot.as_ref()?.point_reading_load(memory, pointer) else {
+            note_reason(|| {
+                format!(
+                    "snapshot read: its memory matches no recorded point (read site: {})",
+                    if memory.read_site().is_some() {
+                        "yes"
+                    } else {
+                        "no"
+                    }
+                )
+            });
+            return None;
+        };
+        let Some(load) = scalar_read_in_state(read, state) else {
+            note_reason(|| {
+                "snapshot read: the recorded point with its memory names the cell differently"
+                    .to_string()
+            });
+            return None;
+        };
         Some((selector.clone(), state.clone(), load))
     })
 }
@@ -5823,12 +5842,27 @@ fn synthesize_spelled_point_read(
         return Some((ContractExpression::Old(Box::new(expression)), ty));
     }
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        use crate::surface::proof::raise_lower_audit::note_reason;
         let points = slot.borrow();
         let points = points.as_ref()?;
-        let selector = points.point_name(version.read_version_id()?)?;
-        let recorded = points.get_exact(selector)?;
-        selects_version(recorded).then_some(())?;
-        let (expression, ty) = expression(recorded)?;
+        let Some(selector) = points.point_name(version.read_version_id()?) else {
+            note_reason(|| "point read: its version point has no name".to_string());
+            return None;
+        };
+        let Some(recorded) = points.get_exact(selector) else {
+            note_reason(|| "point read: its named point has no recorded state".to_string());
+            return None;
+        };
+        if !selects_version(recorded) {
+            note_reason(|| {
+                "point read: the recorded state at its point selects another version".to_string()
+            });
+            return None;
+        }
+        let Some((expression, ty)) = expression(recorded) else {
+            note_reason(|| "point read: no place spells its cell at its point".to_string());
+            return None;
+        };
         Some((
             ContractExpression::At {
                 selector: selector.clone(),
@@ -8393,11 +8427,30 @@ fn synthesize_pointer_equality_operand(
             return Some(ContractExpression::Old(Box::new(at_state(&entry)?)));
         }
         return SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            use crate::surface::proof::raise_lower_audit::note_reason;
             let slot = slot.borrow();
-            let (selector, recorded) = slot.as_ref()?.point_reading_memory(&source)?;
+            let Some((selector, recorded)) = slot.as_ref()?.point_reading_memory(&source) else {
+                let site = address_read
+                    .as_ref()
+                    .is_some_and(|read| read.point.read_site().is_some());
+                note_reason(|| {
+                    format!(
+                        "snapshot pointer load: its memory matches no recorded point (read site: {})",
+                        if site { "yes" } else { "no" }
+                    )
+                });
+                return None;
+            };
+            let Some(expression) = at_state(recorded) else {
+                note_reason(|| {
+                    "snapshot pointer load: no place spells its cell at its recorded point"
+                        .to_string()
+                });
+                return None;
+            };
             Some(ContractExpression::At {
                 selector: selector.clone(),
-                expression: Box::new(at_state(recorded)?),
+                expression: Box::new(expression),
             })
         });
     }
@@ -8493,6 +8546,57 @@ fn synthesize_byte_offset(
 }
 
 fn synthesize_surface_pointer_expression(
+    pointer: &Address,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ContractExpression> {
+    let raised = synthesize_surface_pointer_expression_routes(
+        pointer,
+        parameter_binding,
+        state,
+        bound_variables,
+    );
+    if raised.is_none()
+        && let Some(read) = pointer.as_loaded_value()
+    {
+        // Audit only: say what kind of loaded pointer no route spelled.
+        crate::surface::proof::raise_lower_audit::note_reason(|| {
+            SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                let slot = slot.borrow();
+                let points = slot.as_ref();
+                if let Some(id) = read.point.read_version_id() {
+                    let named = points.is_some_and(|points| points.point_name(id).is_some());
+                    return format!(
+                        "pointer load at a point: {}",
+                        if named {
+                            "its point is named, no route spelled it"
+                        } else {
+                            "its version point has no name"
+                        }
+                    );
+                }
+                let recorded = points.is_some_and(|points| {
+                    points
+                        .point_reading_load(&read.point, &read.defining_address)
+                        .is_some()
+                });
+                format!(
+                    "pointer load at a snapshot: memory matches {} recorded point (read site: {})",
+                    if recorded { "a" } else { "no" },
+                    if read.point.read_site().is_some() {
+                        "yes"
+                    } else {
+                        "no"
+                    }
+                )
+            })
+        });
+    }
+    raised
+}
+
+fn synthesize_surface_pointer_expression_routes(
     pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
