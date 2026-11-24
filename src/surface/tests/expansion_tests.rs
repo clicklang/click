@@ -7004,7 +7004,7 @@ fn cpp_local_record_call_requirement_expands_and_replays() {
 }
 
 #[test]
-fn cpp_allocation_rewrites_verify_with_legacy_normalization() {
+fn cpp_allocation_rewrites_expand_and_replay() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/cpp_generic_class_state_in_a_resource.md");
     let fixture = crate::cli::read_mdtest(&path).unwrap();
@@ -7023,9 +7023,23 @@ fn cpp_allocation_rewrites_verify_with_legacy_normalization() {
     );
     crate::surface::verify_project_functions(&project, &program, [function.to_owned()])
         .unwrap_or_else(|error| panic!("{}", error.report()));
-    assert_compatibility_normalization_refusal(
-        expand_claim_by_label(None, source, &program, &claim, None).unwrap_err(),
+    let expanded = expand_claim_by_label(None, source, &program, &claim, None)
+        .unwrap_or_else(|error| panic!("{}", error.report()))
+        .source;
+    assert_eq!(
+        expanded.matches("normalize()").count(),
+        source.matches("normalize()").count()
     );
+    assert!(
+        expanded.contains("rewrite(this->head, region(1).allocation)"),
+        "{expanded}"
+    );
+    let project = project.with_entry_source(&expanded);
+    check_audit_claim(&claim, true, || {
+        crate::surface::verify_project_functions(&project, &program, [function.to_owned()])
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]

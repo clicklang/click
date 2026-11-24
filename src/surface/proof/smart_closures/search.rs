@@ -10782,6 +10782,44 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let goal = goal.clone();
         let attempted_closures = std::cell::RefCell::new(BTreeSet::new());
+        // An alignment mask is not a pointer comparison. Select rewrites
+        // from the exact aliases of its pointer operand, and cite the
+        // allocation by the region that produced it. After the rewrite the
+        // ordinary alignment check reads the intrinsic heap alignment.
+        if let Some((condition, _)) = goal.condition_native()
+            && let Some((pointer, _)) =
+                crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
+            && let Some(view) = proof.premise_fixed_state_view()
+        {
+            for alias in proof
+                .facts()
+                .assumptions()
+                .exact_pointer_aliases(pointer)
+                .take(MAX_SOLVE_SOURCE_PREMISES)
+            {
+                if crate::instrumentation::deadline_exceeded_with_work(1) {
+                    return Continue(());
+                }
+                if view
+                    .fixed_state
+                    .recorded_states
+                    .allocation_result(alias)
+                    .is_none()
+                {
+                    continue;
+                }
+                let equality = Proposition::condition_is(
+                    ConditionTerm::AddressEqual(Box::new(pointer.clone()), Box::new(alias.clone())),
+                    true,
+                );
+                if let Some(surface) = Self::available_rewrite_equality(proof, &equality)
+                    && let Ok(rewritten) = proof.driver().apply_step(ProofStep::Rewrite(surface))
+                    && let Ok(closed) = rewritten.driver().apply_step(ProofStep::Known)
+                {
+                    return Break(Some(closed));
+                }
+            }
+        }
         // Pointer equalities between scaled offsets are candidates too:
         // `rewrite` carries one through the address of a load, so a
         // goal over `p->q->x` reaches `r->x` under `p->q == r`.
