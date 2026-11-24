@@ -803,7 +803,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_so
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_widened_unsigned_sum_using	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_widened_unsigned_sum_using	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_signed_interval_using	1
-src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::rewrite_conditional_arms_using	driver	2
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::rewrite_conditional_arms_using	driver	4
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	rewrite_conditional_arms_using	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_conditional_bound_using	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bound_using	known_bridge_using	1
