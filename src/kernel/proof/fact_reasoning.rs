@@ -9,7 +9,7 @@ pub(in crate::kernel) use computation::{
 pub(crate) use computation::{computes_leaf, trivial_condition_value};
 pub(in crate::kernel) use known_bridges::known_uint32_from_defined_bytes;
 pub(crate) use known_bridges::{
-    is_quotient_remainder_order, known_bridge_leaf, pointer_projection_source,
+    is_quotient_remainder_order, known_bridge_leaf, known_shifted_one, pointer_projection_source,
 };
 
 use crate::kernel::CompareRelation;

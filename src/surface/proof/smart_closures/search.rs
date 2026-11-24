@@ -4288,12 +4288,34 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(guard) = signed_quotient_bridge_requirement(goal) {
             candidates.push(vec![guard]);
         }
-        for signed in [false, true] {
-            if let Some(bounds) = shifted_one_bounds(goal, signed)
-                && let Some((proof, _)) =
-                    Self::establish_arithmetic_bounds(search_input, &bounds, introduced_surfaces)?
-                && let Some(closed) =
-                    attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        'counts: for signed in [false, true] {
+            let Some(bounds) = shifted_one_bounds(goal, signed) else {
+                continue;
+            };
+            let Some((mut proof, _)) =
+                Self::establish_arithmetic_bounds(search_input, &bounds, introduced_surfaces)?
+            else {
+                continue;
+            };
+            for bound in &bounds {
+                if proof.facts().contains(bound) {
+                    continue;
+                }
+                // Publish this exact count reading even if the execution
+                // checker could already prove it through a different fact.
+                let Some(surface) = proof.structural_proposition_candidate(bound) else {
+                    continue 'counts;
+                };
+                let Some(materialized) = attempt::candidate_outcome(proof.driver().apply_step(
+                    super::super::wide_arithmetic::have(surface, vec![ProofStep::Known]),
+                ))?
+                else {
+                    continue 'counts;
+                };
+                proof = materialized;
+            }
+            if let Some(closed) =
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
             {
                 return Ok(Some(closed));
             }

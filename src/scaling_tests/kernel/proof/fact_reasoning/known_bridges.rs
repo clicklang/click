@@ -181,13 +181,15 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
                 premises.extend([bound(&count, width), bound(&other, width)]);
                 let present = PureFactStore::from_ordered(&premises);
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    for goal in [&mask_goal, &shift_goal, &nonzero_goal] {
+                    for goal in [&mask_goal, &shift_goal] {
                         assert!(known_bridge_leaf(goal, &|p| present.pure_known_available(p)));
                         assert!(!known_bridge_leaf(goal, &|p| missing.pure_known_available(p)));
                     }
                     assert!(
                         !known_bridge_leaf(&different_count, &|p| present.pure_known_available(p))
                     );
+                    assert!(known_shifted_one(&nonzero_goal, &|p| present.contains(p)));
+                    assert!(!known_shifted_one(&nonzero_goal, &|p| missing.contains(p)));
                 });
                 let baseline = *expected_work.get_or_insert(work);
                 // Indexed lookups can visit a different number of nodes as

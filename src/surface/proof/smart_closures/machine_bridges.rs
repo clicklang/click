@@ -15,12 +15,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let readings =
             crate::kernel::machine_integer::comparison::integer_readings_with_promotions(goal);
-        let check = |available: &dyn Fn(&Proposition) -> bool| {
-            crate::kernel::proof::fact_reasoning::known_bridge_leaf(goal, &available)
-                || readings.iter().any(|reading| {
-                    crate::kernel::proof::fact_reasoning::known_bridge_leaf(reading, &available)
-                })
-        };
         let mut selected = Vec::with_capacity(premises.len());
         for premise in premises {
             let kernel =
@@ -35,7 +29,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // `known()`. Keep restricted search tied to the selected facts.
         let mirrored =
             crate::kernel::mirrored_equality(goal).is_some_and(|premise| facts.contains(&premise));
-        Ok(mirrored || check(&|p| facts.pure_known_available(p)))
+        use crate::kernel::proof::fact_reasoning::{known_bridge_leaf, known_shifted_one};
+        let check = |goal| {
+            known_shifted_one(goal, &|bound| facts.contains(bound))
+                || known_bridge_leaf(goal, &|p| facts.pure_known_available(p))
+        };
+        Ok(mirrored || check(goal) || readings.iter().any(check))
     }
 }
 

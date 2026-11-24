@@ -863,7 +863,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_max_sh
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_max_shift_bound	establish_arithmetic_bounds	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	establish_arithmetic_bounds	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_signed_max_shift_bound	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	driver	10
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	driver	11
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	resolve_solve_premises_unmeasured	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	select_arithmetic_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_normalize_after_arithmetic_bounds	2
