@@ -54,7 +54,7 @@ impl StoredMachineTerm {
         Some(Self(value.into()))
     }
     pub(crate) fn as_const(&self) -> Option<u32> {
-        self.native_compat().as_const()
+        self.operand_view().word32_constant()
     }
     pub(crate) fn map_native(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
         Self::new(

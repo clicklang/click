@@ -279,3 +279,30 @@ fn mixed_integer_descriptor_identity_survives_handle_drop_without_exports() {
         "{measured:?}"
     );
 }
+
+#[test]
+fn stored_machine_quantity_reads_the_cached_word_without_export() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let mut root = KernelTermImport::default().machine(format, &MachineTerm::constant(1));
+    let mut symbolic =
+        KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998990));
+    for depth in 1..=16 {
+        let double = |child: KernelTerm| {
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [child.clone(), child])
+        };
+        root = double(root);
+        symbolic = double(symbolic);
+        if depth % 4 == 0 {
+            for (operand, expected) in [(&root, Some(1 << depth)), (&symbolic, None)] {
+                let stored = StoredMachineTerm::from_value(ExecutionValue::Shared(operand.clone()))
+                    .expect("stored machine quantity");
+                let (constant, work) =
+                    crate::instrumentation::measure_deterministic_work(|| stored.as_const());
+                assert_eq!(constant, expected);
+                assert!(!operand.has_cached_native_argument());
+                assert!(work <= 2, "depth={depth}, work={work}");
+            }
+        }
+    }
+}

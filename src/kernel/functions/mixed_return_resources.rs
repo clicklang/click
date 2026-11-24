@@ -1036,7 +1036,7 @@ fn take_returned_footprint(
     fact: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<ConsumedCellReturn> {
-    if fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(1) {
+    if fact.owned_quantity() != Some(1) {
         return None;
     }
     // Custody concerns bytes. Keep the returned carrier metadata on the

@@ -675,8 +675,7 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     insert_resource_index_entry(&result.iterated_by_block, second.clone(), entry);
             }
-            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
-            {
+            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1)) {
                 result.owned_iterated_by_clause = insert_resource_index_entry(
                     &result.owned_iterated_by_clause,
                     iterated.without_holes(),
@@ -1115,8 +1114,7 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     remove_resource_index_entry(&result.iterated_by_block, second, entry);
             }
-            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
-            {
+            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1)) {
                 result.owned_iterated_by_clause = remove_resource_index_entry(
                     &result.owned_iterated_by_clause,
                     &iterated.without_holes(),
@@ -1808,7 +1806,7 @@ impl ResourceContext {
             .iter()
             .filter_map(|entry| match self.fact(*entry) {
                 ResourceFact::Own(Resource::Instance(instance), quantity)
-                    if quantity.native_compat().as_const() == Some(1) =>
+                    if quantity.as_const() == Some(1) =>
                 {
                     Some(instance)
                 }
@@ -1851,7 +1849,7 @@ impl ResourceContext {
         else {
             return None;
         };
-        (quantity.native_compat().as_const() == Some(1)).then_some(instance)
+        (quantity.as_const() == Some(1)).then_some(instance)
     }
 
     /// A structural/unpublished context. Use `new_with_equalities` for a
@@ -4244,10 +4242,7 @@ impl ResourceContext {
                 _ => false,
             };
         }
-        required
-            .owned_quantity_term()
-            .and_then(MachineTerm::as_const)
-            == Some(1)
+        required.owned_quantity() == Some(1)
             && (self
                 .exact_owned_fragment_cover(required, assumptions)
                 .is_some()
@@ -4264,7 +4259,7 @@ impl ResourceContext {
         required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<()> {
-        if required.owned_quantity_term()?.as_const()? != 1 {
+        if required.owned_quantity()? != 1 {
             return None;
         }
         let range = required.memory_own_range()?;
@@ -4352,7 +4347,7 @@ impl ResourceContext {
     ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
         let range = required.memory_own_range()?;
         let layout = range.symbolic_object()?;
-        if range.has_holes() || required.owned_quantity_term()?.as_const()? != 1 {
+        if range.has_holes() || required.owned_quantity()? != 1 {
             return None;
         }
         let base = range.base().clone();
@@ -4415,7 +4410,7 @@ impl ResourceContext {
         mut origins: Option<&mut MemorySplitOrigins>,
         establish_requested_carrier: bool,
     ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
-        if required.owned_quantity_term()?.as_const()? != 1 {
+        if required.owned_quantity()? != 1 {
             return None;
         }
         if required
@@ -7610,7 +7605,7 @@ impl ResourceContext {
             // Decide unit ownership by constructing its consumption
             // on a persistent branch. The caller retains every occurrence;
             // indexed selection stops at a gap instead of normalizing candidates.
-            if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1) {
+            if fact.owned_quantity() == Some(1) {
                 return self
                     .clone()
                     .consume_unit_owned_memory(fact, assumptions, None, true)
@@ -8307,7 +8302,7 @@ impl ResourceContext {
                 .is_some();
             return supported.then_some(self);
         }
-        if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1) {
+        if fact.owned_quantity() == Some(1) {
             return self.consume_unit_owned_memory(fact, assumptions, origins, false);
         }
         let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
@@ -8445,7 +8440,7 @@ impl ResourceContext {
                 return None;
             }
             let available = self.fact(next);
-            if available.owned_quantity_term().and_then(|q| q.as_const()) != Some(1) {
+            if available.owned_quantity() != Some(1) {
                 return None;
             }
             let piece = candidates.supplier_at_base(next, range.base())?;
@@ -8865,12 +8860,7 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         candidates: &[ResourceEntryId],
     ) -> bool {
-        if fact.memory_range().is_some()
-            || fact
-                .owned_quantity_term()
-                .and_then(MachineTerm::as_const)
-                .is_none()
-        {
+        if fact.memory_range().is_some() || fact.owned_quantity().is_none() {
             return false;
         }
         let algebra = resource_family_algebra(fact.family());
@@ -8885,7 +8875,7 @@ impl ResourceContext {
         for &entry in candidates {
             crate::instrumentation::record_deterministic_work(1);
             let unit = self.fact(entry);
-            let Some(quantity) = unit.owned_quantity_term().and_then(MachineTerm::as_const) else {
+            let Some(quantity) = unit.owned_quantity() else {
                 continue;
             };
             if !seen.insert(entry)
@@ -9051,9 +9041,7 @@ impl ResourceContext {
                 let owned = support.memory_own_range()?;
                 let occurrence = self.occurrence(*entry);
                 (owned == range
-                    && support
-                        .owned_quantity_term()
-                        .is_some_and(|q| q.as_const() == Some(1))
+                    && support.owned_quantity() == Some(1)
                     && self.borrow_dependency(occurrence).is_none())
                 .then_some(*entry)
             })
@@ -9097,9 +9085,7 @@ impl ResourceContext {
                 if !self.delta_normalization_eligible(entry) {
                     break;
                 }
-                if fact.has_valid_exclusive_access()
-                    && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
-                {
+                if fact.has_valid_exclusive_access() && fact.owned_quantity() == Some(0) {
                     self.remove_entry(entry);
                     break;
                 }
@@ -9249,8 +9235,7 @@ impl ResourceContext {
         // the ordinary cleanup path below.
         if self.storage.facts.len() <= 1
             && !self.storage.facts.iter().next().is_some_and(|(_, fact)| {
-                fact.has_valid_exclusive_access()
-                    && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+                fact.has_valid_exclusive_access() && fact.owned_quantity() == Some(0)
             })
         {
             self.synchronize_memory_equalities(assumptions);
@@ -9288,11 +9273,7 @@ impl ResourceContext {
             .facts
             .iter()
             .filter_map(|(entry, fact)| {
-                if fact.has_valid_exclusive_access()
-                    && fact
-                        .owned_quantity_term()
-                        .is_some_and(|quantity| quantity.as_const() == Some(0))
-                {
+                if fact.has_valid_exclusive_access() && fact.owned_quantity() == Some(0) {
                     changed_facts.insert(fact.clone());
                     None
                 } else {
@@ -10188,7 +10169,7 @@ pub(crate) fn coalesce_written_resource_descriptions(
             // An empty owned range has no footprint to publish, including
             // when a field supplies an endpoint proved equal to the other.
             if fact.has_valid_exclusive_access()
-                && (fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+                && (fact.owned_quantity() == Some(0)
                     || fact
                         .memory_own_range()
                         .is_some_and(|range| memory_range_is_proven_empty(range, assumptions)))
@@ -13996,7 +13977,7 @@ impl ResourceFact {
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
                 | Resource::Publication(_)
-        ) || matches!(self, Self::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
+        ) || matches!(self, Self::Own(_, quantity) if quantity.as_const() == Some(1))
     }
 
     pub const ALLOCATION_RESOURCE_NAME: &'static str = "allocation";
@@ -14354,7 +14335,7 @@ impl ResourceFact {
 
     pub fn owned_quantity(&self) -> Option<u32> {
         match self {
-            Self::Own(_, quantity) => quantity.native_compat().as_const(),
+            Self::Own(_, quantity) => quantity.as_const(),
             Self::View(_) => None,
         }
     }

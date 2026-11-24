@@ -9634,10 +9634,7 @@ impl ExecutionState {
             return Err("population import requires authority".into());
         };
         if !description.schema().is_fieldless() {
-            if authority
-                .owned_quantity_term()
-                .and_then(MachineTerm::as_const)
-                != Some(1)
+            if authority.owned_quantity() != Some(1)
                 || !self.resources.contains_exact_representation(authority)
             {
                 return Err("Requires one declared owned authority for named members".into());
@@ -9667,17 +9664,13 @@ impl ExecutionState {
             self.import_opaque_population_quantity(authority, held)
         } else if held.len() > 1
             && let Some(total) = held.iter().try_fold(0u32, |total, fact| {
-                fact.owned_quantity_term()
-                    .and_then(MachineTerm::as_const)
+                fact.owned_quantity()
                     .and_then(|quantity| total.checked_add(quantity))
             })
         {
             // Separate contract clauses, such as a retained `owns` member
             // beside a `consumes` batch, are one custody of their summed units.
-            if authority
-                .owned_quantity_term()
-                .and_then(MachineTerm::as_const)
-                != Some(1)
+            if authority.owned_quantity() != Some(1)
                 || !self.resources.contains_exact_representation(authority)
             {
                 return Err(
@@ -10093,7 +10086,7 @@ impl ExecutionState {
                 .resources
                 .exact_resource_facts(member.resource())
                 .into_iter()
-                .filter_map(|fact| fact.owned_quantity_term().and_then(MachineTerm::as_const))
+                .filter_map(|fact| fact.owned_quantity())
                 .sum::<u32>();
             let events = events
                 .import_acquired_control_population(description, owned, acquired_from)

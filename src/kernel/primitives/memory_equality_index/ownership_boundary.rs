@@ -48,7 +48,7 @@ impl ResourceContext {
                 return Clear;
             }
         }
-        if fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0) {
+        if fact.owned_quantity() == Some(0) {
             return Clear;
         }
         // A compiler-private scalar slot has no address any pointer value
