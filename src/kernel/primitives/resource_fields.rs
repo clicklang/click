@@ -492,9 +492,9 @@ mod tests {
         for a in &values {
             let native: NativeResourceArguments = vec![a.clone()].into();
             let fields = ResourceFieldValues::from(native.clone());
-            let minted = ResourceFieldValues::from_minted(vec![a.clone()]);
-            assert_eq!(fields, minted);
-            assert_eq!(hash(&fields), hash(&minted));
+            let written = ResourceFieldValues::from_stored([StoredResourceField::Input(a.clone())]);
+            assert_eq!(fields, written);
+            assert_eq!(hash(&fields), hash(&written));
             assert_eq!(format!("{fields:?}"), format!("{native:?}"));
             assert_eq!(fields.get(0).unwrap().into_native(), *a);
             for b in &values {
@@ -504,6 +504,13 @@ mod tests {
                 assert_eq!(fields.cmp(&stored), native.cmp(&other));
             }
         }
+        let value = AlgebraicValue::Program(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+            10993305,
+        ))));
+        let fields = ResourceFieldValues::from(vec![value.clone()]);
+        let minted = ResourceFieldValues::from_minted(vec![value]);
+        assert_eq!(fields, minted);
+        assert_eq!(hash(&fields), hash(&minted));
     }
 
     #[test]
@@ -668,8 +675,9 @@ mod tests {
         ];
         let native: NativeResourceArguments = values.clone().into();
         let retained = ResourceFieldValues::from_minted(values);
-        assert_eq!(retained, ResourceFieldValues::from(native.clone()));
-        assert_eq!(hash(&retained), hash(&native));
+        let written = ResourceFieldValues::from(native.clone());
+        assert_eq!(retained, written);
+        assert_eq!(hash(&retained), hash(&written));
         assert_eq!(format!("{retained:?}"), format!("{native:?}"));
     }
 

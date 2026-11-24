@@ -99,6 +99,7 @@ pub(crate) use contracts::{
 mod integer;
 pub(crate) use integer::clear_machine_observation_memo;
 mod kernel_term;
+pub(in crate::kernel) use kernel_term::wrap_exact_machine_value;
 pub(crate) use kernel_term::{
     BooleanOperandView, FloatOperandView, KernelConstructor, KernelFold, KernelFoldIndex,
     KernelMatch, KernelTermExport, KernelTermImport,

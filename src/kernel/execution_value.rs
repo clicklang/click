@@ -445,8 +445,29 @@ impl PartialEq for StoredMemoryValue {
 impl Eq for StoredMemoryValue {}
 impl std::hash::Hash for StoredMemoryValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Native scalar cells can be visited for the first time while a
+        // memory view is hashed. Keep their existing one-word identity.
+        if let ExecutionValue::Native(value @ (crate::kernel::integer_c_value!(word))) =
+            self.value()
+            && matches!(
+                word,
+                MachineTerm::Constant { .. }
+                    | MachineTerm::Variable(_)
+                    | MachineTerm::MemoryLoad(..)
+                    | MachineTerm::ThreadHandle(_)
+            )
+        {
+            return std::hash::Hash::hash(value, state);
+        }
         match self.identity() {
             ProgramStorageKey::Native(value) => std::hash::Hash::hash(value, state),
+            ProgramStorageKey::Scalar(ty, key)
+                if let Some(format) = MachineIntegerType::from_program_type(*ty)
+                    && let Some(word) = key.native_atom() =>
+            {
+                let value = crate::kernel::wrap_exact_machine_value(format, word.clone());
+                std::hash::Hash::hash(&value, state);
+            }
             key => std::hash::Hash::hash(&key, state),
         }
     }
@@ -508,6 +529,11 @@ enum StoredKey {
 
 impl StoredKey {
     fn for_value(value: &ExecutionValue) -> Self {
+        if let Some(root) = value.algebraic() {
+            return Self::Native(ProgramStorageKey::Algebraic(
+                storage_keys::algebraic_for_root(&root),
+            ));
+        }
         let Some((format, view)) = value.machine() else {
             return Self::Native(ProgramStorageKey::for_value(value));
         };

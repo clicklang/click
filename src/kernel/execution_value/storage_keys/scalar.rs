@@ -92,6 +92,13 @@ impl ArgumentKey {
     }
 }
 impl ScalarStorageKey {
+    pub(in crate::kernel) fn native_atom(&self) -> Option<&MachineTerm> {
+        match &self.0.shape {
+            ScalarShape::Atom(word) => Some(word),
+            _ => None,
+        }
+    }
+
     fn new(shape: ScalarShape) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         let mut hash = std::collections::hash_map::DefaultHasher::new();
