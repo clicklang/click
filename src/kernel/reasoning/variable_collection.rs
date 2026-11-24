@@ -956,13 +956,11 @@ fn load_carrier(
     pointer: &crate::kernel::Address,
     algebraic_type: &crate::kernel::AlgebraicType,
 ) -> AlgebraicValue {
-    AlgebraicValue::Program(ProgramValue::UInt64(
-        AlgebraicTermNode::memory_load_carrier(
-            &crate::kernel::ProgramPoint::at(memory),
-            pointer,
-            algebraic_type,
-        ),
-    ))
+    AlgebraicTermNode::memory_load_carrier_value(
+        &crate::kernel::ProgramPoint::at(memory),
+        pointer,
+        algebraic_type,
+    )
 }
 
 fn collect_algebraic_term_bitvector_variables(

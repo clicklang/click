@@ -409,7 +409,8 @@ The implicit tail runs the `return` and closes the claim. The proof verifies:
 An explicitly requested `--trace-proof` keeps its typed diagnostic notation:
 readable Click expressions are used there only when they preserve the checked
 operands, and otherwise a memory operand prints as
-`read<Bits64>(state#1, pointer=value#1)`, in an added fact just as in a goal.
+`read<Bits64>(state#1, pointer=value#1)`, in an added fact just as in a goal;
+a read of a value of algebraic type names its type, `read<T>(..)`.
 The width, memory label, and address remain visible even when the source wrote only
 `parent->__rb_parent_color`.
 

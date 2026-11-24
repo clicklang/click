@@ -3220,13 +3220,18 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     collector.extend_into(&mut variables);
     let reads = collector.take_read_terms().collect::<Vec<_>>();
     // A read of a library or enum value is the value its state stores
-    // at that address, as a scalar read is: one cell lookup, no walk.
+    // at that address, as a scalar read is: one cell lookup, no walk. A
+    // value of a type Click knows only by name is not one of these.
     let algebraic_reads = reads
         .iter()
         .filter_map(|read| {
-            let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64) = read else {
+            let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Algebraic(read_type)) = read
+            else {
                 return None;
             };
+            if read_type.has_abstract_size() {
+                return None;
+            }
             let ProgramValue::Parameter(stored) = memory.shared_memory().known_value(pointer)?
             else {
                 return None;
@@ -3980,10 +3985,10 @@ pub(crate) fn load_term_access_width(
 /// value of abstract type's whole object, else the widest access recorded
 /// at the address, never narrower than the read.
 pub(crate) fn load_access_extent(pointer: &Address, kind: LoadKind) -> crate::kernel::AccessExtent {
-    match kind {
-        LoadKind::Abstract(_) => kind.extent(),
-        _ => crate::kernel::AccessExtent::Bytes(
-            load_access_width_at_address_or_widest(pointer).max(kind.byte_width()),
+    match kind.extent() {
+        object @ crate::kernel::AccessExtent::Object(_) => object,
+        crate::kernel::AccessExtent::Bytes(bytes) => crate::kernel::AccessExtent::Bytes(
+            load_access_width_at_address_or_widest(pointer).max(bytes),
         ),
     }
 }
@@ -5995,7 +6000,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
                 LoadKind::UInt8 => MachineIntegerType::UInt8,
                 LoadKind::Int16 => MachineIntegerType::Int16,
                 LoadKind::UInt16 => MachineIntegerType::UInt16,
-                LoadKind::Bits64 | LoadKind::Abstract(_) | LoadKind::Float64 => {
+                LoadKind::Bits64 | LoadKind::Algebraic(_) | LoadKind::Float64 => {
                     MachineIntegerType::Int64
                 }
                 LoadKind::Int128 => MachineIntegerType::Int128,

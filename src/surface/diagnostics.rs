@@ -3568,7 +3568,10 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
         LoadKind::UInt16 => "an unsigned two-byte integer",
         LoadKind::Int32 | LoadKind::UInt32 => "a four-byte word",
         LoadKind::Bits64 => "an eight-byte word",
-        LoadKind::Abstract(_) => "a value of an abstract type",
+        LoadKind::Algebraic(parameter) if parameter.has_abstract_size() => {
+            "a value of an abstract type"
+        }
+        LoadKind::Algebraic(_) => "a value of an algebraic type",
         LoadKind::Int128 => "a signed sixteen-byte integer",
         LoadKind::UInt128 => "an unsigned sixteen-byte integer",
         LoadKind::Float32 => "a `float32`",

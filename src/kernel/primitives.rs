@@ -777,6 +777,10 @@ impl Sort {
 /// is also how a materialized pointer field's cells hold it. The access is
 /// still eight bytes wide; framing takes the width recorded at the address,
 /// which a pointer read records, and never less than the kind's own.
+///
+/// A value of an algebraic type held in memory is read at its own type,
+/// [`Self::Algebraic`]: the decoding of the cell's bytes at that type
+/// (`design/loads.md`, step 3b PR 2), never an integer read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum LoadKind {
     Int8,
@@ -786,10 +790,14 @@ pub enum LoadKind {
     Int32,
     UInt32,
     Bits64,
-    /// A read of a whole value of an abstract type `T`, the stand-in an
-    /// algebraic read of a `T` takes in memory reasoning: it reaches
-    /// `sizeof(T)` bytes ([`Self::extent`]), not a word's.
-    Abstract(TypeParameterName),
+    /// A read of a whole value of algebraic type `T`, the stand-in an
+    /// algebraic read of a `T` ([`AlgebraicTermNode::MemoryLoad`]) takes in
+    /// memory reasoning: the cell's bytes decoded at `T`. It reaches the
+    /// model's width for a type Click lays out itself (an enum, a library
+    /// instance), and `sizeof(T)` bytes for one it knows only by name
+    /// ([`Self::extent`]). Two stand-ins of one cell at two types are two
+    /// decodings of one load, and neither is an integer read of the cell.
+    Algebraic(TypeParameterName),
     /// Wide loads retain signedness because their constant payloads are typed.
     Int128,
     UInt128,
@@ -918,17 +926,18 @@ impl LoadKind {
             Self::Int32 | Self::UInt32 | Self::Float32 => 4,
             Self::Bits64 | Self::Float64 => 8,
             Self::Int128 | Self::UInt128 => 16,
-            // A cell holding a value of abstract type keeps the model width;
+            // A cell holding a value of algebraic type keeps the model width;
             // the bytes the read reaches are its extent.
-            Self::Abstract(_) => ABSTRACT_VALUE_WIDTH,
+            Self::Algebraic(_) => ABSTRACT_VALUE_WIDTH,
         }
     }
 
     /// The bytes a read of this kind reaches: its width, or the whole
-    /// object of an abstract type.
+    /// object of an abstract type, `sizeof(T)`.
     pub(crate) fn extent(self) -> crate::kernel::AccessExtent {
         match self {
-            Self::Abstract(parameter) => {
+            // `AccessExtent::of_algebraic` of the read's type.
+            Self::Algebraic(parameter) => {
                 crate::kernel::AccessExtent::of_type(ProgramType::Parameter(parameter))
             }
             other => crate::kernel::AccessExtent::Bytes(other.byte_width()),
@@ -936,12 +945,17 @@ impl LoadKind {
     }
 
     /// The kind of the stand-in load an algebraic read of `algebraic_type`
-    /// takes: [`Self::Abstract`] for a type Click knows nothing of but its
-    /// name, else the model's 64-bit word.
+    /// takes: the decoding at that type, [`Self::Algebraic`].
     pub(crate) fn of_algebraic(algebraic_type: &AlgebraicType) -> Self {
-        match crate::kernel::AccessExtent::of_algebraic(algebraic_type) {
-            crate::kernel::AccessExtent::Object(parameter) => Self::Abstract(parameter),
-            crate::kernel::AccessExtent::Bytes(_) => Self::Bits64,
+        Self::Algebraic(TypeParameterName::of(algebraic_type))
+    }
+
+    /// The algebraic type a read of this kind decodes at, for the stand-in
+    /// of an algebraic read; `None` for a C scalar read.
+    pub(crate) fn algebraic_type(self) -> Option<TypeParameterName> {
+        match self {
+            Self::Algebraic(parameter) => Some(parameter),
+            _ => None,
         }
     }
 }
@@ -5291,9 +5305,12 @@ pub enum AlgebraicTermNode {
 }
 
 impl AlgebraicTermNode {
-    /// The scalar load term at the same memory and address as a
-    /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
-    /// address as it reaches a scalar load's.
+    /// The load term at the same memory and address as a
+    /// [`AlgebraicTermNode::MemoryLoad`], decoded at its algebraic type
+    /// ([`LoadKind::Algebraic`]): a walker reaches its memory and address as
+    /// it reaches a scalar load's, and a load-atom comparison compares it as
+    /// it compares one. It is no integer read of the cell: it equals no C
+    /// scalar read, and no fact about one names it.
     pub(crate) fn memory_load_carrier(
         point: &ProgramPoint,
         pointer: &Address,
@@ -5307,14 +5324,15 @@ impl AlgebraicTermNode {
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
-    /// [`Self::memory_load_carrier`] left: a scalar load at a memory and an
-    /// address. `None` when the rewrite replaced the load.
+    /// [`Self::memory_load_carrier_value`] left: a load at a memory and an
+    /// address, still decoded at an algebraic type. `None` when the rewrite
+    /// replaced the load.
     pub(crate) fn memory_load_from_carrier(carrier: &ProgramValue) -> Option<Self> {
         match carrier {
             ProgramValue::UInt64(MachineTerm::MemoryLoad(
                 point,
                 pointer,
-                LoadKind::Bits64 | LoadKind::Abstract(_),
+                LoadKind::Algebraic(_),
             )) => Some(Self::MemoryLoad {
                 point: point.point().clone(),
                 pointer: pointer.boxed(),
@@ -5368,7 +5386,13 @@ impl AlgebraicTermNode {
         }))
     }
 
-    /// [`Self::memory_load_carrier`] as an algebraic field value.
+    /// [`Self::memory_load_carrier`] as an algebraic field value, for the
+    /// value-level walkers (substitution, rewriting, variable collection),
+    /// which reach a 64-bit term through a `ProgramValue`. The `UInt64` tag
+    /// only routes such a walker to its machine-term arm, which reads no
+    /// format from it; the term inside is the decoding at the algebraic
+    /// type. The walkers count work per level, so passing the term to them
+    /// bare would change their work accounting.
     pub(crate) fn memory_load_carrier_value(
         point: &ProgramPoint,
         pointer: &Address,
@@ -17382,6 +17406,24 @@ struct TypeParameterNames {
     // Rigid names of library instances, `Vec<uint32>`: opaque values of a
     // fixed width, not of a size Click does not know.
     library_instances: std::collections::BTreeSet<String>,
+    // Every other type, by name: the few interned types of one name are the
+    // only candidates a lookup compares, so finding a type does not scan
+    // every type the process has interned.
+    structural: std::collections::BTreeMap<String, Vec<TypeParameterName>>,
+}
+
+impl TypeParameterNames {
+    /// The interned type equal to `algebraic_type`, which is not rigid.
+    fn structural(&self, algebraic_type: &AlgebraicType) -> Option<TypeParameterName> {
+        self.structural
+            .get(&algebraic_type.name)?
+            .iter()
+            .copied()
+            .find(|known| {
+                crate::instrumentation::record_deterministic_work(1);
+                *self.types[known.0 as usize] == *algebraic_type
+            })
+    }
 }
 
 static TYPE_PARAMETER_NAMES: std::sync::Mutex<TypeParameterNames> =
@@ -17389,6 +17431,7 @@ static TYPE_PARAMETER_NAMES: std::sync::Mutex<TypeParameterNames> =
         types: Vec::new(),
         rigid: std::collections::BTreeMap::new(),
         library_instances: std::collections::BTreeSet::new(),
+        structural: std::collections::BTreeMap::new(),
     });
 
 impl TypeParameterName {
@@ -17408,11 +17451,8 @@ impl TypeParameterName {
             if let Some(known) = names.rigid.get(&algebraic_type.name) {
                 return *known;
             }
-        } else if let Some(index) = names.types.iter().position(|known| {
-            crate::instrumentation::record_deterministic_work(1);
-            *known == algebraic_type
-        }) {
-            return Self(index as u32);
+        } else if let Some(known) = names.structural(algebraic_type) {
+            return known;
         }
         let id = Self(names.types.len() as u32);
         names
@@ -17420,6 +17460,12 @@ impl TypeParameterName {
             .push(Box::leak(Box::new(algebraic_type.clone())));
         if rigid {
             names.rigid.insert(algebraic_type.name.clone(), id);
+        } else {
+            names
+                .structural
+                .entry(algebraic_type.name.clone())
+                .or_default()
+                .push(id);
         }
         id
     }
@@ -17499,10 +17545,7 @@ impl TypeParameterName {
             crate::instrumentation::record_deterministic_work(1);
             names.rigid.contains_key(&algebraic_type.name)
         } else {
-            names.types.iter().any(|known| {
-                crate::instrumentation::record_deterministic_work(1);
-                *known == algebraic_type
-            })
+            names.structural(algebraic_type).is_some()
         }
     }
 
