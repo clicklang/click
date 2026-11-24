@@ -11052,13 +11052,21 @@ impl Parser {
             ResourceClause::Named { binding, resource } => {
                 // A child keeps its parent's clause as a placeholder until
                 // its actual resource arguments are known.
-                let (root, _) = binding.name.split_once('.').unwrap_or((&binding.name, ""));
-                let family = self
-                    .names
-                    .resource_bindings
-                    .get(root)
-                    .and_then(|(_, family)| self.resource_path_family(family, &binding.children))
-                    .map(str::to_owned);
+                let family = if binding.unnamed {
+                    match resource.as_ref() {
+                        ResourceClause::Declared { name, .. } => Some(name.clone()),
+                        _ => None,
+                    }
+                } else {
+                    let (root, _) = binding.name.split_once('.').unwrap_or((&binding.name, ""));
+                    self.names
+                        .resource_bindings
+                        .get(root)
+                        .and_then(|(_, family)| {
+                            self.resource_path_family(family, &binding.children)
+                        })
+                        .map(str::to_owned)
+                };
                 let declared_witnesses = family
                     .as_ref()
                     .and_then(|family| self.declared_resource_witnesses.get(family));
