@@ -2031,6 +2031,49 @@ fn short_circuit_boolean_returns_expand_distinct_outcome_proofs() {
 }
 
 #[test]
+fn short_circuit_return_expands_after_an_early_return() {
+    let sources = [(
+        "header.c",
+        r#"
+        bool has_header(int size, unsigned char first, unsigned char second) {
+            if (size < 2)
+                return false;
+            return first == 67 && second == 75;
+        }
+        "#,
+    )];
+    let source = r#"verifying "header.c";
+        bool has_header(int32 size, uint8 first, uint8 second) {
+            ensures result implies 2 <= size;
+            ensures result implies (first as int32) == 67;
+            ensures result implies (second as int32) == 75;
+            ensures 2 <= size implies (first as int32) == 67 implies
+                (second as int32) == 75 implies result;
+        } by {
+            branch {
+                true => {
+                    step_until(function.exit);
+                    have 2 <= size implies (first as int32) == 67 implies
+                        (second as int32) == 75 implies result by {
+                        intro();
+                        contradiction(size < 2);
+                    }
+                    solve();
+                }
+                false => {}
+            }
+            step_until(function.exit);
+            solve();
+        }"#;
+    let claim = "has_header.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim).unwrap();
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original branching alias proofs and expansion take one second"]
 fn alias_load_outcome_requirements_keep_recorded_value_names_in_expansion() {

@@ -499,6 +499,7 @@ fn synthesize_post_execution_paths(
     closers: &[Vec<ProofTactic>],
     choices: &[Vec<SurfacePathChoice>],
     boolean_returns: &[Option<bool>],
+    terminal_choices: &[Result<Vec<SurfacePathChoice>, String>],
 ) -> Result<Vec<ProofStep>, String> {
     let paths = tactics
         .iter()
@@ -520,7 +521,7 @@ fn synthesize_post_execution_paths(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    synthesize_surface_alternatives_with_returns(paths, boolean_returns)
+    synthesize_surface_alternatives_with_returns(paths, boolean_returns, terminal_choices)
 }
 
 fn checked_boolean_return(outcome: &FunctionOutcome) -> Option<bool> {
@@ -550,6 +551,7 @@ fn append_post_execution_paths_by_surface_leaf(
     tactics: &[Vec<ProofTactic>],
     closers: &[Vec<ProofTactic>],
     choices: &[Vec<SurfacePathChoice>],
+    terminal_choices: &[Result<Vec<SurfacePathChoice>, String>],
     mut branch_path: impl FnMut(usize) -> Option<Vec<bool>>,
     boolean_return: impl Fn(usize) -> Option<bool>,
 ) -> Result<(), String> {
@@ -568,12 +570,18 @@ fn append_post_execution_paths_by_surface_leaf(
             .map(|&index| boolean_return(index))
             .collect::<Vec<_>>();
         let choices = select(choices, &members);
+        let terminal_choices = if terminal_choices.is_empty() {
+            Vec::new()
+        } else {
+            select(terminal_choices, &members)
+        };
         let keep_scopes = outcome_paths_bind_obtain(&choices);
         let suffix = synthesize_post_execution_paths(
             &select(tactics, &members),
             &select(closers, &members),
             &choices,
             &returns,
+            &terminal_choices,
         )?;
         append_surface_steps_at_step_branch_path(steps, &branch_path, suffix, keep_scopes)?;
     }
@@ -3726,7 +3734,7 @@ pub(super) fn finish_ordered_proof<'a>(
         .core
         .validate_execution_evidence_shapes()
         .map_err(|message| ClickError::new(format!("{proof_label}: {message}")))?;
-    let mut retained_surface = {
+    let retained_surface = {
         let record = &proof_execution.presentation.surface_record;
         let mut retained = ProofCertificateBuilder {
             path_choices: record.path_choices.clone(),
@@ -6142,21 +6150,32 @@ pub(super) fn finish_ordered_proof<'a>(
                 );
             }
         }
-        // A shared suffix needs no case selector. In particular, loading
-        // different cells can produce internal pointer-offset cases whose
-        // common proof is already expressible. Preserve an existing terminal
-        // selector too; raw statement cases must not replace its checked route.
-        if distinct_terminal_suffixes && surface_post_choices_by_path.iter().all(Vec::is_empty) {
-            for (choices, path_index) in surface_post_choices_by_path
-                .iter_mut()
-                .zip(&surface_post_path_indices)
-            {
-                match direct_view.terminal_statement_choices(*path_index) {
-                    Ok(terminal_choices) => *choices = terminal_choices,
-                    Err(message) => retained_surface.block(message),
-                }
-            }
-        }
+        // Statement cases and written post-execution cases can both be
+        // needed. Keep the statement choices available within each leaf of
+        // the written case tree. Identical suffixes need no extra split.
+        let terminal_choices = if distinct_terminal_suffixes {
+            surface_post_path_indices
+                .iter()
+                .map(|&index| direct_view.terminal_statement_choices(index))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let has_written_choices = surface_post_choices_by_path
+            .iter()
+            .any(|choices| !choices.is_empty());
+        // Let written cases use their existing routes first. If a leaf
+        // still needs a split, its outcomes can use their return values or
+        // their retained return-expression guards.
+        let unrouted_terminal_choices = if has_written_choices {
+            &[][..]
+        } else {
+            terminal_choices.as_slice()
+        };
+        let has_post_execution_choices = has_written_choices
+            || terminal_choices
+                .iter()
+                .any(|choices| !matches!(choices, Ok(choices) if choices.is_empty()));
         let completed_strategy = outcome_substrate.finish_contract_execution(contract_owner)?;
         let completed_execution = std::sync::Arc::clone(completed_strategy.execution());
         for theorem in &mut verified {
@@ -6197,6 +6216,7 @@ pub(super) fn finish_ordered_proof<'a>(
                 &surface_post_tactics_by_path,
                 closers,
                 &surface_post_choices_by_path,
+                &terminal_choices,
                 |index| {
                     direct_view.surface_step_branch_path(
                         surface_post_path_indices[index],
@@ -6216,6 +6236,7 @@ pub(super) fn finish_ordered_proof<'a>(
                 closers,
                 &surface_post_choices_by_path,
                 &[],
+                unrouted_terminal_choices,
             ) {
                 Ok(suffix) => {
                     append_surface_steps_in_order(steps, suffix);
@@ -6240,15 +6261,13 @@ pub(super) fn finish_ordered_proof<'a>(
                 {
                     expanded.block(message);
                 }
-            } else if surface_post_choices_by_path
-                .iter()
-                .any(|choices| !choices.is_empty())
-            {
+            } else if has_post_execution_choices {
                 match synthesize_post_execution_paths(
                     &surface_post_tactics_by_path,
                     &surface_grouped_closers_by_path,
                     &surface_post_choices_by_path,
                     &[],
+                    unrouted_terminal_choices,
                 ) {
                     Ok(suffix) => {
                         for step in suffix {
@@ -6319,20 +6338,25 @@ pub(super) fn finish_ordered_proof<'a>(
                         &mut expanded.steps,
                         &surface_closers_by_claim[claim_index],
                     )
-                } else if surface_post_choices_by_path
-                    .iter()
-                    .any(|choices| !choices.is_empty())
-                {
+                } else if has_post_execution_choices {
                     synthesize_post_execution_paths(
                         &surface_post_tactics_by_path,
                         &surface_closers_by_claim[claim_index],
                         &surface_post_choices_by_path,
                         &[],
+                        unrouted_terminal_choices,
                     )
                     .map(|suffix| {
                         for step in suffix {
                             append_surface_step_to_leaves(&mut expanded.steps, step);
                         }
+                    })
+                    .or_else(|message| {
+                        append_paths_by_leaf(
+                            &mut expanded.steps,
+                            &surface_closers_by_claim[claim_index],
+                        )
+                        .map_err(|_| message)
                     })
                 } else {
                     append_post_and_closers(
@@ -6677,7 +6701,8 @@ mod tests {
             ]
         });
         let closers = vec![vec![ProofTactic::Normalize]; 4];
-        let steps = synthesize_post_execution_paths(&tactics, &closers, &choices, &[]).unwrap();
+        let steps =
+            synthesize_post_execution_paths(&tactics, &closers, &choices, &[], &[]).unwrap();
         let [
             ProofStep::Step,
             ProofStep::If {
@@ -6701,7 +6726,9 @@ mod tests {
         );
         let mut mismatched = tactics;
         mismatched[1][0] = ProofTactic::Normalize;
-        assert!(synthesize_post_execution_paths(&mismatched, &closers, &choices, &[]).is_err());
+        assert!(
+            synthesize_post_execution_paths(&mismatched, &closers, &choices, &[], &[]).is_err()
+        );
     }
 
     #[test]
