@@ -2639,8 +2639,10 @@ Signed overflow is C undefined behavior. Signed division and remainder also
 have C undefined behavior for a zero divisor, and for `INT_MIN / -1` or
 `INT_MIN % -1`. Shift counts must be in `0..32` for 32-bit operands and
 `0..64` for 64-bit operands. Signed left shift is undefined for a negative
-left operand or an unrepresentable result in the selected signed width. Proofs
-involving signed arithmetic usually need requirements such as:
+left operand or an unrepresentable result in the selected signed width.
+Once the count and sign are valid, direct upper bounds on the left operand
+and count can establish that the shifted result fits. Proofs involving signed
+arithmetic usually need requirements such as:
 
 <!-- verified-example: mdtests/signed_arithmetic_requires_both_bounds.md -->
 ```click

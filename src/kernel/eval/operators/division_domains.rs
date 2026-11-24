@@ -47,42 +47,19 @@ fn or_cannot_be_minus_one(
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
 ) -> bool {
-    use MachineOperandView as View;
-    let Some((operation_format, MachineBinaryOp::BitwiseOr, [left, right])) =
-        View::Legacy(divisor).binary()
-    else {
-        return false;
-    };
-    if operation_format != format {
-        return false;
-    }
-    crate::instrumentation::record_deterministic_work(1);
-    let zero = if format == MachineIntegerType::Int64 {
-        MachineTerm::int64_constant(0)
-    } else {
-        MachineTerm::constant(0)
-    };
-    [(left, right), (right, left)]
-        .into_iter()
-        .any(|(operand, literal)| {
-            if !literal
-                .literal()
-                .and_then(|literal| format.constant_from_term(&literal))
-                .is_some_and(|literal| literal.to_i128().is_some_and(|value| value >= 0))
-            {
-                return false;
-            }
-            [
-                (CompareRelation::GreaterEqual, true),
-                (CompareRelation::LessThan, false),
-            ]
-            .into_iter()
-            .any(|(relation, expected)| {
-                let condition =
-                    condition_for_operand_views(format, relation, [operand, View::Legacy(&zero)]);
-                indexed_condition_value(assumptions, facts, &condition) == Some(expected)
-            })
+    crate::kernel::proof::arithmetic_special::signed_or_sign_premises(
+        format,
+        MachineOperandView::Legacy(divisor),
+    )
+    .is_some_and(|premises| {
+        premises.iter().any(|premise| {
+            premise
+                .condition_native()
+                .is_some_and(|(condition, truth)| {
+                    indexed_condition_value(assumptions, facts, condition) == Some(*truth)
+                })
         })
+    })
 }
 
 pub(super) fn apply_nonzero(

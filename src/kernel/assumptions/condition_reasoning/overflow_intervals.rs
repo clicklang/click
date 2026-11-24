@@ -62,6 +62,20 @@ impl PureFactContext {
         }
     }
 
+    pub(in crate::kernel) fn indexed_signed_wide_constant_interval_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<(i64, i64)> {
+        self.checked_order_bounds.signed_wide_interval_view(term)
+    }
+
+    pub(in crate::kernel) fn indexed_unsigned_wide_upper_bound_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<u64> {
+        self.checked_order_bounds.unsigned_wide_upper_view(term)
+    }
+
     pub(in crate::kernel) fn decide_from_overflow_facts(
         &self,
         condition: &ConditionTerm,

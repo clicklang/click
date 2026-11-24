@@ -356,14 +356,14 @@ fn float_quotient_range_checks_only_four_cited_endpoints() {
     let le = ComparisonOperator::LessEqual;
     let goal = bound(
         MachineTerm::float32_binary(x.clone(), y.clone(), FloatBinaryOperator::Divide),
-        2.0,
+        0.0,
         le,
     );
     let selected = [
         bound(x.clone(), 1.0, ge),
-        bound(y.clone(), 1.0, ge),
+        bound(y.clone(), -2.0, ge),
         bound(x.clone(), 2.0, le),
-        bound(y, 2.0, le),
+        bound(y, -1.0, le),
     ];
     for related in [false, true] {
         let samples = [4, 16, 64].map(|size| {

@@ -5069,7 +5069,7 @@ fn apply_program_int64_shift_left_nonnegative(
     assumptions: &PureFactContext,
     unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let fits = if literal_signed_shift_fits(
+    let fits = if signed_shift_fits_from_bounds(
         MachineIntegerType::Int64,
         &left,
         &right,
@@ -5391,7 +5391,7 @@ fn apply_program_int32_shift_left_nonnegative(
     assumptions: &PureFactContext,
     unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let fits = if literal_signed_shift_fits(
+    let fits = if signed_shift_fits_from_bounds(
         MachineIntegerType::Int32,
         &left,
         &right,
@@ -5413,10 +5413,10 @@ fn apply_program_int32_shift_left_nonnegative(
     })
 }
 
-/// This path has already checked the count's validity and the left operand's
-/// sign. For a positive literal, the number of shifts before the sign bit
-/// is reached gives an ordinary upper-bound query on the original count.
-fn literal_signed_shift_fits(
+/// The shift path has already checked the count and the left operand's sign.
+/// Use their own indexed upper bounds. After count validation, its low word
+/// or the source of an exact widening is the same nonnegative count.
+fn signed_shift_fits_from_bounds(
     format: MachineIntegerType,
     left: &MachineTerm,
     count: &MachineTerm,
@@ -5424,41 +5424,92 @@ fn literal_signed_shift_fits(
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
 ) -> bool {
-    let Some(value) = format
+    use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
+    use MachineOperandView as View;
+    let bits = format.format().bits();
+    let upper = format
         .constant_from_term(left)
         .and_then(|value| value.to_i128())
-    else {
+        .or_else(|| {
+            let left = View::Legacy(left);
+            let interval = if format == Int64 {
+                assumptions.indexed_signed_wide_constant_interval_view(left)
+            } else {
+                assumptions.indexed_constant_interval_view(left, false)
+            };
+            interval.map(|(_, upper)| i128::from(upper))
+        });
+    let Some(upper) = upper else {
         return false;
     };
-    if value <= 0 {
+    if upper == 0 {
+        return true;
+    }
+    if upper < 0 {
         return false;
     }
-    let bits = format.format().bits();
-    let limit = bits - (value as u128).ilog2() - 1;
-    let (count_format, endpoint) = match (format, unsigned_count) {
-        (MachineIntegerType::Int32, true) => {
-            (MachineIntegerType::UInt32, MachineTerm::constant(limit))
-        }
-        (MachineIntegerType::Int64, true) => (
-            MachineIntegerType::UInt64,
-            MachineTerm::uint64_constant(limit.into()),
-        ),
-        (MachineIntegerType::Int64, false) => (
-            MachineIntegerType::Int64,
-            MachineTerm::int64_constant(limit.into()),
-        ),
-        _ => (MachineIntegerType::Int32, MachineTerm::constant(limit)),
+    let limit = bits - (upper as u128).ilog2() - 1;
+    let count_format = match (format, unsigned_count) {
+        (Int32, true) => UInt32,
+        (Int64, true) => UInt64,
+        _ => format,
     };
+    let view = View::Legacy(count);
+    let fits = |format, count| bounded_shift_count(format, count, limit, assumptions, facts);
+    if fits(count_format, view) {
+        return true;
+    }
+    let Some((_, source, destination, operand)) = view.cast() else {
+        return false;
+    };
+    if destination.format().bits() != bits {
+        return false;
+    }
+    match (source.format().bits(), bits) {
+        (32, 64) => fits(source, operand),
+        (64, 32) if unsigned_count => fits(UInt64, operand),
+        (64, 32) => assumptions
+            .indexed_signed_wide_constant_interval_view(operand)
+            .is_some_and(|(lower, upper)| lower >= 0 && upper < i64::from(limit)),
+        _ => false,
+    }
+}
+
+fn bounded_shift_count(
+    format: MachineIntegerType,
+    count: MachineOperandView<'_>,
+    limit: u32,
+    assumptions: &PureFactContext,
+    facts: &ExecutionFacts,
+) -> bool {
+    use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
+    let endpoint = crate::kernel::machine_integer::range::constant_word(format, &limit.into())
+        .expect("shift count limit fits word");
     crate::instrumentation::record_deterministic_work(1);
     let condition = condition_for_operand_views(
-        count_format,
+        format,
         CompareRelation::LessThan,
-        [
-            MachineOperandView::Legacy(count),
-            MachineOperandView::Legacy(&endpoint),
-        ],
+        [count, MachineOperandView::Legacy(&endpoint)],
     );
-    indexed_condition_value(assumptions, facts, &condition) == Some(true)
+    if indexed_condition_value(assumptions, facts, &condition) == Some(true) {
+        return true;
+    }
+    let small = |upper| (0..i64::from(limit)).contains(&upper);
+    match format {
+        Int32 | UInt32 => {
+            assumptions
+                .indexed_constant_interval_view(count, format == UInt32)
+                .is_some_and(|(_, upper)| small(upper))
+                || i64::from(count.unsigned32_upper_bound()) < i64::from(limit)
+        }
+        Int64 => assumptions
+            .indexed_signed_wide_constant_interval_view(count)
+            .is_some_and(|(_, upper)| small(upper)),
+        UInt64 => assumptions
+            .indexed_unsigned_wide_upper_bound_view(count)
+            .is_some_and(|upper| upper < u64::from(limit)),
+        _ => false,
+    }
 }
 
 /// Decide a fixed comparison from its exact context or path index, without

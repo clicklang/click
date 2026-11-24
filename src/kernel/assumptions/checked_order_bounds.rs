@@ -20,13 +20,14 @@ struct EndpointBounds {
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedOrderBounds {
     signed_wide: PersistentMap<MachineAtom, EndpointBounds>,
+    unsigned_wide_upper: PersistentMap<MachineAtom, PersistentSet<(u64, ConditionTerm, bool)>>,
     endpoints: [PersistentMap<MachineAtom, EndpointBounds>; 2],
     strict_upper: PersistentMap<MachineAtom, PersistentSet<(ConditionTerm, bool)>>,
 }
 
 impl CheckedOrderBounds {
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
-        if self.adjust_signed_wide(condition, value) {
+        if self.adjust_wide(condition, value) {
             return;
         }
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
@@ -144,10 +145,13 @@ impl CheckedOrderBounds {
         }
     }
 
-    fn adjust_signed_wide(&mut self, condition: &ConditionTerm, value: bool) -> bool {
+    fn adjust_wide(&mut self, condition: &ConditionTerm, value: bool) -> bool {
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
         if let Some(view) = comparison_view(condition, value)
-            && view.format == MachineIntegerType::Int64
+            && matches!(
+                view.format,
+                MachineIntegerType::Int64 | MachineIntegerType::UInt64
+            )
         {
             let strict = match view.relation {
                 Relation::Less => true,
@@ -155,6 +159,25 @@ impl CheckedOrderBounds {
                 Relation::Equal | Relation::NotEqual => return true,
             };
             let [left, right] = &view.operands;
+            if view.format == MachineIntegerType::UInt64 {
+                if let Some(upper) = right.operand_view().uint64_constant()
+                    && let Some(upper) = upper.checked_sub(u64::from(strict))
+                {
+                    let key = MachineAtom::from_numeric_operand(
+                        MachineIntegerType::UInt64,
+                        left.operand_view(),
+                    );
+                    crate::instrumentation::record_deterministic_work(1);
+                    let sources = self
+                        .unsigned_wide_upper
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_default()
+                        .with_value((upper, condition.clone(), value));
+                    self.unsigned_wide_upper.insert(key, sources);
+                }
+                return true;
+            }
             for (endpoint, other, upper) in [(left, right, true), (right, left, false)] {
                 let Some(number) = other
                     .operand_view()
@@ -244,6 +267,19 @@ impl CheckedOrderBounds {
                 .map_or(i64::MIN, |bound| bound.0),
             bounds.upper.iter().next().map_or(i64::MAX, |bound| bound.0),
         ))
+    }
+
+    pub(super) fn unsigned_wide_upper_view(&self, term: MachineOperandView<'_>) -> Option<u64> {
+        if self.unsigned_wide_upper.is_empty() {
+            return None;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        let key = MachineAtom::from_numeric_operand(MachineIntegerType::UInt64, term);
+        self.unsigned_wide_upper
+            .get(&key)?
+            .iter()
+            .next()
+            .map(|bound| bound.0)
     }
 
     pub(super) fn interval(&self, term: &MachineTerm, unsigned: bool) -> Option<(i64, i64)> {
