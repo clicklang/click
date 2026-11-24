@@ -7056,6 +7056,36 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         while outcome && let ClickProposition::And(left, _) = comparison {
             comparison = left;
         }
+        fn is_integer_literal(expression: &ContractExpression) -> bool {
+            match expression {
+                ContractExpression::IntegerLiteral(_) => true,
+                ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                    MachineIntegerType::from_program_type(value.program_type())
+                        .is_some_and(|kind| kind.constant_from_value(value).is_some())
+                }
+                _ => false,
+            }
+        }
+        // Signed shift definedness can group two bounds of the same read.
+        // Choose the read from the upper bound and rewrite the whole goal.
+        if let ClickProposition::And(lower, upper) = comparison
+            && let ClickProposition::Not(lower) = lower.as_ref()
+            && let ClickProposition::Comparison {
+                left: lower_read,
+                operator: ComparisonOperator::LessThan,
+                right: lower_bound,
+            } = lower.as_ref()
+            && let ClickProposition::Comparison {
+                left: upper_read @ ContractExpression::Index(..),
+                operator: ComparisonOperator::LessEqual,
+                right: upper_bound,
+            } = upper.as_ref()
+            && lower_read == upper_read
+            && is_integer_literal(lower_bound)
+            && is_integer_literal(upper_bound)
+        {
+            comparison = upper;
+        }
         let ClickProposition::Comparison {
             left,
             operator,
@@ -7068,16 +7098,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let field_bound = *operator == ComparisonOperator::LessEqual;
-        fn is_integer_literal(expression: &ContractExpression) -> bool {
-            match expression {
-                ContractExpression::IntegerLiteral(_) => true,
-                ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-                    MachineIntegerType::from_program_type(value.program_type())
-                        .is_some_and(|kind| kind.constant_from_value(value).is_some())
-                }
-                _ => false,
-            }
-        }
         fn operand_against_literal<'e>(
             left: &'e ContractExpression,
             right: &'e ContractExpression,
