@@ -2252,7 +2252,7 @@ fn uint64_measure_induction_verifies_without_narrowing() {
     let expanded = expand_c_claim_source_by_label(&source, &[], claim).unwrap();
     assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(
-        expanded.contains("click::integer::le_antisymmetric"),
+        expanded.contains("integer::le_antisymmetric("),
         "{expanded}"
     );
     crate::surface::check_audit_claim(claim, true, || {
