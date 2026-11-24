@@ -817,16 +817,20 @@ pub(in crate::kernel) fn closed_algebraic_if_comparison(goal: &Proposition) -> O
     })
 }
 
-fn selected_closed_integer_arm(term: &SharedIntegerTerm) -> Option<&SharedIntegerTerm> {
-    let IntegerTerm::If {
-        condition,
-        then_term,
-        else_term,
-    } = term.as_ref()
+fn selected_closed_integer_arm(term: &KernelTerm) -> Option<&KernelTerm> {
+    let KernelTermNode::IntegerIf {
+        arguments: [guard, then_term, else_term],
+    } = term.node()
     else {
         return None;
     };
-    let truth = literal_value_if_guard(condition)?;
+    let truth = match guard.node() {
+        KernelTermNode::BoolLiteral(truth) => *truth,
+        _ if is_literal_value_if_guard_root(guard) => {
+            literal_value_if_guard(&KernelTermExport::condition(guard).ok()?)?
+        }
+        _ => return None,
+    };
     Some(if truth { then_term } else { else_term })
 }
 
@@ -834,12 +838,12 @@ pub(in crate::kernel) fn closed_integer_if_comparison(
     condition: &ConditionTerm,
 ) -> Option<ConditionTerm> {
     map_integer_comparison(condition, |term| {
-        let mut arm = selected_closed_integer_arm(term)?;
+        let mut arm = selected_closed_integer_arm(term.root())?;
         while let Some(selected) = selected_closed_integer_arm(arm) {
             crate::instrumentation::record_deterministic_work(1);
             arm = selected;
         }
-        Some(arm.clone())
+        Some(SharedIntegerTerm::from_root(arm.clone()))
     })
 }
 
@@ -1818,9 +1822,10 @@ fn integer_affine_difference(
                 }
             }
             IntegerTerm::If { .. } => {
-                if let Some(arm) = selected_closed_integer_arm(&term) {
+                if let Some(arm) = selected_closed_integer_arm(term.root()) {
+                    let arm = SharedIntegerTerm::from_root(arm.clone());
                     stack.push((arm.clone(), false));
-                    reduced_operands.insert(term.id(), arm.clone());
+                    reduced_operands.insert(term.id(), arm);
                 }
             }
             IntegerTerm::AlgebraicMatch { .. } => {
