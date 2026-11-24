@@ -39,7 +39,7 @@ fn partial_claim_audit_runs_once_after_a_fixed_prefix() {
         );
     }
     let markdown = directory.join("unit.md");
-    fs::write(&markdown, "# Partial selection in a container\n\n```c filename=unit.c\nint32 identity(int32 x) { return x; }\n```\n\n```click\nverifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by close();\nhave x + 0 == x by close();\nsolve();\n}\n```\n\n```expect\npass\n```\n").unwrap();
+    fs::write(&markdown, "# Partial selection in a container\n\n```c filename=unit.c\nint32 identity(int32 x) { return x; }\n```\n\n```click\nverifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by close();\nhave x + 0 == x by close();\nclose();\n}\n```\n\n```expect\npass\n```\n").unwrap();
     let sites = inventory_sites(std::slice::from_ref(&markdown)).unwrap();
     let arguments = parse_arguments([
         "--start-at".to_string(),

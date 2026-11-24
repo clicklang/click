@@ -36,7 +36,7 @@ fn product_identity_planning_ignores_unrelated_facts() {
     result.unwrap();
     let samples = work
         .iter()
-        .filter(|sample| sample.tactic.tactic_name == "solve")
+        .filter(|sample| sample.tactic.tactic_name == "close" && sample.tactic.class == "smart")
         .map(|sample| sample.work)
         .collect::<Vec<_>>();
     assert_eq!(samples.len(), sizes.len(), "{samples:?}");

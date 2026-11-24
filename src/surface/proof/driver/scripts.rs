@@ -672,7 +672,22 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .driver()
                         .apply_induction_application(hypothesis, arguments)?;
                 }
-                ProofTactic::Close => proof = proof.driver().apply_close()?,
+                ProofTactic::Close => {
+                    proof = proof.driver().apply_close().map_err(|error| {
+                        if error.proof_refusal()
+                            == Some(crate::surface::ProofRefusal::UnsuccessfulSearch)
+                            && tactics[..index].iter().any(|previous| {
+                                matches!(previous, ProofTactic::Witness(_) | ProofTactic::Choose(_))
+                            })
+                        {
+                            error.with_context(
+                                "checked `close` after witness/choose could not close the remaining witness obligations. Split conjunctions and discharge each definedness condition explicitly",
+                            )
+                        } else {
+                            error
+                        }
+                    })?;
+                }
                 ProofTactic::Solve => {
                     let mut search = attempt::search_scope("written solve");
                     let (selected, checks) = solve(&proof);

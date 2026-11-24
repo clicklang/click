@@ -622,7 +622,7 @@ fn parses_execute_until_proof_tactic() {
                     kind: ProgramPointKind::Entry
                 })),
                 ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
-                ProofTactic::Solve,
+                ProofTactic::Close,
             ]
             .as_slice()
         )
@@ -653,7 +653,7 @@ fn parses_unfold_proof_tactic() {
                         ContractExpression::IntegerLiteral("2".into())
                     ]
                 }),
-                ProofTactic::Solve,
+                ProofTactic::Close,
             ]
             .as_slice()
         )
@@ -679,7 +679,7 @@ fn parses_apply_theorem_proof_tactic() {
                     name: "nonnegative".to_string(),
                     arguments: vec![current_var("result")],
                 }),
-                ProofTactic::Solve,
+                ProofTactic::Close,
             ]
             .as_slice()
         )
@@ -899,8 +899,14 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
     );
     let parsed = parse(&source).expect("printed certificate should parse");
     assert_eq!(
-        parsed.function_blocks()[0].grouped_proof(),
-        Some(&SourceProof::Script(tactics))
+        crate::surface::printing::format_partial_tactic_sequence(
+            parsed.function_blocks()[0]
+                .grouped_proof()
+                .unwrap()
+                .tactics()
+                .unwrap()
+        ),
+        crate::surface::printing::format_partial_tactic_sequence(&tactics)
     );
 }
 
@@ -947,8 +953,14 @@ fn canonical_tactic_printer_round_trips_cases_certificate() {
     );
     let parsed = parse(&source).expect("printed cases certificate should parse");
     assert_eq!(
-        parsed.function_blocks()[0].grouped_proof(),
-        Some(&SourceProof::Script(tactics))
+        crate::surface::printing::format_partial_tactic_sequence(
+            parsed.function_blocks()[0]
+                .grouped_proof()
+                .unwrap()
+                .tactics()
+                .unwrap()
+        ),
+        crate::surface::printing::format_partial_tactic_sequence(&tactics)
     );
 }
 

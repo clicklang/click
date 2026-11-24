@@ -3429,10 +3429,20 @@ theorem pick_nonzero(r: int32) {
         (2, "have r < 0 by { close();"),
         (3, final_solve),
     ] {
-        let close = source.find(needle).unwrap() + needle.find("close();").unwrap();
+        let owner = source.find(needle).unwrap();
+        let close = owner + needle.find("close();").unwrap();
         let position = c_tactic_source_position(source, &[], "pick_nonzero.ensures_0", index)
             .unwrap_or_else(|error| panic!("site {index} has no source position: {error:?}"));
-        assert_eq!(position, position_at_offset(source, close), "site {index}");
+        assert_eq!(position, position_at_offset(source, owner), "site {index}");
+        let site = sites
+            .iter()
+            .find(|site| site.source_index == index)
+            .unwrap();
+        assert_eq!(
+            site.position,
+            position_at_offset(source, close),
+            "site {index}"
+        );
     }
     let after = position_at_offset(source, source.find(final_solve).unwrap());
     let expanded = expand_c_tactic_source_at(source, &[], after.line, after.column)

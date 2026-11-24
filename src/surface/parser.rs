@@ -19673,7 +19673,7 @@ mod tactic_classification_tests {
         ),
         (
             "all",
-            "all { x == 1 => { close(); } x <= 1 => { close(); } }",
+            "all { x == 1 => { normalize(); } x <= 1 => { normalize(); } }",
         ),
         (
             "branch",

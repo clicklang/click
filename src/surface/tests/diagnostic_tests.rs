@@ -3750,17 +3750,13 @@ fn failed_final_known_preserves_its_checked_trace_context() {
             &[("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")],
         )
         .expect_err("the false remaining claim must reject");
+        let failed_claim = "`f.ensures_1`";
         assert!(
-            error.message().contains("found no available fact"),
+            error.message().contains(failed_claim),
             "{}",
             error.message()
         );
-        assert!(
-            error
-                .concise_report_parts()
-                .0
-                .contains("found no available fact")
-        );
+        assert!(error.concise_report_parts().0.contains(failed_claim));
         let trace = error
             .trace_context_report()
             .expect("retain the failed focused goal's existing context");

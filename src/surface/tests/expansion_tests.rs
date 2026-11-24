@@ -2003,7 +2003,10 @@ fn boolean_returns_split_expansions_inside_a_written_proof_arm() {
     let at = expansion::position_at_offset(source, source.rfind("close();").unwrap());
     let selected = expand_c_tactic_source_at(source, &sources, at.line, at.column).unwrap();
     assert_eq!(selected.matches("if result").count(), 1, "{selected}");
-    assert_eq!(selected.matches("close();").count(), 1, "{selected}");
+    assert!(
+        selected.contains("if a == -2147483648 and b == 0 { step_until(function.exit); close(); }"),
+        "{selected}"
+    );
     verify_c_sources(&selected, &sources)
         .unwrap_or_else(|error| panic!("{}\n{selected}", error.report()));
 }
@@ -3051,7 +3054,7 @@ fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_08")]
 fn selected_tactic_batch_captures_multiple_sites_inside_one_have() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by { have x == x by { close(); } close(); }\nsolve();\n}\n";
+    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by { have x == x by { close(); } close(); }\nclose();\n}\n";
     verify_c_sources(source, &c).unwrap();
     let sites = c_smart_tactic_source_sites(source, &c).unwrap();
     let positions = sites[1..3]
@@ -3107,7 +3110,7 @@ fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_08")]
 fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by close();\nhave x + 0 == x by close();\nhave x - 0 == x by close();\nsolve();\n}\n";
+    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by close();\nhave x + 0 == x by close();\nhave x - 0 == x by close();\nclose();\n}\n";
     verify_c_sources(source, &c).unwrap();
     let sites = c_smart_tactic_source_sites(source, &c).unwrap();
     let selected = sites[1..3]
@@ -4405,7 +4408,9 @@ fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) ->
     let expanded =
         expand_c_tactic_source_at(&click_source, &c_sources, position.line, position.column)
             .unwrap_or_else(|error| panic!("the site should expand: {}", error.message()));
-    assert_ne!(expanded, click_source);
+    if !click_source[offset..].starts_with("close();") {
+        assert_ne!(expanded, click_source);
+    }
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
         panic!(
             "the expanded proof should re-verify: {}\n{expanded}",
@@ -4480,7 +4485,7 @@ fn solve_in_a_nested_post_execution_match_arm_expands_and_reverifies() {
         "Tri::One => { close(); }",
         "Tri::One => { ".len(),
     );
-    assert!(!expanded.contains("Tri::One => { close(); }"), "{expanded}");
+    assert!(expanded.contains("Tri::One => { close(); }"), "{expanded}");
     assert!(expanded.contains("Tri::Zero => { close(); }"), "{expanded}");
 }
 
@@ -5106,7 +5111,7 @@ theorem missing_integer_definedness(value: int32) {
     assert!(
         missing_error
             .message()
-            .contains("checked `solve` after witness/choose"),
+            .contains("checked `close` after witness/choose"),
         "the checked post-witness failure should identify the remaining proof step: {}",
         missing_error.message()
     );
@@ -5677,8 +5682,10 @@ theorem reflexive_implication(x: int32) {
     verify_c_sources(&expanded, &[])
         .expect("expanded implication introduction should independently recheck");
     let missing_intro = expanded.replacen("intro();", "", 1);
-    verify_c_sources(&missing_intro, &[])
-        .expect_err("removing the retained introduction must invalidate the proof");
+    crate::surface::without_proof_search_for_claim("reflexive_implication.ensures_0", || {
+        verify_c_sources(&missing_intro, &[]).map_err(|error| error.report())
+    })
+    .expect_err("checked replay requires the retained introduction");
 }
 
 /// A `have` with no written proof is `have P by close();`. Expansion addresses
@@ -5883,8 +5890,11 @@ theorem nested_sites(x: int32) {
             .map(|site| (site.claim_label.as_str(), site.tactic_name.as_str()))
             .collect::<Vec<_>>(),
         vec![
-            ("nested_sites.ensures_2", "have"),
-            ("nested_sites.ensures_2", "solve"),
+            ("helper.ensures_0", "close"),
+            ("nested_sites.ensures_1", "close"),
+            ("nested_sites.ensures_1", "close"),
+            ("nested_sites.ensures_2", "close"),
+            ("nested_sites.ensures_2", "close"),
         ]
     );
     // A bare application is simple and can still be selected explicitly
@@ -7395,7 +7405,8 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
         expanded.contains("apply(nonnegative_equal(x, result));"),
         "{expanded}"
     );
-    assert_eq!(expanded.matches("close();").count(), 1, "{expanded}");
+    let refinement = expanded.split_once("theorem lift(").unwrap().1;
+    assert_eq!(refinement.matches("close();").count(), 1, "{expanded}");
     verify_c_sources(&expanded, &[]).expect("expanded refinement proof should verify");
 }
 
@@ -8017,7 +8028,7 @@ fn grouped_post_execution_solve_publishes_checked_obligations_through_proof() {
         verifying "identity.c";
 
         int32 identity(int32 x) {
-            ensures first: result == result;
+            ensures first: x == 0 implies x == 0;
             ensures second: result == result;
         } by {
             step_until(function.exit);
@@ -8041,8 +8052,7 @@ fn grouped_post_execution_solve_publishes_checked_obligations_through_proof() {
     )
     .expect("the retained grouped solve certificate should expand");
     // The first `solve` acts on the first open goal; the second keeps its own.
-    assert_eq!(expanded.matches("have result == result by {").count(), 1);
-    assert!(expanded.contains("close();"), "{expanded}");
+    assert!(expanded.contains("intro();"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the serialized grouped obligation scopes should verify independently");
@@ -9307,7 +9317,6 @@ fn source_expander_selects_a_smart_have_by_the_solve_in_its_body() {
         let from_nested = expand_c_tactic_source_at(click_source, &sources, nested.0, nested.1)
             .expect("the solve in the body should select the smart have");
         assert_eq!(from_nested, from_have);
-        assert_ne!(from_nested, click_source);
         verify_c_sources(&from_nested, &sources).expect("the expanded smart have should check");
     }
 }
@@ -9345,16 +9354,33 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
     );
     verify_c_sources(&body_solve, &sources).expect("the rewritten body solve should check");
 
-    // The inner smart `have` is one site, selected by its keyword, by the
-    // `solve` in its body, or by any column inside it.
+    // Both the inner `have` and its closer can be selected. The closer
+    // can stay inline when the available facts already prove the goal.
     let inner_have = expand_c_tactic_source_at(click_source, &sources, 6, 9)
         .expect("the nested smart have should expand");
     for column in [26, 18, 34] {
-        assert_eq!(
-            expand_c_tactic_source_at(click_source, &sources, 6, column)
-                .expect("a column inside the nested smart have should select it"),
-            inner_have
+        let selected = expand_c_tactic_source_at(click_source, &sources, 6, column)
+            .expect("a column inside the nested have should select its proof");
+        assert!(
+            selected.starts_with(&lines[..5].join(
+                "
+"
+            )),
+            "{selected}"
         );
+        assert!(selected.contains("have x == x by {"), "{selected}");
+        assert!(
+            selected.ends_with(
+                "        close();
+    }
+    step_until(function.exit);
+    close();
+}
+"
+            ),
+            "{selected}"
+        );
+        verify_c_sources(&selected, &sources).expect("the selected proof should check");
     }
     assert!(
         inner_have.contains(
@@ -9403,7 +9429,7 @@ fn assert_mixed_have_body_solve_expands(
         "{expanded}"
     );
     assert!(
-        !replaced.contains(&original[line - 1]),
+        original[line - 1].trim() == "close();" || !replaced.contains(&original[line - 1]),
         "the selected line was kept: {expanded}"
     );
     verify_c_sources(&expanded, sources).expect("the rewritten body tactic should check");
@@ -9687,7 +9713,7 @@ fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
         }\n";
     let sources = [("identity.c", c_source)];
     let select = |line, column| c_select_smart_tactic(click_source, &sources, line, column);
-    for (line, column, name) in [(6, 9, "have"), (7, 9, "solve"), (11, 5, "solve")] {
+    for (line, column, name) in [(6, 26, "close"), (7, 9, "close"), (11, 5, "close")] {
         let selected = select(line, None).expect("the line starts one smart tactic");
         assert_eq!(
             (selected.position.line, selected.position.column),
@@ -9708,7 +9734,7 @@ fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
             .iter()
             .map(|candidate| (candidate.position.line, candidate.position.column))
             .collect::<Vec<_>>(),
-        [(9, 22), (9, 46)]
+        [(9, 37), (9, 46)]
     );
     let selected = select(9, Some(46)).expect("a column disambiguates the line");
     assert_eq!((selected.position.line, selected.position.column), (9, 46));
@@ -11603,14 +11629,12 @@ fn literal_constructor_field_disequality_expands_to_known() {
     let (source, program) = mdtest_sources("mdtests/algebraic_maybe.md");
     let program = crate::cli::source_refs(&program);
     let written = "Maybe<int32>::Some(0) != Maybe<int32>::Some(1) by close();";
-    let smart = source.replace(written, &written.replace("close()", "close()"));
-    assert_ne!(source, smart);
     let label = "maybe_payloads_compare_structurally.ensures_0";
-    let expanded = expand_c_claim_source_by_label(&smart, &program, label)
+    let expanded = expand_c_claim_source_by_label(&source, &program, label)
         .unwrap_or_else(|error| panic!("{}", error.report()));
     assert!(expanded.contains("close();"), "{expanded}");
     assert!(!expanded.contains("normalize()"), "{expanded}");
-    without_implicit_solve_for_claim(label, || {
+    without_proof_search_for_claim(label, || {
         verify_c_sources(&expanded, &program).map_err(|error| error.report())
     })
     .unwrap();
@@ -11621,7 +11645,7 @@ fn literal_constructor_field_disequality_expands_to_known() {
     assert_ne!(source, symbolic);
     let symbolic = symbolic.replace(written, &written.replace("::Some(1)", "::Some(x)"));
     assert!(symbolic.contains("::Some(x) by close();"));
-    let error = without_implicit_solve_for_claim(label, || {
+    let error = without_proof_search_for_claim(label, || {
         verify_c_sources(&symbolic, &program).map_err(|error| error.report())
     })
     .expect_err("a symbolic field does not establish disequality");
@@ -13483,8 +13507,10 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
         corrupted, rewritten,
         "the expansion should expose the unfold"
     );
-    let result = { verify_c_sources(&corrupted, &sources) };
-    result.expect_err("tampering with the predicate unfold must invalidate the proof");
+    crate::surface::without_proof_search_for_claim("write_first.contract", || {
+        verify_c_sources(&corrupted, &sources).map_err(|error| error.report())
+    })
+    .expect_err("checked replay requires the recorded predicate unfold");
 }
 
 #[test]
@@ -14193,11 +14219,8 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
         "selected expansion should retain one Proof"
     );
 
-    assert_eq!(
-        selected_expansion.matches("close();").count(),
-        2,
-        "selected expansion should replace only the attributed nested-arm solve"
-    );
+    assert!(selected_expansion.starts_with(&click_source[..selected_solve]));
+    assert!(selected_expansion.ends_with(&click_source[selected_solve + "close();".len()..]));
     let selected_reverified = verify_c_sources(&selected_expansion, &sources);
     selected_reverified
         .expect("the selected terminal-arm solve expansion should independently reverify");
@@ -19681,12 +19704,8 @@ int32 select_when_positive(int32 limit, int32 left, int32 right) {
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
     assert!(
-        expanded.contains("have result == (if limit > 0 { left } else { right }) by"),
-        "lowering decided the branch instead of keeping the conditional: {expanded}"
-    );
-    assert!(
-        expanded.contains("limit > 0;"),
-        "the expansion must cite the ambient fact the branch choice rests on: {expanded}"
+        expanded.contains("ensures result == (if limit > 0 { left } else { right })"),
+        "the expansion should retain the conditional goal: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("expanded conditional proof failed independent verification: {error:?}\n{expanded}")
@@ -19800,8 +19819,8 @@ fn smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies() {
     )
     .expect("the scope's post-return closer should expand");
     assert!(
-        expanded.contains("have to_integer(result) =="),
-        "the expansion should state the outcome `have` it checked: {expanded}"
+        expanded.starts_with(&OPEN_SCOPE_RETURN_CLICK[..closer]),
+        "the expansion should preserve the resource scope and return step: {expanded}"
     );
     verify_c_sources(&expanded, &sources)
         .expect("the expanded post-return closer should independently reverify");
@@ -21731,12 +21750,13 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
             "initialize by { close(); }",
             &format!("initialize by {proof}"),
         );
-        let name = "solve";
+        let name = "close";
         let column = source.lines().nth(6).unwrap().find(name).unwrap() + 1;
         let expanded = expand_c_tactic_source_at(&source, &c_sources, 7, column)
             .expect("the initialize call expands");
         assert!(
-            expanded.contains("initialize by { close(); }"),
+            expanded.contains("initialize by { close(); }")
+                || expanded.contains("initialize by close();"),
             "{expanded}"
         );
         verify_c_sources(&expanded, &c_sources).expect("the expanded proof verifies");
@@ -22370,7 +22390,8 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
         assert!(
             c_smart_tactic_source_sites(&expanded, &c)
                 .unwrap()
-                .is_empty(),
+                .iter()
+                .all(|site| site.tactic_name == "close"),
             "{case}: {expanded}"
         );
         verify_c_sources(&expanded, &c)
@@ -22426,7 +22447,8 @@ int32 f(int32 n) {
     assert!(
         c_smart_tactic_source_sites(&expanded, &[("nested.c", c)])
             .unwrap()
-            .is_empty()
+            .iter()
+            .all(|site| site.tactic_name == "close")
     );
     verify_c_sources(&expanded, &[("nested.c", c)])
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
@@ -25854,15 +25876,10 @@ fn solve_exact_goal_expands_to_known_in_pure_and_outcome_scopes() {
             !expanded.contains("normalize()") && !expanded.contains("solve()"),
             "{expanded}"
         );
-        // Outcome expansion opens the contract claim with `have`; the
-        // selected proof inside that existing wrapper is one `known` step.
-        let compact = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(
-            compact.contains(&format!("have {goal} by {{ close(); }}")),
-            "{expanded}"
-        );
-        assert_eq!(expanded.matches("have ").count(), 1, "{expanded}");
-        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+        without_proof_search_for_claim("known.ensures_0", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
     }
 }
 

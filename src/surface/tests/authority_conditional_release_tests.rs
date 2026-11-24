@@ -353,7 +353,7 @@ void bound(int32 value) {
 
 #[test]
 fn mirrored_strict_signed_bound_expands_to_checked_successor_rule() {
-    let source = "theorem bound(value: int32) {\nrequires 2 <= value;\nensures value > 1 by {\nsolve();\n}\n}\n";
+    let source = "theorem bound(value: int32) {\nrequires 2 <= value;\nensures value > 1 by {\nclose();\n}\n}\n";
     crate::instrumentation::with_default_tactic_limits(|| {
         verify_c_sources(source, &[])
             .expect("a mirrored strict bound follows from its successor bound");

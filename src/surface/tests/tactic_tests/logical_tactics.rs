@@ -1687,7 +1687,7 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
             };
             ensures two_le: 2 <= value;
         } by {
-            step_until(function.exit);
+            step();
             have 2 <= value by {
                 have 0 <= 2 and 2 < n;
                 instantiate(forall (k: int32) {
@@ -1702,12 +1702,14 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
     verify_c_sources(click_source, &[("pick.c", c_source)])
         .expect("an ordinary have can prove the exact symbolic guard");
     let without_guard = click_source.replace("                have 0 <= 2 and 2 < n;\n", "");
-    let error = verify_c_sources(&without_guard, &[("pick.c", c_source)])
-        .expect_err("instantiation must preserve the unproved symbolic guard");
+    let error = without_proof_search_for_claim("pick.two_le", || {
+        verify_c_sources(&without_guard, &[("pick.c", c_source)]).map_err(|error| error.report())
+    })
+    .expect_err("instantiation must preserve the unproved symbolic guard");
     assert!(
-        error.message().contains("`known` requires"),
+        error.contains("`known` requires"),
         "unexpected error: {}",
-        error.message()
+        error
     );
 }
 
@@ -2226,13 +2228,16 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
         corrupted, rewritten,
         "the expansion should expose the checked instantiation argument"
     );
-    let corrupted_result = { verify_c_sources(&corrupted, &[("universal_haves.c", c_source)]) };
+    let corrupted_result = without_proof_search_for_claim("universal_haves.contract", || {
+        verify_c_sources(&corrupted, &[("universal_haves.c", c_source)])
+            .map_err(|error| error.report())
+    });
     let error = corrupted_result
         .expect_err("tampering with a universal instantiation must invalidate the proof");
     // The instantiation at the wrong argument adds a different fact, so it
     // no longer closes the `have` goal.
     assert!(
-        error.message().contains("`known` requires"),
+        error.contains("`known` requires"),
         "the checked Proof operation should reject the tamper directly: {error:?}"
     );
 }
@@ -3703,7 +3708,10 @@ fn local_predicate_unfold_opens_only_the_selected_application() {
             }
         }
     "#;
-    assert!(without_implicit_solve(|| verify_click_theorems(not_a_mode)).is_err());
+    crate::surface::without_proof_search(|| {
+        verify_click_theorems(not_a_mode).map_err(|error| error.report())
+    })
+    .expect_err("unfolding one application must leave the other application opaque");
 }
 
 #[test]

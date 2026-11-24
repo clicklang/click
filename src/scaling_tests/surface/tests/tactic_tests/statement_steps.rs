@@ -155,7 +155,7 @@ void write(struct job *job, int32 *dest) {
             }
         }
         c.push_str("}\n");
-        click.push_str("step();\nknown(); close();\nknown(); close(); close();\n}\n");
+        click.push_str("step();\nclose(); close();\nclose(); close(); close();\n}\n");
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::surface::without_implicit_solve(|| verify_c_sources(&click, &[("probe.c", &c)]))
         });

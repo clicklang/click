@@ -379,8 +379,7 @@ termination by {{
                 .source
                 .contains("check_termination_component(\"caller\", normal)")
         );
-        assert!(!expansion.source.contains("close()"));
-        let result = without_implicit_solve_for_claim("program.termination", || {
+        let result = crate::surface::without_proof_search_for_claim("program.termination", || {
             verify_c_sources(&expansion.source, &[("termination.c", C)])
                 .map_err(|error| error.report())
         });

@@ -33,7 +33,7 @@ fn parses_grouped_function_proof() {
         Some(
             [
                 ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
-                ProofTactic::Solve
+                ProofTactic::Close
             ]
             .as_slice()
         )
@@ -237,7 +237,7 @@ fn parses_proof_tactic_script() {
         Some(
             [
                 ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
-                ProofTactic::Solve
+                ProofTactic::Close
             ]
             .as_slice()
         )

@@ -953,10 +953,11 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         let source = r#"
             spec enum Box { Empty, Wrapped(Integer), }
             function project(value: Box) -> Integer { match value { Box::Empty => to_integer(0), Box::Wrapped(inner) => inner, } }
-            theorem close() { ensures project(Box::Wrapped(to_integer(7))) == to_integer(7) by close(); }
+            theorem constructor_is_known() { ensures project(Box::Wrapped(to_integer(7))) == to_integer(7) by close(); }
         "#;
         verify_c_sources(source, &[]).unwrap();
-        let expanded = expand_c_claim_source_by_label(source, &[], "known.ensures_0").unwrap();
+        let expanded =
+            expand_c_claim_source_by_label(source, &[], "constructor_is_known.ensures_0").unwrap();
         verify_c_sources(&expanded, &[]).unwrap();
     }
 

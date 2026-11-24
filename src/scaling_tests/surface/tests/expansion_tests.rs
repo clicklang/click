@@ -56,13 +56,18 @@ fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
 
 #[test]
 fn smart_inventory_positions_are_compatible_and_scale() {
-    use crate::surface::{c_smart_tactic_source_sites, c_tactic_source_position};
+    use crate::surface::{c_select_smart_tactic, c_smart_tactic_source_sites, c_tactic_source_position};
     let source = "// Unicode: λ\ntheorem named() { ensures 0 == 0 by { have 1 == 1 by { close(); } close(); } }\ntheorem implicit() { ensures 0 == 0; }\ntheorem short() { ensures 0 == 0 by close(); }\n";
     for site in c_smart_tactic_source_sites(source, &[]).unwrap() {
-        assert_eq!(
-            site.position,
-            c_tactic_source_position(source, &[], &site.claim_label, site.source_index).unwrap()
-        );
+        let owner =
+            c_tactic_source_position(source, &[], &site.claim_label, site.source_index).unwrap();
+        assert_eq!(site.position.line, owner.line);
+        assert!(site.position.column >= owner.column);
+        let selected =
+            c_select_smart_tactic(source, &[], site.position.line, Some(site.position.column))
+                .unwrap();
+        assert_eq!(selected.claim_label, site.claim_label);
+        assert_eq!(selected.position, site.position);
     }
     for separate_claims in [false, true] {
         let mut measurements = Vec::new();

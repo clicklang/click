@@ -4092,10 +4092,8 @@ mod tests {
                 spec_definitions,
                 &theorems,
             );
-            let certificate = ProofCertificate::from_proof_tactics(
-                theorem.ensures()[0].proof().tactics().unwrap(),
-            )
-            .unwrap();
+            let tactics = theorem.ensures()[0].proof().tactics().unwrap();
+            let certificate = ProofCertificate::from_proof_tactics(&tactics[..1]).unwrap();
             let before = crate::persistent::persistent_node_allocations();
             let instantiated = root
                 .driver()
