@@ -326,7 +326,7 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
 }
 
 #[test]
-fn mirrored_execution_bound_that_uses_legacy_normalization_refuses_expansion() {
+fn mirrored_execution_bound_expands_to_checked_successor_rule() {
     let source = r#"verifying "bound.c";
 void bound(int32 value) {
     requires 2 <= value;
@@ -342,12 +342,27 @@ void bound(int32 value) {
     let c = [("bound.c", "void bound(int32 value) {}")];
     crate::instrumentation::with_default_tactic_limits(|| {
         verify_c_sources(source, &c).expect("execution compares the same signed value");
-        let error = expand_c_tactic_source_at(source, &c, 8, 9)
-            .expect_err("the mirrored execution closure still uses compatibility normalization");
+        let local = expand_c_tactic_source_at(source, &c, 8, 9)
+            .expect("the selected mirrored bound has an ordinary proof");
         assert!(
-            error.message().contains("used legacy normalization"),
-            "{error:?}"
+            local.contains("apply(click::integer::step_le_lt("),
+            "{local}"
         );
+        assert!(!local.contains("normalize("), "{local}");
+
+        let claim = "bound.contract";
+        let expanded = expand_c_claim_source_by_label(source, &c, claim)
+            .expect("expand the whole execution claim");
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        crate::surface::check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &c).map_err(|error| error.report())
+        })
+        .expect("replay the bound without implicit solving");
+
+        let weak = source
+            .replace("requires 2 <= value", "requires 1 <= value")
+            .replace("using { 2 <= old(value); }", "using { 1 <= old(value); }");
+        assert!(verify_c_sources(&weak, &c).is_err());
     });
 }
 

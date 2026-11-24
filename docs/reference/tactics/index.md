@@ -1767,9 +1767,11 @@ when the count is known in range. It also checks the equality of the signed
 and unsigned right shifts of the positive signed maximum at the same in-range
 count. A constant right shift of a zero-extended unsigned byte or halfword
 has a range computed from its source width and count, including after a
-signed widening of the result.
-For a positive literal left operand, a count bound below the point where
-the result would reach the sign bit establishes that the shift fits.
+signed widening of the result. An unsigned left shift of one is nonzero
+when its count is below the width. A signed count reading also needs a
+nonnegative bound. For a positive literal left operand, a count bound below
+the point where the result would reach the sign bit establishes that the shift
+fits.
 
 A root conditional equals its selected arm when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared
@@ -1968,8 +1970,9 @@ from `float` to `double` preserve finiteness.
 For an integer converted to `float` or `double`, `close()` can check
 the rounded limits of the source type. A tighter bound can cite a constant
 integer endpoint. The check rounds that endpoint at the destination precision.
-`close()` can select these float bounds and expand to `normalize() using`
-with the selected premises.
+`close()` prefers named library laws when they cover the selected bounds.
+For other supported shapes it can still expand to `normalize() using` with
+those premises.
 
 
 For two negative signed operands, `x < 0`, `y < 0`, and
