@@ -196,7 +196,7 @@ fn condition_proposition_storage_clones_growing_logical_dags_without_exports() {
 }
 
 #[test]
-fn mixed_integer_descriptor_identity_survives_native_drop_without_exports() {
+fn mixed_integer_descriptor_identity_survives_handle_drop_without_exports() {
     use crate::kernel::{KernelFold, KernelFoldIndex, SharedMachineIntegerTerm};
     let format = MachineIntegerType::Int32;
     let variable = Variable(10993710);
@@ -270,7 +270,7 @@ fn mixed_integer_descriptor_identity_survives_native_drop_without_exports() {
             drop(input);
             let weak = native.downgrade();
             drop(native);
-            assert!(weak.upgrade().is_none());
+            assert_eq!(weak.upgrade().as_ref(), Some(&folded));
         }
         measured.push(work);
     }

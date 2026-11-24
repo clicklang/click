@@ -666,7 +666,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
         // built on a cache miss.
         // Pointer-index fingerprints are syntax-only assumption memos too.
         crate::kernel::assumptions::clear_assumption_memos();
-        crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::clear_machine_observation_memo();
         crate::kernel::eval::clear_load_canonicalization_caches();
         crate::kernel::memory_history::clear_canonical_form_caches();
         let mut entry = CreationEvents::new();
