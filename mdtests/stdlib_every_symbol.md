@@ -9,10 +9,17 @@ The `authority` resource's restricted empty-population source use is verified
 by `authority_establishes_and_retires_empty_stack_population` in
 `src/surface/tests/execution_tests.rs`.
 
-The floating-point transitivity axioms are exercised in
-[`float_order_transitivity.md`](float_order_transitivity.md). Rounded addition bounds
-are exercised in [`arithmetic_expression_float_add_pair.md`](arithmetic_expression_float_add_pair.md).
-Finite positive scaling is exercised in
+The transitivity laws `float_order::float32_le_le`,
+`float_order::float32_le_lt`, `float_order::float32_lt_le`,
+`float_order::float64_le_le`, `float_order::float64_le_lt`, and
+`float_order::float64_lt_le` are exercised in
+[`float_order_transitivity.md`](float_order_transitivity.md).
+The rounded addition bounds `float_order::float32_add_lower`,
+`float_order::float32_add_upper`, `float_order::float64_add_lower`, and
+`float_order::float64_add_upper` are exercised in
+[`arithmetic_expression_float_add_pair.md`](arithmetic_expression_float_add_pair.md).
+The finite positive scaling bounds `float_order::float32_scale_lower` and
+`float_order::float32_scale_upper` are exercised in
 [`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_float_bound_composition.md).
 
 The representation law `integer::uint32_from_le_bytes` is exercised in
