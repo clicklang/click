@@ -2,7 +2,8 @@
 
 Status: approved (2026-11-23). P0 is implemented. P1 has begun: logical
 integer reads ask `ProgramPoint::read_version`. The plan was reordered on
-2026-11-23: points are attached everywhere first ("Plan").
+2026-11-23: points are attached everywhere first ("Plan"). Stage 1 is under
+way: legacy reads record their read site (2026-11-24).
 
 ## Problem
 
@@ -206,7 +207,7 @@ built inside the kernel, by functions handed a `SharedMemory` that wrap it in
 
 | Site | Calls | Owner |
 | --- | --- | --- |
-| `pointer_load_identity` (`eval/memory_loads.rs`) | 31,308 | `design/loads.md` steps 1 and 2 |
+| `pointer_load_identity` (`eval/memory_loads.rs`) | 31,308 | `design/loads.md` steps 1 and 2 (removed) |
 | `canonical_form_of_load`, 26 callers | 13,404 | this design |
 | `SymbolicMemory::symbolic_int32_load` | 9,020 | this design |
 | `read_observations::record` | 7,652 | this design |
@@ -214,17 +215,44 @@ built inside the kernel, by functions handed a `SharedMemory` that wrap it in
 
 ### Stage 1: a point everywhere
 
-A function that builds a read or a point takes the caller's `ProgramPoint`,
-not a `SharedMemory`. `ProgramPoint::at` remains only for a memory with no
-place on any path; a pure theorem's memory uses `ProgramPoint::starting_at`.
-A ratchet like `build_support/read_construction.rs` holds the count of
-`ProgramPoint::at` sites (349 non-test sites today) to a falling baseline.
+A read named by the legacy walk is identified by an older memory snapshot,
+and the walk that found it is what knew where on the path that snapshot sits.
+Naming the read at that place instead is stage 2's renaming. Stage 1
+attaches only the **read site**: the point the read was made at.
 
-Attaching a path keeps the legacy selection, so `read_key()` and term
-identity do not change. Code that branches on `ProgramPoint::id()` or
-`has_certified_read_view()` can still change behavior; each slice is checked
-on the harnesses, and its census count must fall. Pointer loads are threaded
-with `design/loads.md` steps 1 and 2.
+- `ReadSelection::Legacy` carries an optional read site.
+  `ProgramPoint::read_site()` is the point's own path when it has one, else
+  that recorded site. `ProgramPoint::at_read_site(memory, site)` builds a
+  legacy point that records one.
+- The site is no part of identity: legacy points compare and hash by memory,
+  and the point's own path stays empty, so code that branches on
+  `ProgramPoint::id()` or `has_certified_read_view()` is unaffected. No term
+  changes, so no proof changes.
+- Each producer that builds a read from a memory passes its caller's point as
+  the site. The site must be where the read is made: a cell run records the
+  point of the copy that created it, not the point where a cell is later
+  looked up, which could be after the source cell changed.
+- Stage 2 selects a read's version by walking from its site
+  (`resource_tracker::cell_version_on_path`).
+
+Progress, counted by a local census of legacy read terms built with no read
+site over the 57 examples that verify standalone:
+
+| After | Siteless legacy reads |
+| --- | --- |
+| master before stage 1 | 42,023 |
+| clicklang/click#4066: the legacy walk, canonicalization, symbolic and canonical loads, store equations, surface probes | 13,082 |
+| clicklang/click#4070: substitution, exact selection of a pathless point | 11,015 |
+| clicklang/click#4071: resource cell runs | 8,232 |
+| clicklang/click#4072 (`design/loads.md` step 2): pointer loads on `Load` | 8,223 |
+
+What remains:
+
+| Producer | Reads | Next |
+| --- | --- | --- |
+| integer reads of pointer cells from a memory (`Pointer::canonical_read`, `canonical_loaded_value`, `version_read_value`, `symbolic_pointer_load`, `logical_pointer_read_term`) | ~5,560 | `loaded_value_at` records the site (`design/loads.md` step 2 follow-up); then their callers pass a point |
+| legacy-walk endpoint probes (`LoadCellWalks`) | 864 | comparison terms inside the memory-keyed walk history, never kept; they go with the walk |
+| exact-cell and canonical rebuilds of reads that arrived without a site | ~1,800 | fall as their inputs gain sites |
 
 ### Stage 2: reasoning on points
 
