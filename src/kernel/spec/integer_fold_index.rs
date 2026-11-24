@@ -121,7 +121,7 @@ mod tests {
     use crate::kernel::VerificationSession;
 
     #[test]
-    fn retained_integer_binding_releases_native_children_and_restores_on_error() {
+    fn retained_integer_binding_keeps_children_retained_and_restores_on_error() {
         let _session = VerificationSession::enter();
         let variable = Variable(1011100);
         let child: SharedIntegerTerm = IntegerTerm::Add(
@@ -144,7 +144,8 @@ mod tests {
             evaluation.with_retained_integer_bindings(&[Some(variable)], &fields, |evaluation| {
                 drop(source);
                 assert!(
-                    weak.upgrade().is_none(),
+                    weak.upgrade()
+                        .is_some_and(|root| !root.has_cached_native_argument()),
                     "a retained binding must not export native children"
                 );
                 assert_eq!(

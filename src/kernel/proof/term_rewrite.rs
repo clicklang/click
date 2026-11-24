@@ -2110,6 +2110,22 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    pub(super) fn retained_arithmetic_comparison(
+        [left, right]: &[KernelTerm; 2],
+    ) -> Option<[KernelTerm; 2]> {
+        let mut rewrite = Self::for_arithmetic_comparison();
+        let result = (|| {
+            Some([
+                rewrite.rewrite_stored_integer_root(left)?,
+                rewrite.rewrite_stored_integer_root(right)?,
+            ])
+        })();
+        if rewrite.refusal().is_some() || crate::instrumentation::deadline_exceeded_with_work(0) {
+            return None;
+        }
+        result
+    }
+
     pub(crate) fn arithmetic_comparison(proposition: &Proposition) -> Option<Proposition> {
         if crate::instrumentation::deadline_exceeded_with_work(0) {
             return None;
@@ -3359,11 +3375,7 @@ impl<'a> TermRewrite<'a> {
             return;
         }
         let mut variables = self.new_carrier_variables();
-        collect_integer_shared_carriers(
-            &SharedIntegerTerm::from(term.clone()),
-            &mut variables,
-            &mut BTreeSet::new(),
-        );
+        collect_integer_carriers(term, &mut variables, &mut BTreeSet::new());
         self.reserve_source_variables(variables);
     }
 
@@ -4471,12 +4483,17 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_integer(v);
         }
-        self.integer_shared_with_match_retention(&SharedIntegerTerm::from(v.clone()), retain_match)
+        self.integer_shared_with_match_retention(
+            &SharedIntegerTerm::from(v.clone()),
+            Some(v),
+            retain_match,
+        )
     }
 
     fn integer_shared(&mut self, shared: &SharedIntegerTerm) -> IntegerTerm {
         self.integer_shared_with_match_retention(
             shared,
+            None,
             MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get),
         )
     }
@@ -4484,13 +4501,14 @@ impl<'a> TermRewrite<'a> {
     fn integer_shared_with_match_retention(
         &mut self,
         shared: &SharedIntegerTerm,
+        native_input: Option<&IntegerTerm>,
         retain_match: bool,
     ) -> IntegerTerm {
+        let input = || native_input.unwrap_or_else(|| shared.as_ref());
         if self.checked_work_exhausted() {
-            return exhausted_integer(shared.as_ref());
+            return exhausted_integer(input());
         }
-        let retain_match =
-            retain_match && matches!(shared.as_ref(), IntegerTerm::AlgebraicMatch { .. });
+        let retain_match = retain_match && matches!(shared.root().node(), KernelTermNode::Match(_));
         let cache_key = (
             shared.id(),
             self.scope_key(),
@@ -4502,7 +4520,7 @@ impl<'a> TermRewrite<'a> {
         }
         self.visit();
         if self.checked_work_exhausted() {
-            return exhausted_integer(shared.as_ref());
+            return exhausted_integer(input());
         }
         // An occurrence is matched up to its observations' value relations
         // (rule W): `to_integer(count as uint32 as int32)` occurs in a goal
@@ -4516,7 +4534,7 @@ impl<'a> TermRewrite<'a> {
             };
             self.charge_rewrite_work(work);
             if self.checked_work_exhausted() {
-                return exhausted_integer(shared.as_ref());
+                return exhausted_integer(input());
             }
             self.changed = true;
             // Do not recursively rewrite the replacement. Matching uses
@@ -4525,7 +4543,7 @@ impl<'a> TermRewrite<'a> {
             self.integer_cache.insert(cache_key, result.clone());
             return result;
         }
-        let result = match shared.as_ref() {
+        let result = match input() {
             IntegerTerm::Constant(value) => {
                 if self.integer_variables.is_some()
                     || self.typed_variables.is_some()
@@ -4536,10 +4554,10 @@ impl<'a> TermRewrite<'a> {
                             value.bits() as usize + 1,
                         );
                     if self.integer_work_exhausted {
-                        return exhausted_integer(shared.as_ref());
+                        return exhausted_integer(input());
                     }
                 }
-                shared.as_ref().clone()
+                input().clone()
             }
             IntegerTerm::Variable(variable) => self.rewrite_integer_variable(*variable),
             IntegerTerm::PureFunctionApplication(application) => {
@@ -4547,7 +4565,7 @@ impl<'a> TermRewrite<'a> {
                 for argument in application.arguments() {
                     arguments.push(self.argument(argument));
                     if self.checked_work_exhausted() {
-                        return exhausted_integer(shared.as_ref());
+                        return exhausted_integer(input());
                     }
                 }
                 IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
@@ -4597,11 +4615,11 @@ impl<'a> TermRewrite<'a> {
                     return result;
                 }
                 if self.refusal().is_some() {
-                    return exhausted_integer(shared.as_ref());
+                    return exhausted_integer(input());
                 }
                 let bits = self.bits(value.value());
                 if self.checked_work_exhausted() {
-                    return exhausted_integer(shared.as_ref());
+                    return exhausted_integer(input());
                 }
                 // The mathematical observation of a machine *constant* is that
                 // constant: `from_machine` folds it and keeps the carrier
@@ -4696,12 +4714,12 @@ impl<'a> TermRewrite<'a> {
                     folded_machine_condition(condition)
                 };
                 if self.checked_work_exhausted() {
-                    return exhausted_integer(shared.as_ref());
+                    return exhausted_integer(input());
                 }
                 if !preserve && let ConditionTerm::Constant(value) = condition {
                     let result = self.integer_shared(if value { then_term } else { else_term });
                     if self.checked_work_exhausted() {
-                        return exhausted_integer(shared.as_ref());
+                        return exhausted_integer(input());
                     }
                     self.integer_cache.insert(cache_key, result.clone());
                     return result;
@@ -4724,7 +4742,7 @@ impl<'a> TermRewrite<'a> {
             }
         };
         if self.checked_work_exhausted() {
-            return exhausted_integer(shared.as_ref());
+            return exhausted_integer(input());
         }
         self.integer_cache.insert(cache_key, result.clone());
         result

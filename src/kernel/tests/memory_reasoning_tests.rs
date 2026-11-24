@@ -8129,7 +8129,7 @@ fn unkeyed_range_separation_ignores_unrelated_propositions() {
         .into_iter()
         .map(|unrelated| {
             // Keep term-bridge imports cold at every sample size.
-            crate::kernel::clear_integer_bridge_memo();
+            crate::kernel::clear_machine_observation_memo();
             let mut assumptions =
                 PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
                     left: Box::new(Resource::Memory(range_at(93_202))),
@@ -8182,7 +8182,7 @@ fn a_token_inside_memory_finds_its_separation_without_scanning() {
         .into_iter()
         .map(|unrelated| {
             // Keep term-bridge imports cold at every sample size.
-            crate::kernel::clear_integer_bridge_memo();
+            crate::kernel::clear_machine_observation_memo();
             let mut assumptions = PureFactContext::new()
                 .assume_proposition(Proposition::ResourceContains {
                     parent: Box::new(Resource::Memory(memory_range(home.clone(), 0, 4))),
@@ -8305,7 +8305,7 @@ fn existential_obligation_ignores_unrelated_facts() {
         .into_iter()
         .map(|unrelated| {
             // Keep term-bridge imports cold at every sample size.
-            crate::kernel::clear_integer_bridge_memo();
+            crate::kernel::clear_machine_observation_memo();
             let mut assumptions =
                 PureFactContext::new().assume_proposition(existential(97_000, Sort::ProgramInt32));
             for index in 0..unrelated {

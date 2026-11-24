@@ -396,7 +396,7 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
         crate::kernel::eval::restore_load_variable_registry(&cold_reads);
         // Keep term-bridge imports and canonical forms cold at every sample
         // size.
-        crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::clear_machine_observation_memo();
         crate::kernel::eval::clear_load_canonicalization_caches();
         crate::kernel::memory_history::clear_canonical_form_caches();
         let mut graph = EqualityGraph::default();
@@ -450,7 +450,7 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
     for size in sizes {
         crate::kernel::eval::restore_load_variable_registry(&cold_reads);
         // Keep descriptor caches and term-bridge imports cold at every sample size.
-        crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::clear_machine_observation_memo();
         let word = |value: MachineTerm| MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(value),

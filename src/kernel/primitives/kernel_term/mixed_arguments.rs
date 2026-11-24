@@ -253,8 +253,19 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
 
     let other = import.machine_call(MachineIntegerType::Int32, &second);
     assert_ne!(machine.children(), other.children());
-    let other = import.integer(&IntegerTerm::PureFunctionApplication(second).into());
-    assert_eq!(integer.children(), other.children());
+    let other = import.integer(&IntegerTerm::PureFunctionApplication(second.clone()).into());
+    assert_ne!(integer.children(), other.children());
+    let [child] = other.children() else {
+        panic!("one exact argument");
+    };
+    let KernelTermNode::Legacy(payload) = child.node() else {
+        panic!("opaque argument slot");
+    };
+    assert!(std::ptr::eq(payload.value(), &second.arguments()[0]));
+    assert_eq!(
+        KernelTermExport::default().integer(&integer).unwrap(),
+        KernelTermExport::default().integer(&other).unwrap()
+    );
 }
 
 /// A null array views no memory, so a null array argument formed at

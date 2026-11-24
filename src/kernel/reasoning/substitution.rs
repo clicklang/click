@@ -108,16 +108,14 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
         if root.is_mathematical_integer() {
             return root;
         }
-        if root.is_integer_observation_arithmetic() {
-            let source = MachineTerm::Variable(self.from);
-            let mut rewrite =
-                crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, self.to);
-            let result = rewrite.shared_integer_operand(&root);
-            integer_substitution_refusal(rewrite.refusal())
-                .unwrap_or_else(|error| panic!("integer substitution refused: {error}"));
-            if let Some(result) = result {
-                return result;
-            }
+        let source = MachineTerm::Variable(self.from);
+        let mut rewrite =
+            crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, self.to);
+        let result = rewrite.retained_integer_field(&root);
+        integer_substitution_refusal(rewrite.refusal())
+            .unwrap_or_else(|error| panic!("integer substitution refused: {error}"));
+        if let Some(result) = result {
+            return result;
         }
         let value = self.integer(root.integer_native_compat().expect("Integer field"));
         KernelTermImport::for_exact_field_inputs().integer(&value.into())

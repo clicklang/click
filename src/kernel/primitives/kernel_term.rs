@@ -242,6 +242,7 @@ pub struct KernelLegacyTerm {
 enum LegacyIdentity {
     Machine(u64),
     MachineObservation(SharedMachineIntegerTerm),
+    ExactIntegerObservation(SharedMachineIntegerTerm),
     NativeObservation(Box<PureFunctionArgument>),
     ApplicationArgument(SharedPureApplication, usize),
     ExactApplicationArgument {
@@ -317,12 +318,20 @@ impl MachineLeafCache {
     }
 }
 
+#[cfg(test)]
+pub(crate) struct WeakKernelTerm(Weak<TermData>);
+#[cfg(test)]
+impl WeakKernelTerm {
+    pub(crate) fn upgrade(&self) -> Option<KernelTerm> {
+        self.0.upgrade().map(KernelTerm)
+    }
+}
+
 struct TermData {
     id: u64,
     key: NodeKey,
-    // Temporary reverse bridge. Weak because the old node caches this term.
-    integer: Mutex<WeakIntegerTerm>,
     integer_identity: OnceLock<Arc<IntegerIdentity>>,
+    integer_reading: OnceLock<Option<SharedIntegerTerm>>,
     machine_leaf: MachineLeafCache,
     integer_output: OnceLock<Box<IntegerTerm>>,
     argument_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
@@ -334,7 +343,6 @@ struct NodeKeyData {
     node: KernelTermNode,
     shared_machine_operand: bool,
     mathematical_integer: bool,
-    retained_integer_identity: bool,
     integer_observation_arithmetic: bool,
     literal_integer_arithmetic: bool,
     opaque_observation_boundary: bool,
@@ -440,6 +448,7 @@ impl NodeKey {
                 matches!(
                     value.identity,
                     LegacyIdentity::Fresh(_)
+                        | LegacyIdentity::ExactIntegerObservation(_)
                         | LegacyIdentity::Machine(_)
                         | LegacyIdentity::ExactApplicationArgument { .. }
                 )
@@ -525,7 +534,9 @@ impl NodeKey {
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
-                LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
+                LegacyIdentity::Machine(_)
+                    | LegacyIdentity::MachineObservation(_)
+                    | LegacyIdentity::ExactIntegerObservation(_)
             ),
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
@@ -549,7 +560,9 @@ impl NodeKey {
             KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
-                LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
+                LegacyIdentity::Machine(_)
+                    | LegacyIdentity::MachineObservation(_)
+                    | LegacyIdentity::ExactIntegerObservation(_)
             ),
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().any(KernelTerm::has_machine_conversions)
@@ -663,34 +676,13 @@ impl NodeKey {
                 }
                 _ => false,
             };
-        let retained_integer_identity = ty == KernelType::Integer
-            && (mathematical_integer
-                || match &node {
-                    KernelTermNode::IntegerOperation { arguments, .. } => arguments
-                        .iter()
-                        .all(KernelTerm::has_retained_integer_identity),
-                    KernelTermNode::MachineObservation { format, operand } => {
-                        !opaque_observation_boundary
-                            && operand.is_shared_machine_operand()
-                            && operand.ty() == &KernelType::Program(format.program_type())
-                    }
-                    KernelTermNode::IntegerIf {
-                        arguments: [condition, yes, no],
-                    } => {
-                        matches!(
-                            condition.node(),
-                            KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_)
-                        ) && yes.has_retained_integer_identity()
-                            && no.has_retained_integer_identity()
-                    }
-                    KernelTermNode::Fold(fold) if fold.index == KernelFoldIndex::Integer => fold
-                        .arguments
-                        .iter()
-                        .all(KernelTerm::has_retained_integer_identity),
-                    _ => false,
-                });
         let literal_integer_arithmetic = match &node {
             KernelTermNode::IntegerLiteral(_) => true,
+            KernelTermNode::MachineObservation { format, operand } => {
+                MachineOperandView::Shared(operand)
+                    .checked_literal_integer_conversion()
+                    .is_some_and(|(destination, _)| destination == *format)
+            }
             KernelTermNode::IntegerOperation { arguments, .. } => arguments
                 .iter()
                 .all(KernelTerm::is_literal_integer_arithmetic),
@@ -700,7 +692,6 @@ impl NodeKey {
         Self(Arc::new(NodeKeyData {
             machine_constant,
             mathematical_integer,
-            retained_integer_identity,
             integer_observation_arithmetic,
             literal_integer_arithmetic,
             fingerprint: hash.finish(),
@@ -776,8 +767,8 @@ impl Interner {
         let value = Arc::new(TermData {
             id,
             key: key.clone(),
-            integer: Mutex::default(),
             integer_identity: Default::default(),
+            integer_reading: Default::default(),
             machine_leaf: Default::default(),
             argument_leaf: Default::default(),
             integer_output: Default::default(),
@@ -794,18 +785,13 @@ impl Interner {
         KernelTerm(value)
     }
 }
-thread_local! {
-    // The bridge links preserve structural identity across sessions, but their
-    // use as a shortcut must not depend on an earlier verification's cache.
-    static SESSION_INTEGER_BRIDGES: std::cell::RefCell<std::collections::HashSet<u64>> = Default::default();
-}
-
-pub(crate) fn clear_integer_bridge_memo() {
-    super::integer::clear_machine_observation_memo();
-    SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow_mut().clear());
-}
 
 impl KernelTerm {
+    #[cfg(test)]
+    pub(crate) fn downgrade(&self) -> WeakKernelTerm {
+        WeakKernelTerm(Arc::downgrade(&self.0))
+    }
+
     pub(in crate::kernel) fn float_storage_key(
         &self,
     ) -> crate::kernel::execution_value::storage_keys::FloatStorageKey {
@@ -863,24 +849,17 @@ impl KernelTerm {
             return Some(value);
         }
         Some(self.0.integer_output.get_or_init(|| {
-            let output = if self.is_mathematical_integer() {
-                self.mathematical_integer_output()
-            } else {
-                KernelTermExport::default()
-                    .integer(self)
-                    .expect("Integer field output")
-                    .as_ref()
-                    .clone()
-            };
-            // The shallow output may own child handles, but must not retain
-            // a compatibility handle pointing back to this same root.
-            Box::new(output)
+            Box::new(
+                self.shallow_integer_output()
+                    .expect("Integer compatibility output"),
+            )
         }))
     }
 
-    fn mathematical_integer_output(&self) -> IntegerTerm {
-        let child = |root: &KernelTerm| SharedIntegerTerm::from_mathematical_root(root.clone());
-        match self.node() {
+    fn shallow_integer_output(&self) -> Result<IntegerTerm, &'static str> {
+        let child = |root: &KernelTerm| SharedIntegerTerm::from_root(root.clone());
+        let mut export = KernelTermExport::default();
+        Ok(match self.node() {
             KernelTermNode::IntegerLiteral(value) => IntegerTerm::Constant(value.clone()),
             KernelTermNode::Variable(variable) => IntegerTerm::Variable(*variable),
             KernelTermNode::IntegerOperation {
@@ -902,21 +881,47 @@ impl KernelTerm {
                     }
                 }
             }
-            KernelTermNode::Fold(fold) => {
-                let [start, end, initial, body] = &fold.arguments;
-                IntegerTerm::RangeFold {
-                    index: IntegerRangeFoldIndex::Integer {
-                        start: child(start),
-                        end: child(end),
-                    },
-                    initial: child(initial),
-                    accumulator: fold.accumulator,
-                    item: fold.item,
-                    body: child(body),
-                }
-            }
-            _ => unreachable!("mathematical Integer output"),
+            KernelTermNode::MachineObservation { .. } => IntegerTerm::Machine(
+                self.exact_shared_integer_observation()
+                    .ok_or("Integer observation operand")?,
+            ),
+            KernelTermNode::IntegerIf {
+                arguments: [guard, yes, no],
+            } => IntegerTerm::If {
+                condition: Box::new(KernelTermExport::condition(guard)?),
+                then_term: child(yes),
+                else_term: child(no),
+            },
+            KernelTermNode::Fold(fold) => fold.integer_compatibility(&mut export)?,
+            KernelTermNode::Match(matched) => matched.export_integer(&mut export)?,
+            KernelTermNode::Call { .. } => IntegerTerm::PureFunctionApplication(
+                self.integer_application()
+                    .ok_or("Integer application arguments")?,
+            ),
+            _ => return Err("expected an Integer term"),
+        })
+    }
+
+    pub(in crate::kernel) fn integer_application(&self) -> Option<SharedPureApplication> {
+        let KernelTermNode::Call { name, arguments } = self.node() else {
+            return None;
+        };
+        if let Some(MachineLeaf::Application(application)) = self.0.machine_leaf.0.get() {
+            return Some(application.clone());
         }
+        let mut export = KernelTermExport::default();
+        let arguments = arguments
+            .iter()
+            .map(|arg| export.argument(arg))
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        let application = SharedPureApplication::intern(name.clone(), arguments);
+        self.0.machine_leaf.retain_application(&application);
+        Some(application)
+    }
+
+    pub(super) fn integer_reading(&self) -> &OnceLock<Option<SharedIntegerTerm>> {
+        &self.0.integer_reading
     }
 
     #[cfg(test)]
@@ -986,45 +991,58 @@ impl KernelTerm {
         if self.is_mathematical_integer() {
             return Some(IntegerShallowKey::mathematical(self));
         }
-        Some(self.mixed_integer_identity()?.key.clone())
+        if self.ty() != &KernelType::Integer {
+            return None;
+        }
+        if let KernelTermNode::Legacy(leaf) = self.node()
+            && let PureFunctionArgument::Integer(value) = leaf.value()
+        {
+            return value.root().integer_exact_key();
+        }
+        Some(self.mixed_integer_identity().key.clone())
     }
 
     pub(super) fn retained_integer_exact_id(&self) -> Option<u64> {
         if self.is_mathematical_integer() {
             return Some(SharedIntegerTerm::mathematical_id(self));
         }
-        Some(self.mixed_integer_identity()?.id)
-    }
-
-    fn has_retained_integer_identity(&self) -> bool {
-        self.0.key.0.retained_integer_identity
-    }
-
-    fn mixed_integer_identity(&self) -> Option<&IntegerIdentity> {
-        if let Some(identity) = self.0.integer_identity.get() {
-            return Some(identity);
-        }
-        // An opaque observation may still have a producer-specific native
-        // key. Keep its existing identity boundary until that carrier moves.
-        if !self.has_retained_integer_identity() {
+        if self.ty() != &KernelType::Integer {
             return None;
         }
+        if let KernelTermNode::Legacy(leaf) = self.node()
+            && let PureFunctionArgument::Integer(value) = leaf.value()
+        {
+            return Some(value.id());
+        }
+        Some(self.mixed_integer_identity().id)
+    }
 
-        let child_id = |child: &KernelTerm| {
-            if child.is_mathematical_integer() {
-                SharedIntegerTerm::mathematical_id(child)
-            } else {
-                child
-                    .0
-                    .integer_identity
-                    .get()
-                    .expect("registered Integer child")
-                    .id
-            }
-        };
+    pub(super) fn remember_integer_identity(&self, term: &IntegerTerm) {
+        if self.is_mathematical_integer() {
+            return;
+        }
+        self.0.integer_identity.get_or_init(|| {
+            let observation = match term {
+                IntegerTerm::Machine(observation) => Some(observation.clone()),
+                _ => None,
+            };
+            IntegerIdentity::retained(term.shallow_key(), observation)
+        });
+    }
+
+    fn mixed_integer_identity(&self) -> &IntegerIdentity {
+        if let Some(identity) = self.0.integer_identity.get() {
+            return identity;
+        }
+        let child_id =
+            |child: &KernelTerm| child.retained_integer_exact_id().expect("Integer child");
         let mut pending = vec![(self, false)];
         while let Some((root, expanded)) = pending.pop() {
-            if root.is_mathematical_integer() || root.0.integer_identity.get().is_some() {
+            if root.ty() != &KernelType::Integer
+                || root.is_mathematical_integer()
+                || root.0.integer_identity.get().is_some()
+                || matches!(root.node(), KernelTermNode::Legacy(_))
+            {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
@@ -1033,8 +1051,9 @@ impl KernelTerm {
                     KernelTermNode::IntegerOperation { arguments, .. } => arguments.as_slice(),
                     KernelTermNode::IntegerIf { arguments } => &arguments[1..],
                     KernelTermNode::Fold(fold) => fold.arguments.as_slice(),
-                    KernelTermNode::MachineObservation { .. } => &[],
-                    _ => unreachable!("retained Integer identity"),
+                    KernelTermNode::Match(matched) => &matched.arguments[1..],
+                    KernelTermNode::Call { arguments, .. } => arguments.as_slice(),
+                    _ => &[],
                 };
                 if !children.is_empty() {
                     pending.push((root, true));
@@ -1043,10 +1062,10 @@ impl KernelTerm {
                 }
             }
             let (key, observation) = match root.node() {
-                KernelTermNode::MachineObservation { format, operand } => {
-                    let observation =
-                        SharedMachineIntegerTerm::from_shared(*format, operand.clone())
-                            .expect("retained Integer observation");
+                KernelTermNode::MachineObservation { .. } => {
+                    let observation = root
+                        .exact_shared_integer_observation()
+                        .expect("retained Integer observation");
                     (
                         IntegerShallowKey::Machine(observation.id()),
                         Some(observation),
@@ -1066,17 +1085,14 @@ impl KernelTerm {
                 KernelTermNode::IntegerIf {
                     arguments: [condition, yes, no],
                 } => {
-                    let condition = match condition.node() {
-                        KernelTermNode::BoolLiteral(value) => ConditionTerm::Constant(*value),
-                        KernelTermNode::Variable(variable) => ConditionTerm::Variable(*variable),
-                        _ => unreachable!("retained Integer guard identity"),
-                    };
+                    let condition = KernelTermExport::condition(condition).expect("Integer guard");
+
                     (
                         IntegerShallowKey::If(Box::new(condition), child_id(yes), child_id(no)),
                         None,
                     )
                 }
-                KernelTermNode::Fold(fold) => {
+                KernelTermNode::Fold(fold) if fold.index == KernelFoldIndex::Integer => {
                     let [start, end, initial, body] = &fold.arguments;
                     (
                         IntegerShallowKey::RangeFold(
@@ -1089,62 +1105,62 @@ impl KernelTerm {
                         None,
                     )
                 }
-                _ => unreachable!("retained Integer identity"),
+                _ => (
+                    root.integer_native_compat()
+                        .expect("Integer identity")
+                        .shallow_key(),
+                    None,
+                ),
             };
             root.0
                 .integer_identity
                 .get_or_init(|| IntegerIdentity::retained(key, observation));
         }
-        self.0.integer_identity.get().map(Arc::as_ref)
+        self.0
+            .integer_identity
+            .get()
+            .expect("registered Integer identity")
     }
 
-    /// The exact observation key for a single retained leaf. Keep any native
-    /// spelling already associated with the leaf by the compatibility bridge.
+    /// Exact observation used by Integer identity and rule W.
     pub(crate) fn exact_shared_integer_observation(&self) -> Option<SharedMachineIntegerTerm> {
         let KernelTermNode::MachineObservation { format, operand } = self.node() else {
             return None;
         };
-        if let Some(native) = self.legacy_integer() {
-            let IntegerTerm::Machine(observation) = native.as_ref() else {
-                return None;
-            };
+        if let KernelTermNode::Legacy(leaf) = operand.node()
+            && let LegacyIdentity::ExactIntegerObservation(observation) = &leaf.identity
+        {
             return Some(observation.clone());
         }
-        SharedMachineIntegerTerm::from_shared(*format, operand.clone())
+        if let Some(observation) = self
+            .0
+            .integer_identity
+            .get()
+            .and_then(|identity| identity.observation.as_ref())
+            && observation.shared_operand() == Some(operand)
+        {
+            return Some(observation.clone());
+        }
+        SharedMachineIntegerTerm::from_shared(*format, operand.clone()).or_else(|| {
+            Some(SharedMachineIntegerTerm::intern(
+                *format,
+                KernelTermExport::machine(operand).ok()?,
+            ))
+        })
     }
 
-    pub(super) fn is_literal_integer_arithmetic(&self) -> bool {
+    pub(super) fn legacy_range_endpoint(&self) -> Option<SharedMachineIntegerTerm> {
+        let KernelTermNode::Legacy(leaf) = self.node() else {
+            return None;
+        };
+        match &leaf.identity {
+            LegacyIdentity::MachineObservation(value) => Some(value.clone()),
+            _ => None,
+        }
+    }
+
+    pub(in crate::kernel) fn is_literal_integer_arithmetic(&self) -> bool {
         self.0.key.0.literal_integer_arithmetic
-    }
-
-    fn legacy_integer(&self) -> Option<SharedIntegerTerm> {
-        self.0
-            .integer
-            .lock()
-            .expect("term bridge poisoned")
-            .upgrade()
-            .filter(|integer| {
-                SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow().contains(&integer.id()))
-            })
-    }
-    fn remember_integer(&self, integer: &SharedIntegerTerm) {
-        if matches!(
-            self.node(),
-            KernelTermNode::MachineObservation { format, operand }
-                if matches!(integer.as_ref(), IntegerTerm::Machine(value)
-                    if value.ty() == *format && value.shared_operand() == Some(operand))
-        ) {
-            // The typed operand and observation format recover the exact
-            // native identity, even for a composite machine expression.
-            *self.0.integer.lock().expect("term bridge poisoned") = WeakIntegerTerm::default();
-            return;
-        }
-        SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow_mut().insert(integer.id()));
-        *self.0.integer.lock().expect("term bridge poisoned") = integer.downgrade();
-        // A legacy leaf owns its old value; a forward link would create a cycle.
-        if !matches!(self.node(), KernelTermNode::Legacy(_)) {
-            integer.remember_kernel_term(self.clone());
-        }
     }
 
     pub(in crate::kernel::primitives) fn intern(ty: KernelType, node: KernelTermNode) -> Self {
@@ -1484,7 +1500,6 @@ impl KernelTerm {
 /// This bridge is removed as producers construct KernelTerm directly.
 #[derive(Default)]
 pub(crate) struct KernelTermImport {
-    integers: HashMap<SharedIntegerTerm, KernelTerm>,
     // Stored native field inputs preserve argument carrier forms. Numeric
     // checking/producer imports keep their existing common-operand policy.
     exact_field_inputs: bool,
@@ -1572,49 +1587,47 @@ impl KernelTermImport {
         Some(root)
     }
     pub(crate) fn integer(&mut self, term: &SharedIntegerTerm) -> KernelTerm {
-        if let Some(root) = term.mathematical_root() {
-            return root.clone();
-        }
-        if SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow().contains(&term.id()))
-            && let Some(value) = term.kernel_term()
-        {
-            return value.clone();
-        }
-        if let Some(value) = self.integers.get(term) {
-            return value.clone();
-        }
-        crate::instrumentation::record_deterministic_work(1);
+        term.root().clone()
+    }
+
+    pub(super) fn integer_input(&mut self, term: &IntegerTerm) -> KernelTerm {
         use KernelIntegerOperator as Op;
-        let value = match term.as_ref() {
+        match term {
             IntegerTerm::Constant(value) => KernelTerm::integer_literal(value.clone()),
             IntegerTerm::Variable(variable) => KernelTerm::variable(KernelType::Integer, *variable),
-            IntegerTerm::Machine(machine) => KernelTerm::intern(
-                KernelType::Integer,
-                KernelTermNode::MachineObservation {
+            IntegerTerm::Machine(machine) => {
+                KernelTerm::intern_native_integer(KernelTermNode::MachineObservation {
                     format: machine.ty(),
-                    operand: machine
-                        .shared_operand()
-                        .cloned()
-                        .unwrap_or_else(|| self.machine(machine.ty(), machine.value())),
-                },
-            ),
+                    operand: machine.shared_operand().cloned().unwrap_or_else(|| {
+                        KernelTerm::legacy_at(
+                            PureFunctionArgument::SharedMachine(machine.clone()),
+                            LegacyIdentity::ExactIntegerObservation(machine.clone()),
+                        )
+                    }),
+                })
+            }
             IntegerTerm::Negate(inner) => {
-                KernelTerm::integer_operation(Op::Negate, vec![self.integer(inner)]).unwrap()
+                KernelTerm::intern_native_integer(KernelTermNode::IntegerOperation {
+                    operator: Op::Negate,
+                    arguments: vec![self.integer(inner)],
+                })
             }
             IntegerTerm::Add(a, b)
             | IntegerTerm::Subtract(a, b)
             | IntegerTerm::Multiply(a, b)
             | IntegerTerm::TruncatingQuotient(a, b)
             | IntegerTerm::TruncatingRemainder(a, b) => {
-                let operator = match term.as_ref() {
+                let operator = match term {
                     IntegerTerm::Add(..) => Op::Add,
                     IntegerTerm::Subtract(..) => Op::Subtract,
                     IntegerTerm::Multiply(..) => Op::Multiply,
                     IntegerTerm::TruncatingQuotient(..) => Op::TruncatingQuotient,
                     _ => Op::TruncatingRemainder,
                 };
-                KernelTerm::integer_operation(operator, vec![self.integer(a), self.integer(b)])
-                    .unwrap()
+                KernelTerm::intern_native_integer(KernelTermNode::IntegerOperation {
+                    operator,
+                    arguments: vec![self.integer(a), self.integer(b)],
+                })
             }
             IntegerTerm::PureFunctionApplication(application) => {
                 let arguments = application
@@ -1623,36 +1636,38 @@ impl KernelTermImport {
                     .enumerate()
                     .map(|(index, _)| {
                         application.common_argument(index).unwrap_or_else(|| {
-                            KernelTerm::native_call_argument(application, index, false)
+                            KernelTerm::native_call_argument(application, index, true)
                         })
                     })
                     .collect();
-                KernelTerm::checked_call(KernelType::Integer, application.name().into(), arguments)
+                let root = KernelTerm::intern_native_integer(KernelTermNode::Call {
+                    name: application.name().into(),
+                    arguments,
+                });
+                root.0
+                    .machine_leaf
+                    .0
+                    .get_or_init(|| MachineLeaf::Application(application.clone()));
+                root
             }
             IntegerTerm::If {
                 condition,
                 then_term,
                 else_term,
-            } => KernelTerm::intern(
-                KernelType::Integer,
-                KernelTermNode::IntegerIf {
-                    arguments: [
-                        self.condition(condition),
-                        self.integer(then_term),
-                        self.integer(else_term),
-                    ],
-                },
-            ),
+            } => KernelTerm::intern_native_integer(KernelTermNode::IntegerIf {
+                arguments: [
+                    self.condition(condition),
+                    self.integer(then_term),
+                    self.integer(else_term),
+                ],
+            }),
             IntegerTerm::RangeFold { .. } => KernelFold::import_integer(self, term)
                 .expect("Integer fold payload")
                 .into_term(),
             IntegerTerm::AlgebraicMatch { .. } => KernelMatch::import_integer(self, term)
                 .expect("Integer match payload")
                 .into_term(),
-        };
-        value.remember_integer(term);
-        self.integers.insert(term.clone(), value.clone());
-        value
+        }
     }
 }
 
@@ -1660,7 +1675,7 @@ impl KernelTermImport {
 mod tests {
     use super::*;
     #[test]
-    fn retained_integer_bridges_have_session_local_work() {
+    fn retained_integer_handles_have_constant_work_across_sessions() {
         use crate::instrumentation::measure_deterministic_work;
         let source: SharedIntegerTerm = IntegerTerm::If {
             condition: Box::new(ConditionTerm::Variable(Variable(87654329))),
@@ -1675,7 +1690,7 @@ mod tests {
             let (again, warm) =
                 measure_deterministic_work(|| KernelTermImport::default().integer(&source));
             assert_eq!(term, again);
-            assert!(cold > warm);
+            assert_eq!((cold, warm), (0, 0));
             (term, cold)
         };
         let first = import();
@@ -1694,14 +1709,14 @@ mod tests {
             });
             assert_eq!(value, again);
             assert_eq!(value, source);
-            assert!(cold > warm);
+            assert_eq!((cold, warm), (0, 0));
             cold
         };
         assert_eq!(export(), export());
     }
 
     #[test]
-    fn reverse_bridge_does_not_keep_the_source_node_alive() {
+    fn integer_handles_share_the_same_root_without_a_native_view() {
         let source: SharedIntegerTerm = IntegerTerm::If {
             condition: Box::new(ConditionTerm::Variable(Variable(87654321))),
             then_term: IntegerTerm::constant_i64(19).into(),
@@ -1711,10 +1726,13 @@ mod tests {
         let weak = source.downgrade();
         let common = KernelTermImport::default().integer(&source);
         drop(source);
-        assert!(weak.upgrade().is_none());
+        assert_eq!(weak.upgrade().as_ref(), Some(&common));
         assert_eq!(common.ty(), &KernelType::Integer);
         let reconstructed = KernelTermExport::default().integer(&common).unwrap();
-        assert_eq!(reconstructed.kernel_term(), Some(&common));
+        assert_eq!(reconstructed.root(), &common);
+        assert!(!common.has_cached_native_argument());
+        drop((reconstructed, common));
+        assert!(weak.upgrade().is_none());
     }
 
     #[test]
@@ -1767,10 +1785,10 @@ mod tests {
             let source: SharedIntegerTerm = IntegerTerm::Machine(observation.clone()).into();
             let common = KernelTermImport::default().integer(&source);
             assert_eq!(common.children()[0], operand);
-            assert!(source.kernel_term().is_none());
-            assert!(common.legacy_integer().is_none());
+            assert_eq!(source.root(), &common);
+            assert!(!common.has_cached_native_argument());
             drop(source);
-            clear_integer_bridge_memo();
+            super::super::integer::clear_machine_observation_memo();
             let restored = KernelTermExport::default().integer(&common).unwrap();
             let IntegerTerm::Machine(restored) = restored.as_ref() else {
                 panic!("machine observation");
@@ -1801,8 +1819,8 @@ mod tests {
         let common = KernelTermImport::default().integer(&source);
         let restored = KernelTermExport::default().integer(&common).unwrap();
         assert_eq!(restored, source);
-        assert!(source.kernel_term().is_none());
-        assert!(common.legacy_integer().is_none());
+        assert_eq!(source.root(), &common);
+        assert!(!common.has_cached_native_argument());
         assert_eq!(KernelTermImport::default().integer(&source), common);
     }
 
@@ -1934,7 +1952,8 @@ mod tests {
         assert_eq!(common.children().len(), 3);
         assert_eq!(common.children()[0].ty(), &KernelType::Bool);
         drop(source);
-        assert!(weak.upgrade().is_none());
+        assert_eq!(weak.upgrade().as_ref(), Some(&common));
+        assert!(!common.has_cached_native_argument());
         let restored = KernelTermExport::default().integer(&common).unwrap();
         assert_eq!(KernelTermImport::default().integer(&restored), common);
     }
@@ -2085,13 +2104,10 @@ impl KernelTermExport {
                 _ => {}
             }
         }
-        if term.is_mathematical_integer() {
-            return Ok(PureFunctionArgument::Integer(
-                SharedIntegerTerm::from_mathematical_root(term.clone()),
-            ));
-        }
-        if let Some(value) = term.legacy_integer() {
-            return Ok(PureFunctionArgument::Integer(value));
+        if term.ty() == &KernelType::Integer {
+            return Ok(PureFunctionArgument::Integer(SharedIntegerTerm::from_root(
+                term.clone(),
+            )));
         }
         if let KernelType::Program(program_type) = term.ty()
             && let Some(format) = MachineIntegerType::from_program_type(*program_type)
@@ -2127,12 +2143,6 @@ impl KernelTermExport {
             _ => 1,
         });
         let value = match term.node() {
-            KernelTermNode::Match(matched) if term.ty() == &KernelType::Integer => {
-                PureFunctionArgument::Integer(matched.export_integer(self)?.into())
-            }
-            KernelTermNode::Fold(fold) if term.ty() == &KernelType::Integer => {
-                PureFunctionArgument::Integer(fold.integer_compatibility(self)?.into())
-            }
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. }
@@ -2145,77 +2155,17 @@ impl KernelTermExport {
             KernelTermNode::ProgramParameter { operand } => PureFunctionArgument::Value(
                 ProgramValue::Parameter(Box::new(self.algebraic(operand)?)),
             ),
-            KernelTermNode::Legacy(value) => value.value().clone(),
-            KernelTermNode::IntegerLiteral(value) => {
-                PureFunctionArgument::Integer(IntegerTerm::Constant(value.clone()).into())
-            }
-            KernelTermNode::Variable(variable) if term.ty() == &KernelType::Integer => {
-                PureFunctionArgument::Integer(IntegerTerm::Variable(*variable).into())
-            }
-            KernelTermNode::MachineObservation { format, operand } => {
-                PureFunctionArgument::Integer(
-                    IntegerTerm::Machine(
-                        match SharedMachineIntegerTerm::from_shared(*format, operand.clone()) {
-                            Some(value) => value,
-                            None => {
-                                SharedMachineIntegerTerm::intern(*format, Self::machine(operand)?)
-                            }
-                        },
-                    )
-                    .into(),
-                )
-            }
-            KernelTermNode::IntegerIf { arguments } => PureFunctionArgument::Integer(
-                IntegerTerm::If {
-                    condition: Box::new(Self::condition(&arguments[0])?),
-                    then_term: self.integer(&arguments[1])?,
-                    else_term: self.integer(&arguments[2])?,
-                }
-                .into(),
-            ),
-            KernelTermNode::IntegerOperation {
-                operator,
-                arguments,
-            } => {
-                let mut args = arguments
-                    .iter()
-                    .map(|arg| self.integer(arg))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter();
-                let a = args.next().unwrap();
-                use KernelIntegerOperator as Op;
-                let value = match operator {
-                    Op::Negate => IntegerTerm::Negate(a),
-                    Op::Add => IntegerTerm::Add(a, args.next().unwrap()),
-                    Op::Subtract => IntegerTerm::Subtract(a, args.next().unwrap()),
-                    Op::Multiply => IntegerTerm::Multiply(a, args.next().unwrap()),
-                    Op::TruncatingQuotient => {
-                        IntegerTerm::TruncatingQuotient(a, args.next().unwrap())
-                    }
-                    Op::TruncatingRemainder => {
-                        IntegerTerm::TruncatingRemainder(a, args.next().unwrap())
-                    }
-                };
-                PureFunctionArgument::Integer(value.into())
-            }
-            KernelTermNode::Call { name, arguments } if term.ty() == &KernelType::Integer => {
-                let arguments = arguments
-                    .iter()
-                    .map(|arg| self.argument(arg))
-                    .collect::<Result<Vec<_>, _>>()?;
-                PureFunctionArgument::Integer(
-                    IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
-                        name.clone(),
-                        arguments,
+            KernelTermNode::Legacy(value) => match &value.identity {
+                LegacyIdentity::ExactIntegerObservation(observation) => {
+                    PureFunctionArgument::Value(machine::wrap_exact(
+                        observation.ty(),
+                        observation.value().clone(),
                     ))
-                    .into(),
-                )
-            }
+                }
+                _ => value.value().clone(),
+            },
             _ => return Err("kernel term sort has not migrated to the checker bridge"),
         };
-        if let PureFunctionArgument::Integer(integer) = &value {
-            term.remember_integer(integer);
-        }
         self.values.insert(term.clone(), value.clone());
         Ok(value)
     }

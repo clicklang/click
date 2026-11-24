@@ -4,6 +4,14 @@
 
 use super::*;
 
+fn add_unrelated_constants(context: &mut IntegerAffineCollectionContext, count: u64) {
+    context.constants.extend((0..count).map(|index| {
+        let root =
+            KernelTerm::variable(crate::kernel::KernelType::Integer, Variable(92_000 + index));
+        (root.id(), None)
+    }));
+}
+
 #[test]
 fn nonlinear_integer_atoms_do_not_traverse_their_operand_dags() {
     let mut shared_work = Vec::new();
@@ -209,9 +217,7 @@ fn affine_claims_read_retained_fold_operands_without_export() {
         disequality_samples.push(work);
         let works = [0, 16, 64, 256].map(|unrelated| {
             let mut context = IntegerAffineCollectionContext::default();
-            context
-                .constants
-                .extend((0..unrelated).map(|id| (id, None)));
+            add_unrelated_constants(&mut context, unrelated);
             let exports = KernelTermExport::integer_export_count();
             let (claims, work) = crate::instrumentation::measure_deterministic_work(|| {
                 integer_affine_claims_with_context(&equal, &mut context)
@@ -316,9 +322,7 @@ fn shared_additive_fold_claims_stay_retained() {
         assert_eq!(KernelTermExport::integer_export_count(), exports);
         let works = [0, 16, 64, 256].map(|unrelated| {
             let mut context = IntegerAffineCollectionContext::default();
-            context
-                .constants
-                .extend((0..unrelated).map(|id| (id, None)));
+            add_unrelated_constants(&mut context, unrelated);
             let exports = KernelTermExport::integer_export_count();
             let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
                 integer_affine_claim_with_context(&equal, &mut context).unwrap()
@@ -389,9 +393,7 @@ fn literal_scaled_fold_claims_stay_retained() {
 
         let works = [0, 16, 64, 256].map(|unrelated| {
             let mut context = IntegerAffineCollectionContext::default();
-            context
-                .constants
-                .extend((0..unrelated).map(|id| (id, None)));
+            add_unrelated_constants(&mut context, unrelated);
             let exports = KernelTermExport::integer_export_count();
             let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
                 integer_affine_claim_with_context(&equal, &mut context).unwrap()
@@ -468,16 +470,16 @@ fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
         }
         let mut cache = HashMap::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            collect_integer_constants(&value, &mut cache).unwrap();
+            collect_integer_constants(value.root(), &mut cache).unwrap();
         });
         assert_eq!(cache.len(), depth + 1);
         assert_eq!(
-            cache.get(&value.id()).unwrap().as_ref().unwrap(),
+            cache.get(&value.root().id()).unwrap().as_ref().unwrap(),
             &(BigInt::from(1) << depth)
         );
         costs.push(work);
         let (_, repeated) = crate::instrumentation::measure_deterministic_work(|| {
-            collect_integer_constants(&value, &mut cache).unwrap();
+            collect_integer_constants(value.root(), &mut cache).unwrap();
         });
         assert!(repeated < 8, "{repeated}");
     }
@@ -496,7 +498,7 @@ fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
         control: 1000,
     };
     let result = crate::instrumentation::with_tactic_work_limits(limits, || {
-        collect_integer_constants(&value, &mut HashMap::new())
+        collect_integer_constants(value.root(), &mut HashMap::new())
     });
     assert!(
         result.is_none(),
@@ -557,5 +559,73 @@ fn mixed_affine_claims_read_observations_without_exporting_integer_arithmetic() 
     assert!(
         work_by_size.windows(2).all(|pair| pair[1] <= 5 * pair[0]),
         "{work_by_size:?}"
+    );
+}
+
+#[test]
+fn opaque_mixed_atoms_share_their_retained_value_reading() {
+    use crate::kernel::{
+        KernelTermExport, KernelTermImport, KernelType, MachineCastSpelling, MachineIntegerType,
+        SharedMachineIntegerTerm, Variable,
+    };
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = MachineIntegerType::Int32;
+        let destination = MachineIntegerType::Int64;
+        let observe = |format, word| {
+            let observation = SharedMachineIntegerTerm::from_shared(format, word).unwrap();
+            KernelTermImport::default().integer(&IntegerTerm::Machine(observation).into())
+        };
+        let word =
+            KernelTerm::variable(KernelType::Program(source.program_type()), Variable(980280));
+        let widened = KernelTerm::machine_cast_shared(
+            MachineCastSpelling::Int64From32,
+            source,
+            destination,
+            word.clone(),
+        );
+        let product = |mut operand| {
+            for index in 0..size {
+                operand = KernelTerm::integer_operation(
+                    KernelIntegerOperator::Add,
+                    vec![
+                        operand,
+                        KernelTerm::variable(KernelType::Integer, Variable(980300 + index)),
+                    ],
+                )
+                .unwrap();
+            }
+            KernelTerm::integer_operation(
+                KernelIntegerOperator::Multiply,
+                vec![
+                    operand,
+                    KernelTerm::variable(KernelType::Integer, Variable(980281)),
+                ],
+            )
+            .unwrap()
+        };
+        let left = product(observe(source, word));
+        let right = product(observe(destination, widened));
+        let comparison = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::Equal,
+            [left.clone(), right.clone()],
+        )
+        .unwrap();
+        let proposition =
+            Proposition::condition_is(StoredConditionTerm::from_root(comparison).unwrap(), true);
+        let exports = KernelTermExport::integer_export_count();
+        let (result, work) =
+            crate::instrumentation::measure_deterministic_work(|| claim(&proposition));
+        assert!(result.terms.is_empty());
+        assert!(result.constant.is_zero());
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert!(!left.has_cached_native_argument());
+        assert!(!right.has_cached_native_argument());
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|work| work[1] <= 5 * work[0]),
+        "{samples:?}"
     );
 }

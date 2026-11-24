@@ -9,6 +9,9 @@ use crate::kernel::{
 
 impl KernelLegacyTerm {
     pub(in crate::kernel) fn machine_operand(&self) -> Option<&MachineTerm> {
+        if let LegacyIdentity::ExactIntegerObservation(observation) = &self.identity {
+            return Some(observation.value());
+        }
         if !matches!(
             self.identity,
             LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
@@ -895,6 +898,9 @@ impl KernelTermExport {
                 operand,
             } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
             Node::Legacy(value) => {
+                if let LegacyIdentity::ExactIntegerObservation(observation) = &value.identity {
+                    return Ok(observation.value().clone());
+                }
                 let PureFunctionArgument::Value(value) = value.value() else {
                     return Err("expected a machine value legacy payload");
                 };

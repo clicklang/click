@@ -1222,7 +1222,7 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
     let mut prior = None;
     for size in [4, 16, 64] {
         // Keep term-bridge imports cold at every sample size.
-        crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::clear_machine_observation_memo();
         let mut facts = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
                 ConditionTerm::uint64_equal(x.clone(), MachineTerm::uint64_constant(u64::MAX)),

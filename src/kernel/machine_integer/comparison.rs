@@ -1183,6 +1183,14 @@ fn comparison_view_at_format(
     value: bool,
 ) -> Option<NativeComparisonView<'static>> {
     let (relation, left, right) = integer_relation(condition, value)?;
+    if [left, right].iter().any(|operand| {
+        !matches!(
+            operand.root().node(),
+            KernelTermNode::MachineObservation { .. } | KernelTermNode::IntegerLiteral(_)
+        )
+    }) {
+        return None;
+    }
     comparison_view_at_format_from_operands(relation, left, right)
 }
 
