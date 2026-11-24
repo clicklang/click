@@ -1592,7 +1592,7 @@ theorem selected(x: int32) {
         verify_expansion(None, source, source, &inputs, claim, true).unwrap();
         for body in [
             "close();",
-            "intro() { have x == 0 implies x == 0 by { close(); } close(); }",
+            "intro() { have forall (k: int32) { k == k } by { close(); } close(); }",
             "intro() {}",
         ] {
             let incomplete = source.replace(
