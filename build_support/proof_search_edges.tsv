@@ -61,7 +61,7 @@ src/surface/proof/driver/claims.rs	driver	::close_post_execution_claims_with_sol
 src/surface/proof/driver/claims.rs	driver	::close_post_execution_claims_with_solve	try_solve_closure	2
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	apply_planned_fact_transport	1
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	derive_proposition	1
-src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	driver	14
+src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	driver	15
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	try_direct_logical_closure	1
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	try_execution_fact_transport_or_refusal	1
 src/surface/proof/driver/claims.rs	driver	::focus_claim_goal	driver	1
@@ -74,7 +74,7 @@ src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	driver	
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_to_exit	1
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_until	1
 src/surface/proof/driver/execution.rs	driver	::advance_prepared_execution_match	driver	1
-src/surface/proof/driver/execution.rs	driver	::advance_preservation_region	driver	4
+src/surface/proof/driver/execution.rs	driver	::advance_preservation_region	driver	5
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	apply_planned_fact_transport	1
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	driver	7
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	try_execute_to_exit	1
@@ -141,12 +141,13 @@ src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_signed_definedness_cl
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_solve_closure	try_solve_closure	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_solve_closure	try_solve_closure_after_direct	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_solve_closure_with_surfaces	try_solve_closure_with_surfaces	1
+src/surface/proof/driver/scripts.rs	driver	ProofDriver::apply_close	try_solve_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemma	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemma	try_direct_logical_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::have_by_integer_arithmetic	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::apply_scoped_intro	driver	2
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_planned_fact_transport	1
-src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	19
+src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	20
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_execution_fact_transport_or_refusal	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_restricted_solve_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_solve_closure	3

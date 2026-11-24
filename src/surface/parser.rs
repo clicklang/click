@@ -12148,6 +12148,10 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::CheckTerminationCallbacks
             }
+            "close" => {
+                self.expect_empty_tactic_args(&name)?;
+                ProofTactic::Close
+            }
             "known" => {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Known
@@ -19755,6 +19759,7 @@ mod tactic_classification_tests {
         ("observe-resource", "observe(reference(p));"),
         ("witness", "witness(1);"),
         ("obtain", "let x = obtain(exists (k: Integer) { k == k });"),
+        ("close", "close();"),
         ("known", "known();"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),

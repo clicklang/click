@@ -936,7 +936,9 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             Some(PostExecutionTactic::Apply(application.clone()))
         }
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
-        ProofTactic::IntroBlock { .. } => Some(PostExecutionTactic::Leaf(tactic.clone())),
+        ProofTactic::IntroBlock { .. } | ProofTactic::Close => {
+            Some(PostExecutionTactic::Leaf(tactic.clone()))
+        }
         ProofTactic::Both(_) | ProofTactic::All(_) => {
             Some(PostExecutionTactic::Both(tactic.clone()))
         }
@@ -2888,7 +2890,10 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                     }
                     let handled_by_linear_driver = !matches!(
                         indexed.tactic,
-                        ProofTactic::Loop(_) | ProofTactic::Solve | ProofTactic::Step
+                        ProofTactic::Loop(_)
+                            | ProofTactic::Close
+                            | ProofTactic::Solve
+                            | ProofTactic::Step
                     );
                     if handled_by_linear_driver {
                         let segment = InternalProofNode::Linear {
@@ -2989,6 +2994,26 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                                 indexed.index,
                                 indexed.source_index,
                             )?;
+                        }
+                        ProofTactic::Close => {
+                            // At the back edge, first try the whole bundle as
+                            // an explicit check. A miss can use the existing
+                            // deferred region solver.
+                            match proof.driver().apply_close_invariants_body(
+                                &[ProofTactic::Known], None, false,
+                            ) {
+                                Ok(closed) => {
+                                    proof = closed.record_invariant_closer(indexed.index, indexed.source_index)?;
+                                }
+                                Err(error) if error.verification_stopped()
+                                    || crate::surface::proof::implicit_solve_scope::checked_only() =>
+                                {
+                                    return Err(error.with_failed_tactic("close"));
+                                }
+                                Err(_) => {
+                                    proof = proof.defer_region_solve(indexed.index, indexed.source_index)?;
+                                }
+                            }
                         }
                         ProofTactic::Solve => {
                             // The region solve's semantic content is the bundle

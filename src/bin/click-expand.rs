@@ -1540,6 +1540,30 @@ theorem use_add_one(x: Integer) {
     }
 
     #[test]
+    fn close_replays_direct_hits_and_expands_its_search() {
+        let source = r#"
+theorem direct(x: int32) {
+    requires x == 0;
+    ensures x == 0 by close();
+}
+theorem fallback(x: int32) {
+    ensures x == 0 implies x == 0 by close();
+}
+"#;
+        let inputs = VerificationInput::Bundle(Vec::new());
+        verify_expansion(None, source, source, &inputs, "direct.ensures_0", true).unwrap();
+
+        let claim = "fallback.ensures_0";
+        verify_expansion(None, source, source, &inputs, claim, false).unwrap();
+        assert!(verify_expansion(None, source, source, &inputs, claim, true).is_err());
+        let expanded = click::surface::expand_c_claim_source_by_label(source, &[], claim).unwrap();
+        let fallback = expanded.split("theorem fallback").nth(1).unwrap();
+        assert!(fallback.contains("intro();") && fallback.contains("known();"));
+        assert!(!fallback.contains("close();"));
+        verify_expansion(None, source, &expanded, &inputs, claim, true).unwrap();
+    }
+
+    #[test]
     fn whole_claim_replay_refuses_search_even_in_nested_proofs() {
         let source = r#"
 theorem neighbor(x: int32) {
