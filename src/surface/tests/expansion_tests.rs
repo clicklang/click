@@ -27059,16 +27059,14 @@ fn positive_reciprocal_and_signed_quotient_bounds_expand_and_cold_replay() {
 
 #[test]
 fn selected_float_bounds_expand_and_cold_replay() {
-    for (fixture, functions, ordinary) in [
+    for (fixture, functions) in [
         (
             "float_bound_composition",
             &["scale_twice", "double_twice"][..],
-            &[][..],
         ),
         (
             "float_signed_ranges",
             &["by_zero_bounded", "product", "quotient"][..],
-            &["product", "quotient"][..],
         ),
         (
             "float_reciprocals_and_squares",
@@ -27078,7 +27076,6 @@ fn selected_float_bounds_expand_and_cold_replay() {
                 "reciprocal_strict",
                 "square",
             ][..],
-            &[][..],
         ),
     ] {
         let (source, sources) =
@@ -27088,13 +27085,11 @@ fn selected_float_bounds_expand_and_cold_replay() {
             let claim = format!("{function}.ensures_0");
             let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
                 .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
-            if ordinary.contains(function) {
-                assert_eq!(
-                    expanded.matches("normalize()").count(),
-                    source.matches("normalize()").count(),
-                    "{claim}: {expanded}"
-                );
-            }
+            assert_eq!(
+                expanded.matches("normalize()").count(),
+                source.matches("normalize()").count(),
+                "{claim}: {expanded}"
+            );
             without_implicit_solve_for_claim(&claim, || {
                 verify_c_sources(&expanded, &sources).map_err(|error| error.report())
             })
