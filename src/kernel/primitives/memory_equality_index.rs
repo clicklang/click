@@ -3175,8 +3175,15 @@ mod tests {
         assert!(candidates.address().is_some(), "candidate address");
         assert!(resources.permits_memory_read(&query, 1, &facts));
         assert!(resources.permits_memory_read(&query.offset_by_bytes(1), 1, &facts));
-        assert!(!resources.permits_memory_read(&query, 2, &facts));
+        // The two proved byte bounds cover the full two-byte access.
+        assert!(resources.permits_memory_read(&query, 2, &facts));
         assert!(!ResourceContext::new().permits_memory_read(&query, 1, &facts));
+        let last_byte = aliases.clone().assume_condition(
+            ConditionTerm::uint64_equal(index.clone(), MachineTerm::uint64_constant(5551)),
+            true,
+        );
+        assert!(resources.permits_memory_read(&query, 1, &last_byte));
+        assert!(!resources.permits_memory_read(&query, 2, &last_byte));
         let boundary = aliases.assume_condition(
             ConditionTerm::uint64_equal(index, MachineTerm::uint64_constant(5552)),
             true,

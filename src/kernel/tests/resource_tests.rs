@@ -6987,6 +6987,29 @@ fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
 }
 
 #[test]
+fn wide_byte_range_covers_a_word_through_a_checked_alias() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let bytes = Address::symbolic(Variable(983_410));
+    let word = SymbolicMemory::local_pointer("word");
+    let length = MachineTerm::Variable(Variable(983_411));
+    let range = MemoryRange::new_wide(
+        bytes.clone(),
+        MachineTerm::uint64_constant(0),
+        length.clone(),
+        1,
+    );
+    let alias = PureFactContext::new()
+        .assume_condition(ConditionTerm::address_equal(bytes, word.clone()), true);
+    assert!(!alias.pointer_access_in_wide_range(&word, 4, &range));
+    let four = alias.assume_condition(
+        ConditionTerm::uint64_less_equal(MachineTerm::uint64_constant(4), length),
+        true,
+    );
+    assert!(four.pointer_access_in_wide_range(&word, 4, &range));
+    assert!(!four.pointer_access_in_wide_range(&word.offset_by_bytes(1), 4, &range));
+}
+
+#[test]
 fn native_range_coverage_checks_complete_signed_observations() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Address::symbolic(Variable(983_400));

@@ -1651,9 +1651,10 @@ available when one of these holds:
 - It is a typed read-definedness goal whose memory state holds a compatible
   cell or one unambiguous live slot of the requested type at the exact
   address. It also accepts the whole read of a declared local `uint32` when
-  all four bytes are recorded initialized. These checks use the goal's
-  memory state and decline if its lifetime or initialization needs further
-  evidence.
+  all four bytes are recorded initialized or have exact `uint8` definedness
+  facts in the same state. The unsigned word's declared type makes every
+  initialized bit pattern valid. This establishes read definedness while
+  execution still checks memory permission.
 - It checks containment of constant byte intervals with the same address
   origin, including intervals written at different element widths.
 - It separates a complete recorded effect footprint from the named

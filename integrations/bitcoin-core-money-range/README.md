@@ -820,5 +820,10 @@ corresponding entry source byte. It also checks the cursor's pointer and length
 after advancing. On short input the proof checks the exact exception and the
 unchanged cursor. The test authenticates the `memcpy` declaration, then
 verifies the sidecar and replays its expansion both cold and in a retained
-session. Decoding through this reader and typed
-catches are tracked in [the exceptions roadmap](../../roadmap/cpp-exceptions.md).
+session.
+
+`SpanReaderRead32.click` composes that contract with the pinned
+`ser_readdata32<SpanReader>` instantiation. Success advances the cursor four
+bytes and returns their little-endian value on x86-64. Short input propagates
+`std::ios_base::failure` and leaves the cursor unchanged. Typed catches are
+tracked in [the exceptions roadmap](../../roadmap/cpp-exceptions.md).

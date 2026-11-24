@@ -26,10 +26,14 @@ The pinned `SpanReader::read` now verifies unchanged, with exact copy and
 cursor guarantees on return and the failure bound and unchanged cursor on throw.
 Its integration test checks ordinary verification and expanded replay.
 
-Still pending: decoded serialization through `SpanReader` and exact/base-class
-typed catches. User constructors, lvalue throws,
-nontrivial exception classes, resource transitions and full C++ unwinding
-remain refused. No false acceptance is known.
+The pinned `ser_readdata32<SpanReader>` proof composes the reader contract
+with a little-endian word read. On success it returns the four input bytes
+as a `uint32` and advances the cursor by four. On short input it propagates
+the exact exception and preserves the cursor.
+
+Exact and base-class typed catches are still pending. User constructors,
+lvalue throws, nontrivial exception classes, resource transitions and full
+C++ unwinding remain refused. No false acceptance is known.
 
 ## Motivation
 
