@@ -7101,6 +7101,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         | ContractExpression::ProgramExpression(ProgramExpression::Load(_)) => {
                             Some(expression)
                         }
+                        ContractExpression::BitwiseNot(operand)
+                            if matches!(operand.as_ref(), ContractExpression::Index(..)) =>
+                        {
+                            Some(expression)
+                        }
                         ContractExpression::BitwiseAnd(left, right)
                         | ContractExpression::BitwiseOr(left, right)
                         | ContractExpression::BitwiseXor(left, right)
