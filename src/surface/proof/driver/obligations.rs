@@ -1269,10 +1269,19 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let proof = if execution.core.checked_invariant_lowerings.is_some() {
             driver_proof.clone()
         } else {
+            // Expanded maintain scripts can establish the invariant bundle
+            // as facts and leave the back edge to certify them. In checked
+            // replay that certification must use the facts directly.
+            let checked_only = crate::surface::proof::implicit_solve_scope::checked_only();
+            let closer = if checked_only {
+                ProofTactic::Known
+            } else {
+                ProofTactic::Solve
+            };
             driver_proof.driver().apply_close_invariants_body(
-                &[ProofTactic::Solve],
+                &[closer],
                 Some(&boundary),
-                true,
+                !checked_only,
             )?
         };
         proof.validate_loop_invariant_bundle(
