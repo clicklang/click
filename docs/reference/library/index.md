@@ -10249,6 +10249,100 @@ axiom float32_scale_upper(factor: float, x: float, bound: float) {
 }
 ```
 
+Rounded subtraction requires opposite bound directions for its two operands.
+Both endpoints are finite, and each difference rounds at the stated precision.
+
+### `float_order::float32_sub_lower`
+
+```click
+axiom float32_sub_lower(x: float, y: float, a: float, b: float) {
+    requires x >= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y >= a - b;
+}
+```
+
+### `float_order::float32_sub_upper`
+
+```click
+axiom float32_sub_upper(x: float, y: float, a: float, b: float) {
+    requires x <= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y <= a - b;
+}
+```
+
+### `float_order::float64_sub_lower`
+
+```click
+axiom float64_sub_lower(x: double, y: double, a: double, b: double) {
+    requires x >= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y >= a - b;
+}
+```
+
+### `float_order::float64_sub_upper`
+
+```click
+axiom float64_sub_upper(x: double, y: double, a: double, b: double) {
+    requires x <= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y <= a - b;
+}
+```
+
+### `float_order::float64_narrow_le`
+
+Rounding from `double` to `float` preserves a true non-strict order.
+
+```click
+axiom float64_narrow_le(a: double, b: double) {
+    requires a <= b;
+    ensures (a as float) <= (b as float);
+}
+```
+
+### `float_order::float64_narrow_lt`
+
+Distinct double values can round to the same float. A strict input order
+therefore gives an inclusive bound on the result.
+
+```click
+axiom float64_narrow_lt(a: double, b: double) {
+    requires a < b;
+    ensures (a as float) <= (b as float);
+}
+```
+
+A true strict IEEE comparison also gives non-strict order.
+
+### `float_order::float32_lt_to_le`
+
+```click
+axiom float32_lt_to_le(a: float, b: float) {
+    requires a < b;
+    ensures a <= b;
+}
+```
+
+### `float_order::float64_lt_to_le`
+
+```click
+axiom float64_lt_to_le(a: double, b: double) {
+    requires a < b;
+    ensures a <= b;
+}
+```
+
 Positive lower endpoints bound a rounded product from below. With two finite
 operand intervals, any bound on all four rounded corners also bounds the product.
 

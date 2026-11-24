@@ -149,6 +149,15 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
         let right_shift = shift(signed, count.clone());
         let shift_goal = equality(right_shift.clone(), shift(unsigned, count.clone()));
         let different_count = equality(right_shift, shift(unsigned, other.clone()));
+        let shifted_one = observe(
+            unsigned,
+            MachineBinaryOp::ShiftLeft,
+            constant_word(unsigned, &1.into()).unwrap(),
+            count.clone(),
+        );
+        let nonzero_goal =
+            ConditionTerm::IntegerNotEqual(shifted_one.into(), IntegerTerm::constant_i64(0).into())
+                .truth_claim(true);
         let bound = |d, endpoint: u32| {
             let endpoint = constant_word(unsigned, &endpoint.into()).unwrap();
             condition_for_operand_views(
@@ -172,7 +181,7 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
                 premises.extend([bound(&count, width), bound(&other, width)]);
                 let present = PureFactStore::from_ordered(&premises);
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    for goal in [&mask_goal, &shift_goal] {
+                    for goal in [&mask_goal, &shift_goal, &nonzero_goal] {
                         assert!(known_bridge_leaf(goal, &|p| present.pure_known_available(p)));
                         assert!(!known_bridge_leaf(goal, &|p| missing.pure_known_available(p)));
                     }
@@ -185,8 +194,8 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
                 // the fact store grows. A scan of either bucket would exceed
                 // this fixed allowance.
                 assert!(
-                    work <= baseline + 16,
-                    "{unsigned:?}, related={related}, facts={size}: {work} > {baseline} + 16"
+                    work <= baseline + 32,
+                    "{unsigned:?}, related={related}, facts={size}: {work} > {baseline} + 32"
                 );
             }
         }
