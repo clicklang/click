@@ -79,3 +79,54 @@ fn literal_or_zero_check_ignores_related_and_unrelated_bounds() {
         assert_eq!(samples, [samples[0]; 4], "{related}: {samples:?}");
     }
 }
+
+#[test]
+fn computed_divisor_queries_use_one_exact_operand_fact() {
+    let format = MachineIntegerType::Int32;
+    let word = MachineTerm::var(Variable(973_001));
+    let literal = MachineTerm::constant(1);
+    let xor = MachineTerm::machine_binary(
+        format,
+        MachineBinaryOp::BitwiseXor,
+        word.clone(),
+        literal.clone(),
+    );
+    let or = MachineTerm::machine_binary(
+        format,
+        MachineBinaryOp::BitwiseOr,
+        word.clone(),
+        literal.clone(),
+    );
+    let zero = ConditionTerm::equal(xor.clone(), MachineTerm::constant(0));
+    let path = ExecutionFacts::new();
+    for related in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let mut facts = PureFactContext::new()
+                .assume_condition(ConditionTerm::equal(word.clone(), literal.clone()), false)
+                .assume_condition(
+                    ConditionTerm::signed_greater_equal(word.clone(), MachineTerm::constant(0)),
+                    true,
+                );
+            for index in 0..size {
+                let value = if related {
+                    word.clone()
+                } else {
+                    MachineTerm::var(Variable(973_100 + u64::from(index)))
+                };
+                facts = facts.assume_condition(
+                    ConditionTerm::signed_less_equal(value, MachineTerm::constant(100 + index)),
+                    true,
+                );
+            }
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                (
+                    decide_zero(&xor, &zero, &facts, &path),
+                    or_cannot_be_minus_one(format, &or, &facts, &path),
+                )
+            });
+            assert_eq!(result, (Some(false), true));
+            work
+        });
+        assert_eq!(samples, [samples[0]; 3], "{related}: {samples:?}");
+    }
+}

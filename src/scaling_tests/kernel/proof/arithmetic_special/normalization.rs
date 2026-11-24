@@ -335,3 +335,63 @@ fn negative_product_guard_checks_only_cited_signs_and_quotient() {
         );
     }
 }
+
+#[test]
+fn float_quotient_range_checks_only_four_cited_endpoints() {
+    use crate::kernel::{FloatBinaryOperator, Variable};
+
+    let x = MachineTerm::var(Variable(880701));
+    let y = MachineTerm::var(Variable(880702));
+    let bound = |word, endpoint: f32, relation| {
+        Proposition::condition_is(
+            ConditionTerm::float32_compare(
+                word,
+                MachineTerm::constant(endpoint.to_bits()),
+                relation,
+            ),
+            true,
+        )
+    };
+    let ge = ComparisonOperator::GreaterEqual;
+    let le = ComparisonOperator::LessEqual;
+    let goal = bound(
+        MachineTerm::float32_binary(x.clone(), y.clone(), FloatBinaryOperator::Divide),
+        2.0,
+        le,
+    );
+    let selected = [
+        bound(x.clone(), 1.0, ge),
+        bound(y.clone(), 1.0, ge),
+        bound(x.clone(), 2.0, le),
+        bound(y, 2.0, le),
+    ];
+    for related in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let mut ambient = selected.to_vec();
+            for index in 0..size {
+                let value = if related {
+                    x.clone()
+                } else {
+                    MachineTerm::var(Variable(880710 + index))
+                };
+                ambient.push(bound(value, 3.0 + index as f32, le));
+            }
+            let facts = PureFactStore::from_ordered(&ambient);
+            let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &selected, &facts)
+            });
+            let (miss, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &selected[..3], &facts)
+            });
+            hit.unwrap();
+            assert!(miss.is_err());
+            (hit_work, miss_work)
+        });
+        assert!(
+            samples
+                .iter()
+                .all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
+            "{related}: {samples:?}"
+        );
+    }
+}

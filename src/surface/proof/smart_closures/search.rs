@@ -3792,7 +3792,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             search_input.facts().assumptions(),
             goal,
         ) {
-            candidates.push(bounds.into());
+            candidates.push(bounds);
         }
         if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_bound_chain(
             search_input.facts().assumptions(),
