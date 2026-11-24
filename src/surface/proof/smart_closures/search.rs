@@ -3856,6 +3856,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_float_bound_weakening(&proof, &plan, intermediate)
     }
 
+    pub(in crate::surface::proof) fn try_float_bound_link(
+        input: &Proof<'a>,
+        source: &Proposition,
+        goal: &Proposition,
+        source_surface: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_bound_link");
+        if let Some(closed) = Self::try_exact_float_bound_transfer(input, source, goal)? {
+            return Ok(Some(closed));
+        }
+        Self::try_float_scale_bound(input, source, goal, source_surface)
+    }
+
     /// Materialize each link of a selected bound chain. Each have cites the
     /// previous bound, with its own endpoint.
     fn try_float_bound_chain(
@@ -3889,15 +3903,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(None);
             };
             if let Some(closed) =
-                Self::try_exact_float_bound_transfer(scope.body(), previous_bound, bound)?
-            {
-                proof = closed.join()?;
-                previous = surface;
-                previous_bound = bound;
-                continue;
-            }
-            if let Some(closed) =
-                Self::try_float_scale_bound(scope.body(), previous_bound, bound, &previous)?
+                scope
+                    .driver()
+                    .try_float_bound_link(previous_bound, bound, &previous)?
             {
                 proof = closed.join()?;
                 previous = surface;
@@ -3916,17 +3924,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             previous = surface;
             previous_bound = bound;
         }
-        if let Some(goal) = proof.goal() {
-            if let Some(closed) =
-                Self::try_exact_float_bound_transfer(&proof, previous_bound, goal)?
-            {
-                return Ok(Some(closed));
-            }
-            if let Some(closed) =
-                Self::try_float_scale_bound(&proof, previous_bound, goal, &previous)?
-            {
-                return Ok(Some(closed));
-            }
+        if let Some(goal) = proof.goal()
+            && let Some(closed) =
+                Self::try_float_bound_link(&proof, previous_bound, goal, &previous)?
+        {
+            return Ok(Some(closed));
         }
         attempt::candidate_outcome(
             proof
