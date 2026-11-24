@@ -493,7 +493,43 @@ impl std::hash::Hash for StoredIntegerTerm {
         self.exact_key().hash(state);
     }
 }
-native_descriptor_identity!(StoredAlgebraicTerm);
+impl std::fmt::Debug for StoredAlgebraicTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.native_compat().fmt(f)
+    }
+}
+impl PartialEq for StoredAlgebraicTerm {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl Eq for StoredAlgebraicTerm {}
+impl PartialOrd for StoredAlgebraicTerm {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StoredAlgebraicTerm {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if let (Some(left), Some(right)) = (self.root(), other.root()) {
+            if left == right {
+                return std::cmp::Ordering::Equal;
+            }
+            if matches!(left.node(), KernelTermNode::Constructor(_))
+                && matches!(right.node(), KernelTermNode::Constructor(_))
+            {
+                use crate::kernel::execution_value::storage_keys::algebraic_for_root;
+                return algebraic_for_root(left).cmp(&algebraic_for_root(right));
+            }
+        }
+        self.native_compat().cmp(other.native_compat())
+    }
+}
+impl std::hash::Hash for StoredAlgebraicTerm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.native_compat().hash(state);
+    }
+}
 impl std::fmt::Debug for StoredConditionTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.native_compat().fmt(f)
@@ -734,6 +770,27 @@ mod protocol_value_tests {
             }
         }
     }
+    #[test]
+    fn retained_algebraic_ordering_keeps_constructor_fields_unboxed() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let constructors = [1, 2].map(|value| {
+            let mut constructor =
+                crate::kernel::KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
+            constructor.node = AlgebraicTermNode::Constructor {
+                variant: "Arm".into(),
+                fields: vec![AlgebraicValue::Integer(IntegerTerm::constant_i64(value))],
+            };
+            constructor
+        });
+        let [left, right] = constructors.each_ref().map(|value| {
+            StoredAlgebraicTerm::from_root(KernelTermImport::default().algebraic(value)).unwrap()
+        });
+        assert!(left != right);
+        assert_eq!(left.cmp(&right), constructors[0].cmp(&constructors[1]));
+        assert!(!left.root().unwrap().has_cached_native_argument());
+        assert!(!right.root().unwrap().has_cached_native_argument());
+    }
+
     #[test]
     fn retained_condition_ordering_keeps_connectives_unboxed() {
         let _session = crate::kernel::VerificationSession::enter();
