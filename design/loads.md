@@ -448,6 +448,68 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        (`build_support/read_construction.rs`): none remains in
        `primitives.rs` or the retained fold collector, and one fewer in
        `eval/memory_loads.rs`.
+     - **Selection state by cell and width.** *Blocked; not implemented.*
+       Replacing the pointer-word bridge in `Address::canonical_read` and
+       `canonical_loaded_value` needs the state `canonical_scalar_read`
+       selects through keyed by the load's cell and width instead of its
+       kind, so a pointer decoding and the 64-bit integer decodings share it
+       without an integer read. That state is:
+       - the identity cache, `SCALAR_READ_IDENTITY_CACHE`
+         (`eval/memory_loads.rs`), keyed by the input read term, that is
+         `(Load, kind)`, and holding the selected read; read by
+         `canonical_scalar_read` and, for pointer cells, by
+         `cached_symbolic_storage_cell_value` through an `Int32` read;
+       - the read observations (`eval/memory_loads/read_observations.rs`),
+         keyed by `(read key, address, kind)`, holding the observed access
+         width, whether it was typed, the live origin, the `selected` flag
+         and the latest producer; read by `existing_read_access_width`,
+         `load_term_access_width`, `is_selected_scalar_read` (the equality
+         graph's `exact_read_comparison_input`, `shared_machine.rs`, the
+         pointer-offset load collector in `assumptions.rs`), observation
+         lookups (`scalar_read_observation`) and `record_pointer_load_source`;
+       - the unrecorded default, `LoadKind::unrecorded_access_byte_width`,
+         which is not state but a per-decoding default: eight bytes for
+         `Int32` and `UInt32`, because `LoadKind::of_type` gives every
+         pointer type the `Int32` kind, and the decoding's own width for
+         every other kind, `Float32` included. No function of width alone
+         keeps both.
+
+       The access widths themselves, `LOAD_ACCESS_WIDTH` and
+       `LOAD_ACCESS_WIDTH_AT_ADDRESS`, are already keyed by the cell, and the
+       pointer and 64-bit integer reads already share every entry above,
+       because the bridge makes the pointer read a `Bits64` read (unit test
+       `a_pointer_read_and_a_64_bit_integer_read_of_one_cell_select_one_version`).
+
+       An instrumented run of both gate harnesses (2026-11-24) compared each
+       observation lookup with the answer a width-keyed record would give.
+       Of 14,268 lookups whose key a width-keyed table would share with a
+       read of the other signedness (`Int32`/`UInt32` and `Int8`/`UInt8`),
+       6,855 differ: mostly the `selected` flag, which the sibling's
+       selection set, and otherwise the live origin. `selected` decides
+       whether `exact_read_comparison_input` keeps a read or selects it
+       again, so the re-keying changes selections. The smallest case is
+       `mdtests/a_32_bit_cell_read_at_the_other_signedness_is_its_sign_cast.md`,
+       `stated_unsigned_read_signed`: the `int` read `s[i]` of the cell the
+       contract states as `u[i]` is selected and the `unsigned` read is not;
+       a width-keyed table reports both as selected. The identity cache
+       agreed on every shared lookup in the same run (1,161 same-width
+       pairs, all equal), and every pointer selection took the cell's
+       unresolved branch, which does not depend on the kind; but the cache's
+       selection depends on the decoding in general, through
+       `cell_integer_for_read`'s stored-value resolution and the held-read
+       match (an `Int32` and a `Float32` read of a cell holding an `int`
+       select differently), so it is not width-keyed by construction either.
+       The `Int32` pointer-cell producers (`Address::version_read_value`'s
+       fallback, `symbolic_pointer_load`, `symbolic_storage_cell_value`)
+       select through `canonical_scalar_read` at `Int32`, a second selection
+       of the cell beside the bridge's: 32 of 7,456 paired selections of one
+       cell differ between the two, so merging them is not neutral either.
+
+       Before the re-keying, the program-point session decides whether a
+       read's `selected` flag and live origin belong to the cell (one answer
+       for every decoding of a load, changing the case above) or stay per
+       decoding (then pointer and 64-bit reads need a shared decoding class
+       in the key, which `Bits64` is today). Until then the bridge stays.
      - **PR 3** adds the e-graph sign relation at 16 and 128 bits.
      - **PR 4** splits `Bits64` into `Int64` and `UInt64`. The remaining
        spellings are genuine 64-bit integer reads: their construction from a

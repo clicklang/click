@@ -6321,6 +6321,64 @@ mod tests {
         );
     }
 
+    /// A pointer read and a 64-bit integer read of one cell share the
+    /// selection state (the identity cache and the read observation) and
+    /// select the same version, whichever registers first
+    /// (`design/loads.md`, step 3b). Re-keying that state by cell and width
+    /// must keep this.
+    #[test]
+    fn a_pointer_read_and_a_64_bit_integer_read_of_one_cell_select_one_version() {
+        for pointer_first in [true, false] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let cell = Address {
+                base: "shared-selection-cell".into(),
+                offset: AddressOffset::Constant(0),
+            };
+            let other = Address {
+                base: "shared-selection-other".into(),
+                offset: AddressOffset::Constant(0),
+            };
+            let memory = SymbolicMemory::new()
+                .with_block("shared-selection-cell", 8)
+                .with_block("shared-selection-other", 4);
+            let before = intern_memory_ref(&memory);
+            let after = crate::kernel::intern_memory(memory.store(other, int32(9)));
+            let integer = || {
+                canonical_scalar_read(&MachineTerm::read_named(
+                    ProgramPoint::at(&after),
+                    cell.clone(),
+                    LoadKind::Bits64,
+                ))
+            };
+            let pointer = || Address::canonical_read(&after, &cell);
+            let (integer_read, pointer_read) = if pointer_first {
+                let pointer_read = pointer();
+                (integer(), pointer_read)
+            } else {
+                let integer_read = integer();
+                (integer_read, pointer())
+            };
+            let MachineTerm::MemoryLoad(point, address, _) = &integer_read else {
+                panic!("a selected integer read: {integer_read:?}");
+            };
+            assert_eq!(
+                pointer_read,
+                Address::loaded_source_value_at(point, address),
+                "the pointer is the load the integer read selected (pointer first: {pointer_first})"
+            );
+            assert_eq!(
+                pointer_read,
+                Address::canonical_read(&before, &cell),
+                "the store to another object leaves the version"
+            );
+            let observation =
+                read_observations::existing(point.shared_memory(), address, LoadKind::Bits64)
+                    .expect("one observation for both reads");
+            assert!(is_selected_scalar_read(point, address, LoadKind::Bits64));
+            assert_eq!(read_observations::bytes(observation), Some(8));
+        }
+    }
+
     #[test]
     fn a_pointer_version_point_read_does_not_cross_a_write_to_its_upper_half() {
         // A pointer cell is eight bytes. A store to its upper four bytes
